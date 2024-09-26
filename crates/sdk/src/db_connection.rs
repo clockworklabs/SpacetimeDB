@@ -32,12 +32,15 @@ use futures_channel::mpsc;
 use http::Uri;
 use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address, Identity};
 use std::{
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex as StdMutex, OnceLock},
     time::{Duration, SystemTime},
 };
-use tokio::runtime::{self, Runtime};
+use tokio::{
+    runtime::{self, Runtime},
+    sync::Mutex as TokioMutex,
+};
 
-pub(crate) type SharedCell<T> = Arc<Mutex<T>>;
+pub(crate) type SharedCell<T> = Arc<StdMutex<T>>;
 
 /// Implementation of `DbConnection`, `EventContext`,
 /// and anything else that provides access to the database connection.
@@ -55,7 +58,7 @@ pub struct DbContextImpl<M: SpacetimeModule> {
 
     /// Receiver channel for WebSocket messages,
     /// which are pre-parsed in the background by [`parse_loop`].
-    recv: SharedCell<mpsc::UnboundedReceiver<ParsedMessage<M>>>,
+    recv: Arc<TokioMutex<mpsc::UnboundedReceiver<ParsedMessage<M>>>>,
 
     /// Channel into which operations which apparently mutate SDK state,
     /// e.g. registering callbacks, push [`PendingMutation`] messages,
@@ -65,7 +68,7 @@ pub struct DbContextImpl<M: SpacetimeModule> {
 
     /// Receive end of `pending_mutations_send`,
     /// from which [Self::apply_pending_mutations] and friends read mutations.
-    pending_mutations_recv: SharedCell<mpsc::UnboundedReceiver<PendingMutation<M>>>,
+    pending_mutations_recv: Arc<TokioMutex<mpsc::UnboundedReceiver<PendingMutation<M>>>>,
 
     /// This connection's `Identity`.
     ///
@@ -209,7 +212,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     /// Apply all queued [`PendingMutation`]s.
     fn apply_pending_mutations(&self) -> anyhow::Result<()> {
-        while let Ok(Some(pending_mutation)) = self.pending_mutations_recv.lock().unwrap().try_next() {
+        while let Ok(Some(pending_mutation)) = self.pending_mutations_recv.blocking_lock().try_next() {
             self.apply_mutation(pending_mutation)?;
         }
         Ok(())
@@ -359,7 +362,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
         // Deranged behavior: mpsc's `try_next` returns `Ok(None)` when the channel is closed,
         // and `Err(_)` when the channel is open and waiting. This seems exactly backwards.
-        let res = match self.recv.lock().unwrap().try_next() {
+        let res = match self.recv.blocking_lock().try_next() {
             Ok(None) => {
                 self.invoke_disconnected(None);
                 Err(anyhow::Error::new(DisconnectedError {}))
@@ -381,8 +384,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // We call this out as an incorrect and unsupported thing to do.
         #![allow(clippy::await_holding_lock)]
 
-        let mut pending_mutations = self.pending_mutations_recv.lock().unwrap();
-        let mut recv = self.recv.lock().unwrap();
+        let mut pending_mutations = self.pending_mutations_recv.lock().await;
+        let mut recv = self.recv.lock().await;
 
         // Always process pending mutations before WS messages, if they're available,
         // so that newly registered callbacks run on messages.
@@ -816,7 +819,7 @@ but you must call one of them, or else the connection will never progress.
         let (_websocket_loop_handle, raw_msg_recv, raw_msg_send) = ws_connection.spawn_message_loop(&handle);
         let (_parse_loop_handle, parsed_recv_chan) = spawn_parse_loop::<M>(raw_msg_recv, &handle);
 
-        let inner = Arc::new(Mutex::new(DbContextImplInner {
+        let inner = Arc::new(StdMutex::new(DbContextImplInner {
             runtime,
 
             send_chan: Some(raw_msg_send),
@@ -828,16 +831,16 @@ but you must call one of them, or else the connection will never progress.
             on_connect_error: self.on_connect_error,
             on_disconnect: self.on_disconnect,
         }));
-        let cache = Arc::new(Mutex::new(Arc::new(ClientCache::default())));
+        let cache = Arc::new(StdMutex::new(Arc::new(ClientCache::default())));
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
         let ctx_imp = DbContextImpl {
             runtime: handle,
             inner,
             cache,
-            recv: Arc::new(Mutex::new(parsed_recv_chan)),
+            recv: Arc::new(TokioMutex::new(parsed_recv_chan)),
             pending_mutations_send,
-            pending_mutations_recv: Arc::new(Mutex::new(pending_mutations_recv)),
-            identity: Arc::new(Mutex::new(self.credentials.as_ref().map(|creds| creds.0))),
+            pending_mutations_recv: Arc::new(TokioMutex::new(pending_mutations_recv)),
+            identity: Arc::new(StdMutex::new(self.credentials.as_ref().map(|creds| creds.0))),
         };
 
         Ok(ctx_imp)
