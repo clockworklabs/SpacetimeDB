@@ -10,7 +10,7 @@ use std::any::Any;
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Status {
     Committed,
-    Failed(String),
+    Failed(Box<str>),
     OutOfEnergy,
 }
 

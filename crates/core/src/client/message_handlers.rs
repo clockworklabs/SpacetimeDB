@@ -112,7 +112,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
 pub struct MessageExecutionError {
-    pub reducer: Option<String>,
+    pub reducer: Option<Box<str>>,
     pub reducer_id: Option<ReducerId>,
     pub caller_identity: Identity,
     pub caller_address: Option<Address>,
@@ -127,7 +127,7 @@ impl MessageExecutionError {
             caller_identity: self.caller_identity,
             caller_address: self.caller_address,
             function_call: ModuleFunctionCall {
-                reducer: self.reducer.unwrap_or_else(|| "<none>".to_owned()),
+                reducer: self.reducer.unwrap_or_else(|| "<none>".into()).into(),
                 reducer_id: self.reducer_id.unwrap_or(u32::MAX.into()),
                 args: Default::default(),
             },

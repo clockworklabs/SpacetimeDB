@@ -113,7 +113,7 @@ impl<Args> ClientMessage<Args> {
 #[sats(crate = spacetimedb_lib)]
 pub struct CallReducer<Args> {
     /// The name of the reducer to call.
-    pub reducer: String,
+    pub reducer: Box<str>,
     /// The arguments to the reducer.
     ///
     /// In the wire format, this will be a [`Bytes`], BSATN or JSON encoded according to the reducer's argument schema
@@ -143,7 +143,7 @@ pub struct CallReducer<Args> {
 #[sats(crate = spacetimedb_lib)]
 pub struct Subscribe {
     /// A sequence of SQL queries.
-    pub query_strings: Vec<String>,
+    pub query_strings: Box<[Box<str>]>,
     pub request_id: u32,
 }
 
@@ -158,8 +158,8 @@ pub struct Subscribe {
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct OneOffQuery {
-    pub message_id: Vec<u8>,
-    pub query_string: String,
+    pub message_id: Box<[u8]>,
+    pub query_string: Box<str>,
 }
 
 /// The tag recognized by ghe host and SDKs to mean no compression of a [`ServerMessage`].
@@ -207,7 +207,7 @@ pub struct InitialSubscription<F: WebsocketFormat> {
 #[sats(crate = spacetimedb_lib)]
 pub struct IdentityToken {
     pub identity: Identity,
-    pub token: String,
+    pub token: Box<str>,
     pub address: Address,
 }
 
@@ -251,7 +251,7 @@ pub struct TransactionUpdate<F: WebsocketFormat> {
 #[sats(crate = spacetimedb_lib)]
 pub struct ReducerCallInfo<F: WebsocketFormat> {
     /// The name of the reducer that was called.
-    pub reducer_name: String,
+    pub reducer_name: Box<str>,
     /// The numerical id of the reducer that was called.
     pub reducer_id: u32,
     /// The arguments to the reducer, encoded as BSATN or JSON according to the reducer's argument schema
@@ -270,7 +270,7 @@ pub enum UpdateStatus<F: WebsocketFormat> {
     Committed(DatabaseUpdate<F>),
     /// The reducer errored, and any changes it attempted to were rolled back.
     /// This is the error message.
-    Failed(String),
+    Failed(Box<str>),
     /// The reducer was interrupted due to insufficient energy/funds,
     /// and any changes it attempted to make were rolled back.
     OutOfEnergy,
@@ -369,12 +369,12 @@ pub struct QueryUpdate<F: WebsocketFormat> {
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct OneOffQueryResponse<F: WebsocketFormat> {
-    pub message_id: Vec<u8>,
+    pub message_id: Box<[u8]>,
     /// If query compilation or evaluation errored, an error message.
-    pub error: Option<String>,
+    pub error: Option<Box<str>>,
 
     /// If query compilation and evaluation succeeded, a set of resulting rows, grouped by table.
-    pub tables: Vec<OneOffTable<F>>,
+    pub tables: Box<[OneOffTable<F>]>,
 
     /// The total duration of query compilation and evaluation on the server, in microseconds.
     pub total_host_execution_duration_micros: u64,
@@ -385,7 +385,7 @@ pub struct OneOffQueryResponse<F: WebsocketFormat> {
 #[sats(crate = spacetimedb_lib)]
 pub struct OneOffTable<F: WebsocketFormat> {
     /// The name of the table.
-    pub table_name: String,
+    pub table_name: Box<str>,
     /// The set of rows which matched the query, encoded as BSATN or JSON according to the table's schema
     /// and the client's requested protocol.
     pub rows: F::List,

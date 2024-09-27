@@ -135,7 +135,7 @@ struct SubscriptionTable {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let queries = args.get_many::<String>("query").unwrap();
+    let queries = args.get_many::<Box<str>>("query").unwrap();
     let num = args.get_one::<u32>("num-updates").copied();
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
@@ -189,7 +189,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 }
 
 /// Send the subscribe message.
-async fn subscribe<S>(ws: &mut S, query_strings: Vec<String>) -> Result<(), S::Error>
+async fn subscribe<S>(ws: &mut S, query_strings: Box<[Box<str>]>) -> Result<(), S::Error>
 where
     S: Sink<WsMessage> + Unpin,
 {
@@ -224,7 +224,7 @@ where
             ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate { status, .. }) => {
                 let message = match status {
                     ws::UpdateStatus::Failed(msg) => msg,
-                    _ => "protocol error: received transaction update before initial subscription update".to_string(),
+                    _ => "protocol error: received transaction update before initial subscription update".into(),
                 };
                 anyhow::bail!(message)
             }

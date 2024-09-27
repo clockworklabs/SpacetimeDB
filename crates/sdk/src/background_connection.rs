@@ -358,7 +358,7 @@ impl BackgroundDbConnection {
         self.subscribe_owned(queries.iter().map(|&s| s.into()).collect())
     }
 
-    pub(crate) fn subscribe_owned(&self, queries: Vec<String>) -> Result<()> {
+    pub(crate) fn subscribe_owned(&self, queries: Box<[Box<str>]>) -> Result<()> {
         self.send_message(ClientMessage::Subscribe(ws_messages::Subscribe {
             query_strings: queries,
             // TODO: generate a useful `request_id`. This will interact with future changes to the SDK's API.
@@ -369,7 +369,7 @@ impl BackgroundDbConnection {
 
     pub(crate) fn invoke_reducer<R: Reducer>(&self, reducer: R) -> Result<()> {
         self.send_message(ClientMessage::CallReducer(ws_messages::CallReducer {
-            reducer: R::REDUCER_NAME.to_string(),
+            reducer: R::REDUCER_NAME.into(),
             args: bsatn::to_vec(&reducer).expect("Serializing reducer failed").into(),
             request_id: 0,
         }))

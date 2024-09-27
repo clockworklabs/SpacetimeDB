@@ -52,7 +52,7 @@ impl ModuleHandle {
     pub async fn call_reducer_json(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
         let args = serde_json::to_string(&args).unwrap();
         let message = ws::ClientMessage::CallReducer(ws::CallReducer {
-            reducer: reducer.to_string(),
+            reducer: reducer.into(),
             args,
             request_id: 0,
         });
@@ -62,7 +62,7 @@ impl ModuleHandle {
 
     pub async fn call_reducer_binary(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
         let message = ws::ClientMessage::CallReducer(ws::CallReducer {
-            reducer: reducer.to_string(),
+            reducer: reducer.into(),
             args: bsatn::to_vec(&args).unwrap(),
             request_id: 0,
         });

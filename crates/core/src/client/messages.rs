@@ -127,7 +127,7 @@ impl ToProtocol for TransactionUpdateMessage {
         ) -> ws::ServerMessage<F> {
             let status = match &event.status {
                 EventStatus::Committed(_) => ws::UpdateStatus::Committed(upd),
-                EventStatus::Failed(errmsg) => ws::UpdateStatus::Failed(errmsg.clone()),
+                EventStatus::Failed(errmsg) => ws::UpdateStatus::Failed(errmsg.clone().into()),
                 EventStatus::OutOfEnergy => ws::UpdateStatus::OutOfEnergy,
             };
 
@@ -138,7 +138,7 @@ impl ToProtocol for TransactionUpdateMessage {
                 status,
                 caller_identity: event.caller_identity,
                 reducer_call: ws::ReducerCallInfo {
-                    reducer_name: event.function_call.reducer.to_owned(),
+                    reducer_name: event.function_call.reducer.to_owned().into(),
                     reducer_id: event.function_call.reducer_id.into(),
                     args,
                     request_id: request_id.unwrap_or(0),
@@ -246,8 +246,8 @@ impl ToProtocol for OneOffQueryResponseMessage {
                 })
                 .collect();
             ws::ServerMessage::OneOffQueryResponse(ws::OneOffQueryResponse {
-                message_id: msg.message_id,
-                error: msg.error,
+                message_id: msg.message_id.into(),
+                error: msg.error.map(Into::into),
                 tables,
                 total_host_execution_duration_micros: msg.total_host_execution_duration,
             })

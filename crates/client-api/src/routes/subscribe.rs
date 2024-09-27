@@ -93,7 +93,7 @@ where
         .ok_or(StatusCode::BAD_REQUEST)?;
     let instance_id = database_instance.id;
 
-    let identity_token = auth.creds.token().to_owned();
+    let identity_token = auth.creds.token().into();
 
     let host = ctx.host_controller();
     let module_rx = host

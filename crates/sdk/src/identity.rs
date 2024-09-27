@@ -13,7 +13,7 @@ pub use spacetimedb_lib::Identity;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 /// A private access token for a client connected to a database.
 pub struct Token {
-    pub(crate) string: String,
+    pub(crate) string: Box<str>,
 }
 
 impl Token {
@@ -31,6 +31,7 @@ impl Token {
     ///
     /// This method does not verify that `string` represents a valid token.
     pub fn from_string(string: String) -> Self {
+        let string = string.into();
         Token { string }
     }
 }
