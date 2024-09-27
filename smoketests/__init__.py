@@ -172,7 +172,7 @@ class Smoketest(unittest.TestCase):
 
     def log_records(self, n):
         self._check_published()
-        logs = self.spacetime("logs", "--json", "--", self.address, str(n))
+        logs = self.spacetime("logs", "--format=json", "--", self.address, str(n))
         return list(map(json.loads, logs.splitlines()))
 
     def publish_module(self, domain=None, *, clear=True, capture_stderr=True):
