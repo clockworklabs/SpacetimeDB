@@ -33,7 +33,7 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("anon_identity")
                 .help("The identity to use for the call"),
         )
-        .arg(common_args::anonymous().conflicts_with("identity"))
+        .arg(common_args::anonymous())
         .after_help("Run `spacetime help call` for more detailed information.\n")
 }
 

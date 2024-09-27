@@ -30,7 +30,7 @@ pub fn cli() -> clap::Command {
                 .long_help("The identity to use to describe the entity. If no identity is provided, the default one will be used."),
         )
         .arg(
-            common_args::anonymous().conflicts_with("identity")
+            common_args::anonymous()
         )
         .arg(
             common_args::server()

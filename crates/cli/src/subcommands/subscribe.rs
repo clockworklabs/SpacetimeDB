@@ -71,7 +71,7 @@ pub fn cli() -> clap::Command {
                      If no identity is provided, the default one will be used.",
                 ),
         )
-        .arg(common_args::anonymous().conflicts_with("identity"))
+        .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
 }
 
