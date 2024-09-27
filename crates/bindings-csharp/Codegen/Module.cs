@@ -4,11 +4,37 @@ using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using SpacetimeDB.Internal;
 using static Utils;
+
+readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null)
+{
+    private static readonly ImmutableDictionary<string, System.Type> AttrTypes = ImmutableArray
+        .Create(
+            typeof(AutoIncAttribute),
+            typeof(PrimaryKeyAttribute),
+            typeof(UniqueAttribute),
+            typeof(IndexedAttribute)
+        )
+        .ToImmutableDictionary(t => t.FullName);
+
+    public static ColumnAttr Parse(AttributeData attrData)
+    {
+        if (
+            attrData.AttributeClass is not { } attrClass
+            || !AttrTypes.TryGetValue(attrClass.ToString(), out var attrType)
+        )
+        {
+            return default;
+        }
+        var attr = attrData.ParseAs<ColumnAttribute>(attrType);
+        return new(attr.Mask, attr.Table);
+    }
+}
 
 record ColumnDeclaration : MemberDeclaration
 {
-    public readonly EquatableArray<(string? table, ColumnAttrs mask)> Attrs;
+    public readonly EquatableArray<ColumnAttr> Attrs;
     public readonly bool IsEquatable;
     public readonly string FullTableName;
 
@@ -22,10 +48,15 @@ record ColumnDeclaration : MemberDeclaration
     )
         : base(name, type, typeInfo)
     {
-        Attrs = new(ImmutableArray.Create((default(string), attrs)));
+        Attrs = new(ImmutableArray.Create(new ColumnAttr(attrs)));
         IsEquatable = isEquatable;
         FullTableName = tableName;
     }
+
+    // A helper to combine multiple column attributes into a single mask.
+    // Note: it doesn't check the table names, this is left up to the caller.
+    private static ColumnAttrs CombineColumnAttrs(IEnumerable<ColumnAttr> attrs) =>
+        attrs.Aggregate(ColumnAttrs.UnSet, (mask, attr) => mask | attr.Mask);
 
     public ColumnDeclaration(string tableName, IFieldSymbol field)
         : base(field)
@@ -35,21 +66,12 @@ record ColumnDeclaration : MemberDeclaration
         Attrs = new(
             field
                 .GetAttributes()
-                .Select(a =>
-                    (
-                        table: a.NamedArguments.FirstOrDefault(a => a.Key == "Table").Value.Value
-                            as string,
-                        attr: a.AttributeClass?.ToString() switch
-                        {
-                            "SpacetimeDB.AutoIncAttribute" => ColumnAttrs.AutoInc,
-                            "SpacetimeDB.PrimaryKeyAttribute" => ColumnAttrs.PrimaryKey,
-                            "SpacetimeDB.UniqueAttribute" => ColumnAttrs.Unique,
-                            "SpacetimeDB.IndexedAttribute" => ColumnAttrs.Indexed,
-                            _ => ColumnAttrs.UnSet,
-                        }
-                    )
+                .Select(ColumnAttr.Parse)
+                .Where(a => a.Mask != ColumnAttrs.UnSet)
+                .GroupBy(
+                    a => a.Table,
+                    (key, group) => new ColumnAttr(CombineColumnAttrs(group), key)
                 )
-                .Where(a => a.attr != ColumnAttrs.UnSet)
                 .ToImmutableArray()
         );
 
@@ -75,7 +97,7 @@ record ColumnDeclaration : MemberDeclaration
             _ => false,
         };
 
-        var attrs = Attrs.Aggregate(ColumnAttrs.UnSet, (xs, x) => xs | x.mask);
+        var attrs = CombineColumnAttrs(Attrs);
 
         if (attrs.HasFlag(ColumnAttrs.AutoInc) && !isInteger)
         {
@@ -107,9 +129,7 @@ record ColumnDeclaration : MemberDeclaration
     }
 
     public ColumnAttrs GetAttrs(string tableName) =>
-        Attrs
-            .Where(x => x.table == null || x.table == tableName)
-            .Aggregate(ColumnAttrs.UnSet, (xs, x) => xs | x.mask);
+        CombineColumnAttrs(Attrs.Where(x => x.Table == null || x.Table == tableName));
 
     // For the `TableDesc` constructor.
     public string GenerateColumnDef() =>
@@ -128,16 +148,11 @@ record TableView
 
     public TableView(TableDeclaration table, AttributeData data)
     {
-        Name =
-            data.NamedArguments.FirstOrDefault(x => x.Key == "Name").Value.Value as string
-            ?? table.ShortName;
+        var attr = data.ParseAs<TableAttribute>();
 
-        IsPublic = data.NamedArguments.Any(pair => pair is { Key: "Public", Value.Value: true });
-
-        Scheduled = data
-            .NamedArguments.Where(pair => pair.Key == "Scheduled")
-            .Select(pair => (string?)pair.Value.Value)
-            .SingleOrDefault();
+        Name = attr.Name ?? table.ShortName;
+        IsPublic = attr.Public;
+        Scheduled = attr.Scheduled;
     }
 }
 
@@ -347,7 +362,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                                     nameof({{ShortName}}),
                                     {{tuple.pos}},
                                     nameof({{tuple.col.Name}}),
-                                    (SpacetimeDB.ColumnAttrs){{(int)tuple.attr}}
+                                    SpacetimeDB.Internal.ColumnAttrs.{{tuple.attr}}
                                 )
                                 """
                             )
