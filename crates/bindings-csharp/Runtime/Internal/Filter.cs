@@ -82,7 +82,7 @@ public partial class Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[
     public byte[] Compile<T>(Expression<Func<T, bool>> query)
     {
         var expr = HandleExpr(query.Body);
-        return IStructuralReadWrite.ToBytes(new Expr.BSATN(), expr);
+        return IStructuralWrite.ToBytes(expr);
     }
 
     static FieldInfo ExprAsTableField(Expression expr) =>

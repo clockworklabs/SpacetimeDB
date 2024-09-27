@@ -24,10 +24,8 @@ partial class CustomClass : SpacetimeDB.BSATN.IStructuralReadWrite
         public CustomClass Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomClass>(reader);
 
-        public void Write(System.IO.BinaryWriter writer, CustomClass value)
-        {
+        public void Write(System.IO.BinaryWriter writer, CustomClass value) =>
             value.WriteFields(writer);
-        }
 
         public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar

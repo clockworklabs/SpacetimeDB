@@ -128,10 +128,8 @@ partial struct PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
         public PublicTable Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<PublicTable>(reader);
 
-        public void Write(System.IO.BinaryWriter writer, PublicTable value)
-        {
+        public void Write(System.IO.BinaryWriter writer, PublicTable value) =>
             value.WriteFields(writer);
-        }
 
         public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar

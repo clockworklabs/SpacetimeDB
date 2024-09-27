@@ -30,10 +30,8 @@ partial class Timers
             public SendMessageTimer Read(System.IO.BinaryReader reader) =>
                 SpacetimeDB.BSATN.IStructuralReadWrite.Read<SendMessageTimer>(reader);
 
-            public void Write(System.IO.BinaryWriter writer, SendMessageTimer value)
-            {
+            public void Write(System.IO.BinaryWriter writer, SendMessageTimer value) =>
                 value.WriteFields(writer);
-            }
 
             public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
                 SpacetimeDB.BSATN.ITypeRegistrar registrar
