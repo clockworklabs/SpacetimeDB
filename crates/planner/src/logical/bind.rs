@@ -406,7 +406,10 @@ pub(crate) fn assert_eq_types(a: TypeWithCtx<'_>, b: TypeWithCtx<'_>) -> TypingR
 mod tests {
     use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, AlgebraicType, ProductType};
     use spacetimedb_primitives::TableId;
-    use spacetimedb_schema::{def::ModuleDef, schema::TableSchema};
+    use spacetimedb_schema::{
+        def::ModuleDef,
+        schema::{Schema, TableSchema},
+    };
     use std::sync::Arc;
 
     use super::{parse_and_type_sub, SchemaView};
@@ -442,7 +445,9 @@ mod tests {
         fn schema(&self, name: &str, _: bool) -> Option<Arc<TableSchema>> {
             self.0.table(name).map(|def| {
                 Arc::new(TableSchema::from_module_def(
+                    &self.0,
                     def,
+                    (),
                     TableId(if *def.name == *"t" { 0 } else { 1 }),
                 ))
             })

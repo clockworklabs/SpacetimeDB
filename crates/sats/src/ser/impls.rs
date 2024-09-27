@@ -1,12 +1,11 @@
 use super::{Serialize, SerializeArray, SerializeMap, SerializeNamedProduct, SerializeSeqProduct, Serializer};
 use crate::{i256, u256};
 use crate::{
-    impl_st, AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType, F32,
-    F64,
+    AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType, F32, F64,
 };
-use core::ops::Bound;
-use spacetimedb_primitives::ColList;
+use spacetimedb_primitives::{ColList, ColSet};
 use std::collections::BTreeMap;
+use std::ops::Bound;
 
 /// Implements [`Serialize`] for a type in a simplified manner.
 ///
@@ -246,10 +245,12 @@ impl_serialize!([] ValueWithType<'_, MapValue>, (self, ser) => {
     map.end()
 });
 
-impl_serialize!([] spacetimedb_primitives::ColId, (self, ser) => ser.serialize_u16(self.0));
 impl_serialize!([] spacetimedb_primitives::TableId, (self, ser) => ser.serialize_u32(self.0));
-impl_serialize!([] spacetimedb_primitives::IndexId, (self, ser) => ser.serialize_u32(self.0));
 impl_serialize!([] spacetimedb_primitives::SequenceId, (self, ser) => ser.serialize_u32(self.0));
+impl_serialize!([] spacetimedb_primitives::IndexId, (self, ser) => ser.serialize_u32(self.0));
+impl_serialize!([] spacetimedb_primitives::ConstraintId, (self, ser) => ser.serialize_u32(self.0));
+impl_serialize!([] spacetimedb_primitives::ColId, (self, ser) => ser.serialize_u16(self.0));
+impl_serialize!([] spacetimedb_primitives::ScheduleId, (self, ser) => ser.serialize_u32(self.0));
 
 impl_serialize!([] ColList, (self, ser) => {
     let mut arr = ser.serialize_array(self.len() as usize)?;
@@ -258,8 +259,10 @@ impl_serialize!([] ColList, (self, ser) => {
        }
        arr.end()
 });
-
-impl_st!([] ColList, ts => AlgebraicType::array(spacetimedb_primitives::ColId::make_type(ts)));
+impl_serialize!([] ColSet, (self, ser) => {
+    let list: &ColList = self;
+    list.serialize(ser)
+});
 
 #[cfg(feature = "blake3")]
 impl_serialize!([] blake3::Hash, (self, ser) => self.as_bytes().serialize(ser));

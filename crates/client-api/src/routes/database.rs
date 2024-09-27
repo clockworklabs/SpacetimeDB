@@ -16,11 +16,10 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use spacetimedb::address::Address;
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::host::DescribedEntityType;
-use spacetimedb::host::EntityDef;
-use spacetimedb::host::ReducerArgs;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
+use spacetimedb::host::{DescribedEntityType, UpdateDatabaseResult};
+use spacetimedb::host::{ModuleHost, ReducerArgs};
 use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType};
@@ -29,10 +28,12 @@ use spacetimedb::sql::execute::{ctx_sql, translate_col};
 use spacetimedb_client_api_messages::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::address::AddressForUrl;
+use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::sats::WithTypespace;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::ProductTypeElement;
+use spacetimedb_schema::def::{ReducerDef, TableDef};
 
 pub(crate) struct DomainParsingRejection;
 
@@ -201,21 +202,50 @@ async fn extract_db_call_info(
     })
 }
 
+pub enum EntityDef<'a> {
+    Reducer(&'a ReducerDef),
+    Table(&'a TableDef),
+}
+
+impl<'a> EntityDef<'a> {
+    fn described_entity_ty(&self) -> DescribedEntityType {
+        match self {
+            EntityDef::Reducer(_) => DescribedEntityType::Reducer,
+            EntityDef::Table(_) => DescribedEntityType::Table,
+        }
+    }
+    fn name(&self) -> &str {
+        match self {
+            EntityDef::Reducer(r) => &r.name[..],
+            EntityDef::Table(t) => &t.name[..],
+        }
+    }
+}
+
 fn entity_description_json(description: WithTypespace<EntityDef>, expand: bool) -> Option<Value> {
-    let typ = DescribedEntityType::from_entitydef(description.ty()).as_str();
+    let typ = description.ty().described_entity_ty().as_str();
     let len = match description.ty() {
-        EntityDef::Table(t) => description.resolve(t.data).ty().as_product()?.elements.len(),
-        EntityDef::Reducer(r) => r.args.len(),
+        EntityDef::Table(t) => description
+            .resolve(t.product_type_ref)
+            .ty()
+            .as_product()?
+            .elements
+            .len(),
+        EntityDef::Reducer(r) => r.params.elements.len(),
     };
     if expand {
         // TODO(noa): make this less hacky; needs coordination w/ spacetime-web
         let schema = match description.ty() {
             EntityDef::Table(table) => {
-                json!(description.with(&table.data).resolve_refs().ok()?.as_product()?)
+                json!(description
+                    .with(&table.product_type_ref)
+                    .resolve_refs()
+                    .ok()?
+                    .as_product()?)
             }
             EntityDef::Reducer(r) => json!({
-                "name": r.name,
-                "elements": r.args,
+                "name": &r.name[..],
+                "elements": r.params.elements,
             }),
         };
         Some(json!({
@@ -277,11 +307,9 @@ where
             format!("Invalid entity type for description: {}", entity_type),
         )
     })?;
-    let catalog = module.catalog();
-    let description = catalog
-        .get(&entity)
-        .filter(|desc| DescribedEntityType::from_entitydef(desc.ty()) == entity_type)
+    let description = get_entity(&module, &entity, entity_type)
         .ok_or_else(|| (StatusCode::NOT_FOUND, format!("{entity_type} {entity:?} not found")))?;
+    let description = WithTypespace::new(module.info().module_def.typespace(), &description);
 
     let expand = expand.unwrap_or(true);
     let response_json = json!({ entity: entity_description_json(description, expand) });
@@ -292,6 +320,21 @@ where
         TypedHeader(SpacetimeIdentityToken(call_info.auth.creds)),
         axum::Json(response_json),
     ))
+}
+
+fn get_catalog(host: &ModuleHost) -> impl Iterator<Item = EntityDef> {
+    let module_def = &host.info().module_def;
+    module_def
+        .reducers()
+        .map(EntityDef::Reducer)
+        .chain(module_def.tables().map(EntityDef::Table))
+}
+
+fn get_entity<'a>(host: &'a ModuleHost, entity: &'_ str, entity_type: DescribedEntityType) -> Option<EntityDef<'a>> {
+    match entity_type {
+        DescribedEntityType::Table => host.info().module_def.table(entity).map(EntityDef::Table),
+        DescribedEntityType::Reducer => host.info().module_def.reducer(entity).map(EntityDef::Reducer),
+    }
 }
 
 #[derive(Deserialize)]
@@ -335,17 +378,24 @@ where
         .map_err(log_and_500)?;
 
     let response_json = if module_def {
-        serde_json::to_value(SerializeWrapper::from_ref(&module.info().module_def)).map_err(log_and_500)?
+        let raw = RawModuleDefV9::from(module.info().module_def.clone());
+        serde_json::to_value(SerializeWrapper::from_ref(&raw)).map_err(log_and_500)?
     } else {
-        let catalog = module.catalog();
         let expand = expand.unwrap_or(false);
-        let response_catalog: HashMap<_, _> = catalog
-            .iter()
-            .map(|(name, entity)| (name, entity_description_json(entity, expand)))
+        let response_catalog: HashMap<_, _> = get_catalog(&module)
+            .map(|entity| {
+                (
+                    entity.name().to_string().into_boxed_str(),
+                    entity_description_json(
+                        WithTypespace::new(module.info().module_def.typespace(), &entity),
+                        expand,
+                    ),
+                )
+            })
             .collect();
         json!({
             "entities": response_catalog,
-            "typespace": catalog.typespace().types,
+            "typespace": SerializeWrapper::from_ref(module.info().module_def.typespace()),
         })
     };
 
@@ -704,8 +754,8 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         .await
         .map_err(log_and_500)?;
 
-    if let Some(Err(e)) = maybe_updated {
-        return Err((StatusCode::BAD_REQUEST, format!("Database update rejected: {e}")).into());
+    if let Some(UpdateDatabaseResult::AutoMigrateError(errs)) = maybe_updated {
+        return Err((StatusCode::BAD_REQUEST, format!("Database update rejected: {errs}")).into());
     }
 
     Ok(axum::Json(PublishResult::Success {
