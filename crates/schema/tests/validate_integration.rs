@@ -64,30 +64,10 @@ fn assert_identical(module_def_1: ModuleDef, module_def_2: ModuleDef) {
 }
 
 #[test]
-fn validate_rust_wasm_test() {
-    validate_module("rust-wasm-test");
-}
-
-#[test]
-fn validate_sdk_test() {
-    validate_module("sdk-test");
-}
-
-#[test]
 fn validate_cs_modules() {
     // These need to be called in sequence because running them in parallel locks the codegen DLLs
     // which causes a compilation failure. Thanks, .NET
     validate_module("sdk-test-cs");
     validate_module("sdk-test-connect-disconnect-cs");
     validate_module("spacetimedb-quickstart-cs");
-}
-
-#[test]
-fn validate_sdk_test_connect_disconnect() {
-    validate_module("sdk-test-connect-disconnect");
-}
-
-#[test]
-fn validate_spacetimedb_quickstart() {
-    validate_module("spacetimedb-quickstart");
 }

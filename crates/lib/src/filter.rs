@@ -11,10 +11,6 @@ use spacetimedb_sats::{ProductTypeElement, Typespace};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-pub trait Table {
-    type FieldIndex;
-}
-
 macro_rules! impl_sum {
     ($seed_ty:ident, $ty:ident { $($variant:ident ( $variant_ty:ty ),)* }) => {
         const _: () = {

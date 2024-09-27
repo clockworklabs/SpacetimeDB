@@ -18,7 +18,7 @@ pub struct VecU256 {
 }
 
 impl TableType for VecU256 {
-    const TABLE_NAME: &'static str = "VecU256";
+    const TABLE_NAME: &'static str = "vec_u256";
     type ReducerEvent = super::ReducerEvent;
 }
 

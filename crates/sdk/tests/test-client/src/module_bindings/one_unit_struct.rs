@@ -19,7 +19,7 @@ pub struct OneUnitStruct {
 }
 
 impl TableType for OneUnitStruct {
-    const TABLE_NAME: &'static str = "OneUnitStruct";
+    const TABLE_NAME: &'static str = "one_unit_struct";
     type ReducerEvent = super::ReducerEvent;
 }
 

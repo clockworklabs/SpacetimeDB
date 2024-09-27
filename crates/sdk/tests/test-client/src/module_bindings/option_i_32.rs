@@ -18,7 +18,7 @@ pub struct OptionI32 {
 }
 
 impl TableType for OptionI32 {
-    const TABLE_NAME: &'static str = "OptionI32";
+    const TABLE_NAME: &'static str = "option_i32";
     type ReducerEvent = super::ReducerEvent;
 }
 

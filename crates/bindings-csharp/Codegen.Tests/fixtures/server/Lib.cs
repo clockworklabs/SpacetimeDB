@@ -13,16 +13,16 @@ public partial struct CustomStruct
 }
 
 [SpacetimeDB.Type]
-public partial struct CustomClass
+public partial class CustomClass
 {
     public const int IGNORE_ME = 0;
     public static readonly string IGNORE_ME_TOO = "";
-    public int IntField;
-    public string StringField;
+    public int IntField = 0;
+    public string StringField = "";
 }
 
 [StructLayout(LayoutKind.Auto)]
-public partial struct CustomClass
+public partial class CustomClass
 {
     public int IgnoreExtraFields;
 }
@@ -44,7 +44,8 @@ public partial class PrivateTable { }
 [SpacetimeDB.Table]
 public partial struct PublicTable
 {
-    [SpacetimeDB.Column(ColumnAttrs.PrimaryKeyAuto)]
+    [SpacetimeDB.AutoInc]
+    [SpacetimeDB.PrimaryKey]
     public int Id;
 
     public byte ByteField;
@@ -81,18 +82,18 @@ public partial struct PublicTable
 public static partial class Reducers
 {
     [SpacetimeDB.Reducer]
-    public static void InsertData(PublicTable data)
+    public static void InsertData(ReducerContext ctx, PublicTable data)
     {
-        data.Insert();
+        ctx.Db.PublicTable.Insert(data);
         Log.Info("New list");
-        foreach (var item in PublicTable.Iter())
+        foreach (var item in ctx.Db.PublicTable.Iter())
         {
             Log.Info($"Item: {item.StringField}");
         }
     }
 
     [SpacetimeDB.Reducer]
-    public static void ScheduleImmediate(PublicTable data)
+    public static void ScheduleImmediate(ReducerContext ctx, PublicTable data)
     {
         VolatileNonatomicScheduleImmediateInsertData(data);
     }
@@ -107,7 +108,7 @@ namespace Test
             [SpacetimeDB.Reducer("test_custom_name_and_reducer_ctx")]
             public static void InsertData2(ReducerContext ctx, PublicTable data)
             {
-                data.Insert();
+                ctx.Db.PublicTable.Insert(data);
             }
         }
     }
@@ -122,7 +123,7 @@ public static partial class Timers
     }
 
     [SpacetimeDB.Reducer]
-    public static void SendScheduledMessage(SendMessageTimer arg)
+    public static void SendScheduledMessage(ReducerContext ctx, SendMessageTimer arg)
     {
         // verify that fields were auto-added
         ulong id = arg.ScheduledId;
@@ -133,10 +134,12 @@ public static partial class Timers
     [SpacetimeDB.Reducer(ReducerKind.Init)]
     public static void Init(ReducerContext ctx)
     {
-        new SendMessageTimer
-        {
-            Text = "bot sending a message",
-            ScheduledAt = ctx.Time.AddSeconds(10),
-        }.Insert();
+        ctx.Db.SendMessageTimer.Insert(
+            new SendMessageTimer
+            {
+                Text = "bot sending a message",
+                ScheduledAt = ctx.Time.AddSeconds(10),
+            }
+        );
     }
 }

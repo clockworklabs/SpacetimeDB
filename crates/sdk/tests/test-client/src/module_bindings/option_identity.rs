@@ -18,7 +18,7 @@ pub struct OptionIdentity {
 }
 
 impl TableType for OptionIdentity {
-    const TABLE_NAME: &'static str = "OptionIdentity";
+    const TABLE_NAME: &'static str = "option_identity";
     type ReducerEvent = super::ReducerEvent;
 }
 

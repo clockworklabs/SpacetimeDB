@@ -18,7 +18,7 @@ pub struct VecIdentity {
 }
 
 impl TableType for VecIdentity {
-    const TABLE_NAME: &'static str = "VecIdentity";
+    const TABLE_NAME: &'static str = "vec_identity";
     type ReducerEvent = super::ReducerEvent;
 }
 

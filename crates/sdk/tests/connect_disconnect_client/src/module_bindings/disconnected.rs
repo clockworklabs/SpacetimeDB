@@ -18,7 +18,7 @@ pub struct Disconnected {
 }
 
 impl TableType for Disconnected {
-    const TABLE_NAME: &'static str = "Disconnected";
+    const TABLE_NAME: &'static str = "disconnected";
     type ReducerEvent = super::ReducerEvent;
 }
 

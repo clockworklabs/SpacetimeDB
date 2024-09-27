@@ -41,10 +41,10 @@ impl SpacetimeModule for Module {
     ) {
         let table_name = &table_update.table_name[..];
         match table_name {
-            "Connected" => {
+            "connected" => {
                 client_cache.handle_table_update_no_primary_key::<connected::Connected>(callbacks, table_update)
             }
-            "Disconnected" => {
+            "disconnected" => {
                 client_cache.handle_table_update_no_primary_key::<disconnected::Disconnected>(callbacks, table_update)
             }
             _ => spacetimedb_sdk::log::error!("TableRowOperation on unknown table {:?}", table_name),
@@ -83,8 +83,8 @@ impl SpacetimeModule for Module {
     ) {
         let table_name = &new_subs.table_name[..];
         match table_name {
-            "Connected" => client_cache.handle_resubscribe_for_type::<connected::Connected>(callbacks, new_subs),
-            "Disconnected" => {
+            "connected" => client_cache.handle_resubscribe_for_type::<connected::Connected>(callbacks, new_subs),
+            "disconnected" => {
                 client_cache.handle_resubscribe_for_type::<disconnected::Disconnected>(callbacks, new_subs)
             }
             _ => spacetimedb_sdk::log::error!("TableRowOperation on unknown table {:?}", table_name),

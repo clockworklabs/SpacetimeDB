@@ -18,7 +18,7 @@ pub struct OneF64 {
 }
 
 impl TableType for OneF64 {
-    const TABLE_NAME: &'static str = "OneF64";
+    const TABLE_NAME: &'static str = "one_f64";
     type ReducerEvent = super::ReducerEvent;
 }
 

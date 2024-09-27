@@ -21,7 +21,7 @@ pub struct TableHoldsTable {
 }
 
 impl TableType for TableHoldsTable {
-    const TABLE_NAME: &'static str = "TableHoldsTable";
+    const TABLE_NAME: &'static str = "table_holds_table";
     type ReducerEvent = super::ReducerEvent;
 }
 

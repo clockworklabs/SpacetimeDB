@@ -434,7 +434,7 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDef> {
     let module_name = &*format!("spacetime_{MODULE_ABI_MAJOR_VERSION}.0");
     linker.func_wrap(
         module_name,
-        "_console_log",
+        "console_log",
         |mut caller: Caller<'_, WasmCtx>,
          _level: u32,
          _target_ptr: u32,
@@ -449,7 +449,7 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDef> {
             println!("from wasm: {}", String::from_utf8_lossy(slice));
         },
     )?;
-    linker.func_wrap(module_name, "_bytes_sink_write", WasmCtx::bytes_sink_write)?;
+    linker.func_wrap(module_name, "bytes_sink_write", WasmCtx::bytes_sink_write)?;
     let instance = linker.instantiate(&mut store, &module)?;
     let memory = Mem::extract(&instance, &mut store)?;
     store.data_mut().mem = Some(memory);

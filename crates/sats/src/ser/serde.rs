@@ -118,16 +118,18 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
         value: &T,
     ) -> Result<Self::Ok, Self::Error> {
         // can't use serialize_variant cause we're too dynamic :(
-        use serde::SerializeMap;
-        let mut map = self.ser.serialize_map(Some(1)).map_err(SerdeError)?;
+        use serde::{SerializeMap, SerializeTuple};
         let value = SerializeWrapper::from_ref(value);
         if let Some(name) = name {
+            let mut map = self.ser.serialize_map(Some(1)).map_err(SerdeError)?;
             map.serialize_entry(name, value).map_err(SerdeError)?;
+            map.end().map_err(SerdeError)
         } else {
-            // FIXME: this probably wouldn't decode if you ran it back through
-            map.serialize_entry(&tag, value).map_err(SerdeError)?;
+            let mut seq = self.ser.serialize_tuple(2).map_err(SerdeError)?;
+            seq.serialize_element(&tag).map_err(SerdeError)?;
+            seq.serialize_element(value).map_err(SerdeError)?;
+            seq.end().map_err(SerdeError)
         }
-        map.end().map_err(SerdeError)
     }
 
     unsafe fn serialize_bsatn(self, ty: &crate::AlgebraicType, bsatn: &[u8]) -> Result<Self::Ok, Self::Error> {

@@ -19,7 +19,7 @@ pub struct OneSimpleEnum {
 }
 
 impl TableType for OneSimpleEnum {
-    const TABLE_NAME: &'static str = "OneSimpleEnum";
+    const TABLE_NAME: &'static str = "one_simple_enum";
     type ReducerEvent = super::ReducerEvent;
 }
 

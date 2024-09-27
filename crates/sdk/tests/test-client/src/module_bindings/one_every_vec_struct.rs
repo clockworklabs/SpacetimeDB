@@ -19,7 +19,7 @@ pub struct OneEveryVecStruct {
 }
 
 impl TableType for OneEveryVecStruct {
-    const TABLE_NAME: &'static str = "OneEveryVecStruct";
+    const TABLE_NAME: &'static str = "one_every_vec_struct";
     type ReducerEvent = super::ReducerEvent;
 }
 

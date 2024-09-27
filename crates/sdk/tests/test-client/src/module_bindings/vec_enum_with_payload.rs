@@ -19,7 +19,7 @@ pub struct VecEnumWithPayload {
 }
 
 impl TableType for VecEnumWithPayload {
-    const TABLE_NAME: &'static str = "VecEnumWithPayload";
+    const TABLE_NAME: &'static str = "vec_enum_with_payload";
     type ReducerEvent = super::ReducerEvent;
 }
 

@@ -19,7 +19,7 @@ pub struct OneEveryPrimitiveStruct {
 }
 
 impl TableType for OneEveryPrimitiveStruct {
-    const TABLE_NAME: &'static str = "OneEveryPrimitiveStruct";
+    const TABLE_NAME: &'static str = "one_every_primitive_struct";
     type ReducerEvent = super::ReducerEvent;
 }
 
