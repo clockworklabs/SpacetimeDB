@@ -29,6 +29,11 @@ jobs:
     env:
       PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.issue.number || null }}
     steps:
+      - name: Clear stdb dir
+        if: always()
+        run: |
+          rm -fr /stdb/*
+
       - name: Enable CPU boost
         run: echo "1" | sudo tee /sys/devices/system/cpu/cpufreq/boost
 
