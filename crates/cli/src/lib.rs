@@ -54,11 +54,11 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "logs" => logs::exec(config, args).await,
         "sql" => sql::exec(config, args).await,
         "dns" => dns::exec(config, args).await,
-        "generate" => generate::exec(config, args),
+        "generate" => generate::exec(config, args).await,
         "list" => list::exec(config, args).await,
         "local" => local::exec(config, args).await,
         "init" => init::exec(config, args).await,
-        "build" => build::exec(config, args).await,
+        "build" => build::exec(config, args).await.map(drop),
         "server" => server::exec(config, args).await,
         "subscribe" => subscribe::exec(config, args).await,
         #[cfg(feature = "standalone")]

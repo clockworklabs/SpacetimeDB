@@ -16,13 +16,23 @@ pub struct TyId(u32);
 
 impl TyId {
     /// The number of primitive types whose [TyId]s are statically defined.
-    pub const N: usize = 16;
+    pub const N: usize = 18;
 
     /// The static type id for Bool
+    /// The value is determined by [TyCtx::default()]
     pub const BOOL: Self = Self(0);
 
+    /// The static type id for U64
+    /// The value is determined by [TyCtx::default()]
+    pub const U64: Self = Self(8);
+
     /// The static type id for String
+    /// The value is determined by [TyCtx::default()]
     pub const STR: Self = Self(15);
+
+    /// the static type id for a byte array
+    /// The value is determined by [TyCtx::default()]
+    pub const BYTES: Self = Self(16);
 
     /// Return the [Type] for this id with its typing context.
     /// Panics if the id is not valid for the context.
@@ -75,6 +85,8 @@ impl Default for TyCtx {
                 Type::Alg(AlgebraicType::F32),
                 Type::Alg(AlgebraicType::F64),
                 Type::Alg(AlgebraicType::String),
+                Type::Alg(AlgebraicType::bytes()),
+                Type::Alg(AlgebraicType::identity()),
             ],
         }
     }
@@ -186,6 +198,9 @@ impl Type {
 
     /// A constant for the string type
     pub const STR: Self = Self::Alg(AlgebraicType::String);
+
+    /// A constant for the U64 type
+    pub const U64: Self = Self::Alg(AlgebraicType::U64);
 
     /// Wrap this type with its typing context
     pub fn with_ctx<'a>(&'a self, ctx: &'a TyCtx) -> TypeWithCtx {

@@ -5,7 +5,7 @@ use std::{
     ops::Range,
 };
 
-use log::{debug, info};
+use log::debug;
 
 use crate::{
     commit::{self, Commit, StoredCommit},
@@ -126,7 +126,7 @@ impl<W: io::Write> Writer<W> {
             index
                 .append_after_commit(self.commit.min_tx_offset, self.bytes_written, commit_len)
                 .map_err(|e| {
-                    info!("failed to append to offset index: {:?}", e);
+                    debug!("failed to append to offset index: {:?}", e);
                 })
         });
 
@@ -242,25 +242,33 @@ impl OffsetIndexWriter {
     ) -> Result<(), IndexError> {
         self.bytes_since_last_index += commit_len;
 
-        if !self.require_segment_fsync && self.bytes_since_last_index >= self.min_write_interval.get() {
-            self.head.append(min_tx_offset, byte_offset)?;
-            self.head.async_flush()?;
-            self.reset();
-        } else {
+        if self.candidate_min_tx_offset == 0 {
             self.candidate_byte_offset = byte_offset;
             self.candidate_min_tx_offset = min_tx_offset;
         }
+
+        if !self.require_segment_fsync {
+            self.append_internal()?;
+        }
+
         Ok(())
     }
 
-    pub fn append_after_fsync(&mut self) -> Result<(), IndexError> {
-        if self.bytes_since_last_index >= self.min_write_interval.get() {
-            self.head
-                .append(self.candidate_min_tx_offset, self.candidate_byte_offset)?;
-
-            self.head.async_flush()?;
-            self.reset();
+    fn append_internal(&mut self) -> Result<(), IndexError> {
+        // If the candidate offset is zero, there has not been a commit since the last offset entry
+        if self.candidate_min_tx_offset == 0 {
+            return Ok(());
         }
+
+        if self.bytes_since_last_index < self.min_write_interval.get() {
+            return Ok(());
+        }
+
+        self.head
+            .append(self.candidate_min_tx_offset, self.candidate_byte_offset)?;
+        self.head.async_flush()?;
+        self.reset();
+
         Ok(())
     }
 }
@@ -268,8 +276,8 @@ impl OffsetIndexWriter {
 impl FileLike for OffsetIndexWriter {
     /// Must be called via SegmentWriter::fsync
     fn fsync(&mut self) -> io::Result<()> {
-        let _ = self.append_after_fsync().map_err(|e| {
-            info!("failed to append to offset index: {:?}", e);
+        let _ = self.append_internal().map_err(|e| {
+            debug!("failed to append to offset index: {:?}", e);
         });
         Ok(())
     }
