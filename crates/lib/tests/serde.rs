@@ -45,6 +45,21 @@ fn test_roundtrip() {
 }
 
 #[test]
+fn test_roundtrip_ron() {
+    let original = Sample {
+        identity: Identity::__dummy(),
+    };
+
+    let s = value_serialize(&original);
+    let result: Sample = spacetimedb_sats::de::Deserialize::deserialize(ValueDeserializer::new(s)).unwrap();
+    assert_eq!(&original, &result);
+
+    let s = ron::to_string(&original).unwrap();
+    let result: Sample = ron::from_str(&s).unwrap();
+    assert_eq!(&original, &result);
+}
+
+#[test]
 fn test_json_mappings() {
     let schema = tuple([
         ("foo", AlgebraicType::U32),
