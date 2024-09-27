@@ -57,7 +57,11 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("anon_identity")
         )
         .arg(
-            common_args::anonymous()
+            Arg::new("anon_identity")
+                .long("anon-identity")
+                .short('a')
+                .action(SetTrue)
+                .help("Instruct SpacetimeDB to allocate a new identity to own this database"),
         )
         .arg(
             Arg::new("name|address")

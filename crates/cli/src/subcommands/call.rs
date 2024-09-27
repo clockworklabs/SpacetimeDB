@@ -4,7 +4,7 @@ use crate::edit_distance::{edit_distance, find_best_match_for_name};
 use crate::util;
 use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
 use anyhow::{bail, Context, Error};
-use clap::{Arg, ArgMatches};
+use clap::{Arg, ArgAction, ArgMatches};
 use itertools::Either;
 use serde_json::Value;
 use spacetimedb_lib::de::serde::deserialize_from;
@@ -33,7 +33,14 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("anon_identity")
                 .help("The identity to use for the call"),
         )
-        .arg(common_args::anonymous())
+        .arg(
+            Arg::new("anon_identity")
+                .long("anon-identity")
+                .short('a')
+                .conflicts_with("identity")
+                .action(ArgAction::SetTrue)
+                .help("If this flag is present, the call will be executed with no identity provided"),
+        )
         .after_help("Run `spacetime help call` for more detailed information.\n")
 }
 

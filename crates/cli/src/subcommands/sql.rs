@@ -40,7 +40,12 @@ pub fn cli() -> clap::Command {
                 .long_help("The identity to use for querying the database. If no identity is provided, the default one will be used."),
         )
         .arg(
-            common_args::anonymous()
+            Arg::new("anon_identity")
+                .long("anon-identity")
+                .short('a')
+                .conflicts_with("identity")
+                .action(ArgAction::SetTrue)
+                .help("If this flag is present, no identity will be provided when querying the database")
         )
         .arg(common_args::server()
                 .help("The nickname, host name or URL of the server hosting the database"),
