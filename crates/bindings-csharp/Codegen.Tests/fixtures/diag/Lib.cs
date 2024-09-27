@@ -5,7 +5,7 @@ public enum LocalEnum { }
 [SpacetimeDB.Type]
 public partial struct TestUnsupportedType
 {
-    public DateTime UnsupportedSpecialTime;
+    public DateTime UnsupportedSpecialType;
     public Exception UnsupportedSystemType;
     public UnresolvedType UnresolvedType;
     public LocalEnum UnsupportedEnum;

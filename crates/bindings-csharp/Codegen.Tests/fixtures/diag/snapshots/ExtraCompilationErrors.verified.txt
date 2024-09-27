@@ -336,7 +336,7 @@
     }
   },
   {/*
-    internal static readonly SpacetimeDB.BSATN.IReadWrite<System.DateTime> UnsupportedSpecialTime = new();
+    internal static readonly SpacetimeDB.BSATN.IReadWrite<System.DateTime> UnsupportedSpecialType = new();
 internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> UnsupportedSystemType = new();
                                                                                                 ^^^^^
 internal static readonly SpacetimeDB.BSATN.IReadWrite<UnresolvedType> UnresolvedType = new();
@@ -433,7 +433,7 @@ internal static readonly SpacetimeDB.BSATN.IReadWrite<LocalEnum> UnsupportedEnum
   },
   {/*
 {
-    internal static readonly SpacetimeDB.BSATN.IReadWrite<System.DateTime> UnsupportedSpecialTime = new();
+    internal static readonly SpacetimeDB.BSATN.IReadWrite<System.DateTime> UnsupportedSpecialType = new();
                                                                                                     ^^^^^
 internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> UnsupportedSystemType = new();
 */

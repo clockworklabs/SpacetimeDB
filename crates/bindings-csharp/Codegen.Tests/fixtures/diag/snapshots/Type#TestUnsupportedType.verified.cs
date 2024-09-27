@@ -6,7 +6,7 @@ partial struct TestUnsupportedType : SpacetimeDB.BSATN.IStructuralReadWrite
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        UnsupportedSpecialTime = BSATN.UnsupportedSpecialTime.Read(reader);
+        UnsupportedSpecialType = BSATN.UnsupportedSpecialType.Read(reader);
         UnsupportedSystemType = BSATN.UnsupportedSystemType.Read(reader);
         UnresolvedType = BSATN.UnresolvedType.Read(reader);
         UnsupportedEnum = BSATN.UnsupportedEnum.Read(reader);
@@ -14,7 +14,7 @@ partial struct TestUnsupportedType : SpacetimeDB.BSATN.IStructuralReadWrite
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.UnsupportedSpecialTime.Write(writer, UnsupportedSpecialTime);
+        BSATN.UnsupportedSpecialType.Write(writer, UnsupportedSpecialType);
         BSATN.UnsupportedSystemType.Write(writer, UnsupportedSystemType);
         BSATN.UnresolvedType.Write(writer, UnresolvedType);
         BSATN.UnsupportedEnum.Write(writer, UnsupportedEnum);
@@ -22,7 +22,7 @@ partial struct TestUnsupportedType : SpacetimeDB.BSATN.IStructuralReadWrite
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestUnsupportedType>
     {
-        internal static readonly SpacetimeDB.BSATN.IReadWrite<System.DateTime> UnsupportedSpecialTime =
+        internal static readonly SpacetimeDB.BSATN.IReadWrite<System.DateTime> UnsupportedSpecialType =
             new();
         internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> UnsupportedSystemType =
             new();
@@ -46,8 +46,8 @@ partial struct TestUnsupportedType : SpacetimeDB.BSATN.IStructuralReadWrite
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
                         new(
-                            nameof(UnsupportedSpecialTime),
-                            UnsupportedSpecialTime.GetAlgebraicType(registrar)
+                            nameof(UnsupportedSpecialType),
+                            UnsupportedSpecialType.GetAlgebraicType(registrar)
                         ),
                         new(
                             nameof(UnsupportedSystemType),
