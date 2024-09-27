@@ -1,8 +1,8 @@
 import './App.css';
 
-import { DbConnection } from './module_bindings';
+import { DbConnection, type RemoteDBContext } from './module_bindings';
 
-import { Identity } from '@clockworklabs/spacetimedb-sdk';
+import { DBConnectionBuilder, Identity } from '@clockworklabs/spacetimedb-sdk';
 import React, { useEffect, useRef, useState } from 'react';
 
 export type MessageType = {
@@ -11,10 +11,7 @@ export type MessageType = {
 };
 
 const token = localStorage.getItem('auth_token') || undefined;
-const conn = DbConnection.builder()
-  .withUri('ws://localhost:3000')
-  .withModuleName('chat')
-  .build();
+const identity = localStorage.getItem('identity') || undefined;
 
 function App() {
   const [newName, setNewName] = useState('');
@@ -31,47 +28,56 @@ function App() {
 
   const local_identity = useRef<Identity | undefined>(undefined);
   const initialized = useRef<boolean>(false);
+  const conn = useRef<RemoteDBContext>(null!);
 
   useEffect(() => {
-    if (!initialized.current) {
-      conn.connect();
-      initialized.current = true;
+    async function main() {
+      if (!conn.current) {
+        conn.current = await DbConnection.builder()
+          .withUri('ws://localhost:3000')
+          .withModuleName('chat')
+          .onDisconnect(() => {
+            console.log('disconnected');
+          })
+          .onConnectError(() => {
+            console.log('client_error');
+          })
+          .onConnect((identity, token) => {
+            console.log('Connected to SpacetimeDB');
+
+            localStorage.setItem('auth_token', token);
+            localStorage.setItem('identity', identity.toHexString());
+
+            // conn.current!.subscribe([
+            //   'SELECT * FROM User',
+            //   'SELECT * FROM Message',
+            // ]);
+          })
+          .build();
+      }
     }
+
+    main();
   }, []);
 
   // All the event listeners are set up in the useEffect hook
   useEffect(() => {
-    conn.on('disconnected', () => {
-      console.log('disconnected');
-    });
+    if (!conn.current) return;
 
-    conn.on('client_error', () => {
-      console.log('client_error');
-    });
+    // TODO: What do about this?
+    // conn.on('initialStateSync', () => {
+    //   setAllMessagesInOrder();
+    //   const user = User.findByIdentity(local_identity?.current!);
+    //   setName(userNameOrIdentity(user!));
+    // });
 
-    conn.onConnect((token: string, identity: Identity) => {
-      console.log('Connected to SpacetimeDB');
-
-      local_identity.current = identity;
-
-      localStorage.setItem('auth_token', token);
-
-      conn.subscribe(['SELECT * FROM User', 'SELECT * FROM Message']);
-    });
-
-    conn.on('initialStateSync', () => {
-      setAllMessagesInOrder();
-      const user = User.findByIdentity(local_identity?.current!);
-      setName(userNameOrIdentity(user!));
-    });
-
-    User.onInsert(user => {
+    conn.current.db.user.onInsert(user => {
       if (user.online) {
         appendToSystemMessage(`${userNameOrIdentity(user)} has connected.`);
       }
     });
 
-    User.onUpdate((oldUser, user) => {
+    conn.current.db.user.onUpdate((oldUser, user) => {
       if (oldUser.online === false && user.online === true) {
         appendToSystemMessage(`${userNameOrIdentity(user)} has connected.`);
       } else if (oldUser.online === true && user.online === false) {
@@ -87,14 +93,14 @@ function App() {
       }
     });
 
-    Message.onInsert(() => {
+    conn.current.db.message.onInsert(() => {
       setAllMessagesInOrder();
     });
 
-    SendMessageReducer.on(reducerEvent => {
+    conn.current.reducers.onSendMessage((ctx, text) => {
       if (
         local_identity.current &&
-        reducerEvent.callerIdentity.isEqual(local_identity.current)
+        ctx.event.callerIdentity.isEqual(local_identity.current)
       ) {
         if (reducerEvent.status === 'failed') {
           appendToSystemMessage(

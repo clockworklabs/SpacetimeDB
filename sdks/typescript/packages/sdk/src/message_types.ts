@@ -1,5 +1,7 @@
 import { Address } from './address.ts';
+import type { Timestamp } from './client_api.ts';
 import { Identity } from './identity.ts';
+import type { ReducerEventStatus } from './reducer_event.ts';
 import { TableUpdate } from './table.ts';
 
 export class SubscriptionUpdateMessage {
@@ -16,18 +18,29 @@ export class TransactionUpdateEvent {
   originalReducerName: string;
   reducerName: string;
   args: Uint8Array;
-  status: string;
+  status: ReducerEventStatus;
   message: string;
+  timestamp: Timestamp;
 
-  constructor(
-    identity: Identity,
-    address: Address | null,
-    originalReducerName: string,
-    reducerName: string,
-    args: Uint8Array,
-    status: string,
-    message: string
-  ) {
+  constructor({
+    address,
+    args,
+    identity,
+    message,
+    originalReducerName,
+    reducerName,
+    status,
+    timestamp,
+  }: {
+    identity: Identity;
+    address: Address | null;
+    originalReducerName: string;
+    reducerName: string;
+    args: Uint8Array;
+    status: ReducerEventStatus;
+    message: string;
+    timestamp: Timestamp;
+  }) {
     this.identity = identity;
     this.address = address;
     this.originalReducerName = originalReducerName;
@@ -35,6 +48,7 @@ export class TransactionUpdateEvent {
     this.args = args;
     this.status = status;
     this.message = message;
+    this.timestamp = timestamp;
   }
 }
 

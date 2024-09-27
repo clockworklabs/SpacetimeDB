@@ -136,21 +136,6 @@ export class DBConnectionBuilder<DBView, ReducerView> {
     this.#reducerView = reducerView;
 
     this.#base = base;
-
-    // this.#db = new ClientDB();
-
-    // if (DBConnectionBuilder.#tableClasses.size === 0) {
-    //   stdbLogger(
-    //     'warn',
-    //     'No tables were automatically registered globally, if you want to automatically register tables, you need to register them with SpacetimeDBClient.registerTable() first'
-    //   );
-    // }
-
-    // for (const [_name, table] of DBConnectionBuilder.#tableClasses) {
-    //   this.#registerTable(table);
-    // }
-
-    // this.#createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
   }
 
   withUri(uri: string | URL): DBConnectionBuilder<DBView, ReducerView> {
@@ -196,9 +181,14 @@ export class DBConnectionBuilder<DBView, ReducerView> {
    * spacetimeDBClient.connect(undefined, undefined, NEW_TOKEN);
    * ```
    */
-  async build(): Promise<DBConnectionBuilder<DBView, ReducerView>> {
+  async build(): Promise<DbContext<DBView, ReducerView>> {
+    const dbContext = new DbContext<DBView, ReducerView>(
+      this.#base,
+      this.#dbView,
+      this.#reducerView
+    );
     if (this.#base.isActive) {
-      return this;
+      return dbContext;
     }
 
     stdbLogger('info', 'Connecting to SpacetimeDB WS...');
@@ -225,7 +215,7 @@ export class DBConnectionBuilder<DBView, ReducerView> {
     this.#base.ws.onopen = this.#base.handleOnOpen.bind(this);
     this.#base.ws.onmessage = this.#base.handleOnMessage.bind(this);
 
-    return this;
+    return dbContext;
   }
 
   /**
@@ -255,7 +245,7 @@ export class DBConnectionBuilder<DBView, ReducerView> {
   onConnect(
     callback: (identity: Identity, token: string) => void,
     init: CallbackInit = {}
-  ): void {
+  ): DBConnectionBuilder<DBView, ReducerView> {
     this.#base.on('connected', callback);
 
     if (init.signal) {
@@ -263,6 +253,8 @@ export class DBConnectionBuilder<DBView, ReducerView> {
         this.#base.off('connected', callback);
       });
     }
+
+    return this;
   }
 
   /**
@@ -279,7 +271,7 @@ export class DBConnectionBuilder<DBView, ReducerView> {
   onConnectError(
     callback: (...args: any[]) => void,
     init: CallbackInit = {}
-  ): void {
+  ): DBConnectionBuilder<DBView, ReducerView> {
     this.#base.on('client_error', callback);
 
     if (init.signal) {
@@ -287,6 +279,8 @@ export class DBConnectionBuilder<DBView, ReducerView> {
         this.#base.off('client_error', callback);
       });
     }
+
+    return this;
   }
 
   /**
@@ -318,7 +312,7 @@ export class DBConnectionBuilder<DBView, ReducerView> {
   onDisconnect(
     callback: (...args: any[]) => void,
     init: CallbackInit = {}
-  ): void {
+  ): DBConnectionBuilder<DBView, ReducerView> {
     this.#base.on('disconnected', callback);
 
     if (init.signal) {
@@ -326,6 +320,8 @@ export class DBConnectionBuilder<DBView, ReducerView> {
         this.#base.off('disconnected', callback);
       });
     }
+
+    return this;
   }
 }
 
@@ -335,7 +331,7 @@ export class DBConnectionBuilder<DBView, ReducerView> {
 
 // ctxz.
 
-export class DBConnectionBase {
+export class DBConnectionBase<ReducerEnum> {
   isActive = false;
   /**
    * The user's public identity.
@@ -565,7 +561,7 @@ export class DBConnectionBase {
   }
 
   processMessage(data: Uint8Array, callback: (message: Message) => void): void {
-    const message: ws.ServerMessage = parseValue(ws.ServerMessage, data);
+    const message = parseValue(ws.ServerMessage, data);
     this.#processParsedMessage(message, callback);
   }
 
@@ -725,7 +721,7 @@ export class DBConnectionBase {
   handleOnMessage(wsMessage: { data: Uint8Array }): void {
     this.#emitter.emit('receiveWSMessage', wsMessage);
 
-    this.processMessage(wsMessage.data, (message: Message) => {
+    this.processMessage(wsMessage.data, message => {
       if (message instanceof SubscriptionUpdateMessage) {
         for (let tableUpdate of message.tableUpdates) {
           const tableName = tableUpdate.tableName;
@@ -753,9 +749,9 @@ export class DBConnectionBase {
             ? DBConnectionBase.#getReducerClass(reducerName)
             : undefined;
 
-          let reducerEvent: ReducerEvent | undefined;
+          let reducerEvent: ReducerEvent<ReducerEnum> | undefined;
           let reducerArgs: any;
-          if (reducer && message.event.status === 'committed') {
+          if (reducer && message.event.status.type === 'Committed') {
             let adapter: ReducerArgsAdapter = new BinaryReducerArgsAdapter(
               new BinaryAdapter(
                 new BinaryReader(message.event.args as Uint8Array)
@@ -765,13 +761,22 @@ export class DBConnectionBase {
             reducerArgs = reducer.deserializeArgs(adapter);
           }
 
-          reducerEvent = new ReducerEvent(
-            message.event.identity,
-            message.event.address,
-            message.event.originalReducerName,
-            message.event.status,
-            message.event.message,
-            reducerArgs
+          reducerEvent = new ReducerEvent<ReducerEnum>(
+            {
+              callerIdentity: message.event.identity,
+              status: message.event.status,
+              message: message.event.message,
+              callerAddress: message.event.address as Address,
+              timestamp: message.event.timestamp,
+              energyConsumed: message.event.energyConsumed,
+              // reducer:
+            }
+            // message.event.identity,
+            // message.event.address,
+            // message.event.originalReducerName,
+            // message.event.status,
+            // message.event.message,
+            // reducerArgs
           );
 
           for (let tableUpdate of message.tableUpdates) {

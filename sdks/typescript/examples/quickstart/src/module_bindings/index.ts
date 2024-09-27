@@ -1,11 +1,18 @@
-import {DBConnectionBuilder, DBConnectionBase, type CallbackInit, DbContext} from '@clockworklabs/spacetimedb-sdk'
-import {Message} from './message.ts';
-import {User} from './user.ts'
+import { DBConnectionBase, DBConnectionBuilder, DbContext, ReducerEvent, STDBEvent, type CallbackInit } from '@clockworklabs/spacetimedb-sdk';
+import { Message } from './message.ts';
+import { User } from './user.ts';
 
-import {SetNameReducer} from './set_name_reducer.ts'
-import {SendMessageReducer} from './send_message_reducer.ts'
+import { SendMessageReducer } from './send_message_reducer.ts';
+import { SetNameReducer } from './set_name_reducer.ts';
 
- class EventContext extends DbContext<RemoteTables, RemoteReducers> {}
+ class EventContext extends DbContext<RemoteTables, RemoteReducers> {
+  event: STDBEvent<ReducerEvent>;
+
+  constructor(client: DBConnectionBase, db: RemoteTables, reducers: RemoteReducers, event: STDBEvent<ReducerEvent>) {
+    super(client, db, reducers);
+    this.event = event;
+  }
+ }
 
  class RemoteTables {
   get user() {
@@ -43,6 +50,8 @@ import {SendMessageReducer} from './send_message_reducer.ts'
     this.#sendMessageReducer.on(callback, init);
   }
 }
+
+export interface RemoteDBContext extends DbContext<RemoteTables, RemoteReducers> {}
 
 export class DbConnection {
   static builder() {
