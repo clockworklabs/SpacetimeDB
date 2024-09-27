@@ -204,7 +204,15 @@ impl ModuleValidator<'_> {
             .map(|schedule| table_in_progress.validate_schedule_def(schedule))
             .transpose();
 
-        let name = table_in_progress.add_to_global_namespace(raw_table_name.clone());
+        let name = table_in_progress
+            .add_to_global_namespace(raw_table_name.clone())
+            .and_then(|name| {
+                if table_type != TableType::System && name.starts_with("st_") {
+                    Err(ValidationError::TableNameReserved { table: name }.into())
+                } else {
+                    Ok(name)
+                }
+            });
 
         let (name, columns, indexes, (constraints, primary_key), sequences, schedule) =
             (name, columns, indexes, constraints_primary_key, sequences, schedule).combine_errors()?;
@@ -445,7 +453,7 @@ impl TableValidator<'_, '_> {
         let pk = primary_key
             .map(|pk| -> Result<ColId> {
                 let pk = self.validate_col_id(&self.raw_name, pk)?;
-                let pk_col_list = ColList::from(pk);
+                let pk_col_list = ColSet::from(pk);
                 if validated_constraints.values().any(|constraint| {
                     let ConstraintData::Unique(UniqueConstraintData { columns }) = &constraint.data;
                     columns == &pk_col_list
@@ -540,7 +548,7 @@ impl TableValidator<'_, '_> {
         let algorithm: Result<IndexAlgorithm> = match algorithm {
             RawIndexAlgorithm::BTree { columns } => self
                 .validate_col_ids(&name, columns)
-                .map(|columns| IndexAlgorithm::BTree { columns }),
+                .map(|columns| BTreeAlgorithm { columns }.into()),
             _ => Err(ValidationError::OnlyBtree { index: name.clone() }.into()),
         };
         let name = self.add_to_global_namespace(name);
@@ -560,10 +568,11 @@ impl TableValidator<'_, '_> {
         let RawConstraintDefV9 { name, data } = constraint;
 
         if let RawConstraintDataV9::Unique(RawUniqueConstraintDataV9 { columns }) = data {
-            let columns = self.validate_col_ids(&name, columns);
+            let columns: Result<ColList> = self.validate_col_ids(&name, columns);
             let name = self.add_to_global_namespace(name);
 
             let (name, columns) = (name, columns).combine_errors()?;
+            let columns: ColSet = columns.into();
             Ok(ConstraintDef {
                 name,
                 data: ConstraintData::Unique(UniqueConstraintData { columns }),
@@ -741,14 +750,14 @@ mod tests {
         check_product_type, expect_identifier, expect_raw_type_name, expect_resolve, expect_type_name,
     };
     use crate::def::{validate::Result, ModuleDef};
-    use crate::def::{ConstraintData, IndexAlgorithm, UniqueConstraintData};
+    use crate::def::{BTreeAlgorithm, ConstraintData, UniqueConstraintData};
     use crate::error::*;
     use crate::type_for_generate::ClientCodegenError;
 
     use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::ScheduleAt;
-    use spacetimedb_primitives::ColList;
+    use spacetimedb_primitives::{ColId, ColList};
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType};
     use v9::{Lifecycle, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess, TableType};
 
@@ -785,10 +794,10 @@ mod tests {
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from_iter([1, 2]),
                 },
-                "apples_id".into(),
+                "apples_id",
                 Some("Apples_index".into()),
             )
-            .with_unique_constraint(3.into(), Some("Apples_unique_constraint".into()))
+            .with_unique_constraint(3, Some("Apples_unique_constraint".into()))
             .finish();
 
         builder
@@ -806,19 +815,15 @@ mod tests {
                 false,
             )
             .with_column_sequence(0, None)
-            .with_unique_constraint(0.into(), None)
+            .with_unique_constraint(ColId(0), None)
             .with_primary_key(0)
             .with_access(TableAccess::Private)
-            .with_index(
-                RawIndexAlgorithm::BTree { columns: 0.into() },
-                "bananas_count".into(),
-                None,
-            )
+            .with_index(RawIndexAlgorithm::BTree { columns: 0.into() }, "bananas_count", None)
             .with_index(
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from_iter([0, 1, 2]),
                 },
-                "bananas_count_id_name".into(),
+                "bananas_count_id_name",
                 None,
             )
             .finish();
@@ -878,7 +883,9 @@ mod tests {
         let apples_unique_constraint = expect_identifier("Apples_unique_constraint");
         assert_eq!(
             apples_def.constraints[&apples_unique_constraint].data,
-            ConstraintData::Unique(UniqueConstraintData { columns: 3.into() })
+            ConstraintData::Unique(UniqueConstraintData {
+                columns: ColId(3).into()
+            })
         );
         assert_eq!(
             apples_def.constraints[&apples_unique_constraint].name,
@@ -892,15 +899,16 @@ mod tests {
                 "Apples_index" => {
                     assert_eq!(
                         index.algorithm,
-                        IndexAlgorithm::BTree {
+                        BTreeAlgorithm {
                             columns: ColList::from_iter([1, 2])
                         }
+                        .into()
                     );
                     assert_eq!(index.accessor_name, Some(expect_identifier("apples_id")));
                 }
                 // auto-generated for the unique constraint
                 _ => {
-                    assert_eq!(index.algorithm, IndexAlgorithm::BTree { columns: 3.into() });
+                    assert_eq!(index.algorithm, BTreeAlgorithm { columns: 3.into() }.into());
                     assert_eq!(index.accessor_name, None);
                 }
             }
@@ -933,7 +941,9 @@ mod tests {
         assert_eq!(bananas_constraint_name, &bananas_constraint.name);
         assert_eq!(
             bananas_constraint.data,
-            ConstraintData::Unique(UniqueConstraintData { columns: 0.into() })
+            ConstraintData::Unique(UniqueConstraintData {
+                columns: ColId(0).into()
+            })
         );
 
         let delivery_def = &def.tables[&deliveries];
@@ -1010,7 +1020,7 @@ mod tests {
         let mut builder = RawModuleDefV9Builder::new();
 
         // `build_table` does NOT initialize table.product_type_ref, which should result in an error.
-        builder.build_table("Bananas".into(), AlgebraicTypeRef(1337)).finish();
+        builder.build_table("Bananas", AlgebraicTypeRef(1337)).finish();
 
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1082,7 +1092,7 @@ mod tests {
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from_iter([0, 55]),
                 },
-                "bananas_a_b".into(),
+                "bananas_a_b",
                 Some("Bananas_index".into()),
             )
             .finish();
@@ -1104,7 +1114,7 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
             )
-            .with_unique_constraint(55.into(), Some("Bananas_unique_constraint".into()))
+            .with_unique_constraint(ColId(55), Some("Bananas_unique_constraint".into()))
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1167,7 +1177,7 @@ mod tests {
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from_iter([0, 0]),
                 },
-                "bananas_a_b".into(),
+                "bananas_a_b",
                 Some("Bananas_index".into()),
             )
             .finish();
@@ -1253,7 +1263,7 @@ mod tests {
             )
             .with_index(
                 RawIndexAlgorithm::Hash { columns: 0.into() },
-                "bananas_b".into(),
+                "bananas_b",
                 Some("Bananas_index".into()),
             )
             .finish();

@@ -10,6 +10,7 @@ spacetimedb-client-api-messages.workspace = true
 spacetimedb-data-structures.workspace = true
 spacetimedb-core.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde"] }
+spacetimedb-schema.workspace = true
 
 tokio = { version = "1.2", features = ["full"] }
 lazy_static = "1.4.0"
@@ -22,7 +23,7 @@ prometheus = "0.13.0"
 email_address = "0.2.3"
 tempfile.workspace = true
 async-trait = "0.1.60"
-chrono = { version = "0.4.23", features = ["serde"]}
+chrono = { version = "0.4.23", features = ["serde"] }
 rand = "0.8.5"
 axum.workspace = true
 axum-extra.workspace = true

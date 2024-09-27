@@ -2,9 +2,10 @@ use reqwest::{header, Client, RequestBuilder};
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
+use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::sats::ProductType;
-use spacetimedb_lib::{Address, RawModuleDefV8};
+use spacetimedb_lib::Address;
 
 static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
 
@@ -50,7 +51,7 @@ impl ClientApi {
     }
 
     /// Reads the `ModuleDef` from the `schema` endpoint.
-    pub async fn module_def(&self) -> anyhow::Result<RawModuleDefV8> {
+    pub async fn module_def(&self) -> anyhow::Result<RawModuleDefV9> {
         let res = self
             .client
             .get(self.con.db_uri("schema"))

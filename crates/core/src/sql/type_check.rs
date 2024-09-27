@@ -77,6 +77,7 @@ impl fmt::Display for Typed<'_> {
     }
 }
 
+#[derive(Debug)]
 struct QueryFragment<'a, T> {
     from: &'a From,
     q: &'a T,

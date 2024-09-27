@@ -5,9 +5,12 @@ use crate::{
 };
 use spacetimedb::db::relational_db::{tests_utils::TestDB, RelationalDB};
 use spacetimedb::execution_context::ExecutionContext;
-use spacetimedb_lib::db::raw_def::{RawIndexDefV8, RawTableDefV8};
 use spacetimedb_lib::sats::AlgebraicValue;
-use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_schema::{
+    def::{BTreeAlgorithm, IndexAlgorithm},
+    schema::{IndexSchema, TableSchema},
+};
 use std::hint::black_box;
 use tempdir::TempDir;
 
@@ -38,21 +41,39 @@ impl BenchDatabase for SpacetimeRaw {
     fn create_table<T: BenchTable>(&mut self, index_strategy: IndexStrategy) -> ResultBench<Self::TableId> {
         let name = table_name::<T>(index_strategy);
         self.db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            let table_def = RawTableDefV8::from_product(&name, T::product_type());
-            let table_id = self.db.create_table(tx, table_def)?;
+            let mut table_schema = TableSchema::from_product_type(T::product_type());
+            table_schema.table_name = name.clone().into();
+            let table_id = self.db.create_table(tx, table_schema)?;
             self.db.rename_table(tx, table_id, &name)?;
             match index_strategy {
                 IndexStrategy::Unique0 => {
-                    self.db
-                        .create_index(tx, table_id, RawIndexDefV8::btree("id".into(), ColId(0), true))?;
+                    self.db.create_index(
+                        tx,
+                        IndexSchema {
+                            index_id: IndexId::SENTINEL,
+                            table_id,
+                            index_name: "id".into(),
+                            index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
+                                columns: ColId(0).into(),
+                            }),
+                        },
+                        true,
+                    )?;
                 }
                 IndexStrategy::NoIndex => (),
                 IndexStrategy::BTreeEachColumn => {
                     for (i, column) in T::product_type().elements.iter().enumerate() {
                         self.db.create_index(
                             tx,
-                            table_id,
-                            RawIndexDefV8::btree(column.name.clone().unwrap(), i, false),
+                            IndexSchema {
+                                index_id: IndexId::SENTINEL,
+                                table_id,
+                                index_name: column.name.clone().unwrap(),
+                                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
+                                    columns: ColId(i as _).into(),
+                                }),
+                            },
+                            false,
                         )?;
                     }
                 }

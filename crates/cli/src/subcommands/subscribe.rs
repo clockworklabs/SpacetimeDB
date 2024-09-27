@@ -6,9 +6,9 @@ use http::uri::Scheme;
 use serde_json::Value;
 use spacetimedb_client_api_messages::websocket::{self as ws, EncodedValue};
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
 use spacetimedb_lib::ser::serde::SerializeWrapper;
-use spacetimedb_lib::RawModuleDefV8;
 use spacetimedb_standalone::TEXT_PROTOCOL;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
@@ -86,7 +86,7 @@ fn parse_msg_json(msg: &WsMessage) -> Option<ws::ServerMessage> {
 
 fn reformat_update(
     msg: ws::DatabaseUpdate,
-    schema: &RawModuleDefV8,
+    schema: &RawModuleDefV9,
 ) -> anyhow::Result<HashMap<String, SubscriptionTable>> {
     msg.tables
         .into_iter()
@@ -94,9 +94,9 @@ fn reformat_update(
             let table_schema = schema
                 .tables
                 .iter()
-                .find(|tbl| tbl.schema.table_name.as_ref() == upd.table_name)
+                .find(|tbl| tbl.name.as_ref() == upd.table_name)
                 .context("table not found in schema")?;
-            let table_ty = schema.typespace.resolve(table_schema.data);
+            let table_ty = schema.typespace.resolve(table_schema.product_type_ref);
 
             let reformat_row = |row: EncodedValue| {
                 let EncodedValue::Text(row) = row else {
@@ -202,7 +202,7 @@ where
 
 /// Await the initial [`ServerMessage::SubscriptionUpdate`].
 /// If `module_def` is `Some`, print a JSON representation to stdout.
-async fn await_initial_update<S>(ws: &mut S, module_def: Option<&RawModuleDefV8>) -> anyhow::Result<()>
+async fn await_initial_update<S>(ws: &mut S, module_def: Option<&RawModuleDefV9>) -> anyhow::Result<()>
 where
     S: TryStream<Ok = WsMessage> + Unpin,
     S::Error: std::error::Error + Send + Sync + 'static,
@@ -237,7 +237,7 @@ where
 async fn consume_transaction_updates<S>(
     ws: &mut S,
     num: Option<u32>,
-    module_def: &RawModuleDefV8,
+    module_def: &RawModuleDefV9,
 ) -> anyhow::Result<bool>
 where
     S: TryStream<Ok = WsMessage> + Unpin,

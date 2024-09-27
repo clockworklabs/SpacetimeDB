@@ -6,12 +6,16 @@ license-file = "LICENSE"
 description = "Schema library for SpacetimeDB"
 rust-version.workspace = true
 
+[features]
+test = []
+
 [dependencies]
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-data-structures.workspace = true
 
+anyhow.workspace = true
 itertools.workspace = true
 lazy_static.workspace = true
 thiserror.workspace = true

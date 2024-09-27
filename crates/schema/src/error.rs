@@ -108,6 +108,8 @@ pub enum ValidationError {
         expected: PrettyAlgebraicType,
         actual: PrettyAlgebraicType,
     },
+    #[error("Table name is reserved for system use: {table}")]
+    TableNameReserved { table: Identifier },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

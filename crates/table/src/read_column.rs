@@ -342,18 +342,10 @@ impl_read_column_via_from! {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{blob_store::HashMapBlobStore, indexes::SquashedOffset, table::Table};
+    use crate::blob_store::HashMapBlobStore;
+    use crate::table::test::table;
     use proptest::{prelude::*, prop_assert_eq, proptest, test_runner::TestCaseResult};
-    use spacetimedb_lib::db::raw_def::RawTableDefV8;
     use spacetimedb_sats::{product, proptest::generate_typed_row};
-    use spacetimedb_schema::schema::TableSchema;
-
-    fn table(ty: ProductType) -> Table {
-        let def = RawTableDefV8::from_product("", ty);
-        #[allow(deprecated)]
-        let schema = TableSchema::from_def(0.into(), def);
-        Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
-    }
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]

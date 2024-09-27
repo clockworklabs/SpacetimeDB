@@ -360,6 +360,8 @@ impl ColSet {
 
 impl<C: Into<ColId>> FromIterator<C> for ColSet {
     fn from_iter<T: IntoIterator<Item = C>>(iter: T) -> Self {
+        // TODO: implement a fast path here that avoids allocation, by lying about
+        // `preserves_set_order` to `push_inner`.
         Self::from(iter.into_iter().collect::<ColList>())
     }
 }
@@ -368,6 +370,18 @@ impl From<ColList> for ColSet {
     fn from(mut list: ColList) -> Self {
         list.sort_dedup();
         Self(list)
+    }
+}
+
+impl From<&ColList> for ColSet {
+    fn from(value: &ColList) -> Self {
+        value.iter().collect()
+    }
+}
+
+impl From<ColId> for ColSet {
+    fn from(id: ColId) -> Self {
+        Self::from(ColList::new(id))
     }
 }
 
