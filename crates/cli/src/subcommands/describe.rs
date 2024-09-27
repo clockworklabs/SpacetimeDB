@@ -1,7 +1,7 @@
 use crate::common_args;
 use crate::config::Config;
 use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
-use clap::{Arg, ArgAction::SetTrue, ArgMatches};
+use clap::{Arg, ArgMatches};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("describe")
@@ -30,12 +30,7 @@ pub fn cli() -> clap::Command {
                 .long_help("The identity to use to describe the entity. If no identity is provided, the default one will be used."),
         )
         .arg(
-            Arg::new("anon_identity")
-                .long("anon-identity")
-                .short('a')
-                .conflicts_with("identity")
-                .action(SetTrue)
-                .help("If this flag is present, no identity will be provided when describing the database"),
+            common_args::anonymous().conflicts_with("identity")
         )
         .arg(
             common_args::server()
