@@ -12,7 +12,7 @@
   </PropertyGroup>
 
   <!-- A helper that allows to auto-accept all snapshots during test run via `dotnet test /p:AutoVerify=true`. -->
-  <PropertyGroup Condition="$(AutoVerify)">
+  <PropertyGroup Condition="'$(AutoVerify)'=='true'">
     <DefineConstants>$(DefineConstants);AUTO_VERIFY</DefineConstants>
   </PropertyGroup>
 
