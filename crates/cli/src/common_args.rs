@@ -13,10 +13,3 @@ pub fn identity() -> Arg {
         .short('i')
         .help("The identity to use")
 }
-
-pub fn yes() -> Arg {
-    Arg::new("force")
-        .long("yes")
-        .action(SetTrue)
-        .help("Assume \"yes\" as answer to all prompts and run non-interactively")
-}

@@ -71,7 +71,10 @@ pub fn cli() -> clap::Command {
                 .help("The nickname, domain name or URL of the server to host the database."),
         )
         .arg(
-            common_args::yes()
+            Arg::new("force")
+                .long("force")
+                .action(SetTrue)
+                .help("DANGEROUS - Proceed with all actions without waiting for user confirmation")
         )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }

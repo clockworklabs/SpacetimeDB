@@ -59,11 +59,23 @@ fn get_subcommands() -> Vec<Command> {
                     .short('I')
                     .action(ArgAction::SetTrue),
             )
-            .arg(common_args::yes()),
+            .arg(
+                Arg::new("force")
+                    .help("Do not prompt before deleting identities")
+                    .long("force")
+                    .short('f')
+                    .action(ArgAction::SetTrue),
+            ),
         Command::new("fingerprint")
             .about("Show or update a saved server's fingerprint")
             .arg(common_args::server().help("The nickname, host name or URL of the server"))
-            .arg(common_args::yes())
+            .arg(
+                Arg::new("force")
+                    .help("Save changes to the server's configuration without confirming")
+                    .short('f')
+                    .long("force")
+                    .action(ArgAction::SetTrue),
+            )
             .arg(
                 Arg::new("delete-obsolete-identities")
                     .help("Delete obsoleted identities if the server's fingerprint has changed")
@@ -108,7 +120,13 @@ fn get_subcommands() -> Vec<Command> {
                     .short('I')
                     .action(ArgAction::SetTrue),
             )
-            .arg(common_args::yes()),
+            .arg(
+                Arg::new("force")
+                    .help("Do not prompt before saving the edited configuration")
+                    .long("force")
+                    .short('f')
+                    .action(ArgAction::SetTrue),
+            ),
         // TODO: set-name, set-protocol, set-host, set-url
     ]
 }
