@@ -217,7 +217,14 @@ impl<Tbl: Table> fmt::Display for TryInsertError<Tbl> {
     }
 }
 
-impl<Tbl: Table> std::error::Error for TryInsertError<Tbl> {}
+impl<Tbl: Table> std::error::Error for TryInsertError<Tbl> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(match self {
+            Self::UniqueConstraintViolation(e) => e,
+            Self::AutoIncOverflow(e) => e,
+        })
+    }
+}
 
 impl<Tbl: Table> From<TryInsertError<Tbl>> for String {
     fn from(err: TryInsertError<Tbl>) -> Self {
@@ -226,7 +233,7 @@ impl<Tbl: Table> From<TryInsertError<Tbl>> for String {
 }
 
 #[doc(hidden)]
-pub trait MaybeError<E = Self>: std::error::Error + Sized {
+pub trait MaybeError<E = Self>: std::error::Error + Send + Sync + Sized + 'static {
     fn get() -> Option<Self>;
 }
 
