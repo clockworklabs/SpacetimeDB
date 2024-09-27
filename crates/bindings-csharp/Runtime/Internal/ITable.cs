@@ -37,7 +37,7 @@ public interface ITableView<View, T>
                 while (true)
                 {
                     buffer_len = (uint)buffer.Length;
-                    var ret = FFI._row_iter_bsatn_advance(handle, buffer, ref buffer_len);
+                    var ret = FFI.row_iter_bsatn_advance(handle, buffer, ref buffer_len);
                     if (ret == Errno.EXHAUSTED)
                     {
                         handle = FFI.RowIter.INVALID;
@@ -74,7 +74,7 @@ public interface ITableView<View, T>
             {
                 if (handle != FFI.RowIter.INVALID)
                 {
-                    FFI._row_iter_bsatn_close(handle);
+                    FFI.row_iter_bsatn_close(handle);
                     handle = FFI.RowIter.INVALID;
                     // Avoid running ~RowIter if Dispose was executed successfully.
                     GC.SuppressFinalize(this);
@@ -120,20 +120,20 @@ public interface ITableView<View, T>
     private class RawTableIter(FFI.TableId tableId) : RawTableIterBase
     {
         protected override void IterStart(out FFI.RowIter handle) =>
-            FFI._datastore_table_scan_bsatn(tableId, out handle);
+            FFI.datastore_table_scan_bsatn(tableId, out handle);
     }
 
     private class RawTableIterFiltered(FFI.TableId tableId, byte[] filterBytes) : RawTableIterBase
     {
         protected override void IterStart(out FFI.RowIter handle) =>
-            FFI._iter_start_filtered(tableId, filterBytes, (uint)filterBytes.Length, out handle);
+            FFI.iter_start_filtered(tableId, filterBytes, (uint)filterBytes.Length, out handle);
     }
 
     private class RawTableIterByColEq(FFI.TableId tableId, FFI.ColId colId, byte[] value)
         : RawTableIterBase
     {
         protected override void IterStart(out FFI.RowIter handle) =>
-            FFI._iter_by_col_eq(tableId, colId, value, (uint)value.Length, out handle);
+            FFI.iter_by_col_eq(tableId, colId, value, (uint)value.Length, out handle);
     }
 
     // Note: this must be Lazy to ensure that we don't try to get the tableId during startup, before the module is initialized.
@@ -141,7 +141,7 @@ public interface ITableView<View, T>
         new(() =>
         {
             var name_bytes = System.Text.Encoding.UTF8.GetBytes(typeof(View).Name);
-            FFI._table_id_from_name(name_bytes, (uint)name_bytes.Length, out var out_);
+            FFI.table_id_from_name(name_bytes, (uint)name_bytes.Length, out var out_);
             return out_;
         });
 
@@ -159,7 +159,7 @@ public interface ITableView<View, T>
         // Insert the row.
         var bytes = IStructuralReadWrite.ToBytes(row);
         var bytes_len = (uint)bytes.Length;
-        FFI._datastore_insert_bsatn(tableId, bytes, ref bytes_len);
+        FFI.datastore_insert_bsatn(tableId, bytes, ref bytes_len);
 
         // Write back any generated column values.
         using var stream = new MemoryStream(bytes, 0, (int)bytes_len);
@@ -190,7 +190,7 @@ public interface ITableView<View, T>
 
         public bool Delete()
         {
-            FFI._delete_by_col_eq(tableId, colId, value, (uint)value.Length, out var out_);
+            FFI.delete_by_col_eq(tableId, colId, value, (uint)value.Length, out var out_);
             return out_ > 0;
         }
 

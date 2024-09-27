@@ -528,7 +528,7 @@ fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
         let spare_len = buf_ptr.len();
         let mut buf_len = buf_ptr.len();
         let buf_ptr = buf_ptr.as_mut_ptr().cast();
-        let ret = unsafe { sys::raw::_bytes_source_read(source, buf_ptr, &mut buf_len) };
+        let ret = unsafe { sys::raw::bytes_source_read(source, buf_ptr, &mut buf_len) };
         if ret <= 0 {
             // SAFETY: `bytes_source_read` just appended `spare_len` bytes to `buf`.
             unsafe { buf.set_len(buf.len() + spare_len) };
@@ -554,7 +554,7 @@ fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
 fn write_to_sink(sink: BytesSink, mut buf: &[u8]) {
     loop {
         let len = &mut buf.len();
-        match unsafe { sys::raw::_bytes_sink_write(sink, buf.as_ptr(), len) } {
+        match unsafe { sys::raw::bytes_sink_write(sink, buf.as_ptr(), len) } {
             0 => {
                 // Set `buf` to remainder and bail if it's empty.
                 (_, buf) = buf.split_at(*len);

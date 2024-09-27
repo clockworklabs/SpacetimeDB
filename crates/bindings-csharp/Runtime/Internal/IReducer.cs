@@ -17,7 +17,7 @@ public interface IReducer
         var name_bytes = Encoding.UTF8.GetBytes(name);
         var args_bytes = args.ToArray();
 
-        FFI._volatile_nonatomic_schedule_immediate(
+        FFI.volatile_nonatomic_schedule_immediate(
             name_bytes,
             (uint)name_bytes.Length,
             args_bytes,

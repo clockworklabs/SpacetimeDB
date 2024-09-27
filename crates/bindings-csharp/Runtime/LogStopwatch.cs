@@ -11,7 +11,7 @@ public sealed class LogStopwatch : IDisposable
     public LogStopwatch(string name)
     {
         var name_bytes = Encoding.UTF8.GetBytes(name);
-        StopwatchId = FFI._console_timer_start(name_bytes, (uint)name_bytes.Length);
+        StopwatchId = FFI.console_timer_start(name_bytes, (uint)name_bytes.Length);
     }
 
     void IDisposable.Dispose()
@@ -24,7 +24,7 @@ public sealed class LogStopwatch : IDisposable
 
     public void End()
     {
-        FFI._console_timer_end(StopwatchId);
+        FFI.console_timer_end(StopwatchId);
         WasStopped = true;
     }
 }
