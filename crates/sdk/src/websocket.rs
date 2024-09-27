@@ -95,7 +95,7 @@ fn request_add_header(req: &mut http::Request<()>, key: &'static str, val: http:
 }
 
 const PROTOCOL_HEADER_KEY: &str = "Sec-WebSocket-Protocol";
-const PROTOCOL_HEADER_VALUE: &str = "v1.bin.spacetimedb";
+const PROTOCOL_HEADER_VALUE: &str = "v1.bsatn.spacetimedb";
 
 fn request_insert_protocol_header(req: &mut http::Request<()>) {
     request_add_header(

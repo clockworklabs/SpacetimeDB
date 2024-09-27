@@ -30,9 +30,9 @@ use crate::util::{NameOrAddress, XForwardedFor};
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 #[allow(clippy::declare_interior_mutable_const)]
-pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static("v1.text.spacetimedb");
+pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static("v1.json.spacetimedb");
 #[allow(clippy::declare_interior_mutable_const)]
-pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static("v1.bin.spacetimedb");
+pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static("v1.bsatn.spacetimedb");
 
 #[derive(Deserialize)]
 pub struct SubscribeParams {
