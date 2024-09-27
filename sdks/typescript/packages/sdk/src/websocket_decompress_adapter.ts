@@ -2,36 +2,25 @@ import decompress from 'brotli/decompress';
 import { Buffer } from 'buffer';
 
 export class WebsocketDecompressAdapter {
-  onclose: Function | undefined;
-  onopen: Function | undefined;
-  onmessage: ((msg: { data: Uint8Array }) => void) | undefined;
-  onerror: Function | undefined;
+  onclose?: (...ev: any[]) => void;
+  onopen?: (...ev: any[]) => void;
+  onmessage?: (msg: { data: Uint8Array }) => void;
+  onerror?: (msg: ErrorEvent) => void;
 
   #ws: WebSocket;
 
-  #handleOnMessage(msg: { data: any }) {
+  #handleOnMessage(msg: MessageEvent) {
     const decompressed = decompress(new Buffer(msg.data));
-    if (this.onmessage) {
-      this.onmessage({ data: decompressed });
-    }
-  }
 
-  #handleOnClose(msg: any) {
-    if (this.onclose !== undefined) {
-      this.onclose(msg);
-    }
+    this.onmessage?.({ data: decompressed });
   }
 
   #handleOnOpen(msg: any) {
-    if (this.onopen !== undefined) {
-      this.onopen(msg);
-    }
+    this.onopen?.(msg);
   }
 
   #handleOnError(msg: any) {
-    if (this.onerror !== undefined) {
-      this.onerror(msg);
-    }
+    this.onerror?.(msg);
   }
 
   send(msg: any): void {
@@ -58,21 +47,18 @@ export class WebsocketDecompressAdapter {
     this.#ws = ws;
   }
 
-  static async createWebSocketFn(
-    url: string,
-    protocol: string,
-    params: {
-      host: string;
-      auth_token: string | undefined | null;
-      ssl: boolean;
-    }
-  ): Promise<WebsocketDecompressAdapter> {
+  static async createWebSocketFn({
+    url,
+    wsProtocol,
+    authToken,
+  }: {
+    url: URL;
+    wsProtocol: string;
+    authToken?: string;
+  }): Promise<WebsocketDecompressAdapter> {
     const headers = new Headers();
-    if (params.auth_token) {
-      headers.set(
-        'Authorization',
-        `Basic ${btoa('token:' + params.auth_token)}`
-      );
+    if (authToken) {
+      headers.set('Authorization', `Basic ${btoa('token:' + authToken)}`);
     }
 
     let WS: typeof WebSocket;
@@ -87,16 +73,14 @@ export class WebsocketDecompressAdapter {
       WS = WebSocket;
     }
 
-    // In the browser we first have to get a short lived token and only then connect to the websocket
-    let httpProtocol = params.ssl ? 'https://' : 'http://';
-    let tokenUrl = `${httpProtocol}${params.host}/identity/websocket_token`;
+    let tokenUrl = new URL('identity/websocket_token', url);
 
     const response = await fetch(tokenUrl, { method: 'POST', headers });
     if (response.ok) {
       const { token } = await response.json();
-      url += '&token=' + btoa('token:' + token);
+      url.searchParams.set('token', btoa('token:' + token));
     }
-    const ws = new WS(url, protocol);
+    const ws = new WS(url, wsProtocol);
     return new WebsocketDecompressAdapter(ws);
   }
 }

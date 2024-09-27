@@ -6,15 +6,15 @@ import * as ws from '../src/client_api';
 import { ClientDB } from '../src/client_db';
 import { Identity } from '../src/identity';
 import { BinarySerializer } from '../src/serializer';
-import { ReducerEvent, SpacetimeDBClient } from '../src/spacetimedb';
+import { ReducerEvent, DBConnection } from '../src/db-connection';
 import WebsocketTestAdapter from '../src/websocket_test_adapter';
 import CreatePlayerReducer from './types/create_player_reducer';
 import Player from './types/player';
 import Point from './types/point';
 import User from './types/user';
 
-SpacetimeDBClient.registerTables(Player, User);
-SpacetimeDBClient.registerReducers(CreatePlayerReducer);
+DBConnection.registerTables(Player, User);
+DBConnection.registerReducers(CreatePlayerReducer);
 
 beforeEach(() => {
   (CreatePlayerReducer as any).reducer = undefined;
@@ -48,11 +48,7 @@ function encodeCreatePlayerArgs(
 
 describe('SpacetimeDBClient', () => {
   test('auto subscribe on connect', async () => {
-    const client = new SpacetimeDBClient(
-      'ws://127.0.0.1:1234',
-      'db',
-      undefined
-    );
+    const client = new DBConnection('ws://127.0.0.1:1234', 'db', undefined);
     const wsAdapter = new WebsocketTestAdapter();
     client._setCreateWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter));
 
@@ -80,11 +76,7 @@ describe('SpacetimeDBClient', () => {
   });
 
   test('call onConnect callback after getting an identity', async () => {
-    const client = new SpacetimeDBClient(
-      'ws://127.0.0.1:1234',
-      'db',
-      undefined
-    );
+    const client = new DBConnection('ws://127.0.0.1:1234', 'db', undefined);
     const wsAdapter = new WebsocketTestAdapter();
     client._setCreateWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter));
 
@@ -110,11 +102,7 @@ describe('SpacetimeDBClient', () => {
   });
 
   test('it calls onInsert callback when a record is added with a subscription update and then with a transaction update', async () => {
-    const client = new SpacetimeDBClient(
-      'ws://127.0.0.1:1234',
-      'db',
-      undefined
-    );
+    const client = new DBConnection('ws://127.0.0.1:1234', 'db', undefined);
     const wsAdapter = new WebsocketTestAdapter();
     client._setCreateWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter));
 
@@ -224,11 +212,7 @@ describe('SpacetimeDBClient', () => {
   });
 
   test('it calls onUpdate callback when a record is added with a subscription update and then with a transaction update', async () => {
-    const client = new SpacetimeDBClient(
-      'ws://127.0.0.1:1234',
-      'db',
-      undefined
-    );
+    const client = new DBConnection('ws://127.0.0.1:1234', 'db', undefined);
     const wsAdapter = new WebsocketTestAdapter();
     client._setCreateWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter));
 
@@ -315,11 +299,7 @@ describe('SpacetimeDBClient', () => {
   });
 
   test('a reducer callback should be called after the database callbacks', async () => {
-    const client = new SpacetimeDBClient(
-      'ws://127.0.0.1:1234',
-      'db',
-      undefined
-    );
+    const client = new DBConnection('ws://127.0.0.1:1234', 'db', undefined);
     const wsAdapter = new WebsocketTestAdapter();
     client._setCreateWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter));
 
@@ -369,11 +349,7 @@ describe('SpacetimeDBClient', () => {
   });
 
   test('it calls onUpdate callback when a record is added with a subscription update and then with a transaction update when the PK is of type Identity', async () => {
-    const client = new SpacetimeDBClient(
-      'ws://127.0.0.1:1234',
-      'db',
-      undefined
-    );
+    const client = new DBConnection('ws://127.0.0.1:1234', 'db', undefined);
     const wsAdapter = new WebsocketTestAdapter();
     client._setCreateWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter));
 
@@ -494,11 +470,7 @@ describe('SpacetimeDBClient', () => {
   });
 
   test('Filtering works', async () => {
-    const client = new SpacetimeDBClient(
-      'ws://127.0.0.1:1234',
-      'db',
-      undefined
-    );
+    const client = new DBConnection('ws://127.0.0.1:1234', 'db', undefined);
     const db = client.db;
     const user1 = new User(new Identity('bobs-idenitty'), 'bob');
     const user2 = new User(new Identity('sallys-identity'), 'sally');

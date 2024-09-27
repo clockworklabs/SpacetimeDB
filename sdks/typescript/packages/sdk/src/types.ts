@@ -6,3 +6,7 @@ export type EventType =
   | 'connected'
   | 'disconnected'
   | 'client_error';
+
+export type CallbackInit = {
+  signal?: AbortSignal;
+};

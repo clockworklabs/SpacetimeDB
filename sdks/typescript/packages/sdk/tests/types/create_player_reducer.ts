@@ -15,7 +15,7 @@ import {
   Address,
   ReducerEvent,
   Reducer,
-  SpacetimeDBClient,
+  DBConnection,
 } from '../../src/index';
 // @ts-ignore
 import { Point } from './point';

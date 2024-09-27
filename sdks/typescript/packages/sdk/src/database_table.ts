@@ -1,6 +1,6 @@
 import { ClientDB } from './client_db.ts';
 import { ReducerEvent } from './reducer_event.ts';
-import { SpacetimeDBClient } from './spacetimedb.ts';
+import { DBConnectionBase } from './spacetimedb.ts';
 import { _tableProxy } from './utils.ts';
 
 export type DatabaseTableClass = {
@@ -19,7 +19,7 @@ export class DatabaseTable {
   static db?: ClientDB;
   static tableName: string;
 
-  static with<T extends DatabaseTable>(this: T, client: SpacetimeDBClient): T {
+  static with<T extends DatabaseTable>(this: T, client: DBConnectionBase): T {
     return _tableProxy<T>(this, client) as unknown as T;
   }
 

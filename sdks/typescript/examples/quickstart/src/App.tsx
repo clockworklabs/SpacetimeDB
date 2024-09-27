@@ -1,12 +1,8 @@
 import './App.css';
 
-// Bindings
-import Message from './module_bindings/message';
-import SendMessageReducer from './module_bindings/send_message_reducer';
-import SetNameReducer from './module_bindings/set_name_reducer';
-import User from './module_bindings/user';
+import { DbConnection } from './module_bindings';
 
-import { Identity, SpacetimeDBClient } from '@clockworklabs/spacetimedb-sdk';
+import { Identity } from '@clockworklabs/spacetimedb-sdk';
 import React, { useEffect, useRef, useState } from 'react';
 
 export type MessageType = {
@@ -14,12 +10,11 @@ export type MessageType = {
   message: string;
 };
 
-// Register the tables and reducers before creating the SpacetimeDBClient
-SpacetimeDBClient.registerTables(Message, User);
-SpacetimeDBClient.registerReducers(SendMessageReducer, SetNameReducer);
-
 const token = localStorage.getItem('auth_token') || undefined;
-const client = new SpacetimeDBClient('ws://localhost:3000', 'chat', token);
+const conn = DbConnection.builder()
+  .withUri('ws://localhost:3000')
+  .withModuleName('chat')
+  .build();
 
 function App() {
   const [newName, setNewName] = useState('');
@@ -39,32 +34,32 @@ function App() {
 
   useEffect(() => {
     if (!initialized.current) {
-      client.connect();
+      conn.connect();
       initialized.current = true;
     }
   }, []);
 
   // All the event listeners are set up in the useEffect hook
   useEffect(() => {
-    client.on('disconnected', () => {
+    conn.on('disconnected', () => {
       console.log('disconnected');
     });
 
-    client.on('client_error', () => {
+    conn.on('client_error', () => {
       console.log('client_error');
     });
 
-    client.onConnect((token: string, identity: Identity) => {
+    conn.onConnect((token: string, identity: Identity) => {
       console.log('Connected to SpacetimeDB');
 
       local_identity.current = identity;
 
       localStorage.setItem('auth_token', token);
 
-      client.subscribe(['SELECT * FROM User', 'SELECT * FROM Message']);
+      conn.subscribe(['SELECT * FROM User', 'SELECT * FROM Message']);
     });
 
-    client.on('initialStateSync', () => {
+    conn.on('initialStateSync', () => {
       setAllMessagesInOrder();
       const user = User.findByIdentity(local_identity?.current!);
       setName(userNameOrIdentity(user!));

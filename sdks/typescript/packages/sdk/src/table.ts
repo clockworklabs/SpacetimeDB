@@ -1,6 +1,6 @@
 import { BinaryAdapter } from './algebraic_value.ts';
 import BinaryReader from './binary_reader.ts';
-import { EventEmitter } from './events.ts';
+import { EventEmitter } from './event_emitter.ts';
 import OperationsMap from './operations_map.ts';
 import { ReducerEvent } from './reducer_event.ts';
 import { AlgebraicValue, DatabaseTable } from './spacetimedb.ts';

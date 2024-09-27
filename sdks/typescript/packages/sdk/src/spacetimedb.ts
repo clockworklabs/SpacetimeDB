@@ -1,8 +1,3 @@
-import { EventEmitter } from './events.ts';
-
-import { WebsocketDecompressAdapter } from './websocket_decompress_adapter.ts';
-import type { WebsocketTestAdapter } from './websocket_test_adapter.ts';
-
 import { Address } from './address.ts';
 import {
   AlgebraicType,
@@ -10,7 +5,7 @@ import {
   ProductTypeElement,
   SumType,
   SumTypeVariant,
-} from './algebraic_type';
+} from './algebraic_type.ts';
 import {
   AlgebraicValue,
   BinaryAdapter,
@@ -22,8 +17,11 @@ import {
 } from './algebraic_value.ts';
 import BinaryReader from './binary_reader.ts';
 import * as ws from './client_api.ts';
-import { ClientDB } from './client_db';
+import { ClientDB } from './client_db.ts';
 import { DatabaseTable, type DatabaseTableClass } from './database_table.ts';
+import { DbContext } from './db_context.ts';
+import type { STDBEvent } from './event.ts';
+import { EventEmitter } from './event_emitter.ts';
 import type { Identity } from './identity.ts';
 import { stdbLogger } from './logger.ts';
 import {
@@ -33,18 +31,21 @@ import {
   TransactionUpdateMessage,
   type Message,
 } from './message_types.ts';
-import { Reducer, type ReducerClass } from './reducer.ts';
+import { Reducer } from './reducer.ts';
 import { ReducerEvent } from './reducer_event.ts';
 import { BinarySerializer, type Serializer } from './serializer.ts';
 import { TableOperation, TableUpdate } from './table.ts';
-import type { EventType } from './types.ts';
+import type { CallbackInit, EventType } from './types.ts';
 import { toPascalCase } from './utils.ts';
+import { WebsocketDecompressAdapter } from './websocket_decompress_adapter.ts';
+import type { WebsocketTestAdapter } from './websocket_test_adapter.ts';
 
 export {
   AlgebraicType,
   AlgebraicValue,
   BinarySerializer,
   DatabaseTable,
+  DbContext,
   ProductType,
   ProductTypeElement,
   ProductValue,
@@ -52,79 +53,62 @@ export {
   ReducerEvent,
   SumType,
   SumTypeVariant,
+  type CallbackInit,
   type DatabaseTableClass,
   type ReducerArgsAdapter,
   type Serializer,
+  type STDBEvent,
   type ValueAdapter,
 };
 
-export type CreateWSFnType = (
-  url: string,
-  protocol: string,
-  params: { host: string; auth_token: string | null | undefined; ssl: boolean }
-) => Promise<WebsocketDecompressAdapter | WebsocketTestAdapter>;
+// TODO: This is temporary notes for how this should turn out. Will be removed by final PR
+// CODEGEN:
+// type RemoteTables = {
+//   user: UserTable;
+//   player: PlayerTable;
+// };
+
+// type RemoteReducers = {
+//   createPlayer: CreatePlayerReducer;
+//   onCreatePlayer: CreatePlayerReducerCB;
+// };
+
+// ctx.db.user;
+
+// export interface DbContext<DBView = Remotetables, ReducerView> {
+//   reducers: ReducerView;
+//   db: DBView;
+//   isActive: boolean;
+
+//   // TODO: disconnect;
+// }
+
+// // These are autogeneratyed types by the codegen. DbContext is from npm package
+// const ctx: DBContext<RemoteTables, RemoteReducers>;
+
+// // Autoigenerated EventContext
+// export interface EventContext extends DbContext<RemoteTables, RemoteReducers> {
+//   event: Event<Reducer>; // ?
+// }
+
+// type Reducer =
+//   | { tag: 'IdentityConnected'; value: IdentityConnected }
+//   | { tag: 'IdentityDisconnected'; value: IdentityDisconnected }
+//   | { tag: 'SendMessage'; value: SendMessage }
+//   | { tag: 'SetName'; value: SetName };
+
+// export class DbConnection extends DbContext<RemoteTables, RemoteReducers> {
+//   static builder(): DbConnectionBuilder<DbConnection, EventContext> {}
+// }
 
 /**
  * The database client connection to a SpacetimeDB server.
  */
-export class SpacetimeDBClient {
-  /**
-   * The user's public identity.
-   */
-  identity?: Identity = undefined;
-  /**
-   * The user's private authentication token.
-   */
-  token?: string = undefined;
+export class DBConnectionBuilder<DBView, ReducerView> {
+  #base!: DBConnectionBase;
 
-  /**
-   * Reference to the database of the client.
-   */
-  db: ClientDB;
-  emitter!: EventEmitter;
-
-  /**
-   * Whether the client is connected.
-   */
-  live: boolean;
-
-  #ws!: WebsocketDecompressAdapter | WebsocketTestAdapter;
-  #manualTableSubscriptions: string[] = [];
-  #queriesQueue: string[];
-  #runtime: {
-    host: string;
-    nameOrAddress: string;
-    authToken?: string;
-  };
-  #createWSFn: CreateWSFnType;
-  #ssl: boolean = false;
-  #clientAddress: Address = Address.random();
-
-  static #tableClasses: Map<string, DatabaseTableClass> = new Map();
-  static #reducerClasses: Map<string, ReducerClass> = new Map();
-
-  static #getTableClass(name: string): DatabaseTableClass {
-    const tableClass = this.#tableClasses.get(name);
-    if (!tableClass) {
-      throw `Could not find class \"${name}\", you need to register it with SpacetimeDBClient.registerTable() first`;
-    }
-
-    return tableClass;
-  }
-
-  static #getReducerClass(name: string): ReducerClass | undefined {
-    const reducerName = `${name}Reducer`;
-    const reducerClass = this.#reducerClasses.get(reducerName);
-    if (!reducerClass) {
-      stdbLogger(
-        'warn',
-        `Could not find class \"${name}\", you need to register it with SpacetimeDBClient.registerReducer() first`
-      );
-      return;
-    }
-
-    return reducerClass;
-  }
+  #dbView: DBView;
+  #reducerView: ReducerView;
 
   /**
    * Creates a new `SpacetimeDBClient` database client and set the initial parameters.
@@ -143,157 +127,273 @@ export class SpacetimeDBClient {
    * var spacetimeDBClient = new SpacetimeDBClient(host, name_or_address, auth_token, protocol);
    * ```
    */
-  constructor(host: string, name_or_address: string, auth_token?: string) {
-    this.db = new ClientDB();
+  constructor(
+    base: DBConnectionBase,
+    dbView: DBView,
+    reducerView: ReducerView
+  ) {
+    this.#dbView = dbView;
+    this.#reducerView = reducerView;
 
-    if (SpacetimeDBClient.#tableClasses.size === 0) {
+    this.#base = base;
+
+    // this.#db = new ClientDB();
+
+    // if (DBConnectionBuilder.#tableClasses.size === 0) {
+    //   stdbLogger(
+    //     'warn',
+    //     'No tables were automatically registered globally, if you want to automatically register tables, you need to register them with SpacetimeDBClient.registerTable() first'
+    //   );
+    // }
+
+    // for (const [_name, table] of DBConnectionBuilder.#tableClasses) {
+    //   this.#registerTable(table);
+    // }
+
+    // this.#createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
+  }
+
+  withUri(uri: string | URL): DBConnectionBuilder<DBView, ReducerView> {
+    this.#base.runtime.uri = new URL(uri);
+    return this;
+  }
+
+  withModuleName(
+    nameOrAddress: string
+  ): DBConnectionBuilder<DBView, ReducerView> {
+    this.#base.runtime.nameOrAddress = nameOrAddress;
+    return this;
+  }
+
+  withCredentials(
+    creds: [identity: Identity, token: string]
+  ): DBConnectionBuilder<DBView, ReducerView> {
+    const [identity, token] = creds;
+    this.#base.identity = identity;
+    this.#base.token = token;
+
+    return this;
+  }
+
+  /**
+   * Connect to The SpacetimeDB Websocket For Your Module. By default, this will use a secure websocket connection. The parameters are optional, and if not provided, will use the values provided on construction of the client.
+   *
+   * @param host The hostname of the SpacetimeDB server. Defaults to the value passed to the `constructor`.
+   * @param nameOrAddress The name or address of the SpacetimeDB module. Defaults to the value passed to the `constructor`.
+   * @param authToken The credentials to use to authenticate with SpacetimeDB. Defaults to the value passed to the `constructor`.
+   *
+   * @example
+   *
+   * ```ts
+   * const host = "ws://localhost:3000";
+   * const name_or_address = "database_name"
+   * const auth_token = undefined;
+   *
+   * var spacetimeDBClient = new SpacetimeDBClient(host, name_or_address, auth_token);
+   * // Connect with the initial parameters
+   * spacetimeDBClient.connect();
+   * //Set the `auth_token`
+   * spacetimeDBClient.connect(undefined, undefined, NEW_TOKEN);
+   * ```
+   */
+  async build(): Promise<DBConnectionBuilder<DBView, ReducerView>> {
+    if (this.#base.isActive) {
+      return this;
+    }
+
+    stdbLogger('info', 'Connecting to SpacetimeDB WS...');
+
+    let url = new URL(
+      `database/subscribe/${this.#base.runtime.nameOrAddress}`,
+      this.#base.runtime.uri
+    );
+    if (!/^wss?:/.test(this.#base.runtime.uri.protocol)) {
+      url.protocol = 'ws:';
+    }
+
+    let clientAddress = this.#base.clientAddress.toHexString();
+    url.searchParams.set('client_address', clientAddress);
+
+    this.#base.ws = await this.#base.createWSFn({
+      url,
+      wsProtocol: 'v1.bin.spacetimedb',
+      authToken: this.#base.runtime.authToken,
+    });
+
+    this.#base.ws.onclose = this.#base.handleOnClose.bind(this);
+    this.#base.ws.onerror = this.#base.handleOnError.bind(this);
+    this.#base.ws.onopen = this.#base.handleOnOpen.bind(this);
+    this.#base.ws.onmessage = this.#base.handleOnMessage.bind(this);
+
+    return this;
+  }
+
+  /**
+   * Register a callback to be invoked upon authentication with the database.
+   *
+   * @param token The credentials to use to authenticate with SpacetimeDB.
+   * @param identity A unique identifier for a client connected to a database.
+   *
+   * The callback will be invoked with the `Identity` and private authentication `token` provided by the database to identify this connection.
+   *
+   * If credentials were supplied to connect, those passed to the callback will be equivalent to the ones used to connect.
+   *
+   * If the initial connection was anonymous, a new set of credentials will be generated by the database to identify this user.
+   *
+   * The credentials passed to the callback can be saved and used to authenticate the same user in future connections.
+   *
+   * @example
+   *
+   * ```ts
+   * spacetimeDBClient.onConnect((token, identity) => {
+   *  console.log("Connected to SpacetimeDB");
+   *  console.log("Token", token);
+   *  console.log("Identity", identity);
+   * });
+   * ```
+   */
+  onConnect(
+    callback: (identity: Identity, token: string) => void,
+    init: CallbackInit = {}
+  ): void {
+    this.#base.on('connected', callback);
+
+    if (init.signal) {
+      init.signal.addEventListener('abort', () => {
+        this.#base.off('connected', callback);
+      });
+    }
+  }
+
+  /**
+   * Register a callback to be invoked upon an error.
+   *
+   * @example
+   *
+   * ```ts
+   * spacetimeDBClient.onError((...args: any[]) => {
+   *  stdbLogger("warn","ERROR", args);
+   * });
+   * ```
+   */
+  onConnectError(
+    callback: (...args: any[]) => void,
+    init: CallbackInit = {}
+  ): void {
+    this.#base.on('client_error', callback);
+
+    if (init.signal) {
+      init.signal.addEventListener('abort', () => {
+        this.#base.off('client_error', callback);
+      });
+    }
+  }
+
+  /**
+   * Registers a callback to run when a {@link DbConnection} whose connection initially succeeded
+   * is disconnected, either after a {@link DbConnection.disconnect} call or due to an error.
+   *
+   * If the connection ended because of an error, the error is passed to the callback.
+   *
+   * The `callback` will be installed on the `DbConnection` created by `build`
+   * before initiating the connection, ensuring there's no opportunity for the disconnect to happen
+   * before the callback is installed.
+   *
+   * Note that this does not trigger if `build` fails
+   * or in cases where {@link DbConnectionBuilder.onConnectError} would trigger.
+   * This callback only triggers if the connection closes after `build` returns successfully
+   * and {@link DbConnectionBuilder.onConnect} is invoked, i.e., after the `IdentityToken` is received.
+   *
+   * To simplify SDK implementation, at most one such callback can be registered.
+   * Calling `onDisconnect` on the same `DbConnectionBuilder` multiple times throws an error.
+   *
+   * Unlike callbacks registered via {@link DbConnection},
+   * no mechanism is provided to unregister the provided callback.
+   * This is a concession to ergonomics; there's no clean place to return a `CallbackId` from this method
+   * or from `build`.
+   *
+   * @param {function(error?: Error): void} callback - The callback to invoke upon disconnection.
+   * @throws {Error} Throws an error if called multiple times on the same `DbConnectionBuilder`.
+   */
+  onDisconnect(
+    callback: (...args: any[]) => void,
+    init: CallbackInit = {}
+  ): void {
+    this.#base.on('disconnected', callback);
+
+    if (init.signal) {
+      init.signal.addEventListener('abort', () => {
+        this.#base.off('disconnected', callback);
+      });
+    }
+  }
+}
+
+// class DBConnection extends DbConnectionBase {}
+
+// const ctxz = new DbConnection()
+
+// ctxz.
+
+export class DBConnectionBase {
+  isActive = false;
+  /**
+   * The user's public identity.
+   */
+  identity?: Identity = undefined;
+  /**
+   * The user's private authentication token.
+   */
+  token?: string = undefined;
+
+  /**
+   * Reference to the database of the client.
+   */
+  #db: ClientDB;
+  #emitter: EventEmitter = new EventEmitter();
+
+  #manualTableSubscriptions: string[] = [];
+  queriesQueue: string[] = [];
+
+  ws!: WebsocketDecompressAdapter | WebsocketTestAdapter;
+  createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
+
+  runtime!: {
+    uri: URL;
+    nameOrAddress: string;
+    authToken?: string;
+  };
+  clientAddress: Address = Address.random();
+
+  static #tableClasses: Map<string, DatabaseTableClass> = new Map();
+  static #reducerClasses: Map<string, Reducer> = new Map();
+
+  constructor() {
+    this.#db = new ClientDB();
+    this.createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
+  }
+
+  static #getTableClass(name: string): DatabaseTableClass {
+    const tableClass = this.#tableClasses.get(name);
+    if (!tableClass) {
+      throw `Could not find class \"${name}\", you need to register it with SpacetimeDBClient.registerTable() first`;
+    }
+
+    return tableClass;
+  }
+
+  static #getReducerClass(name: string): Reducer | undefined {
+    const reducerName = `${name}Reducer`;
+    const reducerClass = this.#reducerClasses.get(reducerName);
+    if (!reducerClass) {
       stdbLogger(
         'warn',
-        'No tables were automatically registered globally, if you want to automatically register tables, you need to register them with SpacetimeDBClient.registerTable() first'
+        `Could not find class \"${name}\", you need to register it with SpacetimeDBClient.registerReducer() first`
       );
+      return;
     }
 
-    for (const [_name, table] of SpacetimeDBClient.#tableClasses) {
-      this.#registerTable(table);
-    }
-
-    this.live = false;
-    this.emitter = new EventEmitter();
-    this.#queriesQueue = [];
-
-    this.#runtime = {
-      host,
-      nameOrAddress: name_or_address,
-      authToken: auth_token,
-    };
-
-    this.#createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
-  }
-
-  /**
-   * Handles WebSocket onClose event.
-   * @param event CloseEvent object.
-   */
-  #handleOnClose(event: CloseEvent) {
-    stdbLogger('warn', 'Closed: ' + event);
-    this.emitter.emit('disconnected');
-    this.emitter.emit('client_error', event);
-  }
-
-  /**
-   * Handles WebSocket onError event.
-   * @param event ErrorEvent object.
-   */
-  #handleOnError(event: ErrorEvent) {
-    stdbLogger('warn', 'WS Error: ' + event);
-    this.emitter.emit('disconnected');
-    this.emitter.emit('client_error', event);
-  }
-
-  /**
-   * Handles WebSocket onOpen event.
-   */
-  #handleOnOpen() {
-    this.live = true;
-
-    if (this.#queriesQueue.length > 0) {
-      this.subscribe(this.#queriesQueue);
-      this.#queriesQueue = [];
-    }
-  }
-
-  /**
-   * Handles WebSocket onMessage event.
-   * @param wsMessage MessageEvent object.
-   */
-  #handleOnMessage(wsMessage: { data: Uint8Array }) {
-    this.emitter.emit('receiveWSMessage', wsMessage);
-
-    this.#processMessage(wsMessage.data, (message: Message) => {
-      if (message instanceof SubscriptionUpdateMessage) {
-        for (let tableUpdate of message.tableUpdates) {
-          const tableName = tableUpdate.tableName;
-          const entityClass = SpacetimeDBClient.#getTableClass(tableName);
-          const table = this.db.getOrCreateTable(
-            tableUpdate.tableName,
-            undefined,
-            entityClass
-          );
-
-          table.applyOperations(tableUpdate.operations, undefined);
-        }
-
-        if (this.emitter) {
-          this.emitter.emit('initialStateSync');
-        }
-      } else if (message instanceof TransactionUpdateMessage) {
-        const reducerName = message.event.reducerName;
-
-        if (reducerName == '<none>') {
-          let errorMessage = message.event.message;
-          console.error(`Received an error from the database: ${errorMessage}`);
-        } else {
-          const reducer: any | undefined = reducerName
-            ? SpacetimeDBClient.#getReducerClass(reducerName)
-            : undefined;
-
-          let reducerEvent: ReducerEvent | undefined;
-          let reducerArgs: any;
-          if (reducer && message.event.status === 'committed') {
-            let adapter: ReducerArgsAdapter = new BinaryReducerArgsAdapter(
-              new BinaryAdapter(
-                new BinaryReader(message.event.args as Uint8Array)
-              )
-            );
-
-            reducerArgs = reducer.deserializeArgs(adapter);
-          }
-
-          reducerEvent = new ReducerEvent(
-            message.event.identity,
-            message.event.address,
-            message.event.originalReducerName,
-            message.event.status,
-            message.event.message,
-            reducerArgs
-          );
-
-          for (let tableUpdate of message.tableUpdates) {
-            const tableName = tableUpdate.tableName;
-            const entityClass = SpacetimeDBClient.#getTableClass(tableName);
-            const table = this.db.getOrCreateTable(
-              tableUpdate.tableName,
-              undefined,
-              entityClass
-            );
-
-            table.applyOperations(tableUpdate.operations, reducerEvent);
-          }
-
-          if (reducer) {
-            this.emitter.emit(
-              'reducer:' + reducerName,
-              reducerEvent,
-              ...(reducerArgs || [])
-            );
-          }
-        }
-      } else if (message instanceof IdentityTokenMessage) {
-        this.identity = message.identity;
-        if (this.#runtime.authToken) {
-          this.token = this.#runtime.authToken;
-        } else {
-          this.token = message.token;
-        }
-        this.#clientAddress = message.address;
-        this.emitter.emit(
-          'connected',
-          this.token,
-          this.identity,
-          this.#clientAddress
-        );
-      }
-    });
+    return reducerClass;
   }
 
   /**
@@ -302,7 +402,7 @@ export class SpacetimeDBClient {
    * @param table The table to subscribe to
    * @param query The query to subscribe to. If not provided, the default is `SELECT * FROM {table}`
    */
-  registerManualTable(table: string, query?: string): void {
+  #registerManualTable(table: string, query?: string): void {
     this.#manualTableSubscriptions.push(
       query ? query : `SELECT * FROM ${table}`
     );
@@ -315,7 +415,7 @@ export class SpacetimeDBClient {
    *
    * @param table The table to unsubscribe from
    */
-  removeManualTable(table: string): void {
+  #removeManualTable(table: string): void {
     // pgoldman 2024-06-25: Is this broken? `registerManualTable` treats `manualTableSubscriptions`
     // as containing SQL strings,
     // but this code treats it as containing table name strings.
@@ -340,85 +440,7 @@ export class SpacetimeDBClient {
    * ```
    */
   disconnect(): void {
-    this.#ws.close();
-  }
-
-  /**
-   * Connect to The SpacetimeDB Websocket For Your Module. By default, this will use a secure websocket connection. The parameters are optional, and if not provided, will use the values provided on construction of the client.
-   *
-   * @param host The hostname of the SpacetimeDB server. Defaults to the value passed to the `constructor`.
-   * @param nameOrAddress The name or address of the SpacetimeDB module. Defaults to the value passed to the `constructor`.
-   * @param authToken The credentials to use to authenticate with SpacetimeDB. Defaults to the value passed to the `constructor`.
-   *
-   * @example
-   *
-   * ```ts
-   * const host = "ws://localhost:3000";
-   * const name_or_address = "database_name"
-   * const auth_token = undefined;
-   *
-   * var spacetimeDBClient = new SpacetimeDBClient(host, name_or_address, auth_token);
-   * // Connect with the initial parameters
-   * spacetimeDBClient.connect();
-   * //Set the `auth_token`
-   * spacetimeDBClient.connect(undefined, undefined, NEW_TOKEN);
-   * ```
-   */
-  async connect(
-    host?: string,
-    nameOrAddress?: string,
-    authToken?: string
-  ): Promise<void> {
-    if (this.live) {
-      return;
-    }
-
-    stdbLogger('info', 'Connecting to SpacetimeDB WS...');
-
-    if (host) {
-      this.#runtime.host = host;
-    }
-
-    if (nameOrAddress) {
-      this.#runtime.nameOrAddress = nameOrAddress;
-    }
-
-    if (authToken) {
-      // TODO: do we need both of these
-      this.#runtime.authToken = authToken;
-      this.token = authToken;
-    }
-
-    // TODO: we should probably just accept a host and an ssl boolean flag in stead of this
-    // whole dance
-    let url = `${this.#runtime.host}/database/subscribe/${
-      this.#runtime.nameOrAddress
-    }`;
-    if (
-      !this.#runtime.host.startsWith('ws://') &&
-      !this.#runtime.host.startsWith('wss://')
-    ) {
-      url = 'ws://' + url;
-    }
-
-    let clientAddress = this.#clientAddress.toHexString();
-    url += `?client_address=${clientAddress}`;
-
-    this.#ssl = url.startsWith('wss');
-    this.#runtime.host = this.#runtime.host
-      .replace('ws://', '')
-      .replace('wss://', '');
-
-    this.#ws = await this.#createWSFn(url, 'v1.bin.spacetimedb', {
-      host: this.#runtime.host,
-      auth_token: this.#runtime.authToken,
-      ssl: this.#ssl,
-    });
-
-    this.#ws.onclose = this.#handleOnClose.bind(this);
-    this.#ws.onerror = this.#handleOnError.bind(this);
-    this.#ws.onopen = this.#handleOnOpen.bind(this);
-    this.#ws.onmessage = this.#handleOnMessage.bind(this);
+    this.ws.close();
   }
 
   #processParsedMessage(
@@ -490,7 +512,7 @@ export class SpacetimeDBClient {
           );
         }
         const args = rawArgs.value;
-        let subscriptionUpdate;
+        let subscriptionUpdate: SubscriptionUpdateMessage;
         let errMessage = '';
         switch (txUpdate.status.tag) {
           case 'Committed':
@@ -542,7 +564,7 @@ export class SpacetimeDBClient {
     }
   }
 
-  #processMessage(data: Uint8Array, callback: (message: Message) => void) {
+  processMessage(data: Uint8Array, callback: (message: Message) => void): void {
     const message: ws.ServerMessage = parseValue(ws.ServerMessage, data);
     this.#processParsedMessage(message, callback);
   }
@@ -554,11 +576,11 @@ export class SpacetimeDBClient {
    * @param component The component to register
    */
   #registerTable(tableClass: DatabaseTableClass) {
-    this.db.getOrCreateTable(tableClass.tableName, undefined, tableClass);
+    this.#db.getOrCreateTable(tableClass.tableName, undefined, tableClass);
     // only set a default ClientDB on a table class if it's not set yet. This means
     // that only the first created client will be usable without the `with` method
     if (!tableClass.db) {
-      tableClass.db = this.db;
+      tableClass.db = this.#db;
     }
   }
 
@@ -566,6 +588,7 @@ export class SpacetimeDBClient {
    * Register a component to be used with any SpacetimeDB client. The component will be automatically registered to any
    * new clients
    * @param table Component to be registered
+   * @private
    */
   static registerTable(table: DatabaseTableClass): void {
     this.#tableClasses.set(table.tableName, table);
@@ -585,16 +608,18 @@ export class SpacetimeDBClient {
    * Register a reducer to be used with any SpacetimeDB client. The reducer will be automatically registered to any
    * new clients
    * @param reducer Reducer to be registered
+   * @private
    */
-  static registerReducer(reducer: ReducerClass): void {
+  static registerReducer(reducer: Reducer): void {
     this.#reducerClasses.set(reducer.reducerName + 'Reducer', reducer);
   }
 
   /**
    * Register a list of reducers to be used with any SpacetimeDB client. The reducers will be automatically registered to any new clients
    * @param reducers A list of reducers to register globally with SpacetimeDBClient
+   * @private
    */
-  static registerReducers(...reducers: ReducerClass[]): void {
+  static registerReducers(...reducers: Reducer[]): void {
     for (const reducer of reducers) {
       this.registerReducer(reducer);
     }
@@ -619,7 +644,7 @@ export class SpacetimeDBClient {
   subscribe(queryOrQueries: string | string[]): void {
     const queries =
       typeof queryOrQueries === 'string' ? [queryOrQueries] : queryOrQueries;
-    if (this.live) {
+    if (this.isActive) {
       const message = ws.ClientMessage.Subscribe(
         new ws.Subscribe(
           queries,
@@ -630,7 +655,7 @@ export class SpacetimeDBClient {
       );
       this.#sendMessage(message);
     } else {
-      this.#queriesQueue = this.#queriesQueue.concat(queries);
+      this.queriesQueue = this.queriesQueue.concat(queries);
     }
   }
 
@@ -638,8 +663,8 @@ export class SpacetimeDBClient {
     const serializer = new BinarySerializer();
     serializer.write(ws.ClientMessage.getAlgebraicType(), message);
     const encoded = serializer.args();
-    this.emitter.emit('sendWSMessage', encoded);
-    this.#ws.send(encoded);
+    this.#emitter.emit('sendWSMessage', encoded);
+    this.ws.send(encoded);
   }
 
   /**
@@ -661,70 +686,150 @@ export class SpacetimeDBClient {
     this.#sendMessage(message);
   }
 
+  /**
+   * Handles WebSocket onClose event.
+   * @param event CloseEvent object.
+   */
+  handleOnClose(event: CloseEvent): void {
+    stdbLogger('warn', 'Closed: ' + event);
+    this.#emitter.emit('disconnected');
+    this.#emitter.emit('client_error', event);
+  }
+
+  /**
+   * Handles WebSocket onError event.
+   * @param event ErrorEvent object.
+   */
+  handleOnError(event: ErrorEvent): void {
+    stdbLogger('warn', 'WS Error: ' + event);
+    this.#emitter.emit('disconnected');
+    this.#emitter.emit('client_error', event);
+  }
+
+  /**
+   * Handles WebSocket onOpen event.
+   */
+  handleOnOpen(): void {
+    this.isActive = true;
+
+    if (this.queriesQueue.length > 0) {
+      this.subscribe(this.queriesQueue);
+      this.queriesQueue = [];
+    }
+  }
+
+  /**
+   * Handles WebSocket onMessage event.
+   * @param wsMessage MessageEvent object.
+   */
+  handleOnMessage(wsMessage: { data: Uint8Array }): void {
+    this.#emitter.emit('receiveWSMessage', wsMessage);
+
+    this.processMessage(wsMessage.data, (message: Message) => {
+      if (message instanceof SubscriptionUpdateMessage) {
+        for (let tableUpdate of message.tableUpdates) {
+          const tableName = tableUpdate.tableName;
+          const entityClass = DBConnectionBase.#getTableClass(tableName);
+          const table = this.#db.getOrCreateTable(
+            tableUpdate.tableName,
+            undefined,
+            entityClass
+          );
+
+          table.applyOperations(tableUpdate.operations, undefined);
+        }
+
+        if (this.#emitter) {
+          this.#emitter.emit('initialStateSync');
+        }
+      } else if (message instanceof TransactionUpdateMessage) {
+        const reducerName = message.event.reducerName;
+
+        if (reducerName == '<none>') {
+          let errorMessage = message.event.message;
+          console.error(`Received an error from the database: ${errorMessage}`);
+        } else {
+          const reducer: any | undefined = reducerName
+            ? DBConnectionBase.#getReducerClass(reducerName)
+            : undefined;
+
+          let reducerEvent: ReducerEvent | undefined;
+          let reducerArgs: any;
+          if (reducer && message.event.status === 'committed') {
+            let adapter: ReducerArgsAdapter = new BinaryReducerArgsAdapter(
+              new BinaryAdapter(
+                new BinaryReader(message.event.args as Uint8Array)
+              )
+            );
+
+            reducerArgs = reducer.deserializeArgs(adapter);
+          }
+
+          reducerEvent = new ReducerEvent(
+            message.event.identity,
+            message.event.address,
+            message.event.originalReducerName,
+            message.event.status,
+            message.event.message,
+            reducerArgs
+          );
+
+          for (let tableUpdate of message.tableUpdates) {
+            const tableName = tableUpdate.tableName;
+            const entityClass = DBConnectionBase.#getTableClass(tableName);
+            const table = this.#db.getOrCreateTable(
+              tableUpdate.tableName,
+              undefined,
+              entityClass
+            );
+
+            table.applyOperations(tableUpdate.operations, reducerEvent);
+          }
+
+          if (reducer) {
+            this.#emitter.emit(
+              'reducer:' + reducerName,
+              reducerEvent,
+              ...(reducerArgs || [])
+            );
+          }
+        }
+      } else if (message instanceof IdentityTokenMessage) {
+        this.identity = message.identity;
+        if (this.runtime.authToken) {
+          this.token = this.runtime.authToken;
+        } else {
+          this.token = message.token;
+        }
+        this.clientAddress = message.address;
+        this.#emitter.emit(
+          'connected',
+          this.token,
+          this.identity,
+          this.clientAddress
+        );
+      }
+    });
+  }
+
+  /**
+   * @private
+   */
+  getSerializer(): Serializer {
+    return new BinarySerializer();
+  }
+
   on(
     eventName: EventType | (string & {}),
     callback: (...args: any[]) => void
   ): void {
-    this.emitter.on(eventName, callback);
+    this.#emitter.on(eventName, callback);
   }
 
   off(
     eventName: EventType | (string & {}),
     callback: (...args: any[]) => void
   ): void {
-    this.emitter.off(eventName, callback);
-  }
-
-  /**
-   * Register a callback to be invoked upon authentication with the database.
-   *
-   * @param token The credentials to use to authenticate with SpacetimeDB.
-   * @param identity A unique identifier for a client connected to a database.
-   *
-   * The callback will be invoked with the `Identity` and private authentication `token` provided by the database to identify this connection.
-   *
-   * If credentials were supplied to connect, those passed to the callback will be equivalent to the ones used to connect.
-   *
-   * If the initial connection was anonymous, a new set of credentials will be generated by the database to identify this user.
-   *
-   * The credentials passed to the callback can be saved and used to authenticate the same user in future connections.
-   *
-   * @example
-   *
-   * ```ts
-   * spacetimeDBClient.onConnect((token, identity) => {
-   *  console.log("Connected to SpacetimeDB");
-   *  console.log("Token", token);
-   *  console.log("Identity", identity);
-   * });
-   * ```
-   */
-  onConnect(
-    callback: (token: string, identity: Identity, address: Address) => void
-  ): void {
-    this.on('connected', callback);
-  }
-
-  /**
-   * Register a callback to be invoked upon an error.
-   *
-   * @example
-   *
-   * ```ts
-   * spacetimeDBClient.onError((...args: any[]) => {
-   *  stdbLogger("warn","ERROR", args);
-   * });
-   * ```
-   */
-  onError(callback: (...args: any[]) => void): void {
-    this.on('client_error', callback);
-  }
-
-  _setCreateWSFn(fn: CreateWSFnType): void {
-    this.#createWSFn = fn;
-  }
-
-  getSerializer(): Serializer {
-    return new BinarySerializer();
+    this.#emitter.off(eventName, callback);
   }
 }
