@@ -37,7 +37,7 @@ impl ReducerContext {
     ///
     /// // Or, cache locally for reuse:
     /// let mut rng = ctx.rng();
-    /// let floats: Vec<f32> = rng.sample_iter(rand::distribution::Standard).collect();
+    /// let floats: Vec<f32> = rng.sample_iter(rand::distributions::Standard).collect();
     /// # }
     /// ```
     ///
