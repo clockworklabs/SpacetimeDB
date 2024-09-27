@@ -179,7 +179,7 @@ class Smoketest(unittest.TestCase):
         publish_output = self.spacetime(
             "publish",
             *[domain] if domain is not None else [],
-            *["-c", "--force"] if clear and domain is not None else [],
+            *["-c", "--yes"] if clear and domain is not None else [],
             "--project-path", self.project_path,
             capture_stderr=capture_stderr,
         )
