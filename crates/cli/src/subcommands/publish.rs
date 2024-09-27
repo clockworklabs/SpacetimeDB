@@ -53,7 +53,6 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("skip_clippy")
                 .long("skip-println-checks")
-                .short('S')
                 .action(SetTrue)
                 .value_parser(clap::builder::FalseyValueParser::new())
                 .help("Skips running clippy on the module before publishing (intended to speed up local iteration, not recommended for CI)"),

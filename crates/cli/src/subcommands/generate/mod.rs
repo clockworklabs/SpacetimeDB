@@ -89,9 +89,7 @@ pub fn cli() -> clap::Command {
         )
         .arg(
             Arg::new("skip_clippy")
-                .long("skip_clippy")
-                .short('s')
-                .short('S')
+                .long("skip-println-checks")
                 .action(SetTrue)
                 .value_parser(clap::builder::FalseyValueParser::new())
                 .help(

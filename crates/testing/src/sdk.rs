@@ -152,7 +152,7 @@ fn publish_module(wasm_file: &str) -> String {
         "--debug",
         "--project-path",
         wasm_file,
-        "--skip_clippy",
+        "--skip-println-checks",
         &name,
     ]);
     name
@@ -195,7 +195,7 @@ fn generate_bindings(language: &str, wasm_file: &str, client_project: &str, gene
         invoke_cli(&[
             "generate",
             "--debug",
-            "--skip_clippy",
+            "--skip-println-checks",
             "--lang",
             language,
             "--bin-path",

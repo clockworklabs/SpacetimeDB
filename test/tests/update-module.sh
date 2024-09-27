@@ -35,7 +35,7 @@ pub fn say_hello() {
 EOF
 
 IDENT=$(basename "$PROJECT_PATH")
-run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" "$IDENT"
+run_test cargo run publish --skip-println-checks --project-path "$PROJECT_PATH" "$IDENT"
 [ "1" == "$(grep -c "reated new database" "$TEST_OUT")" ]
 
 run_test cargo run call "$IDENT" add Robert
@@ -49,7 +49,7 @@ run_test cargo run logs "$IDENT" 100
 [ ' Hello, World!' == "$(grep 'World' "$TEST_OUT" | tail -n 4 | cut -d: -f6-)" ]
 
 # Unchanged module is ok
-run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" "$IDENT"
+run_test cargo run publish --skip-println-checks --project-path "$PROJECT_PATH" "$IDENT"
 [ "1" == "$(grep -c "Updated database" "$TEST_OUT")" ]
 
 # Changing an existing table isn't
@@ -64,7 +64,7 @@ pub struct Person {
 }
 EOF
 
-run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" "$IDENT" || true
+run_test cargo run publish --skip-println-checks --project-path "$PROJECT_PATH" "$IDENT" || true
 [ "1" == "$(grep -c "Error: Database update rejected" "$TEST_OUT")" ]
 # Check that the old module is still running by calling say_hello
 run_test cargo run call "$IDENT" say_hello
@@ -92,7 +92,7 @@ pub fn on_module_update() {
 }
 EOF
 
-run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" "$IDENT"
+run_test cargo run publish --skip-println-checks --project-path "$PROJECT_PATH" "$IDENT"
 [ "1" == "$(grep -c "Updated database" "$TEST_OUT")" ]
 run_test cargo run logs "$IDENT" 2
 [ ' MODULE UPDATED' == "$(grep 'MODULE UPDATED' "$TEST_OUT" | tail -n 1 | cut -d: -f6-)" ]
