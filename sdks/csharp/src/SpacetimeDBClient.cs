@@ -5,11 +5,13 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Net.WebSockets;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 using SpacetimeDB.ClientApi;
+using UnityEngine;
 using Thread = System.Threading.Thread;
 
 namespace SpacetimeDB
@@ -80,7 +82,7 @@ namespace SpacetimeDB
         /// Invoked when an event message is received or at the end of a transaction update.
         /// </summary>
         public event Action<ServerMessage>? onEvent;
-
+        
         public readonly Address clientAddress = Address.Random();
         public Identity? clientIdentity { get; private set; }
 
@@ -93,6 +95,7 @@ namespace SpacetimeDB
         private readonly Dictionary<Guid, TaskCompletionSource<OneOffQueryResponse>> waitingOneOffQueries = new();
 
         private bool isClosing;
+        private bool networkStatsLoggingEnabled;
         private readonly Thread networkMessageProcessThread;
         public readonly Stats stats = new();
 
@@ -176,6 +179,13 @@ namespace SpacetimeDB
                 using var decompressedStream = new BrotliStream(compressedStream, CompressionMode.Decompress);
                 using var binaryReader = new BinaryReader(decompressedStream);
                 var message = new ServerMessage.BSATN().Read(binaryReader);
+                // Network stats tracking goes from tableName => number of rows inserted/deleted
+                Dictionary<string, (int, int)>? tableRowOps = null;
+                if (networkStatsLoggingEnabled)
+                {
+                    tableRowOps = new Dictionary<string, (int, int)>();
+                }
+                
 
                 ReducerEvent? reducerEvent = null;
 
@@ -209,6 +219,18 @@ namespace SpacetimeDB
                             {
                                 Logger.LogError($"Unknown table name: {tableName}");
                                 continue;
+                            }
+
+                            if (networkStatsLoggingEnabled)
+                            {
+                                if (tableRowOps!.TryGetValue(tableName, out var tableOp))
+                                {
+                                    tableRowOps[tableName] = (tableOp.Item1 + update.Inserts.Count, tableOp.Item2 + update.Deletes.Count);
+                                }
+                                else
+                                {
+                                    tableRowOps.Add(tableName, (update.Inserts.Count, update.Deletes.Count));
+                                }
                             }
 
                             if (update.Deletes.Count != 0)
@@ -245,6 +267,19 @@ namespace SpacetimeDB
                                 }
                             }
                         }
+                        
+                        if (networkStatsLoggingEnabled)
+                        {
+                            var builder = new StringBuilder();
+                            builder.AppendLine(
+                                $"Initial Subscription Received: compressed: {SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)}");
+                            foreach(var update in tableRowOps!)
+                            {
+                                builder.AppendLine(
+                                    $"\tTable {update.Key} inserts: {update.Value.Item1} deletes: {update.Value.Item2}");
+                            }
+                            Debug.Log(builder.ToString());
+                        }
 
                         break;
 
@@ -263,6 +298,19 @@ namespace SpacetimeDB
                                     {
                                         Logger.LogError($"Unknown table name: {tableName}");
                                         continue;
+                                    }
+                                    
+
+                                    if (networkStatsLoggingEnabled)
+                                    {
+                                        if (tableRowOps!.TryGetValue(tableName, out var tableOp))
+                                        {
+                                            tableRowOps[tableName] = (tableOp.Item1 + update.Inserts.Count, tableOp.Item2 + update.Deletes.Count);
+                                        }
+                                        else
+                                        {
+                                            tableRowOps.Add(tableName, (update.Inserts.Count, update.Deletes.Count));
+                                        }
                                     }
 
                                     foreach (var row in update.Inserts)
@@ -350,8 +398,25 @@ namespace SpacetimeDB
                                 {
                                     Logger.LogException(e);
                                 }
+                                
+                                if (networkStatsLoggingEnabled)
+                                {
+                                    var builder = new StringBuilder();
+                                    builder.AppendLine(
+                                        $"Transaction Update Received (Committed): reducer: {transactionUpdate.ReducerCall.ReducerName} compressed: {SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)}");
+                                    foreach(var update in tableRowOps!)
+                                    {
+                                        builder.AppendLine(
+                                            $"\tTable {update.Key} inserts: {update.Value.Item1} deletes: {update.Value.Item2}");
+                                    }
+                                    Debug.Log(builder.ToString());
+                                }
                                 break;
                             case UpdateStatus.Failed(var failed):
+                                if (networkStatsLoggingEnabled)
+                                {
+                                    Debug.Log($"Transaction Update Received (Failed): reducer: {transactionUpdate.ReducerCall.ReducerName} compressed: {SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)}");
+                                }
                                 break;
                             case UpdateStatus.OutOfEnergy(var outOfEnergy):
                                 Logger.LogWarning("Failed to execute reducer: out of energy.");
@@ -361,6 +426,10 @@ namespace SpacetimeDB
                         }
                         break;
                     case ServerMessage.IdentityToken(var identityToken):
+                        if (networkStatsLoggingEnabled)
+                        {
+                            Debug.Log($"IdentityToken Message Received: compressed: {SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)} identity: {identityToken.Identity}");
+                        }
                         break;
                     case ServerMessage.OneOffQueryResponse(var resp):
                         /// This case does NOT produce a list of DBOps, because it should not modify the client cache state!
@@ -373,6 +442,31 @@ namespace SpacetimeDB
                         }
 
                         resultSource.SetResult(resp);
+                        
+                        if (networkStatsLoggingEnabled)
+                        {
+                            var builder = new StringBuilder();
+                            builder.AppendLine(
+                                $"One-Off Query Response Received: compressed: {SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)}");
+                            foreach (var table in resp.Tables)
+                            {
+                                if (tableRowOps!.TryGetValue(table.TableName, out var value))
+                                {
+                                    tableRowOps[table.TableName] = (value.Item1 + table.Rows.Count, 0);
+                                }
+                                else
+                                {
+                                    tableRowOps.Add(table.TableName, (table.Rows.Count, 0));
+                                }
+                            }
+                            
+                            foreach(var update in tableRowOps!)
+                            {
+                                builder.AppendLine(
+                                    $"\tTable {update.Key} inserts: {update.Value.Item1}");
+                            }
+                            Debug.Log(builder.ToString());
+                        }
                         break;
                     default:
                         throw new InvalidOperationException();
@@ -746,6 +840,8 @@ namespace SpacetimeDB
             return resultTable.Rows.Select(BSATNHelpers.Decode<T>).ToArray();
         }
 
+        public void SetNetworkDebugState(bool enabled) => networkStatsLoggingEnabled = enabled;
+        
         public bool IsConnected() => webSocket.IsConnected;
 
         public void Update()
