@@ -164,7 +164,7 @@ class Smoketest(unittest.TestCase):
 
     def call(self, reducer, *args, anon=False):
         self._check_published()
-        anon = ["-a"] if anon else []
+        anon = ["--anonymous"] if anon else []
         self.spacetime("call", *anon, "--", self.address, reducer, *map(json.dumps, args))
 
     def logs(self, n):
