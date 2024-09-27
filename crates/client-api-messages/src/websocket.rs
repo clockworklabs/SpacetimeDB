@@ -309,7 +309,7 @@ pub struct TableUpdate<F: WebsocketFormat> {
     /// whereas `table_id` may change between runs.
     pub table_id: TableId,
     /// The name of the table.
-    pub table_name: String,
+    pub table_name: Box<str>,
     /// The sum total of rows in `self.updates`,
     pub num_rows: u64,
     /// The actual insert and delete updates for this table.
@@ -317,6 +317,20 @@ pub struct TableUpdate<F: WebsocketFormat> {
 }
 
 impl<F: WebsocketFormat> TableUpdate<F> {
+    pub fn new(table_id: TableId, table_name: Box<str>, (update, num_rows): (F::QueryUpdate, u64)) -> Self {
+        Self {
+            table_id,
+            table_name,
+            num_rows,
+            updates: [update].into(),
+        }
+    }
+
+    pub fn push(&mut self, (update, num_rows): (F::QueryUpdate, u64)) {
+        self.updates.push(update);
+        self.num_rows += num_rows;
+    }
+
     pub fn num_rows(&self) -> usize {
         self.num_rows as usize
     }

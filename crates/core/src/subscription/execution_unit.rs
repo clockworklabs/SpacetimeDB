@@ -220,12 +220,8 @@ impl ExecutionUnit {
 
         (!inserts.is_empty()).then(|| {
             let deletes = F::List::default();
-            TableUpdate {
-                table_id: self.return_table(),
-                table_name: self.return_name().to_string(),
-                num_rows,
-                updates: [F::into_query_update(QueryUpdate { deletes, inserts })].into(),
-            }
+            let update = F::into_query_update(QueryUpdate { deletes, inserts });
+            TableUpdate::new(self.return_table(), self.return_name(), num_rows, update)
         })
     }
 

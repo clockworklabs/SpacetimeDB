@@ -126,6 +126,8 @@ impl SubscriptionManager {
         sender_client: Option<&ClientConnectionSender>,
         slow_query_threshold: Option<Duration>,
     ) {
+        use FormatSwitch::{Bsatn, Json};
+
         let tables = &event.status.database_update().unwrap().tables;
 
         // Put the main work on a rayon compute thread.
@@ -167,12 +169,12 @@ impl SubscriptionManager {
                     let mut ops_json: Option<(QueryUpdate<JsonFormat>, _)> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {
-                            Protocol::Binary => FormatSwitch::Bsatn(
+                            Protocol::Binary => Bsatn(
                                 ops_bin
                                     .get_or_insert_with(|| delta.updates.encode::<BsatnFormat>())
                                     .clone(),
                             ),
-                            Protocol::Text => FormatSwitch::Json(
+                            Protocol::Text => Json(
                                 ops_json
                                     .get_or_insert_with(|| delta.updates.encode::<JsonFormat>())
                                     .clone(),
@@ -192,36 +194,14 @@ impl SubscriptionManager {
                     HashMap::<(&Id, TableId), FormatSwitch<TableUpdate<_>, TableUpdate<_>>>::new(),
                     |mut tables, (id, table_id, table_name, update)| {
                         match tables.entry((id, table_id)) {
-                            Entry::Occupied(mut entry) => {
-                                let tbl_upd = entry.get_mut();
-                                match tbl_upd.zip_mut(update) {
-                                    FormatSwitch::Bsatn((tbl_upd, (update, num_rows))) => {
-                                        tbl_upd.updates.push(update);
-                                        tbl_upd.num_rows += num_rows;
-                                    }
-                                    FormatSwitch::Json((tbl_upd, (update, num_rows))) => {
-                                        tbl_upd.updates.push(update);
-                                        tbl_upd.num_rows += num_rows;
-                                    }
-                                }
-                            }
-                            Entry::Vacant(entry) => {
-                                let table_name = table_name.into();
-                                entry.insert(match update {
-                                    FormatSwitch::Bsatn((update, num_rows)) => FormatSwitch::Bsatn(TableUpdate {
-                                        table_id,
-                                        table_name,
-                                        num_rows,
-                                        updates: [update].into(),
-                                    }),
-                                    FormatSwitch::Json((update, num_rows)) => FormatSwitch::Json(TableUpdate {
-                                        table_id,
-                                        table_name,
-                                        num_rows,
-                                        updates: [update].into(),
-                                    }),
-                                });
-                            }
+                            Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(update) {
+                                Bsatn((tbl_upd, update)) => tbl_upd.push(update),
+                                Json((tbl_upd, update)) => tbl_upd.push(update),
+                            },
+                            Entry::Vacant(entry) => drop(entry.insert(match update {
+                                Bsatn(update) => Bsatn(TableUpdate::new(table_id, table_name, update)),
+                                Json(update) => Json(TableUpdate::new(table_id, table_name, update)),
+                            })),
                         }
                         tables
                     },
@@ -235,12 +215,12 @@ impl SubscriptionManager {
                     |mut updates, ((id, _), update)| {
                         let entry = updates.entry(id);
                         let entry = entry.or_insert_with(|| match &update {
-                            FormatSwitch::Bsatn(_) => FormatSwitch::Bsatn(<_>::default()),
-                            FormatSwitch::Json(_) => FormatSwitch::Json(<_>::default()),
+                            Bsatn(_) => Bsatn(<_>::default()),
+                            Json(_) => Json(<_>::default()),
                         });
                         match entry.zip_mut(update) {
-                            FormatSwitch::Bsatn((list, elem)) => list.tables.push(elem),
-                            FormatSwitch::Json((list, elem)) => list.tables.push(elem),
+                            Bsatn((list, elem)) => list.tables.push(elem),
+                            Json((list, elem)) => list.tables.push(elem),
                         }
                         updates
                     },

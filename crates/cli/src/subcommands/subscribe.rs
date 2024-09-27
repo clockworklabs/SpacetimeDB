@@ -90,17 +90,17 @@ fn parse_msg_json(msg: &WsMessage) -> Option<ws::ServerMessage<JsonFormat>> {
         .ok()
 }
 
-fn reformat_update(
-    msg: ws::DatabaseUpdate<JsonFormat>,
+fn reformat_update<'a>(
+    msg: &'a ws::DatabaseUpdate<JsonFormat>,
     schema: &RawModuleDefV9,
-) -> anyhow::Result<HashMap<String, SubscriptionTable>> {
+) -> anyhow::Result<HashMap<&'a str, SubscriptionTable>> {
     msg.tables
-        .into_iter()
+        .iter()
         .map(|upd| {
             let table_schema = schema
                 .tables
                 .iter()
-                .find(|tbl| tbl.name.as_ref() == upd.table_name)
+                .find(|tbl| tbl.name == upd.table_name)
                 .context("table not found in schema")?;
             let table_ty = schema.typespace.resolve(table_schema.product_type_ref);
 
@@ -114,16 +114,16 @@ fn reformat_update(
 
             let mut deletes = Vec::new();
             let mut inserts = Vec::new();
-            for upd in upd.updates {
-                for s in upd.deletes {
-                    deletes.push(reformat_row(&s)?);
+            for upd in &upd.updates {
+                for s in &upd.deletes {
+                    deletes.push(reformat_row(s)?);
                 }
-                for s in upd.inserts {
-                    inserts.push(reformat_row(&s)?);
+                for s in &upd.inserts {
+                    inserts.push(reformat_row(s)?);
                 }
             }
 
-            Ok((upd.table_name, SubscriptionTable { deletes, inserts }))
+            Ok((&*upd.table_name, SubscriptionTable { deletes, inserts }))
         })
         .collect()
 }
@@ -215,7 +215,7 @@ where
         match msg {
             ws::ServerMessage::InitialSubscription(sub) => {
                 if let Some(module_def) = module_def {
-                    let formatted = reformat_update(sub.database_update, module_def)?;
+                    let formatted = reformat_update(&sub.database_update, module_def)?;
                     let output = serde_json::to_string(&formatted)? + "\n";
                     tokio::io::stdout().write_all(output.as_bytes()).await?
                 }
@@ -266,7 +266,7 @@ where
                 status: ws::UpdateStatus::Committed(update),
                 ..
             }) => {
-                let output = serde_json::to_string(&reformat_update(update, module_def)?)? + "\n";
+                let output = serde_json::to_string(&reformat_update(&update, module_def)?)? + "\n";
                 stdout.write_all(output.as_bytes()).await?;
                 num_received += 1;
             }
