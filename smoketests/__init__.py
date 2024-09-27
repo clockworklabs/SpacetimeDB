@@ -179,7 +179,7 @@ class Smoketest(unittest.TestCase):
         publish_output = self.spacetime(
             "publish",
             *[domain] if domain is not None else [],
-            *["-c", "--force"] if clear and domain is not None else [],
+            *["-c", "--yes"] if clear and domain is not None else [],
             "--project-path", self.project_path,
             capture_stderr=capture_stderr,
         )
@@ -192,7 +192,7 @@ class Smoketest(unittest.TestCase):
 
     def fingerprint(self):
         # Fetch the server's fingerprint; required for `identity list`.
-        self.spacetime("server", "fingerprint", "-s", "localhost", "-f")
+        self.spacetime("server", "fingerprint", "-s", "localhost", "--yes")
 
     def new_identity(self, *, email, default=False):
         output = self.spacetime("identity", "new", "--no-email" if email is None else f"--email={email}")

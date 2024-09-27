@@ -1,8 +1,8 @@
+use crate::common_args;
 use crate::config::Config;
 use crate::util::y_or_n;
-use clap::ArgAction::SetTrue;
 use clap::ArgMatches;
-use clap::{Arg, Command};
+use clap::Command;
 use spacetimedb::stdb_path;
 use std::path::PathBuf;
 
@@ -22,12 +22,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 fn get_subcommands() -> Vec<Command> {
     vec![Command::new("clear")
         .about("Deletes all data from all local databases")
-        .arg(
-            Arg::new("force")
-                .long("force")
-                .action(SetTrue)
-                .help("Clear the database without prompting for confirmation"),
-        )]
+        .arg(common_args::yes())]
 }
 
 async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {

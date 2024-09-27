@@ -22,6 +22,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use wasmtime::{Caller, StoreContextMut};
 
+use crate::common_args;
 use crate::util::y_or_n;
 use crate::Config;
 
@@ -105,13 +106,7 @@ pub fn cli() -> clap::Command {
              removed from the module. Prompts before deleting unless --force is \
              supplied.",
         ))
-        .arg(
-            Arg::new("force")
-                .long("force")
-                .action(SetTrue)
-                .requires("delete_files")
-                .help("delete-files without prompting first. Useful for scripts."),
-        )
+        .arg(common_args::yes())
         .arg(Arg::new("debug").long("debug").short('d').action(SetTrue).help(
             "Builds the module using debug instead of release (intended to \
              speed up local iteration, not recommended for CI)",

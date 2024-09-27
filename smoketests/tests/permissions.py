@@ -68,7 +68,7 @@ class Permissions(Smoketest):
         self.reset_config()
 
         with self.assertRaises(Exception):
-            self.spacetime("publish", self.address, "--project-path", self.project_path, "--clear-database", "--force")
+            self.spacetime("publish", self.address, "--project-path", self.project_path, "--clear-database", "--yes")
 
         # Check that this holds without `--clear-database`, too.
         with self.assertRaises(Exception):
