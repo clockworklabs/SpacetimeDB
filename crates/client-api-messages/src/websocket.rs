@@ -336,12 +336,11 @@ impl<F: WebsocketFormat> TableUpdate<F> {
     }
 }
 
-#[repr(u8)]
 #[derive(SpacetimeType, Debug, Clone, EnumAsInner)]
 #[sats(crate = spacetimedb_lib)]
 pub enum CompressableQueryUpdate<F: WebsocketFormat> {
-    Uncompressed(QueryUpdate<F>) = 0,
-    Brotli(Bytes) = 1,
+    Uncompressed(QueryUpdate<F>),
+    Brotli(Bytes),
 }
 
 #[derive(SpacetimeType, Debug, Clone)]
