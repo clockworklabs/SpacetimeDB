@@ -3,12 +3,14 @@ namespace SpacetimeDB.Internal;
 using System.Text;
 using SpacetimeDB.BSATN;
 
+public interface IReducerContext { }
+
 public interface IReducer
 {
     ReducerDef MakeReducerDef(ITypeRegistrar registrar);
 
     // This one is not static because we need to be able to store IReducer in a list.
-    void Invoke(BinaryReader reader, ReducerContext args);
+    void Invoke(BinaryReader reader, IReducerContext args);
 
     public static void VolatileNonatomicScheduleImmediate(string name, MemoryStream args)
     {

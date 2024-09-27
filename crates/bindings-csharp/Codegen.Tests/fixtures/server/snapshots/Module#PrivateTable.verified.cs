@@ -26,37 +26,30 @@ partial class PrivateTable : SpacetimeDB.Internal.ITable<PrivateTable>
             ));
     }
 
-    void SpacetimeDB.Internal.ITable<PrivateTable>.ReadGenFields(System.IO.BinaryReader reader) { }
-
-    static SpacetimeDB.Internal.TableDesc SpacetimeDB.Internal.ITable<PrivateTable>.MakeTableDesc(
+    static IEnumerable<SpacetimeDB.Internal.TableDesc> SpacetimeDB.Internal.ITable<PrivateTable>.MakeTableDesc(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
-        new(
+        [
             new(
-                TableName: nameof(PrivateTable),
-                Columns: [],
-                Indexes: [],
-                Constraints: [],
-                Sequences: [],
-                // "system" | "user"
-                TableType: "user",
-                // "public" | "private"
-                TableAccess: "private",
-                Scheduled: null
+                new(
+                    TableName: nameof(PrivateTable),
+                    Columns: [],
+                    Indexes: [],
+                    Constraints: [],
+                    Sequences: [],
+                    // "system" | "user"
+                    TableType: "user",
+                    // "public" | "private"
+                    TableAccess: "private",
+                    Scheduled: null
+                ),
+                (uint)
+                    (
+                        (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
+                    ).Ref_
             ),
-            (uint)
-                ((SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)).Ref_
-        );
+        ];
 
     static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<PrivateTable>.CreateFilter() =>
         new([]);
-
-    public static IEnumerable<PrivateTable> Iter() =>
-        SpacetimeDB.Internal.ITable<PrivateTable>.Iter();
-
-    public static IEnumerable<PrivateTable> Query(
-        System.Linq.Expressions.Expression<Func<PrivateTable, bool>> predicate
-    ) => SpacetimeDB.Internal.ITable<PrivateTable>.Query(predicate);
-
-    public void Insert() => SpacetimeDB.Internal.ITable<PrivateTable>.Insert(this);
 } // PrivateTable

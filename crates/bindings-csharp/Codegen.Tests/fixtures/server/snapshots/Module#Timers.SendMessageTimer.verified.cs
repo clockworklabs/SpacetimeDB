@@ -53,50 +53,43 @@ partial class Timers
         public ulong ScheduledId;
         public SpacetimeDB.ScheduleAt ScheduledAt;
 
-        void SpacetimeDB.Internal.ITable<SendMessageTimer>.ReadGenFields(
-            System.IO.BinaryReader reader
-        )
-        {
-            if (ScheduledId == default)
-            {
-                ScheduledId = BSATN.ScheduledId.Read(reader);
-            }
-        }
-
-        static SpacetimeDB.Internal.TableDesc SpacetimeDB.Internal.ITable<SendMessageTimer>.MakeTableDesc(
+        static IEnumerable<SpacetimeDB.Internal.TableDesc> SpacetimeDB.Internal.ITable<SendMessageTimer>.MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
-            new(
+            [
                 new(
-                    TableName: nameof(SendMessageTimer),
-                    Columns:
-                    [
-                        new(nameof(Text), BSATN.Text.GetAlgebraicType(registrar)),
-                        new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
-                        new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar))
-                    ],
-                    Indexes: [],
-                    Constraints:
-                    [
-                        new(
-                            nameof(SendMessageTimer),
-                            1,
-                            nameof(ScheduledId),
-                            SpacetimeDB.ColumnAttrs.PrimaryKeyIdentity
-                        )
-                    ],
-                    Sequences: [],
-                    // "system" | "user"
-                    TableType: "user",
-                    // "public" | "private"
-                    TableAccess: "private",
-                    Scheduled: nameof(SendScheduledMessage)
+                    new(
+                        TableName: nameof(SendMessageTimer),
+                        Columns:
+                        [
+                            new(nameof(Text), BSATN.Text.GetAlgebraicType(registrar)),
+                            new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
+                            new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar))
+                        ],
+                        Indexes: [],
+                        Constraints:
+                        [
+                            new(
+                                nameof(SendMessageTimer),
+                                1,
+                                nameof(ScheduledId),
+                                (SpacetimeDB.ColumnAttrs)15
+                            )
+                        ],
+                        Sequences: [],
+                        // "system" | "user"
+                        TableType: "user",
+                        // "public" | "private"
+                        TableAccess: "private",
+                        Scheduled: nameof(SendScheduledMessage)
+                    ),
+                    (uint)
+                        (
+                            (SpacetimeDB.BSATN.AlgebraicType.Ref)
+                                new BSATN().GetAlgebraicType(registrar)
+                        ).Ref_
                 ),
-                (uint)
-                    (
-                        (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
-                    ).Ref_
-            );
+            ];
 
         static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<SendMessageTimer>.CreateFilter() =>
             new(
@@ -109,35 +102,5 @@ partial class Timers
                     )
                 ]
             );
-
-        public static IEnumerable<SendMessageTimer> Iter() =>
-            SpacetimeDB.Internal.ITable<SendMessageTimer>.Iter();
-
-        public static IEnumerable<SendMessageTimer> Query(
-            System.Linq.Expressions.Expression<Func<SendMessageTimer, bool>> predicate
-        ) => SpacetimeDB.Internal.ITable<SendMessageTimer>.Query(predicate);
-
-        public void Insert() => SpacetimeDB.Internal.ITable<SendMessageTimer>.Insert(this);
-
-        public static IEnumerable<SendMessageTimer> FilterByText(string Text) =>
-            SpacetimeDB.Internal.ITable<SendMessageTimer>.ColEq.Where(0, Text, BSATN.Text).Iter();
-
-        public static IEnumerable<SendMessageTimer> FilterByScheduledId(ulong ScheduledId) =>
-            SpacetimeDB
-                .Internal.ITable<SendMessageTimer>.ColEq.Where(1, ScheduledId, BSATN.ScheduledId)
-                .Iter();
-
-        public static SendMessageTimer? FindByScheduledId(ulong ScheduledId) =>
-            FilterByScheduledId(ScheduledId).Cast<SendMessageTimer?>().SingleOrDefault();
-
-        public static bool DeleteByScheduledId(ulong ScheduledId) =>
-            SpacetimeDB
-                .Internal.ITable<SendMessageTimer>.ColEq.Where(1, ScheduledId, BSATN.ScheduledId)
-                .Delete();
-
-        public static bool UpdateByScheduledId(ulong ScheduledId, SendMessageTimer @this) =>
-            SpacetimeDB
-                .Internal.ITable<SendMessageTimer>.ColEq.Where(1, ScheduledId, BSATN.ScheduledId)
-                .Update(@this);
     } // SendMessageTimer
 } // Timers

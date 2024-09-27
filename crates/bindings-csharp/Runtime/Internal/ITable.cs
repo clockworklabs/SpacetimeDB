@@ -7,12 +7,18 @@ public interface ITable<T> : IStructuralReadWrite
     where T : ITable<T>, new()
 {
     // These are the methods that codegen needs to implement.
-    void ReadGenFields(BinaryReader reader);
-    static abstract TableDesc MakeTableDesc(ITypeRegistrar registrar);
+    static abstract IEnumerable<TableDesc> MakeTableDesc(ITypeRegistrar registrar);
+
     static abstract Filter CreateFilter();
+}
+
+public interface ITableView<View, T>
+    where View : ITableView<View, T>
+    where T : ITable<T>, new()
+{
+    static abstract T ReadGenFields(BinaryReader reader, T row);
 
     // These are static helpers that codegen can use.
-
     private abstract class RawTableIterBase
     {
         public class Enumerator(FFI.RowIter handle) : IDisposable
@@ -105,7 +111,7 @@ public interface ITable<T> : IStructuralReadWrite
                 using var reader = new BinaryReader(stream);
                 while (stream.Position < stream.Length)
                 {
-                    yield return Read<T>(reader);
+                    yield return IStructuralReadWrite.Read<T>(reader);
                 }
             }
         }
@@ -134,7 +140,7 @@ public interface ITable<T> : IStructuralReadWrite
     private static readonly Lazy<FFI.TableId> tableId_ =
         new(() =>
         {
-            var name_bytes = System.Text.Encoding.UTF8.GetBytes(typeof(T).Name);
+            var name_bytes = System.Text.Encoding.UTF8.GetBytes(typeof(View).Name);
             FFI._table_id_from_name(name_bytes, (uint)name_bytes.Length, out var out_);
             return out_;
         });
@@ -148,17 +154,17 @@ public interface ITable<T> : IStructuralReadWrite
     public static IEnumerable<T> Query(Expression<Func<T, bool>> query) =>
         new RawTableIterFiltered(tableId, filter.Value.Compile(query)).Parse();
 
-    protected static void Insert(T row)
+    protected static T Insert(T row)
     {
         // Insert the row.
-        var bytes = ToBytes(row);
+        var bytes = IStructuralReadWrite.ToBytes(row);
         var bytes_len = (uint)bytes.Length;
         FFI._datastore_insert_bsatn(tableId, bytes, ref bytes_len);
 
         // Write back any generated column values.
         using var stream = new MemoryStream(bytes, 0, (int)bytes_len);
         using var reader = new BinaryReader(stream);
-        row.ReadGenFields(reader);
+        return View.ReadGenFields(reader, row);
     }
 
     protected readonly ref struct ColEq
@@ -175,7 +181,7 @@ public interface ITable<T> : IStructuralReadWrite
         public static ColEq Where<TCol, TColRW>(ushort colId, TCol colValue, TColRW rw)
             where TColRW : IReadWrite<TCol>
         {
-            return new(new FFI.ColId(colId), ToBytes(rw, colValue));
+            return new(new FFI.ColId(colId), IStructuralReadWrite.ToBytes(rw, colValue));
         }
 
         // Note: do not inline FindBy from the Codegen as a helper API here.

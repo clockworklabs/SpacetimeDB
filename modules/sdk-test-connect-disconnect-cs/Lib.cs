@@ -1,28 +1,30 @@
+namespace SpacetimeDB.Sdk.Test.ConnectDisconnect;
+
 using SpacetimeDB;
+
+[SpacetimeDB.Table(Public = true)]
+public partial struct Connected
+{
+    public Identity identity;
+}
+
+[SpacetimeDB.Table(Public = true)]
+public partial struct Disconnected
+{
+    public Identity identity;
+}
 
 static partial class Module
 {
-    [SpacetimeDB.Table(Public = true)]
-    public partial struct Connected
-    {
-        public Identity identity;
-    }
-
-    [SpacetimeDB.Table(Public = true)]
-    public partial struct Disconnected
-    {
-        public Identity identity;
-    }
-
     [SpacetimeDB.Reducer(ReducerKind.Connect)]
-    public static void OnConnect(ReducerContext e)
+    public static void OnConnect(ReducerContext ctx)
     {
-        new Connected { identity = e.Sender }.Insert();
+        ctx.Db.Connected.Insert(new Connected { identity = ctx.Sender });
     }
 
     [SpacetimeDB.Reducer(ReducerKind.Disconnect)]
-    public static void OnDisconnect(ReducerContext e)
+    public static void OnDisconnect(ReducerContext ctx)
     {
-        new Disconnected { identity = e.Sender }.Insert();
+        ctx.Db.Disconnected.Insert(new Disconnected { identity = ctx.Sender });
     }
 }
