@@ -486,15 +486,20 @@ record ReducerDeclaration
 [Generator]
 public class Module : IIncrementalGenerator
 {
-    private static IGrouping<TKey, TValue>? FindDuplicates<T, TKey, TValue>(
+    private static void CheckDuplicates<T>(
         IEnumerable<T> source,
-        Func<T, TKey> keySelector,
-        Func<T, TValue> valueSelector
+        Func<T, string> keySelector,
+        Func<T, string> valueSelector,
+        string message
     )
     {
-        return source
-            .GroupBy(keySelector, valueSelector)
-            .FirstOrDefault(group => group.Count() > 1);
+        foreach (var group in source.GroupBy(keySelector, valueSelector))
+        {
+            if (group.Count() > 1)
+            {
+                throw new Exception($"{message} {group.Key}: {string.Join(", ", group)}");
+            }
+        }
     }
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -537,23 +542,23 @@ public class Module : IIncrementalGenerator
                 .WithTrackingName("Reducer.ConflictChecks"),
             (context, reducers) =>
             {
-                if (
-                    reducers.FirstOrDefault(r =>
-                        r.ExportName.Length >= 2 && r.ExportName[..2] is "__" or "on" or "On"
-                    ) is
-                    { } reducer
-                )
+                foreach (var reducer in reducers)
                 {
-                    throw new Exception($"Reducer {reducer.FullName} has a reserved name prefix.");
+                    var name = reducer.FullName;
+
+                    if (name.Length >= 2 && name[..2] is "__" or "on" or "On")
+                    {
+                        throw new Exception($"Reducer {name} has a reserved name prefix.");
+                    }
                 }
 
                 // TODO: in V9 this will become 2 separate checks, as the reducer kind and export name will be separate fields.
-                if (FindDuplicates(reducers, r => r.ExportName, r => r.FullName) is { } dupByExport)
-                {
-                    throw new Exception(
-                        $"Several reducers have the same export name {dupByExport.Key}: {string.Join(", ", dupByExport)}"
-                    );
-                }
+                CheckDuplicates(
+                    reducers,
+                    r => r.ExportName,
+                    r => r.FullName,
+                    "Several reducers have the same export name"
+                );
             }
         );
 
@@ -565,12 +570,12 @@ public class Module : IIncrementalGenerator
                 .WithTrackingName("Table.ConflictChecks"),
             (context, tables) =>
             {
-                if (FindDuplicates(tables, t => t.ShortName, t => t.FullName) is { } dupByShortName)
-                {
-                    throw new Exception(
-                        $"Several tables have the same exported name: {string.Join(", ", dupByShortName)}"
-                    );
-                }
+                CheckDuplicates(
+                    tables,
+                    t => t.ShortName,
+                    t => t.FullName,
+                    "Several tables have the same exported name"
+                );
             }
         );
 

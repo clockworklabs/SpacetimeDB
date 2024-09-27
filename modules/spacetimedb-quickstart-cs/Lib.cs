@@ -14,14 +14,12 @@ public partial struct Person
 
 static partial class Module
 {
-    [Reducer("add")]
-    public static void Add(ReducerContext ctx, string name, byte age)
+    public static void add(ReducerContext ctx, string name, byte age)
     {
         ctx.Db.Person.Insert(new Person { Name = name, Age = age });
     }
 
-    [Reducer("say_hello")]
-    public static void SayHello(ReducerContext ctx)
+    public static void say_hello(ReducerContext ctx)
     {
         foreach (var person in ctx.Db.Person.Iter())
         {
@@ -30,8 +28,7 @@ static partial class Module
         Log.Info("Hello, World!");
     }
 
-    [Reducer("list_over_age")]
-    public static void ListOverAge(ReducerContext ctx, byte age)
+    public static void list_over_age(ReducerContext ctx, byte age)
     {
         // TODO: convert this to use BTree index.
         foreach (var person in ctx.Db.Person.Iter().Where(person => person.Age >= age))
