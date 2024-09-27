@@ -182,9 +182,10 @@ public static class Utils
             _ => constant.Value,
         };
 
-    public static T ParseAs<T>(this AttributeData attrData)
+    public static T ParseAs<T>(this AttributeData attrData, System.Type? type = null)
         where T : Attribute
     {
+        type ??= typeof(T);
         var ctorArgs = attrData.ConstructorArguments.Select(ResolveConstant).ToArray();
         // For now only support attributes with a single constructor.
         //
@@ -193,10 +194,10 @@ public static class Utils
         // which prevent APIs like `Activator.CreateInstance` from finding the constructor.
         //
         // Expand logic in the future if it ever becomes actually necessary.
-        var attr = (T)typeof(T).GetConstructors().Single().Invoke(ctorArgs);
+        var attr = (T)type.GetConstructors().Single().Invoke(ctorArgs);
         foreach (var arg in attrData.NamedArguments)
         {
-            typeof(T).GetProperty(arg.Key).SetValue(attr, ResolveConstant(arg.Value));
+            type.GetProperty(arg.Key).SetValue(attr, ResolveConstant(arg.Value));
         }
         return attr;
     }

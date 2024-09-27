@@ -255,7 +255,12 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
                     Indexes: [],
                     Constraints:
                     [
-                        new(nameof(PublicTable), 0, nameof(Id), (SpacetimeDB.ColumnAttrs)15)
+                        new(
+                            nameof(PublicTable),
+                            0,
+                            nameof(Id),
+                            SpacetimeDB.Internal.ColumnAttrs.PrimaryKeyAuto
+                        )
                     ],
                     Sequences: [],
                     // "system" | "user"
