@@ -57,7 +57,7 @@ class Permissions(Smoketest):
         self.reset_config()
         identity = self.new_identity(email=None, default=True)
         with self.assertRaises(Exception):
-            self.spacetime("logs", "-n", "10000", self.address)
+            self.spacetime("logs", self.address, "-n", "10000")
 
     def test_publish(self):
         """This test checks to make sure that you cannot publish to an address that you do not own."""
