@@ -182,6 +182,12 @@ jobs:
     env:
       PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.issue.number || null }}
     steps:
+      - name: Clear stdb dir
+        if: always()
+        shell: bash
+        run: |
+          rm -fr /stdb/*
+
       - name: Install valgrind & iai-callgrind-runner
         run: |
           apt-get update
