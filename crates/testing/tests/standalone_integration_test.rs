@@ -235,9 +235,10 @@ fn test_index_scans() {
                 .await
                 .unwrap();
 
-            // TODO(1011): Uncomment once multi-column prefix scans are supported
-            // let json = r#"{"call": {"fn": "test_index_scan_on_x_z", "args": []}}"#;
-            // module.send(json.to_string()).await.unwrap();
+            module
+                .call_reducer_json("test_index_scan_on_x_z", product![])
+                .await
+                .unwrap();
 
             let logs = read_logs(&module).await;
 
@@ -249,7 +250,7 @@ fn test_index_scans() {
             assert!(timing(&logs[0]));
             assert!(timing(&logs[1]));
             assert!(timing(&logs[2]));
-            // assert!(timing(&logs[3]));
+            assert!(timing(&logs[3]));
         },
     );
 }

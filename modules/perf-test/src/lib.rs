@@ -63,12 +63,7 @@ pub fn test_index_scan_on_x_z_dimension(ctx: &ReducerContext) {
     let z = CHUNK as i32;
     let dimension = ID as u32;
     let span = LogStopwatch::new("Index scan on {x, z, dimension}");
-    let n = ctx
-        .db
-        .location()
-        .iter()
-        .filter(|r| r.x == 0 && r.z == z && r.dimension == dimension)
-        .count();
+    let n = ctx.db.location().coordinates().filter((0, z, dimension)).count();
     span.end();
     assert_eq!(n, 1);
 }
@@ -78,7 +73,7 @@ pub fn test_index_scan_on_x_z_dimension(ctx: &ReducerContext) {
 pub fn test_index_scan_on_x_z(ctx: &ReducerContext) {
     let z = CHUNK as i32;
     let span = LogStopwatch::new("Index scan on {x, z}");
-    let n = ctx.db.location().iter().filter(|r| r.x == 0 && r.z == z).count();
+    let n = ctx.db.location().coordinates().filter((0, z)).count();
     span.end();
     assert_eq!(n as u64, ROWS_PER_CHUNK);
 }
