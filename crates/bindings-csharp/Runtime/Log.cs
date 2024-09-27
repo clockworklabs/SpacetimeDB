@@ -165,7 +165,7 @@ public static class Log
         var filename_bytes = Encoding.UTF8.GetBytes(filename);
         var text_bytes = Encoding.UTF8.GetBytes(text);
 
-        FFI._console_log(
+        FFI.console_log(
             level,
             target_bytes,
             (uint)target_bytes.Length,

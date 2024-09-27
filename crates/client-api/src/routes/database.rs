@@ -754,8 +754,20 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         .await
         .map_err(log_and_500)?;
 
-    if let Some(UpdateDatabaseResult::AutoMigrateError(errs)) = maybe_updated {
-        return Err((StatusCode::BAD_REQUEST, format!("Database update rejected: {errs}")).into());
+    if let Some(updated) = maybe_updated {
+        match updated {
+            UpdateDatabaseResult::AutoMigrateError(errs) => {
+                return Err((StatusCode::BAD_REQUEST, format!("Database update rejected: {errs}")).into());
+            }
+            UpdateDatabaseResult::ErrorExecutingMigration(err) => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    format!("Failed to create or update the database: {err}"),
+                )
+                    .into());
+            }
+            UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {}
+        }
     }
 
     Ok(axum::Json(PublishResult::Success {

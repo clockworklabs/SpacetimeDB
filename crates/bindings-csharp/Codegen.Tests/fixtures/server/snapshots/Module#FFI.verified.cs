@@ -6,6 +6,373 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
+namespace SpacetimeDB
+{
+    public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
+    {
+        public readonly Identity Sender;
+        public readonly Address? Address;
+        public readonly Random Random;
+        public readonly DateTimeOffset Time;
+
+        internal ReducerContext(
+            Identity sender,
+            Address? address,
+            Random random,
+            DateTimeOffset time
+        )
+        {
+            Sender = sender;
+            Address = address;
+            Random = random;
+            Time = time;
+        }
+    }
+
+    namespace Internal.TableHandles
+    {
+        public readonly struct PrivateTable
+            : SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>
+        {
+            static global::PrivateTable SpacetimeDB.Internal.ITableView<
+                PrivateTable,
+                global::PrivateTable
+            >.ReadGenFields(System.IO.BinaryReader reader, global::PrivateTable row)
+            {
+                return row;
+            }
+
+            public IEnumerable<global::PrivateTable> Iter() =>
+                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.Iter();
+
+            public IEnumerable<global::PrivateTable> Query(
+                System.Linq.Expressions.Expression<Func<global::PrivateTable, bool>> predicate
+            ) =>
+                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.Query(
+                    predicate
+                );
+
+            public global::PrivateTable Insert(global::PrivateTable row) =>
+                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.Insert(row);
+        }
+
+        public readonly struct PublicTable
+            : SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>
+        {
+            static global::PublicTable SpacetimeDB.Internal.ITableView<
+                PublicTable,
+                global::PublicTable
+            >.ReadGenFields(System.IO.BinaryReader reader, global::PublicTable row)
+            {
+                if (row.Id == default)
+                {
+                    row.Id = global::PublicTable.BSATN.Id.Read(reader);
+                }
+                return row;
+            }
+
+            public IEnumerable<global::PublicTable> Iter() =>
+                SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.Iter();
+
+            public IEnumerable<global::PublicTable> Query(
+                System.Linq.Expressions.Expression<Func<global::PublicTable, bool>> predicate
+            ) => SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.Query(predicate);
+
+            public global::PublicTable Insert(global::PublicTable row) =>
+                SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.Insert(row);
+
+            public IEnumerable<global::PublicTable> FilterById(int Id) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        0,
+                        Id,
+                        global::PublicTable.BSATN.Id
+                    )
+                    .Iter();
+
+            public global::PublicTable? FindById(int Id) =>
+                FilterById(Id).Cast<global::PublicTable?>().SingleOrDefault();
+
+            public bool DeleteById(int Id) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        0,
+                        Id,
+                        global::PublicTable.BSATN.Id
+                    )
+                    .Delete();
+
+            public bool UpdateById(int Id, global::PublicTable @this) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        0,
+                        Id,
+                        global::PublicTable.BSATN.Id
+                    )
+                    .Update(@this);
+
+            public IEnumerable<global::PublicTable> FilterByByteField(byte ByteField) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        1,
+                        ByteField,
+                        global::PublicTable.BSATN.ByteField
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByUshortField(ushort UshortField) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        2,
+                        UshortField,
+                        global::PublicTable.BSATN.UshortField
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByUintField(uint UintField) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        3,
+                        UintField,
+                        global::PublicTable.BSATN.UintField
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByUlongField(ulong UlongField) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        4,
+                        UlongField,
+                        global::PublicTable.BSATN.UlongField
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByUInt128Field(
+                System.UInt128 UInt128Field
+            ) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        5,
+                        UInt128Field,
+                        global::PublicTable.BSATN.UInt128Field
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByU128Field(SpacetimeDB.U128 U128Field) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        6,
+                        U128Field,
+                        global::PublicTable.BSATN.U128Field
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByU256Field(SpacetimeDB.U256 U256Field) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        7,
+                        U256Field,
+                        global::PublicTable.BSATN.U256Field
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterBySbyteField(sbyte SbyteField) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        8,
+                        SbyteField,
+                        global::PublicTable.BSATN.SbyteField
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByShortField(short ShortField) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        9,
+                        ShortField,
+                        global::PublicTable.BSATN.ShortField
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByIntField(int IntField) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        10,
+                        IntField,
+                        global::PublicTable.BSATN.IntField
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByLongField(long LongField) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        11,
+                        LongField,
+                        global::PublicTable.BSATN.LongField
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByInt128Field(
+                System.Int128 Int128Field
+            ) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        12,
+                        Int128Field,
+                        global::PublicTable.BSATN.Int128Field
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByI128Field(SpacetimeDB.I128 I128Field) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        13,
+                        I128Field,
+                        global::PublicTable.BSATN.I128Field
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByI256Field(SpacetimeDB.I256 I256Field) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        14,
+                        I256Field,
+                        global::PublicTable.BSATN.I256Field
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByBoolField(bool BoolField) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        15,
+                        BoolField,
+                        global::PublicTable.BSATN.BoolField
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByStringField(string StringField) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        18,
+                        StringField,
+                        global::PublicTable.BSATN.StringField
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByIdentityField(
+                SpacetimeDB.Identity IdentityField
+            ) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        19,
+                        IdentityField,
+                        global::PublicTable.BSATN.IdentityField
+                    )
+                    .Iter();
+
+            public IEnumerable<global::PublicTable> FilterByAddressField(
+                SpacetimeDB.Address AddressField
+            ) =>
+                SpacetimeDB
+                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
+                        20,
+                        AddressField,
+                        global::PublicTable.BSATN.AddressField
+                    )
+                    .Iter();
+        }
+
+        public readonly struct SendMessageTimer
+            : SpacetimeDB.Internal.ITableView<SendMessageTimer, global::Timers.SendMessageTimer>
+        {
+            static global::Timers.SendMessageTimer SpacetimeDB.Internal.ITableView<
+                SendMessageTimer,
+                global::Timers.SendMessageTimer
+            >.ReadGenFields(System.IO.BinaryReader reader, global::Timers.SendMessageTimer row)
+            {
+                if (row.ScheduledId == default)
+                {
+                    row.ScheduledId = global::Timers.SendMessageTimer.BSATN.ScheduledId.Read(
+                        reader
+                    );
+                }
+                return row;
+            }
+
+            public IEnumerable<global::Timers.SendMessageTimer> Iter() =>
+                SpacetimeDB.Internal.ITableView<
+                    SendMessageTimer,
+                    global::Timers.SendMessageTimer
+                >.Iter();
+
+            public IEnumerable<global::Timers.SendMessageTimer> Query(
+                System.Linq.Expressions.Expression<
+                    Func<global::Timers.SendMessageTimer, bool>
+                > predicate
+            ) =>
+                SpacetimeDB.Internal.ITableView<
+                    SendMessageTimer,
+                    global::Timers.SendMessageTimer
+                >.Query(predicate);
+
+            public global::Timers.SendMessageTimer Insert(global::Timers.SendMessageTimer row) =>
+                SpacetimeDB.Internal.ITableView<
+                    SendMessageTimer,
+                    global::Timers.SendMessageTimer
+                >.Insert(row);
+
+            public IEnumerable<global::Timers.SendMessageTimer> FilterByText(string Text) =>
+                SpacetimeDB
+                    .Internal.ITableView<
+                        SendMessageTimer,
+                        global::Timers.SendMessageTimer
+                    >.ColEq.Where(0, Text, global::Timers.SendMessageTimer.BSATN.Text)
+                    .Iter();
+
+            public IEnumerable<global::Timers.SendMessageTimer> FilterByScheduledId(
+                ulong ScheduledId
+            ) =>
+                SpacetimeDB
+                    .Internal.ITableView<
+                        SendMessageTimer,
+                        global::Timers.SendMessageTimer
+                    >.ColEq.Where(1, ScheduledId, global::Timers.SendMessageTimer.BSATN.ScheduledId)
+                    .Iter();
+
+            public global::Timers.SendMessageTimer? FindByScheduledId(ulong ScheduledId) =>
+                FilterByScheduledId(ScheduledId)
+                    .Cast<global::Timers.SendMessageTimer?>()
+                    .SingleOrDefault();
+
+            public bool DeleteByScheduledId(ulong ScheduledId) =>
+                SpacetimeDB
+                    .Internal.ITableView<
+                        SendMessageTimer,
+                        global::Timers.SendMessageTimer
+                    >.ColEq.Where(1, ScheduledId, global::Timers.SendMessageTimer.BSATN.ScheduledId)
+                    .Delete();
+
+            public bool UpdateByScheduledId(
+                ulong ScheduledId,
+                global::Timers.SendMessageTimer @this
+            ) =>
+                SpacetimeDB
+                    .Internal.ITableView<
+                        SendMessageTimer,
+                        global::Timers.SendMessageTimer
+                    >.ColEq.Where(1, ScheduledId, global::Timers.SendMessageTimer.BSATN.ScheduledId)
+                    .Update(@this);
+        }
+    }
+
+    public sealed class Local
+    {
+        public Internal.TableHandles.PrivateTable PrivateTable => new();
+        public Internal.TableHandles.PublicTable PublicTable => new();
+        public Internal.TableHandles.SendMessageTimer SendMessageTimer => new();
+    }
+}
+
 static class ModuleRegistration
 {
     class Init : SpacetimeDB.Internal.IReducer
@@ -14,9 +381,9 @@ static class ModuleRegistration
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) => new("__init__", []);
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
-            Timers.Init(ctx);
+            Timers.Init((SpacetimeDB.ReducerContext)ctx);
         }
     }
 
@@ -28,9 +395,9 @@ static class ModuleRegistration
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) => new("InsertData", [new(nameof(data), data.GetAlgebraicType(registrar))]);
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
-            Reducers.InsertData(data.Read(reader));
+            Reducers.InsertData((SpacetimeDB.ReducerContext)ctx, data.Read(reader));
         }
     }
 
@@ -46,9 +413,12 @@ static class ModuleRegistration
                 [new(nameof(data), data.GetAlgebraicType(registrar))]
             );
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
-            Test.NestingNamespaces.AndClasses.InsertData2(ctx, data.Read(reader));
+            Test.NestingNamespaces.AndClasses.InsertData2(
+                (SpacetimeDB.ReducerContext)ctx,
+                data.Read(reader)
+            );
         }
     }
 
@@ -60,9 +430,9 @@ static class ModuleRegistration
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) => new("ScheduleImmediate", [new(nameof(data), data.GetAlgebraicType(registrar))]);
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
-            Reducers.ScheduleImmediate(data.Read(reader));
+            Reducers.ScheduleImmediate((SpacetimeDB.ReducerContext)ctx, data.Read(reader));
         }
     }
 
@@ -74,9 +444,9 @@ static class ModuleRegistration
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) => new("SendScheduledMessage", [new(nameof(arg), arg.GetAlgebraicType(registrar))]);
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
-            Timers.SendScheduledMessage(arg.Read(reader));
+            Timers.SendScheduledMessage((SpacetimeDB.ReducerContext)ctx, arg.Read(reader));
         }
     }
 
@@ -93,14 +463,19 @@ static class ModuleRegistration
 #endif
     public static void Main()
     {
+        SpacetimeDB.Internal.Module.SetReducerContextConstructor(
+            (identity, address, random, time) =>
+                new SpacetimeDB.ReducerContext(identity, address, random, time)
+        );
+
         SpacetimeDB.Internal.Module.RegisterReducer<Init>();
         SpacetimeDB.Internal.Module.RegisterReducer<InsertData>();
         SpacetimeDB.Internal.Module.RegisterReducer<InsertData2>();
         SpacetimeDB.Internal.Module.RegisterReducer<ScheduleImmediate>();
         SpacetimeDB.Internal.Module.RegisterReducer<SendScheduledMessage>();
-        SpacetimeDB.Internal.Module.RegisterTable<PrivateTable>();
-        SpacetimeDB.Internal.Module.RegisterTable<PublicTable>();
-        SpacetimeDB.Internal.Module.RegisterTable<Timers.SendMessageTimer>();
+        SpacetimeDB.Internal.Module.RegisterTable<global::PrivateTable>();
+        SpacetimeDB.Internal.Module.RegisterTable<global::PublicTable>();
+        SpacetimeDB.Internal.Module.RegisterTable<global::Timers.SendMessageTimer>();
     }
 
     // Exports only work from the main assembly, so we need to generate forwarding methods.

@@ -3,14 +3,8 @@
   <PropertyGroup>
     <!-- We want to ensure that BSATN.Codegen on its own produces code compatible with Unity. -->
     <!-- This means limiting project to .NET Standard 2.1 and C# 9. -->
-    <TargetFrameworks>netstandard2.1</TargetFrameworks>
+    <TargetFramework>netstandard2.1</TargetFramework>
     <LangVersion>9</LangVersion>
-    <ImplicitUsings>disable</ImplicitUsings>
-  </PropertyGroup>
-
-  <PropertyGroup>
-    <IsPackable>false</IsPackable>
-    <DefaultItemExcludes>$(DefaultItemExcludes);snapshots/**/*</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

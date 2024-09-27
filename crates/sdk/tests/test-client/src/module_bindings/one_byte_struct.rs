@@ -19,7 +19,7 @@ pub struct OneByteStruct {
 }
 
 impl TableType for OneByteStruct {
-    const TABLE_NAME: &'static str = "OneByteStruct";
+    const TABLE_NAME: &'static str = "one_byte_struct";
     type ReducerEvent = super::ReducerEvent;
 }
 

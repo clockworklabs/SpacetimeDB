@@ -19,7 +19,7 @@ pub struct PkIdentity {
 }
 
 impl TableType for PkIdentity {
-    const TABLE_NAME: &'static str = "PkIdentity";
+    const TABLE_NAME: &'static str = "pk_identity";
     type ReducerEvent = super::ReducerEvent;
 }
 

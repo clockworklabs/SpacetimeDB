@@ -18,7 +18,7 @@ pub struct VecAddress {
 }
 
 impl TableType for VecAddress {
-    const TABLE_NAME: &'static str = "VecAddress";
+    const TABLE_NAME: &'static str = "vec_address";
     type ReducerEvent = super::ReducerEvent;
 }
 

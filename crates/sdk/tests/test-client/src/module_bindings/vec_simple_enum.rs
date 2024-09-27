@@ -19,7 +19,7 @@ pub struct VecSimpleEnum {
 }
 
 impl TableType for VecSimpleEnum {
-    const TABLE_NAME: &'static str = "VecSimpleEnum";
+    const TABLE_NAME: &'static str = "vec_simple_enum";
     type ReducerEvent = super::ReducerEvent;
 }
 

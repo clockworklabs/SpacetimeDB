@@ -18,7 +18,7 @@ pub struct VecI32 {
 }
 
 impl TableType for VecI32 {
-    const TABLE_NAME: &'static str = "VecI32";
+    const TABLE_NAME: &'static str = "vec_i32";
     type ReducerEvent = super::ReducerEvent;
 }
 

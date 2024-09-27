@@ -669,7 +669,6 @@ impl RelationalDB {
                 }),
             };
 
-            log::trace!("append {txdata:?}");
             // TODO: Should measure queuing time + actual write
             durability.append_tx(txdata);
         } else {

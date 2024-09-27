@@ -24,6 +24,7 @@ impl<'a, W> Serializer<'a, W> {
 
 /// An error during BSATN serialization.
 #[derive(Debug)]
+// TODO: rename to EncodeError
 pub struct BsatnError {
     /// The error message for the BSATN error.
     custom: String,

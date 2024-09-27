@@ -18,7 +18,7 @@ pub struct VecBool {
 }
 
 impl TableType for VecBool {
-    const TABLE_NAME: &'static str = "VecBool";
+    const TABLE_NAME: &'static str = "vec_bool";
     type ReducerEvent = super::ReducerEvent;
 }
 

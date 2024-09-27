@@ -18,7 +18,7 @@ pub struct VecString {
 }
 
 impl TableType for VecString {
-    const TABLE_NAME: &'static str = "VecString";
+    const TABLE_NAME: &'static str = "vec_string";
     type ReducerEvent = super::ReducerEvent;
 }
 

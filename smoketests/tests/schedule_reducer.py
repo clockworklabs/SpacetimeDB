@@ -4,37 +4,37 @@ import time
 class CancelReducer(Smoketest):
 
     MODULE_CODE = """
-    use spacetimedb::{duration, println, ReducerContext};
+use spacetimedb::{duration, println, ReducerContext, Table};
 
 #[spacetimedb::reducer(init)]
-fn init() {
-    let schedule = ScheuledReducerArgs::insert(ScheuledReducerArgs {
+fn init(ctx: &ReducerContext) {
+    let schedule = ctx.db.scheduled_reducer_args().insert(ScheduledReducerArgs {
         num: 1,
         scheduled_id: 0,
         scheduled_at: duration!(100ms).into(),
     });
-    ScheuledReducerArgs::delete_by_scheduled_id(&schedule.unwrap().scheduled_id);
+    ctx.db.scheduled_reducer_args().scheduled_id().delete(&schedule.scheduled_id);
 
-    let schedule = ScheuledReducerArgs::insert(ScheuledReducerArgs {
+    let schedule = ctx.db.scheduled_reducer_args().insert(ScheduledReducerArgs {
          num: 2,
          scheduled_id: 0,
          scheduled_at: duration!(1000ms).into(),
      });
-     do_cancel(schedule.unwrap().scheduled_id);
+     do_cancel(ctx, schedule.scheduled_id);
 }
 
 #[spacetimedb::table(name = scheduled_reducer_args, public, scheduled(reducer))]
-pub struct ScheuledReducerArgs {
+pub struct ScheduledReducerArgs {
     num: i32,
 }
 
 #[spacetimedb::reducer]
-fn do_cancel(schedule_id: u64) {
-    ScheuledReducerArgs::delete_by_scheduled_id(&schedule_id);
+fn do_cancel(ctx: &ReducerContext, schedule_id: u64) {
+    ctx.db.scheduled_reducer_args().scheduled_id().delete(&schedule_id);
 }
 
 #[spacetimedb::reducer]
-fn reducer(_ctx: ReducerContext, args: ScheuledReducerArgs) {
+fn reducer(_ctx: &ReducerContext, args: ScheduledReducerArgs) {
     println!("the reducer ran: {}", args.num);
 }
 """
@@ -49,8 +49,7 @@ fn reducer(_ctx: ReducerContext, args: ScheuledReducerArgs) {
 
 class SubscribeScheduledTable(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, duration, Timestamp, ReducerContext};
-
+use spacetimedb::{println, duration, ReducerContext, Table, Timestamp};
 
 #[spacetimedb::table(name = scheduled_table, public, scheduled(my_reducer))]
 pub struct ScheduledTable {
@@ -58,17 +57,17 @@ pub struct ScheduledTable {
 }
 
 #[spacetimedb::reducer]
-fn schedule_reducer() {
-    let _ = ScheduledTable::insert(ScheduledTable { prev: Timestamp::from_micros_since_epoch(0), scheduled_id: 2, scheduled_at: Timestamp::from_micros_since_epoch(0).into(), });
+fn schedule_reducer(ctx: &ReducerContext) {
+    ctx.db.scheduled_table().insert(ScheduledTable { prev: Timestamp::from_micros_since_epoch(0), scheduled_id: 2, scheduled_at: Timestamp::from_micros_since_epoch(0).into(), });
 }
 
 #[spacetimedb::reducer]
-fn schedule_repeated_reducer() {
-    let _ = ScheduledTable::insert(ScheduledTable { prev: Timestamp::from_micros_since_epoch(0), scheduled_id: 1, scheduled_at: duration!(100ms).into(), });
+fn schedule_repeated_reducer(ctx: &ReducerContext) {
+    ctx.db.scheduled_table().insert(ScheduledTable { prev: Timestamp::from_micros_since_epoch(0), scheduled_id: 1, scheduled_at: duration!(100ms).into(), });
 }
 
 #[spacetimedb::reducer]
-pub fn my_reducer(_ctx: ReducerContext, arg: ScheduledTable) {
+pub fn my_reducer(_ctx: &ReducerContext, arg: ScheduledTable) {
     println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), arg.prev.elapsed());
 }
 """
@@ -115,19 +114,21 @@ pub fn my_reducer(_ctx: ReducerContext, arg: ScheduledTable) {
 class VolatileNonatomicScheduleImmediate(Smoketest):
     BINDINGS_FEATURES = ["unstable_abi"]
     MODULE_CODE = """
+use spacetimedb::{ReducerContext, Table};
+
 #[spacetimedb::table(name = my_table, public)]
 pub struct MyTable {
     x: String,
 }
 
 #[spacetimedb::reducer]
-fn do_schedule() {
+fn do_schedule(_ctx: &ReducerContext) {
     spacetimedb::volatile_nonatomic_schedule_immediate!(do_insert("hello".to_owned()));
 }
 
 #[spacetimedb::reducer]
-fn do_insert(x: String) {
-    MyTable::insert(MyTable { x });
+fn do_insert(ctx: &ReducerContext, x: String) {
+    ctx.db.my_table().insert(MyTable { x });
 }
 """
     def test_volatile_nonatomic_schedule_immediate(self):

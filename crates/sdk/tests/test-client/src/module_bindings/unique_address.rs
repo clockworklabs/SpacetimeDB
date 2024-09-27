@@ -19,7 +19,7 @@ pub struct UniqueAddress {
 }
 
 impl TableType for UniqueAddress {
-    const TABLE_NAME: &'static str = "UniqueAddress";
+    const TABLE_NAME: &'static str = "unique_address";
     type ReducerEvent = super::ReducerEvent;
 }
 

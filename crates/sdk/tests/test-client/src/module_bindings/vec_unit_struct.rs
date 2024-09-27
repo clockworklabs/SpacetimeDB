@@ -19,7 +19,7 @@ pub struct VecUnitStruct {
 }
 
 impl TableType for VecUnitStruct {
-    const TABLE_NAME: &'static str = "VecUnitStruct";
+    const TABLE_NAME: &'static str = "vec_unit_struct";
     type ReducerEvent = super::ReducerEvent;
 }
 
