@@ -19,7 +19,7 @@ pub struct PkAddress {
 }
 
 impl TableType for PkAddress {
-    const TABLE_NAME: &'static str = "PkAddress";
+    const TABLE_NAME: &'static str = "pk_address";
     type ReducerEvent = super::ReducerEvent;
 }
 

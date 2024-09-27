@@ -19,7 +19,7 @@ pub struct UniqueIdentity {
 }
 
 impl TableType for UniqueIdentity {
-    const TABLE_NAME: &'static str = "UniqueIdentity";
+    const TABLE_NAME: &'static str = "unique_identity";
     type ReducerEvent = super::ReducerEvent;
 }
 

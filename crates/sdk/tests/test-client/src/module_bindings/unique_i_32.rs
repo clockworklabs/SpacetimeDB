@@ -19,7 +19,7 @@ pub struct UniqueI32 {
 }
 
 impl TableType for UniqueI32 {
-    const TABLE_NAME: &'static str = "UniqueI32";
+    const TABLE_NAME: &'static str = "unique_i32";
     type ReducerEvent = super::ReducerEvent;
 }
 

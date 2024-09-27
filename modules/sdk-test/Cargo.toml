@@ -12,3 +12,4 @@ crate-type = ["cdylib"]
 spacetimedb.workspace = true
 log.workspace = true
 anyhow.workspace = true
+paste.workspace = true

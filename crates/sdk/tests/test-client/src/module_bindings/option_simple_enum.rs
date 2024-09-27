@@ -19,7 +19,7 @@ pub struct OptionSimpleEnum {
 }
 
 impl TableType for OptionSimpleEnum {
-    const TABLE_NAME: &'static str = "OptionSimpleEnum";
+    const TABLE_NAME: &'static str = "option_simple_enum";
     type ReducerEvent = super::ReducerEvent;
 }
 

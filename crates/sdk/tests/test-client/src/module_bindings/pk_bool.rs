@@ -19,7 +19,7 @@ pub struct PkBool {
 }
 
 impl TableType for PkBool {
-    const TABLE_NAME: &'static str = "PkBool";
+    const TABLE_NAME: &'static str = "pk_bool";
     type ReducerEvent = super::ReducerEvent;
 }
 

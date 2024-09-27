@@ -478,10 +478,12 @@ impl RawTableDefV8 {
     ///
     /// It looks into [Self::constraints] for possible duplicates and remove them from the result
     pub fn generated_sequences(&self) -> impl Iterator<Item = RawSequenceDefV8> + '_ {
+        let cols: HashSet<_> = self.sequences.iter().map(|seq| ColList::new(seq.col_pos)).collect();
+
         self.constraints
             .iter()
             // We are only interested in constraints implying a sequence.
-            .filter(|x| x.constraints.has_autoinc())
+            .filter(move |x| !cols.contains(&x.columns) && x.constraints.has_autoinc())
             // Create the `SequenceDef`.
             .map(|x| RawSequenceDefV8::for_column(&self.table_name, &x.constraint_name, x.columns.head().unwrap()))
             // Only keep those we don't yet have in the list of sequences (checked by name).

@@ -19,7 +19,7 @@ pub struct OneEnumWithPayload {
 }
 
 impl TableType for OneEnumWithPayload {
-    const TABLE_NAME: &'static str = "OneEnumWithPayload";
+    const TABLE_NAME: &'static str = "one_enum_with_payload";
     type ReducerEvent = super::ReducerEvent;
 }
 

@@ -18,7 +18,7 @@ pub struct OneBool {
 }
 
 impl TableType for OneBool {
-    const TABLE_NAME: &'static str = "OneBool";
+    const TABLE_NAME: &'static str = "one_bool";
     type ReducerEvent = super::ReducerEvent;
 }
 

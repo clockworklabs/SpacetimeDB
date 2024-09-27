@@ -12,21 +12,22 @@ pub use de::Deserializer;
 pub use ser::Serializer;
 
 pub use crate::buffer::DecodeError;
+pub use ser::BsatnError as EncodeError;
 
 /// Serialize `value` into the buffered writer `w` in the BSATN format.
-pub fn to_writer<W: BufWriter, T: Serialize + ?Sized>(w: &mut W, value: &T) -> Result<(), ser::BsatnError> {
+pub fn to_writer<W: BufWriter, T: Serialize + ?Sized>(w: &mut W, value: &T) -> Result<(), EncodeError> {
     value.serialize(Serializer::new(w))
 }
 
 /// Serialize `value` into a `Vec<u8>` in the BSATN format.
-pub fn to_vec<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, ser::BsatnError> {
+pub fn to_vec<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, EncodeError> {
     let mut v = Vec::new();
     to_writer(&mut v, value)?;
     Ok(v)
 }
 
 /// Computes the size of `val` when BSATN encoding without actually encoding.
-pub fn to_len<T: Serialize + ?Sized>(value: &T) -> Result<usize, ser::BsatnError> {
+pub fn to_len<T: Serialize + ?Sized>(value: &T) -> Result<usize, EncodeError> {
     let mut writer = CountWriter::default();
     to_writer(&mut writer, value)?;
     Ok(writer.finish())

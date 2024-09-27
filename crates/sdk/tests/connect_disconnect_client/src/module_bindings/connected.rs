@@ -18,7 +18,7 @@ pub struct Connected {
 }
 
 impl TableType for Connected {
-    const TABLE_NAME: &'static str = "Connected";
+    const TABLE_NAME: &'static str = "connected";
     type ReducerEvent = super::ReducerEvent;
 }
 

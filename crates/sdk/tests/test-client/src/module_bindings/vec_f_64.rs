@@ -18,7 +18,7 @@ pub struct VecF64 {
 }
 
 impl TableType for VecF64 {
-    const TABLE_NAME: &'static str = "VecF64";
+    const TABLE_NAME: &'static str = "vec_f64";
     type ReducerEvent = super::ReducerEvent;
 }
 

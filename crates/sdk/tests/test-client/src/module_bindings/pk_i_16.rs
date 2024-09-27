@@ -19,7 +19,7 @@ pub struct PkI16 {
 }
 
 impl TableType for PkI16 {
-    const TABLE_NAME: &'static str = "PkI16";
+    const TABLE_NAME: &'static str = "pk_i16";
     type ReducerEvent = super::ReducerEvent;
 }
 

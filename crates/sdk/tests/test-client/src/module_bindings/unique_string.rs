@@ -19,7 +19,7 @@ pub struct UniqueString {
 }
 
 impl TableType for UniqueString {
-    const TABLE_NAME: &'static str = "UniqueString";
+    const TABLE_NAME: &'static str = "unique_string";
     type ReducerEvent = super::ReducerEvent;
 }
 

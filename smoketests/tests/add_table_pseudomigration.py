@@ -5,7 +5,7 @@ import logging
 
 class AddTablePseudomigration(Smoketest):
     MODULE_CODE = """
-use spacetimedb::println;
+use spacetimedb::{println, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -13,13 +13,13 @@ pub struct Person {
 }
 
 #[spacetimedb::reducer]
-pub fn add_person(name: String) {
-    Person::insert(Person { name });
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
 }
 
 #[spacetimedb::reducer]
-pub fn print_persons(prefix: String) {
-    for person in Person::iter() {
+pub fn print_persons(ctx: &ReducerContext, prefix: String) {
+    for person in ctx.db.person().iter() {
         println!("{}: {}", prefix, person.name);
     }
 }
@@ -34,13 +34,13 @@ pub struct Book {
 }
  
 #[spacetimedb::reducer]
-pub fn add_book(isbn: String) {
-    Book::insert(Book { isbn });
+pub fn add_book(ctx: &ReducerContext, isbn: String) {
+    ctx.db.book().insert(Book { isbn });
 }
 
 #[spacetimedb::reducer]
-pub fn print_books(prefix: String) {
-    for book in Book::iter() {
+pub fn print_books(ctx: &ReducerContext, prefix: String) {
+    for book in ctx.db.book().iter() {
         println!("{}: {}", prefix, book.isbn);
     }
 }
@@ -87,7 +87,7 @@ pub fn print_books(prefix: String) {
 
 class RejectTableChanges(Smoketest):
     MODULE_CODE = """
-use spacetimedb::println;
+use spacetimedb::{println, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -95,20 +95,20 @@ pub struct Person {
 }
 
 #[spacetimedb::reducer]
-pub fn add_person(name: String) {
-    Person::insert(Person { name });
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
 }
 
 #[spacetimedb::reducer]
-pub fn print_persons(prefix: String) {
-    for person in Person::iter() {
+pub fn print_persons(ctx: &ReducerContext, prefix: String) {
+    for person in ctx.db.person().iter() {
         println!("{}: {}", prefix, person.name);
     }
 }
 """
 
     MODULE_CODE_UPDATED = """
-use spacetimedb::println;
+use spacetimedb::{println, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -117,13 +117,13 @@ pub struct Person {
 }
 
 #[spacetimedb::reducer]
-pub fn add_person(name: String) {
-    Person::insert(Person { name, age: 70 });
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name, age: 70 });
 }
 
 #[spacetimedb::reducer]
-pub fn print_persons(prefix: String) {
-    for person in Person::iter() {
+pub fn print_persons(ctx: &ReducerContext, prefix: String) {
+    for person in ctx.db.person().iter() {
         println!("{}: {}", prefix, person.name);
     }
 }
