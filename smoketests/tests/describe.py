@@ -27,5 +27,5 @@ pub fn say_hello() {
         """Check describing a module"""
 
         self.spacetime("describe", self.address)
-        self.spacetime("describe", self.address, "reducer", "say_hello")
-        self.spacetime("describe", self.address, "table", "person")
+        self.spacetime("describe", self.address, "-t", "reducer", "say_hello")
+        self.spacetime("describe", self.address, "-t", "table", "person")
