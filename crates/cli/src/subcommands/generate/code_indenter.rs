@@ -1,6 +1,15 @@
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 
+pub(super) type Indenter = CodeIndenter<String>;
+
+#[macro_export]
+macro_rules! indent_scope {
+    ($x:ident) => {
+        let mut $x = $x.indented(1);
+    };
+}
+
 pub struct CodeIndenter<W: fmt::Write> {
     writer: W,
     level: u32,
@@ -46,6 +55,9 @@ impl<W: fmt::Write> CodeIndenter<W> {
         f(&mut indenter)
     }
 
+    // Writes a newline without setting the `needs_indenting` flag.
+    // TODO(cloutiertyler): I think it should set the flag, but I don't know
+    // if anyone is relying on the current behavior.
     pub fn newline(&mut self) {
         self.writer.write_char('\n').unwrap();
     }
