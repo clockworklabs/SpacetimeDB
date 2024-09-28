@@ -35,6 +35,7 @@ class CreateProject(unittest.TestCase):
                 for project in packed_projects:
                     # Add local build directories as NuGet repositories.
                     path = bindings / project / "bin" / "Release"
+                    project = f"SpacetimeDB.{project}"
                     xml.SubElement(sources, "add", key=project, value=str(path))
 
                     # Add strict package source mappings to ensure that
