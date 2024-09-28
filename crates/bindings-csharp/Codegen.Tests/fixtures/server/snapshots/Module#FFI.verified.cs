@@ -31,6 +31,154 @@ namespace SpacetimeDB
 
     namespace Internal.TableHandles
     {
+        public readonly struct MultiTable1
+            : SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTable>
+        {
+            static global::MultiTable SpacetimeDB.Internal.ITableView<
+                MultiTable1,
+                global::MultiTable
+            >.ReadGenFields(System.IO.BinaryReader reader, global::MultiTable row)
+            {
+                if (row.Foo == default)
+                {
+                    row.Foo = global::MultiTable.BSATN.Foo.Read(reader);
+                }
+                return row;
+            }
+
+            public IEnumerable<global::MultiTable> Iter() =>
+                SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTable>.Iter();
+
+            public IEnumerable<global::MultiTable> Query(
+                System.Linq.Expressions.Expression<Func<global::MultiTable, bool>> predicate
+            ) => SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTable>.Query(predicate);
+
+            public global::MultiTable Insert(global::MultiTable row) =>
+                SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTable>.Insert(row);
+
+            public IEnumerable<global::MultiTable> FilterByName(string Name) =>
+                SpacetimeDB
+                    .Internal.ITableView<MultiTable1, global::MultiTable>.ColEq.Where(
+                        0,
+                        Name,
+                        global::MultiTable.BSATN.Name
+                    )
+                    .Iter();
+
+            public IEnumerable<global::MultiTable> FilterByFoo(uint Foo) =>
+                SpacetimeDB
+                    .Internal.ITableView<MultiTable1, global::MultiTable>.ColEq.Where(
+                        1,
+                        Foo,
+                        global::MultiTable.BSATN.Foo
+                    )
+                    .Iter();
+
+            public global::MultiTable? FindByFoo(uint Foo) =>
+                FilterByFoo(Foo).Cast<global::MultiTable?>().SingleOrDefault();
+
+            public bool DeleteByFoo(uint Foo) =>
+                SpacetimeDB
+                    .Internal.ITableView<MultiTable1, global::MultiTable>.ColEq.Where(
+                        1,
+                        Foo,
+                        global::MultiTable.BSATN.Foo
+                    )
+                    .Delete();
+
+            public bool UpdateByFoo(uint Foo, global::MultiTable @this) =>
+                SpacetimeDB
+                    .Internal.ITableView<MultiTable1, global::MultiTable>.ColEq.Where(
+                        1,
+                        Foo,
+                        global::MultiTable.BSATN.Foo
+                    )
+                    .Update(@this);
+
+            public IEnumerable<global::MultiTable> FilterByBar(uint Bar) =>
+                SpacetimeDB
+                    .Internal.ITableView<MultiTable1, global::MultiTable>.ColEq.Where(
+                        2,
+                        Bar,
+                        global::MultiTable.BSATN.Bar
+                    )
+                    .Iter();
+        }
+
+        public readonly struct MultiTable2
+            : SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTable>
+        {
+            static global::MultiTable SpacetimeDB.Internal.ITableView<
+                MultiTable2,
+                global::MultiTable
+            >.ReadGenFields(System.IO.BinaryReader reader, global::MultiTable row)
+            {
+                if (row.Foo == default)
+                {
+                    row.Foo = global::MultiTable.BSATN.Foo.Read(reader);
+                }
+                return row;
+            }
+
+            public IEnumerable<global::MultiTable> Iter() =>
+                SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTable>.Iter();
+
+            public IEnumerable<global::MultiTable> Query(
+                System.Linq.Expressions.Expression<Func<global::MultiTable, bool>> predicate
+            ) => SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTable>.Query(predicate);
+
+            public global::MultiTable Insert(global::MultiTable row) =>
+                SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTable>.Insert(row);
+
+            public IEnumerable<global::MultiTable> FilterByName(string Name) =>
+                SpacetimeDB
+                    .Internal.ITableView<MultiTable2, global::MultiTable>.ColEq.Where(
+                        0,
+                        Name,
+                        global::MultiTable.BSATN.Name
+                    )
+                    .Iter();
+
+            public IEnumerable<global::MultiTable> FilterByFoo(uint Foo) =>
+                SpacetimeDB
+                    .Internal.ITableView<MultiTable2, global::MultiTable>.ColEq.Where(
+                        1,
+                        Foo,
+                        global::MultiTable.BSATN.Foo
+                    )
+                    .Iter();
+
+            public IEnumerable<global::MultiTable> FilterByBar(uint Bar) =>
+                SpacetimeDB
+                    .Internal.ITableView<MultiTable2, global::MultiTable>.ColEq.Where(
+                        2,
+                        Bar,
+                        global::MultiTable.BSATN.Bar
+                    )
+                    .Iter();
+
+            public global::MultiTable? FindByBar(uint Bar) =>
+                FilterByBar(Bar).Cast<global::MultiTable?>().SingleOrDefault();
+
+            public bool DeleteByBar(uint Bar) =>
+                SpacetimeDB
+                    .Internal.ITableView<MultiTable2, global::MultiTable>.ColEq.Where(
+                        2,
+                        Bar,
+                        global::MultiTable.BSATN.Bar
+                    )
+                    .Delete();
+
+            public bool UpdateByBar(uint Bar, global::MultiTable @this) =>
+                SpacetimeDB
+                    .Internal.ITableView<MultiTable2, global::MultiTable>.ColEq.Where(
+                        2,
+                        Bar,
+                        global::MultiTable.BSATN.Bar
+                    )
+                    .Update(@this);
+        }
+
         public readonly struct PrivateTable
             : SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>
         {
@@ -367,6 +515,8 @@ namespace SpacetimeDB
 
     public sealed class Local
     {
+        public Internal.TableHandles.MultiTable1 MultiTable1 => new();
+        public Internal.TableHandles.MultiTable2 MultiTable2 => new();
         public Internal.TableHandles.PrivateTable PrivateTable => new();
         public Internal.TableHandles.PublicTable PublicTable => new();
         public Internal.TableHandles.SendMessageTimer SendMessageTimer => new();
@@ -422,6 +572,20 @@ static class ModuleRegistration
         }
     }
 
+    class InsertMultiData : SpacetimeDB.Internal.IReducer
+    {
+        private static readonly MultiTable.BSATN data = new();
+
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new("InsertMultiData", [new(nameof(data), data.GetAlgebraicType(registrar))]);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            MultiTable.InsertMultiData((SpacetimeDB.ReducerContext)ctx, data.Read(reader));
+        }
+    }
+
     class ScheduleImmediate : SpacetimeDB.Internal.IReducer
     {
         private static readonly PublicTable.BSATN data = new();
@@ -471,8 +635,11 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterReducer<Init>();
         SpacetimeDB.Internal.Module.RegisterReducer<InsertData>();
         SpacetimeDB.Internal.Module.RegisterReducer<InsertData2>();
+        SpacetimeDB.Internal.Module.RegisterReducer<InsertMultiData>();
         SpacetimeDB.Internal.Module.RegisterReducer<ScheduleImmediate>();
         SpacetimeDB.Internal.Module.RegisterReducer<SendScheduledMessage>();
+        SpacetimeDB.Internal.Module.RegisterTable<global::MultiTable>();
+        SpacetimeDB.Internal.Module.RegisterTable<global::MultiTable>();
         SpacetimeDB.Internal.Module.RegisterTable<global::PrivateTable>();
         SpacetimeDB.Internal.Module.RegisterTable<global::PublicTable>();
         SpacetimeDB.Internal.Module.RegisterTable<global::Timers.SendMessageTimer>();

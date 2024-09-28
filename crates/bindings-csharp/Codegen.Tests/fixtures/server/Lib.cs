@@ -143,3 +143,25 @@ public static partial class Timers
         );
     }
 }
+
+[Table(Name = "MultiTable1", Public = true)]
+[Table(Name = "MultiTable2")]
+public partial struct MultiTable
+{
+    public string Name;
+
+    [AutoInc]
+    [PrimaryKey(Table = "MultiTable1")]
+    public uint Foo;
+
+    [Unique(Table = "MultiTable2")]
+    public uint Bar;
+
+    [SpacetimeDB.Reducer]
+    public static void InsertMultiData(ReducerContext ctx, MultiTable data)
+    {
+        // Verify that we have both tables generated on the context.
+        ctx.Db.MultiTable1.Insert(data);
+        ctx.Db.MultiTable2.Insert(data);
+    }
+}
