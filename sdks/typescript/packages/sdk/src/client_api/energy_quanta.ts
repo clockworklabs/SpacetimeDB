@@ -6,11 +6,11 @@ import type { AlgebraicValue } from '../algebraic_value.ts';
 
 export class EnergyQuanta {
   static tableName = 'EnergyQuanta';
-  quanta: BigInt;
+  quanta: bigint;
 
   static primaryKey: string | undefined = undefined;
 
-  constructor(quanta: BigInt) {
+  constructor(quanta: bigint) {
     this.quanta = quanta;
   }
 

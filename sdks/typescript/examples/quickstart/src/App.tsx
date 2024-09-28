@@ -36,6 +36,7 @@ function App() {
         conn.current = await DbConnection.builder()
           .withUri('ws://localhost:3000')
           .withModuleName('chat')
+          .withCredentials([Identity.fromString(identity!), token!])
           .onDisconnect(() => {
             console.log('disconnected');
           })

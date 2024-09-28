@@ -1,93 +1,70 @@
-import { ClientDB } from './client_db.ts';
 import { ReducerEvent } from './reducer_event.ts';
-import { DBConnectionBase } from './spacetimedb.ts';
+import {
+  DBConnectionBase,
+  DbContext,
+  type CallbackInit,
+} from './spacetimedb.ts';
 import { _tableProxy } from './utils.ts';
 
-export type DatabaseTableClass = {
-  new (...args: any[]): any;
-  db?: ClientDB;
+export class DatabaseTable<
+  TableType,
+  EventContext extends DbContext<any, any> = any,
+> {
   tableName: string;
-};
 
-type ThisDatabaseType<T extends DatabaseTable> = {
-  new (...args: any): T;
-  tableName: string;
-  getDB: () => ClientDB;
-};
+  #client: DBConnectionBase;
 
-export class DatabaseTable {
-  static db?: ClientDB;
-  static tableName: string;
+  constructor(client: DBConnectionBase, tableName: string) {
+    this.#client = client;
+    this.tableName = tableName;
+  }
 
-  static with<T extends DatabaseTable>(this: T, client: DBConnectionBase): T {
+  static with<TableType, T extends DatabaseTable<TableType>>(
+    this: T,
+    client: DBConnectionBase
+  ): T {
     return _tableProxy<T>(this, client) as unknown as T;
   }
 
-  static getDB(): ClientDB {
-    if (!this.db) {
-      throw "You can't query the database without creating a client first";
-    }
-
-    return this.db;
+  count(): number {
+    return this.#client.db.getTable(this.tableName).count();
   }
 
-  static count(): number {
-    return this.getDB().getTable(this.tableName).count();
+  all<T extends DatabaseTable<TableType>>(): T[] {
+    return this.#client.db.getTable(this.tableName).getInstances() as T[];
   }
 
-  static all<T extends DatabaseTable>(this: ThisDatabaseType<T>): T[] {
-    return this.getDB()
-      .getTable(this.tableName)
-      .getInstances() as unknown as T[];
-  }
-
-  static onInsert<T extends DatabaseTable>(
-    this: ThisDatabaseType<T>,
-    callback: (value: T, reducerEvent: ReducerEvent | undefined) => void
-  ): void {
-    this.getDB().getTable(this.tableName).onInsert(callback);
-  }
-
-  static onUpdate<T extends DatabaseTable>(
-    this: ThisDatabaseType<T>,
+  onInsert<T extends DatabaseTable<TableType>>(
     callback: (
+      ctx: EventContext,
+      value: T,
+      reducerEvent: ReducerEvent | undefined
+    ) => void,
+    init?: CallbackInit
+  ): void {
+    this.#client.db.getTable(this.tableName).onInsert(callback, init);
+  }
+
+  onUpdate<T extends DatabaseTable<TableType>>(
+    callback: (
+      ctx: EventContext,
       oldValue: T,
       newValue: T,
       reducerEvent: ReducerEvent | undefined
-    ) => void
+    ) => void,
+    init?: CallbackInit
   ): void {
-    this.getDB().getTable(this.tableName).onUpdate(callback);
+    this.#client.db.getTable(this.tableName).onUpdate(callback, init);
   }
 
-  static onDelete<T extends DatabaseTable>(
-    this: ThisDatabaseType<T>,
-    callback: (value: T, reducerEvent: ReducerEvent | undefined) => void
-  ): void {
-    this.getDB().getTable(this.tableName).onDelete(callback);
-  }
-
-  static removeOnInsert<T extends DatabaseTable>(
-    this: ThisDatabaseType<T>,
-    callback: (value: T, reducerEvent: ReducerEvent | undefined) => void
-  ): void {
-    this.getDB().getTable(this.tableName).removeOnInsert(callback);
-  }
-
-  static removeOnUpdate<T extends DatabaseTable>(
-    this: ThisDatabaseType<T>,
+  onDelete<T extends DatabaseTable<TableType>>(
     callback: (
-      oldValue: T,
-      newValue: T,
+      ctx: EventContext,
+      value: T,
       reducerEvent: ReducerEvent | undefined
-    ) => void
+    ) => void,
+    init?: CallbackInit
   ): void {
-    this.getDB().getTable(this.tableName).removeOnUpdate(callback);
-  }
-
-  static removeOnDelete<T extends DatabaseTable>(
-    this: ThisDatabaseType<T>,
-    callback: (value: T, reducerEvent: ReducerEvent | undefined) => void
-  ): void {
-    this.getDB().getTable(this.tableName).removeOnDelete(callback);
+    this.#client.db.getTable(this.tableName).onDelete(callback, init);
   }
 }

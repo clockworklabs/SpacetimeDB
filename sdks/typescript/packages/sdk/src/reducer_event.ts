@@ -1,17 +1,8 @@
 import { Address } from './address.ts';
-import type { Timestamp } from './client_api.ts';
+import type { Timestamp, UpdateStatus } from './client_api.ts';
 import { Identity } from './identity.ts';
 
-/**
- * Indicates the status of the reducer execution.
- * Whether the reducer committed, was aborted due to insufficient energy, or failed with an error message.
- */
-export type ReducerEventStatus =
-  | { type: 'Committed' }
-  | { type: 'AbortedDueToInsufficientEnergy' }
-  | { type: 'FailedWithErrorMessage'; message: string };
-
-export class ReducerEvent<ReducerEnum> {
+export class ReducerEvent<ReducerEnum extends any = any> {
   /**
    * The time when the reducer started running.
    *
@@ -23,7 +14,7 @@ export class ReducerEvent<ReducerEnum> {
   /**
    * Whether the reducer committed, was aborted due to insufficient energy, or failed with an error message.
    */
-  status: ReducerEventStatus;
+  status: UpdateStatus;
 
   /**
    * The identity of the caller.
@@ -59,7 +50,7 @@ export class ReducerEvent<ReducerEnum> {
     reducer,
   }: {
     callerIdentity: Identity;
-    status: ReducerEventStatus;
+    status: UpdateStatus;
     message: string;
     callerAddress?: Address;
     timestamp: Timestamp;

@@ -1,5 +1,3 @@
-import type { Address } from './address.ts';
-import type { Identity } from './identity.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 
 /**

@@ -12,7 +12,8 @@ export class SendMessageReducer<
   EventContext,
   DBView,
   ReducerView,
-> extends Reducer<[text: string], DBView, ReducerView, EventContext> {
+  ReducerEnum,
+> extends Reducer<[text: string], DBView, ReducerView, EventContext,ReducerEnum> {
   constructor(client: DBConnectionBase) {
     super(client, "SendMessage");
   }
@@ -25,7 +26,7 @@ export class SendMessageReducer<
     const serializer = this.client.getSerializer();
     let _textType = AlgebraicType.createStringType();
     serializer.write(_textType, _text);
-    this.client.call("send_message", serializer);
+    this.client.call("SendMessage", serializer);
   }
 
   public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {

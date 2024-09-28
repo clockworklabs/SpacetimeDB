@@ -1,7 +1,6 @@
 import { Address } from './address.ts';
-import type { Timestamp } from './client_api.ts';
+import type { Timestamp, UpdateStatus } from './client_api.ts';
 import { Identity } from './identity.ts';
-import type { ReducerEventStatus } from './reducer_event.ts';
 import { TableUpdate } from './table.ts';
 
 export class SubscriptionUpdateMessage {
@@ -18,9 +17,10 @@ export class TransactionUpdateEvent {
   originalReducerName: string;
   reducerName: string;
   args: Uint8Array;
-  status: ReducerEventStatus;
+  status: UpdateStatus;
   message: string;
   timestamp: Timestamp;
+  energyConsumed: bigint;
 
   constructor({
     address,
@@ -31,15 +31,17 @@ export class TransactionUpdateEvent {
     reducerName,
     status,
     timestamp,
+    energyConsumed,
   }: {
     identity: Identity;
     address: Address | null;
     originalReducerName: string;
     reducerName: string;
     args: Uint8Array;
-    status: ReducerEventStatus;
+    status: UpdateStatus;
     message: string;
     timestamp: Timestamp;
+    energyConsumed: bigint;
   }) {
     this.identity = identity;
     this.address = address;
@@ -49,6 +51,7 @@ export class TransactionUpdateEvent {
     this.status = status;
     this.message = message;
     this.timestamp = timestamp;
+    this.energyConsumed = energyConsumed;
   }
 }
 

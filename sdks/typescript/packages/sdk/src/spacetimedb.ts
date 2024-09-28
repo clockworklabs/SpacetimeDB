@@ -18,7 +18,7 @@ import {
 import BinaryReader from './binary_reader.ts';
 import * as ws from './client_api.ts';
 import { ClientDB } from './client_db.ts';
-import { DatabaseTable, type DatabaseTableClass } from './database_table.ts';
+import { DatabaseTable } from './database_table.ts';
 import { DbContext } from './db_context.ts';
 import type { STDBEvent } from './event.ts';
 import { EventEmitter } from './event_emitter.ts';
@@ -54,7 +54,6 @@ export {
   SumType,
   SumTypeVariant,
   type CallbackInit,
-  type DatabaseTableClass,
   type ReducerArgsAdapter,
   type Serializer,
   type STDBEvent,
@@ -104,8 +103,13 @@ export {
 /**
  * The database client connection to a SpacetimeDB server.
  */
-export class DBConnectionBuilder<DBView, ReducerView> {
-  #base!: DBConnectionBase;
+export class DBConnectionBuilder<
+  DBView,
+  ReducerView,
+  ReducerEnum,
+  EventContext extends DbContext<DBView, ReducerView>,
+> {
+  #base!: DBConnectionBase<ReducerEnum>;
 
   #dbView: DBView;
   #reducerView: ReducerView;
@@ -128,7 +132,7 @@ export class DBConnectionBuilder<DBView, ReducerView> {
    * ```
    */
   constructor(
-    base: DBConnectionBase,
+    base: DBConnectionBase<ReducerEnum>,
     dbView: DBView,
     reducerView: ReducerView
   ) {
@@ -138,21 +142,23 @@ export class DBConnectionBuilder<DBView, ReducerView> {
     this.#base = base;
   }
 
-  withUri(uri: string | URL): DBConnectionBuilder<DBView, ReducerView> {
+  withUri(
+    uri: string | URL
+  ): DBConnectionBuilder<DBView, ReducerView, ReducerEnum, EventContext> {
     this.#base.runtime.uri = new URL(uri);
     return this;
   }
 
   withModuleName(
     nameOrAddress: string
-  ): DBConnectionBuilder<DBView, ReducerView> {
+  ): DBConnectionBuilder<DBView, ReducerView, ReducerEnum, EventContext> {
     this.#base.runtime.nameOrAddress = nameOrAddress;
     return this;
   }
 
   withCredentials(
     creds: [identity: Identity, token: string]
-  ): DBConnectionBuilder<DBView, ReducerView> {
+  ): DBConnectionBuilder<DBView, ReducerView, ReducerEnum, EventContext> {
     const [identity, token] = creds;
     this.#base.identity = identity;
     this.#base.token = token;
@@ -181,7 +187,7 @@ export class DBConnectionBuilder<DBView, ReducerView> {
    * spacetimeDBClient.connect(undefined, undefined, NEW_TOKEN);
    * ```
    */
-  async build(): Promise<DbContext<DBView, ReducerView>> {
+  build(): DbContext<DBView, ReducerView> {
     const dbContext = new DbContext<DBView, ReducerView>(
       this.#base,
       this.#dbView,
@@ -204,16 +210,22 @@ export class DBConnectionBuilder<DBView, ReducerView> {
     let clientAddress = this.#base.clientAddress.toHexString();
     url.searchParams.set('client_address', clientAddress);
 
-    this.#base.ws = await this.#base.createWSFn({
-      url,
-      wsProtocol: 'v1.bin.spacetimedb',
-      authToken: this.#base.runtime.authToken,
-    });
+    this.#base.wsPromise = this.#base
+      .createWSFn({
+        url,
+        wsProtocol: 'v1.bin.spacetimedb',
+        authToken: this.#base.runtime.authToken,
+      })
+      .then(v => {
+        this.#base.ws = v;
 
-    this.#base.ws.onclose = this.#base.handleOnClose.bind(this);
-    this.#base.ws.onerror = this.#base.handleOnError.bind(this);
-    this.#base.ws.onopen = this.#base.handleOnOpen.bind(this);
-    this.#base.ws.onmessage = this.#base.handleOnMessage.bind(this);
+        this.#base.ws.onclose = this.#base.handleOnClose.bind(this);
+        this.#base.ws.onerror = this.#base.handleOnError.bind(this);
+        this.#base.ws.onopen = this.#base.handleOnOpen.bind(this);
+        this.#base.ws.onmessage = this.#base.handleOnMessage.bind(this);
+
+        return v;
+      });
 
     return dbContext;
   }
@@ -245,7 +257,7 @@ export class DBConnectionBuilder<DBView, ReducerView> {
   onConnect(
     callback: (identity: Identity, token: string) => void,
     init: CallbackInit = {}
-  ): DBConnectionBuilder<DBView, ReducerView> {
+  ): DBConnectionBuilder<DBView, ReducerView, ReducerEnum, EventContext> {
     this.#base.on('connected', callback);
 
     if (init.signal) {
@@ -271,7 +283,7 @@ export class DBConnectionBuilder<DBView, ReducerView> {
   onConnectError(
     callback: (...args: any[]) => void,
     init: CallbackInit = {}
-  ): DBConnectionBuilder<DBView, ReducerView> {
+  ): DBConnectionBuilder<DBView, ReducerView, ReducerEnum, EventContext> {
     this.#base.on('client_error', callback);
 
     if (init.signal) {
@@ -312,7 +324,7 @@ export class DBConnectionBuilder<DBView, ReducerView> {
   onDisconnect(
     callback: (...args: any[]) => void,
     init: CallbackInit = {}
-  ): DBConnectionBuilder<DBView, ReducerView> {
+  ): DBConnectionBuilder<DBView, ReducerView, ReducerEnum, EventContext> {
     this.#base.on('disconnected', callback);
 
     if (init.signal) {
@@ -331,7 +343,10 @@ export class DBConnectionBuilder<DBView, ReducerView> {
 
 // ctxz.
 
-export class DBConnectionBase<ReducerEnum> {
+export class DBConnectionBase<
+  ReducerEnum = {},
+  EventContext extends DbContext<any, any> = any,
+> {
   isActive = false;
   /**
    * The user's public identity.
@@ -345,13 +360,14 @@ export class DBConnectionBase<ReducerEnum> {
   /**
    * Reference to the database of the client.
    */
-  #db: ClientDB;
+  db: ClientDB;
   #emitter: EventEmitter = new EventEmitter();
 
   #manualTableSubscriptions: string[] = [];
   queriesQueue: string[] = [];
 
-  ws!: WebsocketDecompressAdapter | WebsocketTestAdapter;
+  wsPromise!: Promise<WebsocketDecompressAdapter | WebsocketTestAdapter>;
+  ws?: WebsocketDecompressAdapter | WebsocketTestAdapter;
   createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
 
   runtime!: {
@@ -361,15 +377,15 @@ export class DBConnectionBase<ReducerEnum> {
   };
   clientAddress: Address = Address.random();
 
-  static #tableClasses: Map<string, DatabaseTableClass> = new Map();
+  static #tableClasses: Map<string, DatabaseTable<any>> = new Map();
   static #reducerClasses: Map<string, Reducer> = new Map();
 
   constructor() {
-    this.#db = new ClientDB();
+    this.db = new ClientDB();
     this.createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
   }
 
-  static #getTableClass(name: string): DatabaseTableClass {
+  static #getTableClass(name: string): DatabaseTable<any> {
     const tableClass = this.#tableClasses.get(name);
     if (!tableClass) {
       throw `Could not find class \"${name}\", you need to register it with SpacetimeDBClient.registerTable() first`;
@@ -392,37 +408,37 @@ export class DBConnectionBase<ReducerEnum> {
     return reducerClass;
   }
 
-  /**
-   * Subscribes to a table without registering it as a component.
-   *
-   * @param table The table to subscribe to
-   * @param query The query to subscribe to. If not provided, the default is `SELECT * FROM {table}`
-   */
-  #registerManualTable(table: string, query?: string): void {
-    this.#manualTableSubscriptions.push(
-      query ? query : `SELECT * FROM ${table}`
-    );
+  // /**
+  //  * Subscribes to a table without registering it as a component.
+  //  *
+  //  * @param table The table to subscribe to
+  //  * @param query The query to subscribe to. If not provided, the default is `SELECT * FROM {table}`
+  //  */
+  // #registerManualTable(table: string, query?: string): void {
+  //   this.#manualTableSubscriptions.push(
+  //     query ? query : `SELECT * FROM ${table}`
+  //   );
 
-    this.subscribe([...this.#manualTableSubscriptions]);
-  }
+  //   this.subscribe([...this.#manualTableSubscriptions]);
+  // }
 
-  /**
-   * Unsubscribes from a table without unregistering it as a component.
-   *
-   * @param table The table to unsubscribe from
-   */
-  #removeManualTable(table: string): void {
-    // pgoldman 2024-06-25: Is this broken? `registerManualTable` treats `manualTableSubscriptions`
-    // as containing SQL strings,
-    // but this code treats it as containing table name strings.
-    this.#manualTableSubscriptions = this.#manualTableSubscriptions.filter(
-      val => val !== table
-    );
+  // /**
+  //  * Unsubscribes from a table without unregistering it as a component.
+  //  *
+  //  * @param table The table to unsubscribe from
+  //  */
+  // #removeManualTable(table: string): void {
+  //   // pgoldman 2024-06-25: Is this broken? `registerManualTable` treats `manualTableSubscriptions`
+  //   // as containing SQL strings,
+  //   // but this code treats it as containing table name strings.
+  //   this.#manualTableSubscriptions = this.#manualTableSubscriptions.filter(
+  //     val => val !== table
+  //   );
 
-    this.subscribe(
-      this.#manualTableSubscriptions.map(val => `SELECT * FROM ${val}`)
-    );
-  }
+  //   this.subscribe(
+  //     this.#manualTableSubscriptions.map(val => `SELECT * FROM ${val}`)
+  //   );
+  // }
 
   /**
    * Close the current connection.
@@ -436,7 +452,9 @@ export class DBConnectionBase<ReducerEnum> {
    * ```
    */
   disconnect(): void {
-    this.ws.close();
+    this.wsPromise.then(wsResolved => {
+      wsResolved.close();
+    });
   }
 
   #processParsedMessage(
@@ -502,6 +520,8 @@ export class DBConnectionBase<ReducerEnum> {
         const originalReducerName = txUpdate.reducerCall.reducerName;
         const reducerName: string = toPascalCase(originalReducerName);
         const rawArgs = txUpdate.reducerCall.args;
+        const energyQuantaUsed = txUpdate.energyQuantaUsed;
+
         if (rawArgs.tag !== 'Binary') {
           throw new Error(
             `Expected a binary EncodedValue but found ${rawArgs.tag} ${rawArgs.value}`
@@ -523,15 +543,17 @@ export class DBConnectionBase<ReducerEnum> {
             break;
         }
         const transactionUpdateEvent: TransactionUpdateEvent =
-          new TransactionUpdateEvent(
+          new TransactionUpdateEvent({
             identity,
             address,
             originalReducerName,
             reducerName,
             args,
-            txUpdate.status.tag.toLowerCase(),
-            errMessage
-          );
+            status: txUpdate.status,
+            energyConsumed: energyQuantaUsed.quanta,
+            message: errMessage,
+            timestamp: txUpdate.timestamp,
+          });
 
         const transactionUpdate = new TransactionUpdateMessage(
           subscriptionUpdate.tableUpdates,
@@ -571,34 +593,14 @@ export class DBConnectionBase<ReducerEnum> {
    * @param name The name of the component to register
    * @param component The component to register
    */
-  #registerTable(tableClass: DatabaseTableClass) {
-    this.#db.getOrCreateTable(tableClass.tableName, undefined, tableClass);
-    // only set a default ClientDB on a table class if it's not set yet. This means
-    // that only the first created client will be usable without the `with` method
-    if (!tableClass.db) {
-      tableClass.db = this.#db;
-    }
-  }
-
-  /**
-   * Register a component to be used with any SpacetimeDB client. The component will be automatically registered to any
-   * new clients
-   * @param table Component to be registered
-   * @private
-   */
-  static registerTable(table: DatabaseTableClass): void {
-    this.#tableClasses.set(table.tableName, table);
-  }
-
-  /**
-   *  Register a list of components to be used with any SpacetimeDB client. The components will be automatically registered to any new clients
-   * @param tables A list of tables to register globally with SpacetimeDBClient
-   */
-  static registerTables(...tables: DatabaseTableClass[]): void {
-    for (const table of tables) {
-      this.registerTable(table);
-    }
-  }
+  // #registerTable(tableClass: DatabaseTable) {
+  //   this.db.getOrCreateTable(tableClass.tableName, undefined, tableClass);
+  //   // only set a default ClientDB on a table class if it's not set yet. This means
+  //   // that only the first created client will be usable without the `with` method
+  //   if (!tableClass.db) {
+  //     tableClass.db = this.db;
+  //   }
+  // }
 
   /**
    * Register a reducer to be used with any SpacetimeDB client. The reducer will be automatically registered to any
@@ -656,11 +658,13 @@ export class DBConnectionBase<ReducerEnum> {
   }
 
   #sendMessage(message: ws.ClientMessage) {
-    const serializer = new BinarySerializer();
-    serializer.write(ws.ClientMessage.getAlgebraicType(), message);
-    const encoded = serializer.args();
-    this.#emitter.emit('sendWSMessage', encoded);
-    this.ws.send(encoded);
+    this.wsPromise.then(wsResolved => {
+      const serializer = new BinarySerializer();
+      serializer.write(ws.ClientMessage.getAlgebraicType(), message);
+      const encoded = serializer.args();
+      this.#emitter.emit('sendWSMessage', encoded);
+      wsResolved.send(encoded);
+    });
   }
 
   /**
@@ -726,7 +730,7 @@ export class DBConnectionBase<ReducerEnum> {
         for (let tableUpdate of message.tableUpdates) {
           const tableName = tableUpdate.tableName;
           const entityClass = DBConnectionBase.#getTableClass(tableName);
-          const table = this.#db.getOrCreateTable(
+          const table = this.db.getOrCreateTable(
             tableUpdate.tableName,
             undefined,
             entityClass
@@ -745,13 +749,13 @@ export class DBConnectionBase<ReducerEnum> {
           let errorMessage = message.event.message;
           console.error(`Received an error from the database: ${errorMessage}`);
         } else {
-          const reducer: any | undefined = reducerName
+          const reducer: any = reducerName
             ? DBConnectionBase.#getReducerClass(reducerName)
             : undefined;
 
           let reducerEvent: ReducerEvent<ReducerEnum> | undefined;
           let reducerArgs: any;
-          if (reducer && message.event.status.type === 'Committed') {
+          if (reducer && message.event.status.tag === 'Committed') {
             let adapter: ReducerArgsAdapter = new BinaryReducerArgsAdapter(
               new BinaryAdapter(
                 new BinaryReader(message.event.args as Uint8Array)
@@ -761,28 +765,20 @@ export class DBConnectionBase<ReducerEnum> {
             reducerArgs = reducer.deserializeArgs(adapter);
           }
 
-          reducerEvent = new ReducerEvent<ReducerEnum>(
-            {
-              callerIdentity: message.event.identity,
-              status: message.event.status,
-              message: message.event.message,
-              callerAddress: message.event.address as Address,
-              timestamp: message.event.timestamp,
-              energyConsumed: message.event.energyConsumed,
-              // reducer:
-            }
-            // message.event.identity,
-            // message.event.address,
-            // message.event.originalReducerName,
-            // message.event.status,
-            // message.event.message,
-            // reducerArgs
-          );
+          reducerEvent = new ReducerEvent<ReducerEnum>({
+            callerIdentity: message.event.identity,
+            status: message.event.status,
+            message: message.event.message,
+            callerAddress: message.event.address as Address,
+            timestamp: message.event.timestamp,
+            energyConsumed: message.event.energyConsumed,
+            reducer: reducer,
+          });
 
           for (let tableUpdate of message.tableUpdates) {
             const tableName = tableUpdate.tableName;
             const entityClass = DBConnectionBase.#getTableClass(tableName);
-            const table = this.#db.getOrCreateTable(
+            const table = this.db.getOrCreateTable(
               tableUpdate.tableName,
               undefined,
               entityClass
@@ -826,14 +822,14 @@ export class DBConnectionBase<ReducerEnum> {
 
   on(
     eventName: EventType | (string & {}),
-    callback: (...args: any[]) => void
+    callback: (ctx: EventContext, ...args: any[]) => void
   ): void {
     this.#emitter.on(eventName, callback);
   }
 
   off(
     eventName: EventType | (string & {}),
-    callback: (...args: any[]) => void
+    callback: (ctx: EventContext, ...args: any[]) => void
   ): void {
     this.#emitter.off(eventName, callback);
   }

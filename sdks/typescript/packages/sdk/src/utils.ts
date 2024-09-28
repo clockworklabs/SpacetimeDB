@@ -1,7 +1,7 @@
-import { DBConnectionBuilder } from './spacetimedb.ts';
+import { DBConnectionBase } from './spacetimedb.ts';
 
 // Helper function for creating a proxy for a table class
-export function _tableProxy<T>(t: any, client: DBConnectionBuilder): T {
+export function _tableProxy<T>(t: any, client: DBConnectionBase<any, any>): T {
   return new Proxy(t, {
     get: (target, prop: keyof typeof t) => {
       if (typeof target[prop] === 'function') {

@@ -6,12 +6,13 @@ export class Reducer<
   DBView = {},
   ReducerView = {},
   EventContext = DbContext<DBView, ReducerView>,
+  ReducerEnum = {},
 > {
   reducerName: string;
 
-  client: DBConnectionBase;
+  client: DBConnectionBase<ReducerEnum>;
 
-  constructor(client: DBConnectionBase, reducerName: string) {
+  constructor(client: DBConnectionBase<ReducerEnum>, reducerName: string) {
     this.reducerName = reducerName;
     this.client = client;
   }
@@ -31,12 +32,5 @@ export class Reducer<
         this.client.off(`reducer:${this.reducerName}`, callback);
       });
     }
-  }
-
-  static with<T extends typeof Reducer>(
-    client: DBConnectionBase,
-    reducerName: string
-  ): InstanceType<T> {
-    return new this(client, reducerName) as InstanceType<T>;
   }
 }

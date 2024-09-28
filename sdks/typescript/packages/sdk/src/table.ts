@@ -3,7 +3,12 @@ import BinaryReader from './binary_reader.ts';
 import { EventEmitter } from './event_emitter.ts';
 import OperationsMap from './operations_map.ts';
 import { ReducerEvent } from './reducer_event.ts';
-import { AlgebraicValue, DatabaseTable } from './spacetimedb.ts';
+import {
+  AlgebraicValue,
+  DatabaseTable,
+  DbContext,
+  type CallbackInit,
+} from './spacetimedb.ts';
 
 class DBOp {
   type: 'insert' | 'delete';
@@ -47,10 +52,13 @@ export class TableUpdate {
 /**
  * Builder to generate calls to query a `table` in the database
  */
-export class Table {
+export class Table<
+  TableType = any,
+  EventContext extends DbContext<any, any> = any,
+> {
   // TODO: most of this stuff should be probably private
   name: string;
-  instances: Map<string, DatabaseTable>;
+  instances: Map<string, DatabaseTable<TableType, EventContext>>;
   emitter: EventEmitter;
   #entityClass: any;
   pkCol?: number;
@@ -173,9 +181,20 @@ export class Table {
    * @param cb Callback to be called when a new row is inserted
    */
   onInsert = (
-    cb: (value: any, reducerEvent: ReducerEvent | undefined) => void
+    cb: (
+      ctx: EventContext,
+      value: any,
+      reducerEvent: ReducerEvent | undefined
+    ) => void,
+    init?: CallbackInit
   ): void => {
     this.emitter.on('insert', cb);
+
+    if (init?.signal) {
+      init.signal.addEventListener('abort', () => {
+        this.emitter.off('insert', cb);
+      });
+    }
   };
 
   /**
@@ -194,9 +213,20 @@ export class Table {
    * @param cb Callback to be called when a new row is inserted
    */
   onDelete = (
-    cb: (value: any, reducerEvent: ReducerEvent | undefined) => void
+    cb: (
+      ctx: EventContext,
+      value: any,
+      reducerEvent: ReducerEvent | undefined
+    ) => void,
+    init?: CallbackInit
   ): void => {
     this.emitter.on('delete', cb);
+
+    if (init?.signal) {
+      init.signal.addEventListener('abort', () => {
+        this.emitter.off('delete', cb);
+      });
+    }
   };
 
   /**
@@ -216,45 +246,19 @@ export class Table {
    */
   onUpdate = (
     cb: (
+      ctx: EventContext,
       value: any,
       oldValue: any,
       reducerEvent: ReducerEvent | undefined
-    ) => void
+    ) => void,
+    init?: CallbackInit
   ): void => {
     this.emitter.on('update', cb);
-  };
 
-  /**
-   * Removes the event listener for when a new row is inserted
-   * @param cb Callback to be called when the event listener is removed
-   */
-  removeOnInsert = (
-    cb: (value: any, reducerEvent: ReducerEvent | undefined) => void
-  ): void => {
-    this.emitter.off('insert', cb);
-  };
-
-  /**
-   * Removes the event listener for when a row is deleted
-   * @param cb Callback to be called when the event listener is removed
-   */
-  removeOnDelete = (
-    cb: (value: any, reducerEvent: ReducerEvent | undefined) => void
-  ): void => {
-    this.emitter.off('delete', cb);
-  };
-
-  /**
-   * Removes the event listener for when a row is updated
-   * @param cb Callback to be called when the event listener is removed
-   */
-  removeOnUpdate = (
-    cb: (
-      value: any,
-      oldValue: any,
-      reducerEvent: ReducerEvent | undefined
-    ) => void
-  ): void => {
-    this.emitter.off('update', cb);
+    if (init?.signal) {
+      init.signal.addEventListener('abort', () => {
+        this.emitter.off('update', cb);
+      });
+    }
   };
 }

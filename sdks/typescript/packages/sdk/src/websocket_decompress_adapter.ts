@@ -81,6 +81,7 @@ export class WebsocketDecompressAdapter {
       url.searchParams.set('token', btoa('token:' + token));
     }
     const ws = new WS(url, wsProtocol);
+
     return new WebsocketDecompressAdapter(ws);
   }
 }
