@@ -222,7 +222,8 @@ pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow
     let module = ModuleDef::try_from(module)?;
     Ok(match lang {
         Language::Rust => generate_lang(&module, rust::Rust, namespace),
-        Language::Csharp | Language::TypeScript => {
+        Language::TypeScript => generate_lang(&module, typescript::TypeScript, namespace),
+        Language::Csharp => {
             let ctx = GenCtx {
                 typespace: module.typespace().clone(),
                 names: (0..module.typespace().types.len())
@@ -334,7 +335,7 @@ pub enum GenItem {
 fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenItem]) -> Vec<(String, String)> {
     match lang {
         Language::Csharp => csharp::autogen_csharp_globals(ctx, items, namespace),
-        Language::TypeScript => typescript::autogen_typescript_globals(ctx, items),
+        Language::TypeScript => unreachable!(),
         Language::Rust => unreachable!(),
     }
 }
@@ -343,37 +344,8 @@ impl GenItem {
     fn generate(&self, ctx: &GenCtx, lang: Language, namespace: &str) -> Option<(String, String)> {
         match lang {
             Language::Csharp => self.generate_csharp(ctx, namespace),
-            Language::TypeScript => self.generate_typescript(ctx),
+            Language::TypeScript => unreachable!(),
             Language::Rust => unreachable!(),
-        }
-    }
-
-    fn generate_typescript(&self, ctx: &GenCtx) -> Option<(String, String)> {
-        match self {
-            GenItem::Table(table) => {
-                let code = typescript::autogen_typescript_table(ctx, table);
-                // TODO: this is not ideal (should use table name, not row type name)
-                let name = ctx.names[table.data.idx()].as_ref().unwrap().to_case(Case::Snake);
-                Some((name + ".ts", code))
-            }
-            GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
-                AlgebraicType::Sum(sum) => {
-                    let filename = name.replace('.', "").to_case(Case::Snake);
-                    let code = typescript::autogen_typescript_sum(ctx, name, sum);
-                    Some((filename + ".ts", code))
-                }
-                AlgebraicType::Product(prod) => {
-                    let code = typescript::autogen_typescript_tuple(ctx, name, prod);
-                    let name = name.to_case(Case::Snake);
-                    Some((name + ".ts", code))
-                }
-                _ => todo!(),
-            },
-            GenItem::Reducer(reducer) => {
-                let code = typescript::autogen_typescript_reducer(ctx, reducer);
-                let name = reducer.name.deref().to_case(Case::Snake);
-                Some((name + "_reducer.ts", code))
-            }
         }
     }
 

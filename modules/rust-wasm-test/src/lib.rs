@@ -47,6 +47,23 @@ pub struct TestE {
 }
 
 #[derive(SpacetimeType)]
+pub struct Baz {
+    pub field: String,
+}
+
+#[derive(SpacetimeType)]
+pub enum Foobar {
+    Baz(Baz),
+    Bar,
+    Har(u32),
+}
+
+#[table(name = test_f, public)]
+pub struct TestFoobar {
+    pub field: Foobar,
+}
+
+#[derive(SpacetimeType)]
 #[sats(name = "Namespace.TestF")]
 pub enum TestF {
     Foo,
