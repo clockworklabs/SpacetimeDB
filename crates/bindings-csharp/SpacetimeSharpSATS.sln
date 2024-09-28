@@ -26,6 +26,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "spacetimedb-quickstart-serv
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "sdk-tests", "sdk-tests", "{D39E8203-6C3C-4C4B-9C7D-7911AA19D7CC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "benchmarks-cs", "..\..\modules\benchmarks-cs\benchmarks-cs.csproj", "{50E1AAE1-C42C-4C2F-B708-5190B0362165}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -61,6 +63,10 @@ Global
 		{FDACD960-168E-44F9-B036-2E29EA391BE7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{FDACD960-168E-44F9-B036-2E29EA391BE7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FDACD960-168E-44F9-B036-2E29EA391BE7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{50E1AAE1-C42C-4C2F-B708-5190B0362165}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{50E1AAE1-C42C-4C2F-B708-5190B0362165}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{50E1AAE1-C42C-4C2F-B708-5190B0362165}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{50E1AAE1-C42C-4C2F-B708-5190B0362165}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -69,6 +75,7 @@ Global
 		{5393711C-44B0-4752-B8D0-852C73D6866F} = {D39E8203-6C3C-4C4B-9C7D-7911AA19D7CC}
 		{40F1C615-EDD9-463F-A012-B232F6710FA5} = {D39E8203-6C3C-4C4B-9C7D-7911AA19D7CC}
 		{FDACD960-168E-44F9-B036-2E29EA391BE7} = {D39E8203-6C3C-4C4B-9C7D-7911AA19D7CC}
+		{50E1AAE1-C42C-4C2F-B708-5190B0362165} = {D39E8203-6C3C-4C4B-9C7D-7911AA19D7CC}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {8A5DE392-1C9D-4806-B6C7-EDD4D33C5D1E}

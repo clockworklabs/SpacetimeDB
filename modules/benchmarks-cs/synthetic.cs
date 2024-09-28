@@ -9,7 +9,7 @@ public static partial class synthetic
     [SpacetimeDB.Table]
     public partial struct unique_0_u32_u64_str
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [Unique]
         public uint id;
         public ulong age;
         public string name;
@@ -26,20 +26,20 @@ public static partial class synthetic
     [SpacetimeDB.Table]
     public partial struct btree_each_column_u32_u64_str
     {
-        [SpacetimeDB.Column(ColumnAttrs.Indexed)]
+        [Indexed]
         public uint id;
 
-        [SpacetimeDB.Column(ColumnAttrs.Indexed)]
+        [Indexed]
         public ulong age;
 
-        [SpacetimeDB.Column(ColumnAttrs.Indexed)]
+        [Indexed]
         public string name;
     }
 
     [SpacetimeDB.Table]
     public partial struct unique_0_u32_u64_u64
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [Unique]
         public uint id;
         public ulong x;
         public ulong y;
@@ -56,159 +56,205 @@ public static partial class synthetic
     [SpacetimeDB.Table]
     public partial struct btree_each_column_u32_u64_u64
     {
-        [SpacetimeDB.Column(ColumnAttrs.Indexed)]
+        [Indexed]
         public uint id;
 
-        [SpacetimeDB.Column(ColumnAttrs.Indexed)]
+        [Indexed]
         public ulong x;
 
-        [SpacetimeDB.Column(ColumnAttrs.Indexed)]
+        [Indexed]
         public ulong y;
     }
 
     // ---------- empty ----------
 
     [SpacetimeDB.Reducer]
-    public static void empty() { }
+    public static void empty(ReducerContext ctx) { }
 
     // ---------- insert ----------
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_0_u32_u64_str(uint id, ulong age, string name)
+    public static void insert_unique_0_u32_u64_str(
+        ReducerContext ctx,
+        uint id,
+        ulong age,
+        string name
+    )
     {
-        new unique_0_u32_u64_str()
-        {
-            id = id,
-            age = age,
-            name = name,
-        }.Insert();
+        ctx.Db.unique_0_u32_u64_str.Insert(
+            new()
+            {
+                id = id,
+                age = age,
+                name = name,
+            }
+        );
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_no_index_u32_u64_str(uint id, ulong age, string name)
+    public static void insert_no_index_u32_u64_str(
+        ReducerContext ctx,
+        uint id,
+        ulong age,
+        string name
+    )
     {
-        new no_index_u32_u64_str()
-        {
-            id = id,
-            age = age,
-            name = name,
-        }.Insert();
+        ctx.Db.no_index_u32_u64_str.Insert(
+            new()
+            {
+                id = id,
+                age = age,
+                name = name,
+            }
+        );
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_btree_each_column_u32_u64_str(uint id, ulong age, string name)
+    public static void insert_btree_each_column_u32_u64_str(
+        ReducerContext ctx,
+        uint id,
+        ulong age,
+        string name
+    )
     {
-        new btree_each_column_u32_u64_str()
-        {
-            id = id,
-            age = age,
-            name = name,
-        }.Insert();
+        ctx.Db.btree_each_column_u32_u64_str.Insert(
+            new()
+            {
+                id = id,
+                age = age,
+                name = name,
+            }
+        );
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_0_u32_u64_u64(uint id, ulong x, ulong y)
+    public static void insert_unique_0_u32_u64_u64(ReducerContext ctx, uint id, ulong x, ulong y)
     {
-        new unique_0_u32_u64_u64()
-        {
-            id = id,
-            x = x,
-            y = y,
-        }.Insert();
+        ctx.Db.unique_0_u32_u64_u64.Insert(
+            new()
+            {
+                id = id,
+                x = x,
+                y = y,
+            }
+        );
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_no_index_u32_u64_u64(uint id, ulong x, ulong y)
+    public static void insert_no_index_u32_u64_u64(ReducerContext ctx, uint id, ulong x, ulong y)
     {
-        new no_index_u32_u64_u64()
-        {
-            id = id,
-            x = x,
-            y = y,
-        }.Insert();
+        ctx.Db.no_index_u32_u64_u64.Insert(
+            new()
+            {
+                id = id,
+                x = x,
+                y = y,
+            }
+        );
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_btree_each_column_u32_u64_u64(uint id, ulong x, ulong y)
+    public static void insert_btree_each_column_u32_u64_u64(
+        ReducerContext ctx,
+        uint id,
+        ulong x,
+        ulong y
+    )
     {
-        new btree_each_column_u32_u64_u64()
-        {
-            id = id,
-            x = x,
-            y = y,
-        }.Insert();
+        ctx.Db.btree_each_column_u32_u64_u64.Insert(
+            new()
+            {
+                id = id,
+                x = x,
+                y = y,
+            }
+        );
     }
 
     // ---------- insert bulk ----------
 
     [SpacetimeDB.Reducer]
-    public static void insert_bulk_unique_0_u32_u64_u64(List<unique_0_u32_u64_u64> locs)
+    public static void insert_bulk_unique_0_u32_u64_u64(
+        ReducerContext ctx,
+        List<unique_0_u32_u64_u64> locs
+    )
     {
         foreach (unique_0_u32_u64_u64 loc in locs)
         {
-            loc.Insert();
+            ctx.Db.unique_0_u32_u64_u64.Insert(loc);
         }
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_bulk_no_index_u32_u64_u64(List<no_index_u32_u64_u64> locs)
+    public static void insert_bulk_no_index_u32_u64_u64(
+        ReducerContext ctx,
+        List<no_index_u32_u64_u64> locs
+    )
     {
         foreach (no_index_u32_u64_u64 loc in locs)
         {
-            loc.Insert();
+            ctx.Db.no_index_u32_u64_u64.Insert(loc);
         }
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_bulk_btree_each_column_u32_u64_u64(
+        ReducerContext ctx,
         List<btree_each_column_u32_u64_u64> locs
     )
     {
         foreach (btree_each_column_u32_u64_u64 loc in locs)
         {
-            loc.Insert();
+            ctx.Db.btree_each_column_u32_u64_u64.Insert(loc);
         }
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_bulk_unique_0_u32_u64_str(List<unique_0_u32_u64_str> people)
+    public static void insert_bulk_unique_0_u32_u64_str(
+        ReducerContext ctx,
+        List<unique_0_u32_u64_str> people
+    )
     {
         foreach (unique_0_u32_u64_str u32_u64_str in people)
         {
-            u32_u64_str.Insert();
+            ctx.Db.unique_0_u32_u64_str.Insert(u32_u64_str);
         }
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_bulk_no_index_u32_u64_str(List<no_index_u32_u64_str> people)
+    public static void insert_bulk_no_index_u32_u64_str(
+        ReducerContext ctx,
+        List<no_index_u32_u64_str> people
+    )
     {
         foreach (no_index_u32_u64_str u32_u64_str in people)
         {
-            u32_u64_str.Insert();
+            ctx.Db.no_index_u32_u64_str.Insert(u32_u64_str);
         }
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_bulk_btree_each_column_u32_u64_str(
+        ReducerContext ctx,
         List<btree_each_column_u32_u64_str> people
     )
     {
         foreach (btree_each_column_u32_u64_str u32_u64_str in people)
         {
-            u32_u64_str.Insert();
+            ctx.Db.btree_each_column_u32_u64_str.Insert(u32_u64_str);
         }
     }
 
     // ---------- update ----------
 
     [SpacetimeDB.Reducer]
-    public static void update_bulk_unique_0_u32_u64_u64(uint rowCount)
+    public static void update_bulk_unique_0_u32_u64_u64(ReducerContext ctx, uint rowCount)
     {
         int hit = 0;
-        foreach (unique_0_u32_u64_u64 loc in unique_0_u32_u64_u64.Iter().Take((int)rowCount))
+        foreach (unique_0_u32_u64_u64 loc in ctx.Db.unique_0_u32_u64_u64.Iter().Take((int)rowCount))
         {
             hit++;
-            unique_0_u32_u64_u64.UpdateByid(
+            ctx.Db.unique_0_u32_u64_u64.UpdateByid(
                 loc.id,
                 new()
                 {
@@ -225,15 +271,17 @@ public static partial class synthetic
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_bulk_unique_0_u32_u64_str(uint rowCount)
+    public static void update_bulk_unique_0_u32_u64_str(ReducerContext ctx, uint rowCount)
     {
         uint hit = 0;
         foreach (
-            unique_0_u32_u64_str u32_u64_str in unique_0_u32_u64_str.Iter().Take((int)rowCount)
+            unique_0_u32_u64_str u32_u64_str in ctx
+                .Db.unique_0_u32_u64_str.Iter()
+                .Take((int)rowCount)
         )
         {
             hit++;
-            unique_0_u32_u64_str.UpdateByid(
+            ctx.Db.unique_0_u32_u64_str.UpdateByid(
                 u32_u64_str.id,
                 new()
                 {
@@ -252,18 +300,18 @@ public static partial class synthetic
     // ---------- iterate ----------
 
     [SpacetimeDB.Reducer]
-    public static void iterate_unique_0_u32_u64_str()
+    public static void iterate_unique_0_u32_u64_str(ReducerContext ctx)
     {
-        foreach (unique_0_u32_u64_str u32_u64_str in unique_0_u32_u64_str.Iter())
+        foreach (unique_0_u32_u64_str u32_u64_str in ctx.Db.unique_0_u32_u64_str.Iter())
         {
             Bench.BlackBox(u32_u64_str);
         }
     }
 
     [SpacetimeDB.Reducer]
-    public static void iterate_unique_0_u32_u64_u64()
+    public static void iterate_unique_0_u32_u64_u64(ReducerContext ctx)
     {
-        foreach (unique_0_u32_u64_u64 u32_u64_u64 in unique_0_u32_u64_u64.Iter())
+        foreach (unique_0_u32_u64_u64 u32_u64_u64 in ctx.Db.unique_0_u32_u64_u64.Iter())
         {
             Bench.BlackBox(u32_u64_u64);
         }
@@ -272,143 +320,143 @@ public static partial class synthetic
     // ---------- filtering ----------
 
     [SpacetimeDB.Reducer]
-    public static void filter_unique_0_u32_u64_str_by_id(uint id)
+    public static void filter_unique_0_u32_u64_str_by_id(ReducerContext ctx, uint id)
     {
-        Bench.BlackBox(unique_0_u32_u64_str.FindByid(id));
+        Bench.BlackBox(ctx.Db.unique_0_u32_u64_str.FindByid(id));
     }
 
     [SpacetimeDB.Reducer]
-    public static void filter_no_index_u32_u64_str_by_id(uint id)
+    public static void filter_no_index_u32_u64_str_by_id(ReducerContext ctx, uint id)
     {
-        Bench.BlackBox(no_index_u32_u64_str.FilterByid(id));
+        Bench.BlackBox(ctx.Db.no_index_u32_u64_str.FilterByid(id));
     }
 
     [SpacetimeDB.Reducer]
-    public static void filter_btree_each_column_u32_u64_str_by_id(uint id)
+    public static void filter_btree_each_column_u32_u64_str_by_id(ReducerContext ctx, uint id)
     {
-        Bench.BlackBox(btree_each_column_u32_u64_str.FilterByid(id));
+        Bench.BlackBox(ctx.Db.btree_each_column_u32_u64_str.FilterByid(id));
     }
 
     [SpacetimeDB.Reducer]
-    public static void filter_unique_0_u32_u64_str_by_name(string name)
+    public static void filter_unique_0_u32_u64_str_by_name(ReducerContext ctx, string name)
     {
-        Bench.BlackBox(unique_0_u32_u64_str.FilterByname(name));
+        Bench.BlackBox(ctx.Db.unique_0_u32_u64_str.FilterByname(name));
     }
 
     [SpacetimeDB.Reducer]
-    public static void filter_no_index_u32_u64_str_by_name(string name)
+    public static void filter_no_index_u32_u64_str_by_name(ReducerContext ctx, string name)
     {
-        Bench.BlackBox(no_index_u32_u64_str.FilterByname(name));
+        Bench.BlackBox(ctx.Db.no_index_u32_u64_str.FilterByname(name));
     }
 
     [SpacetimeDB.Reducer]
-    public static void filter_btree_each_column_u32_u64_str_by_name(string name)
+    public static void filter_btree_each_column_u32_u64_str_by_name(ReducerContext ctx, string name)
     {
-        Bench.BlackBox(btree_each_column_u32_u64_str.FilterByname(name));
+        Bench.BlackBox(ctx.Db.btree_each_column_u32_u64_str.FilterByname(name));
     }
 
     [SpacetimeDB.Reducer]
-    public static void filter_unique_0_u32_u64_u64_by_id(uint id)
+    public static void filter_unique_0_u32_u64_u64_by_id(ReducerContext ctx, uint id)
     {
-        Bench.BlackBox(unique_0_u32_u64_u64.FindByid(id));
+        Bench.BlackBox(ctx.Db.unique_0_u32_u64_u64.FindByid(id));
     }
 
     [SpacetimeDB.Reducer]
-    public static void filter_no_index_u32_u64_u64_by_id(uint id)
+    public static void filter_no_index_u32_u64_u64_by_id(ReducerContext ctx, uint id)
     {
-        Bench.BlackBox(no_index_u32_u64_u64.FilterByid(id));
+        Bench.BlackBox(ctx.Db.no_index_u32_u64_u64.FilterByid(id));
     }
 
     [SpacetimeDB.Reducer]
-    public static void filter_btree_each_column_u32_u64_u64_by_id(uint id)
+    public static void filter_btree_each_column_u32_u64_u64_by_id(ReducerContext ctx, uint id)
     {
-        Bench.BlackBox(btree_each_column_u32_u64_u64.FilterByid(id));
+        Bench.BlackBox(ctx.Db.btree_each_column_u32_u64_u64.FilterByid(id));
     }
 
     [SpacetimeDB.Reducer]
-    public static void filter_unique_0_u32_u64_u64_by_x(ulong x)
+    public static void filter_unique_0_u32_u64_u64_by_x(ReducerContext ctx, ulong x)
     {
-        Bench.BlackBox(unique_0_u32_u64_u64.FilterByx(x));
+        Bench.BlackBox(ctx.Db.unique_0_u32_u64_u64.FilterByx(x));
     }
 
     [SpacetimeDB.Reducer]
-    public static void filter_no_index_u32_u64_u64_by_x(ulong x)
+    public static void filter_no_index_u32_u64_u64_by_x(ReducerContext ctx, ulong x)
     {
-        Bench.BlackBox(no_index_u32_u64_u64.FilterByx(x));
+        Bench.BlackBox(ctx.Db.no_index_u32_u64_u64.FilterByx(x));
     }
 
     [SpacetimeDB.Reducer]
-    public static void filter_btree_each_column_u32_u64_u64_by_x(ulong x)
+    public static void filter_btree_each_column_u32_u64_u64_by_x(ReducerContext ctx, ulong x)
     {
-        Bench.BlackBox(btree_each_column_u32_u64_u64.FilterByx(x));
+        Bench.BlackBox(ctx.Db.btree_each_column_u32_u64_u64.FilterByx(x));
     }
 
     [SpacetimeDB.Reducer]
-    public static void filter_unique_0_u32_u64_u64_by_y(ulong x)
+    public static void filter_unique_0_u32_u64_u64_by_y(ReducerContext ctx, ulong x)
     {
-        Bench.BlackBox(unique_0_u32_u64_u64.FilterByy(x));
+        Bench.BlackBox(ctx.Db.unique_0_u32_u64_u64.FilterByy(x));
     }
 
     [SpacetimeDB.Reducer]
-    public static void filter_no_index_u32_u64_u64_by_y(ulong x)
+    public static void filter_no_index_u32_u64_u64_by_y(ReducerContext ctx, ulong x)
     {
-        Bench.BlackBox(no_index_u32_u64_u64.FilterByy(x));
+        Bench.BlackBox(ctx.Db.no_index_u32_u64_u64.FilterByy(x));
     }
 
     [SpacetimeDB.Reducer]
-    public static void filter_btree_each_column_u32_u64_u64_by_y(ulong x)
+    public static void filter_btree_each_column_u32_u64_u64_by_y(ReducerContext ctx, ulong x)
     {
-        Bench.BlackBox(btree_each_column_u32_u64_u64.FilterByy(x));
+        Bench.BlackBox(ctx.Db.btree_each_column_u32_u64_u64.FilterByy(x));
     }
 
     // ---------- delete ----------
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_0_u32_u64_str_by_id(uint id)
+    public static void delete_unique_0_u32_u64_str_by_id(ReducerContext ctx, uint id)
     {
-        unique_0_u32_u64_str.DeleteByid(id);
+        ctx.Db.unique_0_u32_u64_str.DeleteByid(id);
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_0_u32_u64_u64_by_id(uint id)
+    public static void delete_unique_0_u32_u64_u64_by_id(ReducerContext ctx, uint id)
     {
-        unique_0_u32_u64_u64.DeleteByid(id);
+        ctx.Db.unique_0_u32_u64_u64.DeleteByid(id);
     }
 
     // ---------- clear table ----------
 
     [SpacetimeDB.Reducer]
-    public static void clear_table_unique_0_u32_u64_str()
+    public static void clear_table_unique_0_u32_u64_str(ReducerContext ctx)
     {
         throw new NotImplementedException("Modules currently have no interface to clear a table");
     }
 
     [SpacetimeDB.Reducer]
-    public static void clear_table_no_index_u32_u64_str()
+    public static void clear_table_no_index_u32_u64_str(ReducerContext ctx)
     {
         throw new NotImplementedException("Modules currently have no interface to clear a table");
     }
 
     [SpacetimeDB.Reducer]
-    public static void clear_table_btree_each_column_u32_u64_str()
+    public static void clear_table_btree_each_column_u32_u64_str(ReducerContext ctx)
     {
         throw new NotImplementedException("Modules currently have no interface to clear a table");
     }
 
     [SpacetimeDB.Reducer]
-    public static void clear_table_unique_0_u32_u64_u64()
+    public static void clear_table_unique_0_u32_u64_u64(ReducerContext ctx)
     {
         throw new NotImplementedException("Modules currently have no interface to clear a table");
     }
 
     [SpacetimeDB.Reducer]
-    public static void clear_table_no_index_u32_u64_u64()
+    public static void clear_table_no_index_u32_u64_u64(ReducerContext ctx)
     {
         throw new NotImplementedException("Modules currently have no interface to clear a table");
     }
 
     [SpacetimeDB.Reducer]
-    public static void clear_table_btree_each_column_u32_u64_u64()
+    public static void clear_table_btree_each_column_u32_u64_u64(ReducerContext ctx)
     {
         throw new NotImplementedException("Modules currently have no interface to clear a table");
     }
@@ -416,48 +464,49 @@ public static partial class synthetic
     // ---------- count ----------
 
     [SpacetimeDB.Reducer]
-    public static void count_unique_0_u32_u64_str()
+    public static void count_unique_0_u32_u64_str(ReducerContext ctx)
     {
-        Log.Info("COUNT: " + unique_0_u32_u64_str.Iter().Count());
+        Log.Info("COUNT: " + ctx.Db.unique_0_u32_u64_str.Iter().Count());
     }
 
     [SpacetimeDB.Reducer]
-    public static void count_no_index_u32_u64_str()
+    public static void count_no_index_u32_u64_str(ReducerContext ctx)
     {
-        Log.Info("COUNT: " + no_index_u32_u64_str.Iter().Count());
+        Log.Info("COUNT: " + ctx.Db.no_index_u32_u64_str.Iter().Count());
     }
 
     [SpacetimeDB.Reducer]
-    public static void count_btree_each_column_u32_u64_str()
+    public static void count_btree_each_column_u32_u64_str(ReducerContext ctx)
     {
-        Log.Info("COUNT: " + btree_each_column_u32_u64_str.Iter().Count());
+        Log.Info("COUNT: " + ctx.Db.btree_each_column_u32_u64_str.Iter().Count());
     }
 
     [SpacetimeDB.Reducer]
-    public static void count_unique_0_u32_u64_u64()
+    public static void count_unique_0_u32_u64_u64(ReducerContext ctx)
     {
-        Log.Info("COUNT: " + unique_0_u32_u64_u64.Iter().Count());
+        Log.Info("COUNT: " + ctx.Db.unique_0_u32_u64_u64.Iter().Count());
     }
 
     [SpacetimeDB.Reducer]
-    public static void count_no_index_u32_u64_u64()
+    public static void count_no_index_u32_u64_u64(ReducerContext ctx)
     {
-        Log.Info("COUNT: " + no_index_u32_u64_u64.Iter().Count());
+        Log.Info("COUNT: " + ctx.Db.no_index_u32_u64_u64.Iter().Count());
     }
 
     [SpacetimeDB.Reducer]
-    public static void count_btree_each_column_u32_u64_u64()
+    public static void count_btree_each_column_u32_u64_u64(ReducerContext ctx)
     {
-        Log.Info("COUNT: " + btree_each_column_u32_u64_u64.Iter().Count());
+        Log.Info("COUNT: " + ctx.Db.btree_each_column_u32_u64_u64.Iter().Count());
     }
 
     // ---------- module-specific stuff ----------
 
     [SpacetimeDB.Reducer]
-    public static void fn_with_1_args(string arg) { }
+    public static void fn_with_1_args(ReducerContext ctx, string arg) { }
 
     [SpacetimeDB.Reducer]
     public static void fn_with_32_args(
+        ReducerContext ctx,
         string arg1,
         string arg2,
         string arg3,
@@ -490,11 +539,10 @@ public static partial class synthetic
         string arg30,
         string arg31,
         string arg32
-    )
-    { }
+    ) { }
 
     [SpacetimeDB.Reducer]
-    public static void print_many_things(uint n)
+    public static void print_many_things(ReducerContext ctx, uint n)
     {
         for (int i = 0; i < n; i++)
         {
