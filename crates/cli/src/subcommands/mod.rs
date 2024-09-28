@@ -8,7 +8,6 @@ pub mod generate;
 pub mod identity;
 pub mod init;
 pub mod list;
-pub mod local;
 pub mod logs;
 pub mod publish;
 pub mod repl;
