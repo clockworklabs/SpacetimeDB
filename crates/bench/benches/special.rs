@@ -9,7 +9,7 @@ use spacetimedb_bench::{
 use spacetimedb_lib::{sats, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_testing::modules::start_runtime;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use std::{hint::black_box, sync::Arc};
 
 #[global_allocator]
@@ -61,9 +61,6 @@ fn custom_db_benchmarks(c: &mut Criterion) {
     };
     let module = runtime.block_on(async { BENCHMARKS_MODULE.load_module(config, None).await });
     let mut group = c.benchmark_group("special");
-    // This bench take long, so adjust for it
-    group.measurement_time(Duration::from_secs(60 * 2));
-    group.sample_size(10);
 
     for n in [10, 100] {
         let args = sats::product![n];
