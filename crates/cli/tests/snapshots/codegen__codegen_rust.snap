@@ -382,10 +382,9 @@ impl<'ctx> __sdk::table::Table for HasSpecialStuffTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    deletes: Vec<__ws::EncodedValue>,
-    inserts: Vec<__ws::EncodedValue>,
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<HasSpecialStuff>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
+    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"has_special_stuff\"")
 }
 '''
@@ -680,9 +679,9 @@ fn reducer_args(&self) -> &dyn std::any::Any {
 }
 }
 }
-impl TryFrom<__ws::ReducerCallInfo> for Reducer {
+impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
 		type Error = __anyhow::Error;
-fn try_from(value: __ws::ReducerCallInfo) -> __anyhow::Result<Self> {
+fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {
 		match &value.reducer_name[..] {
 						"__identity_connected__" => Ok(Reducer::IdentityConnected(__sdk::spacetime_module::parse_reducer_args("__identity_connected__", &value.args)?)),
 			"__init__" => Ok(Reducer::Init(__sdk::spacetime_module::parse_reducer_args("__init__", &value.args)?)),
@@ -713,21 +712,21 @@ pub struct DbUpdate {
 }
 
 
-impl TryFrom<__ws::DatabaseUpdate> for DbUpdate {
+impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
     type Error = __anyhow::Error;
-    fn try_from(raw: __ws::DatabaseUpdate) -> Result<Self, Self::Error> {
+    fn try_from(raw: __ws::DatabaseUpdate<__ws::BsatnFormat>) -> Result<Self, Self::Error> {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
 
-		"has_special_stuff" => db_update.has_special_stuff = has_special_stuff_table::parse_table_update(table_update.deletes, table_update.inserts)?,
-	"pk_multi_identity" => db_update.pk_multi_identity = pk_multi_identity_table::parse_table_update(table_update.deletes, table_update.inserts)?,
-	"points" => db_update.points = points_table::parse_table_update(table_update.deletes, table_update.inserts)?,
-	"private" => db_update.private = private_table::parse_table_update(table_update.deletes, table_update.inserts)?,
-	"repeating_test_arg" => db_update.repeating_test_arg = repeating_test_arg_table::parse_table_update(table_update.deletes, table_update.inserts)?,
-	"test_a" => db_update.test_a = test_a_table::parse_table_update(table_update.deletes, table_update.inserts)?,
-	"test_d" => db_update.test_d = test_d_table::parse_table_update(table_update.deletes, table_update.inserts)?,
-	"test_e" => db_update.test_e = test_e_table::parse_table_update(table_update.deletes, table_update.inserts)?,
+		"has_special_stuff" => db_update.has_special_stuff = has_special_stuff_table::parse_table_update(table_update)?,
+	"pk_multi_identity" => db_update.pk_multi_identity = pk_multi_identity_table::parse_table_update(table_update)?,
+	"points" => db_update.points = points_table::parse_table_update(table_update)?,
+	"private" => db_update.private = private_table::parse_table_update(table_update)?,
+	"repeating_test_arg" => db_update.repeating_test_arg = repeating_test_arg_table::parse_table_update(table_update)?,
+	"test_a" => db_update.test_a = test_a_table::parse_table_update(table_update)?,
+	"test_d" => db_update.test_d = test_d_table::parse_table_update(table_update)?,
+	"test_e" => db_update.test_e = test_e_table::parse_table_update(table_update)?,
 
                 unknown => __anyhow::bail!("Unknown table {unknown:?} in DatabaseUpdate"),
             }
@@ -1200,12 +1199,10 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkMultiIdentityTableHandle<'ctx
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    deletes: Vec<__ws::EncodedValue>,
-    inserts: Vec<__ws::EncodedValue>,
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<PkMultiIdentity>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<u32>(
-        deletes,
-        inserts,
+        raw_updates,
         |row: &PkMultiIdentity| &row.id,
     ).context("Failed to parse table update for table \"pk_multi_identity\"")
 }
@@ -1239,7 +1236,7 @@ pub(super) fn parse_table_update(
                 self.imp.find(col_val)
             }
         }
-
+        
         /// Access to the `other` unique index on the table `pk_multi_identity`,
         /// which allows point queries on the field of the same name
         /// via the [`PkMultiIdentityOtherUnique::find`] method.
@@ -1406,10 +1403,9 @@ impl<'ctx> __sdk::table::Table for PointsTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    deletes: Vec<__ws::EncodedValue>,
-    inserts: Vec<__ws::EncodedValue>,
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<Point>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
+    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"points\"")
 }
 '''
@@ -1497,10 +1493,9 @@ impl<'ctx> __sdk::table::Table for PrivateTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    deletes: Vec<__ws::EncodedValue>,
-    inserts: Vec<__ws::EncodedValue>,
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<Private>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
+    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"private\"")
 }
 '''
@@ -1701,12 +1696,10 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for RepeatingTestArgTableHandle<'ct
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    deletes: Vec<__ws::EncodedValue>,
-    inserts: Vec<__ws::EncodedValue>,
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<RepeatingTestArg>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<u64>(
-        deletes,
-        inserts,
+        raw_updates,
         |row: &RepeatingTestArg| &row.scheduled_id,
     ).context("Failed to parse table update for table \"repeating_test_arg\"")
 }
@@ -1927,10 +1920,9 @@ impl<'ctx> __sdk::table::Table for TestATableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    deletes: Vec<__ws::EncodedValue>,
-    inserts: Vec<__ws::EncodedValue>,
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<TestA>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
+    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"test_a\"")
 }
 '''
@@ -2071,10 +2063,9 @@ impl<'ctx> __sdk::table::Table for TestDTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    deletes: Vec<__ws::EncodedValue>,
-    inserts: Vec<__ws::EncodedValue>,
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<TestD>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
+    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"test_d\"")
 }
 '''
@@ -2205,12 +2196,10 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for TestETableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    deletes: Vec<__ws::EncodedValue>,
-    inserts: Vec<__ws::EncodedValue>,
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<TestE>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<u64>(
-        deletes,
-        inserts,
+        raw_updates,
         |row: &TestE| &row.id,
     ).context("Failed to parse table update for table \"test_e\"")
 }
