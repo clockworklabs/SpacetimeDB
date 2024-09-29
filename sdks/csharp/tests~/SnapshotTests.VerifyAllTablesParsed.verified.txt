@@ -1,17 +1,33 @@
 ﻿{
   Events: {
-    OnIdentityReceived: {
-      identity: Identity_1,
-      address: Guid_1
-    },
+    OnIdentityReceived: Identity_1,
     OnInsertUser: {
+      eventContext: {
+        Reducers: {Scrubbed},
+        Reducer: {},
+        Db: {Scrubbed}
+      },
       user: {
         identity: Identity_1,
         online: true
       }
     },
-    LogException: Unknown reducer __identity_connected__ (Parameter 'Reducer'),
+    LogException: Unknown reducer unknown-reducer (Parameter 'Reducer'),
     OnInsertUser: {
+      eventContext: {
+        Reducers: {Scrubbed},
+        Reducer: {
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_1,
+            Status: {},
+            CallerIdentity: Identity_2,
+            CallerAddress: Guid_1,
+            EnergyConsumed: {},
+            Reducer: {}
+          }
+        },
+        Db: {Scrubbed}
+      },
       user: {
         identity: Identity_2,
         online: true
@@ -20,8 +36,8 @@
     OnEvent: {
       status: {Scrubbed},
       timestamp: 1718487763059031,
-      caller_identity: {Scrubbed},
-      caller_address: Guid_2,
+      caller_identity: Identity_2,
+      caller_address: Guid_1,
       reducer_call: {
         reducer_name: __identity_connected__,
         args: 
@@ -30,6 +46,24 @@
       host_execution_duration_micros: 66
     },
     OnUpdateUser: {
+      eventContext: {
+        Reducers: {Scrubbed},
+        Reducer: {
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_2,
+            Status: {},
+            CallerIdentity: Identity_1,
+            CallerAddress: Guid_2,
+            EnergyConsumed: {},
+            Reducer: {
+              SetName_: {
+                Name: A
+              }
+            }
+          }
+        },
+        Db: {Scrubbed}
+      },
       oldUser: {
         identity: Identity_1,
         online: true
@@ -38,22 +72,13 @@
         identity: Identity_1,
         name: A,
         online: true
-      },
-      reducerEvent: {
-        Args: {
-          Name: A
-        },
-        Timestamp: 1718487768057579,
-        Identity: Identity_1,
-        CallerAddress: Guid_1,
-        Status: {Scrubbed}
       }
     },
     OnEvent: {
       status: {Scrubbed},
       timestamp: 1718487768057579,
-      caller_identity: {Scrubbed},
-      caller_address: Guid_1,
+      caller_identity: Identity_1,
+      caller_address: Guid_2,
       reducer_call: {
         reducer_name: set_name,
         args: AQAAAEE=,
@@ -63,35 +88,53 @@
       host_execution_duration_micros: 70
     },
     OnSetName: {
-      Args: {
-        Name: A
+      Reducers: {Scrubbed},
+      Reducer: {
+        ReducerEvent: {
+          Timestamp: DateTimeOffset_2,
+          Status: {},
+          CallerIdentity: Identity_1,
+          CallerAddress: Guid_2,
+          EnergyConsumed: {},
+          Reducer: {
+            SetName_: {
+              Name: A
+            }
+          }
+        }
       },
-      Timestamp: 1718487768057579,
-      Identity: Identity_1,
-      CallerAddress: Guid_1,
-      Status: {Scrubbed}
+      Db: {Scrubbed}
     },
     OnInsertMessage: {
+      eventContext: {
+        Reducers: {Scrubbed},
+        Reducer: {
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_3,
+            Status: {},
+            CallerIdentity: Identity_2,
+            CallerAddress: Guid_1,
+            EnergyConsumed: {},
+            Reducer: {
+              SendMessage_: {
+                Text: Hello, A!
+              }
+            }
+          }
+        },
+        Db: {Scrubbed}
+      },
       message: {
         sender: Identity_2,
         sent: 1718487775346381,
         text: Hello, A!
-      },
-      reducerEvent: {
-        Args: {
-          Text: Hello, A!
-        },
-        Timestamp: 1718487775346381,
-        Identity: Identity_2,
-        CallerAddress: Guid_2,
-        Status: {Scrubbed}
       }
     },
     OnEvent: {
       status: {Scrubbed},
       timestamp: 1718487775346381,
-      caller_identity: {Scrubbed},
-      caller_address: Guid_2,
+      caller_identity: Identity_2,
+      caller_address: Guid_1,
       reducer_call: {
         reducer_name: send_message,
         args: CQAAAEhlbGxvLCBBIQ==,
@@ -101,15 +144,42 @@
       host_execution_duration_micros: 57
     },
     OnSendMessage: {
-      Args: {
-        Text: Hello, A!
+      Reducers: {Scrubbed},
+      Reducer: {
+        ReducerEvent: {
+          Timestamp: DateTimeOffset_3,
+          Status: {},
+          CallerIdentity: Identity_2,
+          CallerAddress: Guid_1,
+          EnergyConsumed: {},
+          Reducer: {
+            SendMessage_: {
+              Text: Hello, A!
+            }
+          }
+        }
       },
-      Timestamp: 1718487775346381,
-      Identity: Identity_2,
-      CallerAddress: Guid_2,
-      Status: {Scrubbed}
+      Db: {Scrubbed}
     },
     OnUpdateUser: {
+      eventContext: {
+        Reducers: {Scrubbed},
+        Reducer: {
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_4,
+            Status: {},
+            CallerIdentity: Identity_2,
+            CallerAddress: Guid_1,
+            EnergyConsumed: {},
+            Reducer: {
+              SetName_: {
+                Name: B
+              }
+            }
+          }
+        },
+        Db: {Scrubbed}
+      },
       oldUser: {
         identity: Identity_2,
         online: true
@@ -118,22 +188,13 @@
         identity: Identity_2,
         name: B,
         online: true
-      },
-      reducerEvent: {
-        Args: {
-          Name: B
-        },
-        Timestamp: 1718487777307855,
-        Identity: Identity_2,
-        CallerAddress: Guid_2,
-        Status: {Scrubbed}
       }
     },
     OnEvent: {
       status: {Scrubbed},
       timestamp: 1718487777307855,
-      caller_identity: {Scrubbed},
-      caller_address: Guid_2,
+      caller_identity: Identity_2,
+      caller_address: Guid_1,
       reducer_call: {
         reducer_name: set_name,
         args: AQAAAEI=,
@@ -143,35 +204,53 @@
       host_execution_duration_micros: 98
     },
     OnSetName: {
-      Args: {
-        Name: B
+      Reducers: {Scrubbed},
+      Reducer: {
+        ReducerEvent: {
+          Timestamp: DateTimeOffset_4,
+          Status: {},
+          CallerIdentity: Identity_2,
+          CallerAddress: Guid_1,
+          EnergyConsumed: {},
+          Reducer: {
+            SetName_: {
+              Name: B
+            }
+          }
+        }
       },
-      Timestamp: 1718487777307855,
-      Identity: Identity_2,
-      CallerAddress: Guid_2,
-      Status: {Scrubbed}
+      Db: {Scrubbed}
     },
     OnInsertMessage: {
+      eventContext: {
+        Reducers: {Scrubbed},
+        Reducer: {
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_5,
+            Status: {},
+            CallerIdentity: Identity_1,
+            CallerAddress: Guid_2,
+            EnergyConsumed: {},
+            Reducer: {
+              SendMessage_: {
+                Text: Hello, B!
+              }
+            }
+          }
+        },
+        Db: {Scrubbed}
+      },
       message: {
         sender: Identity_1,
         sent: 1718487783175083,
         text: Hello, B!
-      },
-      reducerEvent: {
-        Args: {
-          Text: Hello, B!
-        },
-        Timestamp: 1718487783175083,
-        Identity: Identity_1,
-        CallerAddress: Guid_1,
-        Status: {Scrubbed}
       }
     },
     OnEvent: {
       status: {Scrubbed},
       timestamp: 1718487783175083,
-      caller_identity: {Scrubbed},
-      caller_address: Guid_1,
+      caller_identity: Identity_1,
+      caller_address: Guid_2,
       reducer_call: {
         reducer_name: send_message,
         args: CQAAAEhlbGxvLCBCIQ==,
@@ -181,35 +260,53 @@
       host_execution_duration_micros: 40
     },
     OnSendMessage: {
-      Args: {
-        Text: Hello, B!
+      Reducers: {Scrubbed},
+      Reducer: {
+        ReducerEvent: {
+          Timestamp: DateTimeOffset_5,
+          Status: {},
+          CallerIdentity: Identity_1,
+          CallerAddress: Guid_2,
+          EnergyConsumed: {},
+          Reducer: {
+            SendMessage_: {
+              Text: Hello, B!
+            }
+          }
+        }
       },
-      Timestamp: 1718487783175083,
-      Identity: Identity_1,
-      CallerAddress: Guid_1,
-      Status: {Scrubbed}
+      Db: {Scrubbed}
     },
     OnInsertMessage: {
+      eventContext: {
+        Reducers: {Scrubbed},
+        Reducer: {
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_6,
+            Status: {},
+            CallerIdentity: Identity_2,
+            CallerAddress: Guid_1,
+            EnergyConsumed: {},
+            Reducer: {
+              SendMessage_: {
+                Text: Goodbye!
+              }
+            }
+          }
+        },
+        Db: {Scrubbed}
+      },
       message: {
         sender: Identity_2,
         sent: 1718487787645364,
         text: Goodbye!
-      },
-      reducerEvent: {
-        Args: {
-          Text: Goodbye!
-        },
-        Timestamp: 1718487787645364,
-        Identity: Identity_2,
-        CallerAddress: Guid_2,
-        Status: {Scrubbed}
       }
     },
     OnEvent: {
       status: {Scrubbed},
       timestamp: 1718487787645364,
-      caller_identity: {Scrubbed},
-      caller_address: Guid_2,
+      caller_identity: Identity_2,
+      caller_address: Guid_1,
       reducer_call: {
         reducer_name: send_message,
         args: CAAAAEdvb2RieWUh,
@@ -219,16 +316,38 @@
       host_execution_duration_micros: 28
     },
     OnSendMessage: {
-      Args: {
-        Text: Goodbye!
+      Reducers: {Scrubbed},
+      Reducer: {
+        ReducerEvent: {
+          Timestamp: DateTimeOffset_6,
+          Status: {},
+          CallerIdentity: Identity_2,
+          CallerAddress: Guid_1,
+          EnergyConsumed: {},
+          Reducer: {
+            SendMessage_: {
+              Text: Goodbye!
+            }
+          }
+        }
       },
-      Timestamp: 1718487787645364,
-      Identity: Identity_2,
-      CallerAddress: Guid_2,
-      Status: {Scrubbed}
+      Db: {Scrubbed}
     },
-    LogException: Unknown reducer __identity_disconnected__ (Parameter 'Reducer'),
     OnUpdateUser: {
+      eventContext: {
+        Reducers: {Scrubbed},
+        Reducer: {
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_7,
+            Status: {},
+            CallerIdentity: Identity_2,
+            CallerAddress: Guid_1,
+            EnergyConsumed: {},
+            Reducer: {}
+          }
+        },
+        Db: {Scrubbed}
+      },
       oldUser: {
         identity: Identity_2,
         name: B,
@@ -243,8 +362,8 @@
     OnEvent: {
       status: {Scrubbed},
       timestamp: 1718487791901504,
-      caller_identity: {Scrubbed},
-      caller_address: Guid_2,
+      caller_identity: Identity_2,
+      caller_address: Guid_1,
       reducer_call: {
         reducer_name: __identity_disconnected__,
         args: 
@@ -253,26 +372,35 @@
       host_execution_duration_micros: 75
     },
     OnInsertMessage: {
+      eventContext: {
+        Reducers: {Scrubbed},
+        Reducer: {
+          ReducerEvent: {
+            Timestamp: DateTimeOffset_8,
+            Status: {},
+            CallerIdentity: Identity_1,
+            CallerAddress: Guid_2,
+            EnergyConsumed: {},
+            Reducer: {
+              SendMessage_: {
+                Text: Goodbye!
+              }
+            }
+          }
+        },
+        Db: {Scrubbed}
+      },
       message: {
         sender: Identity_1,
         sent: 1718487794937841,
         text: Goodbye!
-      },
-      reducerEvent: {
-        Args: {
-          Text: Goodbye!
-        },
-        Timestamp: 1718487794937841,
-        Identity: Identity_1,
-        CallerAddress: Guid_1,
-        Status: {Scrubbed}
       }
     },
     OnEvent: {
       status: {Scrubbed},
       timestamp: 1718487794937841,
-      caller_identity: {Scrubbed},
-      caller_address: Guid_1,
+      caller_identity: Identity_1,
+      caller_address: Guid_2,
       reducer_call: {
         reducer_name: send_message,
         args: CAAAAEdvb2RieWUh,
@@ -282,13 +410,22 @@
       host_execution_duration_micros: 34
     },
     OnSendMessage: {
-      Args: {
-        Text: Goodbye!
+      Reducers: {Scrubbed},
+      Reducer: {
+        ReducerEvent: {
+          Timestamp: DateTimeOffset_8,
+          Status: {},
+          CallerIdentity: Identity_1,
+          CallerAddress: Guid_2,
+          EnergyConsumed: {},
+          Reducer: {
+            SendMessage_: {
+              Text: Goodbye!
+            }
+          }
+        }
       },
-      Timestamp: 1718487794937841,
-      Identity: Identity_1,
-      CallerAddress: Guid_1,
-      Status: {Scrubbed}
+      Db: {Scrubbed}
     }
   },
   FinalSnapshot: {
@@ -330,7 +467,7 @@
   Stats: {
     ReducerRequestTracker: {
       sampleCount: 3,
-      requestsAwaitingResponse: 5,
+      requestsAwaitingResponse: 6,
       Min: sample#4,
       Max: sample#2
     },
@@ -341,12 +478,12 @@
       Max: sample#1
     },
     AllReducersTracker: {
-      sampleCount: 8,
+      sampleCount: 9,
       Min: reducer=send_message,
       Max: reducer=set_name
     },
     ParseMessageTracker: {
-      sampleCount: 9,
+      sampleCount: 10,
       Min: type=TransactionUpdate,reducer=send_message,
       Max: type=InitialSubscription
     }

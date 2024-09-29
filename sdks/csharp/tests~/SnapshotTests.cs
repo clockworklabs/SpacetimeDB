@@ -206,6 +206,9 @@ public class SnapshotTests
         SampleSubscriptionUpdate(
             1, 366, [SampleUserInsert("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)]
         ),
+        SampleTransactionUpdate(0, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
+            0, "unknown-reducer", 0, 40, [], null
+        ),
         SampleTransactionUpdate(
             1718487763059031, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
             0, "__identity_connected__", 1957615, 66, [SampleUserInsert("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, true)],
@@ -255,7 +258,7 @@ public class SnapshotTests
 
         Log.Current = new TestLogger(events);
 
-        var client = SpacetimeDBClient.instance;
+        var client = new DbConnection();
 
         var sampleDumpParsed = SampleDump();
 
@@ -292,35 +295,35 @@ public class SnapshotTests
             ServerMessage.OneOffQueryResponse(var o) => o,
             _ => throw new InvalidOperationException()
         });
-        client.onIdentityReceived += (_authToken, identity, address) =>
-            events.Add("OnIdentityReceived", new { identity, address });
+        client.onConnect += (identity, _token) =>
+            events.Add("OnIdentityReceived", identity);
         client.onSubscriptionApplied += () => events.Add("OnSubscriptionApplied");
         client.onUnhandledReducerError += (exception) =>
             events.Add("OnUnhandledReducerError", exception);
 
-        Reducer.OnSendMessageEvent += (reducerEvent, _text) =>
-            events.Add("OnSendMessage", reducerEvent);
-        Reducer.OnSetNameEvent += (reducerEvent, _name) => events.Add("OnSetName", reducerEvent);
+        client.RemoteReducers.OnSendMessage += (eventContext, _text) =>
+            events.Add("OnSendMessage", eventContext);
+        client.RemoteReducers.OnSetName += (eventContext, _name) => events.Add("OnSetName", eventContext);
 
-        User.OnDelete += (user, reducerEvent) =>
-            events.Add("OnDeleteUser", new { user, reducerEvent });
-        User.OnInsert += (user, reducerEvent) =>
-            events.Add("OnInsertUser", new { user, reducerEvent });
-        User.OnUpdate += (oldUser, newUser, reducerEvent) =>
+        client.RemoteTables.User.OnDelete += (eventContext, user) =>
+            events.Add("OnDeleteUser", new { eventContext, user });
+        client.RemoteTables.User.OnInsert += (eventContext, user) =>
+            events.Add("OnInsertUser", new { eventContext, user });
+        client.RemoteTables.User.OnUpdate += (eventContext, oldUser, newUser) =>
             events.Add(
                 "OnUpdateUser",
                 new
                 {
+                    eventContext,
                     oldUser,
-                    newUser,
-                    reducerEvent
+                    newUser
                 }
             );
 
-        Message.OnDelete += (message, reducerEvent) =>
-            events.Add("OnDeleteMessage", new { message, reducerEvent });
-        Message.OnInsert += (message, reducerEvent) =>
-            events.Add("OnInsertMessage", new { message, reducerEvent });
+        client.RemoteTables.Message.OnDelete += (eventContext, message) =>
+            events.Add("OnDeleteMessage", new { eventContext, message });
+        client.RemoteTables.Message.OnInsert += (eventContext, message) =>
+            events.Add("OnInsertMessage", new { eventContext, message });
 
         // Simulate receiving WebSocket messages.
         foreach (var sample in sampleDumpBinary)
@@ -340,8 +343,8 @@ public class SnapshotTests
                     Events = events,
                     FinalSnapshot = new
                     {
-                        User = User.Iter().ToList(),
-                        Message = Message.Iter().ToList()
+                        User = client.RemoteTables.User.Iter().ToList(),
+                        Message = client.RemoteTables.Message.Iter().ToList()
                     },
                     Stats = client.stats
                 }
@@ -352,8 +355,8 @@ public class SnapshotTests
                 new EnergyQuantaConverter(),
                 new EncodedValueConverter()
             ]))
-            .ScrubMember<TransactionUpdate>(x => x.CallerIdentity)
             .ScrubMember<TransactionUpdate>(x => x.Status)
-            .ScrubMember<ReducerEventBase>(x => x.Status);
+            .ScrubMember<DbContext<RemoteTables>>(x => x.Db)
+            .ScrubMember<EventContext>(x => x.Reducers);
     }
 }

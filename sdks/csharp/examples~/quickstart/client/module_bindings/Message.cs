@@ -14,7 +14,7 @@ namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class Message : SpacetimeDB.DatabaseTable<Message, SpacetimeDB.Types.EventContext>
+	public partial class Message : IDatabaseRow
 	{
 		[DataMember(Name = "sender")]
 		public SpacetimeDB.Identity Sender;
@@ -39,22 +39,5 @@ namespace SpacetimeDB.Types
 			this.Sender = new();
 			this.Text = "";
 		}
-
-		public static IEnumerable<Message> FilterBySender(SpacetimeDB.Identity value)
-		{
-			return Query(x => x.Sender == value);
-		}
-
-		public static IEnumerable<Message> FilterBySent(ulong value)
-		{
-			return Query(x => x.Sent == value);
-		}
-
-		public static IEnumerable<Message> FilterByText(string value)
-		{
-			return Query(x => x.Text == value);
-		}
-
-
 	}
 }

@@ -5,7 +5,8 @@
 #nullable enable
 
 using System;
-using SpacetimeDB;
+using System.Collections.Generic;
+
 using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB.Types
@@ -17,8 +18,52 @@ namespace SpacetimeDB.Types
 
 	public sealed class RemoteTables
 	{
-		public readonly RemoteTableHandle<EventContext, Message> Message = new();
-		public readonly RemoteTableHandle<EventContext, User> User = new();
+		public class MessageHandle : RemoteTableHandle<EventContext, Message> {
+            public IEnumerable<Message> FilterBySender(SpacetimeDB.Identity value) {
+                return Query(x => x.Sender == value);
+            }
+
+            public IEnumerable<Message> FilterBySent(ulong value) {
+                return Query(x => x.Sent == value);
+            }
+
+            public IEnumerable<Message> FilterByText(string value) {
+                return Query(x => x.Text == value);
+            }
+        }
+
+        public class UserHandle : RemoteTableHandle<EventContext, User> {
+			public override object? GetPrimaryKey(IDatabaseRow row) => ((User)row).Identity;
+
+            private Dictionary<SpacetimeDB.Identity, User> Identity_Index = new(16);
+
+            public override void InternalInvokeValueInserted(IDatabaseRow row) {
+				var value = (User)row;
+                Identity_Index[value.Identity] = value;
+            }
+
+            public override void InternalInvokeValueDeleted(IDatabaseRow row) {
+                Identity_Index.Remove(((User)row).Identity);
+            }
+
+            public User? FindByIdentity(SpacetimeDB.Identity value) {
+                Identity_Index.TryGetValue(value, out var r);
+                return r;
+            }
+
+            public IEnumerable<User> FilterByIdentity(SpacetimeDB.Identity value) {
+                if (FindByIdentity(value) is { } found) {
+                    yield return found;
+                }
+            }
+
+            public IEnumerable<User> FilterByOnline(bool value) {
+                return Query(x => x.Online == value);
+            }
+        }
+
+        public readonly MessageHandle Message = new();
+		public readonly UserHandle User = new();
 	}
 
 	public sealed class RemoteReducers : RemoteBase<DbConnection>
@@ -61,18 +106,25 @@ namespace SpacetimeDB.Types
 		}
 	}
 
-	public partial class EventContext : EventContextBase<RemoteTables, RemoteReducers>
-	{
-		public IReducerArgs? Args { get; }
+	public partial record EventContext : DbContext<RemoteTables>, IEventContext {
+		public readonly RemoteReducers Reducers;
+		public readonly Event<Reducer> Reducer;
 
-		public string ReducerName => Args?.ReducerName ?? "<none>";
-
-		public EventContext(DbConnection conn, TransactionUpdate update, IReducerArgs? args) : base(conn.RemoteTables, conn.RemoteReducers, update) => Args = args;
-
-		public override bool InvokeHandler() => Args?.InvokeHandler(this) ?? false;
+		internal EventContext(DbConnection conn, Event<Reducer> reducer) : base(conn.RemoteTables) {
+			Reducers = conn.RemoteReducers;
+			Reducer = reducer;
+		}
 	}
 
-	public class DbConnection : DbConnectionBase<DbConnection, EventContext>
+	[Type]
+	public partial record Reducer : TaggedEnum<(
+		SendMessageArgsStruct SendMessage,
+		SetNameArgsStruct SetName,
+		Unit IdentityConnected,
+		Unit IdentityDisconnected
+    )>;
+
+	public class DbConnection : DbConnectionBase<DbConnection, Reducer>
 	{
 		public readonly RemoteTables RemoteTables = new();
 		public readonly RemoteReducers RemoteReducers;
@@ -81,23 +133,35 @@ namespace SpacetimeDB.Types
 		{
 			RemoteReducers = new(this);
 
-			clientDB.AddTable<Message>();
-			clientDB.AddTable<User>();
+			clientDB.AddTable<Message>("Message", RemoteTables.Message);
+			clientDB.AddTable<User>("User", RemoteTables.User);
 		}
 
-		protected override EventContext ReducerEventFromDbEvent(TransactionUpdate update)
+		protected override Reducer ToReducer(TransactionUpdate update)
 		{
 			var encodedArgs = update.ReducerCall.Args;
-			IReducerArgs? args = update.ReducerCall.ReducerName switch {
-				"send_message" => BSATNHelpers.Decode<SendMessageArgsStruct>(encodedArgs),
-				"set_name" => BSATNHelpers.Decode<SetNameArgsStruct>(encodedArgs),
-				"<none>" => null,
-				"__identity_connected__" => null,
-				"__identity_disconnected__" => null,
-				"" => null,
+			return update.ReducerCall.ReducerName switch {
+				"send_message" => new Reducer.SendMessage(BSATNHelpers.Decode<SendMessageArgsStruct>(encodedArgs)),
+				"set_name" => new Reducer.SetName(BSATNHelpers.Decode<SetNameArgsStruct>(encodedArgs)),
+				"__identity_connected__" => new Reducer.IdentityConnected(default),
+				"__identity_disconnected__" => new Reducer.IdentityDisconnected(default),
 				var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
 			};
-			return new EventContext(this, update, args);
+		}
+
+		protected override IEventContext ToEventContext(Event<Reducer> reducerEvent) {
+			return new EventContext(this, reducerEvent);
+		}
+
+		protected override bool Dispatch(IEventContext context, Reducer reducer) {
+			var eventContext = (EventContext)context;
+			return reducer switch {
+				Reducer.SendMessage(var args) => RemoteReducers.InvokeSendMessage(eventContext, args),
+				Reducer.SetName(var args) => RemoteReducers.InvokeSetName(eventContext, args),
+				Reducer.IdentityConnected => true,
+				Reducer.IdentityDisconnected => true,
+				_ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
+			};
 		}
 	}
 }

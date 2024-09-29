@@ -86,7 +86,7 @@ void User_OnUpdate(EventContext ctx, User oldValue, User newValue)
 
 void PrintMessage(Message message)
 {
-    var sender = User.FindByIdentity(message.Sender);
+    var sender = conn.RemoteTables.User.FindByIdentity(message.Sender);
     var senderName = "unknown";
     if (sender != null)
     {
@@ -98,25 +98,27 @@ void PrintMessage(Message message)
 
 void Message_OnInsert(EventContext ctx, Message insertedValue)
 {
-    if (ctx != null)
+    if (ctx.Reducer is not Event<Reducer>.SubscribeApplied)
     {
         PrintMessage(insertedValue);
     }
 }
 
-void Reducer_OnSetNameEvent(EventContext reducerEvent, string name)
-{
-    if (reducerEvent.Identity == local_identity && reducerEvent.Status is UpdateStatus.Failed)
-    {
-        Console.Write($"Failed to change name to {name}");
+void Reducer_OnSetNameEvent(EventContext ctx, string name) {
+    if (ctx.Reducer is Event<Reducer>.Reducer reducer) {
+        var e = reducer.ReducerEvent;
+        if (e.CallerIdentity == local_identity && e.Status is Status.Failed(var error)) {
+            Console.Write($"Failed to change name to {name}: {error}");
+        }
     }
 }
 
-void Reducer_OnSendMessageEvent(EventContext reducerEvent, string text)
-{
-    if (reducerEvent.Identity == local_identity && reducerEvent.Status is UpdateStatus.Failed)
-    {
-        Console.Write($"Failed to send message {text}");
+void Reducer_OnSendMessageEvent(EventContext ctx, string text) {
+    if (ctx.Reducer is Event<Reducer>.Reducer reducer) {
+        var e = reducer.ReducerEvent;
+        if (e.CallerIdentity == local_identity && e.Status is Status.Failed(var error)) {
+            Console.Write($"Failed to send message {text}: {error}");
+        }
     }
 }
 
@@ -138,7 +140,7 @@ void OnDisconnect(DbConnection conn, WebSocketCloseStatus? status, WebSocketErro
 
 void PrintMessagesInOrder()
 {
-    foreach (Message message in Message.Iter().OrderBy(item => item.Sent))
+    foreach (Message message in conn.RemoteTables.Message.Iter().OrderBy(item => item.Sent))
     {
         PrintMessage(message);
     }
@@ -150,9 +152,9 @@ void OnSubscriptionApplied()
     PrintMessagesInOrder();
 }
 
-void onUnhandledReducerError(EventContext reducerEvent)
+void onUnhandledReducerError(ReducerEvent<Reducer> reducerEvent)
 {
-    Console.WriteLine($"Unhandled reducer error in {reducerEvent.ReducerName}: {reducerEvent.ErrMessage}");
+    Console.WriteLine($"Unhandled reducer error in {reducerEvent.Reducer}: {reducerEvent.Status}");
 }
 
 void ProcessThread()
