@@ -8,15 +8,18 @@ namespace SpacetimeDB
 {
     public interface IDatabaseRow : IStructuralReadWrite { }
 
-    public abstract class RemoteBase<DbConnection> {
+    public abstract class RemoteBase<DbConnection>
+    {
         protected readonly DbConnection conn;
 
-        protected RemoteBase(DbConnection conn) {
+        protected RemoteBase(DbConnection conn)
+        {
             this.conn = conn;
         }
     }
 
-    public interface IRemoteTableHandle {
+    public interface IRemoteTableHandle
+    {
         void SetCache(ClientCache.ITableCache cache);
 
         object? GetPrimaryKey(IDatabaseRow row);

@@ -23,43 +23,52 @@ namespace SpacetimeDB
         string? nameOrAddress;
         string? token;
 
-        public DbConnection Build() {
-            if (uri == null) {
+        public DbConnection Build()
+        {
+            if (uri == null)
+            {
                 throw new InvalidOperationException("Building DbConnection with a null uri. Call WithUri() first.");
             }
-            if (nameOrAddress == null) {
+            if (nameOrAddress == null)
+            {
                 throw new InvalidOperationException("Building DbConnection with a null nameOrAddress. Call WithModuleName() first.");
             }
             conn.Connect(token, uri, nameOrAddress);
             return conn;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> WithUri(string uri) {
+        public DbConnectionBuilder<DbConnection, Reducer> WithUri(string uri)
+        {
             this.uri = uri;
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> WithModuleName(string nameOrAddress) {
+        public DbConnectionBuilder<DbConnection, Reducer> WithModuleName(string nameOrAddress)
+        {
             this.nameOrAddress = nameOrAddress;
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> WithCredentials(in (Identity identity, string token)? creds) {
+        public DbConnectionBuilder<DbConnection, Reducer> WithCredentials(in (Identity identity, string token)? creds)
+        {
             token = creds?.token;
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnConnect(Action<Identity, string> cb) {
+        public DbConnectionBuilder<DbConnection, Reducer> OnConnect(Action<Identity, string> cb)
+        {
             conn.onConnect += cb;
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnConnectError(Action<WebSocketError?, string> cb) {
+        public DbConnectionBuilder<DbConnection, Reducer> OnConnectError(Action<WebSocketError?, string> cb)
+        {
             conn.webSocket.OnConnectError += (a, b) => cb.Invoke(a, b);
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnDisconnect(Action<DbConnection, WebSocketCloseStatus?, WebSocketError?> cb) {
+        public DbConnectionBuilder<DbConnection, Reducer> OnDisconnect(Action<DbConnection, WebSocketCloseStatus?, WebSocketError?> cb)
+        {
             conn.webSocket.OnClose += (code, error) => cb.Invoke(conn, code, error);
             return this;
         }
@@ -285,10 +294,12 @@ namespace SpacetimeDB
 
                     case ServerMessage.TransactionUpdate(var transactionUpdate):
                         // Convert the generic event arguments in to a domain specific event object
-                        try {
+                        try
+                        {
                             reducerEvent = new(
                                 DateTimeOffset.FromUnixTimeMilliseconds((long)transactionUpdate.Timestamp.Microseconds / 1000),
-                                transactionUpdate.Status switch {
+                                transactionUpdate.Status switch
+                                {
                                     UpdateStatus.Committed => Committed,
                                     UpdateStatus.OutOfEnergy => OutOfEnergy,
                                     UpdateStatus.Failed(var reason) => new Status.Failed(reason),
@@ -299,7 +310,8 @@ namespace SpacetimeDB
                                 transactionUpdate.EnergyQuantaUsed.Quanta,
                                 ToReducer(transactionUpdate));
                         }
-                        catch (Exception e) {
+                        catch (Exception e)
+                        {
                             Log.Exception(e);
                         }
 
@@ -308,24 +320,30 @@ namespace SpacetimeDB
                             primaryKeyChanges = new();
 
                             // First apply all of the state
-                            foreach (var update in committed.Tables) {
+                            foreach (var update in committed.Tables)
+                            {
                                 var tableName = update.TableName;
                                 var table = clientDB.GetTable(tableName);
-                                if (table == null) {
+                                if (table == null)
+                                {
                                     Log.Error($"Unknown table name: {tableName}");
                                     continue;
                                 }
 
-                                foreach (var row in update.Inserts) {
+                                foreach (var row in update.Inserts)
+                                {
                                     var op = new DbOp { table = table, insert = Decode(table, row) };
                                     var pk = table.Handle.GetPrimaryKey(op.insert.Value.value);
-                                    if (pk != null) {
+                                    if (pk != null)
+                                    {
                                         // Compound key that we use for lookup.
                                         // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
                                         var key = (table.ClientTableType, pk);
 
-                                        if (primaryKeyChanges.TryGetValue(key, out var oldOp)) {
-                                            if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null)) {
+                                        if (primaryKeyChanges.TryGetValue(key, out var oldOp))
+                                        {
+                                            if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
+                                            {
                                                 Log.Warn($"Update with the same primary key was applied multiple times! tableName={tableName}");
                                                 // TODO(jdetter): Is this a correctable error? This would be a major error on the
                                                 // SpacetimeDB side.
@@ -333,7 +351,8 @@ namespace SpacetimeDB
                                             }
 
                                             var (insertOp, deleteOp) = op.insert is not null ? (op, oldOp) : (oldOp, op);
-                                            op = new DbOp {
+                                            op = new DbOp
+                                            {
                                                 table = insertOp.table,
                                                 delete = deleteOp.delete,
                                                 insert = insertOp.insert,
@@ -341,21 +360,26 @@ namespace SpacetimeDB
                                         }
                                         primaryKeyChanges[key] = op;
                                     }
-                                    else {
+                                    else
+                                    {
                                         dbOps.Add(op);
                                     }
                                 }
 
-                                foreach (var row in update.Deletes) {
+                                foreach (var row in update.Deletes)
+                                {
                                     var op = new DbOp { table = table, delete = Decode(table, row) };
                                     var pk = table.Handle.GetPrimaryKey(op.delete.Value.value);
-                                    if (pk != null) {
+                                    if (pk != null)
+                                    {
                                         // Compound key that we use for lookup.
                                         // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
                                         var key = (table.ClientTableType, pk);
 
-                                        if (primaryKeyChanges.TryGetValue(key, out var oldOp)) {
-                                            if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null)) {
+                                        if (primaryKeyChanges.TryGetValue(key, out var oldOp))
+                                        {
+                                            if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
+                                            {
                                                 Log.Warn($"Update with the same primary key was applied multiple times! tableName={tableName}");
                                                 // TODO(jdetter): Is this a correctable error? This would be a major error on the
                                                 // SpacetimeDB side.
@@ -363,7 +387,8 @@ namespace SpacetimeDB
                                             }
 
                                             var (insertOp, deleteOp) = op.insert is not null ? (op, oldOp) : (oldOp, op);
-                                            op = new DbOp {
+                                            op = new DbOp
+                                            {
                                                 table = insertOp.table,
                                                 delete = deleteOp.delete,
                                                 insert = insertOp.insert,
@@ -371,7 +396,8 @@ namespace SpacetimeDB
                                         }
                                         primaryKeyChanges[key] = op;
                                     }
-                                    else {
+                                    else
+                                    {
                                         dbOps.Add(op);
                                     }
                                 }

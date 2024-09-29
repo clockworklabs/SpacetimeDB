@@ -1,6 +1,7 @@
 ﻿using System;
 
-namespace SpacetimeDB {
+namespace SpacetimeDB
+{
     public interface IEventContext { }
 
     public interface IReducerArgsBase : BSATN.IStructuralReadWrite
@@ -24,7 +25,8 @@ namespace SpacetimeDB {
         R Reducer
     );
 
-    public record Event<R> {
+    public record Event<R>
+    {
         private Event() { }
 
         public record Reducer(ReducerEvent<R> ReducerEvent) : Event<R>;

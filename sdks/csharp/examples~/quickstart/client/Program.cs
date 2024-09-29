@@ -104,19 +104,25 @@ void Message_OnInsert(EventContext ctx, Message insertedValue)
     }
 }
 
-void Reducer_OnSetNameEvent(EventContext ctx, string name) {
-    if (ctx.Reducer is Event<Reducer>.Reducer reducer) {
+void Reducer_OnSetNameEvent(EventContext ctx, string name)
+{
+    if (ctx.Reducer is Event<Reducer>.Reducer reducer)
+    {
         var e = reducer.ReducerEvent;
-        if (e.CallerIdentity == local_identity && e.Status is Status.Failed(var error)) {
+        if (e.CallerIdentity == local_identity && e.Status is Status.Failed(var error))
+        {
             Console.Write($"Failed to change name to {name}: {error}");
         }
     }
 }
 
-void Reducer_OnSendMessageEvent(EventContext ctx, string text) {
-    if (ctx.Reducer is Event<Reducer>.Reducer reducer) {
+void Reducer_OnSendMessageEvent(EventContext ctx, string text)
+{
+    if (ctx.Reducer is Event<Reducer>.Reducer reducer)
+    {
         var e = reducer.ReducerEvent;
-        if (e.CallerIdentity == local_identity && e.Status is Status.Failed(var error)) {
+        if (e.CallerIdentity == local_identity && e.Status is Status.Failed(var error))
+        {
             Console.Write($"Failed to send message {text}: {error}");
         }
     }
@@ -130,11 +136,13 @@ void OnConnect(Identity identity, string authToken)
     conn!.Subscribe(new List<string> { "SELECT * FROM User", "SELECT * FROM Message" });
 }
 
-void OnConnectError(WebSocketError? error, string message) {
+void OnConnectError(WebSocketError? error, string message)
+{
 
 }
 
-void OnDisconnect(DbConnection conn, WebSocketCloseStatus? status, WebSocketError? error) {
+void OnDisconnect(DbConnection conn, WebSocketCloseStatus? status, WebSocketError? error)
+{
 
 }
 
@@ -159,9 +167,11 @@ void onUnhandledReducerError(ReducerEvent<Reducer> reducerEvent)
 
 void ProcessThread()
 {
-    try {
+    try
+    {
         // loop until cancellation token
-        while (!cancel_token.IsCancellationRequested) {
+        while (!cancel_token.IsCancellationRequested)
+        {
             conn.Update();
 
             ProcessCommands();
@@ -169,7 +179,8 @@ void ProcessThread()
             Thread.Sleep(100);
         }
     }
-    finally {
+    finally
+    {
         conn.Close();
     }
 }
