@@ -40,7 +40,7 @@ fn main() {
                     };
                     sub_applied_one_row_result(check());
                 })
-                .subscribe(vec!["SELECT * FROM connected;".to_string()]);
+                .subscribe(["SELECT * FROM connected;"]);
         })
         .on_disconnect(move |ctx, err| {
             assert!(
@@ -94,7 +94,7 @@ fn main() {
             sub_applied_one_row_result(check());
         })
         .on_error(|ctx| panic!("subscription on_error: {:?}", ctx.event))
-        .subscribe(vec!["SELECT * FROM disconnected;".to_string()]);
+        .subscribe(["SELECT * FROM disconnected;"]);
 
     new_connection.run_threaded();
 

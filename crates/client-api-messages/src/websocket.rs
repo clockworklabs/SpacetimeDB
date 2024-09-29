@@ -18,7 +18,10 @@ use crate::energy::EnergyQuanta;
 use crate::timestamp::Timestamp;
 use bytes::Bytes;
 use bytestring::ByteString;
-use core::{fmt::Debug, ops::Deref};
+use core::{
+    fmt::Debug,
+    ops::{Deref, Range},
+};
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_lib::{Address, Identity};
@@ -343,6 +346,15 @@ pub enum CompressableQueryUpdate<F: WebsocketFormat> {
     Brotli(Bytes),
 }
 
+impl CompressableQueryUpdate<BsatnFormat> {
+    pub fn maybe_decompress(self) -> QueryUpdate<BsatnFormat> {
+        match self {
+            Self::Uncompressed(qu) => qu,
+            Self::Brotli(bytes) => brotli_decompress_qu(&bytes),
+        }
+    }
+}
+
 #[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
 pub struct QueryUpdate<F: WebsocketFormat> {
@@ -538,16 +550,6 @@ pub fn brotli_decompress_qu(bytes: &[u8]) -> QueryUpdate<BsatnFormat> {
     bsatn::from_slice(&bytes).unwrap()
 }
 
-pub fn decompress_cqu_inplace(cqu: &mut CompressableQueryUpdate<BsatnFormat>) -> &mut QueryUpdate<BsatnFormat> {
-    if let CompressableQueryUpdate::Brotli(bytes) = cqu {
-        // (1): If compressed, make sure it isn't, in-place.
-        *cqu = CompressableQueryUpdate::Uncompressed(brotli_decompress_qu(bytes));
-    }
-    let qu = cqu.as_uncompressed_mut();
-    // SAFETY: We just uncompressed this in (1).
-    unsafe { qu.unwrap_unchecked() }
-}
-
 type RowSize = u16;
 type RowOffset = u64;
 
@@ -580,6 +582,24 @@ pub enum RowSizeHint<I> {
     RowOffsets(I),
 }
 
+impl<I: AsRef<[RowOffset]>> RowSizeHint<I> {
+    fn index_to_range(&self, index: usize, data_end: usize) -> Option<Range<usize>> {
+        match self {
+            Self::FixedSize(size) => {
+                let size = *size as usize;
+                Some(index * size..(index + 1) * size)
+            }
+            Self::RowOffsets(offsets) => {
+                let offsets = offsets.as_ref();
+                let start = *offsets.get(index)? as usize;
+                // The end is either the start of the next element or the end.
+                let end = offsets.get(index + 1).map(|e| *e as usize).unwrap_or(data_end);
+                Some(start..end)
+            }
+        }
+    }
+}
+
 impl<B: Default, I> BsatnRowList<B, I> {
     pub fn fixed(row_size: RowSize) -> Self {
         Self {
@@ -610,43 +630,31 @@ impl<B: AsRef<[u8]>, I: AsRef<[RowOffset]>> RowListLen for BsatnRowList<B, I> {
     }
 }
 
-impl<B: AsRef<[u8]>, I: AsRef<[RowOffset]>> BsatnRowList<B, I> {
+impl BsatnRowList {
     /// Returns the element at `index` in the list.
-    pub fn get(&self, index: usize) -> Option<&[u8]> {
-        let data = self.rows_data.as_ref();
-        let (start, end) = match &self.size_hint {
-            RowSizeHint::FixedSize(size) => {
-                let size = *size as usize;
-                (index * size, (index + 1) * size)
-            }
-            RowSizeHint::RowOffsets(offsets) => {
-                let offsets = offsets.as_ref();
-                let start = *offsets.get(index)? as usize;
-                // The end is either the start of the next element or the end.
-                let end = offsets.get(index + 1).map(|e| *e as usize).unwrap_or(data.len());
-                (start, end)
-            }
-        };
-        Some(&data[start..end])
+    pub fn get(&self, index: usize) -> Option<Bytes> {
+        let data_end = self.rows_data.len();
+        let data_range = self.size_hint.index_to_range(index, data_end)?;
+        Some(self.rows_data.slice(data_range))
     }
 }
 
 /// An iterator over all the elements in a [`BsatnRowList`].
-pub struct BsatnRowListIter<'a, B, I> {
-    list: &'a BsatnRowList<B, I>,
+pub struct BsatnRowListIter<'a> {
+    list: &'a BsatnRowList,
     index: usize,
 }
 
-impl<'a, B: AsRef<[u8]>, I: AsRef<[RowOffset]>> IntoIterator for &'a BsatnRowList<B, I> {
-    type IntoIter = BsatnRowListIter<'a, B, I>;
-    type Item = &'a [u8];
+impl<'a> IntoIterator for &'a BsatnRowList {
+    type IntoIter = BsatnRowListIter<'a>;
+    type Item = Bytes;
     fn into_iter(self) -> Self::IntoIter {
         BsatnRowListIter { list: self, index: 0 }
     }
 }
 
-impl<'a, B: AsRef<[u8]>, I: AsRef<[RowOffset]>> Iterator for BsatnRowListIter<'a, B, I> {
-    type Item = &'a [u8];
+impl Iterator for BsatnRowListIter<'_> {
+    type Item = Bytes;
     fn next(&mut self) -> Option<Self::Item> {
         let index = self.index;
         self.index += 1;

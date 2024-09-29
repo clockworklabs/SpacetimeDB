@@ -106,7 +106,7 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     /// each of which is a single-table non-projected `SELECT` statement
     /// with an optional `WHERE` clause,
     /// and `JOIN`ed with at most one other table as a filter.
-    pub fn subscribe(self, queries: Vec<String>) -> M::SubscriptionHandle {
+    pub fn subscribe(self, queries: impl IntoQueries) -> M::SubscriptionHandle {
         static NEXT_SUB_ID: AtomicU32 = AtomicU32::new(0);
 
         let sub_id = NEXT_SUB_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -120,11 +120,35 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
             .unbounded_send(PendingMutation::Subscribe {
                 on_applied,
                 on_error,
-                queries,
+                queries: queries.into_queries(),
                 sub_id,
             })
             .unwrap();
         M::SubscriptionHandle::new(SubscriptionHandleImpl { conn, sub_id })
+    }
+}
+
+/// Types which specify a list of query strings.
+pub trait IntoQueries {
+    /// Convert into the list of queries.
+    fn into_queries(self) -> Box<[Box<str>]>;
+}
+
+impl IntoQueries for Box<[Box<str>]> {
+    fn into_queries(self) -> Box<[Box<str>]> {
+        self
+    }
+}
+
+impl<S: Copy + Into<Box<str>>> IntoQueries for &[S] {
+    fn into_queries(self) -> Box<[Box<str>]> {
+        self.iter().copied().map(Into::into).collect()
+    }
+}
+
+impl<S: Into<Box<str>>, const N: usize> IntoQueries for [S; N] {
+    fn into_queries(self) -> Box<[Box<str>]> {
+        self.map(Into::into).into()
     }
 }
 

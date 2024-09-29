@@ -3,11 +3,14 @@
 //! This module is internal, and may incompatibly change without warning.
 
 use crate::ws_messages::{ClientMessage, ServerMessage};
-use anyhow::{bail, Context, Result};
-use brotli::BrotliDecompress;
-use futures::{SinkExt, StreamExt, TryStreamExt};
+use anyhow::{anyhow, bail, Context, Result};
+use bytes::Bytes;
+use futures::{SinkExt, StreamExt as _, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
+use spacetimedb_client_api_messages::websocket::{
+    brotli_decompress, BsatnFormat, SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_NONE,
+};
 use spacetimedb_lib::{bsatn, Address, Identity};
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};
@@ -167,7 +170,7 @@ impl WsConnection {
         })
     }
 
-    pub(crate) fn encode_message(msg: ClientMessage) -> WebSocketMessage {
+    pub(crate) fn encode_message(msg: ClientMessage<Bytes>) -> WebSocketMessage {
         WebSocketMessage::Binary(bsatn::to_vec(&msg).unwrap())
     }
 
@@ -180,7 +183,7 @@ impl WsConnection {
     async fn message_loop(
         mut self,
         incoming_messages: mpsc::UnboundedSender<ServerMessage<BsatnFormat>>,
-        outgoing_messages: mpsc::UnboundedReceiver<ClientMessage>,
+        outgoing_messages: mpsc::UnboundedReceiver<ClientMessage<Bytes>>,
     ) {
         let mut outgoing_messages = Some(outgoing_messages);
         loop {
@@ -235,7 +238,7 @@ impl WsConnection {
     ) -> (
         JoinHandle<()>,
         mpsc::UnboundedReceiver<ServerMessage<BsatnFormat>>,
-        mpsc::UnboundedSender<ClientMessage>,
+        mpsc::UnboundedSender<ClientMessage<Bytes>>,
     ) {
         let (outgoing_send, outgoing_recv) = mpsc::unbounded();
         let (incoming_send, incoming_recv) = mpsc::unbounded();

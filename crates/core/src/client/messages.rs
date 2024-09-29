@@ -241,7 +241,7 @@ impl ToProtocol for OneOffQueryResponseMessage {
                 .results
                 .into_iter()
                 .map(|table| ws::OneOffTable {
-                    table_name: table.head.table_name.clone().into(),
+                    table_name: table.head.table_name.clone(),
                     rows: F::encode_list(table.data.into_iter()).0,
                 })
                 .collect();

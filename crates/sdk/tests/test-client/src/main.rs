@@ -346,7 +346,7 @@ fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&EventCo
     ctx.subscription_builder()
         .on_applied(callback)
         .on_error(|ctx| panic!("Subscription errored: {:?}", ctx.event))
-        .subscribe(SUBSCRIBE_ALL.iter().map(|s| s.to_string()).collect());
+        .subscribe(SUBSCRIBE_ALL);
 }
 
 /// This tests that we can:
@@ -1590,7 +1590,7 @@ fn exec_subscribe_all_select_star() {
             }
         })
         .on_error(|_| panic!("Subscription error"))
-        .subscribe(vec!["SELECT * FROM *".to_string()]);
+        .subscribe(["SELECT * FROM *"]);
 
     test_counter.wait_for_all();
 }

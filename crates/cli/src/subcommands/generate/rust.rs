@@ -246,12 +246,10 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for {table_handle}<'ctx> {{
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    deletes: Vec<__ws::EncodedValue>,
-    inserts: Vec<__ws::EncodedValue>,
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<{row_type}>> {{
     __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<{pk_field_type}>(
-        deletes,
-        inserts,
+        raw_updates,
         |row: &{row_type}| &row.{pk_field_name},
     ).context(\"Failed to parse table update for table \\\"{table_name}\\\"\")
 }}
@@ -263,10 +261,9 @@ pub(super) fn parse_table_update(
                 "
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    deletes: Vec<__ws::EncodedValue>,
-    inserts: Vec<__ws::EncodedValue>,
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<{row_type}>> {{
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
+    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context(\"Failed to parse table update for table \\\"{table_name}\\\"\")
 }}
 "
@@ -875,11 +872,11 @@ impl __sdk::spacetime_module::InModule for Reducer {{
     );
 
     out.delimited_block(
-        "impl TryFrom<__ws::ReducerCallInfo> for Reducer {",
+        "impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {",
         |out| {
             writeln!(out, "type Error = __anyhow::Error;");
             out.delimited_block(
-                "fn try_from(value: __ws::ReducerCallInfo) -> __anyhow::Result<Self> {",
+                "fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {",
                     |out| {
                         out.delimited_block(
                             "match &value.reducer_name[..] {",
@@ -931,9 +928,9 @@ fn print_db_update_defn(module: &ModuleDef, out: &mut Indenter) {
 
     out.delimited_block(
         "
-impl TryFrom<__ws::DatabaseUpdate> for DbUpdate {
+impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
     type Error = __anyhow::Error;
-    fn try_from(raw: __ws::DatabaseUpdate) -> Result<Self, Self::Error> {
+    fn try_from(raw: __ws::DatabaseUpdate<__ws::BsatnFormat>) -> Result<Self, Self::Error> {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
@@ -942,7 +939,7 @@ impl TryFrom<__ws::DatabaseUpdate> for DbUpdate {
             for table in iter_tables(module) {
                 writeln!(
                     out,
-                    "{:?} => db_update.{} = {}::parse_table_update(table_update.deletes, table_update.inserts)?,",
+                    "{:?} => db_update.{} = {}::parse_table_update(table_update)?,",
                     table.name.deref(),
                     table_method_name(&table.name),
                     table_module_name(&table.name),
