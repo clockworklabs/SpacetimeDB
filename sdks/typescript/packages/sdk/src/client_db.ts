@@ -1,4 +1,3 @@
-import type { DatabaseTable } from './database_table.ts';
 import { Table } from './table.ts';
 
 export class ClientDB {
@@ -30,10 +29,10 @@ export class ClientDB {
     return table;
   }
 
-  getOrCreateTable<TableType>(
+  getOrCreateTable(
     tableName: string,
     pkCol: number | undefined,
-    entityClass: DatabaseTable<TableType>
+    entityClass: any
   ): Table {
     let table: Table;
     if (!this.tables.has(tableName)) {

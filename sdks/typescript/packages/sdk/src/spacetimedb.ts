@@ -18,7 +18,6 @@ import {
 import BinaryReader from './binary_reader.ts';
 import * as ws from './client_api.ts';
 import { ClientDB } from './client_db.ts';
-import { DatabaseTable } from './database_table.ts';
 import { DbContext } from './db_context.ts';
 import type { STDBEvent } from './event.ts';
 import { EventEmitter } from './event_emitter.ts';
@@ -44,7 +43,6 @@ export {
   AlgebraicType,
   AlgebraicValue,
   BinarySerializer,
-  DatabaseTable,
   DbContext,
   ProductType,
   ProductTypeElement,
@@ -377,7 +375,7 @@ export class DBConnectionBase<
   };
   clientAddress: Address = Address.random();
 
-  static #tableClasses: Map<string, DatabaseTable<any>> = new Map();
+  static #tableClasses: Map<string, any> = new Map();
   static #reducerClasses: Map<string, Reducer> = new Map();
 
   constructor() {
@@ -385,7 +383,7 @@ export class DBConnectionBase<
     this.createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
   }
 
-  static #getTableClass(name: string): DatabaseTable<any> {
+  static #getTableClass(name: string): any {
     const tableClass = this.#tableClasses.get(name);
     if (!tableClass) {
       throw `Could not find class \"${name}\", you need to register it with SpacetimeDBClient.registerTable() first`;

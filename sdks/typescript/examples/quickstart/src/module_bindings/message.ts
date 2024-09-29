@@ -4,7 +4,6 @@
 import {
   AlgebraicType,
   AlgebraicValue,
-  DatabaseTable,
   DBConnectionBase,
   DbContext,
   Identity,
@@ -22,7 +21,8 @@ export class MessageTable<
   ReducerView,
   ReducerEnum,
   EventContext extends DbContext<DbView, ReducerView>,
-> extends DatabaseTable<Message> {
+> {
+  tableName = 'Message';
   sender: Identity;
   sent: bigint;
   text: string;
@@ -35,7 +35,6 @@ export class MessageTable<
     sent: bigint,
     text: string
   ) {
-    super(client, 'Message');
     this.#client = client;
     this.sender = sender;
     this.sent = sent;

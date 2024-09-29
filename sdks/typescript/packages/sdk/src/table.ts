@@ -3,12 +3,7 @@ import BinaryReader from './binary_reader.ts';
 import { EventEmitter } from './event_emitter.ts';
 import OperationsMap from './operations_map.ts';
 import { ReducerEvent } from './reducer_event.ts';
-import {
-  AlgebraicValue,
-  DatabaseTable,
-  DbContext,
-  type CallbackInit,
-} from './spacetimedb.ts';
+import { AlgebraicValue, DbContext, type CallbackInit } from './spacetimedb.ts';
 
 class DBOp {
   type: 'insert' | 'delete';
@@ -52,13 +47,10 @@ export class TableUpdate {
 /**
  * Builder to generate calls to query a `table` in the database
  */
-export class Table<
-  TableType = any,
-  EventContext extends DbContext<any, any> = any,
-> {
+export class Table {
   // TODO: most of this stuff should be probably private
   name: string;
-  instances: Map<string, DatabaseTable<TableType, EventContext>>;
+  rows: Map<string, any>;
   emitter: EventEmitter;
   #entityClass: any;
   pkCol?: number;
@@ -70,7 +62,7 @@ export class Table<
    */
   constructor(name: string, pkCol: number | undefined, entityClass: any) {
     this.name = name;
-    this.instances = new Map();
+    this.rows = new Map();
     this.emitter = new EventEmitter();
     this.pkCol = pkCol;
     this.#entityClass = entityClass;
@@ -80,14 +72,14 @@ export class Table<
    * @returns number of entries in the table
    */
   count(): number {
-    return this.instances.size;
+    return this.rows.size;
   }
 
   /**
    * @returns The values of the entries in the table
    */
   getInstances(): any[] {
-    return Array.from(this.instances.values());
+    return Array.from(this.rows.values());
   }
 
   applyOperations = (
@@ -150,18 +142,18 @@ export class Table<
   ): void => {
     const newInstance = newDbOp.instance;
     const oldInstance = oldDbOp.instance;
-    this.instances.delete(oldDbOp.rowPk);
-    this.instances.set(newDbOp.rowPk, newInstance);
+    this.rows.delete(oldDbOp.rowPk);
+    this.rows.set(newDbOp.rowPk, newInstance);
     this.emitter.emit('update', oldInstance, newInstance, reducerEvent);
   };
 
   insert = (dbOp: DBOp, reducerEvent: ReducerEvent | undefined): void => {
-    this.instances.set(dbOp.rowPk, dbOp.instance);
+    this.rows.set(dbOp.rowPk, dbOp.instance);
     this.emitter.emit('insert', dbOp.instance, reducerEvent);
   };
 
   delete = (dbOp: DBOp, reducerEvent: ReducerEvent | undefined): void => {
-    this.instances.delete(dbOp.rowPk);
+    this.rows.delete(dbOp.rowPk);
     this.emitter.emit('delete', dbOp.instance, reducerEvent);
   };
 
@@ -180,7 +172,7 @@ export class Table<
    *
    * @param cb Callback to be called when a new row is inserted
    */
-  onInsert = (
+  onInsert = <EventContext>(
     cb: (
       ctx: EventContext,
       value: any,
@@ -212,7 +204,7 @@ export class Table<
    *
    * @param cb Callback to be called when a new row is inserted
    */
-  onDelete = (
+  onDelete = <EventContext>(
     cb: (
       ctx: EventContext,
       value: any,
@@ -244,7 +236,7 @@ export class Table<
    *
    * @param cb Callback to be called when a new row is inserted
    */
-  onUpdate = (
+  onUpdate = <EventContext>(
     cb: (
       ctx: EventContext,
       value: any,
