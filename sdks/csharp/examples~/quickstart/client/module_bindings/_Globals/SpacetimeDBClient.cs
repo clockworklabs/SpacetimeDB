@@ -11,11 +11,6 @@ using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB.Types
 {
-	public interface IReducerArgs : IReducerArgsBase
-	{
-		bool InvokeHandler(EventContext ctx);
-	}
-
 	public sealed class RemoteTables
 	{
 		public class MessageHandle : RemoteTableHandle<EventContext, Message> {

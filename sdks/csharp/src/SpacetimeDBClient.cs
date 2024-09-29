@@ -708,7 +708,7 @@ namespace SpacetimeDB
             _messageQueue.Add(new UnprocessedMessage { bytes = bytes, timestamp = timestamp });
 
         public void InternalCallReducer<T>(T args)
-            where T : IReducerArgsBase, new()
+            where T : IReducerArgs, new()
         {
             if (!webSocket.IsConnected)
             {

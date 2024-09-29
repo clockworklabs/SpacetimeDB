@@ -12,8 +12,7 @@ namespace SpacetimeDB.Types
 	[SpacetimeDB.Type]
 	public partial class SetNameArgsStruct : IReducerArgs
 	{
-		string IReducerArgsBase.ReducerName => "set_name";
-		bool IReducerArgs.InvokeHandler(EventContext ctx) => ctx.Reducers.InvokeSetName(ctx, this);
+		string IReducerArgs.ReducerName => "set_name";
 
 		public string Name = "";
 	}

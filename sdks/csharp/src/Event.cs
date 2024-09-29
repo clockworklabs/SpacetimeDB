@@ -4,7 +4,7 @@ namespace SpacetimeDB
 {
     public interface IEventContext { }
 
-    public interface IReducerArgsBase : BSATN.IStructuralReadWrite
+    public interface IReducerArgs : BSATN.IStructuralReadWrite
     {
         string ReducerName { get; }
     }
