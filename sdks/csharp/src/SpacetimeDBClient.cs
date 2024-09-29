@@ -569,11 +569,7 @@ namespace SpacetimeDB
                     {
                         case { insert: { value: var newValue }, delete: { value: var oldValue } }:
                             {
-                                // If we matched an update, these values must have primary keys.
-                                //var newValue_ = (IDatabaseTableWithPrimaryKey)newValue;
-                                //var oldValue_ = (IDatabaseTableWithPrimaryKey)oldValue;
                                 dbOp.table.Handle.InvokeUpdate(eventContext, oldValue, newValue);
-                                //oldValue_.OnUpdateEvent(newValue_, dbEvent);
                                 break;
                             }
 
