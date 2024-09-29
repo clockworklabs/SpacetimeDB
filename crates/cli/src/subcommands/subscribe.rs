@@ -129,7 +129,7 @@ struct SubscriptionTable {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let queries = args.get_many::<Box<str>>("query").unwrap();
+    let queries = args.get_many::<String>("query").unwrap();
     let num = args.get_one::<u32>("num-updates").copied();
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
@@ -160,7 +160,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
 
     let task = async {
-        subscribe(&mut ws, queries.cloned().collect()).await?;
+        subscribe(&mut ws, queries.cloned().map(Into::into).collect()).await?;
         await_initial_update(&mut ws, print_initial_update.then_some(&module_def)).await?;
         consume_transaction_updates(&mut ws, num, &module_def).await
     };
