@@ -243,13 +243,13 @@ namespace SpacetimeDB
                             var table = clientDB.GetTable(tableName);
                             if (table == null)
                             {
-                                Logger.LogError($"Unknown table name: {tableName}");
+                                Log.Error($"Unknown table name: {tableName}");
                                 continue;
                             }
 
                             if (update.Deletes.Count != 0)
                             {
-                                Logger.LogWarning("Non-insert during a subscription update!");
+                                Log.Warn("Non-insert during a subscription update!");
                             }
 
                             var hashSet = GetInsertHashSet(table.ClientTableType, initialSubscription.DatabaseUpdate.Tables.Count);
@@ -276,7 +276,7 @@ namespace SpacetimeDB
                                         break;
 
                                     case EncodedValue.Text(var txt):
-                                        Logger.LogWarning("JavaScript messages are unsupported.");
+                                        Log.Warn("JavaScript messages are unsupported.");
                                         break;
                                 }
                             }
@@ -300,7 +300,7 @@ namespace SpacetimeDB
                                 ToReducer(transactionUpdate));
                         }
                         catch (Exception e) {
-                            Logger.LogException(e);
+                            Log.Exception(e);
                         }
 
                         if (transactionUpdate.Status is UpdateStatus.Committed(var committed))
@@ -312,7 +312,7 @@ namespace SpacetimeDB
                                 var tableName = update.TableName;
                                 var table = clientDB.GetTable(tableName);
                                 if (table == null) {
-                                    Logger.LogError($"Unknown table name: {tableName}");
+                                    Log.Error($"Unknown table name: {tableName}");
                                     continue;
                                 }
 
@@ -326,7 +326,7 @@ namespace SpacetimeDB
 
                                         if (primaryKeyChanges.TryGetValue(key, out var oldOp)) {
                                             if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null)) {
-                                                Logger.LogWarning($"Update with the same primary key was applied multiple times! tableName={tableName}");
+                                                Log.Warn($"Update with the same primary key was applied multiple times! tableName={tableName}");
                                                 // TODO(jdetter): Is this a correctable error? This would be a major error on the
                                                 // SpacetimeDB side.
                                                 continue;
@@ -356,7 +356,7 @@ namespace SpacetimeDB
 
                                         if (primaryKeyChanges.TryGetValue(key, out var oldOp)) {
                                             if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null)) {
-                                                Logger.LogWarning($"Update with the same primary key was applied multiple times! tableName={tableName}");
+                                                Log.Warn($"Update with the same primary key was applied multiple times! tableName={tableName}");
                                                 // TODO(jdetter): Is this a correctable error? This would be a major error on the
                                                 // SpacetimeDB side.
                                                 continue;
@@ -389,7 +389,7 @@ namespace SpacetimeDB
 
                         if (!waitingOneOffQueries.Remove(messageId, out var resultSource))
                         {
-                            Logger.LogError($"Response to unknown one-off-query: {messageId}");
+                            Log.Error($"Response to unknown one-off-query: {messageId}");
                             break;
                         }
 
@@ -463,7 +463,7 @@ namespace SpacetimeDB
                 uri = $"ws://{uri}";
             }
 
-            Logger.Log($"SpacetimeDBClient: Connecting to {uri} {addressOrName}");
+            Log.Info($"SpacetimeDBClient: Connecting to {uri} {addressOrName}");
             Task.Run(async () =>
             {
                 try
@@ -474,11 +474,11 @@ namespace SpacetimeDB
                 {
                     if (connectionClosed)
                     {
-                        Logger.Log("Connection closed gracefully.");
+                        Log.Info("Connection closed gracefully.");
                         return;
                     }
 
-                    Logger.LogException(e);
+                    Log.Exception(e);
                 }
             });
         }
@@ -496,7 +496,7 @@ namespace SpacetimeDB
                     }
                     catch (Exception e)
                     {
-                        Logger.LogException(e);
+                        Log.Exception(e);
                     }
                 }
             }
@@ -562,7 +562,7 @@ namespace SpacetimeDB
                 }
                 catch (Exception e)
                 {
-                    Logger.LogException(e);
+                    Log.Exception(e);
                 }
             }
         }
@@ -589,7 +589,7 @@ namespace SpacetimeDB
                     }
                     catch (Exception e)
                     {
-                        Logger.LogException(e);
+                        Log.Exception(e);
                     }
                     break;
 
@@ -605,7 +605,7 @@ namespace SpacetimeDB
                         var requestId = transactionUpdate.ReducerCall.RequestId;
                         if (!stats.ReducerRequestTracker.FinishTrackingRequest(requestId))
                         {
-                            Logger.LogWarning($"Failed to finish tracking reducer request: {requestId}");
+                            Log.Warn($"Failed to finish tracking reducer request: {requestId}");
                         }
                     }
 
@@ -623,7 +623,7 @@ namespace SpacetimeDB
                     }
                     catch (Exception e)
                     {
-                        Logger.LogException(e);
+                        Log.Exception(e);
                     }
 
                     var reducerFound = false;
@@ -633,7 +633,7 @@ namespace SpacetimeDB
                     }
                     catch (Exception e)
                     {
-                        Logger.LogException(e);
+                        Log.Exception(e);
                     }
 
                     if (!reducerFound && transactionUpdate.Status is UpdateStatus.Failed(var failed))
@@ -644,7 +644,7 @@ namespace SpacetimeDB
                         }
                         catch (Exception e)
                         {
-                            Logger.LogException(e);
+                            Log.Exception(e);
                         }
                     }
                     break;
@@ -657,7 +657,7 @@ namespace SpacetimeDB
                     }
                     catch (Exception e)
                     {
-                        Logger.LogException(e);
+                        Log.Exception(e);
                     }
                     break;
 
@@ -668,7 +668,7 @@ namespace SpacetimeDB
                     }
                     catch (Exception e)
                     {
-                        Logger.LogException(e);
+                        Log.Exception(e);
                     }
                     break;
 
@@ -686,7 +686,7 @@ namespace SpacetimeDB
         {
             if (!webSocket.IsConnected)
             {
-                Logger.LogError("Cannot call reducer, not connected to server!");
+                Log.Error("Cannot call reducer, not connected to server!");
                 return;
             }
 
@@ -704,7 +704,7 @@ namespace SpacetimeDB
         {
             if (!webSocket.IsConnected)
             {
-                Logger.LogError("Cannot subscribe, not connected to server!");
+                Log.Error("Cannot subscribe, not connected to server!");
                 return;
             }
 
@@ -741,13 +741,13 @@ namespace SpacetimeDB
 
             if (!stats.OneOffRequestTracker.FinishTrackingRequest(requestId))
             {
-                Logger.LogWarning($"Failed to finish tracking one off request: {requestId}");
+                Log.Warn($"Failed to finish tracking one off request: {requestId}");
             }
 
             T[] LogAndThrow(string error)
             {
                 error = $"While processing one-off-query `{queryString}`, ID {messageId}: {error}";
-                Logger.LogError(error);
+                Log.Error(error);
                 throw new Exception(error);
             }
 
