@@ -151,7 +151,6 @@ record TableView
 record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 {
     public readonly Accessibility Visibility;
-    public readonly string? Scheduled;
     public readonly EquatableArray<TableView> Views;
 
     private static ColumnDeclaration[] ScheduledColumns(string tableName) =>
@@ -204,16 +203,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
         Views = new(context.Attributes.Select(a => new TableView(this, a)).ToImmutableArray());
 
-        var schedules = Views.Select(t => t.Scheduled).Distinct();
-        if (schedules.Count() != 1)
+        var hasScheduled = Views.Select(t => t.Scheduled is not null).Distinct();
+
+        if (hasScheduled.Count() != 1)
         {
-            throw new Exception(
-                "When using multiple [Table] attributes with schedule, all [Table] must have the same schedule."
+            diag.Report(
+                ErrorDescriptor.IncompatibleTableSchedule,
+                (TypeDeclarationSyntax)context.TargetNode
             );
         }
 
-        Scheduled = schedules.First();
-        if (Scheduled != null)
+        if (hasScheduled.Any(has => has))
         {
             // For scheduled tables, we append extra fields early in the pipeline,
             // both to the type itself and to the BSATN information, as if they
@@ -304,7 +304,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     {
         var extensions = base.ToExtensions();
 
-        if (Scheduled is not null)
+        if (Views.Any(v => v.Scheduled is not null))
         {
             // For scheduled tables we're adding extra fields to the type source.
             extensions.Contents.Append(
@@ -370,7 +370,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     TableType: "user",
                     // "public" | "private"
                     TableAccess: "{{(v.IsPublic ? "public" : "private")}}",
-                    Scheduled: {{(v.Scheduled is not null ? $"nameof({v.Scheduled})" : "null")}}
+                    Scheduled: {{(v.Scheduled is not null ? $"\"{v.Scheduled}\"" : "null")}}
                 ),
                 (uint) ((SpacetimeDB.BSATN.AlgebraicType.Ref) new BSATN().GetAlgebraicType(registrar)).Ref_
             ),

@@ -320,6 +320,12 @@ public static partial class Reducers
         [SpacetimeDB.Reducer]
         public static void TestDuplicateReducerName(ReducerContext ctx) { }
     }
+
+    [SpacetimeDB.Reducer]
+    public static void TestIncompatibleScheduleReducer(
+        ReducerContext ctx,
+        TestIncompatibleSchedule table
+    ) { }
 }
 
 [SpacetimeDB.Table]
@@ -353,3 +359,10 @@ public static partial class InAnotherNamespace
     [SpacetimeDB.Reducer]
     public static void TestDuplicateTable() { }
 }
+
+[SpacetimeDB.Table(
+    Name = "TestIncompatibleSchedule1",
+    Scheduled = nameof(Reducers.TestIncompatibleScheduleReducer)
+)]
+[SpacetimeDB.Table(Name = "TestIncompatibleSchedule2")]
+public partial struct TestIncompatibleSchedule { }

@@ -6,13 +6,39 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (345,42)-(345,82),
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (351,42)-(351,82),
       Message: Table TestTableTaggedEnum is a tagged enum, which is not allowed.,
       Severity: Error,
       Descriptor: {
         Id: STDB0004,
         Title: Tables cannot be tagged enums,
         MessageFormat: Table {0} is a tagged enum, which is not allowed.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table(
+^^^^^^^^^^^^^^^^^^^
+    Name = "TestIncompatibleSchedule1",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Scheduled = nameof(Reducers.TestIncompatibleScheduleReducer)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)]
+^^
+[SpacetimeDB.Table(Name = "TestIncompatibleSchedule2")]
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestIncompatibleSchedule { }
+*/
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (362,0)-(366,55),
+      Message: Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0008,
+        Title: Incompatible `[Table(Schedule)]` attributes,
+        MessageFormat: Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
@@ -60,7 +86,7 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
                                          ^^
 }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (353,41)-(353,43),
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (359,41)-(359,43),
       Message: Reducer method TestDuplicateTable does not have a ReducerContext parameter.,
       Severity: Error,
       Descriptor: {

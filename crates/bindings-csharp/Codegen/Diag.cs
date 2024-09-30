@@ -74,4 +74,13 @@ internal static class ErrorDescriptor
                 $"Reducer method {ctx.method.Identifier} starts with '{ctx.prefix}', which is a reserved prefix.",
             ctx => ctx.method.Identifier
         );
+
+    public static readonly ErrorDescriptor<TypeDeclarationSyntax> IncompatibleTableSchedule =
+        new(
+            group,
+            "Incompatible `[Table(Schedule)]` attributes",
+            table =>
+                $"Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.",
+            table => table.SyntaxTree.GetLocation(table.AttributeLists.Span)
+        );
 }
