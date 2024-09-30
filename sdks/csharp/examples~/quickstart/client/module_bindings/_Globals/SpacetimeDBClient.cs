@@ -33,7 +33,7 @@ namespace SpacetimeDB.Types
             private Dictionary<SpacetimeDB.Identity, User> Identity_Index = new(16);
 
             public override void InternalInvokeValueInserted(IDatabaseRow row) {
-				var value = (User)row;
+                var value = (User)row;
                 Identity_Index[value.Identity] = value;
             }
 
