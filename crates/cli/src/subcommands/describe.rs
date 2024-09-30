@@ -13,8 +13,6 @@ pub fn cli() -> clap::Command {
         )
         .arg(
             Arg::new("entity_type")
-                .long("type")
-                .short('t')
                 .value_parser(["reducer", "table"])
                 .help("Whether to describe a reducer or table"),
         )
