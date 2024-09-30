@@ -180,7 +180,7 @@ impl std::ops::DerefMut for IterBuf {
     }
 }
 
-#[cfg(feature = "unstable_abi")]
+#[cfg(feature = "unstable")]
 #[macro_export]
 macro_rules! volatile_nonatomic_schedule_immediate {
     ($($args:tt)*) => {
@@ -188,7 +188,7 @@ macro_rules! volatile_nonatomic_schedule_immediate {
     };
 }
 
-#[cfg(feature = "unstable_abi")]
+#[cfg(feature = "unstable")]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __volatile_nonatomic_schedule_immediate_impl {
