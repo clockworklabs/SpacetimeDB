@@ -2,7 +2,7 @@ import { Address } from './address.ts';
 import type { Timestamp, UpdateStatus } from './client_api.ts';
 import { Identity } from './identity.ts';
 
-export class ReducerEvent<ReducerEnum extends any = any> {
+export class ReducerEvent<ReducerEnum = any> {
   /**
    * The time when the reducer started running.
    *

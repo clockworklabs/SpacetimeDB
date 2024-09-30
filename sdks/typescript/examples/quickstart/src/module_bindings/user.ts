@@ -2,81 +2,117 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import {
+  AlgebraicType,
+  AlgebraicValue,
+  DBConnectionBase,
+  DbContext,
+  Identity,
+  ProductTypeElement,
+  SumTypeVariant,
+} from '@clockworklabs/spacetimedb-sdk';
 
-export class User extends DatabaseTable
-{
-	public static db: ClientDB = __SPACETIMEDB__.clientDB;
-	public static tableName = "User";
-	public identity: Identity;
-	public name: string | null;
-	public online: boolean;
+export type User = {
+  identity: Identity;
+  name: string | null;
+  online: boolean;
+};
 
-	public static primaryKey: string | undefined = "identity";
+export class UserTableHandle<
+  DbView,
+  ReducerView,
+  ReducerEnum,
+  EventContext extends DbContext<DbView, ReducerView>,
+> {
+  #client: DBConnectionBase<ReducerEnum, EventContext>;
+  tableName = 'User';
 
-	constructor(identity: Identity, name: string | null, online: boolean) {
-	super();
-		this.identity = identity;
-		this.name = name;
-		this.online = online;
-	}
+  identity: Identity;
+  name: string | null;
+  online: boolean;
 
-	public static serialize(value: User): object {
-		return [
-		Array.from(value.identity.toUint8Array()), value.name ? { "some": value.name } : { "none": [] }, value.online
-		];
-	}
+  primaryKey?: string = 'identity';
 
-	public static getAlgebraicType(): AlgebraicType
-	{
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("identity", AlgebraicType.createProductType([
-			new ProductTypeElement("__identity_bytes", AlgebraicType.createArrayType(AlgebraicType.createU8Type())),
-		])),
-			new ProductTypeElement("name", AlgebraicType.createSumType([
-			new SumTypeVariant("some", AlgebraicType.createStringType()),
-			new SumTypeVariant("none", AlgebraicType.createProductType([
-		])),
-		])),
-			new ProductTypeElement("online", AlgebraicType.createBoolType()),
-		]);
-	}
+  constructor(
+    client: DBConnectionBase,
+    identity?: Identity,
+    name?: string | null,
+    online?: boolean
+  ) {
+    this.#client = client;
+    this.identity = identity!;
+    this.name = name!;
+    this.online = online!;
+  }
 
-	public static fromValue(value: AlgebraicValue): User
-	{
-		let productValue = value.asProductValue();
-		let __identity = productValue.elements[0].asIdentity();
-		let __name = productValue.elements[1].asSumValue().tag == 1 ? null : productValue.elements[1].asSumValue().value.asString();
-		let __online = productValue.elements[2].asBoolean();
-		return new this(__identity, __name, __online);
-	}
+  static serialize(value: User): object {
+    return [
+      Array.from(value.identity.toUint8Array()),
+      value.name ? { some: value.name } : { none: [] },
+      value.online,
+    ];
+  }
 
-	public static *filterByIdentity(value: Identity): IterableIterator<User>
-	{
-		for (let instance of this.db.getTable("User").getInstances())
-		{
-			if (instance.identity.isEqual(value)) {
-				yield instance;
-			}
-		}
-	}
+  static getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement(
+        'identity',
+        AlgebraicType.createProductType([
+          new ProductTypeElement(
+            '__identity_bytes',
+            AlgebraicType.createArrayType(AlgebraicType.createU8Type())
+          ),
+        ])
+      ),
+      new ProductTypeElement(
+        'name',
+        AlgebraicType.createSumType([
+          new SumTypeVariant('some', AlgebraicType.createStringType()),
+          new SumTypeVariant('none', AlgebraicType.createProductType([])),
+        ])
+      ),
+      new ProductTypeElement('online', AlgebraicType.createBoolType()),
+    ]);
+  }
 
-	public static findByIdentity(value: Identity): User | undefined
-	{
-		return this.filterByIdentity(value).next().value;
-	}
+  static fromValue<
+    DbView,
+    ReducerView,
+    ReducerEnum,
+    EventContext extends DbContext<DbView, ReducerView>,
+  >(
+    client: DBConnectionBase<ReducerEnum, EventContext>,
+    value: AlgebraicValue
+  ): UserTableHandle<DbView, ReducerView, ReducerEnum, EventContext> {
+    let productValue = value.asProductValue();
+    let __identity = productValue.elements[0].asIdentity();
+    let __name =
+      productValue.elements[1].asSumValue().tag == 1
+        ? null
+        : productValue.elements[1].asSumValue().value.asString();
+    let __online = productValue.elements[2].asBoolean();
+    return new this(client, __identity, __name, __online);
+  }
 
-	public static *filterByOnline(value: boolean): IterableIterator<User>
-	{
-		for (let instance of this.db.getTable("User").getInstances())
-		{
-			if (instance.online === value) {
-				yield instance;
-			}
-		}
-	}
+  *filterByIdentity(value: Identity): IterableIterator<User> {
+    for (let instance of this.#client.db.getTable('User').getInstances()) {
+      if (instance.identity.isEqual(value)) {
+        yield instance;
+      }
+    }
+  }
 
+  findByIdentity(value: Identity): User | undefined {
+    return this.filterByIdentity(value).next().value;
+  }
 
+  *filterByOnline(value: boolean): IterableIterator<User> {
+    for (let instance of this.#client.db.getTable('User').getInstances()) {
+      if (instance.online === value) {
+        yield instance;
+      }
+    }
+  }
 }
 
 export default User;

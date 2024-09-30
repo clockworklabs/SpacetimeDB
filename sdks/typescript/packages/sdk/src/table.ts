@@ -3,20 +3,13 @@ import BinaryReader from './binary_reader.ts';
 import { EventEmitter } from './event_emitter.ts';
 import OperationsMap from './operations_map.ts';
 import { ReducerEvent } from './reducer_event.ts';
-import { AlgebraicValue, DbContext, type CallbackInit } from './spacetimedb.ts';
+import { AlgebraicValue, type CallbackInit } from './spacetimedb.ts';
 
-class DBOp {
+type DBOp = {
   type: 'insert' | 'delete';
-  instance: any;
   rowPk: string;
-
-  constructor(type: 'insert' | 'delete', rowPk: string, instance: any) {
-    this.type = type;
-    this.rowPk = rowPk;
-    this.instance = instance;
-  }
-}
-
+  row: any;
+};
 export class TableOperation {
   /**
    * The type of CRUD operation.
@@ -94,9 +87,13 @@ export class Table {
         this.#entityClass.getAlgebraicType(),
         adapter
       );
-      const instance = this.#entityClass.fromValue(entry);
+      const row = this.#entityClass.fromValue(entry);
 
-      dbOps.push(new DBOp(operation.type, pk, instance));
+      dbOps.push({
+        type: operation.type,
+        rowPk: pk,
+        row: row,
+      });
     }
 
     if (this.#entityClass.primaryKey !== undefined) {
@@ -107,7 +104,7 @@ export class Table {
         if (dbOp.type === 'insert') {
           inserts.push(dbOp);
         } else {
-          deleteMap.set(dbOp.instance[pkName], dbOp);
+          deleteMap.set(dbOp.row[pkName], dbOp);
         }
       }
       for (const dbOp of inserts) {
@@ -140,21 +137,21 @@ export class Table {
     oldDbOp: DBOp,
     reducerEvent: ReducerEvent | undefined
   ): void => {
-    const newInstance = newDbOp.instance;
-    const oldInstance = oldDbOp.instance;
+    const newInstance = newDbOp.row;
+    const oldInstance = oldDbOp.row;
     this.rows.delete(oldDbOp.rowPk);
     this.rows.set(newDbOp.rowPk, newInstance);
     this.emitter.emit('update', oldInstance, newInstance, reducerEvent);
   };
 
   insert = (dbOp: DBOp, reducerEvent: ReducerEvent | undefined): void => {
-    this.rows.set(dbOp.rowPk, dbOp.instance);
-    this.emitter.emit('insert', dbOp.instance, reducerEvent);
+    this.rows.set(dbOp.rowPk, dbOp.row);
+    this.emitter.emit('insert', dbOp.row, reducerEvent);
   };
 
   delete = (dbOp: DBOp, reducerEvent: ReducerEvent | undefined): void => {
     this.rows.delete(dbOp.rowPk);
-    this.emitter.emit('delete', dbOp.instance, reducerEvent);
+    this.emitter.emit('delete', dbOp.row, reducerEvent);
   };
 
   /**

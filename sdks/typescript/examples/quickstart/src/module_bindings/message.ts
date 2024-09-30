@@ -16,7 +16,7 @@ type Message = {
   text: string;
 };
 
-export class MessageTable<
+export class MessageTableHandle<
   DbView,
   ReducerView,
   ReducerEnum,
@@ -31,14 +31,14 @@ export class MessageTable<
 
   constructor(
     client: DBConnectionBase<ReducerEnum, EventContext>,
-    sender: Identity,
-    sent: bigint,
-    text: string
+    sender?: Identity,
+    sent?: bigint,
+    text?: string
   ) {
     this.#client = client;
-    this.sender = sender;
-    this.sent = sent;
-    this.text = text;
+    this.sender = sender!;
+    this.sent = sent!;
+    this.text = text!;
   }
 
   public static serialize(value: Message): object {
@@ -69,7 +69,7 @@ export class MessageTable<
   >(
     client: DBConnectionBase<ReducerEnum, EventContext>,
     value: AlgebraicValue
-  ): MessageTable<DbView, ReducerView, ReducerEnum, EventContext> {
+  ): MessageTableHandle<DbView, ReducerView, ReducerEnum, EventContext> {
     let productValue = value.asProductValue();
     let __sender = productValue.elements[0].asIdentity();
     let __sent = productValue.elements[1].asBigInt();

@@ -335,12 +335,6 @@ export class DBConnectionBuilder<
   }
 }
 
-// class DBConnection extends DbConnectionBase {}
-
-// const ctxz = new DbConnection()
-
-// ctxz.
-
 export class DBConnectionBase<
   ReducerEnum = {},
   EventContext extends DbContext<any, any> = any,

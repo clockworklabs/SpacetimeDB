@@ -8,11 +8,17 @@ import {
   ReducerArgsAdapter,
 } from '@clockworklabs/spacetimedb-sdk';
 
-export class SetNameReducer<EventContext, DBView, ReducerView> extends Reducer<
+export class SetNameReducer<
+  EventContext,
+  DBView,
+  ReducerView,
+  ReducerEnum,
+> extends Reducer<
   [name: string],
   DBView,
   ReducerView,
-  EventContext
+  EventContext,
+  ReducerEnum
 > {
   constructor(client: DBConnectionBase) {
     super(client, 'SetName');
