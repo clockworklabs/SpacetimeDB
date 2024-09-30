@@ -186,12 +186,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             diag.Report(ErrorDescriptor.TableTaggedEnum, (TypeDeclarationSyntax)context.TargetNode);
         }
 
-        Visibility = context.TargetSymbol.DeclaredAccessibility;
-
         var container = context.TargetSymbol;
+        Visibility = container.DeclaredAccessibility;
         while (container != null)
         {
-            switch (Visibility)
+            switch (container.DeclaredAccessibility)
             {
                 case Accessibility.ProtectedAndInternal:
                 case Accessibility.NotApplicable:
@@ -203,7 +202,6 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         "Table row type visibility must be public or internal, including containing types."
                     );
             }
-            ;
 
             container = container.ContainingType;
         }
@@ -348,7 +346,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             {{string.Join("\n", Views.Select(v => $$"""
             new (
                 new (
-                    TableName: nameof({{ShortName}}),
+                    TableName: nameof(SpacetimeDB.Local.{{v.Name}}),
                     Columns: [
                         {{string.Join(",\n", Members.Select(m => m.GenerateColumnDef()))}}
                     ],
@@ -363,7 +361,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                             .Select(tuple =>
                                 $$"""
                                 new (
-                                    nameof({{ShortName}}),
+                                    nameof(SpacetimeDB.Local.{{v.Name}}),
                                     {{tuple.pos}},
                                     nameof({{tuple.col.Name}}),
                                     SpacetimeDB.Internal.ColumnAttrs.{{tuple.attr}}
@@ -599,7 +597,7 @@ public class Module : IIncrementalGenerator
                             )}}
                             {{string.Join(
                                 "\n",
-                                tableViews.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}>();")
+                                tableViews.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}>();").Distinct()
                             )}}
                         }
 

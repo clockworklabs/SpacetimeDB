@@ -1,71 +1,57 @@
+#![allow(clippy::disallowed_macros)]
 mod module_bindings;
-
 use module_bindings::*;
 
-use spacetimedb_sdk::{
-    disconnect,
-    identity::{load_credentials, once_on_connect, save_credentials, Credentials, Identity},
-    on_disconnect, on_subscription_applied,
-    reducer::Status,
-    subscribe,
-    table::{TableType, TableWithPrimaryKey},
-    Address,
-};
+use spacetimedb_sdk::{credentials, DbContext, Event, Identity, ReducerEvent, Status, Table, TableWithPrimaryKey};
 
 // # Our main function
 
 fn main() {
-    register_callbacks();
-    connect_to_db();
-    subscribe_to_tables();
-    user_input_loop();
-    disconnect();
+    let ctx = connect_to_db();
+    register_callbacks(&ctx);
+    subscribe_to_tables(&ctx);
+    ctx.run_threaded();
+    user_input_loop(&ctx);
+    ctx.disconnect().unwrap();
 }
 
 // # Register callbacks
 
-/// Register all the callbacks our app will use to respond to database events.
-fn register_callbacks() {
-    // When we receive our `Credentials`, save them to a file.
-    once_on_connect(on_connected);
-
+/// Register our row and reducer callbacks.
+fn register_callbacks(ctx: &DbConnection) {
     // When a new user joins, print a notification.
-    User::on_insert(on_user_inserted);
+    ctx.db.user().on_insert(on_user_inserted);
 
     // When a user's status changes, print a notification.
-    User::on_update(on_user_updated);
+    ctx.db.user().on_update(on_user_updated);
 
     // When a new message is received, print it.
-    Message::on_insert(on_message_inserted);
-
-    // When we receive the message backlog, print it in timestamp order.
-    on_subscription_applied(on_sub_applied);
+    ctx.db.message().on_insert(on_message_inserted);
 
     // When we fail to set our name, print a warning.
-    on_set_name(on_name_set);
+    ctx.reducers.on_set_name(on_name_set);
 
     // When we fail to send a message, print a warning.
-    on_send_message(on_message_sent);
-
-    // When our connection closes, inform the user and exit.
-    on_disconnect(on_disconnected);
+    ctx.reducers.on_send_message(on_message_sent);
 }
 
 // ## Save credentials to a file
 
+fn creds_store() -> credentials::File {
+    credentials::File::new("quickstart-chat")
+}
+
 /// Our `on_connect` callback: save our credentials to a file.
-fn on_connected(creds: &Credentials, _address: Address) {
-    if let Err(e) = save_credentials(CREDS_DIR, creds) {
+fn on_connected(_ctx: &DbConnection, identity: Identity, token: &str) {
+    if let Err(e) = creds_store().save(identity, token) {
         eprintln!("Failed to save credentials: {:?}", e);
     }
 }
 
-const CREDS_DIR: &str = ".spacetime_chat";
-
 // ## Notify about new users
 
 /// Our `User::on_insert` callback: if the user is online, print a notification.
-fn on_user_inserted(user: &User, _: Option<&ReducerEvent>) {
+fn on_user_inserted(_ctx: &EventContext, user: &User) {
     if user.online {
         println!("User {} connected.", user_name_or_identity(user));
     }
@@ -81,7 +67,7 @@ fn user_name_or_identity(user: &User) -> String {
 
 /// Our `User::on_update` callback:
 /// print a notification about name and status changes.
-fn on_user_updated(old: &User, new: &User, _: Option<&ReducerEvent>) {
+fn on_user_updated(_ctx: &EventContext, old: &User, new: &User) {
     if old.name != new.name {
         println!(
             "User {} renamed to {}.",
@@ -100,14 +86,18 @@ fn on_user_updated(old: &User, new: &User, _: Option<&ReducerEvent>) {
 // ## Display incoming messages
 
 /// Our `Message::on_insert` callback: print new messages.
-fn on_message_inserted(message: &Message, reducer_event: Option<&ReducerEvent>) {
-    if reducer_event.is_some() {
-        print_message(message);
+fn on_message_inserted(ctx: &EventContext, message: &Message) {
+    if !matches!(ctx.event, Event::SubscribeApplied) {
+        print_message(ctx, message);
     }
 }
 
-fn print_message(message: &Message) {
-    let sender = User::find_by_identity(message.sender.clone())
+fn print_message(ctx: &EventContext, message: &Message) {
+    let sender = ctx
+        .db
+        .user()
+        .identity()
+        .find(&message.sender)
         .map(|u| user_name_or_identity(&u))
         .unwrap_or_else(|| "unknown".to_string());
     println!("{}: {}", sender, message.text);
@@ -117,19 +107,24 @@ fn print_message(message: &Message) {
 
 /// Our `on_subscription_applied` callback:
 /// sort all past messages and print them in timestamp order.
-fn on_sub_applied() {
-    let mut messages = Message::iter().collect::<Vec<_>>();
+#[allow(unused)]
+fn on_sub_applied(ctx: &EventContext) {
+    let mut messages = ctx.db.message().iter().collect::<Vec<_>>();
     messages.sort_by_key(|m| m.sent);
     for message in messages {
-        print_message(&message);
+        print_message(ctx, &message);
     }
 }
 
 // ## Warn if set_name failed
 
 /// Our `on_set_name` callback: print a warning if the reducer failed.
-fn on_name_set(_sender_id: &Identity, _sender_addr: Option<Address>, status: &Status, name: &String) {
-    if let Status::Failed(err) = status {
+fn on_name_set(ctx: &EventContext, name: &String) {
+    if let Event::Reducer(ReducerEvent {
+        status: Status::Failed(err),
+        ..
+    }) = &ctx.event
+    {
         eprintln!("Failed to change name to {:?}: {}", name, err);
     }
 }
@@ -137,8 +132,12 @@ fn on_name_set(_sender_id: &Identity, _sender_addr: Option<Address>, status: &St
 // ## Warn if a message was rejected
 
 /// Our `on_send_message` callback: print a warning if the reducer failed.
-fn on_message_sent(_sender: &Identity, _sender_addr: Option<Address>, status: &Status, text: &String) {
-    if let Status::Failed(err) = status {
+fn on_message_sent(ctx: &EventContext, text: &String) {
+    if let Event::Reducer(ReducerEvent {
+        status: Status::Failed(err),
+        ..
+    }) = &ctx.event
+    {
         eprintln!("Failed to send message {:?}: {}", text, err);
     }
 }
@@ -146,9 +145,13 @@ fn on_message_sent(_sender: &Identity, _sender_addr: Option<Address>, status: &S
 // ## Exit when disconnected
 
 /// Our `on_disconnect` callback: print a note, then exit the process.
-fn on_disconnected() {
-    eprintln!("Disconnected!");
-    std::process::exit(0)
+fn on_disconnected(_ctx: &DbConnection, err: Option<&anyhow::Error>) {
+    if let Some(err) = err {
+        panic!("Disconnected abnormally: {err}")
+    } else {
+        println!("Disconnected normally.");
+        std::process::exit(0)
+    }
 }
 
 // # Connect to the database
@@ -160,34 +163,40 @@ const HOST: &str = "http://localhost:3000";
 const DB_NAME: &str = "quickstart-chat";
 
 /// Load credentials from a file and connect to the database.
-fn connect_to_db() {
-    connect(
-        HOST,
-        DB_NAME,
-        load_credentials(CREDS_DIR).expect("Error reading stored credentials"),
-    )
-    .expect("Failed to connect");
+fn connect_to_db() -> DbConnection {
+    DbConnection::builder()
+        .on_connect(on_connected)
+        .on_connect_error(|err| panic!("Error while connecting: {err}"))
+        .on_disconnect(on_disconnected)
+        .with_credentials(creds_store().load().expect("Error loading credentials"))
+        .with_module_name(DB_NAME)
+        .with_uri(HOST)
+        .build()
+        .expect("Failed to connect")
 }
 
 // # Subscribe to queries
 
 /// Register subscriptions for all rows of both tables.
-fn subscribe_to_tables() {
-    subscribe(&["SELECT * FROM user;", "SELECT * FROM message;"]).unwrap();
+fn subscribe_to_tables(ctx: &DbConnection) {
+    ctx.subscription_builder().on_applied(on_sub_applied).subscribe(vec![
+        "SELECT * FROM user;".to_string(),
+        "SELECT * FROM message;".to_string(),
+    ]);
 }
 
 // # Handle user input
 
 /// Read each line of standard input, and either set our name or send a message as appropriate.
-fn user_input_loop() {
+fn user_input_loop(ctx: &DbConnection) {
     for line in std::io::stdin().lines() {
         let Ok(line) = line else {
             panic!("Failed to read from stdin.");
         };
         if let Some(name) = line.strip_prefix("/name ") {
-            set_name(name.to_string());
+            ctx.reducers.set_name(name.to_string()).unwrap();
         } else {
-            send_message(line);
+            ctx.reducers.send_message(line).unwrap();
         }
     }
 }

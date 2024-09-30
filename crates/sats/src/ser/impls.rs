@@ -271,3 +271,9 @@ impl_serialize!([] bytes::Bytes, (self, ser) => ser.serialize_bytes(self));
 
 #[cfg(feature = "bytestring")]
 impl_serialize!([] bytestring::ByteString, (self, ser) => ser.serialize_str(self));
+
+impl_serialize!([] std::time::SystemTime, (self, ser) => {
+        let duration = self.duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap();
+        let micros: u64 = duration.as_micros().try_into().expect("SystemTime exceeded 2^64 us since the Unix epoch");
+        ser.serialize_u64(micros)
+});

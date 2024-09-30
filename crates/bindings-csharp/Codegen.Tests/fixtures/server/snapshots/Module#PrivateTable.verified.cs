@@ -32,7 +32,7 @@ partial class PrivateTable : SpacetimeDB.Internal.ITable<PrivateTable>
         [
             new(
                 new(
-                    TableName: nameof(PrivateTable),
+                    TableName: nameof(SpacetimeDB.Local.PrivateTable),
                     Columns: [],
                     Indexes: [],
                     Constraints: [],

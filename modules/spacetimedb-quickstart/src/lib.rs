@@ -1,4 +1,4 @@
-use spacetimedb::{println, query};
+use spacetimedb::{println, ReducerContext, Table};
 
 #[spacetimedb::table(name = person, public)]
 pub struct Person {
@@ -10,21 +10,21 @@ pub struct Person {
 }
 
 #[spacetimedb::reducer]
-pub fn add(name: String, age: u8) {
-    Person::insert(Person { id: 0, name, age }).unwrap();
+pub fn add(ctx: &ReducerContext, name: String, age: u8) {
+    ctx.db.person().insert(Person { id: 0, name, age });
 }
 
 #[spacetimedb::reducer]
-pub fn say_hello() {
-    for person in Person::iter() {
+pub fn say_hello(ctx: &ReducerContext) {
+    for person in ctx.db.person().iter() {
         println!("Hello, {}!", person.name);
     }
     println!("Hello, World!");
 }
 
 #[spacetimedb::reducer]
-pub fn list_over_age(age: u8) {
-    for person in query!(|person: Person| person.age >= age) {
+pub fn list_over_age(ctx: &ReducerContext, age: u8) {
+    for person in ctx.db.person().iter().filter(|person| person.age >= age) {
         println!("{} has age {} >= {}", person.name, person.age, age);
     }
 }

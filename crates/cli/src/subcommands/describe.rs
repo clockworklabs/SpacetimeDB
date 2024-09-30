@@ -28,12 +28,7 @@ pub fn cli() -> clap::Command {
                 .long_help("The identity to use to describe the entity. If no identity is provided, the default one will be used."),
         )
         .arg(
-            Arg::new("anon_identity")
-                .long("anon-identity")
-                .short('a')
-                .conflicts_with("identity")
-                .action(SetTrue)
-                .help("If this flag is present, no identity will be provided when describing the database"),
+            common_args::anonymous()
         )
         .arg(
             common_args::server()

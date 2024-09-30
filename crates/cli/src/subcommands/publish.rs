@@ -1,6 +1,6 @@
 use anyhow::bail;
 use clap::Arg;
-use clap::ArgAction::SetTrue;
+use clap::ArgAction::{Set, SetTrue};
 use clap::ArgMatches;
 use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::PublishOp;
@@ -8,10 +8,10 @@ use spacetimedb_client_api_messages::name::{is_address, parse_domain_name, Publi
 use std::fs;
 use std::path::PathBuf;
 
-use crate::common_args;
 use crate::config::Config;
 use crate::util::{add_auth_header_opt, get_auth_header};
 use crate::util::{unauth_error_context, y_or_n};
+use crate::{build, common_args};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("publish")
@@ -33,6 +33,14 @@ pub fn cli() -> clap::Command {
                 .help("When publishing to an existing address, first DESTROY all data associated with the module"),
         )
         .arg(
+            Arg::new("build_options")
+                .long("build-options")
+                .alias("build-opts")
+                .action(Set)
+                .default_value("")
+                .help("Options to pass to the build command")
+        )
+        .arg(
             Arg::new("project_path")
                 .value_parser(clap::value_parser!(PathBuf))
                 .default_value(".")
@@ -46,6 +54,7 @@ pub fn cli() -> clap::Command {
                 .long("wasm-file")
                 .short('w')
                 .conflicts_with("project_path")
+                .conflicts_with("build_options")
                 .help("The system path (absolute or relative) to the wasm file we should publish, instead of building the project."),
         )
         .arg(
@@ -62,27 +71,7 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("anon_identity")
         )
         .arg(
-            Arg::new("anon_identity")
-                .long("anon-identity")
-                .short('a')
-                .action(SetTrue)
-                .help("Instruct SpacetimeDB to allocate a new identity to own this database"),
-        )
-        .arg(
-            Arg::new("skip_clippy")
-                .long("skip_clippy")
-                .short('S')
-                .action(SetTrue)
-                .env("SPACETIME_SKIP_CLIPPY")
-                .value_parser(clap::builder::FalseyValueParser::new())
-                .help("Skips running clippy on the module before publishing (intended to speed up local iteration, not recommended for CI)"),
-        )
-        .arg(
-            Arg::new("debug")
-                .long("debug")
-                .short('d')
-                .action(SetTrue)
-                .help("Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)"),
+            common_args::anonymous()
         )
         .arg(
             Arg::new("name|address")
@@ -110,10 +99,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let force = args.get_flag("force");
     let trace_log = args.get_flag("trace_log");
     let anon_identity = args.get_flag("anon_identity");
-    let skip_clippy = args.get_flag("skip_clippy");
-    let build_debug = args.get_flag("debug");
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
     let database_host = config.get_host_url(server)?;
+    let build_options = args.get_one::<String>("build_options").unwrap();
 
     // If the user didn't specify an identity and we didn't specify an anonymous identity, then
     // we want to use the default identity
@@ -155,7 +143,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         println!("Skipping build. Instead we are publishing {}", path.display());
         path.clone()
     } else {
-        crate::tasks::build(path_to_project, skip_clippy, build_debug)?
+        build::exec_with_argstring(config.clone(), path_to_project, build_options).await?
     };
     let program_bytes = fs::read(path_to_wasm)?;
     println!(
