@@ -194,7 +194,7 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
         [
             new(
                 new(
-                    TableName: nameof(PublicTable),
+                    TableName: nameof(SpacetimeDB.Local.PublicTable),
                     Columns:
                     [
                         new(nameof(Id), BSATN.Id.GetAlgebraicType(registrar)),
@@ -256,7 +256,7 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
                     Constraints:
                     [
                         new(
-                            nameof(PublicTable),
+                            nameof(SpacetimeDB.Local.PublicTable),
                             0,
                             nameof(Id),
                             SpacetimeDB.Internal.ColumnAttrs.PrimaryKeyAuto

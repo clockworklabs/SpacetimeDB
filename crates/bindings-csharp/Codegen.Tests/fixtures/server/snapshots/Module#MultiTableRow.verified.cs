@@ -51,7 +51,7 @@ partial struct MultiTableRow : SpacetimeDB.Internal.ITable<MultiTableRow>
         [
             new(
                 new(
-                    TableName: nameof(MultiTableRow),
+                    TableName: nameof(SpacetimeDB.Local.MultiTable1),
                     Columns:
                     [
                         new(nameof(Name), BSATN.Name.GetAlgebraicType(registrar)),
@@ -62,7 +62,7 @@ partial struct MultiTableRow : SpacetimeDB.Internal.ITable<MultiTableRow>
                     Constraints:
                     [
                         new(
-                            nameof(MultiTableRow),
+                            nameof(SpacetimeDB.Local.MultiTable1),
                             1,
                             nameof(Foo),
                             SpacetimeDB.Internal.ColumnAttrs.PrimaryKeyAuto
@@ -82,7 +82,7 @@ partial struct MultiTableRow : SpacetimeDB.Internal.ITable<MultiTableRow>
             ),
             new(
                 new(
-                    TableName: nameof(MultiTableRow),
+                    TableName: nameof(SpacetimeDB.Local.MultiTable2),
                     Columns:
                     [
                         new(nameof(Name), BSATN.Name.GetAlgebraicType(registrar)),
@@ -93,13 +93,13 @@ partial struct MultiTableRow : SpacetimeDB.Internal.ITable<MultiTableRow>
                     Constraints:
                     [
                         new(
-                            nameof(MultiTableRow),
+                            nameof(SpacetimeDB.Local.MultiTable2),
                             1,
                             nameof(Foo),
                             SpacetimeDB.Internal.ColumnAttrs.AutoInc
                         ),
                         new(
-                            nameof(MultiTableRow),
+                            nameof(SpacetimeDB.Local.MultiTable2),
                             2,
                             nameof(Bar),
                             SpacetimeDB.Internal.ColumnAttrs.Unique

@@ -645,7 +645,6 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterReducer<ScheduleImmediate>();
         SpacetimeDB.Internal.Module.RegisterReducer<SendScheduledMessage>();
         SpacetimeDB.Internal.Module.RegisterTable<global::MultiTableRow>();
-        SpacetimeDB.Internal.Module.RegisterTable<global::MultiTableRow>();
         SpacetimeDB.Internal.Module.RegisterTable<global::PrivateTable>();
         SpacetimeDB.Internal.Module.RegisterTable<global::PublicTable>();
         SpacetimeDB.Internal.Module.RegisterTable<global::Timers.SendMessageTimer>();

@@ -49,7 +49,7 @@ partial struct TestAutoIncNotInteger : SpacetimeDB.Internal.ITable<TestAutoIncNo
         [
             new(
                 new(
-                    TableName: nameof(TestAutoIncNotInteger),
+                    TableName: nameof(SpacetimeDB.Local.TestAutoIncNotInteger),
                     Columns:
                     [
                         new(nameof(AutoIncField), BSATN.AutoIncField.GetAlgebraicType(registrar)),

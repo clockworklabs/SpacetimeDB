@@ -53,7 +53,7 @@ partial struct TestUniqueNotEquatable : SpacetimeDB.Internal.ITable<TestUniqueNo
         [
             new(
                 new(
-                    TableName: nameof(TestUniqueNotEquatable),
+                    TableName: nameof(SpacetimeDB.Local.TestUniqueNotEquatable),
                     Columns:
                     [
                         new(nameof(UniqueField), BSATN.UniqueField.GetAlgebraicType(registrar)),
