@@ -22,9 +22,9 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use wasmtime::{Caller, StoreContextMut};
 
-use crate::build;
 use crate::util::y_or_n;
 use crate::Config;
+use crate::{build, common_args};
 
 mod code_indenter;
 pub mod csharp;
@@ -102,13 +102,7 @@ pub fn cli() -> clap::Command {
                 .default_value("")
                 .help("Options to pass to the build command"),
         )
-        .arg(
-            Arg::new("force")
-                .long("force")
-                .action(SetTrue)
-                .requires("delete_files")
-                .help("delete-files without prompting first. Useful for scripts."),
-        )
+        .arg(common_args::yes())
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 

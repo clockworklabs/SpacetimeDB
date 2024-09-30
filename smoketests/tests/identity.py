@@ -71,7 +71,7 @@ class IdentityImports(Smoketest):
             self.spacetime("identity", "remove", "--identity", identity)
 
     def test_remove_all(self):
-        """Test deleting all identities with --force"""
+        """Test deleting all identities with --yes"""
 
         self.fingerprint()
 
@@ -84,7 +84,7 @@ class IdentityImports(Smoketest):
         identities = self.spacetime("identity", "list")
         self.assertNotIn(identity2, identities)
 
-        self.spacetime("identity", "remove", "--all", "--force")
+        self.spacetime("identity", "remove", "--all", "--yes")
         identities = self.spacetime("identity", "list")
         self.assertNotIn(identity1, identities)
 
