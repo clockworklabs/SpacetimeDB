@@ -308,14 +308,6 @@ pub enum AlgebraicTypeUse {
     /// Values [`AlgebraicValue::Array(array)`](crate::AlgebraicValue::Array) will have this type.
     Array(Arc<AlgebraicTypeUse>),
 
-    /// The type of map values consisting of a key type `key_ty` and value `ty`.
-    /// Values [`AlgebraicValue::Map(map)`](crate::AlgebraicValue::Map) will have this type.
-    /// The order of entries in a map value is observable.
-    Map {
-        key: Arc<AlgebraicTypeUse>,
-        value: Arc<AlgebraicTypeUse>,
-    },
-
     /// A standard structural option type.
     Option(Arc<AlgebraicTypeUse>),
 
@@ -360,10 +352,6 @@ impl AlgebraicTypeUse {
         match self {
             AlgebraicTypeUse::Ref(ref_) => f(*ref_),
             AlgebraicTypeUse::Array(elem_ty) => elem_ty._for_each_ref(f),
-            AlgebraicTypeUse::Map { key, value } => {
-                key._for_each_ref(f);
-                value._for_each_ref(f);
-            }
             AlgebraicTypeUse::Option(elem_ty) => elem_ty._for_each_ref(f),
             _ => {}
         }
@@ -443,18 +431,6 @@ impl TypespaceForGenerateBuilder<'_> {
                     let interned = self.intern_use(elem_ty);
                     Ok(AlgebraicTypeUse::Array(interned))
                 }
-                AlgebraicType::Map(map) => {
-                    let key_ty = self.parse_use(&map.key_ty);
-                    let value_ty = self.parse_use(&map.ty);
-                    let (key_ty, value_ty) = (key_ty, value_ty).combine_errors()?;
-                    let interned_key = self.intern_use(key_ty);
-                    let interned_value = self.intern_use(value_ty);
-                    Ok(AlgebraicTypeUse::Map {
-                        key: interned_key,
-                        value: interned_value,
-                    })
-                }
-
                 AlgebraicType::String => Ok(AlgebraicTypeUse::String),
                 AlgebraicType::Bool => Ok(AlgebraicTypeUse::Primitive(PrimitiveType::Bool)),
                 AlgebraicType::I8 => Ok(AlgebraicTypeUse::Primitive(PrimitiveType::I8)),
@@ -751,17 +727,12 @@ mod tests {
         let ref0 = t.add(AlgebraicType::Ref(def));
         let ref1 = t.add(AlgebraicType::array(AlgebraicType::Ref(def)));
         let ref2 = t.add(AlgebraicType::option(AlgebraicType::Ref(ref1)));
-        let ref3 = t.add(AlgebraicType::map(AlgebraicType::U64, AlgebraicType::Ref(ref2)));
-        let ref4 = t.add(AlgebraicType::Ref(ref3));
+        let ref3 = t.add(AlgebraicType::Ref(ref2));
 
         let expected_0 = AlgebraicTypeUse::Ref(def);
         let expected_1 = AlgebraicTypeUse::Array(Arc::new(expected_0.clone()));
         let expected_2 = AlgebraicTypeUse::Option(Arc::new(expected_1.clone()));
-        let expected_3 = AlgebraicTypeUse::Map {
-            key: Arc::new(AlgebraicTypeUse::Primitive(PrimitiveType::U64)),
-            value: Arc::new(expected_2.clone()),
-        };
-        let expected_4 = expected_3.clone();
+        let expected_3 = expected_2.clone();
 
         let mut for_generate_forward = TypespaceForGenerate::builder(&t, [def]);
         for_generate_forward.add_definition(def).unwrap();
@@ -769,16 +740,13 @@ mod tests {
         let use1 = for_generate_forward.parse_use(&ref1.into()).unwrap();
         let use2 = for_generate_forward.parse_use(&ref2.into()).unwrap();
         let use3 = for_generate_forward.parse_use(&ref3.into()).unwrap();
-        let use4 = for_generate_forward.parse_use(&ref4.into()).unwrap();
 
         assert_eq!(use0, expected_0);
         assert_eq!(use1, expected_1);
         assert_eq!(use2, expected_2);
         assert_eq!(use3, expected_3);
-        assert_eq!(use4, expected_4);
 
         let mut for_generate_backward = TypespaceForGenerate::builder(&t, [def]);
-        let use4 = for_generate_backward.parse_use(&ref4.into()).unwrap();
         let use3 = for_generate_forward.parse_use(&ref3.into()).unwrap();
         let use2 = for_generate_forward.parse_use(&ref2.into()).unwrap();
         let use1 = for_generate_forward.parse_use(&ref1.into()).unwrap();
@@ -789,7 +757,6 @@ mod tests {
         assert_eq!(use1, expected_1);
         assert_eq!(use2, expected_2);
         assert_eq!(use3, expected_3);
-        assert_eq!(use4, expected_4);
     }
 
     #[test]

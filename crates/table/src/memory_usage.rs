@@ -2,7 +2,7 @@ use std::hash::{BuildHasher, Hash};
 use std::mem;
 
 use spacetimedb_sats::{
-    algebraic_value::Packed, i256, u256, AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, ProductType,
+    algebraic_value::Packed, i256, u256, AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, ProductType,
     ProductTypeElement, ProductValue, SumType, SumTypeVariant, SumValue,
 };
 
@@ -137,7 +137,6 @@ impl MemoryUsage for AlgebraicValue {
             AlgebraicValue::Sum(x) => x.heap_usage(),
             AlgebraicValue::Product(x) => x.heap_usage(),
             AlgebraicValue::Array(x) => x.heap_usage(),
-            AlgebraicValue::Map(x) => x.heap_usage(),
             AlgebraicValue::String(x) => x.heap_usage(),
             _ => 0,
         }
@@ -175,7 +174,6 @@ impl MemoryUsage for ArrayValue {
             ArrayValue::F64(v) => v.heap_usage(),
             ArrayValue::String(v) => v.heap_usage(),
             ArrayValue::Array(v) => v.heap_usage(),
-            ArrayValue::Map(v) => v.heap_usage(),
         }
     }
 }
@@ -186,7 +184,6 @@ impl MemoryUsage for AlgebraicType {
             AlgebraicType::Sum(x) => x.heap_usage(),
             AlgebraicType::Product(x) => x.heap_usage(),
             AlgebraicType::Array(x) => x.heap_usage(),
-            AlgebraicType::Map(x) => x.heap_usage(),
             AlgebraicType::String
             | AlgebraicType::Bool
             | AlgebraicType::I8
@@ -229,11 +226,6 @@ impl MemoryUsage for ProductTypeElement {
 impl MemoryUsage for ArrayType {
     fn heap_usage(&self) -> usize {
         self.elem_ty.heap_usage()
-    }
-}
-impl MemoryUsage for MapType {
-    fn heap_usage(&self) -> usize {
-        self.key_ty.heap_usage() + self.ty.heap_usage()
     }
 }
 

@@ -139,20 +139,6 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
         let iter = map_err(self.val.into_array())?.into_iter();
         visitor.visit(ArrayAccess { iter, seed })
     }
-
-    fn deserialize_map_seed<
-        Vi: de::MapVisitor<'de, K::Output, V::Output>,
-        K: de::DeserializeSeed<'de> + Clone,
-        V: de::DeserializeSeed<'de> + Clone,
-    >(
-        self,
-        visitor: Vi,
-        kseed: K,
-        vseed: V,
-    ) -> Result<Vi::Output, Self::Error> {
-        let iter = map_err(self.val.into_map())?.into_iter();
-        visitor.visit(MapAccess { iter, kseed, vseed })
-    }
 }
 
 /// Defines deserialization for [`ValueDeserializer`] where product elements are in the input.
@@ -224,38 +210,6 @@ impl<'de, T: de::DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for ArrayAcc
         self.iter
             .next()
             .map(|val| self.seed.clone().deserialize(ValueDeserializer { val }))
-            .transpose()
-    }
-}
-
-/// Defines deserialization for [`ValueDeserializer`] where a map value is in the input.
-struct MapAccess<K, V> {
-    /// The elements of the map as an iterator of owned key/value entries.
-    iter: std::collections::btree_map::IntoIter<AlgebraicValue, AlgebraicValue>,
-    /// A key seed value provided by the caller of
-    /// [`deserialize_map_seed`](de::Deserializer::deserialize_map_seed).
-    kseed: K,
-    /// A value seed value provided by the caller of
-    /// [`deserialize_map_seed`](de::Deserializer::deserialize_map_seed).
-    vseed: V,
-}
-
-impl<'de, K: de::DeserializeSeed<'de> + Clone, V: de::DeserializeSeed<'de> + Clone> de::MapAccess<'de>
-    for MapAccess<K, V>
-{
-    type Key = K::Output;
-    type Value = V::Output;
-    type Error = ValueDeserializeError;
-
-    fn next_entry(&mut self) -> Result<Option<(Self::Key, Self::Value)>, Self::Error> {
-        self.iter
-            .next()
-            .map(|(key, val)| {
-                Ok((
-                    self.kseed.clone().deserialize(ValueDeserializer { val: key })?,
-                    self.vseed.clone().deserialize(ValueDeserializer { val })?,
-                ))
-            })
             .transpose()
     }
 }
@@ -335,20 +289,6 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
         let iter = ok_or(self.val.as_array())?.iter_cloned();
         visitor.visit(RefArrayAccess { iter, seed })
     }
-
-    fn deserialize_map_seed<
-        Vi: de::MapVisitor<'de, K::Output, V::Output>,
-        K: de::DeserializeSeed<'de> + Clone,
-        V: de::DeserializeSeed<'de> + Clone,
-    >(
-        self,
-        visitor: Vi,
-        kseed: K,
-        vseed: V,
-    ) -> Result<Vi::Output, Self::Error> {
-        let iter = ok_or(self.val.as_map())?.iter();
-        visitor.visit(RefMapAccess { iter, kseed, vseed })
-    }
 }
 
 /// Defines deserialization for [`&'de ValueDeserializer`] where product elements are in the input.
@@ -405,38 +345,6 @@ impl<'de, T: de::DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for RefArray
         self.iter
             .next()
             .map(|val| self.seed.clone().deserialize(ValueDeserializer { val }))
-            .transpose()
-    }
-}
-
-/// Defines deserialization for [`&'de ValueDeserializer`] where an map value is in the input.
-struct RefMapAccess<'a, K, V> {
-    /// The elements of the map as an iterator of borrowed key/value entries.
-    iter: std::collections::btree_map::Iter<'a, AlgebraicValue, AlgebraicValue>,
-    /// A key seed value provided by the caller of
-    /// [`deserialize_map_seed`](de::Deserializer::deserialize_map_seed).
-    kseed: K,
-    /// A value seed value provided by the caller of
-    /// [`deserialize_map_seed`](de::Deserializer::deserialize_map_seed).
-    vseed: V,
-}
-
-impl<'de, K: de::DeserializeSeed<'de> + Clone, V: de::DeserializeSeed<'de> + Clone> de::MapAccess<'de>
-    for RefMapAccess<'de, K, V>
-{
-    type Key = K::Output;
-    type Value = V::Output;
-    type Error = ValueDeserializeError;
-
-    fn next_entry(&mut self) -> Result<Option<(Self::Key, Self::Value)>, Self::Error> {
-        self.iter
-            .next()
-            .map(|(key, val)| {
-                Ok((
-                    self.kseed.clone().deserialize(ValueDeserializer::from_ref(key))?,
-                    self.vseed.clone().deserialize(ValueDeserializer::from_ref(val))?,
-                ))
-            })
             .transpose()
     }
 }

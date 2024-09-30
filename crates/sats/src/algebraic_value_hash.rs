@@ -4,7 +4,7 @@ use crate::{
     bsatn::Deserializer,
     buffer::{BufReader, DecodeError},
     de::{Deserialize, Deserializer as _},
-    i256, u256, AlgebraicType, AlgebraicValue, ArrayValue, MapType, ProductType, ProductValue, SumType, F32, F64,
+    i256, u256, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumType, F32, F64,
 };
 use bytemuck::{must_cast_slice, NoUninit};
 use core::hash::{Hash, Hasher};
@@ -37,7 +37,6 @@ impl Hash for AlgebraicValue {
             AlgebraicValue::Sum(x) => x.hash(state),
             AlgebraicValue::Product(x) => x.hash(state),
             AlgebraicValue::Array(x) => x.hash(state),
-            AlgebraicValue::Map(x) => x.hash(state),
             AlgebraicValue::Bool(x) => x.hash(state),
             AlgebraicValue::I8(x) => x.hash(state),
             AlgebraicValue::U8(x) => x.hash(state),
@@ -117,7 +116,6 @@ impl Hash for ArrayValue {
             ArrayValue::F64(es) => es.hash(state),
             ArrayValue::String(es) => es.hash(state),
             ArrayValue::Array(es) => es.hash(state),
-            ArrayValue::Map(es) => es.hash(state),
         }
     }
 }
@@ -130,7 +128,6 @@ pub fn hash_bsatn<'a>(state: &mut impl Hasher, ty: &AlgebraicType, de: Deseriali
         AlgebraicType::Sum(ty) => hash_bsatn_sum(state, ty, de),
         AlgebraicType::Product(ty) => hash_bsatn_prod(state, ty, de),
         AlgebraicType::Array(ty) => hash_bsatn_array(state, &ty.elem_ty, de),
-        AlgebraicType::Map(ty) => hash_bsatn_map(state, ty, de),
         AlgebraicType::Bool => hash_bsatn_de::<bool>(state, de),
         AlgebraicType::I8 => hash_bsatn_de::<i8>(state, de),
         AlgebraicType::U8 => hash_bsatn_de::<u8>(state, de),
@@ -177,7 +174,6 @@ fn hash_bsatn_array<'a>(state: &mut impl Hasher, ty: &AlgebraicType, de: Deseria
         AlgebraicType::Sum(ty) => hash_bsatn_seq(state, de, |s, d| hash_bsatn_sum(s, ty, d)),
         AlgebraicType::Product(ty) => hash_bsatn_seq(state, de, |s, d| hash_bsatn_prod(s, ty, d)),
         AlgebraicType::Array(ty) => hash_bsatn_seq(state, de, |s, d| hash_bsatn_array(s, &ty.elem_ty, d)),
-        AlgebraicType::Map(ty) => hash_bsatn_seq(state, de, |s, d| hash_bsatn_map(s, ty, d)),
         AlgebraicType::Bool => hash_bsatn_seq(state, de, hash_bsatn_de::<bool>),
         AlgebraicType::I8 | AlgebraicType::U8 => hash_bsatn_int_seq(state, de, 1),
         AlgebraicType::I16 | AlgebraicType::U16 => hash_bsatn_int_seq(state, de, 2),
@@ -189,19 +185,6 @@ fn hash_bsatn_array<'a>(state: &mut impl Hasher, ty: &AlgebraicType, de: Deseria
         AlgebraicType::F64 => hash_bsatn_seq(state, de, hash_bsatn_de::<F64>),
         AlgebraicType::String => hash_bsatn_seq(state, de, hash_bsatn_de::<&str>),
     }
-}
-
-/// Hashes every (key, value) in the BSATN-encoded map value.
-fn hash_bsatn_map<'a>(state: &mut impl Hasher, ty: &MapType, de: Deserializer<'_, impl BufReader<'a>>) -> HR {
-    // Hash each (key, value) pair but first length-prefix.
-    // This is OK as BSATN serializes the map in order
-    // and `BTreeMap` will hash the elements in order,
-    // so everything stays consistent.
-    hash_bsatn_seq(state, de, |state, mut de| {
-        hash_bsatn(state, &ty.key_ty, de.reborrow())?;
-        hash_bsatn(state, &ty.ty, de)?;
-        Ok(())
-    })
 }
 
 /// Hashes elements in the BSATN-encoded element sequence.
