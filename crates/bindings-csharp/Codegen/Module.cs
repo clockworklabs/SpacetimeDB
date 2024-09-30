@@ -186,12 +186,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             diag.Report(ErrorDescriptor.TableTaggedEnum, (TypeDeclarationSyntax)context.TargetNode);
         }
 
-        Visibility = context.TargetSymbol.DeclaredAccessibility;
-
         var container = context.TargetSymbol;
+        Visibility = container.DeclaredAccessibility;
         while (container != null)
         {
-            switch (Visibility)
+            switch (container.DeclaredAccessibility)
             {
                 case Accessibility.ProtectedAndInternal:
                 case Accessibility.NotApplicable:
@@ -203,7 +202,6 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         "Table row type visibility must be public or internal, including containing types."
                     );
             }
-            ;
 
             container = container.ContainingType;
         }
