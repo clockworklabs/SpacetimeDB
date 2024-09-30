@@ -39,6 +39,18 @@ namespace SpacetimeDB
                 global::TestAutoIncNotInteger
             >.ReadGenFields(System.IO.BinaryReader reader, global::TestAutoIncNotInteger row)
             {
+                if (row.AutoIncField == default)
+                {
+                    row.AutoIncField = global::TestAutoIncNotInteger.BSATN.AutoIncField.Read(
+                        reader
+                    );
+                }
+                if (row.IdentityField == default)
+                {
+                    row.IdentityField = global::TestAutoIncNotInteger.BSATN.IdentityField.Read(
+                        reader
+                    );
+                }
                 return row;
             }
 
@@ -67,6 +79,38 @@ namespace SpacetimeDB
                         global::TestAutoIncNotInteger.BSATN.IdentityField
                     )
                     .Iter();
+
+            public global::TestAutoIncNotInteger? FindByIdentityField(string IdentityField) =>
+                FilterByIdentityField(IdentityField)
+                    .Cast<global::TestAutoIncNotInteger?>()
+                    .SingleOrDefault();
+
+            public bool DeleteByIdentityField(string IdentityField) =>
+                SpacetimeDB
+                    .Internal.ITableView<
+                        TestAutoIncNotInteger,
+                        global::TestAutoIncNotInteger
+                    >.ColEq.Where(
+                        1,
+                        IdentityField,
+                        global::TestAutoIncNotInteger.BSATN.IdentityField
+                    )
+                    .Delete();
+
+            public bool UpdateByIdentityField(
+                string IdentityField,
+                global::TestAutoIncNotInteger @this
+            ) =>
+                SpacetimeDB
+                    .Internal.ITableView<
+                        TestAutoIncNotInteger,
+                        global::TestAutoIncNotInteger
+                    >.ColEq.Where(
+                        1,
+                        IdentityField,
+                        global::TestAutoIncNotInteger.BSATN.IdentityField
+                    )
+                    .Update(@this);
         }
 
         public readonly struct TestDuplicateTableName

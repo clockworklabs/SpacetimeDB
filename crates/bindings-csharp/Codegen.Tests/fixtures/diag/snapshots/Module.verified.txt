@@ -1,12 +1,84 @@
 ﻿{
   Diagnostics: [
     {/*
+    [AutoInc]
+    public float AutoIncField;
+                 ^^^^^^^^^^^^
+
+*/
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (334,17)-(334,29),
+      Message: Field AutoIncField is marked as AutoInc but it has a non-integer type float.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0002,
+        Title: AutoInc fields must be of integer type,
+        MessageFormat: Field {0} is marked as AutoInc but it has a non-integer type {1}.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [AutoInc]
+    public string IdentityField;
+                  ^^^^^^^^^^^^^
+}
+*/
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (338,18)-(338,31),
+      Message: Field IdentityField is marked as AutoInc but it has a non-integer type string.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0002,
+        Title: AutoInc fields must be of integer type,
+        MessageFormat: Field {0} is marked as AutoInc but it has a non-integer type {1}.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [Unique]
+    public int? UniqueField;
+                ^^^^^^^^^^^
+
+*/
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (345,16)-(345,27),
+      Message: Field UniqueField is marked as Unique but it has a type int? which is not an equatable primitive.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0003,
+        Title: Unique fields must be equatable,
+        MessageFormat: Field {0} is marked as Unique but it has a type {1} which is not an equatable primitive.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [PrimaryKey]
+    public TestEnumWithExplicitValues PrimaryKeyField;
+                                      ^^^^^^^^^^^^^^^
+}
+*/
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (348,38)-(348,53),
+      Message: Field PrimaryKeyField is marked as Unique but it has a type TestEnumWithExplicitValues which is not an equatable primitive.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0003,
+        Title: Unique fields must be equatable,
+        MessageFormat: Field {0} is marked as Unique but it has a type {1} which is not an equatable primitive.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
 [SpacetimeDB.Table]
 public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y)> { }
                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (351,42)-(351,82),
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (352,42)-(352,82),
       Message: Table TestTableTaggedEnum is a tagged enum, which is not allowed.,
       Severity: Error,
       Descriptor: {
@@ -32,7 +104,7 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 public partial struct TestIncompatibleSchedule { }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (362,0)-(366,55),
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (363,0)-(367,55),
       Message: Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.,
       Severity: Error,
       Descriptor: {

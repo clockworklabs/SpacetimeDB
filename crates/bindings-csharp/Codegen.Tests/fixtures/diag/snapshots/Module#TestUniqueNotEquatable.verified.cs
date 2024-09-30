@@ -63,7 +63,21 @@ partial struct TestUniqueNotEquatable : SpacetimeDB.Internal.ITable<TestUniqueNo
                         )
                     ],
                     Indexes: [],
-                    Constraints: [],
+                    Constraints:
+                    [
+                        new(
+                            nameof(SpacetimeDB.Local.TestUniqueNotEquatable),
+                            0,
+                            nameof(UniqueField),
+                            SpacetimeDB.Internal.ColumnAttrs.Unique
+                        ),
+                        new(
+                            nameof(SpacetimeDB.Local.TestUniqueNotEquatable),
+                            1,
+                            nameof(PrimaryKeyField),
+                            SpacetimeDB.Internal.ColumnAttrs.PrimaryKey
+                        )
+                    ],
                     Sequences: [],
                     // "system" | "user"
                     TableType: "user",

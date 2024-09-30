@@ -331,20 +331,21 @@ public static partial class Reducers
 [SpacetimeDB.Table]
 public partial struct TestAutoIncNotInteger
 {
-    [SpacetimeDB.Column(ColumnAttrs.AutoInc)]
+    [AutoInc]
     public float AutoIncField;
 
-    [SpacetimeDB.Column(ColumnAttrs.Identity)]
+    [Unique]
+    [AutoInc]
     public string IdentityField;
 }
 
 [SpacetimeDB.Table]
 public partial struct TestUniqueNotEquatable
 {
-    [SpacetimeDB.Column(ColumnAttrs.Unique)]
+    [Unique]
     public int? UniqueField;
 
-    [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+    [PrimaryKey]
     public TestEnumWithExplicitValues PrimaryKeyField;
 }
 
