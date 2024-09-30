@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -11,7 +12,6 @@ using System.Threading.Tasks;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 using SpacetimeDB.ClientApi;
-using UnityEngine;
 using Thread = System.Threading.Thread;
 
 namespace SpacetimeDB
@@ -179,13 +179,33 @@ namespace SpacetimeDB
                 using var decompressedStream = new BrotliStream(compressedStream, CompressionMode.Decompress);
                 using var binaryReader = new BinaryReader(decompressedStream);
                 var message = new ServerMessage.BSATN().Read(binaryReader);
-                // Network stats tracking goes from tableName => number of rows inserted/deleted
-                Dictionary<string, (int, int)>? tableRowOps = null;
+                
+                // Network stats tracking goes from tableName => number of rows inserted/deleted/inserted bytes
+                Dictionary<string, (int, int, int)>? tableRowOps = null;
+                byte[]? decompressedBytes = null;
+                var decompressedReadLength = 0;
                 if (networkStatsLoggingEnabled)
                 {
-                    tableRowOps = new Dictionary<string, (int, int)>();
+                    tableRowOps = new Dictionary<string, (int, int, int)>();
+                    
+                    // This is terribly inefficient, but only runs when network stats logging is enabled.
+                    using var debugCompressedStream = new MemoryStream(unprocessed.bytes);
+                    using var debugDecompressedStream = new BrotliStream(debugCompressedStream, CompressionMode.Decompress);
+                    decompressedBytes = new byte[10000];
+                    decompressedReadLength = 0;
+                    int readSize;
+                    
+                    while ((readSize = debugDecompressedStream.Read(decompressedBytes, decompressedReadLength, decompressedBytes.Length - decompressedReadLength)) != 0)
+                    {
+                        decompressedReadLength += readSize;
+                        if (decompressedReadLength == decompressedBytes.Length)
+                        {
+                            var newDecompressedBytes = new byte[decompressedBytes.Length * 2];
+                            Array.Copy(decompressedBytes, newDecompressedBytes, decompressedBytes.Length);
+                            decompressedBytes = newDecompressedBytes;
+                        }
+                    }
                 }
-                
 
                 ReducerEvent? reducerEvent = null;
 
@@ -221,17 +241,7 @@ namespace SpacetimeDB
                                 continue;
                             }
 
-                            if (networkStatsLoggingEnabled)
-                            {
-                                if (tableRowOps!.TryGetValue(tableName, out var tableOp))
-                                {
-                                    tableRowOps[tableName] = (tableOp.Item1 + update.Inserts.Count, tableOp.Item2 + update.Deletes.Count);
-                                }
-                                else
-                                {
-                                    tableRowOps.Add(tableName, (update.Inserts.Count, update.Deletes.Count));
-                                }
-                            }
+
 
                             if (update.Deletes.Count != 0)
                             {
@@ -240,6 +250,7 @@ namespace SpacetimeDB
 
                             var hashSet = GetInsertHashSet(table.ClientTableType, initialSubscription.DatabaseUpdate.Tables.Count);
 
+                            var insertedBytes = 0;
                             foreach (var row in update.Inserts)
                             {
                                 switch (row)
@@ -251,6 +262,7 @@ namespace SpacetimeDB
                                             continue;
                                         }
 
+                                        insertedBytes = bin.Length;
                                         var obj = table.DecodeValue(bin);
                                         var op = new DbOp
                                         {
@@ -266,19 +278,35 @@ namespace SpacetimeDB
                                         break;
                                 }
                             }
+                            
+                            if (networkStatsLoggingEnabled)
+                            {
+                                if (tableRowOps!.TryGetValue(tableName, out var tableOp))
+                                {
+                                    tableRowOps[tableName] = (tableOp.Item1 + update.Inserts.Count, tableOp.Item2 + update.Deletes.Count, tableOp.Item3 + insertedBytes);
+                                }
+                                else
+                                {
+                                    tableRowOps.Add(tableName, (update.Inserts.Count, update.Deletes.Count, insertedBytes));
+                                }
+                            }
                         }
                         
                         if (networkStatsLoggingEnabled)
                         {
                             var builder = new StringBuilder();
                             builder.AppendLine(
-                                $"Initial Subscription Received: compressed: {SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)}");
+                                $"Initial Subscription Received: compressed: {SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)} decompressed: {SpacetimeDBUtils.FormatBytes(decompressedReadLength)}");
                             foreach(var update in tableRowOps!)
                             {
                                 builder.AppendLine(
-                                    $"\tTable {update.Key} inserts: {update.Value.Item1} deletes: {update.Value.Item2}");
+                                    $"\tTable {update.Key} inserts: {update.Value.Item1} deletes: {update.Value.Item2} inserted row bytes: {update.Value.Item3}");
                             }
-                            Debug.Log(builder.ToString());
+                            for(var x = 0;x < decompressedReadLength;x++)
+                            {
+                                builder.Append(decompressedBytes![x].ToString("X2") + " ");
+                            }
+                            Logger.Log(builder.ToString());
                         }
 
                         break;
@@ -288,7 +316,6 @@ namespace SpacetimeDB
                         {
                             case UpdateStatus.Committed(var committed):
                                 primaryKeyChanges = new();
-
                                 // First apply all of the state
                                 foreach (var update in committed.Tables)
                                 {
@@ -299,22 +326,20 @@ namespace SpacetimeDB
                                         Logger.LogError($"Unknown table name: {tableName}");
                                         continue;
                                     }
-                                    
 
-                                    if (networkStatsLoggingEnabled)
-                                    {
-                                        if (tableRowOps!.TryGetValue(tableName, out var tableOp))
-                                        {
-                                            tableRowOps[tableName] = (tableOp.Item1 + update.Inserts.Count, tableOp.Item2 + update.Deletes.Count);
-                                        }
-                                        else
-                                        {
-                                            tableRowOps.Add(tableName, (update.Inserts.Count, update.Deletes.Count));
-                                        }
-                                    }
-
+                                    var insertedBytes = 0;
                                     foreach (var row in update.Inserts)
                                     {
+                                        if (networkStatsLoggingEnabled)
+                                        {
+                                            switch(row)
+                                            {
+                                                case EncodedValue.Binary(var bin):
+                                                    insertedBytes += bin.Length;
+                                                    break;
+                                            }
+                                        }
+                                        
                                         var op = new DbOp { table = table, insert = Decode(table, row) };
 
                                         if (op.insert.Value.value is IDatabaseTableWithPrimaryKey objWithPk)
@@ -384,6 +409,18 @@ namespace SpacetimeDB
                                             dbOps.Add(op);
                                         }
                                     }
+                                    
+                                    if (networkStatsLoggingEnabled)
+                                    {
+                                        if (tableRowOps!.TryGetValue(tableName, out var tableOp))
+                                        {
+                                            tableRowOps[tableName] = (tableOp.Item1 + update.Inserts.Count, tableOp.Item2 + update.Deletes.Count, tableOp.Item3 + insertedBytes);
+                                        }
+                                        else
+                                        {
+                                            tableRowOps.Add(tableName, (update.Inserts.Count, update.Deletes.Count, insertedBytes));
+                                        }
+                                    }
                                 }
 
                                 // Combine primary key updates and non-primary key updates
@@ -403,19 +440,27 @@ namespace SpacetimeDB
                                 {
                                     var builder = new StringBuilder();
                                     builder.AppendLine(
-                                        $"Transaction Update Received (Committed): reducer: {transactionUpdate.ReducerCall.ReducerName} compressed: {SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)}");
+                                        $"Transaction Update Received (Committed): reducer: {transactionUpdate.ReducerCall.ReducerName} compressed: " +
+                                        $"{SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)} decompressed: {SpacetimeDBUtils.FormatBytes(decompressedReadLength)}");
                                     foreach(var update in tableRowOps!)
                                     {
                                         builder.AppendLine(
-                                            $"\tTable {update.Key} inserts: {update.Value.Item1} deletes: {update.Value.Item2}");
+                                            $"\tTable {update.Key} inserts: {update.Value.Item1} deletes: {update.Value.Item2} inserted row bytes: {update.Value.Item3}");
                                     }
-                                    Debug.Log(builder.ToString());
+
+                                    builder.Append("Decompressed bytes: ");
+                                    for(var x = 0;x < decompressedReadLength;x++)
+                                    {
+                                        builder.Append(decompressedBytes![x].ToString("X2") + " ");
+                                    }
+                                    Logger.Log(builder.ToString());
                                 }
                                 break;
                             case UpdateStatus.Failed(var failed):
                                 if (networkStatsLoggingEnabled)
                                 {
-                                    Debug.Log($"Transaction Update Received (Failed): reducer: {transactionUpdate.ReducerCall.ReducerName} compressed: {SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)}");
+                                    Logger.Log($"Transaction Update Received (Failed): reducer: {transactionUpdate.ReducerCall.ReducerName} compressed: " +
+                                               $"{SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)} decompressed: {SpacetimeDBUtils.FormatBytes(decompressedReadLength)}");
                                 }
                                 break;
                             case UpdateStatus.OutOfEnergy(var outOfEnergy):
@@ -428,7 +473,16 @@ namespace SpacetimeDB
                     case ServerMessage.IdentityToken(var identityToken):
                         if (networkStatsLoggingEnabled)
                         {
-                            Debug.Log($"IdentityToken Message Received: compressed: {SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)} identity: {identityToken.Identity}");
+                            var builder = new StringBuilder();
+                            builder.AppendLine(
+                                $"IdentityToken Message Received: compressed: {SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)} " +
+                                $"decompressed: {SpacetimeDBUtils.FormatBytes(decompressedReadLength)} identity: {identityToken.Identity}");
+                            builder.Append("Decompressed bytes: ");
+                            for(var x = 0;x < decompressedReadLength;x++)
+                            {
+                                builder.Append(decompressedBytes![x].ToString("X2") + " ");
+                            }
+                            Logger.Log(builder.ToString());
                         }
                         break;
                     case ServerMessage.OneOffQueryResponse(var resp):
@@ -447,16 +501,28 @@ namespace SpacetimeDB
                         {
                             var builder = new StringBuilder();
                             builder.AppendLine(
-                                $"One-Off Query Response Received: compressed: {SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)}");
+                                $"One-Off Query Response Received: compressed: {SpacetimeDBUtils.FormatBytes(unprocessed.bytes.Length)} " +
+                                $"decompressed: {SpacetimeDBUtils.FormatBytes(decompressedReadLength)}");
                             foreach (var table in resp.Tables)
                             {
+                                var insertedBytes = 0;
+                                foreach (var update in table.Rows)
+                                {
+                                    switch (update)
+                                    {
+                                        case EncodedValue.Binary(var bin):
+                                            insertedBytes += bin.Length;
+                                            break;
+                                    }
+                                }
+                                
                                 if (tableRowOps!.TryGetValue(table.TableName, out var value))
                                 {
-                                    tableRowOps[table.TableName] = (value.Item1 + table.Rows.Count, 0);
+                                    tableRowOps[table.TableName] = (value.Item1 + table.Rows.Count, 0, value.Item3 + insertedBytes);
                                 }
                                 else
                                 {
-                                    tableRowOps.Add(table.TableName, (table.Rows.Count, 0));
+                                    tableRowOps.Add(table.TableName, (table.Rows.Count, 0, insertedBytes));
                                 }
                             }
                             
@@ -465,7 +531,12 @@ namespace SpacetimeDB
                                 builder.AppendLine(
                                     $"\tTable {update.Key} inserts: {update.Value.Item1}");
                             }
-                            Debug.Log(builder.ToString());
+                            builder.Append("Decompressed bytes: ");
+                            for(var x = 0;x < decompressedReadLength;x++)
+                            {
+                                builder.Append(decompressedBytes![x].ToString("X2") + " ");
+                            }
+                            Logger.Log(builder.ToString());
                         }
                         break;
                     default:
