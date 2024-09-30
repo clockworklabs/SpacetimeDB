@@ -101,12 +101,10 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkI256TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    deletes: Vec<__ws::EncodedValue>,
-    inserts: Vec<__ws::EncodedValue>,
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<PkI256>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<__sats::i256>(
-        deletes,
-        inserts,
+        raw_updates,
         |row: &PkI256| &row.n,
     )
     .context("Failed to parse table update for table \"pk_i256\"")
