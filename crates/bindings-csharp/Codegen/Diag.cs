@@ -41,4 +41,37 @@ internal static class ErrorDescriptor
             table => $"Table {table.Identifier} is a tagged enum, which is not allowed.",
             table => table.BaseList!
         );
+
+    public static readonly ErrorDescriptor<(
+        string kind,
+        IGrouping<string, string> group
+    )> DuplicateExport =
+        new(
+            group,
+            "Duplicate exports",
+            ctx =>
+                $"{ctx.kind} with the same export name {ctx.group.Key} is registered in multiple places: {string.Join(", ", ctx.group)}",
+            ctx => Location.None
+        );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ReducerContextParam =
+        new(
+            group,
+            "Reducers must have a first argument of type ReducerContext",
+            method =>
+                $"Reducer method {method.Identifier} does not have a ReducerContext parameter.",
+            method => method.ParameterList
+        );
+
+    public static readonly ErrorDescriptor<(
+        MethodDeclarationSyntax method,
+        string prefix
+    )> ReducerReservedPrefix =
+        new(
+            group,
+            "Reducer method has a reserved name prefix",
+            ctx =>
+                $"Reducer method {ctx.method.Identifier} starts with '{ctx.prefix}', which is a reserved prefix.",
+            ctx => ctx.method.Identifier
+        );
 }

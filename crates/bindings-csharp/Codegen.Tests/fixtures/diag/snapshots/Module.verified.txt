@@ -6,7 +6,7 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (327,42)-(327,82),
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (345,42)-(345,82),
       Message: Table TestTableTaggedEnum is a tagged enum, which is not allowed.,
       Severity: Error,
       Descriptor: {
@@ -20,9 +20,9 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
     },
     {/*
     [SpacetimeDB.Reducer]
-    public static int TestReducerReturnType() => 0;
+    public static int TestReducerReturnType(ReducerContext ctx) => 0;
                   ^^^
-}
+
 */
       Location: {ProjectDirectory}fixtures\diag\Lib.cs: (303,18)-(303,21),
       Message: Reducer method TestReducerReturnType returns int instead of void.,
@@ -37,21 +37,63 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
       }
     },
     {/*
-{
     [SpacetimeDB.Reducer]
-    ^^^^^^^^^^^^^^^^^^^^^
-    public static int TestReducerReturnType() => 0;
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-}
+    public static void TestReducerWithoutContext() { }
+                                                ^^
+
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (302,4)-(303,51),
-      Message: An internal error occurred during codegen: Reducer Reducers.TestReducerReturnType() must have a first argument of type ReducerContext,
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (306,48)-(306,50),
+      Message: Reducer method TestReducerWithoutContext does not have a ReducerContext parameter.,
       Severity: Error,
       Descriptor: {
-        Id: STDBINT0001,
-        Title: Internal SpacetimeDB codegen error,
-        MessageFormat: An internal error occurred during codegen: {0},
-        Category: SpacetimeDB.Internal,
+        Id: STDB0006,
+        Title: Reducers must have a first argument of type ReducerContext,
+        MessageFormat: Reducer method {0} does not have a ReducerContext parameter.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.Reducer]
+    public static void TestDuplicateTable() { }
+                                         ^^
+}
+*/
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (353,41)-(353,43),
+      Message: Reducer method TestDuplicateTable does not have a ReducerContext parameter.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0006,
+        Title: Reducers must have a first argument of type ReducerContext,
+        MessageFormat: Reducer method {0} does not have a ReducerContext parameter.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: Reducer with the same export name __init__ is registered in multiple places: Reducers.TestDuplicateReducerKind1, Reducers.TestDuplicateReducerKind2,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0005,
+        Title: Duplicate exports,
+        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: Reducer with the same export name TestDuplicateReducerName is registered in multiple places: Reducers.TestDuplicateReducerName, Reducers.InAnotherNamespace.TestDuplicateReducerName,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0005,
+        Title: Duplicate exports,
+        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
+        Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
       }

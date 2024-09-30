@@ -301,7 +301,25 @@ public partial struct TestTypeParams<T>
 public static partial class Reducers
 {
     [SpacetimeDB.Reducer]
-    public static int TestReducerReturnType() => 0;
+    public static int TestReducerReturnType(ReducerContext ctx) => 0;
+
+    [SpacetimeDB.Reducer]
+    public static void TestReducerWithoutContext() { }
+
+    [SpacetimeDB.Reducer(ReducerKind.Init)]
+    public static void TestDuplicateReducerKind1(ReducerContext ctx) { }
+
+    [SpacetimeDB.Reducer(ReducerKind.Init)]
+    public static void TestDuplicateReducerKind2(ReducerContext ctx) { }
+
+    [SpacetimeDB.Reducer]
+    public static void TestDuplicateReducerName(ReducerContext ctx) { }
+
+    public static partial class InAnotherNamespace
+    {
+        [SpacetimeDB.Reducer]
+        public static void TestDuplicateReducerName(ReducerContext ctx) { }
+    }
 }
 
 [SpacetimeDB.Table]
@@ -326,3 +344,12 @@ public partial struct TestUniqueNotEquatable
 
 [SpacetimeDB.Table]
 public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y)> { }
+
+[SpacetimeDB.Table]
+public partial struct TestDuplicateTable { }
+
+public static partial class InAnotherNamespace
+{
+    [SpacetimeDB.Reducer]
+    public static void TestDuplicateTable() { }
+}

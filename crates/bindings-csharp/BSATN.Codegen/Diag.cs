@@ -71,6 +71,14 @@ public class ErrorDescriptor<TContext>
         ErrorDescriptorGroup group,
         string title,
         Expression<Func<TContext, FormattableString>> interpolate,
+        Func<TContext, SyntaxToken> toLocation
+    )
+        : this(group, title, interpolate, ctx => toLocation(ctx).GetLocation()) { }
+
+    public ErrorDescriptor(
+        ErrorDescriptorGroup group,
+        string title,
+        Expression<Func<TContext, FormattableString>> interpolate,
         Func<TContext, SyntaxNode> toLocation
     )
         : this(group, title, interpolate, ctx => toLocation(ctx).GetLocation()) { }
@@ -172,8 +180,6 @@ public class DiagReporter
     {
         builder.Add(descriptor.ToDiag(ctx));
     }
-
-    private DiagReporter() { }
 
     private static readonly ErrorDescriptor<(SyntaxNode node, Exception e)> InternalError =
         new(

@@ -29,7 +29,7 @@
                  ^^^^^^
     public float AutoIncField;
 */
-    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (309,17)-(309,23),
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (327,17)-(327,23),
     Message: The type or namespace name 'ColumnAttribute' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
     Severity: Error,
     Descriptor: {
@@ -53,7 +53,7 @@
                  ^^^^^^
     public float AutoIncField;
 */
-    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (309,17)-(309,23),
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (327,17)-(327,23),
     Message: The type or namespace name 'Column' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
     Severity: Error,
     Descriptor: {
@@ -77,7 +77,7 @@
                         ^^^^^^^^^^^
     public float AutoIncField;
 */
-    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (309,24)-(309,35),
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (327,24)-(327,35),
     Message: The name 'ColumnAttrs' does not exist in the current context,
     Severity: Error,
     Descriptor: {
@@ -101,7 +101,7 @@
                  ^^^^^^
     public string IdentityField;
 */
-    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (312,17)-(312,23),
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (330,17)-(330,23),
     Message: The type or namespace name 'ColumnAttribute' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
     Severity: Error,
     Descriptor: {
@@ -125,7 +125,7 @@
                  ^^^^^^
     public string IdentityField;
 */
-    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (312,17)-(312,23),
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (330,17)-(330,23),
     Message: The type or namespace name 'Column' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
     Severity: Error,
     Descriptor: {
@@ -149,7 +149,7 @@
                         ^^^^^^^^^^^
     public string IdentityField;
 */
-    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (312,24)-(312,35),
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (330,24)-(330,35),
     Message: The name 'ColumnAttrs' does not exist in the current context,
     Severity: Error,
     Descriptor: {
@@ -173,7 +173,7 @@
                  ^^^^^^
     public int? UniqueField;
 */
-    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (319,17)-(319,23),
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (337,17)-(337,23),
     Message: The type or namespace name 'ColumnAttribute' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
     Severity: Error,
     Descriptor: {
@@ -197,7 +197,7 @@
                  ^^^^^^
     public int? UniqueField;
 */
-    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (319,17)-(319,23),
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (337,17)-(337,23),
     Message: The type or namespace name 'Column' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
     Severity: Error,
     Descriptor: {
@@ -221,7 +221,7 @@
                         ^^^^^^^^^^^
     public int? UniqueField;
 */
-    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (319,24)-(319,35),
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (337,24)-(337,35),
     Message: The name 'ColumnAttrs' does not exist in the current context,
     Severity: Error,
     Descriptor: {
@@ -245,7 +245,7 @@
                  ^^^^^^
     public TestEnumWithExplicitValues PrimaryKeyField;
 */
-    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (322,17)-(322,23),
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (340,17)-(340,23),
     Message: The type or namespace name 'ColumnAttribute' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
     Severity: Error,
     Descriptor: {
@@ -269,7 +269,7 @@
                  ^^^^^^
     public TestEnumWithExplicitValues PrimaryKeyField;
 */
-    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (322,17)-(322,23),
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (340,17)-(340,23),
     Message: The type or namespace name 'Column' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
     Severity: Error,
     Descriptor: {
@@ -293,7 +293,7 @@
                         ^^^^^^^^^^^
     public TestEnumWithExplicitValues PrimaryKeyField;
 */
-    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (322,24)-(322,35),
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (340,24)-(340,35),
     Message: The name 'ColumnAttrs' does not exist in the current context,
     Severity: Error,
     Descriptor: {
@@ -461,7 +461,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
                        ^^^^^^^^^^^^^^^^^^^
     static global::TestTableTaggedEnum SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ReadGenFields(System.IO.BinaryReader reader, global::TestTableTaggedEnum row) {
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (33,23)-(33,42),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (42,23)-(42,42),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -485,7 +485,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
                        ^^^^^^^^^^^^^^^^^^^
     static global::TestTableTaggedEnum SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ReadGenFields(System.IO.BinaryReader reader, global::TestTableTaggedEnum row) {
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (33,23)-(33,42),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (42,23)-(42,42),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
     Descriptor: {
@@ -509,7 +509,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (34,39)-(34,120),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (43,39)-(43,120),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -533,7 +533,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (34,39)-(34,120),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (43,39)-(43,120),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
     Descriptor: {
@@ -557,7 +557,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
                                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (38,115)-(38,142),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (47,115)-(47,142),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -581,7 +581,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
                                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (38,115)-(38,142),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (47,115)-(47,142),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
     Descriptor: {
@@ -605,7 +605,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
                                                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public IEnumerable<global::TestTableTaggedEnum> FilterByX(int X) =>
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (39,135)-(39,162),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (48,135)-(48,162),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -629,7 +629,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
                                                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public IEnumerable<global::TestTableTaggedEnum> FilterByX(int X) =>
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (39,135)-(39,162),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (48,135)-(48,162),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
     Descriptor: {
@@ -653,7 +653,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (41,57)-(41,84),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (50,57)-(50,84),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -677,7 +677,7 @@ public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (41,57)-(41,84),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (50,57)-(50,84),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
     Descriptor: {
@@ -701,7 +701,7 @@ public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 }
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (43,57)-(43,84),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (52,57)-(52,84),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -725,7 +725,7 @@ public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 }
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (43,57)-(43,84),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (52,57)-(52,84),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
     Descriptor: {
@@ -744,12 +744,132 @@ public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
     }
   },
   {/*
-        SpacetimeDB.Internal.Module.RegisterTable<global::TestAutoIncNotInteger>();
+}
+class TestDuplicateReducerName: SpacetimeDB.Internal.IReducer {
+      ^^^^^^^^^^^^^^^^^^^^^^^^
+    
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (110,6)-(110,30),
+    Message: The type 'ModuleRegistration' already contains a definition for 'TestDuplicateReducerName',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0102,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0102),
+      MessageFormat: The type '{0}' already contains a definition for '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+    public SpacetimeDB.Internal.ReducerDef MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                                           ^^^^^^^^^^^^^^
+        "TestDuplicateReducerName",
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (113,43)-(113,57),
+    Message: Type 'ModuleRegistration.TestDuplicateReducerName' already defines a member called 'MakeReducerDef' with the same parameter types,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0111,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
+      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+    public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
+                ^^^^^^
+        Reducers.InAnotherNamespace.TestDuplicateReducerName((SpacetimeDB.ReducerContext)ctx);
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (118,16)-(118,22),
+    Message: Type 'ModuleRegistration.TestDuplicateReducerName' already defines a member called 'Invoke' with the same parameter types,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0111,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
+      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
+        InAnotherNamespace.TestDuplicateTable((SpacetimeDB.ReducerContext)ctx);
+                           ^^^^^^^^^^^^^^^^^^
+    }
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (131,27)-(131,45),
+    Message: No overload for method 'TestDuplicateTable' takes 1 arguments,
+    Severity: Error,
+    Descriptor: {
+      Id: CS1501,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1501),
+      MessageFormat: No overload for method '{0}' takes {1} arguments,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
+        Reducers.TestReducerWithoutContext((SpacetimeDB.ReducerContext)ctx);
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (155,17)-(155,42),
+    Message: No overload for method 'TestReducerWithoutContext' takes 1 arguments,
+    Severity: Error,
+    Descriptor: {
+      Id: CS1501,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1501),
+      MessageFormat: No overload for method '{0}' takes {1} arguments,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+SpacetimeDB.Internal.Module.RegisterTable<global::TestDuplicateTable>();
 SpacetimeDB.Internal.Module.RegisterTable<global::TestTableTaggedEnum>();
                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable>();
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (79,28)-(79,70),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (179,28)-(179,70),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'Module.RegisterTable<T>()'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -768,12 +888,12 @@ SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable>();
     }
   },
   {/*
-        SpacetimeDB.Internal.Module.RegisterTable<global::TestAutoIncNotInteger>();
+SpacetimeDB.Internal.Module.RegisterTable<global::TestDuplicateTable>();
 SpacetimeDB.Internal.Module.RegisterTable<global::TestTableTaggedEnum>();
                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable>();
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (79,28)-(79,70),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (179,28)-(179,70),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'Module.RegisterTable<T>()',
     Severity: Error,
     Descriptor: {

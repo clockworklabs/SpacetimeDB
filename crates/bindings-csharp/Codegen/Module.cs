@@ -401,17 +401,25 @@ record ReducerDeclaration
         {
             diag.Report(ErrorDescriptor.ReducerReturnType, methodSyntax);
         }
+
         if (
-            method.Parameters.FirstOrDefault()?.Type is not INamedTypeSymbol namedType
-            || namedType.Name != "ReducerContext"
+            method.Parameters.FirstOrDefault()?.Type
+            is not INamedTypeSymbol { Name: "ReducerContext" }
         )
         {
-            throw new Exception(
-                $"Reducer {method} must have a first argument of type ReducerContext"
-            );
+            diag.Report(ErrorDescriptor.ReducerContextParam, methodSyntax);
         }
 
         Name = method.Name;
+        if (Name.Length >= 2)
+        {
+            var prefix = Name[..2];
+            if (prefix is "__" or "on" or "On")
+            {
+                diag.Report(ErrorDescriptor.ReducerReservedPrefix, (methodSyntax, prefix));
+            }
+        }
+
         ExportName = attr.Kind switch
         {
             ReducerKind.Init => "__init__",
@@ -487,19 +495,32 @@ record ReducerDeclaration
 public class Module : IIncrementalGenerator
 {
     private static void CheckDuplicates<T>(
-        IEnumerable<T> source,
+        string kind,
+        IncrementalGeneratorInitializationContext context,
+        IncrementalValuesProvider<T> source,
         Func<T, string> keySelector,
-        Func<T, string> valueSelector,
-        string message
+        Func<T, string> valueSelector
     )
     {
-        foreach (var group in source.GroupBy(keySelector, valueSelector))
-        {
-            if (group.Count() > 1)
+        context.RegisterSourceOutput(
+            source
+                .Select(
+                    (r, ct) => new KeyValuePair<string, string>(keySelector(r), valueSelector(r))
+                )
+                .Collect()
+                .WithTrackingName($"SpacetimeDB.{kind}.ConflictChecks"),
+            (context, collected) =>
             {
-                throw new Exception($"{message} {group.Key}: {string.Join(", ", group)}");
+                foreach (
+                    var group in collected
+                        .GroupBy(kv => kv.Key, kv => kv.Value)
+                        .Where(group => group.Count() > 1)
+                )
+                {
+                    context.ReportDiagnostic(ErrorDescriptor.DuplicateExport.ToDiag((kind, group)));
+                }
             }
-        }
+        );
     }
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -534,50 +555,8 @@ public class Module : IIncrementalGenerator
             .WithTrackingName("SpacetimeDB.Reducer.GenerateSchedule")
             .RegisterSourceOutputs(context);
 
-        // TODO: turn these checks into proper diagnostics when diagnostics PR lands.
-        context.RegisterSourceOutput(
-            reducers
-                .Select((r, ct) => (r.ExportName, r.FullName))
-                .Collect()
-                .WithTrackingName("Reducer.ConflictChecks"),
-            (context, reducers) =>
-            {
-                foreach (var reducer in reducers)
-                {
-                    var name = reducer.FullName;
-
-                    if (name.Length >= 2 && name[..2] is "__" or "on" or "On")
-                    {
-                        throw new Exception($"Reducer {name} has a reserved name prefix.");
-                    }
-                }
-
-                // TODO: in V9 this will become 2 separate checks, as the reducer kind and export name will be separate fields.
-                CheckDuplicates(
-                    reducers,
-                    r => r.ExportName,
-                    r => r.FullName,
-                    "Several reducers have the same export name"
-                );
-            }
-        );
-
-        // TODO: turn these checks into proper diagnostics when diagnostics PR lands.
-        context.RegisterSourceOutput(
-            tables
-                .Select((t, ct) => (t.ShortName, t.FullName))
-                .Collect()
-                .WithTrackingName("Table.ConflictChecks"),
-            (context, tables) =>
-            {
-                CheckDuplicates(
-                    tables,
-                    t => t.ShortName,
-                    t => t.FullName,
-                    "Several tables have the same exported name"
-                );
-            }
-        );
+        CheckDuplicates("Reducer", context, reducers, r => r.ExportName, r => r.FullName);
+        CheckDuplicates("Table", context, tables, t => t.ShortName, t => t.FullName);
 
         var addReducers = reducers
             .Select((r, ct) => r.GenerateClass())

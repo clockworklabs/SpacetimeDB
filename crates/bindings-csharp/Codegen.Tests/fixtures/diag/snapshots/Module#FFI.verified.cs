@@ -69,6 +69,30 @@ namespace SpacetimeDB
                     .Iter();
         }
 
+        public readonly struct TestDuplicateTable
+            : SpacetimeDB.Internal.ITableView<TestDuplicateTable, global::TestDuplicateTable>
+        {
+            static global::TestDuplicateTable SpacetimeDB.Internal.ITableView<
+                TestDuplicateTable,
+                global::TestDuplicateTable
+            >.ReadGenFields(System.IO.BinaryReader reader, global::TestDuplicateTable row)
+            {
+                return row;
+            }
+
+            public IEnumerable<global::TestDuplicateTable> Iter() =>
+                SpacetimeDB.Internal.ITableView<
+                    TestDuplicateTable,
+                    global::TestDuplicateTable
+                >.Iter();
+
+            public global::TestDuplicateTable Insert(global::TestDuplicateTable row) =>
+                SpacetimeDB.Internal.ITableView<
+                    TestDuplicateTable,
+                    global::TestDuplicateTable
+                >.Insert(row);
+        }
+
         public readonly struct TestTableTaggedEnum
             : SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>
         {
@@ -140,6 +164,7 @@ namespace SpacetimeDB
     public sealed class Local
     {
         public Internal.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger => new();
+        public Internal.TableHandles.TestDuplicateTable TestDuplicateTable => new();
         public Internal.TableHandles.TestTableTaggedEnum TestTableTaggedEnum => new();
         public Internal.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable => new();
     }
@@ -147,6 +172,90 @@ namespace SpacetimeDB
 
 static class ModuleRegistration
 {
+    class TestDuplicateReducerKind1 : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new("__init__", []);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.TestDuplicateReducerKind1((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
+    class TestDuplicateReducerKind2 : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new("__init__", []);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.TestDuplicateReducerKind2((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
+    class TestDuplicateReducerName : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new("TestDuplicateReducerName", []);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.TestDuplicateReducerName((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
+    class TestDuplicateReducerName : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new("TestDuplicateReducerName", []);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.InAnotherNamespace.TestDuplicateReducerName((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
+    class TestDuplicateTable : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new("TestDuplicateTable", []);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            InAnotherNamespace.TestDuplicateTable((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
+    class TestReducerReturnType : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new("TestReducerReturnType", []);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.TestReducerReturnType((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
+    class TestReducerWithoutContext : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new("TestReducerWithoutContext", []);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.TestReducerWithoutContext((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
 #if EXPERIMENTAL_WASM_AOT
     // In AOT mode we're building a library.
     // Main method won't be called automatically, so we need to export it as a preinit function.
@@ -165,7 +274,15 @@ static class ModuleRegistration
                 new SpacetimeDB.ReducerContext(identity, address, random, time)
         );
 
+        SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerKind1>();
+        SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerKind2>();
+        SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerName>();
+        SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerName>();
+        SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateTable>();
+        SpacetimeDB.Internal.Module.RegisterReducer<TestReducerReturnType>();
+        SpacetimeDB.Internal.Module.RegisterReducer<TestReducerWithoutContext>();
         SpacetimeDB.Internal.Module.RegisterTable<global::TestAutoIncNotInteger>();
+        SpacetimeDB.Internal.Module.RegisterTable<global::TestDuplicateTable>();
         SpacetimeDB.Internal.Module.RegisterTable<global::TestTableTaggedEnum>();
         SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable>();
     }
