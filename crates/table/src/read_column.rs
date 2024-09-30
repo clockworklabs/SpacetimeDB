@@ -11,7 +11,7 @@ use crate::{
 };
 use spacetimedb_sats::{
     algebraic_value::{ser::ValueSerializer, Packed},
-    i256, u256, AlgebraicType, AlgebraicValue, ArrayValue, MapValue, ProductType, ProductValue, SumValue,
+    i256, u256, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumValue,
 };
 use std::{cell::Cell, mem};
 use thiserror::Error;
@@ -305,7 +305,6 @@ macro_rules! impl_read_column_via_av {
 impl_read_column_via_av! {
     AlgebraicTypeLayout::VarLen(VarLenType::String) => into_string => Box<str>;
     AlgebraicTypeLayout::VarLen(VarLenType::Array(_)) => into_array => ArrayValue;
-    AlgebraicTypeLayout::VarLen(VarLenType::Map(_)) => into_map => Box<MapValue>;
     AlgebraicTypeLayout::Sum(_) => into_sum => SumValue;
     AlgebraicTypeLayout::Product(_) => into_product => ProductValue;
 }

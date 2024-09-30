@@ -13,20 +13,12 @@ public partial struct AggregateElement(string? name, AlgebraicType algebraicType
 }
 
 [SpacetimeDB.Type]
-public partial struct MapElement(AlgebraicType key, AlgebraicType value)
-{
-    public AlgebraicType Key = key;
-    public AlgebraicType Value = value;
-}
-
-[SpacetimeDB.Type]
 public partial record AlgebraicType
     : SpacetimeDB.TaggedEnum<(
         int Ref,
         AggregateElement[] Sum,
         AggregateElement[] Product,
         AlgebraicType Array,
-        MapElement Map,
         Unit String,
         Unit Bool,
         Unit I8,

@@ -158,7 +158,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_>, ty: &AlgebraicTypeLayout, rhs: &Algebrai
             // to either be `NULL` or point to a valid granule in `ctx.lhs.page`.
             unsafe { eq_str(ctx, rhs) }
         }
-        (AlgebraicTypeLayout::VarLen(_), AlgebraicValue::Array(_) | AlgebraicValue::Map(_)) => {
+        (AlgebraicTypeLayout::VarLen(_), AlgebraicValue::Array(_)) => {
             // SAFETY: `lhs` was valid at and aligned for `ty`.
             // This kind of `ty` stores a `vlr: VarLenRef` as its value,
             // so the range is valid and properly aligned for `VarLenRef`.

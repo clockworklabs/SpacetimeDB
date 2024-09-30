@@ -18,7 +18,6 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + Display {
         AlgebraicType::Sum(ty) => write!(f, "{}", fmt_sum_type(ty)),
         AlgebraicType::Product(ty) => write!(f, "{}", fmt_product_type(ty)),
         AlgebraicType::Array(a) => write!(f, "Array<{}>", fmt(&a.elem_ty)),
-        AlgebraicType::Map(m) => write!(f, "Map<{}, {}>", fmt(&m.key_ty), fmt(&m.ty)),
         AlgebraicType::Bool => write!(f, "Bool"),
         AlgebraicType::I8 => write!(f, "I8"),
         AlgebraicType::U8 => write!(f, "U8"),
