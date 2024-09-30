@@ -1,7 +1,7 @@
 #![warn(clippy::uninlined_format_args)]
 
 use clap::Arg;
-use clap::ArgAction::SetTrue;
+use clap::ArgAction::{Set, SetTrue};
 use convert_case::{Case, Casing};
 use core::mem;
 use duct::cmd;
@@ -22,6 +22,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use wasmtime::{Caller, StoreContextMut};
 
+use crate::build;
 use crate::util::y_or_n;
 use crate::Config;
 
@@ -43,6 +44,8 @@ pub fn cli() -> clap::Command {
                 .long("wasm-file")
                 .short('w')
                 .group("source")
+                .conflicts_with("project_path")
+                .conflicts_with("build_options")
                 .help("The system path (absolute or relative) to the wasm file we should inspect"),
         )
         .arg(
@@ -86,25 +89,19 @@ pub fn cli() -> clap::Command {
                 .value_parser(clap::value_parser!(Language))
                 .help("The language to generate"),
         )
-        .arg(
-            Arg::new("skip_clippy")
-                .long("skip_clippy")
-                .short('s')
-                .short('S')
-                .action(SetTrue)
-                .env("SPACETIME_SKIP_CLIPPY")
-                .value_parser(clap::builder::FalseyValueParser::new())
-                .help(
-                    "Skips running clippy on the module before generating \
-                     (intended to speed up local iteration, not recommended \
-                     for CI)",
-                ),
-        )
         .arg(Arg::new("delete_files").long("delete-files").action(SetTrue).help(
             "Delete outdated generated files whose definitions have been \
              removed from the module. Prompts before deleting unless --force is \
              supplied.",
         ))
+        .arg(
+            Arg::new("build_options")
+                .long("build-options")
+                .alias("build-opts")
+                .action(Set)
+                .default_value("")
+                .help("Options to pass to the build command"),
+        )
         .arg(
             Arg::new("force")
                 .long("force")
@@ -112,24 +109,19 @@ pub fn cli() -> clap::Command {
                 .requires("delete_files")
                 .help("delete-files without prompting first. Useful for scripts."),
         )
-        .arg(Arg::new("debug").long("debug").short('d').action(SetTrue).help(
-            "Builds the module using debug instead of release (intended to \
-             speed up local iteration, not recommended for CI)",
-        ))
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
-pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
+pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let wasm_file = args.get_one::<PathBuf>("wasm_file").cloned();
     let json_module = args.get_many::<PathBuf>("json_module");
     let out_dir = args.get_one::<PathBuf>("out_dir").unwrap();
     let lang = *args.get_one::<Language>("lang").unwrap();
     let namespace = args.get_one::<String>("namespace").unwrap();
-    let skip_clippy = args.get_flag("skip_clippy");
-    let build_debug = args.get_flag("debug");
     let delete_files = args.get_flag("delete_files");
     let force = args.get_flag("force");
+    let build_options = args.get_one::<String>("build_options").unwrap();
 
     let module = if let Some(mut json_module) = json_module {
         let DeserializeWrapper(module) = if let Some(path) = json_module.next() {
@@ -147,7 +139,7 @@ pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
             println!("Skipping build. Instead we are inspecting {}", path.display());
             path.clone()
         } else {
-            crate::tasks::build(project_path, skip_clippy, build_debug)?
+            build::exec_with_argstring(config.clone(), project_path, build_options).await?
         };
         extract_descriptions(&wasm_path)?
     };
