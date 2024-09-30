@@ -877,7 +877,7 @@ impl ModuleHost {
         log::debug!("One-off query: {query}");
         let ctx = &ExecutionContext::sql(db.address());
         db.with_read_only(ctx, |tx| {
-            let ast = sql::compiler::compile_sql(db, tx, &query)?;
+            let ast = sql::compiler::compile_sql(db, &auth, tx, &query)?;
             sql::execute::execute_sql_tx(db, tx, &query, ast, auth)?
                 .context("One-off queries are not allowed to modify the database")
         })

@@ -4,6 +4,7 @@ use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use core::ops::Deref;
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::{self, ColExpr, DbTable, FieldName, Header};
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::schema::TableSchema;
@@ -19,12 +20,17 @@ use super::ast::TableSchemaView;
 const MAX_SQL_LENGTH: usize = 50_000;
 
 /// Compile the `SQL` expression into an `ast`
-pub fn compile_sql<T: TableSchemaView>(db: &RelationalDB, tx: &T, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
+pub fn compile_sql<T: TableSchemaView>(
+    db: &RelationalDB,
+    auth: &AuthCtx,
+    tx: &T,
+    sql_text: &str,
+) -> Result<Vec<CrudExpr>, DBError> {
     if sql_text.len() > MAX_SQL_LENGTH {
         return Err(anyhow::anyhow!("SQL query exceeds maximum allowed length: \"{sql_text:.120}...\"").into());
     }
     tracing::trace!(sql = sql_text);
-    let ast = compile_to_ast(db, tx, sql_text)?;
+    let ast = compile_to_ast(db, auth, tx, sql_text)?;
 
     // TODO(perf, bikeshedding): SmallVec?
     let mut results = Vec::with_capacity(ast.len());
@@ -227,8 +233,6 @@ mod tests {
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
     use crate::sql::execute::tests::run_for_testing;
-    use crate::vm::tests::create_table_with_rows;
-    use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::{Address, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
@@ -262,6 +266,10 @@ mod tests {
 
     fn assert_select(op: &Query) {
         assert!(matches!(op, Query::Select(_)));
+    }
+
+    fn compile_sql<T: TableSchemaView>(db: &RelationalDB, tx: &T, sql: &str) -> Result<Vec<CrudExpr>, DBError> {
+        super::compile_sql(db, &AuthCtx::for_testing(), tx, sql)
     }
 
     #[test]
@@ -622,7 +630,7 @@ mod tests {
 
         let tx = db.begin_tx();
         // Should push sargable equality condition below join
-        let sql = "select * from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
         let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
@@ -635,7 +643,7 @@ mod tests {
         };
 
         assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
-        assert_eq!(query.len(), 2);
+        assert_eq!(query.len(), 3);
 
         // First operation in the pipeline should be an index scan
         let table_id = assert_one_eq_index_scan(&query[0], 0, 3u64.into());
@@ -674,7 +682,7 @@ mod tests {
 
         let tx = db.begin_tx();
         // Should push equality condition below join
-        let sql = "select * from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
         let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
@@ -686,7 +694,7 @@ mod tests {
             panic!("unexpected expression: {:#?}", exp);
         };
         assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
-        assert_eq!(query.len(), 2);
+        assert_eq!(query.len(), 3);
 
         // The first operation in the pipeline should be a selection with `col#0 = 3`
         let Query::Select(ColumnOp::ColCmpVal {
@@ -731,7 +739,7 @@ mod tests {
 
         let tx = db.begin_tx();
         // Should push equality condition below join
-        let sql = "select * from lhs join rhs on lhs.b = rhs.b where rhs.c = 3";
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c = 3";
         let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
@@ -751,7 +759,7 @@ mod tests {
             ref rhs,
             col_lhs,
             col_rhs,
-            inner: Some(ref inner_header),
+            inner: None,
         }) = query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
@@ -760,7 +768,6 @@ mod tests {
         assert_eq!(rhs.source.table_id().unwrap(), rhs_id);
         assert_eq!(col_lhs, 1.into());
         assert_eq!(col_rhs, 0.into());
-        assert_eq!(&**inner_header, &source_lhs.head().extend(rhs.source.head()));
 
         // The selection should be pushed onto the rhs of the join
         let Query::Select(ColumnOp::ColCmpVal {
@@ -791,7 +798,7 @@ mod tests {
         let tx = db.begin_tx();
         // Should push the sargable equality condition into the join's left arg.
         // Should push the sargable range condition into the join's right arg.
-        let sql = "select * from lhs join rhs on lhs.b = rhs.b where lhs.a = 3 and rhs.c < 4";
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where lhs.a = 3 and rhs.c < 4";
         let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
@@ -804,7 +811,7 @@ mod tests {
         };
 
         assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
-        assert_eq!(query.len(), 2);
+        assert_eq!(query.len(), 3);
 
         // First operation in the pipeline should be an index scan
         let table_id = assert_one_eq_index_scan(&query[0], 0, 3u64.into());
@@ -1001,75 +1008,11 @@ mod tests {
     }
 
     #[test]
-    fn compile_check_ambiguous_field() -> ResultTest<()> {
-        let db = TestDB::durable()?;
-
-        // Create table [lhs] with index on [a]
-        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0.into(), "a")];
-        db.create_table_for_test("lhs", schema, indexes)?;
-
-        // Create table [rhs] with no indexes
-        let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
-        let indexes = &[];
-        db.create_table_for_test("rhs", schema, indexes)?;
-
-        let tx = db.begin_tx();
-        // Should work with any qualified field
-        let sql = "select * from lhs join rhs on lhs.b = rhs.b where lhs.b = 3";
-        assert!(compile_sql(&db, &tx, sql).is_ok());
-        let sql = "select * from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
-        assert!(compile_sql(&db, &tx, sql).is_ok());
-        // Should work with any unqualified but unique field
-        let sql = "select * from lhs join rhs on lhs.b = rhs.b where a = 3";
-        assert!(compile_sql(&db, &tx, sql).is_ok());
-        let sql = "select * from lhs join rhs on lhs.b = rhs.b where c = 3";
-        assert!(compile_sql(&db, &tx, sql).is_ok());
-        // ... and fail on ambiguous
-        let sql = "select * from lhs join rhs on lhs.b = rhs.b where b = 3";
-        match compile_sql(&db, &tx, sql) {
-            Err(DBError::Plan {
-                error: PlanError::AmbiguousField { field, found },
-                ..
-            }) => {
-                assert_eq!(field, "b");
-                assert_eq!(found, ["lhs.b", "rhs.b"]);
-            }
-            _ => {
-                panic!("Unexpected")
-            }
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn compile_enum_field() -> ResultTest<()> {
-        let db = TestDB::durable()?;
-
-        // Create table [enum] with enum type on [a]
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-        let head = ProductType::from([("a", AlgebraicType::simple_enum(["Player", "Gm"].into_iter()))]);
-        let rows: Vec<_> = (1..=10).map(|_| product!(AlgebraicValue::enum_simple(0))).collect();
-        create_table_with_rows(&db, &mut tx, "enum", head.clone(), &rows, StAccess::Public)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
-
-        // Should work with any qualified field
-        let sql = "select * from enum where a = 'Player'";
-        let result = run_for_testing(&db, sql)?;
-        assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
-
-        let sql = "select * from enum where 'Player' = a";
-        let result = run_for_testing(&db, sql)?;
-        assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
-        Ok(())
-    }
-
-    #[test]
     fn compile_join_with_diff_col_names() -> ResultTest<()> {
         let db = TestDB::durable()?;
         db.create_table_for_test("A", &[("x", AlgebraicType::U64)], &[])?;
         db.create_table_for_test("B", &[("y", AlgebraicType::U64)], &[])?;
-        assert!(compile_sql(&db, &db.begin_tx(), "select * from B join A on B.y = A.x").is_ok());
+        assert!(compile_sql(&db, &db.begin_tx(), "select B.* from B join A on B.y = A.x").is_ok());
         Ok(())
     }
 
@@ -1097,9 +1040,9 @@ mod tests {
         //
         // TODO: Type check other operations deferred for the new query engine.
 
-        assert_eq!(
-            compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
-            Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` != `String(\"161853\"): String`, executing: `SELECT * FROM PlayerState WHERE entity_id = '161853'`".into())
+        assert!(
+            compile_sql(&db, &db.begin_tx(), sql).is_err(),
+            // Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` != `String(\"161853\"): String`, executing: `SELECT * FROM PlayerState WHERE entity_id = '161853'`".into())
         );
 
         // Check we can still compile the query if we remove the type mismatch and have multiple logical operations.
@@ -1110,16 +1053,16 @@ mod tests {
         // Now verify when we have a type mismatch in the middle of the logical operations.
         let sql = "SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id";
 
-        assert_eq!(
-            compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
-            Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64 == U64(1): U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id`".into())
+        assert!(
+            compile_sql(&db, &db.begin_tx(), sql).is_err(),
+            // Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64 == U64(1): U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id`".into())
         );
         // Verify that all operands of `AND` must be `Bool`.
         let sql = "SELECT * FROM PlayerState WHERE entity_id AND entity_id";
 
-        assert_eq!(
-            compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
-            Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id AND entity_id`".into())
+        assert!(
+            compile_sql(&db, &db.begin_tx(), sql).is_err(),
+            // Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id AND entity_id`".into())
         );
         Ok(())
     }

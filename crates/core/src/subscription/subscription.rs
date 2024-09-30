@@ -634,8 +634,8 @@ mod tests {
     use super::*;
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::sql::compiler::compile_sql;
-    use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::DbTable;
+    use spacetimedb_lib::{error::ResultTest, identity::AuthCtx};
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
 
@@ -663,7 +663,7 @@ mod tests {
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+        let exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?.remove(0);
 
         let CrudExpr::Query(mut expr) = exp else {
             panic!("unexpected result from compilation: {:#?}", exp);
@@ -743,7 +743,7 @@ mod tests {
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+        let exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?.remove(0);
 
         let CrudExpr::Query(mut expr) = exp else {
             panic!("unexpected result from compilation: {:#?}", exp);
@@ -828,7 +828,9 @@ mod tests {
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-        let exp = compile_sql(&db, &tx, sql).expect("Failed to compile_sql").remove(0);
+        let exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)
+            .expect("Failed to compile_sql")
+            .remove(0);
 
         let CrudExpr::Query(expr) = exp else {
             panic!("unexpected result from compilation: {:#?}", exp);

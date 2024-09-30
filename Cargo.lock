@@ -4524,6 +4524,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-primitives",
+ "spacetimedb-query-planner",
  "spacetimedb-sats",
  "spacetimedb-schema",
  "spacetimedb-snapshot",

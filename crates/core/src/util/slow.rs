@@ -53,6 +53,7 @@ mod tests {
     use crate::sql::execute::tests::execute_for_testing;
     use crate::{db::datastore::system_tables::ST_VARNAME_SLOW_QRY, execution_context::ExecutionContext};
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::ProductValue;
 
     use crate::db::relational_db::tests_utils::TestDB;
@@ -62,13 +63,13 @@ mod tests {
 
     fn run_query(db: &RelationalDB, sql: String) -> ResultTest<MemTable> {
         let tx = db.begin_tx();
-        let q = compile_sql(db, &tx, &sql)?;
+        let q = compile_sql(db, &AuthCtx::for_testing(), &tx, &sql)?;
         Ok(execute_for_testing(db, &sql, q)?.pop().unwrap())
     }
 
     fn run_query_write(db: &RelationalDB, sql: String) -> ResultTest<()> {
         let tx = db.begin_tx();
-        let q = compile_sql(db, &tx, &sql)?;
+        let q = compile_sql(db, &AuthCtx::for_testing(), &tx, &sql)?;
         drop(tx);
 
         execute_for_testing(db, &sql, q)?;
@@ -93,7 +94,7 @@ mod tests {
         let tx = db.begin_tx();
 
         let sql = "select * from test where x > 0";
-        let q = compile_sql(&db, &tx, sql)?;
+        let q = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?;
 
         let slow = SlowQueryLogger::new(sql, Some(Duration::from_millis(1)), ctx.workload());
 

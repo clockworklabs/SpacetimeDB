@@ -27,6 +27,7 @@ spacetimedb-schema.workspace = true
 spacetimedb-table.workspace = true
 spacetimedb-vm.workspace = true
 spacetimedb-snapshot.workspace = true
+spacetimedb-query-planner.workspace = true
 
 anyhow = { workspace = true, features = ["backtrace"] }
 arrayvec.workspace = true

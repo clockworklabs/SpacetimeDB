@@ -73,7 +73,7 @@ mod tests {
         execution_context::ExecutionContext,
         sql::compiler::compile_sql,
     };
-    use spacetimedb_lib::AlgebraicType;
+    use spacetimedb_lib::{identity::AuthCtx, AlgebraicType};
     use spacetimedb_sats::product;
     use spacetimedb_vm::expr::CrudExpr;
 
@@ -83,7 +83,7 @@ mod tests {
 
     fn num_rows_for(db: &RelationalDB, sql: &str) -> u64 {
         let tx = db.begin_tx();
-        match &*compile_sql(db, &tx, sql).expect("Failed to compile sql") {
+        match &*compile_sql(db, &AuthCtx::for_testing(), &tx, sql).expect("Failed to compile sql") {
             [CrudExpr::Query(expr)] => num_rows(&tx, expr),
             exprs => panic!("unexpected result from compilation: {:#?}", exprs),
         }
