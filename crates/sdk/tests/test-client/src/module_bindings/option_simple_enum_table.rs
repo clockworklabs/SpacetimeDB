@@ -10,7 +10,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `OptionSimpleEnum`.
+/// Table handle for the table `option_simple_enum`.
 ///
 /// Obtain a handle from the [`OptionSimpleEnumTableAccess::option_simple_enum`] method on [`super::RemoteTables`],
 /// like `ctx.db.option_simple_enum()`.
@@ -24,19 +24,19 @@ pub struct OptionSimpleEnumTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `OptionSimpleEnum`.
+/// Extension trait for access to the table `option_simple_enum`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OptionSimpleEnumTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OptionSimpleEnumTableHandle`], which mediates access to the table `OptionSimpleEnum`.
+    /// Obtain a [`OptionSimpleEnumTableHandle`], which mediates access to the table `option_simple_enum`.
     fn option_simple_enum(&self) -> OptionSimpleEnumTableHandle<'_>;
 }
 
 impl OptionSimpleEnumTableAccess for super::RemoteTables {
     fn option_simple_enum(&self) -> OptionSimpleEnumTableHandle<'_> {
         OptionSimpleEnumTableHandle {
-            imp: self.imp.get_table::<OptionSimpleEnum>("OptionSimpleEnum"),
+            imp: self.imp.get_table::<OptionSimpleEnum>("option_simple_enum"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -89,5 +89,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OptionSimpleEnum>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"OptionSimpleEnum\"")
+        .context("Failed to parse table update for table \"option_simple_enum\"")
 }

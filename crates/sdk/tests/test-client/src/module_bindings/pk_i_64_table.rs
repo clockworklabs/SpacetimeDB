@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `PkI64`.
+/// Table handle for the table `pk_i64`.
 ///
 /// Obtain a handle from the [`PkI64TableAccess::pk_i_64`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_i_64()`.
@@ -23,19 +23,19 @@ pub struct PkI64TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `PkI64`.
+/// Extension trait for access to the table `pk_i64`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkI64TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkI64TableHandle`], which mediates access to the table `PkI64`.
+    /// Obtain a [`PkI64TableHandle`], which mediates access to the table `pk_i64`.
     fn pk_i_64(&self) -> PkI64TableHandle<'_>;
 }
 
 impl PkI64TableAccess for super::RemoteTables {
     fn pk_i_64(&self) -> PkI64TableHandle<'_> {
         PkI64TableHandle {
-            imp: self.imp.get_table::<PkI64>("PkI64"),
+            imp: self.imp.get_table::<PkI64>("pk_i64"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -107,10 +107,10 @@ pub(super) fn parse_table_update(
     __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<i64>(deletes, inserts, |row: &PkI64| {
         &row.n
     })
-    .context("Failed to parse table update for table \"PkI64\"")
+    .context("Failed to parse table update for table \"pk_i64\"")
 }
 
-/// Access to the `n` unique index on the table `PkI64`,
+/// Access to the `n` unique index on the table `pk_i64`,
 /// which allows point queries on the field of the same name
 /// via the [`PkI64NUnique::find`] method.
 ///
@@ -123,7 +123,7 @@ pub struct PkI64NUnique<'ctx> {
 }
 
 impl<'ctx> PkI64TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `PkI64`.
+    /// Get a handle on the `n` unique index on the table `pk_i64`.
     pub fn n(&self) -> PkI64NUnique<'ctx> {
         PkI64NUnique {
             imp: self.imp.get_unique_constraint::<i64>("n", |row| &row.n),

@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `UniqueU256`.
+/// Table handle for the table `unique_u256`.
 ///
 /// Obtain a handle from the [`UniqueU256TableAccess::unique_u_256`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_u_256()`.
@@ -23,19 +23,19 @@ pub struct UniqueU256TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `UniqueU256`.
+/// Extension trait for access to the table `unique_u256`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueU256TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueU256TableHandle`], which mediates access to the table `UniqueU256`.
+    /// Obtain a [`UniqueU256TableHandle`], which mediates access to the table `unique_u256`.
     fn unique_u_256(&self) -> UniqueU256TableHandle<'_>;
 }
 
 impl UniqueU256TableAccess for super::RemoteTables {
     fn unique_u_256(&self) -> UniqueU256TableHandle<'_> {
         UniqueU256TableHandle {
-            imp: self.imp.get_table::<UniqueU256>("UniqueU256"),
+            imp: self.imp.get_table::<UniqueU256>("unique_u256"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,10 +88,10 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueU256>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"UniqueU256\"")
+        .context("Failed to parse table update for table \"unique_u256\"")
 }
 
-/// Access to the `n` unique index on the table `UniqueU256`,
+/// Access to the `n` unique index on the table `unique_u256`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueU256NUnique::find`] method.
 ///
@@ -104,7 +104,7 @@ pub struct UniqueU256NUnique<'ctx> {
 }
 
 impl<'ctx> UniqueU256TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `UniqueU256`.
+    /// Get a handle on the `n` unique index on the table `unique_u256`.
     pub fn n(&self) -> UniqueU256NUnique<'ctx> {
         UniqueU256NUnique {
             imp: self.imp.get_unique_constraint::<__sats::u256>("n", |row| &row.n),

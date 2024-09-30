@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `UniqueAddress`.
+/// Table handle for the table `unique_address`.
 ///
 /// Obtain a handle from the [`UniqueAddressTableAccess::unique_address`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_address()`.
@@ -23,19 +23,19 @@ pub struct UniqueAddressTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `UniqueAddress`.
+/// Extension trait for access to the table `unique_address`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueAddressTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueAddressTableHandle`], which mediates access to the table `UniqueAddress`.
+    /// Obtain a [`UniqueAddressTableHandle`], which mediates access to the table `unique_address`.
     fn unique_address(&self) -> UniqueAddressTableHandle<'_>;
 }
 
 impl UniqueAddressTableAccess for super::RemoteTables {
     fn unique_address(&self) -> UniqueAddressTableHandle<'_> {
         UniqueAddressTableHandle {
-            imp: self.imp.get_table::<UniqueAddress>("UniqueAddress"),
+            imp: self.imp.get_table::<UniqueAddress>("unique_address"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,10 +88,10 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueAddress>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"UniqueAddress\"")
+        .context("Failed to parse table update for table \"unique_address\"")
 }
 
-/// Access to the `a` unique index on the table `UniqueAddress`,
+/// Access to the `a` unique index on the table `unique_address`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueAddressAUnique::find`] method.
 ///
@@ -104,7 +104,7 @@ pub struct UniqueAddressAUnique<'ctx> {
 }
 
 impl<'ctx> UniqueAddressTableHandle<'ctx> {
-    /// Get a handle on the `a` unique index on the table `UniqueAddress`.
+    /// Get a handle on the `a` unique index on the table `unique_address`.
     pub fn a(&self) -> UniqueAddressAUnique<'ctx> {
         UniqueAddressAUnique {
             imp: self.imp.get_unique_constraint::<__sdk::Address>("a", |row| &row.a),

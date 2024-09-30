@@ -1,0 +1,60 @@
+﻿{
+  Diagnostics: [
+    {/*
+[SpacetimeDB.Table]
+public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y)> { }
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+*/
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (327,42)-(327,82),
+      Message: Table TestTableTaggedEnum is a tagged enum, which is not allowed.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0004,
+        Title: Tables cannot be tagged enums,
+        MessageFormat: Table {0} is a tagged enum, which is not allowed.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.Reducer]
+    public static int TestReducerReturnType() => 0;
+                  ^^^
+}
+*/
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (303,18)-(303,21),
+      Message: Reducer method TestReducerReturnType returns int instead of void.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0001,
+        Title: [SpacetimeDB.Reducer] methods must return void,
+        MessageFormat: Reducer method {0} returns {1} instead of void.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+{
+    [SpacetimeDB.Reducer]
+    ^^^^^^^^^^^^^^^^^^^^^
+    public static int TestReducerReturnType() => 0;
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (302,4)-(303,51),
+      Message: An internal error occurred during codegen: Reducer Reducers.TestReducerReturnType() must have a first argument of type ReducerContext,
+      Severity: Error,
+      Descriptor: {
+        Id: STDBINT0001,
+        Title: Internal SpacetimeDB codegen error,
+        MessageFormat: An internal error occurred during codegen: {0},
+        Category: SpacetimeDB.Internal,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    }
+  ]
+}

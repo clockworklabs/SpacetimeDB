@@ -518,7 +518,7 @@ impl WasmInstanceEnv {
     ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
     ///    where the inner `AlgebraicValue`s are
     ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
-    fn datastore_btree_scan_bsatn(
+    pub fn datastore_btree_scan_bsatn(
         caller: Caller<'_, Self>,
         index_id: u32,
         prefix_ptr: WasmPtr<u8>,

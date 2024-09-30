@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `OneI64`.
+/// Table handle for the table `one_i64`.
 ///
 /// Obtain a handle from the [`OneI64TableAccess::one_i_64`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_i_64()`.
@@ -23,19 +23,19 @@ pub struct OneI64TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `OneI64`.
+/// Extension trait for access to the table `one_i64`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneI64TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneI64TableHandle`], which mediates access to the table `OneI64`.
+    /// Obtain a [`OneI64TableHandle`], which mediates access to the table `one_i64`.
     fn one_i_64(&self) -> OneI64TableHandle<'_>;
 }
 
 impl OneI64TableAccess for super::RemoteTables {
     fn one_i_64(&self) -> OneI64TableHandle<'_> {
         OneI64TableHandle {
-            imp: self.imp.get_table::<OneI64>("OneI64"),
+            imp: self.imp.get_table::<OneI64>("one_i64"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,5 +88,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneI64>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"OneI64\"")
+        .context("Failed to parse table update for table \"one_i64\"")
 }

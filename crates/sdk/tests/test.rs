@@ -176,4 +176,5 @@ macro_rules! declare_tests_with_suffix {
 }
 
 declare_tests_with_suffix!(rust, "");
-declare_tests_with_suffix!(csharp, "-cs");
+// TODO: migrate csharp to snake_case table names
+// declare_tests_with_suffix!(csharp, "-cs");

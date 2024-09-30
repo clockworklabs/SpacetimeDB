@@ -15,39 +15,69 @@ public static class GeneratorSnapshotTests
 
     record struct StepOutput(string Key, IncrementalStepRunReason Reason, object Value);
 
-    static async Task<CSharpCompilation> CompileFixture(string name)
+    class Fixture(string projectDir, CSharpCompilation sampleCompilation)
     {
-        using var workspace = MSBuildWorkspace.Create();
-        var sampleProject = await workspace.OpenProjectAsync(
-            $"{GetProjectDir()}/fixtures/{name}/{name}.csproj"
-        );
-        var compilation = await sampleProject.GetCompilationAsync();
-        return (CSharpCompilation)compilation!;
+        public static async Task<Fixture> Compile(string name)
+        {
+            var projectDir = Path.Combine(GetProjectDir(), "fixtures", name);
+            using var workspace = MSBuildWorkspace.Create();
+            var sampleProject = await workspace.OpenProjectAsync($"{projectDir}/{name}.csproj");
+            var compilation = await sampleProject.GetCompilationAsync();
+            return new(projectDir, (CSharpCompilation)compilation!);
+        }
+
+        private static CSharpGeneratorDriver CreateDriver(
+            IIncrementalGenerator generator,
+            LanguageVersion languageVersion
+        )
+        {
+            return CSharpGeneratorDriver.Create(
+                [generator.AsSourceGenerator()],
+                driverOptions: new(
+                    disabledOutputs: IncrementalGeneratorOutputKind.None,
+                    trackIncrementalGeneratorSteps: true
+                ),
+                // Make sure that generated files are parsed with the same language version.
+                parseOptions: new(languageVersion)
+            );
+        }
+
+        public Task Verify(string fileName, object target) =>
+            Verifier.Verify(target).UseDirectory($"{projectDir}/snapshots").UseFileName(fileName);
+
+        private async Task<IEnumerable<SyntaxTree>> RunAndCheckGenerator(
+            IIncrementalGenerator generator
+        )
+        {
+            var driver = CreateDriver(generator, sampleCompilation.LanguageVersion);
+
+            // Store the new driver instance - it contains the results and the cache.
+            var driverAfterGen = driver.RunGenerators(sampleCompilation);
+            var genResult = driverAfterGen.GetRunResult();
+
+            // Verify the generated code against the snapshots.
+            await Verify(generator.GetType().Name, genResult);
+
+            CheckCacheWorking(sampleCompilation, driverAfterGen);
+
+            return genResult.GeneratedTrees;
+        }
+
+        public async Task<CSharpCompilation> RunAndCheckGenerators(
+            params IIncrementalGenerator[] generators
+        ) =>
+            sampleCompilation.AddSyntaxTrees(
+                (await Task.WhenAll(generators.Select(RunAndCheckGenerator))).SelectMany(output =>
+                    output
+                )
+            );
     }
 
-    static async Task<IEnumerable<SyntaxTree>> RunAndCheckGenerator<G>(
-        CSharpCompilation sampleCompilation
+    private static void CheckCacheWorking(
+        CSharpCompilation sampleCompilation,
+        GeneratorDriver driverAfterGen
     )
-        where G : IIncrementalGenerator, new()
     {
-        var driver = CSharpGeneratorDriver.Create(
-            [new G().AsSourceGenerator()],
-            driverOptions: new(
-                disabledOutputs: IncrementalGeneratorOutputKind.None,
-                trackIncrementalGeneratorSteps: true
-            ),
-            // Make sure that generated files are parsed with the same language version.
-            parseOptions: new(sampleCompilation.LanguageVersion)
-        );
-
-        // Store the new driver instance - it contains the results and the cache.
-        var driverAfterGen = driver.RunGenerators(sampleCompilation);
-
-        // Verify the generated code against the snapshots.
-        await Verify(driverAfterGen)
-            .UseDirectory($"{GetProjectDir()}/fixtures/{sampleCompilation.AssemblyName}/snapshots")
-            .UseFileName(typeof(G).Name);
-
         // Run again with a driver containing the cache and a trivially modified code to verify that the cache is working.
         var modifiedCompilation = sampleCompilation
             .RemoveAllSyntaxTrees()
@@ -63,6 +93,7 @@ public static class GeneratorSnapshotTests
                     )
                 )
             );
+
         var driverAfterRegen = driverAfterGen.RunGenerators(modifiedCompilation);
 
         var regenSteps = driverAfterRegen
@@ -85,51 +116,55 @@ public static class GeneratorSnapshotTests
                     is not (IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged)
             )
         );
-
-        return driverAfterGen.GetRunResult().GeneratedTrees;
     }
 
-    static void AssertCompilationSuccessful(Compilation compilation)
+    static IEnumerable<Diagnostic> GetCompilationErrors(Compilation compilation)
     {
-        var emitResult = compilation.Emit(Stream.Null);
-
-        Assert.True(
-            emitResult.Success,
-            string.Join(
-                "\n",
-                emitResult.Diagnostics.Select(diag =>
-                    CSharpDiagnosticFormatter.Instance.Format(diag)
-                )
-            )
-        );
+        return compilation
+            .Emit(Stream.Null)
+            .Diagnostics.Where(diag => diag.Severity != DiagnosticSeverity.Hidden)
+            // The order of diagnostics is not predictable, sort them by location to make the test deterministic.
+            .OrderBy(diag => diag.Location.ToString());
     }
 
     [Fact]
     public static async Task TypeGeneratorOnClient()
     {
-        var sampleCompilation = await CompileFixture("client");
+        var fixture = await Fixture.Compile("client");
 
-        var genOutputs = await RunAndCheckGenerator<SpacetimeDB.Codegen.Type>(sampleCompilation);
+        var compilationAfterGen = await fixture.RunAndCheckGenerators(
+            new SpacetimeDB.Codegen.Type()
+        );
 
-        var compilationAfterGen = sampleCompilation.AddSyntaxTrees(genOutputs);
-
-        AssertCompilationSuccessful(compilationAfterGen);
+        Assert.Empty(GetCompilationErrors(compilationAfterGen));
     }
 
     [Fact]
     public static async Task TypeAndModuleGeneratorsOnServer()
     {
-        var sampleCompilation = await CompileFixture("server");
+        var fixture = await Fixture.Compile("server");
 
-        var genOutputs = (
-            await Task.WhenAll(
-                RunAndCheckGenerator<SpacetimeDB.Codegen.Type>(sampleCompilation),
-                RunAndCheckGenerator<SpacetimeDB.Codegen.Module>(sampleCompilation)
-            )
-        ).SelectMany(output => output);
+        var compilationAfterGen = await fixture.RunAndCheckGenerators(
+            new SpacetimeDB.Codegen.Type(),
+            new SpacetimeDB.Codegen.Module()
+        );
 
-        var compilationAfterGen = sampleCompilation.AddSyntaxTrees(genOutputs);
+        Assert.Empty(GetCompilationErrors(compilationAfterGen));
+    }
 
-        AssertCompilationSuccessful(compilationAfterGen);
+    [Fact]
+    public static async Task TestDiagnostics()
+    {
+        var fixture = await Fixture.Compile("diag");
+
+        var compilationAfterGen = await fixture.RunAndCheckGenerators(
+            new SpacetimeDB.Codegen.Type(),
+            new SpacetimeDB.Codegen.Module()
+        );
+
+        // Unlike in regular tests, we don't expect this compilation to succeed - it's supposed to be full of errors.
+        // We already reported the useful ones from the generator, but let's snapshot those emitted by the compiler as well.
+        // This way we can notice when they get particularly noisy and improve our codegen for the case of a broken code.
+        await fixture.Verify("ExtraCompilationErrors", GetCompilationErrors(compilationAfterGen));
     }
 }

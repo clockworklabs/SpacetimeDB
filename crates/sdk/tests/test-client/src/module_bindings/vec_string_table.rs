@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `VecString`.
+/// Table handle for the table `vec_string`.
 ///
 /// Obtain a handle from the [`VecStringTableAccess::vec_string`] method on [`super::RemoteTables`],
 /// like `ctx.db.vec_string()`.
@@ -23,19 +23,19 @@ pub struct VecStringTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `VecString`.
+/// Extension trait for access to the table `vec_string`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait VecStringTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`VecStringTableHandle`], which mediates access to the table `VecString`.
+    /// Obtain a [`VecStringTableHandle`], which mediates access to the table `vec_string`.
     fn vec_string(&self) -> VecStringTableHandle<'_>;
 }
 
 impl VecStringTableAccess for super::RemoteTables {
     fn vec_string(&self) -> VecStringTableHandle<'_> {
         VecStringTableHandle {
-            imp: self.imp.get_table::<VecString>("VecString"),
+            imp: self.imp.get_table::<VecString>("vec_string"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,5 +88,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<VecString>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"VecString\"")
+        .context("Failed to parse table update for table \"vec_string\"")
 }

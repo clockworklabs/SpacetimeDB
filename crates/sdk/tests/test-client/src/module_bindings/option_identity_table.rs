@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `OptionIdentity`.
+/// Table handle for the table `option_identity`.
 ///
 /// Obtain a handle from the [`OptionIdentityTableAccess::option_identity`] method on [`super::RemoteTables`],
 /// like `ctx.db.option_identity()`.
@@ -23,19 +23,19 @@ pub struct OptionIdentityTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `OptionIdentity`.
+/// Extension trait for access to the table `option_identity`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OptionIdentityTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OptionIdentityTableHandle`], which mediates access to the table `OptionIdentity`.
+    /// Obtain a [`OptionIdentityTableHandle`], which mediates access to the table `option_identity`.
     fn option_identity(&self) -> OptionIdentityTableHandle<'_>;
 }
 
 impl OptionIdentityTableAccess for super::RemoteTables {
     fn option_identity(&self) -> OptionIdentityTableHandle<'_> {
         OptionIdentityTableHandle {
-            imp: self.imp.get_table::<OptionIdentity>("OptionIdentity"),
+            imp: self.imp.get_table::<OptionIdentity>("option_identity"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,5 +88,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OptionIdentity>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"OptionIdentity\"")
+        .context("Failed to parse table update for table \"option_identity\"")
 }

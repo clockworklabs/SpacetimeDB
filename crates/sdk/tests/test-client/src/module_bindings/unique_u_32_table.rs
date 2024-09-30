@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `UniqueU32`.
+/// Table handle for the table `unique_u32`.
 ///
 /// Obtain a handle from the [`UniqueU32TableAccess::unique_u_32`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_u_32()`.
@@ -23,19 +23,19 @@ pub struct UniqueU32TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `UniqueU32`.
+/// Extension trait for access to the table `unique_u32`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueU32TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueU32TableHandle`], which mediates access to the table `UniqueU32`.
+    /// Obtain a [`UniqueU32TableHandle`], which mediates access to the table `unique_u32`.
     fn unique_u_32(&self) -> UniqueU32TableHandle<'_>;
 }
 
 impl UniqueU32TableAccess for super::RemoteTables {
     fn unique_u_32(&self) -> UniqueU32TableHandle<'_> {
         UniqueU32TableHandle {
-            imp: self.imp.get_table::<UniqueU32>("UniqueU32"),
+            imp: self.imp.get_table::<UniqueU32>("unique_u32"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,10 +88,10 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueU32>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"UniqueU32\"")
+        .context("Failed to parse table update for table \"unique_u32\"")
 }
 
-/// Access to the `n` unique index on the table `UniqueU32`,
+/// Access to the `n` unique index on the table `unique_u32`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueU32NUnique::find`] method.
 ///
@@ -104,7 +104,7 @@ pub struct UniqueU32NUnique<'ctx> {
 }
 
 impl<'ctx> UniqueU32TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `UniqueU32`.
+    /// Get a handle on the `n` unique index on the table `unique_u32`.
     pub fn n(&self) -> UniqueU32NUnique<'ctx> {
         UniqueU32NUnique {
             imp: self.imp.get_unique_constraint::<u32>("n", |row| &row.n),

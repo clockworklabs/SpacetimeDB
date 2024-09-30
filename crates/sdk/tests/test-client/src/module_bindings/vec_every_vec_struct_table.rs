@@ -10,7 +10,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `VecEveryVecStruct`.
+/// Table handle for the table `vec_every_vec_struct`.
 ///
 /// Obtain a handle from the [`VecEveryVecStructTableAccess::vec_every_vec_struct`] method on [`super::RemoteTables`],
 /// like `ctx.db.vec_every_vec_struct()`.
@@ -24,19 +24,19 @@ pub struct VecEveryVecStructTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `VecEveryVecStruct`.
+/// Extension trait for access to the table `vec_every_vec_struct`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait VecEveryVecStructTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`VecEveryVecStructTableHandle`], which mediates access to the table `VecEveryVecStruct`.
+    /// Obtain a [`VecEveryVecStructTableHandle`], which mediates access to the table `vec_every_vec_struct`.
     fn vec_every_vec_struct(&self) -> VecEveryVecStructTableHandle<'_>;
 }
 
 impl VecEveryVecStructTableAccess for super::RemoteTables {
     fn vec_every_vec_struct(&self) -> VecEveryVecStructTableHandle<'_> {
         VecEveryVecStructTableHandle {
-            imp: self.imp.get_table::<VecEveryVecStruct>("VecEveryVecStruct"),
+            imp: self.imp.get_table::<VecEveryVecStruct>("vec_every_vec_struct"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -89,5 +89,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<VecEveryVecStruct>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"VecEveryVecStruct\"")
+        .context("Failed to parse table update for table \"vec_every_vec_struct\"")
 }

@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `UniqueU64`.
+/// Table handle for the table `unique_u64`.
 ///
 /// Obtain a handle from the [`UniqueU64TableAccess::unique_u_64`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_u_64()`.
@@ -23,19 +23,19 @@ pub struct UniqueU64TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `UniqueU64`.
+/// Extension trait for access to the table `unique_u64`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueU64TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueU64TableHandle`], which mediates access to the table `UniqueU64`.
+    /// Obtain a [`UniqueU64TableHandle`], which mediates access to the table `unique_u64`.
     fn unique_u_64(&self) -> UniqueU64TableHandle<'_>;
 }
 
 impl UniqueU64TableAccess for super::RemoteTables {
     fn unique_u_64(&self) -> UniqueU64TableHandle<'_> {
         UniqueU64TableHandle {
-            imp: self.imp.get_table::<UniqueU64>("UniqueU64"),
+            imp: self.imp.get_table::<UniqueU64>("unique_u64"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,10 +88,10 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueU64>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"UniqueU64\"")
+        .context("Failed to parse table update for table \"unique_u64\"")
 }
 
-/// Access to the `n` unique index on the table `UniqueU64`,
+/// Access to the `n` unique index on the table `unique_u64`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueU64NUnique::find`] method.
 ///
@@ -104,7 +104,7 @@ pub struct UniqueU64NUnique<'ctx> {
 }
 
 impl<'ctx> UniqueU64TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `UniqueU64`.
+    /// Get a handle on the `n` unique index on the table `unique_u64`.
     pub fn n(&self) -> UniqueU64NUnique<'ctx> {
         UniqueU64NUnique {
             imp: self.imp.get_unique_constraint::<u64>("n", |row| &row.n),

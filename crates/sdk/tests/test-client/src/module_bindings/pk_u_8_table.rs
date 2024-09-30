@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `PkU8`.
+/// Table handle for the table `pk_u8`.
 ///
 /// Obtain a handle from the [`PkU8TableAccess::pk_u_8`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_u_8()`.
@@ -23,19 +23,19 @@ pub struct PkU8TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `PkU8`.
+/// Extension trait for access to the table `pk_u8`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkU8TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkU8TableHandle`], which mediates access to the table `PkU8`.
+    /// Obtain a [`PkU8TableHandle`], which mediates access to the table `pk_u8`.
     fn pk_u_8(&self) -> PkU8TableHandle<'_>;
 }
 
 impl PkU8TableAccess for super::RemoteTables {
     fn pk_u_8(&self) -> PkU8TableHandle<'_> {
         PkU8TableHandle {
-            imp: self.imp.get_table::<PkU8>("PkU8"),
+            imp: self.imp.get_table::<PkU8>("pk_u8"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -107,10 +107,10 @@ pub(super) fn parse_table_update(
     __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<u8>(deletes, inserts, |row: &PkU8| {
         &row.n
     })
-    .context("Failed to parse table update for table \"PkU8\"")
+    .context("Failed to parse table update for table \"pk_u8\"")
 }
 
-/// Access to the `n` unique index on the table `PkU8`,
+/// Access to the `n` unique index on the table `pk_u8`,
 /// which allows point queries on the field of the same name
 /// via the [`PkU8NUnique::find`] method.
 ///
@@ -123,7 +123,7 @@ pub struct PkU8NUnique<'ctx> {
 }
 
 impl<'ctx> PkU8TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `PkU8`.
+    /// Get a handle on the `n` unique index on the table `pk_u8`.
     pub fn n(&self) -> PkU8NUnique<'ctx> {
         PkU8NUnique {
             imp: self.imp.get_unique_constraint::<u8>("n", |row| &row.n),

@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `PkU128`.
+/// Table handle for the table `pk_u128`.
 ///
 /// Obtain a handle from the [`PkU128TableAccess::pk_u_128`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_u_128()`.
@@ -23,19 +23,19 @@ pub struct PkU128TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `PkU128`.
+/// Extension trait for access to the table `pk_u128`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkU128TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkU128TableHandle`], which mediates access to the table `PkU128`.
+    /// Obtain a [`PkU128TableHandle`], which mediates access to the table `pk_u128`.
     fn pk_u_128(&self) -> PkU128TableHandle<'_>;
 }
 
 impl PkU128TableAccess for super::RemoteTables {
     fn pk_u_128(&self) -> PkU128TableHandle<'_> {
         PkU128TableHandle {
-            imp: self.imp.get_table::<PkU128>("PkU128"),
+            imp: self.imp.get_table::<PkU128>("pk_u128"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -109,10 +109,10 @@ pub(super) fn parse_table_update(
         inserts,
         |row: &PkU128| &row.n,
     )
-    .context("Failed to parse table update for table \"PkU128\"")
+    .context("Failed to parse table update for table \"pk_u128\"")
 }
 
-/// Access to the `n` unique index on the table `PkU128`,
+/// Access to the `n` unique index on the table `pk_u128`,
 /// which allows point queries on the field of the same name
 /// via the [`PkU128NUnique::find`] method.
 ///
@@ -125,7 +125,7 @@ pub struct PkU128NUnique<'ctx> {
 }
 
 impl<'ctx> PkU128TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `PkU128`.
+    /// Get a handle on the `n` unique index on the table `pk_u128`.
     pub fn n(&self) -> PkU128NUnique<'ctx> {
         PkU128NUnique {
             imp: self.imp.get_unique_constraint::<u128>("n", |row| &row.n),

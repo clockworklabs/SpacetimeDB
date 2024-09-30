@@ -10,7 +10,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `OneUnitStruct`.
+/// Table handle for the table `one_unit_struct`.
 ///
 /// Obtain a handle from the [`OneUnitStructTableAccess::one_unit_struct`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_unit_struct()`.
@@ -24,19 +24,19 @@ pub struct OneUnitStructTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `OneUnitStruct`.
+/// Extension trait for access to the table `one_unit_struct`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneUnitStructTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneUnitStructTableHandle`], which mediates access to the table `OneUnitStruct`.
+    /// Obtain a [`OneUnitStructTableHandle`], which mediates access to the table `one_unit_struct`.
     fn one_unit_struct(&self) -> OneUnitStructTableHandle<'_>;
 }
 
 impl OneUnitStructTableAccess for super::RemoteTables {
     fn one_unit_struct(&self) -> OneUnitStructTableHandle<'_> {
         OneUnitStructTableHandle {
-            imp: self.imp.get_table::<OneUnitStruct>("OneUnitStruct"),
+            imp: self.imp.get_table::<OneUnitStruct>("one_unit_struct"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -89,5 +89,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneUnitStruct>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"OneUnitStruct\"")
+        .context("Failed to parse table update for table \"one_unit_struct\"")
 }

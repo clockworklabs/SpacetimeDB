@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `OptionVecOptionI32`.
+/// Table handle for the table `option_vec_option_i32`.
 ///
 /// Obtain a handle from the [`OptionVecOptionI32TableAccess::option_vec_option_i_32`] method on [`super::RemoteTables`],
 /// like `ctx.db.option_vec_option_i_32()`.
@@ -23,19 +23,19 @@ pub struct OptionVecOptionI32TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `OptionVecOptionI32`.
+/// Extension trait for access to the table `option_vec_option_i32`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OptionVecOptionI32TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OptionVecOptionI32TableHandle`], which mediates access to the table `OptionVecOptionI32`.
+    /// Obtain a [`OptionVecOptionI32TableHandle`], which mediates access to the table `option_vec_option_i32`.
     fn option_vec_option_i_32(&self) -> OptionVecOptionI32TableHandle<'_>;
 }
 
 impl OptionVecOptionI32TableAccess for super::RemoteTables {
     fn option_vec_option_i_32(&self) -> OptionVecOptionI32TableHandle<'_> {
         OptionVecOptionI32TableHandle {
-            imp: self.imp.get_table::<OptionVecOptionI32>("OptionVecOptionI32"),
+            imp: self.imp.get_table::<OptionVecOptionI32>("option_vec_option_i32"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,5 +88,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OptionVecOptionI32>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"OptionVecOptionI32\"")
+        .context("Failed to parse table update for table \"option_vec_option_i32\"")
 }

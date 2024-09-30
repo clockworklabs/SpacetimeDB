@@ -15,7 +15,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `LargeTable`.
+/// Table handle for the table `large_table`.
 ///
 /// Obtain a handle from the [`LargeTableTableAccess::large_table`] method on [`super::RemoteTables`],
 /// like `ctx.db.large_table()`.
@@ -29,19 +29,19 @@ pub struct LargeTableTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `LargeTable`.
+/// Extension trait for access to the table `large_table`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait LargeTableTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`LargeTableTableHandle`], which mediates access to the table `LargeTable`.
+    /// Obtain a [`LargeTableTableHandle`], which mediates access to the table `large_table`.
     fn large_table(&self) -> LargeTableTableHandle<'_>;
 }
 
 impl LargeTableTableAccess for super::RemoteTables {
     fn large_table(&self) -> LargeTableTableHandle<'_> {
         LargeTableTableHandle {
-            imp: self.imp.get_table::<LargeTable>("LargeTable"),
+            imp: self.imp.get_table::<LargeTable>("large_table"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -94,5 +94,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<LargeTable>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"LargeTable\"")
+        .context("Failed to parse table update for table \"large_table\"")
 }

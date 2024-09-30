@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `Disconnected`.
+/// Table handle for the table `disconnected`.
 ///
 /// Obtain a handle from the [`DisconnectedTableAccess::disconnected`] method on [`super::RemoteTables`],
 /// like `ctx.db.disconnected()`.
@@ -23,19 +23,19 @@ pub struct DisconnectedTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `Disconnected`.
+/// Extension trait for access to the table `disconnected`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait DisconnectedTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`DisconnectedTableHandle`], which mediates access to the table `Disconnected`.
+    /// Obtain a [`DisconnectedTableHandle`], which mediates access to the table `disconnected`.
     fn disconnected(&self) -> DisconnectedTableHandle<'_>;
 }
 
 impl DisconnectedTableAccess for super::RemoteTables {
     fn disconnected(&self) -> DisconnectedTableHandle<'_> {
         DisconnectedTableHandle {
-            imp: self.imp.get_table::<Disconnected>("Disconnected"),
+            imp: self.imp.get_table::<Disconnected>("disconnected"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,5 +88,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<Disconnected>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"Disconnected\"")
+        .context("Failed to parse table update for table \"disconnected\"")
 }

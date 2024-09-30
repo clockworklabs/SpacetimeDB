@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `PkU16`.
+/// Table handle for the table `pk_u16`.
 ///
 /// Obtain a handle from the [`PkU16TableAccess::pk_u_16`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_u_16()`.
@@ -23,19 +23,19 @@ pub struct PkU16TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `PkU16`.
+/// Extension trait for access to the table `pk_u16`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkU16TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkU16TableHandle`], which mediates access to the table `PkU16`.
+    /// Obtain a [`PkU16TableHandle`], which mediates access to the table `pk_u16`.
     fn pk_u_16(&self) -> PkU16TableHandle<'_>;
 }
 
 impl PkU16TableAccess for super::RemoteTables {
     fn pk_u_16(&self) -> PkU16TableHandle<'_> {
         PkU16TableHandle {
-            imp: self.imp.get_table::<PkU16>("PkU16"),
+            imp: self.imp.get_table::<PkU16>("pk_u16"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -107,10 +107,10 @@ pub(super) fn parse_table_update(
     __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<u16>(deletes, inserts, |row: &PkU16| {
         &row.n
     })
-    .context("Failed to parse table update for table \"PkU16\"")
+    .context("Failed to parse table update for table \"pk_u16\"")
 }
 
-/// Access to the `n` unique index on the table `PkU16`,
+/// Access to the `n` unique index on the table `pk_u16`,
 /// which allows point queries on the field of the same name
 /// via the [`PkU16NUnique::find`] method.
 ///
@@ -123,7 +123,7 @@ pub struct PkU16NUnique<'ctx> {
 }
 
 impl<'ctx> PkU16TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `PkU16`.
+    /// Get a handle on the `n` unique index on the table `pk_u16`.
     pub fn n(&self) -> PkU16NUnique<'ctx> {
         PkU16NUnique {
             imp: self.imp.get_unique_constraint::<u16>("n", |row| &row.n),

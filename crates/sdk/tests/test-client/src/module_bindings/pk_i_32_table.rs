@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `PkI32`.
+/// Table handle for the table `pk_i32`.
 ///
 /// Obtain a handle from the [`PkI32TableAccess::pk_i_32`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_i_32()`.
@@ -23,19 +23,19 @@ pub struct PkI32TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `PkI32`.
+/// Extension trait for access to the table `pk_i32`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkI32TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkI32TableHandle`], which mediates access to the table `PkI32`.
+    /// Obtain a [`PkI32TableHandle`], which mediates access to the table `pk_i32`.
     fn pk_i_32(&self) -> PkI32TableHandle<'_>;
 }
 
 impl PkI32TableAccess for super::RemoteTables {
     fn pk_i_32(&self) -> PkI32TableHandle<'_> {
         PkI32TableHandle {
-            imp: self.imp.get_table::<PkI32>("PkI32"),
+            imp: self.imp.get_table::<PkI32>("pk_i32"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -107,10 +107,10 @@ pub(super) fn parse_table_update(
     __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<i32>(deletes, inserts, |row: &PkI32| {
         &row.n
     })
-    .context("Failed to parse table update for table \"PkI32\"")
+    .context("Failed to parse table update for table \"pk_i32\"")
 }
 
-/// Access to the `n` unique index on the table `PkI32`,
+/// Access to the `n` unique index on the table `pk_i32`,
 /// which allows point queries on the field of the same name
 /// via the [`PkI32NUnique::find`] method.
 ///
@@ -123,7 +123,7 @@ pub struct PkI32NUnique<'ctx> {
 }
 
 impl<'ctx> PkI32TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `PkI32`.
+    /// Get a handle on the `n` unique index on the table `pk_i32`.
     pub fn n(&self) -> PkI32NUnique<'ctx> {
         PkI32NUnique {
             imp: self.imp.get_unique_constraint::<i32>("n", |row| &row.n),

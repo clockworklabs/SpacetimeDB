@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `PkAddress`.
+/// Table handle for the table `pk_address`.
 ///
 /// Obtain a handle from the [`PkAddressTableAccess::pk_address`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_address()`.
@@ -23,19 +23,19 @@ pub struct PkAddressTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `PkAddress`.
+/// Extension trait for access to the table `pk_address`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkAddressTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkAddressTableHandle`], which mediates access to the table `PkAddress`.
+    /// Obtain a [`PkAddressTableHandle`], which mediates access to the table `pk_address`.
     fn pk_address(&self) -> PkAddressTableHandle<'_>;
 }
 
 impl PkAddressTableAccess for super::RemoteTables {
     fn pk_address(&self) -> PkAddressTableHandle<'_> {
         PkAddressTableHandle {
-            imp: self.imp.get_table::<PkAddress>("PkAddress"),
+            imp: self.imp.get_table::<PkAddress>("pk_address"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -109,10 +109,10 @@ pub(super) fn parse_table_update(
         inserts,
         |row: &PkAddress| &row.a,
     )
-    .context("Failed to parse table update for table \"PkAddress\"")
+    .context("Failed to parse table update for table \"pk_address\"")
 }
 
-/// Access to the `a` unique index on the table `PkAddress`,
+/// Access to the `a` unique index on the table `pk_address`,
 /// which allows point queries on the field of the same name
 /// via the [`PkAddressAUnique::find`] method.
 ///
@@ -125,7 +125,7 @@ pub struct PkAddressAUnique<'ctx> {
 }
 
 impl<'ctx> PkAddressTableHandle<'ctx> {
-    /// Get a handle on the `a` unique index on the table `PkAddress`.
+    /// Get a handle on the `a` unique index on the table `pk_address`.
     pub fn a(&self) -> PkAddressAUnique<'ctx> {
         PkAddressAUnique {
             imp: self.imp.get_unique_constraint::<__sdk::Address>("a", |row| &row.a),

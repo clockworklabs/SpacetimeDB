@@ -10,7 +10,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `VecSimpleEnum`.
+/// Table handle for the table `vec_simple_enum`.
 ///
 /// Obtain a handle from the [`VecSimpleEnumTableAccess::vec_simple_enum`] method on [`super::RemoteTables`],
 /// like `ctx.db.vec_simple_enum()`.
@@ -24,19 +24,19 @@ pub struct VecSimpleEnumTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `VecSimpleEnum`.
+/// Extension trait for access to the table `vec_simple_enum`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait VecSimpleEnumTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`VecSimpleEnumTableHandle`], which mediates access to the table `VecSimpleEnum`.
+    /// Obtain a [`VecSimpleEnumTableHandle`], which mediates access to the table `vec_simple_enum`.
     fn vec_simple_enum(&self) -> VecSimpleEnumTableHandle<'_>;
 }
 
 impl VecSimpleEnumTableAccess for super::RemoteTables {
     fn vec_simple_enum(&self) -> VecSimpleEnumTableHandle<'_> {
         VecSimpleEnumTableHandle {
-            imp: self.imp.get_table::<VecSimpleEnum>("VecSimpleEnum"),
+            imp: self.imp.get_table::<VecSimpleEnum>("vec_simple_enum"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -89,5 +89,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<VecSimpleEnum>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"VecSimpleEnum\"")
+        .context("Failed to parse table update for table \"vec_simple_enum\"")
 }

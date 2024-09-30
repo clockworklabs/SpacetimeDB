@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `VecBool`.
+/// Table handle for the table `vec_bool`.
 ///
 /// Obtain a handle from the [`VecBoolTableAccess::vec_bool`] method on [`super::RemoteTables`],
 /// like `ctx.db.vec_bool()`.
@@ -23,19 +23,19 @@ pub struct VecBoolTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `VecBool`.
+/// Extension trait for access to the table `vec_bool`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait VecBoolTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`VecBoolTableHandle`], which mediates access to the table `VecBool`.
+    /// Obtain a [`VecBoolTableHandle`], which mediates access to the table `vec_bool`.
     fn vec_bool(&self) -> VecBoolTableHandle<'_>;
 }
 
 impl VecBoolTableAccess for super::RemoteTables {
     fn vec_bool(&self) -> VecBoolTableHandle<'_> {
         VecBoolTableHandle {
-            imp: self.imp.get_table::<VecBool>("VecBool"),
+            imp: self.imp.get_table::<VecBool>("vec_bool"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,5 +88,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<VecBool>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"VecBool\"")
+        .context("Failed to parse table update for table \"vec_bool\"")
 }

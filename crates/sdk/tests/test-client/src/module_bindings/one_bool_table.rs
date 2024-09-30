@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `OneBool`.
+/// Table handle for the table `one_bool`.
 ///
 /// Obtain a handle from the [`OneBoolTableAccess::one_bool`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_bool()`.
@@ -23,19 +23,19 @@ pub struct OneBoolTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `OneBool`.
+/// Extension trait for access to the table `one_bool`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneBoolTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneBoolTableHandle`], which mediates access to the table `OneBool`.
+    /// Obtain a [`OneBoolTableHandle`], which mediates access to the table `one_bool`.
     fn one_bool(&self) -> OneBoolTableHandle<'_>;
 }
 
 impl OneBoolTableAccess for super::RemoteTables {
     fn one_bool(&self) -> OneBoolTableHandle<'_> {
         OneBoolTableHandle {
-            imp: self.imp.get_table::<OneBool>("OneBool"),
+            imp: self.imp.get_table::<OneBool>("one_bool"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,5 +88,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneBool>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"OneBool\"")
+        .context("Failed to parse table update for table \"one_bool\"")
 }

@@ -1,13 +1,10 @@
 #![allow(clippy::disallowed_names)]
-use spacetimedb::spacetimedb_lib::db::auth::StAccess;
+use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
-use spacetimedb::{
-    duration, query, table, Address, Deserialize, Identity, ReducerContext, SpacetimeType, TableType, Timestamp,
-};
+use spacetimedb::{duration, table, Address, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 
-#[spacetimedb::table(name = test_a)]
+#[spacetimedb::table(name = test_a, index(name = foo, btree(columns = [x])))]
 pub struct TestA {
-    #[index(btree)]
     pub x: u32,
     pub y: u32,
     pub z: String,
@@ -30,8 +27,14 @@ pub struct TestD {
     test_c: Option<TestC>,
 }
 
+// uses internal apis that should not be used by user code
+#[allow(dead_code)] // false positive
+const fn get_table_access<Tbl: spacetimedb::Table>(_: impl Fn(&spacetimedb::Local) -> &Tbl + Copy) -> TableAccess {
+    <Tbl as spacetimedb::table::TableInternal>::TABLE_ACCESS
+}
+
 // This table was specified as public.
-const _: () = assert!(matches!(TestD::TABLE_ACCESS, StAccess::Public));
+const _: () = assert!(matches!(get_table_access(test_d::test_d), TableAccess::Public));
 
 #[spacetimedb::table(name = test_e)]
 #[derive(Debug)]
@@ -39,6 +42,7 @@ pub struct TestE {
     #[primary_key]
     #[auto_inc]
     id: u64,
+    #[index(btree)]
     name: String,
 }
 
@@ -50,8 +54,8 @@ pub enum TestF {
     Baz(String),
 }
 
-// All tables are private by default.
-const _: () = assert!(matches!(TestE::TABLE_ACCESS, StAccess::Private));
+// // All tables are private by default.
+const _: () = assert!(matches!(get_table_access(test_e::test_e), TableAccess::Private));
 
 #[spacetimedb::table(name = private)]
 pub struct Private {
@@ -65,7 +69,7 @@ pub struct Point {
 }
 
 // It is redundant, but we can explicitly specify a table as private.
-const _: () = assert!(matches!(Point::TABLE_ACCESS, StAccess::Private));
+const _: () = assert!(matches!(get_table_access(points::points), TableAccess::Private));
 
 // Test we can compile multiple constraints
 #[spacetimedb::table(name = pk_multi_identity)]
@@ -93,8 +97,8 @@ pub struct HasSpecialStuff {
 }
 
 #[spacetimedb::reducer(init)]
-pub fn init() {
-    let _ = RepeatingTestArg::insert(RepeatingTestArg {
+pub fn init(ctx: &ReducerContext) {
+    ctx.db.repeating_test_arg().insert(RepeatingTestArg {
         prev_time: Timestamp::now(),
         scheduled_id: 0,
         scheduled_at: duration!("1000ms").into(),
@@ -102,13 +106,13 @@ pub fn init() {
 }
 
 #[spacetimedb::reducer]
-pub fn repeating_test(ctx: ReducerContext, arg: RepeatingTestArg) {
+pub fn repeating_test(ctx: &ReducerContext, arg: RepeatingTestArg) {
     let delta_time = arg.prev_time.elapsed();
     log::trace!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
 }
 
 #[spacetimedb::reducer]
-pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4: TestF) -> anyhow::Result<()> {
+pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4: TestF) -> anyhow::Result<()> {
     log::info!("BEGIN");
     log::info!("sender: {:?}", ctx.sender);
     log::info!("timestamp: {:?}", ctx.timestamp);
@@ -124,25 +128,25 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4:
         TestF::Baz(string) => log::info!("{}", string),
     }
     for i in 0..1000 {
-        TestA::insert(TestA {
+        ctx.db.test_a().insert(TestA {
             x: i + arg.x,
             y: i + arg.y,
             z: "Yo".to_owned(),
         });
     }
 
-    let row_count_before_delete = TestA::iter().count();
+    let row_count_before_delete = ctx.db.test_a().count();
 
     log::info!("Row count before delete: {:?}", row_count_before_delete);
 
     let mut num_deleted = 0;
     for row in 5..10 {
-        num_deleted += TestA::delete_by_x(&row);
+        num_deleted += ctx.db.test_a().foo().delete(row);
     }
 
-    let row_count_after_delete = TestA::iter().count();
+    let row_count_after_delete = ctx.db.test_a().count();
 
-    if row_count_before_delete != row_count_after_delete + num_deleted as usize {
+    if row_count_before_delete != row_count_after_delete + num_deleted {
         log::error!(
             "Started with {} rows, deleted {}, and wound up with {} rows... huh?",
             row_count_before_delete,
@@ -151,7 +155,7 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4:
         );
     }
 
-    match TestE::insert(TestE {
+    match ctx.db.test_e().try_insert(TestE {
         id: 0,
         name: "Tyler".to_owned(),
     }) {
@@ -161,20 +165,25 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4:
 
     log::info!("Row count after delete: {:?}", row_count_after_delete);
 
-    let other_row_count = query!(|row: TestA| row.x >= 0 && row.x <= u32::MAX).count();
+    let other_row_count = ctx
+        .db
+        .test_a()
+        // .iter()
+        // .filter(|row| row.x >= 0 && row.x <= u32::MAX)
+        .count();
 
     log::info!("Row count filtered by condition: {:?}", other_row_count);
 
     log::info!("MultiColumn");
 
     for i in 0i64..1000 {
-        Point::insert(Point {
+        ctx.db.points().insert(Point {
             x: i + arg.x as i64,
             y: i + arg.y as i64,
         });
     }
 
-    let multi_row_count = query!(|row: Point| row.x >= 0 && row.y <= 200).count();
+    let multi_row_count = ctx.db.points().iter().filter(|row| row.x >= 0 && row.y <= 200).count();
 
     log::info!("Row count filtered by multi-column condition: {:?}", multi_row_count);
 
@@ -183,14 +192,14 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4:
 }
 
 #[spacetimedb::reducer]
-pub fn add_player(name: String) -> Result<(), String> {
-    TestE::insert(TestE { id: 0, name })?;
+pub fn add_player(ctx: &ReducerContext, name: String) -> Result<(), String> {
+    ctx.db.test_e().try_insert(TestE { id: 0, name })?;
     Ok(())
 }
 
 #[spacetimedb::reducer]
-pub fn delete_player(id: u64) -> Result<(), String> {
-    if TestE::delete_by_id(&id) {
+pub fn delete_player(ctx: &ReducerContext, id: u64) -> Result<(), String> {
+    if ctx.db.test_e().id().delete(id) {
         Ok(())
     } else {
         Err(format!("No TestE row with id {}", id))
@@ -198,8 +207,8 @@ pub fn delete_player(id: u64) -> Result<(), String> {
 }
 
 #[spacetimedb::reducer]
-pub fn delete_players_by_name(name: String) -> Result<(), String> {
-    match TestE::delete_by_name(&name) {
+pub fn delete_players_by_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
+    match ctx.db.test_e().name().delete(&name) {
         0 => Err(format!("No TestE row with name {:?}", name)),
         num_deleted => {
             log::info!("Deleted {} player(s) with name {:?}", num_deleted, name);
@@ -209,7 +218,7 @@ pub fn delete_players_by_name(name: String) -> Result<(), String> {
 }
 
 #[spacetimedb::reducer(client_connected)]
-fn on_connect(_ctx: ReducerContext) {}
+fn on_connect(_ctx: &ReducerContext) {}
 
 // We can derive `Deserialize` for lifetime generic types:
 
@@ -225,13 +234,13 @@ impl Foo<'_> {
 }
 
 #[spacetimedb::reducer]
-pub fn add_private(name: String) {
-    Private::insert(Private { name });
+pub fn add_private(ctx: &ReducerContext, name: String) {
+    ctx.db.private().insert(Private { name });
 }
 
 #[spacetimedb::reducer]
-pub fn query_private() {
-    for person in Private::iter() {
+pub fn query_private(ctx: &ReducerContext) {
+    for person in ctx.db.private().iter() {
         log::info!("Private, {}!", person.name);
     }
     log::info!("Private, World!");

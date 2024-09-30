@@ -10,7 +10,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `OptionEveryPrimitiveStruct`.
+/// Table handle for the table `option_every_primitive_struct`.
 ///
 /// Obtain a handle from the [`OptionEveryPrimitiveStructTableAccess::option_every_primitive_struct`] method on [`super::RemoteTables`],
 /// like `ctx.db.option_every_primitive_struct()`.
@@ -24,12 +24,12 @@ pub struct OptionEveryPrimitiveStructTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `OptionEveryPrimitiveStruct`.
+/// Extension trait for access to the table `option_every_primitive_struct`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OptionEveryPrimitiveStructTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OptionEveryPrimitiveStructTableHandle`], which mediates access to the table `OptionEveryPrimitiveStruct`.
+    /// Obtain a [`OptionEveryPrimitiveStructTableHandle`], which mediates access to the table `option_every_primitive_struct`.
     fn option_every_primitive_struct(&self) -> OptionEveryPrimitiveStructTableHandle<'_>;
 }
 
@@ -38,7 +38,7 @@ impl OptionEveryPrimitiveStructTableAccess for super::RemoteTables {
         OptionEveryPrimitiveStructTableHandle {
             imp: self
                 .imp
-                .get_table::<OptionEveryPrimitiveStruct>("OptionEveryPrimitiveStruct"),
+                .get_table::<OptionEveryPrimitiveStruct>("option_every_primitive_struct"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -91,5 +91,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OptionEveryPrimitiveStruct>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"OptionEveryPrimitiveStruct\"")
+        .context("Failed to parse table update for table \"option_every_primitive_struct\"")
 }

@@ -10,7 +10,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `OneEnumWithPayload`.
+/// Table handle for the table `one_enum_with_payload`.
 ///
 /// Obtain a handle from the [`OneEnumWithPayloadTableAccess::one_enum_with_payload`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_enum_with_payload()`.
@@ -24,19 +24,19 @@ pub struct OneEnumWithPayloadTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `OneEnumWithPayload`.
+/// Extension trait for access to the table `one_enum_with_payload`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneEnumWithPayloadTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneEnumWithPayloadTableHandle`], which mediates access to the table `OneEnumWithPayload`.
+    /// Obtain a [`OneEnumWithPayloadTableHandle`], which mediates access to the table `one_enum_with_payload`.
     fn one_enum_with_payload(&self) -> OneEnumWithPayloadTableHandle<'_>;
 }
 
 impl OneEnumWithPayloadTableAccess for super::RemoteTables {
     fn one_enum_with_payload(&self) -> OneEnumWithPayloadTableHandle<'_> {
         OneEnumWithPayloadTableHandle {
-            imp: self.imp.get_table::<OneEnumWithPayload>("OneEnumWithPayload"),
+            imp: self.imp.get_table::<OneEnumWithPayload>("one_enum_with_payload"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -89,5 +89,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneEnumWithPayload>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"OneEnumWithPayload\"")
+        .context("Failed to parse table update for table \"one_enum_with_payload\"")
 }

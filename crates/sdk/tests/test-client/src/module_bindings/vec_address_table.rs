@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `VecAddress`.
+/// Table handle for the table `vec_address`.
 ///
 /// Obtain a handle from the [`VecAddressTableAccess::vec_address`] method on [`super::RemoteTables`],
 /// like `ctx.db.vec_address()`.
@@ -23,19 +23,19 @@ pub struct VecAddressTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `VecAddress`.
+/// Extension trait for access to the table `vec_address`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait VecAddressTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`VecAddressTableHandle`], which mediates access to the table `VecAddress`.
+    /// Obtain a [`VecAddressTableHandle`], which mediates access to the table `vec_address`.
     fn vec_address(&self) -> VecAddressTableHandle<'_>;
 }
 
 impl VecAddressTableAccess for super::RemoteTables {
     fn vec_address(&self) -> VecAddressTableHandle<'_> {
         VecAddressTableHandle {
-            imp: self.imp.get_table::<VecAddress>("VecAddress"),
+            imp: self.imp.get_table::<VecAddress>("vec_address"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,5 +88,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<VecAddress>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"VecAddress\"")
+        .context("Failed to parse table update for table \"vec_address\"")
 }

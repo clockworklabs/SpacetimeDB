@@ -4,7 +4,7 @@ import time
 class NewUserFlow(Smoketest):
     AUTOPUBLISH = False
     MODULE_CODE = """
-use spacetimedb::println;
+use spacetimedb::{println, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -12,13 +12,13 @@ pub struct Person {
 }
 
 #[spacetimedb::reducer]
-pub fn add(name: String) {
-    Person::insert(Person { name });
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
 }
 
 #[spacetimedb::reducer]
-pub fn say_hello() {
-    for person in Person::iter() {
+pub fn say_hello(ctx: &ReducerContext) {
+    for person in ctx.db.person().iter() {
         println!("Hello, {}!", person.name);
     }
     println!("Hello, World!");

@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `UniqueI16`.
+/// Table handle for the table `unique_i16`.
 ///
 /// Obtain a handle from the [`UniqueI16TableAccess::unique_i_16`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_i_16()`.
@@ -23,19 +23,19 @@ pub struct UniqueI16TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `UniqueI16`.
+/// Extension trait for access to the table `unique_i16`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueI16TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueI16TableHandle`], which mediates access to the table `UniqueI16`.
+    /// Obtain a [`UniqueI16TableHandle`], which mediates access to the table `unique_i16`.
     fn unique_i_16(&self) -> UniqueI16TableHandle<'_>;
 }
 
 impl UniqueI16TableAccess for super::RemoteTables {
     fn unique_i_16(&self) -> UniqueI16TableHandle<'_> {
         UniqueI16TableHandle {
-            imp: self.imp.get_table::<UniqueI16>("UniqueI16"),
+            imp: self.imp.get_table::<UniqueI16>("unique_i16"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,10 +88,10 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueI16>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"UniqueI16\"")
+        .context("Failed to parse table update for table \"unique_i16\"")
 }
 
-/// Access to the `n` unique index on the table `UniqueI16`,
+/// Access to the `n` unique index on the table `unique_i16`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueI16NUnique::find`] method.
 ///
@@ -104,7 +104,7 @@ pub struct UniqueI16NUnique<'ctx> {
 }
 
 impl<'ctx> UniqueI16TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `UniqueI16`.
+    /// Get a handle on the `n` unique index on the table `unique_i16`.
     pub fn n(&self) -> UniqueI16NUnique<'ctx> {
         UniqueI16NUnique {
             imp: self.imp.get_unique_constraint::<i16>("n", |row| &row.n),

@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `OneIdentity`.
+/// Table handle for the table `one_identity`.
 ///
 /// Obtain a handle from the [`OneIdentityTableAccess::one_identity`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_identity()`.
@@ -23,19 +23,19 @@ pub struct OneIdentityTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `OneIdentity`.
+/// Extension trait for access to the table `one_identity`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneIdentityTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneIdentityTableHandle`], which mediates access to the table `OneIdentity`.
+    /// Obtain a [`OneIdentityTableHandle`], which mediates access to the table `one_identity`.
     fn one_identity(&self) -> OneIdentityTableHandle<'_>;
 }
 
 impl OneIdentityTableAccess for super::RemoteTables {
     fn one_identity(&self) -> OneIdentityTableHandle<'_> {
         OneIdentityTableHandle {
-            imp: self.imp.get_table::<OneIdentity>("OneIdentity"),
+            imp: self.imp.get_table::<OneIdentity>("one_identity"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,5 +88,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneIdentity>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"OneIdentity\"")
+        .context("Failed to parse table update for table \"one_identity\"")
 }

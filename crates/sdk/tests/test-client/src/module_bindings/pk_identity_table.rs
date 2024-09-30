@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `PkIdentity`.
+/// Table handle for the table `pk_identity`.
 ///
 /// Obtain a handle from the [`PkIdentityTableAccess::pk_identity`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_identity()`.
@@ -23,19 +23,19 @@ pub struct PkIdentityTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `PkIdentity`.
+/// Extension trait for access to the table `pk_identity`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkIdentityTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkIdentityTableHandle`], which mediates access to the table `PkIdentity`.
+    /// Obtain a [`PkIdentityTableHandle`], which mediates access to the table `pk_identity`.
     fn pk_identity(&self) -> PkIdentityTableHandle<'_>;
 }
 
 impl PkIdentityTableAccess for super::RemoteTables {
     fn pk_identity(&self) -> PkIdentityTableHandle<'_> {
         PkIdentityTableHandle {
-            imp: self.imp.get_table::<PkIdentity>("PkIdentity"),
+            imp: self.imp.get_table::<PkIdentity>("pk_identity"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -109,10 +109,10 @@ pub(super) fn parse_table_update(
         inserts,
         |row: &PkIdentity| &row.i,
     )
-    .context("Failed to parse table update for table \"PkIdentity\"")
+    .context("Failed to parse table update for table \"pk_identity\"")
 }
 
-/// Access to the `i` unique index on the table `PkIdentity`,
+/// Access to the `i` unique index on the table `pk_identity`,
 /// which allows point queries on the field of the same name
 /// via the [`PkIdentityIUnique::find`] method.
 ///
@@ -125,7 +125,7 @@ pub struct PkIdentityIUnique<'ctx> {
 }
 
 impl<'ctx> PkIdentityTableHandle<'ctx> {
-    /// Get a handle on the `i` unique index on the table `PkIdentity`.
+    /// Get a handle on the `i` unique index on the table `pk_identity`.
     pub fn i(&self) -> PkIdentityIUnique<'ctx> {
         PkIdentityIUnique {
             imp: self.imp.get_unique_constraint::<__sdk::Identity>("i", |row| &row.i),

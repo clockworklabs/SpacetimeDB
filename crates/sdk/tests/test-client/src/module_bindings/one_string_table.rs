@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `OneString`.
+/// Table handle for the table `one_string`.
 ///
 /// Obtain a handle from the [`OneStringTableAccess::one_string`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_string()`.
@@ -23,19 +23,19 @@ pub struct OneStringTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `OneString`.
+/// Extension trait for access to the table `one_string`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneStringTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneStringTableHandle`], which mediates access to the table `OneString`.
+    /// Obtain a [`OneStringTableHandle`], which mediates access to the table `one_string`.
     fn one_string(&self) -> OneStringTableHandle<'_>;
 }
 
 impl OneStringTableAccess for super::RemoteTables {
     fn one_string(&self) -> OneStringTableHandle<'_> {
         OneStringTableHandle {
-            imp: self.imp.get_table::<OneString>("OneString"),
+            imp: self.imp.get_table::<OneString>("one_string"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,5 +88,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneString>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"OneString\"")
+        .context("Failed to parse table update for table \"one_string\"")
 }

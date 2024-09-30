@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `UniqueString`.
+/// Table handle for the table `unique_string`.
 ///
 /// Obtain a handle from the [`UniqueStringTableAccess::unique_string`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_string()`.
@@ -23,19 +23,19 @@ pub struct UniqueStringTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `UniqueString`.
+/// Extension trait for access to the table `unique_string`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueStringTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueStringTableHandle`], which mediates access to the table `UniqueString`.
+    /// Obtain a [`UniqueStringTableHandle`], which mediates access to the table `unique_string`.
     fn unique_string(&self) -> UniqueStringTableHandle<'_>;
 }
 
 impl UniqueStringTableAccess for super::RemoteTables {
     fn unique_string(&self) -> UniqueStringTableHandle<'_> {
         UniqueStringTableHandle {
-            imp: self.imp.get_table::<UniqueString>("UniqueString"),
+            imp: self.imp.get_table::<UniqueString>("unique_string"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,10 +88,10 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueString>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"UniqueString\"")
+        .context("Failed to parse table update for table \"unique_string\"")
 }
 
-/// Access to the `s` unique index on the table `UniqueString`,
+/// Access to the `s` unique index on the table `unique_string`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueStringSUnique::find`] method.
 ///
@@ -104,7 +104,7 @@ pub struct UniqueStringSUnique<'ctx> {
 }
 
 impl<'ctx> UniqueStringTableHandle<'ctx> {
-    /// Get a handle on the `s` unique index on the table `UniqueString`.
+    /// Get a handle on the `s` unique index on the table `unique_string`.
     pub fn s(&self) -> UniqueStringSUnique<'ctx> {
         UniqueStringSUnique {
             imp: self.imp.get_unique_constraint::<String>("s", |row| &row.s),

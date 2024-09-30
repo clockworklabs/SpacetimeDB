@@ -2,7 +2,7 @@ from .. import Smoketest
 
 class ModuleNestedOp(Smoketest):
     MODULE_CODE = """
-use spacetimedb::println;
+use spacetimedb::{println, ReducerContext, Table};
 
 #[spacetimedb::table(name = account)]
 pub struct Account {
@@ -18,26 +18,26 @@ pub struct Friends {
 }
 
 #[spacetimedb::reducer]
-pub fn create_account(account_id: i32, name: String) {
-    Account::insert(Account { id: account_id, name } );
+pub fn create_account(ctx: &ReducerContext, account_id: i32, name: String) {
+    ctx.db.account().insert(Account { id: account_id, name } );
 }
 
 #[spacetimedb::reducer]
-pub fn add_friend(my_id: i32, their_id: i32) {
+pub fn add_friend(ctx: &ReducerContext, my_id: i32, their_id: i32) {
     // Make sure our friend exists
-    for account in Account::iter() {
+    for account in ctx.db.account().iter() {
         if account.id == their_id {
-            Friends::insert(Friends { friend_1: my_id, friend_2: their_id });
+            ctx.db.friends().insert(Friends { friend_1: my_id, friend_2: their_id });
             return;
         }
     }
 }
 
 #[spacetimedb::reducer]
-pub fn say_friends() {
-    for friendship in Friends::iter() {
-        let friend1 = Account::filter_by_id(&friendship.friend_1).unwrap();
-        let friend2 = Account::filter_by_id(&friendship.friend_2).unwrap();
+pub fn say_friends(ctx: &ReducerContext) {
+    for friendship in ctx.db.friends().iter() {
+        let friend1 = ctx.db.account().id().find(&friendship.friend_1).unwrap();
+        let friend2 = ctx.db.account().id().find(&friendship.friend_2).unwrap();
         println!("{} is friends with {}", friend1.name, friend2.name);
     }
 }

@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `OptionString`.
+/// Table handle for the table `option_string`.
 ///
 /// Obtain a handle from the [`OptionStringTableAccess::option_string`] method on [`super::RemoteTables`],
 /// like `ctx.db.option_string()`.
@@ -23,19 +23,19 @@ pub struct OptionStringTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `OptionString`.
+/// Extension trait for access to the table `option_string`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OptionStringTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OptionStringTableHandle`], which mediates access to the table `OptionString`.
+    /// Obtain a [`OptionStringTableHandle`], which mediates access to the table `option_string`.
     fn option_string(&self) -> OptionStringTableHandle<'_>;
 }
 
 impl OptionStringTableAccess for super::RemoteTables {
     fn option_string(&self) -> OptionStringTableHandle<'_> {
         OptionStringTableHandle {
-            imp: self.imp.get_table::<OptionString>("OptionString"),
+            imp: self.imp.get_table::<OptionString>("option_string"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,5 +88,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OptionString>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"OptionString\"")
+        .context("Failed to parse table update for table \"option_string\"")
 }

@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `OneI32`.
+/// Table handle for the table `one_i32`.
 ///
 /// Obtain a handle from the [`OneI32TableAccess::one_i_32`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_i_32()`.
@@ -23,19 +23,19 @@ pub struct OneI32TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `OneI32`.
+/// Extension trait for access to the table `one_i32`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneI32TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneI32TableHandle`], which mediates access to the table `OneI32`.
+    /// Obtain a [`OneI32TableHandle`], which mediates access to the table `one_i32`.
     fn one_i_32(&self) -> OneI32TableHandle<'_>;
 }
 
 impl OneI32TableAccess for super::RemoteTables {
     fn one_i_32(&self) -> OneI32TableHandle<'_> {
         OneI32TableHandle {
-            imp: self.imp.get_table::<OneI32>("OneI32"),
+            imp: self.imp.get_table::<OneI32>("one_i32"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,5 +88,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneI32>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"OneI32\"")
+        .context("Failed to parse table update for table \"one_i32\"")
 }

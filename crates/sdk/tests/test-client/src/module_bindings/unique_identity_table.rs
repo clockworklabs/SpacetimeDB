@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `UniqueIdentity`.
+/// Table handle for the table `unique_identity`.
 ///
 /// Obtain a handle from the [`UniqueIdentityTableAccess::unique_identity`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_identity()`.
@@ -23,19 +23,19 @@ pub struct UniqueIdentityTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `UniqueIdentity`.
+/// Extension trait for access to the table `unique_identity`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueIdentityTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueIdentityTableHandle`], which mediates access to the table `UniqueIdentity`.
+    /// Obtain a [`UniqueIdentityTableHandle`], which mediates access to the table `unique_identity`.
     fn unique_identity(&self) -> UniqueIdentityTableHandle<'_>;
 }
 
 impl UniqueIdentityTableAccess for super::RemoteTables {
     fn unique_identity(&self) -> UniqueIdentityTableHandle<'_> {
         UniqueIdentityTableHandle {
-            imp: self.imp.get_table::<UniqueIdentity>("UniqueIdentity"),
+            imp: self.imp.get_table::<UniqueIdentity>("unique_identity"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,10 +88,10 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueIdentity>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"UniqueIdentity\"")
+        .context("Failed to parse table update for table \"unique_identity\"")
 }
 
-/// Access to the `i` unique index on the table `UniqueIdentity`,
+/// Access to the `i` unique index on the table `unique_identity`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueIdentityIUnique::find`] method.
 ///
@@ -104,7 +104,7 @@ pub struct UniqueIdentityIUnique<'ctx> {
 }
 
 impl<'ctx> UniqueIdentityTableHandle<'ctx> {
-    /// Get a handle on the `i` unique index on the table `UniqueIdentity`.
+    /// Get a handle on the `i` unique index on the table `unique_identity`.
     pub fn i(&self) -> UniqueIdentityIUnique<'ctx> {
         UniqueIdentityIUnique {
             imp: self.imp.get_unique_constraint::<__sdk::Identity>("i", |row| &row.i),

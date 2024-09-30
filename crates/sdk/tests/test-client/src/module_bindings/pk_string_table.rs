@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `PkString`.
+/// Table handle for the table `pk_string`.
 ///
 /// Obtain a handle from the [`PkStringTableAccess::pk_string`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_string()`.
@@ -23,19 +23,19 @@ pub struct PkStringTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `PkString`.
+/// Extension trait for access to the table `pk_string`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkStringTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkStringTableHandle`], which mediates access to the table `PkString`.
+    /// Obtain a [`PkStringTableHandle`], which mediates access to the table `pk_string`.
     fn pk_string(&self) -> PkStringTableHandle<'_>;
 }
 
 impl PkStringTableAccess for super::RemoteTables {
     fn pk_string(&self) -> PkStringTableHandle<'_> {
         PkStringTableHandle {
-            imp: self.imp.get_table::<PkString>("PkString"),
+            imp: self.imp.get_table::<PkString>("pk_string"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -109,10 +109,10 @@ pub(super) fn parse_table_update(
         inserts,
         |row: &PkString| &row.s,
     )
-    .context("Failed to parse table update for table \"PkString\"")
+    .context("Failed to parse table update for table \"pk_string\"")
 }
 
-/// Access to the `s` unique index on the table `PkString`,
+/// Access to the `s` unique index on the table `pk_string`,
 /// which allows point queries on the field of the same name
 /// via the [`PkStringSUnique::find`] method.
 ///
@@ -125,7 +125,7 @@ pub struct PkStringSUnique<'ctx> {
 }
 
 impl<'ctx> PkStringTableHandle<'ctx> {
-    /// Get a handle on the `s` unique index on the table `PkString`.
+    /// Get a handle on the `s` unique index on the table `pk_string`.
     pub fn s(&self) -> PkStringSUnique<'ctx> {
         PkStringSUnique {
             imp: self.imp.get_unique_constraint::<String>("s", |row| &row.s),

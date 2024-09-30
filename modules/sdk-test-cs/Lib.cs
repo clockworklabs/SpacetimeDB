@@ -1,6 +1,8 @@
+namespace SpacetimeDB.Sdk.Test;
+
 using SpacetimeDB;
 
-static partial class Module
+public static partial class Module
 {
     [SpacetimeDB.Type]
     public enum SimpleEnum
@@ -99,9 +101,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_u8(byte n)
+    public static void insert_one_u8(ReducerContext ctx, byte n)
     {
-        new OneU8 { n = n }.Insert();
+        ctx.Db.OneU8.Insert(new OneU8 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -111,9 +113,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_u16(ushort n)
+    public static void insert_one_u16(ReducerContext ctx, ushort n)
     {
-        new OneU16 { n = n }.Insert();
+        ctx.Db.OneU16.Insert(new OneU16 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -123,9 +125,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_u32(uint n)
+    public static void insert_one_u32(ReducerContext ctx, uint n)
     {
-        new OneU32 { n = n }.Insert();
+        ctx.Db.OneU32.Insert(new OneU32 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -135,9 +137,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_u64(ulong n)
+    public static void insert_one_u64(ReducerContext ctx, ulong n)
     {
-        new OneU64 { n = n }.Insert();
+        ctx.Db.OneU64.Insert(new OneU64 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -147,9 +149,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_u128(U128 n)
+    public static void insert_one_u128(ReducerContext ctx, U128 n)
     {
-        new OneU128 { n = n }.Insert();
+        ctx.Db.OneU128.Insert(new OneU128 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -159,9 +161,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_u256(U256 n)
+    public static void insert_one_u256(ReducerContext ctx, U256 n)
     {
-        new OneU256 { n = n }.Insert();
+        ctx.Db.OneU256.Insert(new OneU256 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -171,9 +173,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_i8(sbyte n)
+    public static void insert_one_i8(ReducerContext ctx, sbyte n)
     {
-        new OneI8 { n = n }.Insert();
+        ctx.Db.OneI8.Insert(new OneI8 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -183,9 +185,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_i16(short n)
+    public static void insert_one_i16(ReducerContext ctx, short n)
     {
-        new OneI16 { n = n }.Insert();
+        ctx.Db.OneI16.Insert(new OneI16 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -195,9 +197,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_i32(int n)
+    public static void insert_one_i32(ReducerContext ctx, int n)
     {
-        new OneI32 { n = n }.Insert();
+        ctx.Db.OneI32.Insert(new OneI32 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -207,9 +209,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_i64(long n)
+    public static void insert_one_i64(ReducerContext ctx, long n)
     {
-        new OneI64 { n = n }.Insert();
+        ctx.Db.OneI64.Insert(new OneI64 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -219,9 +221,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_i128(I128 n)
+    public static void insert_one_i128(ReducerContext ctx, I128 n)
     {
-        new OneI128 { n = n }.Insert();
+        ctx.Db.OneI128.Insert(new OneI128 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -231,9 +233,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_i256(I256 n)
+    public static void insert_one_i256(ReducerContext ctx, I256 n)
     {
-        new OneI256 { n = n }.Insert();
+        ctx.Db.OneI256.Insert(new OneI256 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -243,9 +245,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_bool(bool b)
+    public static void insert_one_bool(ReducerContext ctx, bool b)
     {
-        new OneBool { b = b }.Insert();
+        ctx.Db.OneBool.Insert(new OneBool { b = b });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -255,9 +257,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_f32(float f)
+    public static void insert_one_f32(ReducerContext ctx, float f)
     {
-        new OneF32 { f = f }.Insert();
+        ctx.Db.OneF32.Insert(new OneF32 { f = f });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -267,9 +269,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_f64(double f)
+    public static void insert_one_f64(ReducerContext ctx, double f)
     {
-        new OneF64 { f = f }.Insert();
+        ctx.Db.OneF64.Insert(new OneF64 { f = f });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -279,9 +281,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_string(string s)
+    public static void insert_one_string(ReducerContext ctx, string s)
     {
-        new OneString { s = s }.Insert();
+        ctx.Db.OneString.Insert(new OneString { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -291,9 +293,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_identity(Identity i)
+    public static void insert_one_identity(ReducerContext ctx, Identity i)
     {
-        new OneIdentity { i = i }.Insert();
+        ctx.Db.OneIdentity.Insert(new OneIdentity { i = i });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -303,9 +305,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_address(Address a)
+    public static void insert_one_address(ReducerContext ctx, Address a)
     {
-        new OneAddress { a = a }.Insert();
+        ctx.Db.OneAddress.Insert(new OneAddress { a = a });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -315,9 +317,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_simple_enum(SimpleEnum e)
+    public static void insert_one_simple_enum(ReducerContext ctx, SimpleEnum e)
     {
-        new OneSimpleEnum { e = e }.Insert();
+        ctx.Db.OneSimpleEnum.Insert(new OneSimpleEnum { e = e });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -327,9 +329,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_enum_with_payload(EnumWithPayload e)
+    public static void insert_one_enum_with_payload(ReducerContext ctx, EnumWithPayload e)
     {
-        new OneEnumWithPayload { e = e }.Insert();
+        ctx.Db.OneEnumWithPayload.Insert(new OneEnumWithPayload { e = e });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -339,9 +341,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_unit_struct(UnitStruct s)
+    public static void insert_one_unit_struct(ReducerContext ctx, UnitStruct s)
     {
-        new OneUnitStruct { s = s }.Insert();
+        ctx.Db.OneUnitStruct.Insert(new OneUnitStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -351,9 +353,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_byte_struct(ByteStruct s)
+    public static void insert_one_byte_struct(ReducerContext ctx, ByteStruct s)
     {
-        new OneByteStruct { s = s }.Insert();
+        ctx.Db.OneByteStruct.Insert(new OneByteStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -363,9 +365,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_every_primitive_struct(EveryPrimitiveStruct s)
+    public static void insert_one_every_primitive_struct(ReducerContext ctx, EveryPrimitiveStruct s)
     {
-        new OneEveryPrimitiveStruct { s = s }.Insert();
+        ctx.Db.OneEveryPrimitiveStruct.Insert(new OneEveryPrimitiveStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -375,9 +377,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_one_every_vec_struct(EveryVecStruct s)
+    public static void insert_one_every_vec_struct(ReducerContext ctx, EveryVecStruct s)
     {
-        new OneEveryVecStruct { s = s }.Insert();
+        ctx.Db.OneEveryVecStruct.Insert(new OneEveryVecStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -387,9 +389,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_u8(List<byte> n)
+    public static void insert_vec_u8(ReducerContext ctx, List<byte> n)
     {
-        new VecU8 { n = n }.Insert();
+        ctx.Db.VecU8.Insert(new VecU8 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -399,9 +401,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_u16(List<ushort> n)
+    public static void insert_vec_u16(ReducerContext ctx, List<ushort> n)
     {
-        new VecU16 { n = n }.Insert();
+        ctx.Db.VecU16.Insert(new VecU16 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -411,9 +413,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_u32(List<uint> n)
+    public static void insert_vec_u32(ReducerContext ctx, List<uint> n)
     {
-        new VecU32 { n = n }.Insert();
+        ctx.Db.VecU32.Insert(new VecU32 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -423,9 +425,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_u64(List<ulong> n)
+    public static void insert_vec_u64(ReducerContext ctx, List<ulong> n)
     {
-        new VecU64 { n = n }.Insert();
+        ctx.Db.VecU64.Insert(new VecU64 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -435,9 +437,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_u128(List<U128> n)
+    public static void insert_vec_u128(ReducerContext ctx, List<U128> n)
     {
-        new VecU128 { n = n }.Insert();
+        ctx.Db.VecU128.Insert(new VecU128 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -447,9 +449,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_u256(List<U256> n)
+    public static void insert_vec_u256(ReducerContext ctx, List<U256> n)
     {
-        new VecU256 { n = n }.Insert();
+        ctx.Db.VecU256.Insert(new VecU256 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -459,9 +461,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_i8(List<sbyte> n)
+    public static void insert_vec_i8(ReducerContext ctx, List<sbyte> n)
     {
-        new VecI8 { n = n }.Insert();
+        ctx.Db.VecI8.Insert(new VecI8 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -471,9 +473,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_i16(List<short> n)
+    public static void insert_vec_i16(ReducerContext ctx, List<short> n)
     {
-        new VecI16 { n = n }.Insert();
+        ctx.Db.VecI16.Insert(new VecI16 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -483,9 +485,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_i32(List<int> n)
+    public static void insert_vec_i32(ReducerContext ctx, List<int> n)
     {
-        new VecI32 { n = n }.Insert();
+        ctx.Db.VecI32.Insert(new VecI32 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -495,9 +497,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_i64(List<long> n)
+    public static void insert_vec_i64(ReducerContext ctx, List<long> n)
     {
-        new VecI64 { n = n }.Insert();
+        ctx.Db.VecI64.Insert(new VecI64 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -507,9 +509,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_i128(List<I128> n)
+    public static void insert_vec_i128(ReducerContext ctx, List<I128> n)
     {
-        new VecI128 { n = n }.Insert();
+        ctx.Db.VecI128.Insert(new VecI128 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -519,9 +521,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_i256(List<I256> n)
+    public static void insert_vec_i256(ReducerContext ctx, List<I256> n)
     {
-        new VecI256 { n = n }.Insert();
+        ctx.Db.VecI256.Insert(new VecI256 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -531,9 +533,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_bool(List<bool> b)
+    public static void insert_vec_bool(ReducerContext ctx, List<bool> b)
     {
-        new VecBool { b = b }.Insert();
+        ctx.Db.VecBool.Insert(new VecBool { b = b });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -543,9 +545,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_f32(List<float> f)
+    public static void insert_vec_f32(ReducerContext ctx, List<float> f)
     {
-        new VecF32 { f = f }.Insert();
+        ctx.Db.VecF32.Insert(new VecF32 { f = f });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -555,9 +557,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_f64(List<double> f)
+    public static void insert_vec_f64(ReducerContext ctx, List<double> f)
     {
-        new VecF64 { f = f }.Insert();
+        ctx.Db.VecF64.Insert(new VecF64 { f = f });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -567,9 +569,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_string(List<string> s)
+    public static void insert_vec_string(ReducerContext ctx, List<string> s)
     {
-        new VecString { s = s }.Insert();
+        ctx.Db.VecString.Insert(new VecString { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -579,9 +581,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_identity(List<Identity> i)
+    public static void insert_vec_identity(ReducerContext ctx, List<Identity> i)
     {
-        new VecIdentity { i = i }.Insert();
+        ctx.Db.VecIdentity.Insert(new VecIdentity { i = i });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -591,9 +593,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_address(List<Address> a)
+    public static void insert_vec_address(ReducerContext ctx, List<Address> a)
     {
-        new VecAddress { a = a }.Insert();
+        ctx.Db.VecAddress.Insert(new VecAddress { a = a });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -603,9 +605,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_simple_enum(List<SimpleEnum> e)
+    public static void insert_vec_simple_enum(ReducerContext ctx, List<SimpleEnum> e)
     {
-        new VecSimpleEnum { e = e }.Insert();
+        ctx.Db.VecSimpleEnum.Insert(new VecSimpleEnum { e = e });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -615,9 +617,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_enum_with_payload(List<EnumWithPayload> e)
+    public static void insert_vec_enum_with_payload(ReducerContext ctx, List<EnumWithPayload> e)
     {
-        new VecEnumWithPayload { e = e }.Insert();
+        ctx.Db.VecEnumWithPayload.Insert(new VecEnumWithPayload { e = e });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -627,9 +629,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_unit_struct(List<UnitStruct> s)
+    public static void insert_vec_unit_struct(ReducerContext ctx, List<UnitStruct> s)
     {
-        new VecUnitStruct { s = s }.Insert();
+        ctx.Db.VecUnitStruct.Insert(new VecUnitStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -639,9 +641,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_byte_struct(List<ByteStruct> s)
+    public static void insert_vec_byte_struct(ReducerContext ctx, List<ByteStruct> s)
     {
-        new VecByteStruct { s = s }.Insert();
+        ctx.Db.VecByteStruct.Insert(new VecByteStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -651,9 +653,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_every_primitive_struct(List<EveryPrimitiveStruct> s)
+    public static void insert_vec_every_primitive_struct(ReducerContext ctx, List<EveryPrimitiveStruct> s)
     {
-        new VecEveryPrimitiveStruct { s = s }.Insert();
+        ctx.Db.VecEveryPrimitiveStruct.Insert(new VecEveryPrimitiveStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -663,9 +665,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_every_vec_struct(List<EveryVecStruct> s)
+    public static void insert_vec_every_vec_struct(ReducerContext ctx, List<EveryVecStruct> s)
     {
-        new VecEveryVecStruct { s = s }.Insert();
+        ctx.Db.VecEveryVecStruct.Insert(new VecEveryVecStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -675,9 +677,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_option_i32(int? n)
+    public static void insert_option_i32(ReducerContext ctx, int? n)
     {
-        new OptionI32 { n = n }.Insert();
+        ctx.Db.OptionI32.Insert(new OptionI32 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -687,9 +689,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_option_string(string? s)
+    public static void insert_option_string(ReducerContext ctx, string? s)
     {
-        new OptionString { s = s }.Insert();
+        ctx.Db.OptionString.Insert(new OptionString { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -699,9 +701,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_option_identity(Identity? i)
+    public static void insert_option_identity(ReducerContext ctx, Identity? i)
     {
-        new OptionIdentity { i = i }.Insert();
+        ctx.Db.OptionIdentity.Insert(new OptionIdentity { i = i });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -711,9 +713,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_option_simple_enum(SimpleEnum? e)
+    public static void insert_option_simple_enum(ReducerContext ctx, SimpleEnum? e)
     {
-        new OptionSimpleEnum { e = e }.Insert();
+        ctx.Db.OptionSimpleEnum.Insert(new OptionSimpleEnum { e = e });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -723,9 +725,9 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_option_every_primitive_struct(EveryPrimitiveStruct? s)
+    public static void insert_option_every_primitive_struct(ReducerContext ctx, EveryPrimitiveStruct? s)
     {
-        new OptionEveryPrimitiveStruct { s = s }.Insert();
+        ctx.Db.OptionEveryPrimitiveStruct.Insert(new OptionEveryPrimitiveStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -735,903 +737,903 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_option_vec_option_i32(List<int?>? v)
+    public static void insert_option_vec_option_i32(ReducerContext ctx, List<int?>? v)
     {
-        new OptionVecOptionI32 { v = v }.Insert();
+        ctx.Db.OptionVecOptionI32.Insert(new OptionVecOptionI32 { v = v });
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueU8
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public byte n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_u8(byte n, int data)
+    public static void insert_unique_u8(ReducerContext ctx, byte n, int data)
     {
-        new UniqueU8 { n = n, data = data }.Insert();
+        ctx.Db.UniqueU8.Insert(new UniqueU8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_u8(byte n, int data)
+    public static void update_unique_u8(ReducerContext ctx, byte n, int data)
     {
         var key = n;
-        UniqueU8.UpdateByn(key, new UniqueU8 { n = n, data = data });
+        ctx.Db.UniqueU8.UpdateByn(key, new UniqueU8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_u8(byte n)
+    public static void delete_unique_u8(ReducerContext ctx, byte n)
     {
-        UniqueU8.DeleteByn(n);
+        ctx.Db.UniqueU8.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueU16
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public ushort n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_u16(ushort n, int data)
+    public static void insert_unique_u16(ReducerContext ctx, ushort n, int data)
     {
-        new UniqueU16 { n = n, data = data }.Insert();
+        ctx.Db.UniqueU16.Insert(new UniqueU16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_u16(ushort n, int data)
+    public static void update_unique_u16(ReducerContext ctx, ushort n, int data)
     {
         var key = n;
-        UniqueU16.UpdateByn(key, new UniqueU16 { n = n, data = data });
+        ctx.Db.UniqueU16.UpdateByn(key, new UniqueU16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_u16(ushort n)
+    public static void delete_unique_u16(ReducerContext ctx, ushort n)
     {
-        UniqueU16.DeleteByn(n);
+        ctx.Db.UniqueU16.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueU32
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public uint n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_u32(uint n, int data)
+    public static void insert_unique_u32(ReducerContext ctx, uint n, int data)
     {
-        new UniqueU32 { n = n, data = data }.Insert();
+        ctx.Db.UniqueU32.Insert(new UniqueU32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_u32(uint n, int data)
+    public static void update_unique_u32(ReducerContext ctx, uint n, int data)
     {
         var key = n;
-        UniqueU32.UpdateByn(key, new UniqueU32 { n = n, data = data });
+        ctx.Db.UniqueU32.UpdateByn(key, new UniqueU32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_u32(uint n)
+    public static void delete_unique_u32(ReducerContext ctx, uint n)
     {
-        UniqueU32.DeleteByn(n);
+        ctx.Db.UniqueU32.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueU64
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public ulong n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_u64(ulong n, int data)
+    public static void insert_unique_u64(ReducerContext ctx, ulong n, int data)
     {
-        new UniqueU64 { n = n, data = data }.Insert();
+        ctx.Db.UniqueU64.Insert(new UniqueU64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_u64(ulong n, int data)
+    public static void update_unique_u64(ReducerContext ctx, ulong n, int data)
     {
         var key = n;
-        UniqueU64.UpdateByn(key, new UniqueU64 { n = n, data = data });
+        ctx.Db.UniqueU64.UpdateByn(key, new UniqueU64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_u64(ulong n)
+    public static void delete_unique_u64(ReducerContext ctx, ulong n)
     {
-        UniqueU64.DeleteByn(n);
+        ctx.Db.UniqueU64.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueU128
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public U128 n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_u128(U128 n, int data)
+    public static void insert_unique_u128(ReducerContext ctx, U128 n, int data)
     {
-        new UniqueU128 { n = n, data = data }.Insert();
+        ctx.Db.UniqueU128.Insert(new UniqueU128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_u128(U128 n, int data)
+    public static void update_unique_u128(ReducerContext ctx, U128 n, int data)
     {
         var key = n;
-        UniqueU128.UpdateByn(key, new UniqueU128 { n = n, data = data });
+        ctx.Db.UniqueU128.UpdateByn(key, new UniqueU128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_u128(U128 n)
+    public static void delete_unique_u128(ReducerContext ctx, U128 n)
     {
-        UniqueU128.DeleteByn(n);
+        ctx.Db.UniqueU128.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueU256
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public U256 n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_u256(U256 n, int data)
+    public static void insert_unique_u256(ReducerContext ctx, U256 n, int data)
     {
-        new UniqueU256 { n = n, data = data }.Insert();
+        ctx.Db.UniqueU256.Insert(new UniqueU256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_u256(U256 n, int data)
+    public static void update_unique_u256(ReducerContext ctx, U256 n, int data)
     {
         var key = n;
-        UniqueU256.UpdateByn(key, new UniqueU256 { n = n, data = data });
+        ctx.Db.UniqueU256.UpdateByn(key, new UniqueU256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_u256(U256 n)
+    public static void delete_unique_u256(ReducerContext ctx, U256 n)
     {
-        UniqueU256.DeleteByn(n);
+        ctx.Db.UniqueU256.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueI8
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public sbyte n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_i8(sbyte n, int data)
+    public static void insert_unique_i8(ReducerContext ctx, sbyte n, int data)
     {
-        new UniqueI8 { n = n, data = data }.Insert();
+        ctx.Db.UniqueI8.Insert(new UniqueI8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_i8(sbyte n, int data)
+    public static void update_unique_i8(ReducerContext ctx, sbyte n, int data)
     {
         var key = n;
-        UniqueI8.UpdateByn(key, new UniqueI8 { n = n, data = data });
+        ctx.Db.UniqueI8.UpdateByn(key, new UniqueI8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_i8(sbyte n)
+    public static void delete_unique_i8(ReducerContext ctx, sbyte n)
     {
-        UniqueI8.DeleteByn(n);
+        ctx.Db.UniqueI8.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueI16
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public short n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_i16(short n, int data)
+    public static void insert_unique_i16(ReducerContext ctx, short n, int data)
     {
-        new UniqueI16 { n = n, data = data }.Insert();
+        ctx.Db.UniqueI16.Insert(new UniqueI16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_i16(short n, int data)
+    public static void update_unique_i16(ReducerContext ctx, short n, int data)
     {
         var key = n;
-        UniqueI16.UpdateByn(key, new UniqueI16 { n = n, data = data });
+        ctx.Db.UniqueI16.UpdateByn(key, new UniqueI16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_i16(short n)
+    public static void delete_unique_i16(ReducerContext ctx, short n)
     {
-        UniqueI16.DeleteByn(n);
+        ctx.Db.UniqueI16.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueI32
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public int n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_i32(int n, int data)
+    public static void insert_unique_i32(ReducerContext ctx, int n, int data)
     {
-        new UniqueI32 { n = n, data = data }.Insert();
+        ctx.Db.UniqueI32.Insert(new UniqueI32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_i32(int n, int data)
+    public static void update_unique_i32(ReducerContext ctx, int n, int data)
     {
         var key = n;
-        UniqueI32.UpdateByn(key, new UniqueI32 { n = n, data = data });
+        ctx.Db.UniqueI32.UpdateByn(key, new UniqueI32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_i32(int n)
+    public static void delete_unique_i32(ReducerContext ctx, int n)
     {
-        UniqueI32.DeleteByn(n);
+        ctx.Db.UniqueI32.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueI64
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public long n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_i64(long n, int data)
+    public static void insert_unique_i64(ReducerContext ctx, long n, int data)
     {
-        new UniqueI64 { n = n, data = data }.Insert();
+        ctx.Db.UniqueI64.Insert(new UniqueI64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_i64(long n, int data)
+    public static void update_unique_i64(ReducerContext ctx, long n, int data)
     {
         var key = n;
-        UniqueI64.UpdateByn(key, new UniqueI64 { n = n, data = data });
+        ctx.Db.UniqueI64.UpdateByn(key, new UniqueI64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_i64(long n)
+    public static void delete_unique_i64(ReducerContext ctx, long n)
     {
-        UniqueI64.DeleteByn(n);
+        ctx.Db.UniqueI64.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueI128
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public I128 n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_i128(I128 n, int data)
+    public static void insert_unique_i128(ReducerContext ctx, I128 n, int data)
     {
-        new UniqueI128 { n = n, data = data }.Insert();
+        ctx.Db.UniqueI128.Insert(new UniqueI128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_i128(I128 n, int data)
+    public static void update_unique_i128(ReducerContext ctx, I128 n, int data)
     {
         var key = n;
-        UniqueI128.UpdateByn(key, new UniqueI128 { n = n, data = data });
+        ctx.Db.UniqueI128.UpdateByn(key, new UniqueI128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_i128(I128 n)
+    public static void delete_unique_i128(ReducerContext ctx, I128 n)
     {
-        UniqueI128.DeleteByn(n);
+        ctx.Db.UniqueI128.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueI256
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public I256 n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_i256(I256 n, int data)
+    public static void insert_unique_i256(ReducerContext ctx, I256 n, int data)
     {
-        new UniqueI256 { n = n, data = data }.Insert();
+        ctx.Db.UniqueI256.Insert(new UniqueI256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_i256(I256 n, int data)
+    public static void update_unique_i256(ReducerContext ctx, I256 n, int data)
     {
         var key = n;
-        UniqueI256.UpdateByn(key, new UniqueI256 { n = n, data = data });
+        ctx.Db.UniqueI256.UpdateByn(key, new UniqueI256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_i256(I256 n)
+    public static void delete_unique_i256(ReducerContext ctx, I256 n)
     {
-        UniqueI256.DeleteByn(n);
+        ctx.Db.UniqueI256.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueBool
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public bool b;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_bool(bool b, int data)
+    public static void insert_unique_bool(ReducerContext ctx, bool b, int data)
     {
-        new UniqueBool { b = b, data = data }.Insert();
+        ctx.Db.UniqueBool.Insert(new UniqueBool { b = b, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_bool(bool b, int data)
+    public static void update_unique_bool(ReducerContext ctx, bool b, int data)
     {
         var key = b;
-        UniqueBool.UpdateByb(key, new UniqueBool { b = b, data = data });
+        ctx.Db.UniqueBool.UpdateByb(key, new UniqueBool { b = b, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_bool(bool b)
+    public static void delete_unique_bool(ReducerContext ctx, bool b)
     {
-        UniqueBool.DeleteByb(b);
+        ctx.Db.UniqueBool.DeleteByb(b);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueString
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public string s;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_string(string s, int data)
+    public static void insert_unique_string(ReducerContext ctx, string s, int data)
     {
-        new UniqueString { s = s, data = data }.Insert();
+        ctx.Db.UniqueString.Insert(new UniqueString { s = s, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_string(string s, int data)
+    public static void update_unique_string(ReducerContext ctx, string s, int data)
     {
         var key = s;
-        UniqueString.UpdateBys(key, new UniqueString { s = s, data = data });
+        ctx.Db.UniqueString.UpdateBys(key, new UniqueString { s = s, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_string(string s)
+    public static void delete_unique_string(ReducerContext ctx, string s)
     {
-        UniqueString.DeleteBys(s);
+        ctx.Db.UniqueString.DeleteBys(s);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueIdentity
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public Identity i;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_identity(Identity i, int data)
+    public static void insert_unique_identity(ReducerContext ctx, Identity i, int data)
     {
-        new UniqueIdentity { i = i, data = data }.Insert();
+        ctx.Db.UniqueIdentity.Insert(new UniqueIdentity { i = i, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_identity(Identity i, int data)
+    public static void update_unique_identity(ReducerContext ctx, Identity i, int data)
     {
         var key = i;
-        UniqueIdentity.UpdateByi(key, new UniqueIdentity { i = i, data = data });
+        ctx.Db.UniqueIdentity.UpdateByi(key, new UniqueIdentity { i = i, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_identity(Identity i)
+    public static void delete_unique_identity(ReducerContext ctx, Identity i)
     {
-        UniqueIdentity.DeleteByi(i);
+        ctx.Db.UniqueIdentity.DeleteByi(i);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueAddress
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [SpacetimeDB.Unique]
         public Address a;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_address(Address a, int data)
+    public static void insert_unique_address(ReducerContext ctx, Address a, int data)
     {
-        new UniqueAddress { a = a, data = data }.Insert();
+        ctx.Db.UniqueAddress.Insert(new UniqueAddress { a = a, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_unique_address(Address a, int data)
+    public static void update_unique_address(ReducerContext ctx, Address a, int data)
     {
         var key = a;
-        UniqueAddress.UpdateBya(key, new UniqueAddress { a = a, data = data });
+        ctx.Db.UniqueAddress.UpdateBya(key, new UniqueAddress { a = a, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_unique_address(Address a)
+    public static void delete_unique_address(ReducerContext ctx, Address a)
     {
-        UniqueAddress.DeleteBya(a);
+        ctx.Db.UniqueAddress.DeleteBya(a);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkU8
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public byte n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_u8(byte n, int data)
+    public static void insert_pk_u8(ReducerContext ctx, byte n, int data)
     {
-        new PkU8 { n = n, data = data }.Insert();
+        ctx.Db.PkU8.Insert(new PkU8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_u8(byte n, int data)
+    public static void update_pk_u8(ReducerContext ctx, byte n, int data)
     {
         var key = n;
-        PkU8.UpdateByn(key, new PkU8 { n = n, data = data });
+        ctx.Db.PkU8.UpdateByn(key, new PkU8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_u8(byte n)
+    public static void delete_pk_u8(ReducerContext ctx, byte n)
     {
-        PkU8.DeleteByn(n);
+        ctx.Db.PkU8.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkU16
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public ushort n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_u16(ushort n, int data)
+    public static void insert_pk_u16(ReducerContext ctx, ushort n, int data)
     {
-        new PkU16 { n = n, data = data }.Insert();
+        ctx.Db.PkU16.Insert(new PkU16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_u16(ushort n, int data)
+    public static void update_pk_u16(ReducerContext ctx, ushort n, int data)
     {
         var key = n;
-        PkU16.UpdateByn(key, new PkU16 { n = n, data = data });
+        ctx.Db.PkU16.UpdateByn(key, new PkU16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_u16(ushort n)
+    public static void delete_pk_u16(ReducerContext ctx, ushort n)
     {
-        PkU16.DeleteByn(n);
+        ctx.Db.PkU16.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkU32
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public uint n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_u32(uint n, int data)
+    public static void insert_pk_u32(ReducerContext ctx, uint n, int data)
     {
-        new PkU32 { n = n, data = data }.Insert();
+        ctx.Db.PkU32.Insert(new PkU32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_u32(uint n, int data)
+    public static void update_pk_u32(ReducerContext ctx, uint n, int data)
     {
         var key = n;
-        PkU32.UpdateByn(key, new PkU32 { n = n, data = data });
+        ctx.Db.PkU32.UpdateByn(key, new PkU32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_u32(uint n)
+    public static void delete_pk_u32(ReducerContext ctx, uint n)
     {
-        PkU32.DeleteByn(n);
+        ctx.Db.PkU32.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkU64
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public ulong n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_u64(ulong n, int data)
+    public static void insert_pk_u64(ReducerContext ctx, ulong n, int data)
     {
-        new PkU64 { n = n, data = data }.Insert();
+        ctx.Db.PkU64.Insert(new PkU64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_u64(ulong n, int data)
+    public static void update_pk_u64(ReducerContext ctx, ulong n, int data)
     {
         var key = n;
-        PkU64.UpdateByn(key, new PkU64 { n = n, data = data });
+        ctx.Db.PkU64.UpdateByn(key, new PkU64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_u64(ulong n)
+    public static void delete_pk_u64(ReducerContext ctx, ulong n)
     {
-        PkU64.DeleteByn(n);
+        ctx.Db.PkU64.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkU128
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public U128 n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_u128(U128 n, int data)
+    public static void insert_pk_u128(ReducerContext ctx, U128 n, int data)
     {
-        new PkU128 { n = n, data = data }.Insert();
+        ctx.Db.PkU128.Insert(new PkU128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_u128(U128 n, int data)
+    public static void update_pk_u128(ReducerContext ctx, U128 n, int data)
     {
         var key = n;
-        PkU128.UpdateByn(key, new PkU128 { n = n, data = data });
+        ctx.Db.PkU128.UpdateByn(key, new PkU128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_u128(U128 n)
+    public static void delete_pk_u128(ReducerContext ctx, U128 n)
     {
-        PkU128.DeleteByn(n);
+        ctx.Db.PkU128.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkU256
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public U256 n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_u256(U256 n, int data)
+    public static void insert_pk_u256(ReducerContext ctx, U256 n, int data)
     {
-        new PkU256 { n = n, data = data }.Insert();
+        ctx.Db.PkU256.Insert(new PkU256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_u256(U256 n, int data)
+    public static void update_pk_u256(ReducerContext ctx, U256 n, int data)
     {
         var key = n;
-        PkU256.UpdateByn(key, new PkU256 { n = n, data = data });
+        ctx.Db.PkU256.UpdateByn(key, new PkU256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_u256(U256 n)
+    public static void delete_pk_u256(ReducerContext ctx, U256 n)
     {
-        PkU256.DeleteByn(n);
+        ctx.Db.PkU256.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkI8
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public sbyte n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_i8(sbyte n, int data)
+    public static void insert_pk_i8(ReducerContext ctx, sbyte n, int data)
     {
-        new PkI8 { n = n, data = data }.Insert();
+        ctx.Db.PkI8.Insert(new PkI8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_i8(sbyte n, int data)
+    public static void update_pk_i8(ReducerContext ctx, sbyte n, int data)
     {
         var key = n;
-        PkI8.UpdateByn(key, new PkI8 { n = n, data = data });
+        ctx.Db.PkI8.UpdateByn(key, new PkI8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_i8(sbyte n)
+    public static void delete_pk_i8(ReducerContext ctx, sbyte n)
     {
-        PkI8.DeleteByn(n);
+        ctx.Db.PkI8.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkI16
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public short n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_i16(short n, int data)
+    public static void insert_pk_i16(ReducerContext ctx, short n, int data)
     {
-        new PkI16 { n = n, data = data }.Insert();
+        ctx.Db.PkI16.Insert(new PkI16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_i16(short n, int data)
+    public static void update_pk_i16(ReducerContext ctx, short n, int data)
     {
         var key = n;
-        PkI16.UpdateByn(key, new PkI16 { n = n, data = data });
+        ctx.Db.PkI16.UpdateByn(key, new PkI16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_i16(short n)
+    public static void delete_pk_i16(ReducerContext ctx, short n)
     {
-        PkI16.DeleteByn(n);
+        ctx.Db.PkI16.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkI32
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public int n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_i32(int n, int data)
+    public static void insert_pk_i32(ReducerContext ctx, int n, int data)
     {
-        new PkI32 { n = n, data = data }.Insert();
+        ctx.Db.PkI32.Insert(new PkI32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_i32(int n, int data)
+    public static void update_pk_i32(ReducerContext ctx, int n, int data)
     {
         var key = n;
-        PkI32.UpdateByn(key, new PkI32 { n = n, data = data });
+        ctx.Db.PkI32.UpdateByn(key, new PkI32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_i32(int n)
+    public static void delete_pk_i32(ReducerContext ctx, int n)
     {
-        PkI32.DeleteByn(n);
+        ctx.Db.PkI32.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkI64
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public long n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_i64(long n, int data)
+    public static void insert_pk_i64(ReducerContext ctx, long n, int data)
     {
-        new PkI64 { n = n, data = data }.Insert();
+        ctx.Db.PkI64.Insert(new PkI64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_i64(long n, int data)
+    public static void update_pk_i64(ReducerContext ctx, long n, int data)
     {
         var key = n;
-        PkI64.UpdateByn(key, new PkI64 { n = n, data = data });
+        ctx.Db.PkI64.UpdateByn(key, new PkI64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_i64(long n)
+    public static void delete_pk_i64(ReducerContext ctx, long n)
     {
-        PkI64.DeleteByn(n);
+        ctx.Db.PkI64.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkI128
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public I128 n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_i128(I128 n, int data)
+    public static void insert_pk_i128(ReducerContext ctx, I128 n, int data)
     {
-        new PkI128 { n = n, data = data }.Insert();
+        ctx.Db.PkI128.Insert(new PkI128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_i128(I128 n, int data)
+    public static void update_pk_i128(ReducerContext ctx, I128 n, int data)
     {
         var key = n;
-        PkI128.UpdateByn(key, new PkI128 { n = n, data = data });
+        ctx.Db.PkI128.UpdateByn(key, new PkI128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_i128(I128 n)
+    public static void delete_pk_i128(ReducerContext ctx, I128 n)
     {
-        PkI128.DeleteByn(n);
+        ctx.Db.PkI128.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkI256
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public I256 n;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_i256(I256 n, int data)
+    public static void insert_pk_i256(ReducerContext ctx, I256 n, int data)
     {
-        new PkI256 { n = n, data = data }.Insert();
+        ctx.Db.PkI256.Insert(new PkI256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_i256(I256 n, int data)
+    public static void update_pk_i256(ReducerContext ctx, I256 n, int data)
     {
         var key = n;
-        PkI256.UpdateByn(key, new PkI256 { n = n, data = data });
+        ctx.Db.PkI256.UpdateByn(key, new PkI256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_i256(I256 n)
+    public static void delete_pk_i256(ReducerContext ctx, I256 n)
     {
-        PkI256.DeleteByn(n);
+        ctx.Db.PkI256.DeleteByn(n);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkBool
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public bool b;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_bool(bool b, int data)
+    public static void insert_pk_bool(ReducerContext ctx, bool b, int data)
     {
-        new PkBool { b = b, data = data }.Insert();
+        ctx.Db.PkBool.Insert(new PkBool { b = b, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_bool(bool b, int data)
+    public static void update_pk_bool(ReducerContext ctx, bool b, int data)
     {
         var key = b;
-        PkBool.UpdateByb(key, new PkBool { b = b, data = data });
+        ctx.Db.PkBool.UpdateByb(key, new PkBool { b = b, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_bool(bool b)
+    public static void delete_pk_bool(ReducerContext ctx, bool b)
     {
-        PkBool.DeleteByb(b);
+        ctx.Db.PkBool.DeleteByb(b);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkString
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public string s;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_string(string s, int data)
+    public static void insert_pk_string(ReducerContext ctx, string s, int data)
     {
-        new PkString { s = s, data = data }.Insert();
+        ctx.Db.PkString.Insert(new PkString { s = s, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_string(string s, int data)
+    public static void update_pk_string(ReducerContext ctx, string s, int data)
     {
         var key = s;
-        PkString.UpdateBys(key, new PkString { s = s, data = data });
+        ctx.Db.PkString.UpdateBys(key, new PkString { s = s, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_string(string s)
+    public static void delete_pk_string(ReducerContext ctx, string s)
     {
-        PkString.DeleteBys(s);
+        ctx.Db.PkString.DeleteBys(s);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkIdentity
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public Identity i;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_identity(Identity i, int data)
+    public static void insert_pk_identity(ReducerContext ctx, Identity i, int data)
     {
-        new PkIdentity { i = i, data = data }.Insert();
+        ctx.Db.PkIdentity.Insert(new PkIdentity { i = i, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_identity(Identity i, int data)
+    public static void update_pk_identity(ReducerContext ctx, Identity i, int data)
     {
         var key = i;
-        PkIdentity.UpdateByi(key, new PkIdentity { i = i, data = data });
+        ctx.Db.PkIdentity.UpdateByi(key, new PkIdentity { i = i, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_identity(Identity i)
+    public static void delete_pk_identity(ReducerContext ctx, Identity i)
     {
-        PkIdentity.DeleteByi(i);
+        ctx.Db.PkIdentity.DeleteByi(i);
     }
 
     [SpacetimeDB.Table(Public = true)]
     public partial struct PkAddress
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [SpacetimeDB.PrimaryKey]
         public Address a;
         public int data;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_pk_address(Address a, int data)
+    public static void insert_pk_address(ReducerContext ctx, Address a, int data)
     {
-        new PkAddress { a = a, data = data }.Insert();
+        ctx.Db.PkAddress.Insert(new PkAddress { a = a, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_pk_address(Address a, int data)
+    public static void update_pk_address(ReducerContext ctx, Address a, int data)
     {
         var key = a;
-        PkAddress.UpdateBya(key, new PkAddress { a = a, data = data });
+        ctx.Db.PkAddress.UpdateBya(key, new PkAddress { a = a, data = data });
     }
 
     [SpacetimeDB.Reducer]
-    public static void delete_pk_address(Address a)
+    public static void delete_pk_address(ReducerContext ctx, Address a)
     {
-        PkAddress.DeleteBya(a);
+        ctx.Db.PkAddress.DeleteBya(a);
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_one_identity(ReducerContext ctx)
     {
-        new OneIdentity { i = ctx.Sender }.Insert();
+        ctx.Db.OneIdentity.Insert(new OneIdentity { i = ctx.Sender });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_vec_identity(ReducerContext ctx)
     {
-        new VecIdentity { i = new List<Identity> { ctx.Sender } }.Insert();
+        ctx.Db.VecIdentity.Insert(new VecIdentity { i = new List<Identity> { ctx.Sender } });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_unique_identity(ReducerContext ctx, int data)
     {
-        new UniqueIdentity { i = ctx.Sender, data = data }.Insert();
+        ctx.Db.UniqueIdentity.Insert(new UniqueIdentity { i = ctx.Sender, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_pk_identity(ReducerContext ctx, int data)
     {
-        new PkIdentity { i = ctx.Sender, data = data }.Insert();
+        ctx.Db.PkIdentity.Insert(new PkIdentity { i = ctx.Sender, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_one_address(ReducerContext ctx)
     {
-        new OneAddress { a = (Address)ctx.Address!, }.Insert();
+        ctx.Db.OneAddress.Insert(new OneAddress { a = (Address)ctx.Address!, });
     }
 
     [SpacetimeDB.Reducer]
@@ -1648,13 +1650,13 @@ static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_caller_unique_address(ReducerContext ctx, int data)
     {
-        new UniqueAddress { a = (Address)ctx.Address!, data = data }.Insert();
+        ctx.Db.UniqueAddress.Insert(new UniqueAddress { a = (Address)ctx.Address!, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_pk_address(ReducerContext ctx, int data)
     {
-        new PkAddress { a = (Address)ctx.Address!, data = data }.Insert();
+        ctx.Db.PkAddress.Insert(new PkAddress { a = (Address)ctx.Address!, data = data });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -1686,6 +1688,7 @@ static partial class Module
 
     [SpacetimeDB.Reducer]
     public static void insert_large_table(
+        ReducerContext ctx,
         byte a,
         ushort b,
         uint c,
@@ -1710,8 +1713,7 @@ static partial class Module
         EveryVecStruct v
     )
     {
-        new LargeTable
-        {
+        ctx.Db.LargeTable.Insert(new LargeTable {
             a = a,
             b = b,
             c = c,
@@ -1734,19 +1736,18 @@ static partial class Module
             t = t,
             u = u,
             v = v,
-        }.Insert();
+        });
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_primitives_as_strings(EveryPrimitiveStruct s)
+    public static void insert_primitives_as_strings(ReducerContext ctx, EveryPrimitiveStruct s)
     {
-        new VecString
-        {
+        ctx.Db.VecString.Insert(new VecString {
             s = typeof(EveryPrimitiveStruct)
                 .GetFields()
                 .Select(f => f.GetValue(s)!.ToString()!.ToLowerInvariant())
                 .ToList()
-        }.Insert();
+        });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -1757,11 +1758,11 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_table_holds_table(OneU8 a, VecU8 b)
+    public static void insert_table_holds_table(ReducerContext ctx, OneU8 a, VecU8 b)
     {
-        new TableHoldsTable { a = a, b = b }.Insert();
+        ctx.Db.TableHoldsTable.Insert(new TableHoldsTable { a = a, b = b });
     }
 
     [SpacetimeDB.Reducer]
-    public static void no_op_succeeds() { }
+    public static void no_op_succeeds(ReducerContext ctx) { }
 }

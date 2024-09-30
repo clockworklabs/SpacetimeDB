@@ -1930,326 +1930,326 @@ impl TryFrom<__ws::DatabaseUpdate> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
-                "LargeTable" => {
+                "large_table" => {
                     db_update.large_table =
                         large_table_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneAddress" => {
+                "one_address" => {
                     db_update.one_address =
                         one_address_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneBool" => {
+                "one_bool" => {
                     db_update.one_bool = one_bool_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneByteStruct" => {
+                "one_byte_struct" => {
                     db_update.one_byte_struct =
                         one_byte_struct_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneEnumWithPayload" => {
+                "one_enum_with_payload" => {
                     db_update.one_enum_with_payload =
                         one_enum_with_payload_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneEveryPrimitiveStruct" => {
+                "one_every_primitive_struct" => {
                     db_update.one_every_primitive_struct = one_every_primitive_struct_table::parse_table_update(
                         table_update.deletes,
                         table_update.inserts,
                     )?
                 }
-                "OneEveryVecStruct" => {
+                "one_every_vec_struct" => {
                     db_update.one_every_vec_struct =
                         one_every_vec_struct_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneF32" => {
+                "one_f32" => {
                     db_update.one_f_32 = one_f_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneF64" => {
+                "one_f64" => {
                     db_update.one_f_64 = one_f_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneI128" => {
+                "one_i128" => {
                     db_update.one_i_128 =
                         one_i_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneI16" => {
+                "one_i16" => {
                     db_update.one_i_16 = one_i_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneI256" => {
+                "one_i256" => {
                     db_update.one_i_256 =
                         one_i_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneI32" => {
+                "one_i32" => {
                     db_update.one_i_32 = one_i_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneI64" => {
+                "one_i64" => {
                     db_update.one_i_64 = one_i_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneI8" => {
+                "one_i8" => {
                     db_update.one_i_8 = one_i_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneIdentity" => {
+                "one_identity" => {
                     db_update.one_identity =
                         one_identity_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneSimpleEnum" => {
+                "one_simple_enum" => {
                     db_update.one_simple_enum =
                         one_simple_enum_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneString" => {
+                "one_string" => {
                     db_update.one_string =
                         one_string_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneU128" => {
+                "one_u128" => {
                     db_update.one_u_128 =
                         one_u_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneU16" => {
+                "one_u16" => {
                     db_update.one_u_16 = one_u_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneU256" => {
+                "one_u256" => {
                     db_update.one_u_256 =
                         one_u_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneU32" => {
+                "one_u32" => {
                     db_update.one_u_32 = one_u_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneU64" => {
+                "one_u64" => {
                     db_update.one_u_64 = one_u_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneU8" => {
+                "one_u8" => {
                     db_update.one_u_8 = one_u_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OneUnitStruct" => {
+                "one_unit_struct" => {
                     db_update.one_unit_struct =
                         one_unit_struct_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OptionEveryPrimitiveStruct" => {
+                "option_every_primitive_struct" => {
                     db_update.option_every_primitive_struct = option_every_primitive_struct_table::parse_table_update(
                         table_update.deletes,
                         table_update.inserts,
                     )?
                 }
-                "OptionI32" => {
+                "option_i32" => {
                     db_update.option_i_32 =
                         option_i_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OptionIdentity" => {
+                "option_identity" => {
                     db_update.option_identity =
                         option_identity_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OptionSimpleEnum" => {
+                "option_simple_enum" => {
                     db_update.option_simple_enum =
                         option_simple_enum_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OptionString" => {
+                "option_string" => {
                     db_update.option_string =
                         option_string_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "OptionVecOptionI32" => {
+                "option_vec_option_i32" => {
                     db_update.option_vec_option_i_32 =
                         option_vec_option_i_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkAddress" => {
+                "pk_address" => {
                     db_update.pk_address =
                         pk_address_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkBool" => {
+                "pk_bool" => {
                     db_update.pk_bool = pk_bool_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkI128" => {
+                "pk_i128" => {
                     db_update.pk_i_128 = pk_i_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkI16" => {
+                "pk_i16" => {
                     db_update.pk_i_16 = pk_i_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkI256" => {
+                "pk_i256" => {
                     db_update.pk_i_256 = pk_i_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkI32" => {
+                "pk_i32" => {
                     db_update.pk_i_32 = pk_i_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkI64" => {
+                "pk_i64" => {
                     db_update.pk_i_64 = pk_i_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkI8" => {
+                "pk_i8" => {
                     db_update.pk_i_8 = pk_i_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkIdentity" => {
+                "pk_identity" => {
                     db_update.pk_identity =
                         pk_identity_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkString" => {
+                "pk_string" => {
                     db_update.pk_string =
                         pk_string_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkU128" => {
+                "pk_u128" => {
                     db_update.pk_u_128 = pk_u_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkU16" => {
+                "pk_u16" => {
                     db_update.pk_u_16 = pk_u_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkU256" => {
+                "pk_u256" => {
                     db_update.pk_u_256 = pk_u_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkU32" => {
+                "pk_u32" => {
                     db_update.pk_u_32 = pk_u_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkU64" => {
+                "pk_u64" => {
                     db_update.pk_u_64 = pk_u_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "PkU8" => {
+                "pk_u8" => {
                     db_update.pk_u_8 = pk_u_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "TableHoldsTable" => {
+                "table_holds_table" => {
                     db_update.table_holds_table =
                         table_holds_table_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueAddress" => {
+                "unique_address" => {
                     db_update.unique_address =
                         unique_address_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueBool" => {
+                "unique_bool" => {
                     db_update.unique_bool =
                         unique_bool_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueI128" => {
+                "unique_i128" => {
                     db_update.unique_i_128 =
                         unique_i_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueI16" => {
+                "unique_i16" => {
                     db_update.unique_i_16 =
                         unique_i_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueI256" => {
+                "unique_i256" => {
                     db_update.unique_i_256 =
                         unique_i_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueI32" => {
+                "unique_i32" => {
                     db_update.unique_i_32 =
                         unique_i_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueI64" => {
+                "unique_i64" => {
                     db_update.unique_i_64 =
                         unique_i_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueI8" => {
+                "unique_i8" => {
                     db_update.unique_i_8 =
                         unique_i_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueIdentity" => {
+                "unique_identity" => {
                     db_update.unique_identity =
                         unique_identity_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueString" => {
+                "unique_string" => {
                     db_update.unique_string =
                         unique_string_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueU128" => {
+                "unique_u128" => {
                     db_update.unique_u_128 =
                         unique_u_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueU16" => {
+                "unique_u16" => {
                     db_update.unique_u_16 =
                         unique_u_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueU256" => {
+                "unique_u256" => {
                     db_update.unique_u_256 =
                         unique_u_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueU32" => {
+                "unique_u32" => {
                     db_update.unique_u_32 =
                         unique_u_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueU64" => {
+                "unique_u64" => {
                     db_update.unique_u_64 =
                         unique_u_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "UniqueU8" => {
+                "unique_u8" => {
                     db_update.unique_u_8 =
                         unique_u_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecAddress" => {
+                "vec_address" => {
                     db_update.vec_address =
                         vec_address_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecBool" => {
+                "vec_bool" => {
                     db_update.vec_bool = vec_bool_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecByteStruct" => {
+                "vec_byte_struct" => {
                     db_update.vec_byte_struct =
                         vec_byte_struct_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecEnumWithPayload" => {
+                "vec_enum_with_payload" => {
                     db_update.vec_enum_with_payload =
                         vec_enum_with_payload_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecEveryPrimitiveStruct" => {
+                "vec_every_primitive_struct" => {
                     db_update.vec_every_primitive_struct = vec_every_primitive_struct_table::parse_table_update(
                         table_update.deletes,
                         table_update.inserts,
                     )?
                 }
-                "VecEveryVecStruct" => {
+                "vec_every_vec_struct" => {
                     db_update.vec_every_vec_struct =
                         vec_every_vec_struct_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecF32" => {
+                "vec_f32" => {
                     db_update.vec_f_32 = vec_f_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecF64" => {
+                "vec_f64" => {
                     db_update.vec_f_64 = vec_f_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecI128" => {
+                "vec_i128" => {
                     db_update.vec_i_128 =
                         vec_i_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecI16" => {
+                "vec_i16" => {
                     db_update.vec_i_16 = vec_i_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecI256" => {
+                "vec_i256" => {
                     db_update.vec_i_256 =
                         vec_i_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecI32" => {
+                "vec_i32" => {
                     db_update.vec_i_32 = vec_i_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecI64" => {
+                "vec_i64" => {
                     db_update.vec_i_64 = vec_i_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecI8" => {
+                "vec_i8" => {
                     db_update.vec_i_8 = vec_i_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecIdentity" => {
+                "vec_identity" => {
                     db_update.vec_identity =
                         vec_identity_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecSimpleEnum" => {
+                "vec_simple_enum" => {
                     db_update.vec_simple_enum =
                         vec_simple_enum_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecString" => {
+                "vec_string" => {
                     db_update.vec_string =
                         vec_string_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecU128" => {
+                "vec_u128" => {
                     db_update.vec_u_128 =
                         vec_u_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecU16" => {
+                "vec_u16" => {
                     db_update.vec_u_16 = vec_u_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecU256" => {
+                "vec_u256" => {
                     db_update.vec_u_256 =
                         vec_u_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecU32" => {
+                "vec_u32" => {
                     db_update.vec_u_32 = vec_u_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecU64" => {
+                "vec_u64" => {
                     db_update.vec_u_64 = vec_u_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecU8" => {
+                "vec_u8" => {
                     db_update.vec_u_8 = vec_u_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
-                "VecUnitStruct" => {
+                "vec_unit_struct" => {
                     db_update.vec_unit_struct =
                         vec_unit_struct_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
@@ -2267,225 +2267,225 @@ impl __sdk::spacetime_module::InModule for DbUpdate {
 
 impl __sdk::spacetime_module::DbUpdate for DbUpdate {
     fn apply_to_client_cache(&self, cache: &mut __sdk::client_cache::ClientCache<RemoteModule>) {
-        cache.apply_diff_to_table::<LargeTable>("LargeTable", &self.large_table);
-        cache.apply_diff_to_table::<OneAddress>("OneAddress", &self.one_address);
-        cache.apply_diff_to_table::<OneBool>("OneBool", &self.one_bool);
-        cache.apply_diff_to_table::<OneByteStruct>("OneByteStruct", &self.one_byte_struct);
-        cache.apply_diff_to_table::<OneEnumWithPayload>("OneEnumWithPayload", &self.one_enum_with_payload);
+        cache.apply_diff_to_table::<LargeTable>("large_table", &self.large_table);
+        cache.apply_diff_to_table::<OneAddress>("one_address", &self.one_address);
+        cache.apply_diff_to_table::<OneBool>("one_bool", &self.one_bool);
+        cache.apply_diff_to_table::<OneByteStruct>("one_byte_struct", &self.one_byte_struct);
+        cache.apply_diff_to_table::<OneEnumWithPayload>("one_enum_with_payload", &self.one_enum_with_payload);
         cache.apply_diff_to_table::<OneEveryPrimitiveStruct>(
-            "OneEveryPrimitiveStruct",
+            "one_every_primitive_struct",
             &self.one_every_primitive_struct,
         );
-        cache.apply_diff_to_table::<OneEveryVecStruct>("OneEveryVecStruct", &self.one_every_vec_struct);
-        cache.apply_diff_to_table::<OneF32>("OneF32", &self.one_f_32);
-        cache.apply_diff_to_table::<OneF64>("OneF64", &self.one_f_64);
-        cache.apply_diff_to_table::<OneI128>("OneI128", &self.one_i_128);
-        cache.apply_diff_to_table::<OneI16>("OneI16", &self.one_i_16);
-        cache.apply_diff_to_table::<OneI256>("OneI256", &self.one_i_256);
-        cache.apply_diff_to_table::<OneI32>("OneI32", &self.one_i_32);
-        cache.apply_diff_to_table::<OneI64>("OneI64", &self.one_i_64);
-        cache.apply_diff_to_table::<OneI8>("OneI8", &self.one_i_8);
-        cache.apply_diff_to_table::<OneIdentity>("OneIdentity", &self.one_identity);
-        cache.apply_diff_to_table::<OneSimpleEnum>("OneSimpleEnum", &self.one_simple_enum);
-        cache.apply_diff_to_table::<OneString>("OneString", &self.one_string);
-        cache.apply_diff_to_table::<OneU128>("OneU128", &self.one_u_128);
-        cache.apply_diff_to_table::<OneU16>("OneU16", &self.one_u_16);
-        cache.apply_diff_to_table::<OneU256>("OneU256", &self.one_u_256);
-        cache.apply_diff_to_table::<OneU32>("OneU32", &self.one_u_32);
-        cache.apply_diff_to_table::<OneU64>("OneU64", &self.one_u_64);
-        cache.apply_diff_to_table::<OneU8>("OneU8", &self.one_u_8);
-        cache.apply_diff_to_table::<OneUnitStruct>("OneUnitStruct", &self.one_unit_struct);
+        cache.apply_diff_to_table::<OneEveryVecStruct>("one_every_vec_struct", &self.one_every_vec_struct);
+        cache.apply_diff_to_table::<OneF32>("one_f32", &self.one_f_32);
+        cache.apply_diff_to_table::<OneF64>("one_f64", &self.one_f_64);
+        cache.apply_diff_to_table::<OneI128>("one_i128", &self.one_i_128);
+        cache.apply_diff_to_table::<OneI16>("one_i16", &self.one_i_16);
+        cache.apply_diff_to_table::<OneI256>("one_i256", &self.one_i_256);
+        cache.apply_diff_to_table::<OneI32>("one_i32", &self.one_i_32);
+        cache.apply_diff_to_table::<OneI64>("one_i64", &self.one_i_64);
+        cache.apply_diff_to_table::<OneI8>("one_i8", &self.one_i_8);
+        cache.apply_diff_to_table::<OneIdentity>("one_identity", &self.one_identity);
+        cache.apply_diff_to_table::<OneSimpleEnum>("one_simple_enum", &self.one_simple_enum);
+        cache.apply_diff_to_table::<OneString>("one_string", &self.one_string);
+        cache.apply_diff_to_table::<OneU128>("one_u128", &self.one_u_128);
+        cache.apply_diff_to_table::<OneU16>("one_u16", &self.one_u_16);
+        cache.apply_diff_to_table::<OneU256>("one_u256", &self.one_u_256);
+        cache.apply_diff_to_table::<OneU32>("one_u32", &self.one_u_32);
+        cache.apply_diff_to_table::<OneU64>("one_u64", &self.one_u_64);
+        cache.apply_diff_to_table::<OneU8>("one_u8", &self.one_u_8);
+        cache.apply_diff_to_table::<OneUnitStruct>("one_unit_struct", &self.one_unit_struct);
         cache.apply_diff_to_table::<OptionEveryPrimitiveStruct>(
-            "OptionEveryPrimitiveStruct",
+            "option_every_primitive_struct",
             &self.option_every_primitive_struct,
         );
-        cache.apply_diff_to_table::<OptionI32>("OptionI32", &self.option_i_32);
-        cache.apply_diff_to_table::<OptionIdentity>("OptionIdentity", &self.option_identity);
-        cache.apply_diff_to_table::<OptionSimpleEnum>("OptionSimpleEnum", &self.option_simple_enum);
-        cache.apply_diff_to_table::<OptionString>("OptionString", &self.option_string);
-        cache.apply_diff_to_table::<OptionVecOptionI32>("OptionVecOptionI32", &self.option_vec_option_i_32);
-        cache.apply_diff_to_table::<PkAddress>("PkAddress", &self.pk_address);
-        cache.apply_diff_to_table::<PkBool>("PkBool", &self.pk_bool);
-        cache.apply_diff_to_table::<PkI128>("PkI128", &self.pk_i_128);
-        cache.apply_diff_to_table::<PkI16>("PkI16", &self.pk_i_16);
-        cache.apply_diff_to_table::<PkI256>("PkI256", &self.pk_i_256);
-        cache.apply_diff_to_table::<PkI32>("PkI32", &self.pk_i_32);
-        cache.apply_diff_to_table::<PkI64>("PkI64", &self.pk_i_64);
-        cache.apply_diff_to_table::<PkI8>("PkI8", &self.pk_i_8);
-        cache.apply_diff_to_table::<PkIdentity>("PkIdentity", &self.pk_identity);
-        cache.apply_diff_to_table::<PkString>("PkString", &self.pk_string);
-        cache.apply_diff_to_table::<PkU128>("PkU128", &self.pk_u_128);
-        cache.apply_diff_to_table::<PkU16>("PkU16", &self.pk_u_16);
-        cache.apply_diff_to_table::<PkU256>("PkU256", &self.pk_u_256);
-        cache.apply_diff_to_table::<PkU32>("PkU32", &self.pk_u_32);
-        cache.apply_diff_to_table::<PkU64>("PkU64", &self.pk_u_64);
-        cache.apply_diff_to_table::<PkU8>("PkU8", &self.pk_u_8);
-        cache.apply_diff_to_table::<TableHoldsTable>("TableHoldsTable", &self.table_holds_table);
-        cache.apply_diff_to_table::<UniqueAddress>("UniqueAddress", &self.unique_address);
-        cache.apply_diff_to_table::<UniqueBool>("UniqueBool", &self.unique_bool);
-        cache.apply_diff_to_table::<UniqueI128>("UniqueI128", &self.unique_i_128);
-        cache.apply_diff_to_table::<UniqueI16>("UniqueI16", &self.unique_i_16);
-        cache.apply_diff_to_table::<UniqueI256>("UniqueI256", &self.unique_i_256);
-        cache.apply_diff_to_table::<UniqueI32>("UniqueI32", &self.unique_i_32);
-        cache.apply_diff_to_table::<UniqueI64>("UniqueI64", &self.unique_i_64);
-        cache.apply_diff_to_table::<UniqueI8>("UniqueI8", &self.unique_i_8);
-        cache.apply_diff_to_table::<UniqueIdentity>("UniqueIdentity", &self.unique_identity);
-        cache.apply_diff_to_table::<UniqueString>("UniqueString", &self.unique_string);
-        cache.apply_diff_to_table::<UniqueU128>("UniqueU128", &self.unique_u_128);
-        cache.apply_diff_to_table::<UniqueU16>("UniqueU16", &self.unique_u_16);
-        cache.apply_diff_to_table::<UniqueU256>("UniqueU256", &self.unique_u_256);
-        cache.apply_diff_to_table::<UniqueU32>("UniqueU32", &self.unique_u_32);
-        cache.apply_diff_to_table::<UniqueU64>("UniqueU64", &self.unique_u_64);
-        cache.apply_diff_to_table::<UniqueU8>("UniqueU8", &self.unique_u_8);
-        cache.apply_diff_to_table::<VecAddress>("VecAddress", &self.vec_address);
-        cache.apply_diff_to_table::<VecBool>("VecBool", &self.vec_bool);
-        cache.apply_diff_to_table::<VecByteStruct>("VecByteStruct", &self.vec_byte_struct);
-        cache.apply_diff_to_table::<VecEnumWithPayload>("VecEnumWithPayload", &self.vec_enum_with_payload);
+        cache.apply_diff_to_table::<OptionI32>("option_i32", &self.option_i_32);
+        cache.apply_diff_to_table::<OptionIdentity>("option_identity", &self.option_identity);
+        cache.apply_diff_to_table::<OptionSimpleEnum>("option_simple_enum", &self.option_simple_enum);
+        cache.apply_diff_to_table::<OptionString>("option_string", &self.option_string);
+        cache.apply_diff_to_table::<OptionVecOptionI32>("option_vec_option_i32", &self.option_vec_option_i_32);
+        cache.apply_diff_to_table::<PkAddress>("pk_address", &self.pk_address);
+        cache.apply_diff_to_table::<PkBool>("pk_bool", &self.pk_bool);
+        cache.apply_diff_to_table::<PkI128>("pk_i128", &self.pk_i_128);
+        cache.apply_diff_to_table::<PkI16>("pk_i16", &self.pk_i_16);
+        cache.apply_diff_to_table::<PkI256>("pk_i256", &self.pk_i_256);
+        cache.apply_diff_to_table::<PkI32>("pk_i32", &self.pk_i_32);
+        cache.apply_diff_to_table::<PkI64>("pk_i64", &self.pk_i_64);
+        cache.apply_diff_to_table::<PkI8>("pk_i8", &self.pk_i_8);
+        cache.apply_diff_to_table::<PkIdentity>("pk_identity", &self.pk_identity);
+        cache.apply_diff_to_table::<PkString>("pk_string", &self.pk_string);
+        cache.apply_diff_to_table::<PkU128>("pk_u128", &self.pk_u_128);
+        cache.apply_diff_to_table::<PkU16>("pk_u16", &self.pk_u_16);
+        cache.apply_diff_to_table::<PkU256>("pk_u256", &self.pk_u_256);
+        cache.apply_diff_to_table::<PkU32>("pk_u32", &self.pk_u_32);
+        cache.apply_diff_to_table::<PkU64>("pk_u64", &self.pk_u_64);
+        cache.apply_diff_to_table::<PkU8>("pk_u8", &self.pk_u_8);
+        cache.apply_diff_to_table::<TableHoldsTable>("table_holds_table", &self.table_holds_table);
+        cache.apply_diff_to_table::<UniqueAddress>("unique_address", &self.unique_address);
+        cache.apply_diff_to_table::<UniqueBool>("unique_bool", &self.unique_bool);
+        cache.apply_diff_to_table::<UniqueI128>("unique_i128", &self.unique_i_128);
+        cache.apply_diff_to_table::<UniqueI16>("unique_i16", &self.unique_i_16);
+        cache.apply_diff_to_table::<UniqueI256>("unique_i256", &self.unique_i_256);
+        cache.apply_diff_to_table::<UniqueI32>("unique_i32", &self.unique_i_32);
+        cache.apply_diff_to_table::<UniqueI64>("unique_i64", &self.unique_i_64);
+        cache.apply_diff_to_table::<UniqueI8>("unique_i8", &self.unique_i_8);
+        cache.apply_diff_to_table::<UniqueIdentity>("unique_identity", &self.unique_identity);
+        cache.apply_diff_to_table::<UniqueString>("unique_string", &self.unique_string);
+        cache.apply_diff_to_table::<UniqueU128>("unique_u128", &self.unique_u_128);
+        cache.apply_diff_to_table::<UniqueU16>("unique_u16", &self.unique_u_16);
+        cache.apply_diff_to_table::<UniqueU256>("unique_u256", &self.unique_u_256);
+        cache.apply_diff_to_table::<UniqueU32>("unique_u32", &self.unique_u_32);
+        cache.apply_diff_to_table::<UniqueU64>("unique_u64", &self.unique_u_64);
+        cache.apply_diff_to_table::<UniqueU8>("unique_u8", &self.unique_u_8);
+        cache.apply_diff_to_table::<VecAddress>("vec_address", &self.vec_address);
+        cache.apply_diff_to_table::<VecBool>("vec_bool", &self.vec_bool);
+        cache.apply_diff_to_table::<VecByteStruct>("vec_byte_struct", &self.vec_byte_struct);
+        cache.apply_diff_to_table::<VecEnumWithPayload>("vec_enum_with_payload", &self.vec_enum_with_payload);
         cache.apply_diff_to_table::<VecEveryPrimitiveStruct>(
-            "VecEveryPrimitiveStruct",
+            "vec_every_primitive_struct",
             &self.vec_every_primitive_struct,
         );
-        cache.apply_diff_to_table::<VecEveryVecStruct>("VecEveryVecStruct", &self.vec_every_vec_struct);
-        cache.apply_diff_to_table::<VecF32>("VecF32", &self.vec_f_32);
-        cache.apply_diff_to_table::<VecF64>("VecF64", &self.vec_f_64);
-        cache.apply_diff_to_table::<VecI128>("VecI128", &self.vec_i_128);
-        cache.apply_diff_to_table::<VecI16>("VecI16", &self.vec_i_16);
-        cache.apply_diff_to_table::<VecI256>("VecI256", &self.vec_i_256);
-        cache.apply_diff_to_table::<VecI32>("VecI32", &self.vec_i_32);
-        cache.apply_diff_to_table::<VecI64>("VecI64", &self.vec_i_64);
-        cache.apply_diff_to_table::<VecI8>("VecI8", &self.vec_i_8);
-        cache.apply_diff_to_table::<VecIdentity>("VecIdentity", &self.vec_identity);
-        cache.apply_diff_to_table::<VecSimpleEnum>("VecSimpleEnum", &self.vec_simple_enum);
-        cache.apply_diff_to_table::<VecString>("VecString", &self.vec_string);
-        cache.apply_diff_to_table::<VecU128>("VecU128", &self.vec_u_128);
-        cache.apply_diff_to_table::<VecU16>("VecU16", &self.vec_u_16);
-        cache.apply_diff_to_table::<VecU256>("VecU256", &self.vec_u_256);
-        cache.apply_diff_to_table::<VecU32>("VecU32", &self.vec_u_32);
-        cache.apply_diff_to_table::<VecU64>("VecU64", &self.vec_u_64);
-        cache.apply_diff_to_table::<VecU8>("VecU8", &self.vec_u_8);
-        cache.apply_diff_to_table::<VecUnitStruct>("VecUnitStruct", &self.vec_unit_struct);
+        cache.apply_diff_to_table::<VecEveryVecStruct>("vec_every_vec_struct", &self.vec_every_vec_struct);
+        cache.apply_diff_to_table::<VecF32>("vec_f32", &self.vec_f_32);
+        cache.apply_diff_to_table::<VecF64>("vec_f64", &self.vec_f_64);
+        cache.apply_diff_to_table::<VecI128>("vec_i128", &self.vec_i_128);
+        cache.apply_diff_to_table::<VecI16>("vec_i16", &self.vec_i_16);
+        cache.apply_diff_to_table::<VecI256>("vec_i256", &self.vec_i_256);
+        cache.apply_diff_to_table::<VecI32>("vec_i32", &self.vec_i_32);
+        cache.apply_diff_to_table::<VecI64>("vec_i64", &self.vec_i_64);
+        cache.apply_diff_to_table::<VecI8>("vec_i8", &self.vec_i_8);
+        cache.apply_diff_to_table::<VecIdentity>("vec_identity", &self.vec_identity);
+        cache.apply_diff_to_table::<VecSimpleEnum>("vec_simple_enum", &self.vec_simple_enum);
+        cache.apply_diff_to_table::<VecString>("vec_string", &self.vec_string);
+        cache.apply_diff_to_table::<VecU128>("vec_u128", &self.vec_u_128);
+        cache.apply_diff_to_table::<VecU16>("vec_u16", &self.vec_u_16);
+        cache.apply_diff_to_table::<VecU256>("vec_u256", &self.vec_u_256);
+        cache.apply_diff_to_table::<VecU32>("vec_u32", &self.vec_u_32);
+        cache.apply_diff_to_table::<VecU64>("vec_u64", &self.vec_u_64);
+        cache.apply_diff_to_table::<VecU8>("vec_u8", &self.vec_u_8);
+        cache.apply_diff_to_table::<VecUnitStruct>("vec_unit_struct", &self.vec_unit_struct);
     }
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::callbacks::DbCallbacks<RemoteModule>) {
-        callbacks.invoke_table_row_callbacks::<LargeTable>("LargeTable", &self.large_table, event);
-        callbacks.invoke_table_row_callbacks::<OneAddress>("OneAddress", &self.one_address, event);
-        callbacks.invoke_table_row_callbacks::<OneBool>("OneBool", &self.one_bool, event);
-        callbacks.invoke_table_row_callbacks::<OneByteStruct>("OneByteStruct", &self.one_byte_struct, event);
+        callbacks.invoke_table_row_callbacks::<LargeTable>("large_table", &self.large_table, event);
+        callbacks.invoke_table_row_callbacks::<OneAddress>("one_address", &self.one_address, event);
+        callbacks.invoke_table_row_callbacks::<OneBool>("one_bool", &self.one_bool, event);
+        callbacks.invoke_table_row_callbacks::<OneByteStruct>("one_byte_struct", &self.one_byte_struct, event);
         callbacks.invoke_table_row_callbacks::<OneEnumWithPayload>(
-            "OneEnumWithPayload",
+            "one_enum_with_payload",
             &self.one_enum_with_payload,
             event,
         );
         callbacks.invoke_table_row_callbacks::<OneEveryPrimitiveStruct>(
-            "OneEveryPrimitiveStruct",
+            "one_every_primitive_struct",
             &self.one_every_primitive_struct,
             event,
         );
         callbacks.invoke_table_row_callbacks::<OneEveryVecStruct>(
-            "OneEveryVecStruct",
+            "one_every_vec_struct",
             &self.one_every_vec_struct,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<OneF32>("OneF32", &self.one_f_32, event);
-        callbacks.invoke_table_row_callbacks::<OneF64>("OneF64", &self.one_f_64, event);
-        callbacks.invoke_table_row_callbacks::<OneI128>("OneI128", &self.one_i_128, event);
-        callbacks.invoke_table_row_callbacks::<OneI16>("OneI16", &self.one_i_16, event);
-        callbacks.invoke_table_row_callbacks::<OneI256>("OneI256", &self.one_i_256, event);
-        callbacks.invoke_table_row_callbacks::<OneI32>("OneI32", &self.one_i_32, event);
-        callbacks.invoke_table_row_callbacks::<OneI64>("OneI64", &self.one_i_64, event);
-        callbacks.invoke_table_row_callbacks::<OneI8>("OneI8", &self.one_i_8, event);
-        callbacks.invoke_table_row_callbacks::<OneIdentity>("OneIdentity", &self.one_identity, event);
-        callbacks.invoke_table_row_callbacks::<OneSimpleEnum>("OneSimpleEnum", &self.one_simple_enum, event);
-        callbacks.invoke_table_row_callbacks::<OneString>("OneString", &self.one_string, event);
-        callbacks.invoke_table_row_callbacks::<OneU128>("OneU128", &self.one_u_128, event);
-        callbacks.invoke_table_row_callbacks::<OneU16>("OneU16", &self.one_u_16, event);
-        callbacks.invoke_table_row_callbacks::<OneU256>("OneU256", &self.one_u_256, event);
-        callbacks.invoke_table_row_callbacks::<OneU32>("OneU32", &self.one_u_32, event);
-        callbacks.invoke_table_row_callbacks::<OneU64>("OneU64", &self.one_u_64, event);
-        callbacks.invoke_table_row_callbacks::<OneU8>("OneU8", &self.one_u_8, event);
-        callbacks.invoke_table_row_callbacks::<OneUnitStruct>("OneUnitStruct", &self.one_unit_struct, event);
+        callbacks.invoke_table_row_callbacks::<OneF32>("one_f32", &self.one_f_32, event);
+        callbacks.invoke_table_row_callbacks::<OneF64>("one_f64", &self.one_f_64, event);
+        callbacks.invoke_table_row_callbacks::<OneI128>("one_i128", &self.one_i_128, event);
+        callbacks.invoke_table_row_callbacks::<OneI16>("one_i16", &self.one_i_16, event);
+        callbacks.invoke_table_row_callbacks::<OneI256>("one_i256", &self.one_i_256, event);
+        callbacks.invoke_table_row_callbacks::<OneI32>("one_i32", &self.one_i_32, event);
+        callbacks.invoke_table_row_callbacks::<OneI64>("one_i64", &self.one_i_64, event);
+        callbacks.invoke_table_row_callbacks::<OneI8>("one_i8", &self.one_i_8, event);
+        callbacks.invoke_table_row_callbacks::<OneIdentity>("one_identity", &self.one_identity, event);
+        callbacks.invoke_table_row_callbacks::<OneSimpleEnum>("one_simple_enum", &self.one_simple_enum, event);
+        callbacks.invoke_table_row_callbacks::<OneString>("one_string", &self.one_string, event);
+        callbacks.invoke_table_row_callbacks::<OneU128>("one_u128", &self.one_u_128, event);
+        callbacks.invoke_table_row_callbacks::<OneU16>("one_u16", &self.one_u_16, event);
+        callbacks.invoke_table_row_callbacks::<OneU256>("one_u256", &self.one_u_256, event);
+        callbacks.invoke_table_row_callbacks::<OneU32>("one_u32", &self.one_u_32, event);
+        callbacks.invoke_table_row_callbacks::<OneU64>("one_u64", &self.one_u_64, event);
+        callbacks.invoke_table_row_callbacks::<OneU8>("one_u8", &self.one_u_8, event);
+        callbacks.invoke_table_row_callbacks::<OneUnitStruct>("one_unit_struct", &self.one_unit_struct, event);
         callbacks.invoke_table_row_callbacks::<OptionEveryPrimitiveStruct>(
-            "OptionEveryPrimitiveStruct",
+            "option_every_primitive_struct",
             &self.option_every_primitive_struct,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<OptionI32>("OptionI32", &self.option_i_32, event);
-        callbacks.invoke_table_row_callbacks::<OptionIdentity>("OptionIdentity", &self.option_identity, event);
-        callbacks.invoke_table_row_callbacks::<OptionSimpleEnum>("OptionSimpleEnum", &self.option_simple_enum, event);
-        callbacks.invoke_table_row_callbacks::<OptionString>("OptionString", &self.option_string, event);
+        callbacks.invoke_table_row_callbacks::<OptionI32>("option_i32", &self.option_i_32, event);
+        callbacks.invoke_table_row_callbacks::<OptionIdentity>("option_identity", &self.option_identity, event);
+        callbacks.invoke_table_row_callbacks::<OptionSimpleEnum>("option_simple_enum", &self.option_simple_enum, event);
+        callbacks.invoke_table_row_callbacks::<OptionString>("option_string", &self.option_string, event);
         callbacks.invoke_table_row_callbacks::<OptionVecOptionI32>(
-            "OptionVecOptionI32",
+            "option_vec_option_i32",
             &self.option_vec_option_i_32,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<PkAddress>("PkAddress", &self.pk_address, event);
-        callbacks.invoke_table_row_callbacks::<PkBool>("PkBool", &self.pk_bool, event);
-        callbacks.invoke_table_row_callbacks::<PkI128>("PkI128", &self.pk_i_128, event);
-        callbacks.invoke_table_row_callbacks::<PkI16>("PkI16", &self.pk_i_16, event);
-        callbacks.invoke_table_row_callbacks::<PkI256>("PkI256", &self.pk_i_256, event);
-        callbacks.invoke_table_row_callbacks::<PkI32>("PkI32", &self.pk_i_32, event);
-        callbacks.invoke_table_row_callbacks::<PkI64>("PkI64", &self.pk_i_64, event);
-        callbacks.invoke_table_row_callbacks::<PkI8>("PkI8", &self.pk_i_8, event);
-        callbacks.invoke_table_row_callbacks::<PkIdentity>("PkIdentity", &self.pk_identity, event);
-        callbacks.invoke_table_row_callbacks::<PkString>("PkString", &self.pk_string, event);
-        callbacks.invoke_table_row_callbacks::<PkU128>("PkU128", &self.pk_u_128, event);
-        callbacks.invoke_table_row_callbacks::<PkU16>("PkU16", &self.pk_u_16, event);
-        callbacks.invoke_table_row_callbacks::<PkU256>("PkU256", &self.pk_u_256, event);
-        callbacks.invoke_table_row_callbacks::<PkU32>("PkU32", &self.pk_u_32, event);
-        callbacks.invoke_table_row_callbacks::<PkU64>("PkU64", &self.pk_u_64, event);
-        callbacks.invoke_table_row_callbacks::<PkU8>("PkU8", &self.pk_u_8, event);
-        callbacks.invoke_table_row_callbacks::<TableHoldsTable>("TableHoldsTable", &self.table_holds_table, event);
-        callbacks.invoke_table_row_callbacks::<UniqueAddress>("UniqueAddress", &self.unique_address, event);
-        callbacks.invoke_table_row_callbacks::<UniqueBool>("UniqueBool", &self.unique_bool, event);
-        callbacks.invoke_table_row_callbacks::<UniqueI128>("UniqueI128", &self.unique_i_128, event);
-        callbacks.invoke_table_row_callbacks::<UniqueI16>("UniqueI16", &self.unique_i_16, event);
-        callbacks.invoke_table_row_callbacks::<UniqueI256>("UniqueI256", &self.unique_i_256, event);
-        callbacks.invoke_table_row_callbacks::<UniqueI32>("UniqueI32", &self.unique_i_32, event);
-        callbacks.invoke_table_row_callbacks::<UniqueI64>("UniqueI64", &self.unique_i_64, event);
-        callbacks.invoke_table_row_callbacks::<UniqueI8>("UniqueI8", &self.unique_i_8, event);
-        callbacks.invoke_table_row_callbacks::<UniqueIdentity>("UniqueIdentity", &self.unique_identity, event);
-        callbacks.invoke_table_row_callbacks::<UniqueString>("UniqueString", &self.unique_string, event);
-        callbacks.invoke_table_row_callbacks::<UniqueU128>("UniqueU128", &self.unique_u_128, event);
-        callbacks.invoke_table_row_callbacks::<UniqueU16>("UniqueU16", &self.unique_u_16, event);
-        callbacks.invoke_table_row_callbacks::<UniqueU256>("UniqueU256", &self.unique_u_256, event);
-        callbacks.invoke_table_row_callbacks::<UniqueU32>("UniqueU32", &self.unique_u_32, event);
-        callbacks.invoke_table_row_callbacks::<UniqueU64>("UniqueU64", &self.unique_u_64, event);
-        callbacks.invoke_table_row_callbacks::<UniqueU8>("UniqueU8", &self.unique_u_8, event);
-        callbacks.invoke_table_row_callbacks::<VecAddress>("VecAddress", &self.vec_address, event);
-        callbacks.invoke_table_row_callbacks::<VecBool>("VecBool", &self.vec_bool, event);
-        callbacks.invoke_table_row_callbacks::<VecByteStruct>("VecByteStruct", &self.vec_byte_struct, event);
+        callbacks.invoke_table_row_callbacks::<PkAddress>("pk_address", &self.pk_address, event);
+        callbacks.invoke_table_row_callbacks::<PkBool>("pk_bool", &self.pk_bool, event);
+        callbacks.invoke_table_row_callbacks::<PkI128>("pk_i128", &self.pk_i_128, event);
+        callbacks.invoke_table_row_callbacks::<PkI16>("pk_i16", &self.pk_i_16, event);
+        callbacks.invoke_table_row_callbacks::<PkI256>("pk_i256", &self.pk_i_256, event);
+        callbacks.invoke_table_row_callbacks::<PkI32>("pk_i32", &self.pk_i_32, event);
+        callbacks.invoke_table_row_callbacks::<PkI64>("pk_i64", &self.pk_i_64, event);
+        callbacks.invoke_table_row_callbacks::<PkI8>("pk_i8", &self.pk_i_8, event);
+        callbacks.invoke_table_row_callbacks::<PkIdentity>("pk_identity", &self.pk_identity, event);
+        callbacks.invoke_table_row_callbacks::<PkString>("pk_string", &self.pk_string, event);
+        callbacks.invoke_table_row_callbacks::<PkU128>("pk_u128", &self.pk_u_128, event);
+        callbacks.invoke_table_row_callbacks::<PkU16>("pk_u16", &self.pk_u_16, event);
+        callbacks.invoke_table_row_callbacks::<PkU256>("pk_u256", &self.pk_u_256, event);
+        callbacks.invoke_table_row_callbacks::<PkU32>("pk_u32", &self.pk_u_32, event);
+        callbacks.invoke_table_row_callbacks::<PkU64>("pk_u64", &self.pk_u_64, event);
+        callbacks.invoke_table_row_callbacks::<PkU8>("pk_u8", &self.pk_u_8, event);
+        callbacks.invoke_table_row_callbacks::<TableHoldsTable>("table_holds_table", &self.table_holds_table, event);
+        callbacks.invoke_table_row_callbacks::<UniqueAddress>("unique_address", &self.unique_address, event);
+        callbacks.invoke_table_row_callbacks::<UniqueBool>("unique_bool", &self.unique_bool, event);
+        callbacks.invoke_table_row_callbacks::<UniqueI128>("unique_i128", &self.unique_i_128, event);
+        callbacks.invoke_table_row_callbacks::<UniqueI16>("unique_i16", &self.unique_i_16, event);
+        callbacks.invoke_table_row_callbacks::<UniqueI256>("unique_i256", &self.unique_i_256, event);
+        callbacks.invoke_table_row_callbacks::<UniqueI32>("unique_i32", &self.unique_i_32, event);
+        callbacks.invoke_table_row_callbacks::<UniqueI64>("unique_i64", &self.unique_i_64, event);
+        callbacks.invoke_table_row_callbacks::<UniqueI8>("unique_i8", &self.unique_i_8, event);
+        callbacks.invoke_table_row_callbacks::<UniqueIdentity>("unique_identity", &self.unique_identity, event);
+        callbacks.invoke_table_row_callbacks::<UniqueString>("unique_string", &self.unique_string, event);
+        callbacks.invoke_table_row_callbacks::<UniqueU128>("unique_u128", &self.unique_u_128, event);
+        callbacks.invoke_table_row_callbacks::<UniqueU16>("unique_u16", &self.unique_u_16, event);
+        callbacks.invoke_table_row_callbacks::<UniqueU256>("unique_u256", &self.unique_u_256, event);
+        callbacks.invoke_table_row_callbacks::<UniqueU32>("unique_u32", &self.unique_u_32, event);
+        callbacks.invoke_table_row_callbacks::<UniqueU64>("unique_u64", &self.unique_u_64, event);
+        callbacks.invoke_table_row_callbacks::<UniqueU8>("unique_u8", &self.unique_u_8, event);
+        callbacks.invoke_table_row_callbacks::<VecAddress>("vec_address", &self.vec_address, event);
+        callbacks.invoke_table_row_callbacks::<VecBool>("vec_bool", &self.vec_bool, event);
+        callbacks.invoke_table_row_callbacks::<VecByteStruct>("vec_byte_struct", &self.vec_byte_struct, event);
         callbacks.invoke_table_row_callbacks::<VecEnumWithPayload>(
-            "VecEnumWithPayload",
+            "vec_enum_with_payload",
             &self.vec_enum_with_payload,
             event,
         );
         callbacks.invoke_table_row_callbacks::<VecEveryPrimitiveStruct>(
-            "VecEveryPrimitiveStruct",
+            "vec_every_primitive_struct",
             &self.vec_every_primitive_struct,
             event,
         );
         callbacks.invoke_table_row_callbacks::<VecEveryVecStruct>(
-            "VecEveryVecStruct",
+            "vec_every_vec_struct",
             &self.vec_every_vec_struct,
             event,
         );
-        callbacks.invoke_table_row_callbacks::<VecF32>("VecF32", &self.vec_f_32, event);
-        callbacks.invoke_table_row_callbacks::<VecF64>("VecF64", &self.vec_f_64, event);
-        callbacks.invoke_table_row_callbacks::<VecI128>("VecI128", &self.vec_i_128, event);
-        callbacks.invoke_table_row_callbacks::<VecI16>("VecI16", &self.vec_i_16, event);
-        callbacks.invoke_table_row_callbacks::<VecI256>("VecI256", &self.vec_i_256, event);
-        callbacks.invoke_table_row_callbacks::<VecI32>("VecI32", &self.vec_i_32, event);
-        callbacks.invoke_table_row_callbacks::<VecI64>("VecI64", &self.vec_i_64, event);
-        callbacks.invoke_table_row_callbacks::<VecI8>("VecI8", &self.vec_i_8, event);
-        callbacks.invoke_table_row_callbacks::<VecIdentity>("VecIdentity", &self.vec_identity, event);
-        callbacks.invoke_table_row_callbacks::<VecSimpleEnum>("VecSimpleEnum", &self.vec_simple_enum, event);
-        callbacks.invoke_table_row_callbacks::<VecString>("VecString", &self.vec_string, event);
-        callbacks.invoke_table_row_callbacks::<VecU128>("VecU128", &self.vec_u_128, event);
-        callbacks.invoke_table_row_callbacks::<VecU16>("VecU16", &self.vec_u_16, event);
-        callbacks.invoke_table_row_callbacks::<VecU256>("VecU256", &self.vec_u_256, event);
-        callbacks.invoke_table_row_callbacks::<VecU32>("VecU32", &self.vec_u_32, event);
-        callbacks.invoke_table_row_callbacks::<VecU64>("VecU64", &self.vec_u_64, event);
-        callbacks.invoke_table_row_callbacks::<VecU8>("VecU8", &self.vec_u_8, event);
-        callbacks.invoke_table_row_callbacks::<VecUnitStruct>("VecUnitStruct", &self.vec_unit_struct, event);
+        callbacks.invoke_table_row_callbacks::<VecF32>("vec_f32", &self.vec_f_32, event);
+        callbacks.invoke_table_row_callbacks::<VecF64>("vec_f64", &self.vec_f_64, event);
+        callbacks.invoke_table_row_callbacks::<VecI128>("vec_i128", &self.vec_i_128, event);
+        callbacks.invoke_table_row_callbacks::<VecI16>("vec_i16", &self.vec_i_16, event);
+        callbacks.invoke_table_row_callbacks::<VecI256>("vec_i256", &self.vec_i_256, event);
+        callbacks.invoke_table_row_callbacks::<VecI32>("vec_i32", &self.vec_i_32, event);
+        callbacks.invoke_table_row_callbacks::<VecI64>("vec_i64", &self.vec_i_64, event);
+        callbacks.invoke_table_row_callbacks::<VecI8>("vec_i8", &self.vec_i_8, event);
+        callbacks.invoke_table_row_callbacks::<VecIdentity>("vec_identity", &self.vec_identity, event);
+        callbacks.invoke_table_row_callbacks::<VecSimpleEnum>("vec_simple_enum", &self.vec_simple_enum, event);
+        callbacks.invoke_table_row_callbacks::<VecString>("vec_string", &self.vec_string, event);
+        callbacks.invoke_table_row_callbacks::<VecU128>("vec_u128", &self.vec_u_128, event);
+        callbacks.invoke_table_row_callbacks::<VecU16>("vec_u16", &self.vec_u_16, event);
+        callbacks.invoke_table_row_callbacks::<VecU256>("vec_u256", &self.vec_u_256, event);
+        callbacks.invoke_table_row_callbacks::<VecU32>("vec_u32", &self.vec_u_32, event);
+        callbacks.invoke_table_row_callbacks::<VecU64>("vec_u64", &self.vec_u_64, event);
+        callbacks.invoke_table_row_callbacks::<VecU8>("vec_u8", &self.vec_u_8, event);
+        callbacks.invoke_table_row_callbacks::<VecUnitStruct>("vec_unit_struct", &self.vec_unit_struct, event);
     }
 }
 

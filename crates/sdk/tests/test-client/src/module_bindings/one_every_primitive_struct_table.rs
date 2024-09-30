@@ -10,7 +10,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `OneEveryPrimitiveStruct`.
+/// Table handle for the table `one_every_primitive_struct`.
 ///
 /// Obtain a handle from the [`OneEveryPrimitiveStructTableAccess::one_every_primitive_struct`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_every_primitive_struct()`.
@@ -24,19 +24,21 @@ pub struct OneEveryPrimitiveStructTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `OneEveryPrimitiveStruct`.
+/// Extension trait for access to the table `one_every_primitive_struct`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneEveryPrimitiveStructTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneEveryPrimitiveStructTableHandle`], which mediates access to the table `OneEveryPrimitiveStruct`.
+    /// Obtain a [`OneEveryPrimitiveStructTableHandle`], which mediates access to the table `one_every_primitive_struct`.
     fn one_every_primitive_struct(&self) -> OneEveryPrimitiveStructTableHandle<'_>;
 }
 
 impl OneEveryPrimitiveStructTableAccess for super::RemoteTables {
     fn one_every_primitive_struct(&self) -> OneEveryPrimitiveStructTableHandle<'_> {
         OneEveryPrimitiveStructTableHandle {
-            imp: self.imp.get_table::<OneEveryPrimitiveStruct>("OneEveryPrimitiveStruct"),
+            imp: self
+                .imp
+                .get_table::<OneEveryPrimitiveStruct>("one_every_primitive_struct"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -89,5 +91,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneEveryPrimitiveStruct>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"OneEveryPrimitiveStruct\"")
+        .context("Failed to parse table update for table \"one_every_primitive_struct\"")
 }

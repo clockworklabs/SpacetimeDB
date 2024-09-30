@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `OneAddress`.
+/// Table handle for the table `one_address`.
 ///
 /// Obtain a handle from the [`OneAddressTableAccess::one_address`] method on [`super::RemoteTables`],
 /// like `ctx.db.one_address()`.
@@ -23,19 +23,19 @@ pub struct OneAddressTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `OneAddress`.
+/// Extension trait for access to the table `one_address`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait OneAddressTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`OneAddressTableHandle`], which mediates access to the table `OneAddress`.
+    /// Obtain a [`OneAddressTableHandle`], which mediates access to the table `one_address`.
     fn one_address(&self) -> OneAddressTableHandle<'_>;
 }
 
 impl OneAddressTableAccess for super::RemoteTables {
     fn one_address(&self) -> OneAddressTableHandle<'_> {
         OneAddressTableHandle {
-            imp: self.imp.get_table::<OneAddress>("OneAddress"),
+            imp: self.imp.get_table::<OneAddress>("one_address"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,5 +88,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneAddress>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"OneAddress\"")
+        .context("Failed to parse table update for table \"one_address\"")
 }

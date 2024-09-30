@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `VecI16`.
+/// Table handle for the table `vec_i16`.
 ///
 /// Obtain a handle from the [`VecI16TableAccess::vec_i_16`] method on [`super::RemoteTables`],
 /// like `ctx.db.vec_i_16()`.
@@ -23,19 +23,19 @@ pub struct VecI16TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `VecI16`.
+/// Extension trait for access to the table `vec_i16`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait VecI16TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`VecI16TableHandle`], which mediates access to the table `VecI16`.
+    /// Obtain a [`VecI16TableHandle`], which mediates access to the table `vec_i16`.
     fn vec_i_16(&self) -> VecI16TableHandle<'_>;
 }
 
 impl VecI16TableAccess for super::RemoteTables {
     fn vec_i_16(&self) -> VecI16TableHandle<'_> {
         VecI16TableHandle {
-            imp: self.imp.get_table::<VecI16>("VecI16"),
+            imp: self.imp.get_table::<VecI16>("vec_i16"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,5 +88,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<VecI16>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"VecI16\"")
+        .context("Failed to parse table update for table \"vec_i16\"")
 }

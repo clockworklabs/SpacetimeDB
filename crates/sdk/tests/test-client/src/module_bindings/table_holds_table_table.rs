@@ -11,7 +11,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `TableHoldsTable`.
+/// Table handle for the table `table_holds_table`.
 ///
 /// Obtain a handle from the [`TableHoldsTableTableAccess::table_holds_table`] method on [`super::RemoteTables`],
 /// like `ctx.db.table_holds_table()`.
@@ -25,19 +25,19 @@ pub struct TableHoldsTableTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `TableHoldsTable`.
+/// Extension trait for access to the table `table_holds_table`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait TableHoldsTableTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`TableHoldsTableTableHandle`], which mediates access to the table `TableHoldsTable`.
+    /// Obtain a [`TableHoldsTableTableHandle`], which mediates access to the table `table_holds_table`.
     fn table_holds_table(&self) -> TableHoldsTableTableHandle<'_>;
 }
 
 impl TableHoldsTableTableAccess for super::RemoteTables {
     fn table_holds_table(&self) -> TableHoldsTableTableHandle<'_> {
         TableHoldsTableTableHandle {
-            imp: self.imp.get_table::<TableHoldsTable>("TableHoldsTable"),
+            imp: self.imp.get_table::<TableHoldsTable>("table_holds_table"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -90,5 +90,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<TableHoldsTable>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"TableHoldsTable\"")
+        .context("Failed to parse table update for table \"table_holds_table\"")
 }

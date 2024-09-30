@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `PkBool`.
+/// Table handle for the table `pk_bool`.
 ///
 /// Obtain a handle from the [`PkBoolTableAccess::pk_bool`] method on [`super::RemoteTables`],
 /// like `ctx.db.pk_bool()`.
@@ -23,19 +23,19 @@ pub struct PkBoolTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `PkBool`.
+/// Extension trait for access to the table `pk_bool`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait PkBoolTableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`PkBoolTableHandle`], which mediates access to the table `PkBool`.
+    /// Obtain a [`PkBoolTableHandle`], which mediates access to the table `pk_bool`.
     fn pk_bool(&self) -> PkBoolTableHandle<'_>;
 }
 
 impl PkBoolTableAccess for super::RemoteTables {
     fn pk_bool(&self) -> PkBoolTableHandle<'_> {
         PkBoolTableHandle {
-            imp: self.imp.get_table::<PkBool>("PkBool"),
+            imp: self.imp.get_table::<PkBool>("pk_bool"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -109,10 +109,10 @@ pub(super) fn parse_table_update(
         inserts,
         |row: &PkBool| &row.b,
     )
-    .context("Failed to parse table update for table \"PkBool\"")
+    .context("Failed to parse table update for table \"pk_bool\"")
 }
 
-/// Access to the `b` unique index on the table `PkBool`,
+/// Access to the `b` unique index on the table `pk_bool`,
 /// which allows point queries on the field of the same name
 /// via the [`PkBoolBUnique::find`] method.
 ///
@@ -125,7 +125,7 @@ pub struct PkBoolBUnique<'ctx> {
 }
 
 impl<'ctx> PkBoolTableHandle<'ctx> {
-    /// Get a handle on the `b` unique index on the table `PkBool`.
+    /// Get a handle on the `b` unique index on the table `pk_bool`.
     pub fn b(&self) -> PkBoolBUnique<'ctx> {
         PkBoolBUnique {
             imp: self.imp.get_unique_constraint::<bool>("b", |row| &row.b),

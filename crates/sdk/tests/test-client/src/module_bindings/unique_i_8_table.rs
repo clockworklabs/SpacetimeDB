@@ -9,7 +9,7 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-/// Table handle for the table `UniqueI8`.
+/// Table handle for the table `unique_i8`.
 ///
 /// Obtain a handle from the [`UniqueI8TableAccess::unique_i_8`] method on [`super::RemoteTables`],
 /// like `ctx.db.unique_i_8()`.
@@ -23,19 +23,19 @@ pub struct UniqueI8TableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the table `UniqueI8`.
+/// Extension trait for access to the table `unique_i8`.
 ///
 /// Implemented for [`super::RemoteTables`].
 pub trait UniqueI8TableAccess {
     #[allow(non_snake_case)]
-    /// Obtain a [`UniqueI8TableHandle`], which mediates access to the table `UniqueI8`.
+    /// Obtain a [`UniqueI8TableHandle`], which mediates access to the table `unique_i8`.
     fn unique_i_8(&self) -> UniqueI8TableHandle<'_>;
 }
 
 impl UniqueI8TableAccess for super::RemoteTables {
     fn unique_i_8(&self) -> UniqueI8TableHandle<'_> {
         UniqueI8TableHandle {
-            imp: self.imp.get_table::<UniqueI8>("UniqueI8"),
+            imp: self.imp.get_table::<UniqueI8>("unique_i8"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -88,10 +88,10 @@ pub(super) fn parse_table_update(
     inserts: Vec<__ws::EncodedValue>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueI8>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .context("Failed to parse table update for table \"UniqueI8\"")
+        .context("Failed to parse table update for table \"unique_i8\"")
 }
 
-/// Access to the `n` unique index on the table `UniqueI8`,
+/// Access to the `n` unique index on the table `unique_i8`,
 /// which allows point queries on the field of the same name
 /// via the [`UniqueI8NUnique::find`] method.
 ///
@@ -104,7 +104,7 @@ pub struct UniqueI8NUnique<'ctx> {
 }
 
 impl<'ctx> UniqueI8TableHandle<'ctx> {
-    /// Get a handle on the `n` unique index on the table `UniqueI8`.
+    /// Get a handle on the `n` unique index on the table `unique_i8`.
     pub fn n(&self) -> UniqueI8NUnique<'ctx> {
         UniqueI8NUnique {
             imp: self.imp.get_unique_constraint::<i8>("n", |row| &row.n),
