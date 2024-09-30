@@ -11,6 +11,9 @@ using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 using SpacetimeDB.ClientApi;
 using Thread = System.Threading.Thread;
+using System.Runtime.CompilerServices;
+
+[assembly:InternalsVisibleTo("SpacetimeDB.Tests")]
 
 namespace SpacetimeDB
 {
@@ -98,7 +101,7 @@ namespace SpacetimeDB
             public DbValue? insert;
         }
 
-        public event Action<Identity, string>? onConnect;
+        internal event Action<Identity, string>? onConnect;
 
         /// <summary>
         /// Called when an exception occurs when sending a message.
