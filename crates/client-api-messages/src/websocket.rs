@@ -254,6 +254,12 @@ pub struct TransactionUpdate<F: WebsocketFormat> {
 #[sats(crate = spacetimedb_lib)]
 pub struct ReducerCallInfo<F: WebsocketFormat> {
     /// The name of the reducer that was called.
+    ///
+    /// NOTE(centril, 1.0): For bandwidth resource constrained clients
+    /// this can encourage them to have poor naming of reducers like `a`.
+    /// We should consider not sending this at all and instead
+    /// having a startup message where the name <-> id bindings
+    /// are established between the host and the client.
     pub reducer_name: Box<str>,
     /// The numerical id of the reducer that was called.
     pub reducer_id: u32,
@@ -305,6 +311,10 @@ impl<F: WebsocketFormat> FromIterator<TableUpdate<F>> for DatabaseUpdate<F> {
 }
 
 /// Part of a [`DatabaseUpdate`] received by client from database for alterations to a single table.
+///
+/// NOTE(centril): in 0.12 we added `num_rows` and `table_name` to the struct.
+/// These inflate the size of messages, which for some customers is the wrong default.
+/// We might want to consider `v1.spacetimedb.bsatn.lightweight`
 #[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
 pub struct TableUpdate<F: WebsocketFormat> {
@@ -312,6 +322,9 @@ pub struct TableUpdate<F: WebsocketFormat> {
     /// whereas `table_id` may change between runs.
     pub table_id: TableId,
     /// The name of the table.
+    ///
+    /// NOTE(centril, 1.0): we might want to remove this and instead
+    /// tell clients about changes to table_name <-> table_id mappings.
     pub table_name: Box<str>,
     /// The sum total of rows in `self.updates`,
     pub num_rows: u64,
@@ -400,6 +413,8 @@ pub struct OneOffTable<F: WebsocketFormat> {
     pub table_name: Box<str>,
     /// The set of rows which matched the query, encoded as BSATN or JSON according to the table's schema
     /// and the client's requested protocol.
+    ///
+    /// TODO(centril, 1.0): Evalutate whether we want to conditionally compress these.
     pub rows: F::List,
 }
 
@@ -570,6 +585,9 @@ impl Default for BsatnRowList {
     }
 }
 
+/// NOTE(centril, 1.0): We might want to add a `None` variant to this
+/// where the client has to decode in a loop until `rows_data` has been exhausted.
+/// The use-case for this is clients who are bandwidth limited and where every byte counts.
 #[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
 pub enum RowSizeHint<I> {
