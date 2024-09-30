@@ -87,10 +87,10 @@ where
     let database = ctx
         .get_database_by_address(&db_address)
         .unwrap()
-        .ok_or(StatusCode::BAD_REQUEST)?;
+        .ok_or(StatusCode::NOT_FOUND)?;
     let database_instance = ctx
         .get_leader_database_instance_by_database(database.id)
-        .ok_or(StatusCode::BAD_REQUEST)?;
+        .ok_or(StatusCode::NOT_FOUND)?;
     let instance_id = database_instance.id;
 
     let identity_token = auth.creds.token().to_owned();

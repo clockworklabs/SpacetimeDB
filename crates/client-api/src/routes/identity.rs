@@ -287,7 +287,7 @@ pub async fn confirm_recovery_code<S: ControlStateDelegate + NodeDelegate>(
     let recovery_code = recovery_codes
         .into_iter()
         .find(|rc| rc.code == code.as_str())
-        .ok_or((StatusCode::BAD_REQUEST, "Recovery code not found."))?;
+        .ok_or((StatusCode::NOT_FOUND, "Recovery code not found."))?;
 
     let duration = Utc::now() - recovery_code.generation_time;
     if duration.num_seconds() > 60 * 10 {
@@ -310,7 +310,7 @@ pub async fn confirm_recovery_code<S: ControlStateDelegate + NodeDelegate>(
         .any(|a| a.identity == identity)
     {
         // This can happen if someone changes their associated email during a recovery request.
-        return Err((StatusCode::BAD_REQUEST, "No identity associated with that email.").into());
+        return Err((StatusCode::NOT_FOUND, "No identity associated with that email.").into());
     }
 
     // Recovery code is verified, return the identity and token to the user
