@@ -398,7 +398,7 @@ pub mod raw {
         /// Traps if
         /// - `name` does not point to valid UTF-8
         /// - `name + name_len` or `args + args_len` overflow a 64-bit integer
-        #[cfg(feature = "unstable_abi")]
+        #[cfg(feature = "unstable")]
         pub fn volatile_nonatomic_schedule_immediate(
             name: *const u8,
             name_len: usize,
@@ -1058,7 +1058,7 @@ pub fn console_log(
 /// on a best-effort basis.
 ///
 /// The reducer is assigned `name` and is provided `args` as its argument.
-#[cfg(feature = "unstable_abi")]
+#[cfg(feature = "unstable")]
 #[inline]
 pub fn volatile_nonatomic_schedule_immediate(name: &str, args: &[u8]) {
     unsafe { raw::volatile_nonatomic_schedule_immediate(name.as_ptr(), name.len(), args.as_ptr(), args.len()) }
