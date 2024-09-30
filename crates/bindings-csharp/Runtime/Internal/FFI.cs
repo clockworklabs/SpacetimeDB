@@ -156,14 +156,6 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus iter_start_filtered(
-        TableId table_id,
-        [In] byte[] filter,
-        uint filter_len,
-        out RowIter out_
-    );
-
-    [LibraryImport(StdbNamespace)]
     public static partial Errno row_iter_bsatn_advance(
         RowIter iter_handle,
         [MarshalUsing(CountElementName = nameof(buffer_len))] [Out] byte[] buffer,

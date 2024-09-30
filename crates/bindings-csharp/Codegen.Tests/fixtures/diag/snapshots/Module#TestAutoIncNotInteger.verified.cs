@@ -70,12 +70,4 @@ partial struct TestAutoIncNotInteger : SpacetimeDB.Internal.ITable<TestAutoIncNo
                     ).Ref_
             ),
         ];
-
-    static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<TestAutoIncNotInteger>.CreateFilter() =>
-        new(
-            [
-                new(nameof(AutoIncField), (w, v) => BSATN.AutoIncField.Write(w, (float)v!)),
-                new(nameof(IdentityField), (w, v) => BSATN.IdentityField.Write(w, (string)v!))
-            ]
-        );
 } // TestAutoIncNotInteger

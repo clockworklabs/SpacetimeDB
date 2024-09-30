@@ -130,10 +130,6 @@ record ColumnDeclaration : MemberDeclaration
     // For the `TableDesc` constructor.
     public string GenerateColumnDef() =>
         $"new (nameof({Name}), BSATN.{Name}.GetAlgebraicType(registrar))";
-
-    // For the `Filter` constructor.
-    public string GenerateFilterEntry() =>
-        $"new (nameof({Name}), (w, v) => BSATN.{Name}.Write(w, ({Type}) v!))";
 }
 
 record TableView
@@ -295,7 +291,6 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     return row;
                 }
                 public IEnumerable<{{globalName}}> Iter() => {{iTable}}.Iter();
-                public IEnumerable<{{globalName}}> Query(System.Linq.Expressions.Expression<Func<{{globalName}}, bool>> predicate) => {{iTable}}.Query(predicate);
                 public {{globalName}} Insert({{globalName}} row) => {{iTable}}.Insert(row);
                 {{string.Join("\n", GenerateViewFilters(v.Name, iTable))}}
             }
@@ -381,10 +376,6 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             ),
             """))}}
             ];
-
-            static SpacetimeDB.Internal.Filter {{iTable}}.CreateFilter() => new([
-                {{string.Join(",\n", Members.Select(f => f.GenerateFilterEntry()))}}
-            ]);
             """
         );
 

@@ -48,16 +48,6 @@ namespace SpacetimeDB
                     global::TestAutoIncNotInteger
                 >.Iter();
 
-            public IEnumerable<global::TestAutoIncNotInteger> Query(
-                System.Linq.Expressions.Expression<
-                    Func<global::TestAutoIncNotInteger, bool>
-                > predicate
-            ) =>
-                SpacetimeDB.Internal.ITableView<
-                    TestAutoIncNotInteger,
-                    global::TestAutoIncNotInteger
-                >.Query(predicate);
-
             public global::TestAutoIncNotInteger Insert(global::TestAutoIncNotInteger row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestAutoIncNotInteger,
@@ -95,16 +85,6 @@ namespace SpacetimeDB
                     TestTableTaggedEnum,
                     global::TestTableTaggedEnum
                 >.Iter();
-
-            public IEnumerable<global::TestTableTaggedEnum> Query(
-                System.Linq.Expressions.Expression<
-                    Func<global::TestTableTaggedEnum, bool>
-                > predicate
-            ) =>
-                SpacetimeDB.Internal.ITableView<
-                    TestTableTaggedEnum,
-                    global::TestTableTaggedEnum
-                >.Query(predicate);
 
             public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) =>
                 SpacetimeDB.Internal.ITableView<
@@ -148,16 +128,6 @@ namespace SpacetimeDB
                     TestUniqueNotEquatable,
                     global::TestUniqueNotEquatable
                 >.Iter();
-
-            public IEnumerable<global::TestUniqueNotEquatable> Query(
-                System.Linq.Expressions.Expression<
-                    Func<global::TestUniqueNotEquatable, bool>
-                > predicate
-            ) =>
-                SpacetimeDB.Internal.ITableView<
-                    TestUniqueNotEquatable,
-                    global::TestUniqueNotEquatable
-                >.Query(predicate);
 
             public global::TestUniqueNotEquatable Insert(global::TestUniqueNotEquatable row) =>
                 SpacetimeDB.Internal.ITableView<

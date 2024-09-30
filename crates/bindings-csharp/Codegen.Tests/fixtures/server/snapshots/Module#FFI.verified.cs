@@ -49,13 +49,6 @@ namespace SpacetimeDB
             public IEnumerable<global::MultiTableRow> Iter() =>
                 SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.Iter();
 
-            public IEnumerable<global::MultiTableRow> Query(
-                System.Linq.Expressions.Expression<Func<global::MultiTableRow, bool>> predicate
-            ) =>
-                SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.Query(
-                    predicate
-                );
-
             public global::MultiTableRow Insert(global::MultiTableRow row) =>
                 SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.Insert(row);
 
@@ -126,13 +119,6 @@ namespace SpacetimeDB
             public IEnumerable<global::MultiTableRow> Iter() =>
                 SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.Iter();
 
-            public IEnumerable<global::MultiTableRow> Query(
-                System.Linq.Expressions.Expression<Func<global::MultiTableRow, bool>> predicate
-            ) =>
-                SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.Query(
-                    predicate
-                );
-
             public global::MultiTableRow Insert(global::MultiTableRow row) =>
                 SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.Insert(row);
 
@@ -199,13 +185,6 @@ namespace SpacetimeDB
             public IEnumerable<global::PrivateTable> Iter() =>
                 SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.Iter();
 
-            public IEnumerable<global::PrivateTable> Query(
-                System.Linq.Expressions.Expression<Func<global::PrivateTable, bool>> predicate
-            ) =>
-                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.Query(
-                    predicate
-                );
-
             public global::PrivateTable Insert(global::PrivateTable row) =>
                 SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.Insert(row);
         }
@@ -227,10 +206,6 @@ namespace SpacetimeDB
 
             public IEnumerable<global::PublicTable> Iter() =>
                 SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.Iter();
-
-            public IEnumerable<global::PublicTable> Query(
-                System.Linq.Expressions.Expression<Func<global::PublicTable, bool>> predicate
-            ) => SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.Query(predicate);
 
             public global::PublicTable Insert(global::PublicTable row) =>
                 SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.Insert(row);
@@ -458,16 +433,6 @@ namespace SpacetimeDB
                     SendMessageTimer,
                     global::Timers.SendMessageTimer
                 >.Iter();
-
-            public IEnumerable<global::Timers.SendMessageTimer> Query(
-                System.Linq.Expressions.Expression<
-                    Func<global::Timers.SendMessageTimer, bool>
-                > predicate
-            ) =>
-                SpacetimeDB.Internal.ITableView<
-                    SendMessageTimer,
-                    global::Timers.SendMessageTimer
-                >.Query(predicate);
 
             public global::Timers.SendMessageTimer Insert(global::Timers.SendMessageTimer row) =>
                 SpacetimeDB.Internal.ITableView<

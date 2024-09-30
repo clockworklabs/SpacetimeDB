@@ -3,7 +3,8 @@ namespace SpacetimeDB.Examples.QuickStart.Server;
 using SpacetimeDB;
 
 [Table(Public = true)]
-public partial struct Person {
+public partial struct Person
+{
     [AutoInc]
     [PrimaryKey]
     public uint Id;
@@ -32,7 +33,8 @@ static partial class Module
     [Reducer("list_over_age")]
     public static void ListOverAge(ReducerContext ctx, byte age)
     {
-        foreach (var person in ctx.Db.Person.Query(person => person.Age >= age))
+        // TODO: convert this to use BTree index.
+        foreach (var person in ctx.Db.Person.Iter().Where(person => person.Age >= age))
         {
             Log.Info($"{person.Name} has age {person.Age} >= {age}");
         }
