@@ -80,24 +80,6 @@ public partial struct TestIncompatibleSchedule { }
         IsEnabledByDefault: true
       }
     },
-    {/*
-    [SpacetimeDB.Reducer]
-    public static void TestDuplicateTable() { }
-                                         ^^
-}
-*/
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (359,41)-(359,43),
-      Message: Reducer method TestDuplicateTable does not have a ReducerContext parameter.,
-      Severity: Error,
-      Descriptor: {
-        Id: STDB0006,
-        Title: Reducers must have a first argument of type ReducerContext,
-        MessageFormat: Reducer method {0} does not have a ReducerContext parameter.,
-        Category: SpacetimeDB,
-        DefaultSeverity: Error,
-        IsEnabledByDefault: true
-      }
-    },
     {
       Location: ,
       Message: Reducer with the same export name __init__ is registered in multiple places: Reducers.TestDuplicateReducerKind1, Reducers.TestDuplicateReducerKind2,
@@ -114,6 +96,19 @@ public partial struct TestIncompatibleSchedule { }
     {
       Location: ,
       Message: Reducer with the same export name TestDuplicateReducerName is registered in multiple places: Reducers.TestDuplicateReducerName, Reducers.InAnotherNamespace.TestDuplicateReducerName,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0005,
+        Title: Duplicate exports,
+        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: Table with the same export name TestDuplicateTableName is registered in multiple places: global::TestDuplicateTableName, global::InAnotherNamespace.TestDuplicateTableName,
       Severity: Error,
       Descriptor: {
         Id: STDB0005,

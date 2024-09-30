@@ -437,13 +437,13 @@ record ReducerDeclaration
         Scope = new Scope(methodSyntax.Parent as MemberDeclarationSyntax);
     }
 
-    public KeyValuePair<string, string> GenerateClass()
+    public string GenerateClass()
     {
         var args = string.Join(
             ", ",
             Args.Select(a => $"{a.Name}.Read(reader)").Prepend("(SpacetimeDB.ReducerContext)ctx")
         );
-        var class_ = $$"""
+        return $$"""
             class {{Name}}: SpacetimeDB.Internal.IReducer {
                 {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
 
@@ -457,8 +457,6 @@ record ReducerDeclaration
                 }
             }
             """;
-
-        return new(Name, class_);
     }
 
     public Scope.Extensions GenerateSchedule()
@@ -494,33 +492,61 @@ record ReducerDeclaration
 [Generator]
 public class Module : IIncrementalGenerator
 {
-    private static void CheckDuplicates<T>(
+    private static IncrementalValueProvider<EquatableArray<T>> CollectAndCheckDuplicates<T>(
         string kind,
         IncrementalGeneratorInitializationContext context,
         IncrementalValuesProvider<T> source,
-        Func<T, string> keySelector,
-        Func<T, string> valueSelector
+        Func<T, string> toExportName,
+        Func<T, string> toFullName
     )
+        where T : IEquatable<T>
     {
+        var results = source
+            .Collect()
+            .Select(
+                (collected, ct) =>
+                    DiagReporter.With(
+                        Location.None,
+                        diag =>
+                        {
+                            var grouped = collected.GroupBy(item => toExportName(item));
+                            foreach (var group in grouped.Where(group => group.Count() > 1))
+                            {
+                                diag.Report(
+                                    ErrorDescriptor.DuplicateExport,
+                                    (kind, group.Key, group.Select(toFullName))
+                                );
+                            }
+                            return new EquatableArray<T>(
+                                // Only return first item from each group.
+                                // We already reported duplicates ourselves, and don't want MSBuild to produce lots of duplicate errors too.
+                                grouped
+                                    .Select(g => g.First())
+                                    // Sort tables and reducers by name to match Rust behaviour.
+                                    // Not really important outside of testing, but for testing
+                                    // it matters because we commit module-bindings
+                                    // so they need to match 1:1 between different langs.
+                                    .OrderBy(toExportName)
+                                    .ToImmutableArray()
+                            );
+                        }
+                    )
+            );
+
         context.RegisterSourceOutput(
-            source
-                .Select(
-                    (r, ct) => new KeyValuePair<string, string>(keySelector(r), valueSelector(r))
-                )
-                .Collect()
-                .WithTrackingName($"SpacetimeDB.{kind}.ConflictChecks"),
-            (context, collected) =>
+            results,
+            (context, results) =>
             {
-                foreach (
-                    var group in collected
-                        .GroupBy(kv => kv.Key, kv => kv.Value)
-                        .Where(group => group.Count() > 1)
-                )
+                foreach (var result in results.Diag)
                 {
-                    context.ReportDiagnostic(ErrorDescriptor.DuplicateExport.ToDiag((kind, group)));
+                    context.ReportDiagnostic(result);
                 }
             }
         );
+
+        return results
+            .Select((result, ct) => result.Parsed)
+            .WithTrackingName($"SpacetimeDB.{kind}.Collect");
     }
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -555,31 +581,33 @@ public class Module : IIncrementalGenerator
             .WithTrackingName("SpacetimeDB.Reducer.GenerateSchedule")
             .RegisterSourceOutputs(context);
 
-        CheckDuplicates("Reducer", context, reducers, r => r.ExportName, r => r.FullName);
-        CheckDuplicates("Table", context, tables, t => t.ShortName, t => t.FullName);
+        var addReducers = CollectAndCheckDuplicates(
+            "Reducer",
+            context,
+            reducers
+                .Select((r, ct) => (r.Name, r.ExportName, r.FullName, Class: r.GenerateClass()))
+                .WithTrackingName("SpacetimeDB.Reducer.GenerateClass"),
+            r => r.ExportName,
+            r => r.FullName
+        );
 
-        var addReducers = reducers
-            .Select((r, ct) => r.GenerateClass())
-            .WithTrackingName("SpacetimeDB.Reducer.GenerateClass")
-            .Collect();
-
-        var tableViews = tables
-            .SelectMany((t, ct) => t.GenerateViews())
-            .WithTrackingName("SpacetimeDB.Table.GenerateViews")
-            .Collect();
+        var tableViews = CollectAndCheckDuplicates(
+            "Table",
+            context,
+            tables
+                .SelectMany((t, ct) => t.GenerateViews())
+                .WithTrackingName("SpacetimeDB.Table.GenerateViews"),
+            v => v.viewName,
+            v => v.tableName
+        );
 
         context.RegisterSourceOutput(
             tableViews.Combine(addReducers),
             (context, tuple) =>
             {
-                // Sort tables and reducers by name to match Rust behaviour.
-                // Not really important outside of testing, but for testing
-                // it matters because we commit module-bindings
-                // so they need to match 1:1 between different langs.
-                var tableViews = tuple.Left.Sort((a, b) => a.viewName.CompareTo(b.viewName));
-                var addReducers = tuple.Right.Sort((a, b) => a.Key.CompareTo(b.Key));
+                var (tableViews, addReducers) = tuple;
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
-                if (tableViews.IsEmpty && addReducers.IsEmpty)
+                if (tableViews.Array.IsEmpty && addReducers.Array.IsEmpty)
                 {
                     return;
                 }
@@ -618,7 +646,7 @@ public class Module : IIncrementalGenerator
                     }
 
                     static class ModuleRegistration {
-                        {{string.Join("\n", addReducers.Select(r => r.Value))}}
+                        {{string.Join("\n", addReducers.Select(r => r.Class))}}
 
                     #if EXPERIMENTAL_WASM_AOT
                         // In AOT mode we're building a library.
@@ -634,7 +662,7 @@ public class Module : IIncrementalGenerator
                             {{string.Join(
                                 "\n",
                                 addReducers.Select(r =>
-                                    $"SpacetimeDB.Internal.Module.RegisterReducer<{r.Key}>();"
+                                    $"SpacetimeDB.Internal.Module.RegisterReducer<{r.Name}>();"
                                 )
                             )}}
                             {{string.Join(

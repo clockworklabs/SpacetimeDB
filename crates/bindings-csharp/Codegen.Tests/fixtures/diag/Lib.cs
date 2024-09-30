@@ -352,12 +352,12 @@ public partial struct TestUniqueNotEquatable
 public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y)> { }
 
 [SpacetimeDB.Table]
-public partial struct TestDuplicateTable { }
+public partial struct TestDuplicateTableName { }
 
 public static partial class InAnotherNamespace
 {
-    [SpacetimeDB.Reducer]
-    public static void TestDuplicateTable() { }
+    [SpacetimeDB.Table]
+    public partial struct TestDuplicateTableName { }
 }
 
 [SpacetimeDB.Table(

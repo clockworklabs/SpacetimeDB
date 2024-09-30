@@ -456,108 +456,12 @@ internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> Unsuppor
     }
   },
   {/*
-}
-class TestDuplicateReducerName: SpacetimeDB.Internal.IReducer {
-      ^^^^^^^^^^^^^^^^^^^^^^^^
-    
-*/
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (158,6)-(158,30),
-    Message: The type 'ModuleRegistration' already contains a definition for 'TestDuplicateReducerName',
-    Severity: Error,
-    Descriptor: {
-      Id: CS0102,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0102),
-      MessageFormat: The type '{0}' already contains a definition for '{1}',
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-
-    public SpacetimeDB.Internal.ReducerDef MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
-                                           ^^^^^^^^^^^^^^
-        "TestDuplicateReducerName",
-*/
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (161,43)-(161,57),
-    Message: Type 'ModuleRegistration.TestDuplicateReducerName' already defines a member called 'MakeReducerDef' with the same parameter types,
-    Severity: Error,
-    Descriptor: {
-      Id: CS0111,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
-      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-
-    public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
-                ^^^^^^
-        Reducers.InAnotherNamespace.TestDuplicateReducerName((SpacetimeDB.ReducerContext)ctx);
-*/
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (166,16)-(166,22),
-    Message: Type 'ModuleRegistration.TestDuplicateReducerName' already defines a member called 'Invoke' with the same parameter types,
-    Severity: Error,
-    Descriptor: {
-      Id: CS0111,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
-      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-    public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
-        InAnotherNamespace.TestDuplicateTable((SpacetimeDB.ReducerContext)ctx);
-                           ^^^^^^^^^^^^^^^^^^
-    }
-*/
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (179,27)-(179,45),
-    Message: No overload for method 'TestDuplicateTable' takes 1 arguments,
-    Severity: Error,
-    Descriptor: {
-      Id: CS1501,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1501),
-      MessageFormat: No overload for method '{0}' takes {1} arguments,
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
     public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
         Reducers.TestReducerWithoutContext((SpacetimeDB.ReducerContext)ctx);
                  ^^^^^^^^^^^^^^^^^^^^^^^^^
     }
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (215,17)-(215,42),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (179,17)-(179,42),
     Message: No overload for method 'TestReducerWithoutContext' takes 1 arguments,
     Severity: Error,
     Descriptor: {
@@ -581,7 +485,7 @@ SpacetimeDB.Internal.Module.RegisterTable<global::TestTableTaggedEnum>();
                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable>();
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (241,28)-(241,70),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (202,28)-(202,70),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'Module.RegisterTable<T>()'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -605,7 +509,7 @@ SpacetimeDB.Internal.Module.RegisterTable<global::TestTableTaggedEnum>();
                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable>();
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (241,28)-(241,70),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (202,28)-(202,70),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'Module.RegisterTable<T>()',
     Severity: Error,
     Descriptor: {

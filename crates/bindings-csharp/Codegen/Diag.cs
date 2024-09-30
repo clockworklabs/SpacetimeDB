@@ -44,13 +44,14 @@ internal static class ErrorDescriptor
 
     public static readonly ErrorDescriptor<(
         string kind,
-        IGrouping<string, string> group
+        string exportName,
+        IEnumerable<string> fullNames
     )> DuplicateExport =
         new(
             group,
             "Duplicate exports",
             ctx =>
-                $"{ctx.kind} with the same export name {ctx.group.Key} is registered in multiple places: {string.Join(", ", ctx.group)}",
+                $"{ctx.kind} with the same export name {ctx.exportName} is registered in multiple places: {string.Join(", ", ctx.fullNames)}",
             ctx => Location.None
         );
 

@@ -181,15 +181,17 @@ public class DiagReporter
         builder.Add(descriptor.ToDiag(ctx));
     }
 
-    private static readonly ErrorDescriptor<(SyntaxNode node, Exception e)> InternalError =
+    private DiagReporter() { }
+
+    private static readonly ErrorDescriptor<(Location location, Exception e)> InternalError =
         new(
             new("STDBINT", "SpacetimeDB.Internal"),
             "Internal SpacetimeDB codegen error",
             ctx => $"An internal error occurred during codegen: {ctx.e.Message}",
-            ctx => ctx.node
+            ctx => ctx.location
         );
 
-    public static ParseResult<T> With<T>(SyntaxNode node, Func<DiagReporter, T> build)
+    public static ParseResult<T> With<T>(Location location, Func<DiagReporter, T> build)
         where T : IEquatable<T>
     {
         var reporter = new DiagReporter();
@@ -203,10 +205,16 @@ public class DiagReporter
         // Instead, it will limit the damage to skipping one particular syntax node.
         catch (Exception e)
         {
-            reporter.Report(InternalError, (node, e));
+            reporter.Report(InternalError, (location, e));
             parsed = default;
         }
         return new(parsed, new(reporter.builder.ToImmutable()));
+    }
+
+    public static ParseResult<T> With<T>(SyntaxNode node, Func<DiagReporter, T> build)
+        where T : IEquatable<T>
+    {
+        return With(node.GetLocation(), build);
     }
 }
 
