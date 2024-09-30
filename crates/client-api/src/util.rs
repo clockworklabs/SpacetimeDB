@@ -109,14 +109,14 @@ impl NameOrAddress {
         })
     }
 
-    /// A variant of [`Self::try_resolve()`] which maps to a 400 (Bad Request)
+    /// A variant of [`Self::try_resolve()`] which maps to a 404 (Not Found)
     /// response if `self` is a [`NameOrAddress::Name`] for which no
     /// corresponding [`Address`] is found in the SpacetimeDB DNS.
     pub async fn resolve(
         &self,
         ctx: &(impl ControlStateReadAccess + ?Sized),
     ) -> axum::response::Result<ResolvedAddress> {
-        self.try_resolve(ctx).await?.map_err(|_| StatusCode::BAD_REQUEST.into())
+        self.try_resolve(ctx).await?.map_err(|_| StatusCode::NOT_FOUND.into())
     }
 }
 
