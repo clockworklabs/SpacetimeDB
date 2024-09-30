@@ -5,6 +5,8 @@ use crate::{
 };
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use spacetimedb::stdb_path;
+use std::path::PathBuf;
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
     Table, Tabled,
@@ -59,23 +61,11 @@ fn get_subcommands() -> Vec<Command> {
                     .short('I')
                     .action(ArgAction::SetTrue),
             )
-            .arg(
-                Arg::new("force")
-                    .help("Do not prompt before deleting identities")
-                    .long("force")
-                    .short('f')
-                    .action(ArgAction::SetTrue),
-            ),
+            .arg(common_args::yes()),
         Command::new("fingerprint")
             .about("Show or update a saved server's fingerprint")
             .arg(common_args::server().help("The nickname, host name or URL of the server"))
-            .arg(
-                Arg::new("force")
-                    .help("Save changes to the server's configuration without confirming")
-                    .short('f')
-                    .long("force")
-                    .action(ArgAction::SetTrue),
-            )
+            .arg(common_args::yes())
             .arg(
                 Arg::new("delete-obsolete-identities")
                     .help("Delete obsoleted identities if the server's fingerprint has changed")
@@ -120,13 +110,10 @@ fn get_subcommands() -> Vec<Command> {
                     .short('I')
                     .action(ArgAction::SetTrue),
             )
-            .arg(
-                Arg::new("force")
-                    .help("Do not prompt before saving the edited configuration")
-                    .long("force")
-                    .short('f')
-                    .action(ArgAction::SetTrue),
-            ),
+            .arg(common_args::yes()),
+        Command::new("clear")
+            .about("Deletes all data from all local databases")
+            .arg(common_args::yes()),
         // TODO: set-name, set-protocol, set-host, set-url
     ]
 }
@@ -145,6 +132,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
         "fingerprint" => exec_fingerprint(config, args).await,
         "ping" => exec_ping(config, args).await,
         "edit" => exec_edit(config, args).await,
+        "clear" => exec_clear(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
@@ -418,5 +406,50 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
 
     config.save();
 
+    Ok(())
+}
+
+async fn exec_clear(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let force = args.get_flag("force");
+    if std::env::var_os("STDB_PATH").map(PathBuf::from).is_none() {
+        let mut path = dirs::home_dir().unwrap_or_default();
+        path.push(".spacetime");
+        std::env::set_var("STDB_PATH", path.to_str().unwrap());
+    }
+
+    let control_node_dir = stdb_path("control_node");
+    let worker_node_dir = stdb_path("worker_node");
+    if control_node_dir.exists() || worker_node_dir.exists() {
+        if control_node_dir.exists() {
+            println!("Control node database path: {}", control_node_dir.to_str().unwrap());
+        } else {
+            println!("Control node database path: <not found>");
+        }
+
+        if worker_node_dir.exists() {
+            println!("Worker node database path: {}", worker_node_dir.to_str().unwrap());
+        } else {
+            println!("Worker node database path: <not found>");
+        }
+
+        if !y_or_n(
+            force,
+            "Are you sure you want to delete all data from the local database?",
+        )? {
+            println!("Aborting");
+            return Ok(());
+        }
+
+        if control_node_dir.exists() {
+            std::fs::remove_dir_all(&control_node_dir)?;
+            println!("Deleted control node database: {}", control_node_dir.to_str().unwrap());
+        }
+        if worker_node_dir.exists() {
+            std::fs::remove_dir_all(&worker_node_dir)?;
+            println!("Deleted worker node database: {}", worker_node_dir.to_str().unwrap());
+        }
+    } else {
+        println!("Local database not found. Nothing has been deleted.");
+    }
     Ok(())
 }

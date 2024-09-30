@@ -57,11 +57,7 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("anon_identity")
         )
         .arg(
-            Arg::new("anon_identity")
-                .long("anon-identity")
-                .short('a')
-                .action(SetTrue)
-                .help("Instruct SpacetimeDB to allocate a new identity to own this database"),
+            common_args::anonymous()
         )
         .arg(
             Arg::new("name|address")
@@ -71,10 +67,7 @@ pub fn cli() -> clap::Command {
                 .help("The nickname, domain name or URL of the server to host the database."),
         )
         .arg(
-            Arg::new("force")
-                .long("force")
-                .action(SetTrue)
-                .help("DANGEROUS - Proceed with all actions without waiting for user confirmation")
+            common_args::yes()
         )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }

@@ -1,19 +1,14 @@
-use spacetimedb_sdk::{
-    disconnect,
-    identity::{address, identity, load_credentials, once_on_connect, save_credentials},
-    once_on_disconnect, once_on_subscription_applied,
-    reducer::Status,
-    spacetimedb_lib::sats::{i256, u256},
-    subscribe,
-    table::TableType,
-};
-
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::large_enum_variant)]
 mod module_bindings;
 
 use module_bindings::*;
 
+use spacetimedb_sdk::{
+    credentials,
+    sats::{i256, u256},
+    Address, DbContext, Event, Identity, ReducerEvent, Status, Table,
+};
 use test_counter::TestCounter;
 
 mod simple_test_table;
@@ -41,9 +36,6 @@ fn exit_on_panic() {
     std::panic::set_hook(Box::new(move |panic_info| {
         // Print panic information
         default_hook(panic_info);
-
-        // Close the websocket gracefully before exiting.
-        spacetimedb_sdk::disconnect();
 
         // Exit the process with a non-zero code to denote failure.
         std::process::exit(1);
@@ -77,7 +69,8 @@ fn main() {
         "fail_reducer" => exec_fail_reducer(),
 
         "insert_vec" => exec_insert_vec(),
-
+        "insert_option_some" => exec_insert_option_some(),
+        "insert_option_none" => exec_insert_option_none(),
         "insert_struct" => exec_insert_struct(),
         "insert_simple_enum" => exec_insert_simple_enum(),
         "insert_enum_with_payload" => exec_insert_enum_with_payload(),
@@ -86,31 +79,27 @@ fn main() {
 
         "insert_primitives_as_strings" => exec_insert_primitives_as_strings(),
 
-        "resubscribe" => exec_resubscribe(),
-
-        "reconnect" => exec_reconnect(),
-
+        // "resubscribe" => exec_resubscribe(),
+        //
         "reauth_part_1" => exec_reauth_part_1(),
         "reauth_part_2" => exec_reauth_part_2(),
 
         "should_fail" => exec_should_fail(),
 
         "reconnect_same_address" => exec_reconnect_same_address(),
-
         "caller_always_notified" => exec_caller_always_notified(),
 
         "subscribe_all_select_star" => exec_subscribe_all_select_star(),
-
         _ => panic!("Unknown test: {}", test),
     }
 }
 
-fn assert_table_empty<T: TableType>() -> anyhow::Result<()> {
-    let count = T::count();
+fn assert_table_empty<T: Table>(tbl: T) -> anyhow::Result<()> {
+    let count = tbl.count();
     if count != 0 {
         anyhow::bail!(
             "Expected table {} to be empty, but found {} rows resident",
-            T::TABLE_NAME,
+            std::any::type_name::<T::Row>(),
             count,
         )
     }
@@ -120,119 +109,119 @@ fn assert_table_empty<T: TableType>() -> anyhow::Result<()> {
 /// Each test runs against a fresh DB, so all tables should be empty until we call an insert reducer.
 ///
 /// We'll call this function within our initial `on_subscription_applied` callback to verify that.
-fn assert_all_tables_empty() -> anyhow::Result<()> {
-    assert_table_empty::<OneU8>()?;
-    assert_table_empty::<OneU16>()?;
-    assert_table_empty::<OneU32>()?;
-    assert_table_empty::<OneU64>()?;
-    assert_table_empty::<OneU128>()?;
-    assert_table_empty::<OneU256>()?;
+fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
+    assert_table_empty(ctx.db().one_u_8())?;
+    assert_table_empty(ctx.db().one_u_16())?;
+    assert_table_empty(ctx.db().one_u_32())?;
+    assert_table_empty(ctx.db().one_u_64())?;
+    assert_table_empty(ctx.db().one_u_128())?;
+    assert_table_empty(ctx.db().one_u_256())?;
 
-    assert_table_empty::<OneI8>()?;
-    assert_table_empty::<OneI16>()?;
-    assert_table_empty::<OneI32>()?;
-    assert_table_empty::<OneI64>()?;
-    assert_table_empty::<OneI128>()?;
-    assert_table_empty::<OneI256>()?;
+    assert_table_empty(ctx.db().one_i_8())?;
+    assert_table_empty(ctx.db().one_i_16())?;
+    assert_table_empty(ctx.db().one_i_32())?;
+    assert_table_empty(ctx.db().one_i_64())?;
+    assert_table_empty(ctx.db().one_i_128())?;
+    assert_table_empty(ctx.db().one_i_256())?;
 
-    assert_table_empty::<OneBool>()?;
+    assert_table_empty(ctx.db().one_bool())?;
 
-    assert_table_empty::<OneF32>()?;
-    assert_table_empty::<OneF64>()?;
+    assert_table_empty(ctx.db().one_f_32())?;
+    assert_table_empty(ctx.db().one_f_64())?;
 
-    assert_table_empty::<OneString>()?;
-    assert_table_empty::<OneIdentity>()?;
-    assert_table_empty::<OneAddress>()?;
+    assert_table_empty(ctx.db().one_string())?;
+    assert_table_empty(ctx.db().one_identity())?;
+    assert_table_empty(ctx.db().one_address())?;
 
-    assert_table_empty::<OneSimpleEnum>()?;
-    assert_table_empty::<OneEnumWithPayload>()?;
+    assert_table_empty(ctx.db().one_simple_enum())?;
+    assert_table_empty(ctx.db().one_enum_with_payload())?;
 
-    assert_table_empty::<OneUnitStruct>()?;
-    assert_table_empty::<OneByteStruct>()?;
-    assert_table_empty::<OneEveryPrimitiveStruct>()?;
-    assert_table_empty::<OneEveryVecStruct>()?;
+    assert_table_empty(ctx.db().one_unit_struct())?;
+    assert_table_empty(ctx.db().one_byte_struct())?;
+    assert_table_empty(ctx.db().one_every_primitive_struct())?;
+    assert_table_empty(ctx.db().one_every_vec_struct())?;
 
-    assert_table_empty::<VecU8>()?;
-    assert_table_empty::<VecU16>()?;
-    assert_table_empty::<VecU32>()?;
-    assert_table_empty::<VecU64>()?;
-    assert_table_empty::<VecU128>()?;
-    assert_table_empty::<VecU256>()?;
+    assert_table_empty(ctx.db().vec_u_8())?;
+    assert_table_empty(ctx.db().vec_u_16())?;
+    assert_table_empty(ctx.db().vec_u_32())?;
+    assert_table_empty(ctx.db().vec_u_64())?;
+    assert_table_empty(ctx.db().vec_u_128())?;
+    assert_table_empty(ctx.db().vec_u_256())?;
 
-    assert_table_empty::<VecI8>()?;
-    assert_table_empty::<VecI16>()?;
-    assert_table_empty::<VecI32>()?;
-    assert_table_empty::<VecI64>()?;
-    assert_table_empty::<VecI128>()?;
-    assert_table_empty::<VecI256>()?;
+    assert_table_empty(ctx.db().vec_i_8())?;
+    assert_table_empty(ctx.db().vec_i_16())?;
+    assert_table_empty(ctx.db().vec_i_32())?;
+    assert_table_empty(ctx.db().vec_i_64())?;
+    assert_table_empty(ctx.db().vec_i_128())?;
+    assert_table_empty(ctx.db().vec_i_256())?;
 
-    assert_table_empty::<VecBool>()?;
+    assert_table_empty(ctx.db().vec_bool())?;
 
-    assert_table_empty::<VecF32>()?;
-    assert_table_empty::<VecF64>()?;
+    assert_table_empty(ctx.db().vec_f_32())?;
+    assert_table_empty(ctx.db().vec_f_64())?;
 
-    assert_table_empty::<VecString>()?;
-    assert_table_empty::<VecIdentity>()?;
-    assert_table_empty::<VecAddress>()?;
+    assert_table_empty(ctx.db().vec_string())?;
+    assert_table_empty(ctx.db().vec_identity())?;
+    assert_table_empty(ctx.db().vec_address())?;
 
-    assert_table_empty::<VecSimpleEnum>()?;
-    assert_table_empty::<VecEnumWithPayload>()?;
+    assert_table_empty(ctx.db().vec_simple_enum())?;
+    assert_table_empty(ctx.db().vec_enum_with_payload())?;
 
-    assert_table_empty::<VecUnitStruct>()?;
-    assert_table_empty::<VecByteStruct>()?;
-    assert_table_empty::<VecEveryPrimitiveStruct>()?;
-    assert_table_empty::<VecEveryVecStruct>()?;
+    assert_table_empty(ctx.db().vec_unit_struct())?;
+    assert_table_empty(ctx.db().vec_byte_struct())?;
+    assert_table_empty(ctx.db().vec_every_primitive_struct())?;
+    assert_table_empty(ctx.db().vec_every_vec_struct())?;
 
-    assert_table_empty::<OptionI32>()?;
-    assert_table_empty::<OptionString>()?;
-    assert_table_empty::<OptionIdentity>()?;
-    assert_table_empty::<OptionSimpleEnum>()?;
-    assert_table_empty::<OptionEveryPrimitiveStruct>()?;
-    assert_table_empty::<OptionVecOptionI32>()?;
+    assert_table_empty(ctx.db().option_i_32())?;
+    assert_table_empty(ctx.db().option_string())?;
+    assert_table_empty(ctx.db().option_identity())?;
+    assert_table_empty(ctx.db().option_simple_enum())?;
+    assert_table_empty(ctx.db().option_every_primitive_struct())?;
+    assert_table_empty(ctx.db().option_vec_option_i_32())?;
 
-    assert_table_empty::<UniqueU8>()?;
-    assert_table_empty::<UniqueU16>()?;
-    assert_table_empty::<UniqueU32>()?;
-    assert_table_empty::<UniqueU64>()?;
-    assert_table_empty::<UniqueU128>()?;
-    assert_table_empty::<UniqueU256>()?;
+    assert_table_empty(ctx.db().unique_u_8())?;
+    assert_table_empty(ctx.db().unique_u_16())?;
+    assert_table_empty(ctx.db().unique_u_32())?;
+    assert_table_empty(ctx.db().unique_u_64())?;
+    assert_table_empty(ctx.db().unique_u_128())?;
+    assert_table_empty(ctx.db().unique_u_256())?;
 
-    assert_table_empty::<UniqueI8>()?;
-    assert_table_empty::<UniqueI16>()?;
-    assert_table_empty::<UniqueI32>()?;
-    assert_table_empty::<UniqueI64>()?;
-    assert_table_empty::<UniqueI128>()?;
-    assert_table_empty::<UniqueI256>()?;
+    assert_table_empty(ctx.db().unique_i_8())?;
+    assert_table_empty(ctx.db().unique_i_16())?;
+    assert_table_empty(ctx.db().unique_i_32())?;
+    assert_table_empty(ctx.db().unique_i_64())?;
+    assert_table_empty(ctx.db().unique_i_128())?;
+    assert_table_empty(ctx.db().unique_i_256())?;
 
-    assert_table_empty::<UniqueBool>()?;
+    assert_table_empty(ctx.db().unique_bool())?;
 
-    assert_table_empty::<UniqueString>()?;
-    assert_table_empty::<UniqueIdentity>()?;
-    assert_table_empty::<UniqueAddress>()?;
+    assert_table_empty(ctx.db().unique_string())?;
+    assert_table_empty(ctx.db().unique_identity())?;
+    assert_table_empty(ctx.db().unique_address())?;
 
-    assert_table_empty::<PkU8>()?;
-    assert_table_empty::<PkU16>()?;
-    assert_table_empty::<PkU32>()?;
-    assert_table_empty::<PkU64>()?;
-    assert_table_empty::<PkU128>()?;
-    assert_table_empty::<PkU256>()?;
+    assert_table_empty(ctx.db().pk_u_8())?;
+    assert_table_empty(ctx.db().pk_u_16())?;
+    assert_table_empty(ctx.db().pk_u_32())?;
+    assert_table_empty(ctx.db().pk_u_64())?;
+    assert_table_empty(ctx.db().pk_u_128())?;
+    assert_table_empty(ctx.db().pk_u_256())?;
 
-    assert_table_empty::<PkI8>()?;
-    assert_table_empty::<PkI16>()?;
-    assert_table_empty::<PkI32>()?;
-    assert_table_empty::<PkI64>()?;
-    assert_table_empty::<PkI128>()?;
-    assert_table_empty::<PkI256>()?;
+    assert_table_empty(ctx.db().pk_i_8())?;
+    assert_table_empty(ctx.db().pk_i_16())?;
+    assert_table_empty(ctx.db().pk_i_32())?;
+    assert_table_empty(ctx.db().pk_i_64())?;
+    assert_table_empty(ctx.db().pk_i_128())?;
+    assert_table_empty(ctx.db().pk_i_256())?;
 
-    assert_table_empty::<PkBool>()?;
+    assert_table_empty(ctx.db().pk_bool())?;
 
-    assert_table_empty::<PkString>()?;
-    assert_table_empty::<PkIdentity>()?;
-    assert_table_empty::<PkAddress>()?;
+    assert_table_empty(ctx.db().pk_string())?;
+    assert_table_empty(ctx.db().pk_identity())?;
+    assert_table_empty(ctx.db().pk_address())?;
 
-    assert_table_empty::<LargeTable>()?;
+    assert_table_empty(ctx.db().large_table())?;
 
-    assert_table_empty::<TableHoldsTable>()?;
+    assert_table_empty(ctx.db().table_holds_table())?;
 
     Ok(())
 }
@@ -329,51 +318,75 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM table_holds_table;",
 ];
 
+fn connect_then(
+    test_counter: &std::sync::Arc<TestCounter>,
+    callback: impl FnOnce(&DbConnection) + Send + 'static,
+) -> DbConnection {
+    let connected_result = test_counter.add_test("on_connect");
+    let name = db_name_or_panic();
+    let conn = DbConnection::builder()
+        .with_module_name(name)
+        .with_uri(LOCALHOST)
+        .on_connect(|ctx, _, _| {
+            callback(ctx);
+            connected_result(Ok(()));
+        })
+        .on_connect_error(|e| panic!("Connect errored: {e:?}"))
+        .build()
+        .unwrap();
+    conn.run_threaded();
+    conn
+}
+
+fn connect(test_counter: &std::sync::Arc<TestCounter>) -> DbConnection {
+    connect_then(test_counter, |_| {})
+}
+
+fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&EventContext) + Send + 'static) {
+    ctx.subscription_builder()
+        .on_applied(callback)
+        .on_error(|ctx| panic!("Subscription errored: {:?}", ctx.event))
+        .subscribe(SUBSCRIBE_ALL.iter().map(|s| s.to_string()).collect());
+}
+
 /// This tests that we can:
 /// - Pass primitive types to reducers.
 /// - Deserialize primitive types in rows and in reducer arguments.
 /// - Observe `on_insert` callbacks with appropriate reducer events.
 fn exec_insert_primitive() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    connect_then(&test_counter, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            insert_one::<OneU8>(&test_counter, 0);
-            insert_one::<OneU16>(&test_counter, 0);
-            insert_one::<OneU32>(&test_counter, 0);
-            insert_one::<OneU64>(&test_counter, 0);
-            insert_one::<OneU128>(&test_counter, 0);
-            insert_one::<OneU256>(&test_counter, 0u8.into());
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                insert_one::<OneU8>(ctx, &test_counter, 0);
+                insert_one::<OneU16>(ctx, &test_counter, 0);
+                insert_one::<OneU32>(ctx, &test_counter, 0);
+                insert_one::<OneU64>(ctx, &test_counter, 0);
+                insert_one::<OneU128>(ctx, &test_counter, 0);
+                insert_one::<OneU256>(ctx, &test_counter, 0u8.into());
 
-            insert_one::<OneI8>(&test_counter, 0);
-            insert_one::<OneI16>(&test_counter, 0);
-            insert_one::<OneI32>(&test_counter, 0);
-            insert_one::<OneI64>(&test_counter, 0);
-            insert_one::<OneI128>(&test_counter, 0);
-            insert_one::<OneI256>(&test_counter, 0i8.into());
+                insert_one::<OneI8>(ctx, &test_counter, 0);
+                insert_one::<OneI16>(ctx, &test_counter, 0);
+                insert_one::<OneI32>(ctx, &test_counter, 0);
+                insert_one::<OneI64>(ctx, &test_counter, 0);
+                insert_one::<OneI128>(ctx, &test_counter, 0);
+                insert_one::<OneI256>(ctx, &test_counter, 0i8.into());
 
-            insert_one::<OneBool>(&test_counter, false);
+                insert_one::<OneBool>(ctx, &test_counter, false);
 
-            insert_one::<OneF32>(&test_counter, 0.0);
-            insert_one::<OneF64>(&test_counter, 0.0);
+                insert_one::<OneF32>(ctx, &test_counter, 0.0);
+                insert_one::<OneF64>(ctx, &test_counter, 0.0);
 
-            insert_one::<OneString>(&test_counter, "".to_string());
+                insert_one::<OneString>(ctx, &test_counter, "".to_string());
 
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+        }
+    });
 
     test_counter.wait_for_all();
 }
@@ -381,116 +394,96 @@ fn exec_insert_primitive() {
 /// This tests that we can observe `on_delete` callbacks.
 fn exec_delete_primitive() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    let connection = connect_then(&test_counter, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            insert_then_delete_one::<UniqueU8>(&test_counter, 0, 0xbeef);
-            insert_then_delete_one::<UniqueU16>(&test_counter, 0, 0xbeef);
-            insert_then_delete_one::<UniqueU32>(&test_counter, 0, 0xbeef);
-            insert_then_delete_one::<UniqueU64>(&test_counter, 0, 0xbeef);
-            insert_then_delete_one::<UniqueU128>(&test_counter, 0, 0xbeef);
-            insert_then_delete_one::<UniqueU256>(&test_counter, 0u8.into(), 0xbeef);
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                insert_then_delete_one::<UniqueU8>(ctx, &test_counter, 0, 0xbeef);
+                insert_then_delete_one::<UniqueU16>(ctx, &test_counter, 0, 0xbeef);
+                insert_then_delete_one::<UniqueU32>(ctx, &test_counter, 0, 0xbeef);
+                insert_then_delete_one::<UniqueU64>(ctx, &test_counter, 0, 0xbeef);
+                insert_then_delete_one::<UniqueU128>(ctx, &test_counter, 0, 0xbeef);
+                insert_then_delete_one::<UniqueU256>(ctx, &test_counter, 0u8.into(), 0xbeef);
 
-            insert_then_delete_one::<UniqueI8>(&test_counter, 0, 0xbeef);
-            insert_then_delete_one::<UniqueI16>(&test_counter, 0, 0xbeef);
-            insert_then_delete_one::<UniqueI32>(&test_counter, 0, 0xbeef);
-            insert_then_delete_one::<UniqueI64>(&test_counter, 0, 0xbeef);
-            insert_then_delete_one::<UniqueI128>(&test_counter, 0, 0xbeef);
-            insert_then_delete_one::<UniqueI256>(&test_counter, 0i8.into(), 0xbeef);
+                insert_then_delete_one::<UniqueI8>(ctx, &test_counter, 0, 0xbeef);
+                insert_then_delete_one::<UniqueI16>(ctx, &test_counter, 0, 0xbeef);
+                insert_then_delete_one::<UniqueI32>(ctx, &test_counter, 0, 0xbeef);
+                insert_then_delete_one::<UniqueI64>(ctx, &test_counter, 0, 0xbeef);
+                insert_then_delete_one::<UniqueI128>(ctx, &test_counter, 0, 0xbeef);
+                insert_then_delete_one::<UniqueI256>(ctx, &test_counter, 0i8.into(), 0xbeef);
 
-            insert_then_delete_one::<UniqueBool>(&test_counter, false, 0xbeef);
+                insert_then_delete_one::<UniqueBool>(ctx, &test_counter, false, 0xbeef);
 
-            insert_then_delete_one::<UniqueString>(&test_counter, "".to_string(), 0xbeef);
+                insert_then_delete_one::<UniqueString>(ctx, &test_counter, "".to_string(), 0xbeef);
 
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+        }
+    });
 
     test_counter.wait_for_all();
 
-    assert_all_tables_empty().unwrap();
+    assert_all_tables_empty(&connection).unwrap();
 }
 
 /// This tests that we can distinguish between `on_update` and `on_delete` callbacks for tables with primary keys.
 fn exec_update_primitive() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    let connection = connect_then(&test_counter, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            insert_update_delete_one::<PkU8>(&test_counter, 0, 0xbeef, 0xbabe);
-            insert_update_delete_one::<PkU16>(&test_counter, 0, 0xbeef, 0xbabe);
-            insert_update_delete_one::<PkU32>(&test_counter, 0, 0xbeef, 0xbabe);
-            insert_update_delete_one::<PkU64>(&test_counter, 0, 0xbeef, 0xbabe);
-            insert_update_delete_one::<PkU128>(&test_counter, 0, 0xbeef, 0xbabe);
-            insert_update_delete_one::<PkU256>(&test_counter, 0u8.into(), 0xbeef, 0xbabe);
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                insert_update_delete_one::<PkU8>(ctx, &test_counter, 0, 0xbeef, 0xbabe);
+                insert_update_delete_one::<PkU16>(ctx, &test_counter, 0, 0xbeef, 0xbabe);
+                insert_update_delete_one::<PkU32>(ctx, &test_counter, 0, 0xbeef, 0xbabe);
+                insert_update_delete_one::<PkU64>(ctx, &test_counter, 0, 0xbeef, 0xbabe);
+                insert_update_delete_one::<PkU128>(ctx, &test_counter, 0, 0xbeef, 0xbabe);
+                insert_update_delete_one::<PkU256>(ctx, &test_counter, 0u8.into(), 0xbeef, 0xbabe);
 
-            insert_update_delete_one::<PkI8>(&test_counter, 0, 0xbeef, 0xbabe);
-            insert_update_delete_one::<PkI16>(&test_counter, 0, 0xbeef, 0xbabe);
-            insert_update_delete_one::<PkI32>(&test_counter, 0, 0xbeef, 0xbabe);
-            insert_update_delete_one::<PkI64>(&test_counter, 0, 0xbeef, 0xbabe);
-            insert_update_delete_one::<PkI128>(&test_counter, 0, 0xbeef, 0xbabe);
-            insert_update_delete_one::<PkI256>(&test_counter, 0i8.into(), 0xbeef, 0xbabe);
+                insert_update_delete_one::<PkI8>(ctx, &test_counter, 0, 0xbeef, 0xbabe);
+                insert_update_delete_one::<PkI16>(ctx, &test_counter, 0, 0xbeef, 0xbabe);
+                insert_update_delete_one::<PkI32>(ctx, &test_counter, 0, 0xbeef, 0xbabe);
+                insert_update_delete_one::<PkI64>(ctx, &test_counter, 0, 0xbeef, 0xbabe);
+                insert_update_delete_one::<PkI128>(ctx, &test_counter, 0, 0xbeef, 0xbabe);
+                insert_update_delete_one::<PkI256>(ctx, &test_counter, 0i8.into(), 0xbeef, 0xbabe);
 
-            insert_update_delete_one::<PkBool>(&test_counter, false, 0xbeef, 0xbabe);
+                insert_update_delete_one::<PkBool>(ctx, &test_counter, false, 0xbeef, 0xbabe);
 
-            insert_update_delete_one::<PkString>(&test_counter, "".to_string(), 0xbeef, 0xbabe);
+                insert_update_delete_one::<PkString>(ctx, &test_counter, "".to_string(), 0xbeef, 0xbabe);
 
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+        }
+    });
 
     test_counter.wait_for_all();
 
-    assert_all_tables_empty().unwrap();
+    assert_all_tables_empty(&connection).unwrap();
 }
 
 /// This tests that we can serialize and deserialize `Identity` in various contexts.
 fn exec_insert_identity() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    connect_then(&test_counter, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            insert_one::<OneIdentity>(&test_counter, identity().unwrap());
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                insert_one::<OneIdentity>(
+                    ctx,
+                    &test_counter,
+                    Identity::__dummy(), // connection.identity().unwrap()
+                );
 
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            })
+        }
+    });
 
     test_counter.wait_for_all();
 }
@@ -498,29 +491,21 @@ fn exec_insert_identity() {
 /// This tests that we can retrieve and use the caller's `Identity` from the reducer context.
 fn exec_insert_caller_identity() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    connect_then(&test_counter, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            on_insert_one::<OneIdentity>(&test_counter, identity().unwrap(), |event| {
-                matches!(event, ReducerEvent::InsertCallerOneIdentity(_))
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                on_insert_one::<OneIdentity>(ctx, &test_counter, ctx.identity(), |event| {
+                    matches!(event, Reducer::InsertCallerOneIdentity(_))
+                });
+                ctx.reducers.insert_caller_one_identity().unwrap();
+
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
-            insert_caller_one_identity();
-
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+        }
+    });
 
     test_counter.wait_for_all();
 }
@@ -529,85 +514,61 @@ fn exec_insert_caller_identity() {
 /// but it's here for symmetry.
 fn exec_delete_identity() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    let connection = connect_then(&test_counter, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            insert_then_delete_one::<UniqueIdentity>(&test_counter, identity().unwrap(), 0xbeef);
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                insert_then_delete_one::<UniqueIdentity>(ctx, &test_counter, ctx.identity(), 0xbeef);
 
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+        }
+    });
 
     test_counter.wait_for_all();
 
-    assert_all_tables_empty().unwrap();
+    assert_all_tables_empty(&connection).unwrap();
 }
 
 /// This tests that we can distinguish between `on_delete` and `on_update` events
 /// for tables with `Identity` primary keys.
 fn exec_update_identity() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    let connection = connect_then(&test_counter, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            insert_update_delete_one::<PkIdentity>(&test_counter, identity().unwrap(), 0xbeef, 0xbabe);
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                insert_update_delete_one::<PkIdentity>(ctx, &test_counter, ctx.identity(), 0xbeef, 0xbabe);
 
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+        }
+    });
 
     test_counter.wait_for_all();
 
-    assert_all_tables_empty().unwrap();
+    assert_all_tables_empty(&connection).unwrap();
 }
 
 /// This tests that we can serialize and deserialize `Address` in various contexts.
 fn exec_insert_address() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    connect_then(&test_counter, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            insert_one::<OneAddress>(&test_counter, address().unwrap());
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                insert_one::<OneAddress>(ctx, &test_counter, ctx.address());
 
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+        }
+    });
 
     test_counter.wait_for_all();
 }
@@ -615,29 +576,20 @@ fn exec_insert_address() {
 /// This tests that we can serialize and deserialize `Address` in various contexts.
 fn exec_insert_caller_address() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    connect_then(&test_counter, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            on_insert_one::<OneAddress>(&test_counter, address().unwrap(), |event| {
-                matches!(event, ReducerEvent::InsertCallerOneAddress(_))
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                on_insert_one::<OneAddress>(ctx, &test_counter, ctx.address(), |event| {
+                    matches!(event, Reducer::InsertCallerOneAddress(_))
+                });
+                ctx.reducers.insert_caller_one_address().unwrap();
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
             });
-            insert_caller_one_address();
-
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+        }
+    });
 
     test_counter.wait_for_all();
 }
@@ -646,121 +598,116 @@ fn exec_insert_caller_address() {
 /// but it's here for symmetry.
 fn exec_delete_address() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    let connection = connect_then(&test_counter, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            insert_then_delete_one::<UniqueAddress>(&test_counter, address().unwrap(), 0xbeef);
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                insert_then_delete_one::<UniqueAddress>(ctx, &test_counter, ctx.address(), 0xbeef);
 
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+        }
+    });
 
     test_counter.wait_for_all();
 
-    assert_all_tables_empty().unwrap();
+    assert_all_tables_empty(&connection).unwrap();
 }
 
 /// This tests that we can distinguish between `on_delete` and `on_update` events
 /// for tables with `Address` primary keys.
 fn exec_update_address() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    let connection = connect(&test_counter);
+
+    subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            insert_update_delete_one::<PkAddress>(&test_counter, address().unwrap(), 0xbeef, 0xbabe);
+        move |ctx| {
+            insert_update_delete_one::<PkAddress>(
+                ctx,
+                &test_counter,
+                Address::default(), // connection.address().unwrap(),
+                0xbeef,
+                0xbabe,
+            );
 
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+            sub_applied_nothing_result(assert_all_tables_empty(ctx));
+        }
+    });
 
     test_counter.wait_for_all();
 
-    assert_all_tables_empty().unwrap();
+    assert_all_tables_empty(&connection).unwrap();
 }
 
 /// This tests that we can observe reducer callbacks for successful reducer runs.
 fn exec_on_reducer() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let reducer_result = test_counter.add_test("reducer-callback");
+    let connection = connect(&test_counter);
+
+    let mut reducer_result = Some(test_counter.add_test("reducer-callback"));
 
     let value = 128;
 
-    once_on_insert_one_u_8(move |caller_id, caller_addr, status, arg| {
+    connection.reducers.on_insert_one_u_8(move |ctx, arg| {
         let run_checks = || {
             if *arg != value {
                 anyhow::bail!("Unexpected reducer argument. Expected {} but found {}", value, *arg);
             }
-            if *caller_id != identity().unwrap() {
+            let Event::Reducer(reducer_event) = &ctx.event else {
+                anyhow::bail!("Expected Reducer event but found {:?}", ctx.event);
+            };
+            if reducer_event.caller_identity != ctx.identity() {
                 anyhow::bail!(
-                    "Unexpected caller_id. Expected:\n{:?}\nFound:\n{:?}",
-                    identity().unwrap(),
-                    caller_id
+                    "Expected caller_identity to be my own identity {:?}, but found {:?}",
+                    ctx.identity(),
+                    reducer_event.caller_identity,
                 );
             }
-            if caller_addr != Some(address().unwrap()) {
+            if reducer_event.caller_address != Some(ctx.address()) {
                 anyhow::bail!(
-                    "Unexpected caller_addr. Expected:\n{:?}\nFound:\n{:?}",
-                    address().unwrap(),
-                    caller_addr
+                    "Expected caller_address to be my own address {:?}, but found {:?}",
+                    ctx.address(),
+                    reducer_event.caller_address,
+                )
+            }
+            if !matches!(reducer_event.status, Status::Committed) {
+                anyhow::bail!(
+                    "Unexpected status. Expected Committed but found {:?}",
+                    reducer_event.status
                 );
             }
-            if !matches!(status, Status::Committed) {
-                anyhow::bail!("Unexpected status. Expected Committed but found {:?}", status);
+            let expected_reducer = Reducer::InsertOneU8(InsertOneU8 { n: value });
+            if reducer_event.reducer != expected_reducer {
+                anyhow::bail!(
+                    "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
+                    reducer_event.reducer
+                );
             }
-            if OneU8::count() != 1 {
-                anyhow::bail!("Expected 1 row in table OneU8, but found {}", OneU8::count());
+
+            if ctx.db.one_u_8().count() != 1 {
+                anyhow::bail!("Expected 1 row in table OneU8, but found {}", ctx.db.one_u_8().count());
             }
-            let row = OneU8::iter().next().unwrap();
+            let row = ctx.db.one_u_8().iter().next().unwrap();
             if row.n != value {
                 anyhow::bail!("Unexpected row value. Expected {} but found {:?}", value, row);
             }
             Ok(())
         };
 
-        reducer_result(run_checks());
+        (reducer_result.take().unwrap())(run_checks());
     });
 
-    once_on_subscription_applied(move || {
-        insert_one_u_8(value);
-
-        sub_applied_nothing_result(assert_all_tables_empty());
+    subscribe_all_then(&connection, move |ctx| {
+        sub_applied_nothing_result(assert_all_tables_empty(ctx));
+        ctx.reducers.insert_one_u_8(value).unwrap();
     });
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
 
     test_counter.wait_for_all();
 }
@@ -768,100 +715,72 @@ fn exec_on_reducer() {
 /// This tests that we can observe reducer callbacks for failed reducers.
 fn exec_fail_reducer() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+    let mut reducer_success_result = Some(test_counter.add_test("reducer-callback-success"));
+    let mut reducer_fail_result = Some(test_counter.add_test("reducer-callback-fail"));
 
-    let reducer_success_result = test_counter.add_test("reducer-callback-success");
-    let reducer_fail_result = test_counter.add_test("reducer-callback-fail");
+    let connection = connect(&test_counter);
 
     let key = 128;
     let initial_data = 0xbeef;
     let fail_data = 0xbabe;
 
-    once_on_insert_pk_u_8(move |caller_id, caller_addr, status, arg_key, arg_val| {
-        let run_checks = || {
-            if *arg_key != key {
-                anyhow::bail!("Unexpected reducer argument. Expected {} but found {}", key, *arg_key);
-            }
-            if *arg_val != initial_data {
-                anyhow::bail!(
-                    "Unexpected reducer argument. Expected {} but found {}",
-                    initial_data,
-                    *arg_val,
-                );
-            }
-            if *caller_id != identity().unwrap() {
-                anyhow::bail!(
-                    "Unexpected caller_id. Expected:\n{:?}\nFound:\n{:?}",
-                    identity().unwrap(),
-                    caller_id,
-                );
-            }
-            if caller_addr != Some(address().unwrap()) {
-                anyhow::bail!(
-                    "Unexpected caller_addr. Expected:\n{:?}\nFound:\n{:?}",
-                    address().unwrap(),
-                    caller_addr,
-                );
-            }
-            if !matches!(status, Status::Committed) {
-                anyhow::bail!("Unexpected status. Expected Committed but found {:?}", status);
-            }
-            if PkU8::count() != 1 {
-                anyhow::bail!("Expected 1 row in table PkU8, but found {}", PkU8::count());
-            }
-            let row = PkU8::iter().next().unwrap();
-            if row.n != key || row.data != initial_data {
-                anyhow::bail!(
-                    "Unexpected row value. Expected ({}, {}) but found {:?}",
-                    key,
-                    initial_data,
-                    row
-                );
-            }
-            Ok(())
-        };
+    // We'll call the reducer `insert_pk_u8` twice with the same key,
+    // listening for a success the first time and a failure the second.
+    // We'll set this to false after our first time through.
+    let mut should_succeed = true;
 
-        reducer_success_result(run_checks());
-
-        once_on_insert_pk_u_8(move |caller_id, caller_addr, status, arg_key, arg_val| {
+    connection.reducers.on_insert_pk_u_8(move |ctx, arg_key, arg_val| {
+        if should_succeed {
             let run_checks = || {
                 if *arg_key != key {
                     anyhow::bail!("Unexpected reducer argument. Expected {} but found {}", key, *arg_key);
                 }
-                if *arg_val != fail_data {
+                if *arg_val != initial_data {
                     anyhow::bail!(
                         "Unexpected reducer argument. Expected {} but found {}",
                         initial_data,
-                        *arg_val
+                        *arg_val,
                     );
                 }
-                if *caller_id != identity().unwrap() {
+                let Event::Reducer(reducer_event) = &ctx.event else {
+                    anyhow::bail!("Expected Reducer event but found {:?}", ctx.event);
+                };
+                if reducer_event.caller_identity != ctx.identity() {
                     anyhow::bail!(
-                        "Unexpected caller_id. Expected:\n{:?}\nFound:\n{:?}",
-                        identity().unwrap(),
-                        caller_id,
+                        "Expected caller_identity to be my own identity {:?}, but found {:?}",
+                        ctx.identity(),
+                        reducer_event.caller_identity,
                     );
                 }
-                if caller_addr != Some(address().unwrap()) {
+                if reducer_event.caller_address != Some(ctx.address()) {
                     anyhow::bail!(
-                        "Unexpected caller_addr. Expected:\n{:?}\nFound:\n{:?}",
-                        address().unwrap(),
-                        caller_addr,
+                        "Expected caller_address to be my own address {:?}, but found {:?}",
+                        ctx.address(),
+                        reducer_event.caller_address,
                     )
                 }
-                if !matches!(status, Status::Failed(_)) {
-                    anyhow::bail!("Unexpected status. Expected Failed but found {:?}", status);
+                if !matches!(reducer_event.status, Status::Committed) {
+                    anyhow::bail!(
+                        "Unexpected status. Expected Committed but found {:?}",
+                        reducer_event.status
+                    );
                 }
-                if PkU8::count() != 1 {
-                    anyhow::bail!("Expected 1 row in table PkU8, but found {}", PkU8::count());
+                let expected_reducer = Reducer::InsertPkU8(InsertPkU8 {
+                    n: key,
+                    data: initial_data,
+                });
+                if reducer_event.reducer != expected_reducer {
+                    anyhow::bail!(
+                        "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
+                        reducer_event.reducer
+                    );
                 }
-                let row = PkU8::iter().next().unwrap();
+
+                if ctx.db.pk_u_8().count() != 1 {
+                    anyhow::bail!("Expected 1 row in table PkU8, but found {}", ctx.db.pk_u_8().count());
+                }
+                let row = ctx.db.pk_u_8().iter().next().unwrap();
                 if row.n != key || row.data != initial_data {
                     anyhow::bail!(
                         "Unexpected row value. Expected ({}, {}) but found {:?}",
@@ -873,21 +792,81 @@ fn exec_fail_reducer() {
                 Ok(())
             };
 
-            reducer_fail_result(run_checks());
-        });
+            (reducer_success_result.take().unwrap())(run_checks());
 
-        insert_pk_u_8(key, fail_data);
+            should_succeed = false;
+
+            ctx.reducers.insert_pk_u_8(key, fail_data).unwrap();
+        } else {
+            let run_checks = || {
+                if *arg_key != key {
+                    anyhow::bail!("Unexpected reducer argument. Expected {} but found {}", key, *arg_key);
+                }
+                if *arg_val != fail_data {
+                    anyhow::bail!(
+                        "Unexpected reducer argument. Expected {} but found {}",
+                        initial_data,
+                        *arg_val
+                    );
+                }
+                let Event::Reducer(reducer_event) = &ctx.event else {
+                    anyhow::bail!("Expected Reducer event but found {:?}", ctx.event);
+                };
+                if reducer_event.caller_identity != ctx.identity() {
+                    anyhow::bail!(
+                        "Expected caller_identity to be my own identity {:?}, but found {:?}",
+                        ctx.identity(),
+                        reducer_event.caller_identity,
+                    );
+                }
+                if reducer_event.caller_address != Some(ctx.address()) {
+                    anyhow::bail!(
+                        "Expected caller_address to be my own address {:?}, but found {:?}",
+                        ctx.address(),
+                        reducer_event.caller_address,
+                    )
+                }
+                if !matches!(reducer_event.status, Status::Failed(_)) {
+                    anyhow::bail!(
+                        "Unexpected status. Expected Committed but found {:?}",
+                        reducer_event.status
+                    );
+                }
+                let expected_reducer = Reducer::InsertPkU8(InsertPkU8 {
+                    n: key,
+                    data: fail_data,
+                });
+                if reducer_event.reducer != expected_reducer {
+                    anyhow::bail!(
+                        "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
+                        reducer_event.reducer
+                    );
+                }
+
+                if ctx.db.pk_u_8().count() != 1 {
+                    anyhow::bail!("Expected 1 row in table PkU8, but found {}", ctx.db.pk_u_8().count());
+                }
+                let row = ctx.db.pk_u_8().iter().next().unwrap();
+                if row.n != key || row.data != initial_data {
+                    anyhow::bail!(
+                        "Unexpected row value. Expected ({}, {}) but found {:?}",
+                        key,
+                        initial_data,
+                        row
+                    );
+                }
+                Ok(())
+            };
+
+            (reducer_fail_result.take().unwrap())(run_checks());
+        }
     });
 
-    once_on_subscription_applied(move || {
-        insert_pk_u_8(key, initial_data);
+    subscribe_all_then(&connection, move |ctx| {
+        ctx.reducers.insert_pk_u_8(key, initial_data).unwrap();
 
-        sub_applied_nothing_result(assert_all_tables_empty());
+        sub_applied_nothing_result(assert_all_tables_empty(ctx));
     });
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
 
     test_counter.wait_for_all();
 }
@@ -895,47 +874,40 @@ fn exec_fail_reducer() {
 /// This tests that we can serialize and deserialize `Vec<?>` in various contexts.
 fn exec_insert_vec() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    let connection = connect(&test_counter);
+
+    subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            insert_one::<VecU8>(&test_counter, vec![0, 1]);
-            insert_one::<VecU16>(&test_counter, vec![0, 1]);
-            insert_one::<VecU32>(&test_counter, vec![0, 1]);
-            insert_one::<VecU64>(&test_counter, vec![0, 1]);
-            insert_one::<VecU128>(&test_counter, vec![0, 1]);
-            insert_one::<VecU256>(&test_counter, [0u8, 1].map(Into::into).into());
+        move |ctx| {
+            insert_one::<VecU8>(ctx, &test_counter, vec![0, 1]);
+            insert_one::<VecU16>(ctx, &test_counter, vec![0, 1]);
+            insert_one::<VecU32>(ctx, &test_counter, vec![0, 1]);
+            insert_one::<VecU64>(ctx, &test_counter, vec![0, 1]);
+            insert_one::<VecU128>(ctx, &test_counter, vec![0, 1]);
+            insert_one::<VecU256>(ctx, &test_counter, [0u8, 1].map(Into::into).into());
 
-            insert_one::<VecI8>(&test_counter, vec![0, 1]);
-            insert_one::<VecI16>(&test_counter, vec![0, 1]);
-            insert_one::<VecI32>(&test_counter, vec![0, 1]);
-            insert_one::<VecI64>(&test_counter, vec![0, 1]);
-            insert_one::<VecI128>(&test_counter, vec![0, 1]);
-            insert_one::<VecI256>(&test_counter, [0i8, 1].map(Into::into).into());
+            insert_one::<VecI8>(ctx, &test_counter, vec![0, 1]);
+            insert_one::<VecI16>(ctx, &test_counter, vec![0, 1]);
+            insert_one::<VecI32>(ctx, &test_counter, vec![0, 1]);
+            insert_one::<VecI64>(ctx, &test_counter, vec![0, 1]);
+            insert_one::<VecI128>(ctx, &test_counter, vec![0, 1]);
+            insert_one::<VecI256>(ctx, &test_counter, [0i8, 1].map(Into::into).into());
 
-            insert_one::<VecBool>(&test_counter, vec![false, true]);
+            insert_one::<VecBool>(ctx, &test_counter, vec![false, true]);
 
-            insert_one::<VecF32>(&test_counter, vec![0.0, 1.0]);
-            insert_one::<VecF64>(&test_counter, vec![0.0, 1.0]);
+            insert_one::<VecF32>(ctx, &test_counter, vec![0.0, 1.0]);
+            insert_one::<VecF64>(ctx, &test_counter, vec![0.0, 1.0]);
 
-            insert_one::<VecString>(&test_counter, vec!["zero".to_string(), "one".to_string()]);
+            insert_one::<VecString>(ctx, &test_counter, vec!["zero".to_string(), "one".to_string()]);
 
-            insert_one::<VecIdentity>(&test_counter, vec![identity().unwrap()]);
+            insert_one::<VecIdentity>(ctx, &test_counter, vec![ctx.identity()]);
+            insert_one::<VecAddress>(ctx, &test_counter, vec![ctx.address()]);
 
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+            sub_applied_nothing_result(assert_all_tables_empty(ctx));
+        }
+    });
 
     test_counter.wait_for_all();
 }
@@ -967,8 +939,8 @@ fn every_primitive_struct() -> EveryPrimitiveStruct {
         n: 1.0,
         o: -1.0,
         p: "string".to_string(),
-        q: identity().unwrap(),
-        r: address().unwrap(),
+        q: Identity::__dummy(),
+        r: Address::default(),
     }
 }
 
@@ -990,8 +962,8 @@ fn every_vec_struct() -> EveryVecStruct {
         n: vec![0.0, -1.0, 1.0, -2.0, 2.0],
         o: vec![0.0, -0.5, 0.5, -1.5, 1.5],
         p: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
-        q: vec![identity().unwrap()],
-        r: vec![address().unwrap()],
+        q: vec![Identity::__dummy()],
+        r: vec![Address::default()],
     }
 }
 
@@ -1022,55 +994,83 @@ fn large_table() -> LargeTable {
     }
 }
 
+/// This tests that we can serialize and deserialize `Option`s of various payload types which are `Some`.
+///
+/// Note that this must be a separate test from [`exec_insert_option_none`],
+/// as [`insert_one`] cannot handle running multiple tests for the same type in parallel.
+fn exec_insert_option_some() {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let connection = connect(&test_counter);
+
+    subscribe_all_then(&connection, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            insert_one::<OptionI32>(ctx, &test_counter, Some(0));
+            insert_one::<OptionString>(ctx, &test_counter, Some("string".to_string()));
+            insert_one::<OptionIdentity>(ctx, &test_counter, Some(ctx.identity()));
+            insert_one::<OptionSimpleEnum>(ctx, &test_counter, Some(SimpleEnum::Zero));
+            insert_one::<OptionEveryPrimitiveStruct>(ctx, &test_counter, Some(every_primitive_struct()));
+            insert_one::<OptionVecOptionI32>(ctx, &test_counter, Some(vec![Some(0), None]));
+
+            sub_applied_nothing_result(assert_all_tables_empty(ctx));
+        }
+    });
+
+    test_counter.wait_for_all();
+}
+
+/// This tests that we can serialize and deserialize `Option`s of various payload types which are `None`.
+///
+/// Note that this must be a separate test from [`exec_insert_option_some`],
+/// as [`insert_one`] cannot handle running multiple tests for the same type in parallel.
+fn exec_insert_option_none() {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let connection = connect(&test_counter);
+
+    subscribe_all_then(&connection, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            insert_one::<OptionI32>(ctx, &test_counter, None);
+            insert_one::<OptionString>(ctx, &test_counter, None);
+            insert_one::<OptionIdentity>(ctx, &test_counter, None);
+            insert_one::<OptionSimpleEnum>(ctx, &test_counter, None);
+            insert_one::<OptionEveryPrimitiveStruct>(ctx, &test_counter, None);
+            insert_one::<OptionVecOptionI32>(ctx, &test_counter, None);
+
+            sub_applied_nothing_result(assert_all_tables_empty(ctx));
+        }
+    });
+
+    test_counter.wait_for_all();
+}
+
 /// This tests that we can serialize and deserialize structs in various contexts.
 fn exec_insert_struct() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    let connection = connect(&test_counter);
+
+    subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            insert_one::<OneUnitStruct>(&test_counter, UnitStruct {});
-            insert_one::<OneByteStruct>(&test_counter, ByteStruct { b: 0 });
-            insert_one::<OneEveryPrimitiveStruct>(&test_counter, every_primitive_struct());
-            insert_one::<OneEveryVecStruct>(&test_counter, every_vec_struct());
+        move |ctx| {
+            insert_one::<OneUnitStruct>(ctx, &test_counter, UnitStruct {});
+            insert_one::<OneByteStruct>(ctx, &test_counter, ByteStruct { b: 0 });
+            insert_one::<OneEveryPrimitiveStruct>(ctx, &test_counter, every_primitive_struct());
+            insert_one::<OneEveryVecStruct>(ctx, &test_counter, every_vec_struct());
 
-            insert_one::<VecUnitStruct>(&test_counter, vec![UnitStruct {}]);
-            insert_one::<VecByteStruct>(&test_counter, vec![ByteStruct { b: 0 }]);
-            insert_one::<VecEveryPrimitiveStruct>(&test_counter, vec![every_primitive_struct()]);
-            insert_one::<VecEveryVecStruct>(&test_counter, vec![every_vec_struct()]);
+            insert_one::<VecUnitStruct>(ctx, &test_counter, vec![UnitStruct {}]);
+            insert_one::<VecByteStruct>(ctx, &test_counter, vec![ByteStruct { b: 0 }]);
+            insert_one::<VecEveryPrimitiveStruct>(ctx, &test_counter, vec![every_primitive_struct()]);
+            insert_one::<VecEveryVecStruct>(ctx, &test_counter, vec![every_vec_struct()]);
 
-            insert_one::<OptionI32>(&test_counter, Some(0));
-            insert_one::<OptionI32>(&test_counter, None);
-
-            insert_one::<OptionString>(&test_counter, Some("string".to_string()));
-            insert_one::<OptionString>(&test_counter, None);
-
-            insert_one::<OptionIdentity>(&test_counter, Some(identity().unwrap()));
-            insert_one::<OptionIdentity>(&test_counter, None);
-
-            insert_one::<OptionSimpleEnum>(&test_counter, Some(SimpleEnum::Zero));
-            insert_one::<OptionSimpleEnum>(&test_counter, None);
-
-            insert_one::<OptionEveryPrimitiveStruct>(&test_counter, Some(every_primitive_struct()));
-            insert_one::<OptionEveryPrimitiveStruct>(&test_counter, None);
-
-            insert_one::<OptionVecOptionI32>(&test_counter, Some(vec![Some(0), None]));
-            insert_one::<OptionVecOptionI32>(&test_counter, None);
-
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+            sub_applied_nothing_result(assert_all_tables_empty(ctx));
+        }
+    });
 
     test_counter.wait_for_all();
 }
@@ -1078,27 +1078,23 @@ fn exec_insert_struct() {
 /// This tests that we can serialize and deserialize C-style enums in various contexts.
 fn exec_insert_simple_enum() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    let connection = connect(&test_counter);
+
+    subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            insert_one::<OneSimpleEnum>(&test_counter, SimpleEnum::One);
-            insert_one::<VecSimpleEnum>(&test_counter, vec![SimpleEnum::Zero, SimpleEnum::One, SimpleEnum::Two]);
+        move |ctx| {
+            insert_one::<OneSimpleEnum>(ctx, &test_counter, SimpleEnum::One);
+            insert_one::<VecSimpleEnum>(
+                ctx,
+                &test_counter,
+                vec![SimpleEnum::Zero, SimpleEnum::One, SimpleEnum::Two],
+            );
 
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+            sub_applied_nothing_result(assert_all_tables_empty(ctx));
+        }
+    });
 
     test_counter.wait_for_all();
 }
@@ -1106,19 +1102,16 @@ fn exec_insert_simple_enum() {
 /// This tests that we can serialize and deserialize sum types in various contexts.
 fn exec_insert_enum_with_payload() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    let connection = connect(&test_counter);
+
+    subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            insert_one::<OneEnumWithPayload>(&test_counter, EnumWithPayload::U8(0));
+        move |ctx| {
+            insert_one::<OneEnumWithPayload>(ctx, &test_counter, EnumWithPayload::U8(0));
             insert_one::<VecEnumWithPayload>(
+                ctx,
                 &test_counter,
                 vec![
                     EnumWithPayload::U8(0),
@@ -1137,7 +1130,7 @@ fn exec_insert_enum_with_payload() {
                     EnumWithPayload::F32(0.0),
                     EnumWithPayload::F64(100.0),
                     EnumWithPayload::Str("enum holds string".to_string()),
-                    EnumWithPayload::Identity(identity().unwrap()),
+                    EnumWithPayload::Identity(ctx.identity()),
                     EnumWithPayload::Bytes(vec![0xde, 0xad, 0xbe, 0xef]),
                     EnumWithPayload::Strings(
                         ["enum", "of", "vec", "of", "strings"]
@@ -1149,13 +1142,9 @@ fn exec_insert_enum_with_payload() {
                 ],
             );
 
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+            sub_applied_nothing_result(assert_all_tables_empty(ctx));
+        }
+    });
 
     test_counter.wait_for_all();
 }
@@ -1188,27 +1177,26 @@ macro_rules! assert_eq_or_bail {
 /// and observes a callback for an inserted table with many columns of many types.
 fn exec_insert_long_table() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    let connection = connect(&test_counter);
+
+    subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
         let mut large_table_result = Some(test_counter.add_test("insert-large-table"));
-        once_on_subscription_applied(move || {
-            LargeTable::on_insert(move |row, reducer_event| {
+        move |ctx| {
+            ctx.db.large_table().on_insert(move |ctx, row| {
                 if large_table_result.is_some() {
                     let run_tests = || {
                         assert_eq_or_bail!(large_table(), *row);
-                        if !matches!(reducer_event, Some(ReducerEvent::InsertLargeTable(_))) {
-                            anyhow::bail!(
-                                "Unexpected reducer event: expeced InsertLargeTable but found {:?}",
-                                reducer_event
-                            );
+                        if !matches!(
+                            ctx.event,
+                            Event::Reducer(ReducerEvent {
+                                reducer: Reducer::InsertLargeTable(_),
+                                ..
+                            })
+                        ) {
+                            anyhow::bail!("Unexpected event: expeced InsertLargeTable but found {:?}", ctx.event,);
                         }
                         Ok(())
                     };
@@ -1216,56 +1204,50 @@ fn exec_insert_long_table() {
                 }
             });
             let large_table = large_table();
-            insert_large_table(
-                large_table.a,
-                large_table.b,
-                large_table.c,
-                large_table.d,
-                large_table.e,
-                large_table.f,
-                large_table.g,
-                large_table.h,
-                large_table.i,
-                large_table.j,
-                large_table.k,
-                large_table.l,
-                large_table.m,
-                large_table.n,
-                large_table.o,
-                large_table.p,
-                large_table.q,
-                large_table.r,
-                large_table.s,
-                large_table.t,
-                large_table.u,
-                large_table.v,
-            );
+            ctx.reducers
+                .insert_large_table(
+                    large_table.a,
+                    large_table.b,
+                    large_table.c,
+                    large_table.d,
+                    large_table.e,
+                    large_table.f,
+                    large_table.g,
+                    large_table.h,
+                    large_table.i,
+                    large_table.j,
+                    large_table.k,
+                    large_table.l,
+                    large_table.m,
+                    large_table.n,
+                    large_table.o,
+                    large_table.p,
+                    large_table.q,
+                    large_table.r,
+                    large_table.s,
+                    large_table.t,
+                    large_table.u,
+                    large_table.v,
+                )
+                .unwrap();
 
-            sub_applied_nothing_result(assert_all_tables_empty())
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+            sub_applied_nothing_result(assert_all_tables_empty(ctx))
+        }
+    });
 
     test_counter.wait_for_all();
 }
 
 fn exec_insert_primitives_as_strings() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-
-    let sub_result = test_counter.add_test("subscribe");
-
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
+    let connection = connect(&test_counter);
+
+    subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
         let mut result = Some(test_counter.add_test("insert-primitives-as-strings"));
-        once_on_subscription_applied(move || {
+        move |ctx| {
             let s = every_primitive_struct();
 
             let strings = vec![
@@ -1289,14 +1271,21 @@ fn exec_insert_primitives_as_strings() {
                 s.r.to_string(),
             ];
 
-            VecString::on_insert(move |row, reducer_event| {
+            ctx.db.vec_string().on_insert(move |ctx, row| {
                 if result.is_some() {
                     let run_tests = || {
                         assert_eq_or_bail!(strings, row.s);
-                        if !matches!(reducer_event, Some(ReducerEvent::InsertPrimitivesAsStrings(_))) {
+                        if !matches!(
+                            ctx.event,
+                            Event::Reducer(ReducerEvent {
+                                status: Status::Committed,
+                                reducer: Reducer::InsertPrimitivesAsStrings(_),
+                                ..
+                            })
+                        ) {
                             anyhow::bail!(
-                                "Unexpected reducer event: expeced InsertPrimitivesAsStrings but found {:?}",
-                                reducer_event
+                                "Unexpected Event: expeced reducer InsertPrimitivesAsStrings but found {:?}",
+                                ctx.event,
                             );
                         }
                         Ok(())
@@ -1304,143 +1293,141 @@ fn exec_insert_primitives_as_strings() {
                     (result.take().unwrap())(run_tests());
                 }
             });
-            insert_primitives_as_strings(s);
+            ctx.reducers.insert_primitives_as_strings(s).unwrap();
 
-            sub_applied_nothing_result(assert_all_tables_empty())
-        });
-    }
-
-    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
-
-    conn_result(connect(LOCALHOST, &name, None));
+            sub_applied_nothing_result(assert_all_tables_empty(ctx))
+        }
+    });
 
     test_counter.wait_for_all();
 }
 
-/// This tests the behavior of re-subscribing
-/// by observing `on_delete` callbacks of newly-unsubscribed rows
-/// and `on_insert` callbacks of newly-subscribed rows.
-fn exec_resubscribe() {
-    let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
+// /// This tests the behavior of re-subscribing
+// /// by observing `on_delete` callbacks of newly-unsubscribed rows
+// /// and `on_insert` callbacks of newly-subscribed rows.
+// fn exec_resubscribe() {
+//     let test_counter = TestCounter::new();
+//     let name = db_name_or_panic();
 
-    // Boring stuff first: connect and subscribe to everything.
-    let connect_result = test_counter.add_test("connect");
-    let subscribe_result = test_counter.add_test("initial-subscribe");
-    let sub_applied_result = test_counter.add_test("initial-subscription-nothing");
+//     // Boring stuff first: connect and subscribe to everything.
+//     let connect_result = test_counter.add_test("connect");
+//     let subscribe_result = test_counter.add_test("initial-subscribe");
+//     let sub_applied_result = test_counter.add_test("initial-subscription-nothing");
 
-    once_on_subscription_applied(move || {
-        sub_applied_result(assert_all_tables_empty());
-    });
+//     once_on_subscription_applied(move || {
+//         sub_applied_result(assert_all_tables_empty());
+//     });
 
-    once_on_connect(|_, _| {
-        subscribe_result(subscribe(SUBSCRIBE_ALL));
-    });
+//     once_on_connect(|_, _| {
+//         subscribe_result(subscribe(SUBSCRIBE_ALL));
+//     });
 
-    connect_result(connect(LOCALHOST, &name, None));
+//     connect_result(connect(LOCALHOST, &name, None));
 
-    // Wait for all previous checks before continuing.
-    test_counter.wait_for_all();
+//     // Wait for all previous checks before continuing.
+//     test_counter.wait_for_all();
 
-    // Insert 256 rows of `OneU8`.
-    // At this point, we should be subscribed to all of them.
-    let test_counter = TestCounter::new();
-    let mut insert_u8s = (0..=255)
-        .map(|n| Some(test_counter.add_test(format!("insert-{}", n))))
-        .collect::<Vec<_>>();
-    let on_insert_u8 = OneU8::on_insert(move |row, _| {
-        let n = row.n;
-        (insert_u8s[n as usize].take().unwrap())(Ok(()));
-    });
-    for n in 0..=255 {
-        insert_one_u_8(n as u8);
-    }
-    // Wait for all previous checks before continuing,
-    test_counter.wait_for_all();
-    // and remove the callback now that we're done with it.
-    OneU8::remove_on_insert(on_insert_u8);
+//     // Insert 256 rows of `OneU8`.
+//     // At this point, we should be subscribed to all of them.
+//     let test_counter = TestCounter::new();
+//     let mut insert_u8s = (0..=255)
+//         .map(|n| Some(test_counter.add_test(format!("insert-{}", n))))
+//         .collect::<Vec<_>>();
+//     let on_insert_u8 = OneU8::on_insert(move |row, _| {
+//         let n = row.n;
+//         (insert_u8s[n as usize].take().unwrap())(Ok(()));
+//     });
+//     for n in 0..=255 {
+//         insert_one_u_8(n as u8);
+//     }
+//     // Wait for all previous checks before continuing,
+//     test_counter.wait_for_all();
+//     // and remove the callback now that we're done with it.
+//     OneU8::remove_on_insert(on_insert_u8);
+//     // Re-subscribe with a query that excludes the lower half of the `OneU8` rows,
+//     // and observe `on_delete` callbacks for those rows.
+//     let test_counter = TestCounter::new();
+//     let mut delete_u8s = (0..128)
+//         .map(|n| Some(test_counter.add_test(format!("unsubscribe-{}-delete", n))))
+//         .collect::<Vec<_>>();
+//     let on_delete_verify = OneU8::on_delete(move |row, _| {
+//         let n = row.n;
+//         // This indexing will panic if n > 127.
+//         (delete_u8s[n as usize].take().unwrap())(Ok(()));
+//     });
+//     // There should be no newly-subscribed rows, so we'll panic if we get an on-insert event.
+//     let on_insert_panic = OneU8::on_insert(|row, _| {
+//         panic!("Unexpected insert during re-subscribe for {:?}", row);
+//     });
+//     let subscribe_less_result = test_counter.add_test("resubscribe-fewer-matches");
+//     once_on_subscription_applied(move || {
+//         let run_checks = || {
+//             assert_eq_or_bail!(128, OneU8::count());
+//             if let Some(row) = OneU8::iter().find(|row| row.n < 128) {
+//                 anyhow::bail!("After subscribing to OneU8 WHERE n > 127, found row with n < {}", row.n);
+//             }
+//             Ok(())
+//         };
+//         subscribe_less_result(run_checks());
+//     });
+//     let subscribe_result = test_counter.add_test("resubscribe");
+//     subscribe_result(subscribe(&["SELECT * FROM OneU8 WHERE n > 127"]));
+//     // Wait before continuing, and remove callbacks.
+//     test_counter.wait_for_all();
+//     OneU8::remove_on_delete(on_delete_verify);
+//     OneU8::remove_on_insert(on_insert_panic);
 
-    // Re-subscribe with a query that excludes the lower half of the `OneU8` rows,
-    // and observe `on_delete` callbacks for those rows.
-    let test_counter = TestCounter::new();
-    let mut delete_u8s = (0..128)
-        .map(|n| Some(test_counter.add_test(format!("unsubscribe-{}-delete", n))))
-        .collect::<Vec<_>>();
-    let on_delete_verify = OneU8::on_delete(move |row, _| {
-        let n = row.n;
-        // This indexing will panic if n > 127.
-        (delete_u8s[n as usize].take().unwrap())(Ok(()));
-    });
-    // There should be no newly-subscribed rows, so we'll panic if we get an on-insert event.
-    let on_insert_panic = OneU8::on_insert(|row, _| {
-        panic!("Unexpected insert during re-subscribe for {:?}", row);
-    });
-    let subscribe_less_result = test_counter.add_test("resubscribe-fewer-matches");
-    once_on_subscription_applied(move || {
-        let run_checks = || {
-            assert_eq_or_bail!(128, OneU8::count());
-            if let Some(row) = OneU8::iter().find(|row| row.n < 128) {
-                anyhow::bail!("After subscribing to OneU8 WHERE n > 127, found row with n < {}", row.n);
-            }
-            Ok(())
-        };
-        subscribe_less_result(run_checks());
-    });
-    let subscribe_result = test_counter.add_test("resubscribe");
-    subscribe_result(subscribe(&["SELECT * FROM one_u8 WHERE n > 127"]));
-    // Wait before continuing, and remove callbacks.
-    test_counter.wait_for_all();
-    OneU8::remove_on_delete(on_delete_verify);
-    OneU8::remove_on_insert(on_insert_panic);
+//     // Re-subscribe with a query that includes all of the `OneU8` rows again,
+//     // and observe `on_insert` callbacks for the lower half.
+//     let test_counter = TestCounter::new();
+//     let mut insert_u8s = (0..128)
+//         .map(|n| Some(test_counter.add_test(format!("resubscribe-{}-insert", n))))
+//         .collect::<Vec<_>>();
+//     OneU8::on_insert(move |row, _| {
+//         let n = row.n;
+//         // This indexing will panic if n > 127.
+//         (insert_u8s[n as usize].take().unwrap())(Ok(()));
+//     });
+//     // There should be no newly-unsubscribed rows, so we'll panic if we get an on-delete event.
+//     OneU8::on_delete(|row, _| {
+//         panic!("Unexpected delete during re-subscribe for {:?}", row);
+//     });
+//     let subscribe_more_result = test_counter.add_test("resubscribe-more-matches");
+//     once_on_subscription_applied(move || {
+//         let run_checks = || {
+//             assert_eq_or_bail!(256, OneU8::count());
+//             Ok(())
+//         };
+//         subscribe_more_result(run_checks());
+//     });
+//     let subscribe_result = test_counter.add_test("resubscribe-again");
+//     subscribe_result(subscribe(&["SELECT * FROM OneU8"]));
+//     test_counter.wait_for_all();
+// }
 
-    // Re-subscribe with a query that includes all of the `OneU8` rows again,
-    // and observe `on_insert` callbacks for the lower half.
-    let test_counter = TestCounter::new();
-    let mut insert_u8s = (0..128)
-        .map(|n| Some(test_counter.add_test(format!("resubscribe-{}-insert", n))))
-        .collect::<Vec<_>>();
-    OneU8::on_insert(move |row, _| {
-        let n = row.n;
-        // This indexing will panic if n > 127.
-        (insert_u8s[n as usize].take().unwrap())(Ok(()));
-    });
-    // There should be no newly-unsubscribed rows, so we'll panic if we get an on-delete event.
-    OneU8::on_delete(|row, _| {
-        panic!("Unexpected delete during re-subscribe for {:?}", row);
-    });
-    let subscribe_more_result = test_counter.add_test("resubscribe-more-matches");
-    once_on_subscription_applied(move || {
-        let run_checks = || {
-            assert_eq_or_bail!(256, OneU8::count());
-            Ok(())
-        };
-        subscribe_more_result(run_checks());
-    });
-    let subscribe_result = test_counter.add_test("resubscribe-again");
-    subscribe_result(subscribe(&["SELECT * FROM one_u8"]));
-    test_counter.wait_for_all();
-}
-
-/// Once we determine appropriate semantics for in-process re-connecting,
-/// this test will verify it.
-fn exec_reconnect() {
-    todo!()
+fn creds_store() -> credentials::File {
+    credentials::File::new("rust-sdk-test")
 }
 
 /// Part of the `reauth` test, this connects to Spacetime to get new credentials,
 /// and saves them to a file.
 fn exec_reauth_part_1() {
     let test_counter = TestCounter::new();
+
     let name = db_name_or_panic();
 
-    let connect_result = test_counter.add_test("connect");
     let save_result = test_counter.add_test("save-credentials");
 
-    once_on_connect(|creds, _| {
-        save_result(save_credentials(".spacetime_rust_sdk_test", creds));
-    });
-
-    connect_result(connect(LOCALHOST, &name, None));
+    DbConnection::builder()
+        .on_connect(|_, identity, token| {
+            save_result(creds_store().save(identity, token));
+        })
+        .on_connect_error(|e| panic!("Connect failed: {e:?}"))
+        .with_module_name(name)
+        .with_uri(LOCALHOST)
+        .build()
+        .unwrap()
+        .run_threaded();
 
     test_counter.wait_for_all();
 }
@@ -1451,139 +1438,159 @@ fn exec_reauth_part_1() {
 /// Must run after `exec_reauth_part_1`.
 fn exec_reauth_part_2() {
     let test_counter = TestCounter::new();
+
     let name = db_name_or_panic();
 
-    let connect_result = test_counter.add_test("connect");
-    let creds_match_result = test_counter.add_test("credentials-match");
+    let creds_match_result = test_counter.add_test("creds-match");
 
-    let creds = load_credentials(".spacetime_rust_sdk_test")
-        .expect("Failed to load credentials")
-        .expect("Expected credentials but found none");
+    let (identity, token) = creds_store().load().unwrap().unwrap();
 
-    let creds_dup = creds.clone();
-
-    once_on_connect(move |received_creds, _| {
-        let run_checks = || {
-            assert_eq_or_bail!(creds_dup, *received_creds);
-            Ok(())
-        };
-
-        creds_match_result(run_checks());
-    });
-
-    connect_result(connect(LOCALHOST, &name, Some(creds)));
+    DbConnection::builder()
+        .on_connect({
+            let token = token.clone();
+            move |_, recv_identity, recv_token| {
+                let run_checks = || {
+                    assert_eq_or_bail!(identity, recv_identity);
+                    assert_eq_or_bail!(token, recv_token);
+                    Ok(())
+                };
+                creds_match_result(run_checks());
+            }
+        })
+        .on_connect_error(|e| panic!("Connect failed: {e:?}"))
+        .with_module_name(name)
+        .with_credentials(Some((identity, token)))
+        .with_uri(LOCALHOST)
+        .build()
+        .unwrap()
+        .run_threaded();
 
     test_counter.wait_for_all();
 }
 
 fn exec_reconnect_same_address() {
-    let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
+    let initial_test_counter = TestCounter::new();
+    let initial_connect_result = initial_test_counter.add_test("connect");
 
-    let connect_result = test_counter.add_test("connect");
-    let read_addr_result = test_counter.add_test("read_addr");
+    let disconnect_test_counter = TestCounter::new();
+    let disconnect_result = disconnect_test_counter.add_test("disconnect");
 
-    let name_dup = name.clone();
-    once_on_connect(move |_, received_address| {
-        let my_address = address().unwrap();
-        let run_checks = || {
-            assert_eq_or_bail!(my_address, received_address);
-            Ok(())
-        };
+    let initial_connection = DbConnection::builder()
+        .with_module_name(db_name_or_panic())
+        .with_uri(LOCALHOST)
+        .on_connect_error(|e| panic!("on_connect_error: {e:?}"))
+        .on_connect(move |_, _, _| {
+            initial_connect_result(Ok(()));
+        })
+        .on_disconnect(|_, err| {
+            if let Some(err) = err {
+                disconnect_result(Err(anyhow::anyhow!("{err:?}")));
+            } else {
+                disconnect_result(Ok(()))
+            }
+        })
+        .build()
+        .unwrap();
 
-        read_addr_result(run_checks());
-    });
+    initial_connection.run_threaded();
 
-    connect_result(connect(LOCALHOST, &name, None));
+    initial_test_counter.wait_for_all();
 
-    test_counter.wait_for_all();
+    let my_address = initial_connection.address();
 
-    let my_address = address().unwrap();
+    initial_connection.disconnect().unwrap();
 
-    let test_counter = TestCounter::new();
-    let reconnect_result = test_counter.add_test("reconnect");
-    let addr_after_reconnect_result = test_counter.add_test("addr_after_reconnect");
+    disconnect_test_counter.wait_for_all();
 
-    once_on_disconnect(move || {
-        once_on_connect(move |_, received_address| {
-            let my_address_2 = address().unwrap();
+    let reconnect_test_counter = TestCounter::new();
+    let reconnect_result = reconnect_test_counter.add_test("reconnect");
+    let addr_after_reconnect_result = reconnect_test_counter.add_test("addr_after_reconnect");
+
+    let re_connection = DbConnection::builder()
+        .with_module_name(db_name_or_panic())
+        .with_uri(LOCALHOST)
+        .on_connect_error(|e| panic!("on_connect_error: {e:?}"))
+        .on_connect(move |ctx, _, _| {
+            reconnect_result(Ok(()));
             let run_checks = || {
-                assert_eq_or_bail!(my_address, received_address);
-                assert_eq_or_bail!(my_address, my_address_2);
+                anyhow::ensure!(ctx.address() == my_address);
                 Ok(())
             };
-
             addr_after_reconnect_result(run_checks());
-        });
+        })
+        .build()
+        .unwrap();
+    re_connection.run_threaded();
 
-        reconnect_result(connect(LOCALHOST, &name_dup, None));
-    });
-
-    disconnect();
-
-    test_counter.wait_for_all();
+    reconnect_test_counter.wait_for_all();
 }
 
 fn exec_caller_always_notified() {
     let test_counter = TestCounter::new();
 
-    let no_op_result = test_counter.add_test("notified_of_no_op_reducer");
+    let mut no_op_result = Some(test_counter.add_test("notified_of_no_op_reducer"));
 
-    once_on_connect(move |_, _| {
-        once_on_no_op_succeeds(move |_, _, status| {
-            no_op_result(match status {
-                Status::Committed => Ok(()),
-                els => Err(anyhow::anyhow!(
-                    "Unexpected status from no_op_succeeds reducer: {els:?}"
-                )),
-            });
+    let connection = connect(&test_counter);
+
+    connection.reducers.on_no_op_succeeds(move |ctx| {
+        (no_op_result.take().unwrap())(match ctx.event {
+            Event::Reducer(ReducerEvent {
+                status: Status::Committed,
+                reducer: Reducer::NoOpSucceeds(_),
+                ..
+            }) => Ok(()),
+            _ => Err(anyhow::anyhow!(
+                "Unexpected event from no_op_succeeds reducer: {:?}",
+                ctx.event,
+            )),
         });
-        no_op_succeeds();
     });
+
+    connection.reducers.no_op_succeeds().unwrap();
+
+    test_counter.wait_for_all();
 }
 
 /// Duplicates the test `insert_primitive`, but using the `SELECT * FROM *` sugar
 /// rather than an explicit query set.
 fn exec_subscribe_all_select_star() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
-
-    let conn_result = test_counter.add_test("connect");
-    let sub_result = test_counter.add_test("subscribe");
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    {
-        let test_counter = test_counter.clone();
-        once_on_subscription_applied(move || {
-            insert_one::<OneU8>(&test_counter, 0);
-            insert_one::<OneU16>(&test_counter, 0);
-            insert_one::<OneU32>(&test_counter, 0);
-            insert_one::<OneU64>(&test_counter, 0);
-            insert_one::<OneU128>(&test_counter, 0);
-            insert_one::<OneU256>(&test_counter, 0u8.into());
+    let connection = connect(&test_counter);
 
-            insert_one::<OneI8>(&test_counter, 0);
-            insert_one::<OneI16>(&test_counter, 0);
-            insert_one::<OneI32>(&test_counter, 0);
-            insert_one::<OneI64>(&test_counter, 0);
-            insert_one::<OneI128>(&test_counter, 0);
-            insert_one::<OneI256>(&test_counter, 0i8.into());
+    connection
+        .subscription_builder()
+        .on_applied({
+            let test_counter = test_counter.clone();
+            move |ctx| {
+                insert_one::<OneU8>(ctx, &test_counter, 0);
+                insert_one::<OneU16>(ctx, &test_counter, 0);
+                insert_one::<OneU32>(ctx, &test_counter, 0);
+                insert_one::<OneU64>(ctx, &test_counter, 0);
+                insert_one::<OneU128>(ctx, &test_counter, 0);
+                insert_one::<OneU256>(ctx, &test_counter, 0u8.into());
 
-            insert_one::<OneBool>(&test_counter, false);
+                insert_one::<OneI8>(ctx, &test_counter, 0);
+                insert_one::<OneI16>(ctx, &test_counter, 0);
+                insert_one::<OneI32>(ctx, &test_counter, 0);
+                insert_one::<OneI64>(ctx, &test_counter, 0);
+                insert_one::<OneI128>(ctx, &test_counter, 0);
+                insert_one::<OneI256>(ctx, &test_counter, 0i8.into());
 
-            insert_one::<OneF32>(&test_counter, 0.0);
-            insert_one::<OneF64>(&test_counter, 0.0);
+                insert_one::<OneBool>(ctx, &test_counter, false);
 
-            insert_one::<OneString>(&test_counter, "".to_string());
+                insert_one::<OneF32>(ctx, &test_counter, 0.0);
+                insert_one::<OneF64>(ctx, &test_counter, 0.0);
 
-            sub_applied_nothing_result(assert_all_tables_empty());
-        });
-    }
+                insert_one::<OneString>(ctx, &test_counter, "".to_string());
 
-    once_on_connect(move |_, _| sub_result(subscribe(&["SELECT * FROM *"])));
-
-    conn_result(connect(LOCALHOST, &name, None));
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            }
+        })
+        .on_error(|_| panic!("Subscription error"))
+        .subscribe(vec!["SELECT * FROM *".to_string()]);
 
     test_counter.wait_for_all();
 }

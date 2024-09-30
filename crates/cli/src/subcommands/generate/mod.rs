@@ -23,9 +23,9 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use wasmtime::{Caller, StoreContextMut};
 
-use crate::build;
 use crate::util::y_or_n;
 use crate::Config;
+use crate::{build, common_args};
 
 mod code_indenter;
 pub mod csharp;
@@ -111,13 +111,7 @@ pub fn cli() -> clap::Command {
                 .default_value("")
                 .help("Options to pass to the build command"),
         )
-        .arg(
-            Arg::new("force")
-                .long("force")
-                .action(SetTrue)
-                .requires("delete_files")
-                .help("delete-files without prompting first. Useful for scripts."),
-        )
+        .arg(common_args::yes())
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
@@ -306,7 +300,6 @@ pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow
 }
 
 fn generate_lang(module: &ModuleDef, lang: impl Lang, namespace: &str) -> Vec<(String, String)> {
-    let table_refs = module.tables().map(|tbl| tbl.product_type_ref).collect::<HashSet<_>>();
     itertools::chain!(
         module.tables().map(|tbl| {
             (
@@ -314,13 +307,13 @@ fn generate_lang(module: &ModuleDef, lang: impl Lang, namespace: &str) -> Vec<(S
                 lang.generate_table(module, namespace, tbl),
             )
         }),
-        module.types().filter(|typ| !table_refs.contains(&typ.ty)).map(|typ| {
+        module.types().map(|typ| {
             (
                 lang.type_filename(&typ.name),
                 lang.generate_type(module, namespace, typ),
             )
         }),
-        module.reducers().filter(|r| r.lifecycle.is_none()).map(|reducer| {
+        module.reducers().map(|reducer| {
             (
                 lang.reducer_filename(&reducer.name),
                 lang.generate_reducer(module, namespace, reducer),
