@@ -7,7 +7,7 @@ class UpdateModule(Smoketest):
     AUTOPUBLISH = False
 
     MODULE_CODE = """
-use spacetimedb::println;
+use spacetimedb::{println, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -18,13 +18,13 @@ pub struct Person {
 }
 
 #[spacetimedb::reducer]
-pub fn add(name: String) {
-    Person::insert(Person { id: 0, name }).unwrap();
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { id: 0, name });
 }
 
 #[spacetimedb::reducer]
-pub fn say_hello() {
-    for person in Person::iter() {
+pub fn say_hello(ctx: &ReducerContext) {
+    for person in ctx.db.person().iter() {
         println!("Hello, {}!", person.name);
     }
     println!("Hello, World!");
@@ -42,7 +42,7 @@ pub struct Person {
 """
 
     MODULE_CODE_C = """
-use spacetimedb::println;
+use spacetimedb::{println, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -58,7 +58,7 @@ pub struct Pet {
 }
 
 #[spacetimedb::reducer]
-pub fn are_we_updated_yet() {
+pub fn are_we_updated_yet(ctx: &ReducerContext) {
     println!("MODULE UPDATED");
 }
 """
@@ -102,7 +102,7 @@ pub fn are_we_updated_yet() {
 
 class UploadModule1(Smoketest):
     MODULE_CODE = """
-use spacetimedb::println;
+use spacetimedb::{println, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -110,13 +110,13 @@ pub struct Person {
 }
 
 #[spacetimedb::reducer]
-pub fn add(name: String) {
-    Person::insert(Person { name });
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
 }
 
 #[spacetimedb::reducer]
-pub fn say_hello() {
-    for person in Person::iter() {
+pub fn say_hello(ctx: &ReducerContext) {
+    for person in ctx.db.person().iter() {
         println!("Hello, {}!", person.name);
     }
     println!("Hello, World!");
@@ -139,21 +139,21 @@ pub fn say_hello() {
 
 class UploadModule2(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, duration, Timestamp, ReducerContext};
+use spacetimedb::{println, duration, ReducerContext, Table, Timestamp};
 
 
-#[spacetimedb::table(name = scheduled_messages, public, scheduled(my_repeating_reducer))]
+#[spacetimedb::table(name = scheduled_message, public, scheduled(my_repeating_reducer))]
 pub struct ScheduledMessage {
     prev: Timestamp,
 }
 
 #[spacetimedb::reducer(init)]
-fn init() {
-    let _ = ScheduledMessage::insert(ScheduledMessage { prev: Timestamp::now(), scheduled_id: 0, scheduled_at: duration!(100ms).into(), });
+fn init(ctx: &ReducerContext) {
+    ctx.db.scheduled_message().insert(ScheduledMessage { prev: Timestamp::now(), scheduled_id: 0, scheduled_at: duration!(100ms).into(), });
 }
 
 #[spacetimedb::reducer]
-pub fn my_repeating_reducer(_ctx: ReducerContext, arg: ScheduledMessage) {
+pub fn my_repeating_reducer(_ctx: &ReducerContext, arg: ScheduledMessage) {
     println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), arg.prev.elapsed());
 }
 """
@@ -171,6 +171,8 @@ class HotswapModule(Smoketest):
     AUTOPUBLISH = False
 
     MODULE_CODE = """
+use spacetimedb::{ReducerContext, Table};
+
 #[spacetimedb::table(name = person)]
 pub struct Person {
     #[primary_key]
@@ -180,13 +182,13 @@ pub struct Person {
 }
 
 #[spacetimedb::reducer]
-pub fn add_person(name: String) {
-    Person::insert(Person { id: 0, name }).ok();
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { id: 0, name });
 }
 """
 
     MODULE_CODE_B = """
-use spacetimedb;
+use spacetimedb::{ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -197,8 +199,8 @@ pub struct Person {
 }
 
 #[spacetimedb::reducer]
-pub fn add_person(name: String) {
-    Person::insert(Person { id: 0, name }).ok();
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { id: 0, name });
 }
 
 #[spacetimedb::table(name = pet)]
@@ -208,8 +210,8 @@ pub struct Pet {
 }
 
 #[spacetimedb::reducer]
-pub fn add_pet(species: String) {
-    Pet::insert(Pet { species }).ok();
+pub fn add_pet(ctx: &ReducerContext, species: String) {
+    ctx.db.pet().insert(Pet { species });
 }
 """
 

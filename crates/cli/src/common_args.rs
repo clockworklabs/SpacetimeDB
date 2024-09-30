@@ -15,6 +15,13 @@ pub fn identity() -> Arg {
         .help("The identity to use")
 }
 
+pub fn anonymous() -> Arg {
+    Arg::new("anon_identity")
+        .long("anonymous")
+        .action(SetTrue)
+        .help("Perform this action with an anonymous identity")
+}
+
 pub fn yes() -> Arg {
     Arg::new("force")
         .long("yes")

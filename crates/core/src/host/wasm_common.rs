@@ -366,6 +366,9 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::iter_by_col_eq,
             "spacetime_10.0"::iter_start_filtered,
             "spacetime_10.0"::volatile_nonatomic_schedule_immediate,
+            "spacetime_10.0"::index_id_from_name,
+            "spacetime_10.0"::datastore_btree_scan_bsatn,
+            "spacetime_10.0"::datastore_delete_by_btree_scan_bsatn,
         }
     };
 }

@@ -380,6 +380,9 @@ name = "bitflags"
 version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b048fb63fd8b5923fc5aa7b340d8e156aec7ec02f0c78fa8a6ddc2613f6f71de"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "bitmaps"
@@ -3659,6 +3662,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ron"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b91f7eff05f748767f183df4320a63d6936e9c6107d97c9e6bdd9784f4289c94"
+dependencies = [
+ "base64 0.21.7",
+ "bitflags 2.6.0",
+ "serde",
+ "serde_derive",
+]
+
+[[package]]
 name = "rusqlite"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3865,6 +3880,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "log",
+ "paste",
  "spacetimedb",
 ]
 
@@ -4584,6 +4600,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rand 0.8.5",
+ "ron",
  "serde",
  "serde_json",
  "spacetimedb-bindings-macro",
@@ -4706,7 +4723,6 @@ dependencies = [
  "home",
  "http",
  "im",
- "lazy_static",
  "log",
  "rand 0.8.5",
  "spacetimedb-client-api-messages",

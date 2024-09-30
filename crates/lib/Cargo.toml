@@ -49,6 +49,7 @@ rand.workspace = true
 bytes.workspace = true
 serde_json.workspace = true
 insta.workspace = true
+ron.workspace = true
 
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true

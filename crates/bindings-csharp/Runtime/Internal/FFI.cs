@@ -115,26 +115,23 @@ internal static partial class FFI
     }
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _table_id_from_name(
+    public static partial CheckedStatus table_id_from_name(
         [In] byte[] name,
         uint name_len,
         out TableId out_
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _datastore_table_row_count(
-        TableId table_id,
-        out ulong out_
-    );
+    public static partial CheckedStatus datastore_table_row_count(TableId table_id, out ulong out_);
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _datastore_table_scan_bsatn(
+    public static partial CheckedStatus datastore_table_scan_bsatn(
         TableId table_id,
         out RowIter out_
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_by_col_eq(
+    public static partial CheckedStatus iter_by_col_eq(
         TableId table_id,
         ColId col_id,
         [In] byte[] value,
@@ -143,14 +140,14 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _datastore_insert_bsatn(
+    public static partial CheckedStatus datastore_insert_bsatn(
         TableId table_id,
         Span<byte> row,
         ref uint row_len
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _delete_by_col_eq(
+    public static partial CheckedStatus delete_by_col_eq(
         TableId table_id,
         ColId col_id,
         [In] byte[] value,
@@ -159,7 +156,7 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_start_filtered(
+    public static partial CheckedStatus iter_start_filtered(
         TableId table_id,
         [In] byte[] filter,
         uint filter_len,
@@ -167,17 +164,17 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial Errno _row_iter_bsatn_advance(
+    public static partial Errno row_iter_bsatn_advance(
         RowIter iter_handle,
         [MarshalUsing(CountElementName = nameof(buffer_len))] [Out] byte[] buffer,
         ref uint buffer_len
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _row_iter_bsatn_close(RowIter iter_handle);
+    public static partial CheckedStatus row_iter_bsatn_close(RowIter iter_handle);
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _datastore_delete_all_by_eq_bsatn(
+    public static partial CheckedStatus datastore_delete_all_by_eq_bsatn(
         TableId table_id,
         [In] byte[] relation,
         uint relation_len,
@@ -185,7 +182,7 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial void _volatile_nonatomic_schedule_immediate(
+    public static partial void volatile_nonatomic_schedule_immediate(
         [In] byte[] name,
         uint name_len,
         [In] byte[] args,
@@ -203,7 +200,7 @@ internal static partial class FFI
     }
 
     [LibraryImport(StdbNamespace)]
-    public static partial void _console_log(
+    public static partial void console_log(
         LogLevel level,
         [In] byte[] target,
         uint target_len,
@@ -215,14 +212,14 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial Errno _bytes_source_read(
+    public static partial Errno bytes_source_read(
         BytesSource source,
         Span<byte> buffer,
         ref uint buffer_len
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _bytes_sink_write(
+    public static partial CheckedStatus bytes_sink_write(
         BytesSink sink,
         ReadOnlySpan<byte> buffer,
         ref uint buffer_len
@@ -254,8 +251,8 @@ internal static partial class FFI
     }
 
     [LibraryImport(StdbNamespace)]
-    public static partial ConsoleTimerId _console_timer_start([In] byte[] name, uint name_len);
+    public static partial ConsoleTimerId console_timer_start([In] byte[] name, uint name_len);
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _console_timer_end(ConsoleTimerId stopwatch_id);
+    public static partial CheckedStatus console_timer_end(ConsoleTimerId stopwatch_id);
 }
