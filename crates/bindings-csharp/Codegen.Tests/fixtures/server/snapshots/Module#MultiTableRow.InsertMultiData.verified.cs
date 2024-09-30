@@ -4,6 +4,7 @@
 
 partial struct MultiTableRow
 {
+    [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateInsertMultiData(MultiTableRow data)
     {
         using var stream = new MemoryStream();

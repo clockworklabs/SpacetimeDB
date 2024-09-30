@@ -462,6 +462,7 @@ record ReducerDeclaration
 
         extensions.Contents.Append(
             $$"""
+            [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
             public static void VolatileNonatomicScheduleImmediate{{Name}}({{string.Join(
                 ", ",
                 Args.Select(a => $"{a.Type} {a.Name}")

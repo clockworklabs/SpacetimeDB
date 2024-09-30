@@ -6,6 +6,7 @@ namespace Test.NestingNamespaces
 {
     partial class AndClasses
     {
+        [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
         public static void VolatileNonatomicScheduleImmediateInsertData2(PublicTable data)
         {
             using var stream = new MemoryStream();

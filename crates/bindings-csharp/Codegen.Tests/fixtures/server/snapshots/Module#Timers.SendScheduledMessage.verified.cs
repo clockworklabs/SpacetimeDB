@@ -4,6 +4,7 @@
 
 partial class Timers
 {
+    [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateSendScheduledMessage(
         Timers.SendMessageTimer arg
     )

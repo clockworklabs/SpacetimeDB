@@ -4,6 +4,7 @@
 
 partial class Reducers
 {
+    [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateScheduleImmediate(PublicTable data)
     {
         using var stream = new MemoryStream();
