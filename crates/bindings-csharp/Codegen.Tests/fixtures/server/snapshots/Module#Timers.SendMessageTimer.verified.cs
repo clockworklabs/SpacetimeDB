@@ -59,7 +59,7 @@ partial class Timers
             [
                 new(
                     new(
-                        TableName: nameof(SendMessageTimer),
+                        TableName: nameof(SpacetimeDB.Local.SendMessageTimer),
                         Columns:
                         [
                             new(nameof(Text), BSATN.Text.GetAlgebraicType(registrar)),
@@ -70,7 +70,7 @@ partial class Timers
                         Constraints:
                         [
                             new(
-                                nameof(SendMessageTimer),
+                                nameof(SpacetimeDB.Local.SendMessageTimer),
                                 1,
                                 nameof(ScheduledId),
                                 SpacetimeDB.Internal.ColumnAttrs.PrimaryKeyAuto
