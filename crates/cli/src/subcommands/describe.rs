@@ -1,7 +1,7 @@
 use crate::common_args;
 use crate::config::Config;
 use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
-use clap::{Arg, ArgAction::SetTrue, ArgMatches};
+use clap::{Arg, ArgMatches};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("describe")
@@ -21,8 +21,6 @@ pub fn cli() -> clap::Command {
                 .requires("entity_type")
                 .help("The name of the entity to describe"),
         )
-        .arg(Arg::new("brief").long("brief").short('b').action(SetTrue)
-            .help("If this flag is present, a brief description shall be returned"))
         .arg(
             common_args::identity()
                 .conflicts_with("anon_identity")
@@ -41,7 +39,6 @@ pub fn cli() -> clap::Command {
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
-    let expand = !args.get_flag("brief");
     let entity_name = args.get_one::<String>("entity_name");
     let entity_type = args.get_one::<String>("entity_type");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
@@ -64,13 +61,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let auth_header = get_auth_header_only(&mut config, anon_identity, identity, server).await?;
     let builder = add_auth_header_opt(builder, &auth_header);
 
-    let descr = builder
-        .query(&[("expand", expand)])
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
+    let descr = builder.send().await?.error_for_status()?.text().await?;
     println!("{}", descr);
 
     Ok(())

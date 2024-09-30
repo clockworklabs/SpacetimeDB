@@ -222,7 +222,7 @@ impl<'a> EntityDef<'a> {
     }
 }
 
-fn entity_description_json(description: WithTypespace<EntityDef>, expand: bool) -> Option<Value> {
+fn entity_description_json(description: WithTypespace<EntityDef>) -> Option<Value> {
     let typ = description.ty().described_entity_ty().as_str();
     let len = match description.ty() {
         EntityDef::Table(t) => description
@@ -233,32 +233,25 @@ fn entity_description_json(description: WithTypespace<EntityDef>, expand: bool) 
             .len(),
         EntityDef::Reducer(r) => r.params.elements.len(),
     };
-    if expand {
-        // TODO(noa): make this less hacky; needs coordination w/ spacetime-web
-        let schema = match description.ty() {
-            EntityDef::Table(table) => {
-                json!(description
-                    .with(&table.product_type_ref)
-                    .resolve_refs()
-                    .ok()?
-                    .as_product()?)
-            }
-            EntityDef::Reducer(r) => json!({
-                "name": &r.name[..],
-                "elements": r.params.elements,
-            }),
-        };
-        Some(json!({
-            "type": typ,
-            "arity": len,
-            "schema": schema
-        }))
-    } else {
-        Some(json!({
-            "type": typ,
-            "arity": len,
-        }))
-    }
+    // TODO(noa): make this less hacky; needs coordination w/ spacetime-web
+    let schema = match description.ty() {
+        EntityDef::Table(table) => {
+            json!(description
+                .with(&table.product_type_ref)
+                .resolve_refs()
+                .ok()?
+                .as_product()?)
+        }
+        EntityDef::Reducer(r) => json!({
+            "name": &r.name[..],
+            "elements": r.params.elements,
+        }),
+    };
+    Some(json!({
+        "type": typ,
+        "arity": len,
+        "schema": schema
+    }))
 }
 
 #[derive(Deserialize)]
@@ -268,11 +261,6 @@ pub struct DescribeParams {
     entity: String,
 }
 
-#[derive(Deserialize)]
-pub struct DescribeQueryParams {
-    expand: Option<bool>,
-}
-
 pub async fn describe<S>(
     State(worker_ctx): State<S>,
     Path(DescribeParams {
@@ -280,7 +268,6 @@ pub async fn describe<S>(
         entity_type,
         entity,
     }): Path<DescribeParams>,
-    Query(DescribeQueryParams { expand }): Query<DescribeQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse>
 where
@@ -311,8 +298,7 @@ where
         .ok_or_else(|| (StatusCode::NOT_FOUND, format!("{entity_type} {entity:?} not found")))?;
     let description = WithTypespace::new(module.info().module_def.typespace(), &description);
 
-    let expand = expand.unwrap_or(true);
-    let response_json = json!({ entity: entity_description_json(description, expand) });
+    let response_json = json!({ entity: entity_description_json(description) });
 
     Ok((
         StatusCode::OK,
@@ -343,26 +329,18 @@ pub struct CatalogParams {
 }
 #[derive(Deserialize)]
 pub struct CatalogQueryParams {
-    expand: Option<bool>,
     #[serde(default)]
     module_def: bool,
 }
 pub async fn catalog<S>(
     State(worker_ctx): State<S>,
     Path(CatalogParams { name_or_address }): Path<CatalogParams>,
-    Query(CatalogQueryParams { expand, module_def }): Query<CatalogQueryParams>,
+    Query(CatalogQueryParams { module_def }): Query<CatalogQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse>
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    if module_def && expand.is_some() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "expand and module_def cannot both be specified",
-        )
-            .into());
-    }
     let address = name_or_address.resolve(&worker_ctx).await?.into();
     let database = worker_ctx_find_database(&worker_ctx, &address)
         .await?
@@ -381,15 +359,11 @@ where
         let raw = RawModuleDefV9::from(module.info().module_def.clone());
         serde_json::to_value(SerializeWrapper::from_ref(&raw)).map_err(log_and_500)?
     } else {
-        let expand = expand.unwrap_or(false);
         let response_catalog: HashMap<_, _> = get_catalog(&module)
             .map(|entity| {
                 (
                     entity.name().to_string().into_boxed_str(),
-                    entity_description_json(
-                        WithTypespace::new(module.info().module_def.typespace(), &entity),
-                        expand,
-                    ),
+                    entity_description_json(WithTypespace::new(module.info().module_def.typespace(), &entity)),
                 )
             })
             .collect();
