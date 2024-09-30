@@ -1,6 +1,5 @@
 namespace SpacetimeDB.Internal;
 
-using System.Linq.Expressions;
 using SpacetimeDB.BSATN;
 
 public interface ITable<T> : IStructuralReadWrite
@@ -8,8 +7,6 @@ public interface ITable<T> : IStructuralReadWrite
 {
     // These are the methods that codegen needs to implement.
     static abstract IEnumerable<TableDesc> MakeTableDesc(ITypeRegistrar registrar);
-
-    static abstract Filter CreateFilter();
 }
 
 public interface ITableView<View, T>
@@ -123,12 +120,6 @@ public interface ITableView<View, T>
             FFI.datastore_table_scan_bsatn(tableId, out handle);
     }
 
-    private class RawTableIterFiltered(FFI.TableId tableId, byte[] filterBytes) : RawTableIterBase
-    {
-        protected override void IterStart(out FFI.RowIter handle) =>
-            FFI.iter_start_filtered(tableId, filterBytes, (uint)filterBytes.Length, out handle);
-    }
-
     private class RawTableIterByColEq(FFI.TableId tableId, FFI.ColId colId, byte[] value)
         : RawTableIterBase
     {
@@ -148,11 +139,6 @@ public interface ITableView<View, T>
     private static FFI.TableId tableId => tableId_.Value;
 
     public static IEnumerable<T> Iter() => new RawTableIter(tableId).Parse();
-
-    private static readonly Lazy<Filter> filter = new(T.CreateFilter);
-
-    public static IEnumerable<T> Query(Expression<Func<T, bool>> query) =>
-        new RawTableIterFiltered(tableId, filter.Value.Compile(query)).Parse();
 
     protected static T Insert(T row)
     {

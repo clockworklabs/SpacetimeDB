@@ -90,17 +90,5 @@ partial class Timers
                         ).Ref_
                 ),
             ];
-
-        static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<SendMessageTimer>.CreateFilter() =>
-            new(
-                [
-                    new(nameof(Text), (w, v) => BSATN.Text.Write(w, (string)v!)),
-                    new(nameof(ScheduledId), (w, v) => BSATN.ScheduledId.Write(w, (ulong)v!)),
-                    new(
-                        nameof(ScheduledAt),
-                        (w, v) => BSATN.ScheduledAt.Write(w, (SpacetimeDB.ScheduleAt)v!)
-                    )
-                ]
-            );
     } // SendMessageTimer
 } // Timers

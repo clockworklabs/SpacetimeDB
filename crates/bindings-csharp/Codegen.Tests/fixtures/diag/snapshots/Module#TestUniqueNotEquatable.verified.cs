@@ -77,15 +77,4 @@ partial struct TestUniqueNotEquatable : SpacetimeDB.Internal.ITable<TestUniqueNo
                     ).Ref_
             ),
         ];
-
-    static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<TestUniqueNotEquatable>.CreateFilter() =>
-        new(
-            [
-                new(nameof(UniqueField), (w, v) => BSATN.UniqueField.Write(w, (int?)v!)),
-                new(
-                    nameof(PrimaryKeyField),
-                    (w, v) => BSATN.PrimaryKeyField.Write(w, (TestEnumWithExplicitValues)v!)
-                )
-            ]
-        );
 } // TestUniqueNotEquatable

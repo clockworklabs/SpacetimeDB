@@ -49,7 +49,4 @@ partial class PrivateTable : SpacetimeDB.Internal.ITable<PrivateTable>
                     ).Ref_
             ),
         ];
-
-    static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<PrivateTable>.CreateFilter() =>
-        new([]);
 } // PrivateTable

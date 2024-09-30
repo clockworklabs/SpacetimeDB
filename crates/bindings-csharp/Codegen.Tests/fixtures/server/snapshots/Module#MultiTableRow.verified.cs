@@ -118,13 +118,4 @@ partial struct MultiTableRow : SpacetimeDB.Internal.ITable<MultiTableRow>
                     ).Ref_
             ),
         ];
-
-    static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<MultiTableRow>.CreateFilter() =>
-        new(
-            [
-                new(nameof(Name), (w, v) => BSATN.Name.Write(w, (string)v!)),
-                new(nameof(Foo), (w, v) => BSATN.Foo.Write(w, (uint)v!)),
-                new(nameof(Bar), (w, v) => BSATN.Bar.Write(w, (uint)v!))
-            ]
-        );
 } // MultiTableRow

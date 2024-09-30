@@ -461,7 +461,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
                        ^^^^^^^^^^^^^^^^^^^
     static global::TestTableTaggedEnum SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ReadGenFields(System.IO.BinaryReader reader, global::TestTableTaggedEnum row) {
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (34,23)-(34,42),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (33,23)-(33,42),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -485,7 +485,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
                        ^^^^^^^^^^^^^^^^^^^
     static global::TestTableTaggedEnum SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ReadGenFields(System.IO.BinaryReader reader, global::TestTableTaggedEnum row) {
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (34,23)-(34,42),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (33,23)-(33,42),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
     Descriptor: {
@@ -509,7 +509,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (35,39)-(35,120),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (34,39)-(34,120),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -533,7 +533,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (35,39)-(35,120),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (34,39)-(34,120),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
     Descriptor: {
@@ -555,9 +555,9 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
     }
     public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Iter();
                                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    public IEnumerable<global::TestTableTaggedEnum> Query(System.Linq.Expressions.Expression<Func<global::TestTableTaggedEnum, bool>> predicate) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Query(predicate);
+    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (39,115)-(39,142),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (38,115)-(38,142),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -579,9 +579,9 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
     }
     public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Iter();
                                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    public IEnumerable<global::TestTableTaggedEnum> Query(System.Linq.Expressions.Expression<Func<global::TestTableTaggedEnum, bool>> predicate) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Query(predicate);
+    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (39,115)-(39,142),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (38,115)-(38,142),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
     Descriptor: {
@@ -601,11 +601,11 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
   },
   {/*
     public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Iter();
-    public IEnumerable<global::TestTableTaggedEnum> Query(System.Linq.Expressions.Expression<Func<global::TestTableTaggedEnum, bool>> predicate) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Query(predicate);
-                                                                                                                                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
+                                                                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public IEnumerable<global::TestTableTaggedEnum> FilterByX(int X) =>
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (40,201)-(40,228),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (39,135)-(39,162),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -625,59 +625,11 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
   },
   {/*
     public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Iter();
-    public IEnumerable<global::TestTableTaggedEnum> Query(System.Linq.Expressions.Expression<Func<global::TestTableTaggedEnum, bool>> predicate) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Query(predicate);
-                                                                                                                                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
-*/
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (40,201)-(40,228),
-    Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
-    Severity: Error,
-    Descriptor: {
-      Id: CS0310,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0310),
-      MessageFormat: '{2}' must be a non-abstract type with a public parameterless constructor in order to use it as parameter '{1}' in the generic type or method '{0}',
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-    public IEnumerable<global::TestTableTaggedEnum> Query(System.Linq.Expressions.Expression<Func<global::TestTableTaggedEnum, bool>> predicate) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Query(predicate);
     public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
                                                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public IEnumerable<global::TestTableTaggedEnum> FilterByX(int X) =>
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (41,135)-(41,162),
-    Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
-    Severity: Error,
-    Descriptor: {
-      Id: CS0311,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0311),
-      MessageFormat: The type '{3}' cannot be used as type parameter '{2}' in the generic type or method '{0}'. There is no implicit reference conversion from '{3}' to '{1}'.,
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-    public IEnumerable<global::TestTableTaggedEnum> Query(System.Linq.Expressions.Expression<Func<global::TestTableTaggedEnum, bool>> predicate) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Query(predicate);
-    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
-                                                                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    public IEnumerable<global::TestTableTaggedEnum> FilterByX(int X) =>
-*/
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (41,135)-(41,162),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (39,135)-(39,162),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
     Descriptor: {
@@ -701,7 +653,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (43,57)-(43,84),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (41,57)-(41,84),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -725,7 +677,7 @@ public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (43,57)-(43,84),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (41,57)-(41,84),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
     Descriptor: {
@@ -749,7 +701,7 @@ public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 }
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (45,57)-(45,84),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (43,57)-(43,84),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -773,7 +725,7 @@ public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 }
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (45,57)-(45,84),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (43,57)-(43,84),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
     Descriptor: {
@@ -797,7 +749,7 @@ SpacetimeDB.Internal.Module.RegisterTable<global::TestTableTaggedEnum>();
                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable>();
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (82,28)-(82,70),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (79,28)-(79,70),
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'Module.RegisterTable<T>()'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
     Descriptor: {
@@ -821,7 +773,7 @@ SpacetimeDB.Internal.Module.RegisterTable<global::TestTableTaggedEnum>();
                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable>();
 */
-    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (82,28)-(82,70),
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (79,28)-(79,70),
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'Module.RegisterTable<T>()',
     Severity: Error,
     Descriptor: {
