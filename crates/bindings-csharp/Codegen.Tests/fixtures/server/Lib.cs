@@ -2,6 +2,7 @@
 using SpacetimeDB;
 
 #pragma warning disable CA1050 // Declare types in namespaces - this is a test fixture, no need for a namespace.
+#pragma warning disable STDB_UNSTABLE // Enable experimental SpacetimeDB features
 
 [SpacetimeDB.Type]
 public partial struct CustomStruct

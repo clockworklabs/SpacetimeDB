@@ -451,8 +451,13 @@ record ReducerDeclaration
     {
         var extensions = new Scope.Extensions(Scope, FullName);
 
+        // Mark the API as unstable. We use name `STDB_UNSTABLE` because:
+        // 1. It's a close equivalent of the `unstable` Cargo feature in Rust.
+        // 2. Our diagnostic IDs use either BSATN or STDB prefix depending on the package.
+        // 3. We don't expect to mark individual experimental features with numeric IDs, so we don't use the standard 1234 suffix.
         extensions.Contents.Append(
             $$"""
+            [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
             public static void VolatileNonatomicScheduleImmediate{{Name}}({{string.Join(
                 ", ",
                 Args.Select(a => $"{a.Type} {a.Name}")
