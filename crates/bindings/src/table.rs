@@ -79,7 +79,7 @@ pub trait Table: TableInternal {
     /// and callers may either install handlers around it or allow the exception to bubble up.
     #[track_caller]
     fn try_insert(&self, row: Self::Row) -> Result<Self::Row, TryInsertError<Self>> {
-        insert::<Self>(row)
+        insert::<Self>(row, IterBuf::take())
     }
 
     /// Deletes a row equal to `row` from the TX state,
@@ -108,7 +108,7 @@ pub trait Table: TableInternal {
         let relation = std::slice::from_ref(&row);
         let buf = IterBuf::serialize(relation).unwrap();
         let count = sys::datastore_delete_all_by_eq_bsatn(Self::table_id(), &buf).unwrap();
-        count == 1
+        count > 0
     }
 
     // Re-integrates the BSATN of the `generated_cols` into `row`.
@@ -268,22 +268,37 @@ pub trait FieldAccess<const N: u16> {
     fn get_field(&self) -> &Self::Field;
 }
 
-pub struct UniqueColumn<Tbl: Table, ColType, const COL_IDX: u16>
-where
-    ColType: SpacetimeType + Serialize + DeserializeOwned,
-    Tbl::Row: FieldAccess<COL_IDX, Field = ColType>,
-{
-    _marker: PhantomData<Tbl>,
+pub trait Column {
+    type Row;
+    type ColType;
+    const COLUMN_NAME: &'static str;
+    fn get_field(row: &Self::Row) -> &Self::ColType;
 }
 
-impl<Tbl: Table, ColType, const COL_IDX: u16> UniqueColumn<Tbl, ColType, COL_IDX>
+pub struct UniqueColumn<Tbl: Table, ColType, Col>
 where
     ColType: SpacetimeType + Serialize + DeserializeOwned,
-    Tbl::Row: FieldAccess<COL_IDX, Field = ColType>,
+    Col: Index + Column<Row = Tbl::Row, ColType = ColType>,
+{
+    _marker: PhantomData<(Tbl, Col)>,
+}
+
+impl<Tbl: Table, ColType, Col> UniqueColumn<Tbl, ColType, Col>
+where
+    ColType: SpacetimeType + Serialize + DeserializeOwned,
+    Col: Index + Column<Row = Tbl::Row, ColType = ColType>,
 {
     #[doc(hidden)]
-    pub fn __new() -> Self {
-        Self { _marker: PhantomData }
+    pub const __NEW: Self = Self { _marker: PhantomData };
+
+    #[inline]
+    fn get_args(&self, col_val: &ColType) -> BTreeScanArgs {
+        BTreeScanArgs {
+            data: IterBuf::serialize(&std::ops::Bound::Included(col_val)).unwrap(),
+            prefix_elems: 0,
+            rstart_idx: 0,
+            rend_idx: None,
+        }
     }
 
     /// Finds and returns the row where the value in the unique column matches the supplied `col_val`,
@@ -294,17 +309,26 @@ where
     // By-value makes passing `Copy` fields more convenient,
     // whereas by-ref makes passing `!Copy` fields more performant.
     // Can we do something smart with `std::borrow::Borrow`?
+    #[inline]
     pub fn find(&self, col_val: impl Borrow<ColType>) -> Option<Tbl::Row> {
+        self._find(col_val.borrow())
+    }
+
+    fn _find(&self, col_val: &ColType) -> Option<Tbl::Row> {
         // Find the row with a match.
-        let buf = IterBuf::serialize(col_val.borrow()).unwrap();
-        let iter = sys::iter_by_col_eq(Tbl::table_id(), COL_IDX.into(), &buf).unwrap();
-        let mut iter = TableIter::new_with_buf(iter, buf);
+        let index_id = Col::index_id();
+        let args = self.get_args(col_val);
+        let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
+
+        let iter = sys::datastore_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unique: unexpected error from datastre_btree_scan_bsatn: {e}"));
+        let mut iter = TableIter::new_with_buf(iter, args.data);
 
         // We will always find either 0 or 1 rows here due to the unique constraint.
         let row = iter.next();
         assert!(
             iter.is_exhausted(),
-            "iter_by_col_eq on unique field cannot return >1 rows"
+            "datastore_btree_scan_bsatn on unique field cannot return >1 rows"
         );
         row
     }
@@ -317,13 +341,20 @@ where
     ///
     /// May panic if deleting the row would violate a constraint,
     /// though as of proposing no such constraints exist.
+    #[inline]
     pub fn delete(&self, col_val: impl Borrow<ColType>) -> bool {
-        let buf = IterBuf::serialize(col_val.borrow()).unwrap();
-        sys::delete_by_col_eq(Tbl::table_id(), COL_IDX.into(), &buf)
-            // TODO: Returning `Err` here was supposed to signify an error,
-            //       but it can also return `Err(_)` when there is nothing to delete.
-            .unwrap_or(0)
-            > 0
+        self._delete(col_val.borrow()).0
+    }
+
+    fn _delete(&self, col_val: &ColType) -> (bool, IterBuf) {
+        let index_id = Col::index_id();
+        let args = self.get_args(col_val);
+        let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
+
+        let n_del = sys::datastore_delete_by_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unique: unexpected error from datastore_delete_by_btree_scan_bsatn: {e}"));
+
+        (n_del > 0, args.data)
     }
 
     /// Deletes the row where the value in the unique column matches that in the corresponding field of `new_row`,
@@ -331,19 +362,24 @@ where
     ///
     /// Returns the new row as actually inserted, with any auto-inc placeholders substituted for computed values.
     ///
+    /// # Panics
     /// Panics if no row was previously present with the matching value in the unique column,
     /// or if either the delete or the insertion would violate a constraint.
-    ///
-    /// Implementors are encouraged to include the table name, unique column name, and unique column value
-    /// in the panic message when no such row previously existed.
     #[track_caller]
     pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row {
-        assert!(
-            self.delete(new_row.get_field()),
-            "Row passed to UniqueColumn::update() did not already exist in table."
-        );
-        insert::<Tbl>(new_row).unwrap_or_else(|e| panic!("{e}"))
+        let (deleted, buf) = self._delete(Col::get_field(&new_row));
+        if !deleted {
+            update_row_didnt_exist(Tbl::TABLE_NAME, Col::COLUMN_NAME)
+        }
+        insert::<Tbl>(new_row, buf).unwrap_or_else(|e| panic!("{e}"))
     }
+}
+
+#[cold]
+#[inline(never)]
+#[track_caller]
+fn update_row_didnt_exist(table_name: &str, unique_column: &str) -> ! {
+    panic!("UniqueColumn::update: row in table `{table_name}` being updated by unique column `{unique_column}` did not already exist")
 }
 
 pub trait Index {
@@ -356,9 +392,7 @@ pub struct BTreeIndex<Tbl: Table, IndexType, Idx: Index> {
 
 impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
     #[doc(hidden)]
-    pub fn __new() -> Self {
-        Self { _marker: PhantomData }
-    }
+    pub const __NEW: Self = Self { _marker: PhantomData };
 
     /// Returns an iterator over all rows in the database state where the indexed column(s) match the bounds `b`.
     ///
@@ -593,10 +627,11 @@ impl IsSequenceTrigger for crate::sats::u256 {
 
 /// Insert a row of type `T` into the table identified by `table_id`.
 #[track_caller]
-fn insert<T: Table>(mut row: T::Row) -> Result<T::Row, TryInsertError<T>> {
+fn insert<T: Table>(mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInsertError<T>> {
     let table_id = T::table_id();
     // Encode the row as bsatn into the buffer `buf`.
-    let mut buf = IterBuf::serialize(&row).unwrap();
+    buf.clear();
+    buf.serialize_into(&row).unwrap();
 
     // Insert row into table.
     // When table has an auto-incrementing column, we must re-decode the changed `buf`.

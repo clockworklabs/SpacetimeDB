@@ -16,6 +16,7 @@ use module::{derive_deserialize, derive_satstype, derive_serialize};
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, ToTokens};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::Duration;
 use syn::ext::IdentExt;
@@ -451,6 +452,7 @@ struct IndexArg {
 
 enum IndexType {
     BTree { columns: Vec<Ident> },
+    UniqueBTree { column: Ident },
 }
 
 impl TableArgs {
@@ -568,20 +570,19 @@ impl IndexArg {
     }
 
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'_>> {
+        let find_column = |ident| {
+            cols.iter()
+                .find(|col| col.field.ident == Some(ident))
+                .ok_or_else(|| syn::Error::new(ident.span(), "not a column of the table"))
+        };
         let kind = match &self.kind {
             IndexType::BTree { columns } => {
-                let cols = columns
-                    .iter()
-                    .map(|ident| {
-                        let col = cols
-                            .iter()
-                            .find(|col| col.field.ident == Some(ident))
-                            .ok_or_else(|| syn::Error::new(ident.span(), "not a column of the table"))?;
-                        Ok(col)
-                    })
-                    .collect::<syn::Result<Vec<_>>>()?;
-
+                let cols = columns.iter().map(find_column).collect::<syn::Result<Vec<_>>>()?;
                 ValidatedIndexType::BTree { cols }
+            }
+            IndexType::UniqueBTree { column } => {
+                let col = find_column(column)?;
+                ValidatedIndexType::UniqueBTree { col }
             }
         };
         let index_name = match &kind {
@@ -589,6 +590,9 @@ impl IndexArg {
                 .chain(cols.iter().map(|col| col.field.name.as_deref().unwrap()))
                 .collect::<Vec<_>>()
                 .join("_"),
+            ValidatedIndexType::UniqueBTree { col } => {
+                [table_name, "btree", col.field.name.as_deref().unwrap()].join("_")
+            }
         };
         Ok(ValidatedIndex {
             index_name,
@@ -606,6 +610,7 @@ struct ValidatedIndex<'a> {
 
 enum ValidatedIndexType<'a> {
     BTree { cols: Vec<&'a Column<'a>> },
+    UniqueBTree { col: &'a Column<'a> },
 }
 
 impl ValidatedIndex<'_> {
@@ -615,6 +620,12 @@ impl ValidatedIndex<'_> {
                 let col_ids = cols.iter().map(|col| col.index);
                 quote!(spacetimedb::table::IndexAlgo::BTree {
                     columns: &[#(#col_ids),*]
+                })
+            }
+            ValidatedIndexType::UniqueBTree { col } => {
+                let col_id = col.index;
+                quote!(spacetimedb::table::IndexAlgo::BTree {
+                    columns: &[#col_id]
                 })
             }
         };
@@ -628,9 +639,9 @@ impl ValidatedIndex<'_> {
     }
 
     fn accessor(&self, vis: &syn::Visibility, row_type_ident: &Ident) -> TokenStream {
+        let index_ident = self.accessor_name;
         match &self.kind {
             ValidatedIndexType::BTree { cols } => {
-                let index_ident = self.accessor_name;
                 let col_tys = cols.iter().map(|col| col.ty);
                 let mut doc = format!(
                     "Gets the `{index_ident}` [`BTreeIndex`][spacetimedb::BTreeIndex] as defined \
@@ -651,18 +662,40 @@ impl ValidatedIndex<'_> {
                 quote! {
                     #[doc = #doc]
                     #vis fn #index_ident(&self) -> spacetimedb::BTreeIndex<Self, (#(#col_tys,)*), __indices::#index_ident> {
-                        spacetimedb::BTreeIndex::__new()
+                        spacetimedb::BTreeIndex::__NEW
+                    }
+                }
+            }
+            ValidatedIndexType::UniqueBTree { col } => {
+                let vis = col.field.vis;
+                let col_ty = col.field.ty;
+                let column_ident = col.field.ident.unwrap();
+
+                let doc = format!(
+                    "Gets the [`UniqueColumn`][spacetimedb::UniqueColumn] for the \
+                     [`{column_ident}`][{row_type_ident}::{column_ident}] column."
+                );
+                quote! {
+                    #[doc = #doc]
+                    #vis fn #column_ident(&self) -> spacetimedb::UniqueColumn<Self, #col_ty, __indices::#index_ident> {
+                        spacetimedb::UniqueColumn::__NEW
                     }
                 }
             }
         }
     }
 
-    fn marker_type(&self) -> TokenStream {
+    fn marker_type(&self, vis: &syn::Visibility, row_type_ident: &Ident) -> TokenStream {
         let index_ident = self.accessor_name;
         let index_name = &self.index_name;
-        quote! {
-            pub struct #index_ident;
+        let vis = if let ValidatedIndexType::UniqueBTree { col } = self.kind {
+            col.field.vis
+        } else {
+            vis
+        };
+        let vis = superize_vis(vis);
+        let mut decl = quote! {
+            #vis struct #index_ident;
             impl spacetimedb::table::Index for #index_ident {
                 fn index_id() -> spacetimedb::table::IndexId {
                     static INDEX_ID: std::sync::OnceLock<spacetimedb::table::IndexId> = std::sync::OnceLock::new();
@@ -671,7 +704,46 @@ impl ValidatedIndex<'_> {
                     })
                 }
             }
+        };
+        if let ValidatedIndexType::UniqueBTree { col } = self.kind {
+            let col_ty = col.ty;
+            let col_name = col.field.name.as_deref().unwrap();
+            let field_ident = col.field.ident.unwrap();
+            decl.extend(quote! {
+                impl spacetimedb::table::Column for #index_ident {
+                    type Row = #row_type_ident;
+                    type ColType = #col_ty;
+                    const COLUMN_NAME: &'static str = #col_name;
+                    fn get_field(row: &Self::Row) -> &Self::ColType {
+                        &row.#field_ident
+                    }
+                }
+            });
         }
+        decl
+    }
+}
+
+/// Transform a visibility marker to one with the same effective visibility, but
+/// for use in a child module of the module of the original marker.
+fn superize_vis(vis: &syn::Visibility) -> Cow<'_, syn::Visibility> {
+    match vis {
+        syn::Visibility::Public(_) => Cow::Borrowed(vis),
+        syn::Visibility::Restricted(vis_r) => {
+            let first = &vis_r.path.segments[0];
+            if first.ident == "crate" || vis_r.path.leading_colon.is_some() {
+                Cow::Borrowed(vis)
+            } else {
+                let mut vis_r = vis_r.clone();
+                if first.ident == "super" {
+                    vis_r.path.segments.insert(0, first.clone())
+                } else if first.ident == "self" {
+                    vis_r.path.segments[0].ident = Ident::new("super", Span::call_site())
+                }
+                Cow::Owned(syn::Visibility::Restricted(vis_r))
+            }
+        }
+        syn::Visibility::Inherited => Cow::Owned(parse_quote!(pub(super))),
     }
 }
 
@@ -872,6 +944,12 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
 
         if unique.is_some() || primary_key.is_some() {
             unique_columns.push(column);
+            args.indices.push(IndexArg {
+                name: field_ident.clone(),
+                kind: IndexType::UniqueBTree {
+                    column: field_ident.clone(),
+                },
+            });
         }
         if auto_inc.is_some() {
             sequenced_columns.push(column);
@@ -886,33 +964,25 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
 
     let row_type = quote!(#original_struct_ident);
 
-    let indices = args
+    let mut indices = args
         .indices
         .iter()
         .map(|index| index.validate(&table_name, &columns))
         .collect::<syn::Result<Vec<_>>>()?;
 
+    // order unique accessors before index accessors
+    indices.sort_by(|a, b| match (&a.kind, &b.kind) {
+        (ValidatedIndexType::UniqueBTree { .. }, ValidatedIndexType::UniqueBTree { .. }) => std::cmp::Ordering::Equal,
+        (_, ValidatedIndexType::UniqueBTree { .. }) => std::cmp::Ordering::Greater,
+        (ValidatedIndexType::UniqueBTree { .. }, _) => std::cmp::Ordering::Less,
+        _ => std::cmp::Ordering::Equal,
+    });
+
     let index_descs = indices.iter().map(|index| index.desc());
     let index_accessors = indices.iter().map(|index| index.accessor(vis, original_struct_ident));
-    let index_marker_types = indices.iter().map(|index| index.marker_type());
-
-    let unique_field_accessors = unique_columns.iter().map(|unique| {
-        let column_index = unique.index;
-        let vis = unique.field.vis;
-        let column_type = unique.field.ty;
-        let column_ident = unique.field.ident.unwrap();
-
-        let doc = format!(
-            "Gets the [`UniqueColumn`][spacetimedb::UniqueColumn] for the \
-             [`{column_ident}`][{row_type}::{column_ident}] column."
-        );
-        quote! {
-            #[doc = #doc]
-            #vis fn #column_ident(&self) -> spacetimedb::UniqueColumn<Self, #column_type, #column_index> {
-                spacetimedb::UniqueColumn::__new()
-            }
-        }
-    });
+    let index_marker_types = indices
+        .iter()
+        .map(|index| index.marker_type(vis, original_struct_ident));
 
     let tablehandle_ident = format_ident!("{}__TableHandle", table_ident);
 
@@ -1063,7 +1133,6 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
             }
 
             impl #tablehandle_ident {
-                #(#unique_field_accessors)*
                 #(#index_accessors)*
             }
 
@@ -1071,6 +1140,8 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
 
             #[allow(non_camel_case_types)]
             mod __indices {
+                #[allow(unused)]
+                use super::*;
                 #(#index_marker_types)*
             }
 
