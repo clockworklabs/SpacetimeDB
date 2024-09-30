@@ -104,6 +104,14 @@ pub fn cli() -> clap::Command {
                 .help("Options to pass to the build command"),
         )
         .arg(
+            Arg::new("build_options")
+                .long("build-options")
+                .alias("build-opts")
+                .action(Set)
+                .default_value("")
+                .help("Options to pass to the build command"),
+        )
+        .arg(
             Arg::new("force")
                 .long("force")
                 .action(SetTrue)
