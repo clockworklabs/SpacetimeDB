@@ -89,12 +89,10 @@ pub fn cli() -> clap::Command {
                 .value_parser(clap::value_parser!(Language))
                 .help("The language to generate"),
         )
-        .arg(
-            Arg::new("delete_files")
-                .long("clear-target-directory")
-                .action(SetTrue)
-                .help("Delete all files in the target directory before generating files."),
-        )
+        .arg(Arg::new("delete_files").long("delete-files").action(SetTrue).help(
+            "Delete outdated generated files whose definitions have been \
+             removed from the module.",
+        ))
         .arg(
             Arg::new("build_options")
                 .long("build-options")
