@@ -4,6 +4,7 @@ use crate::sql::compiler::compile_sql;
 use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_vm::expr::{self, Crud, CrudExpr, QueryExpr};
 
 pub(crate) static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
@@ -21,6 +22,7 @@ pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 /// as in [`crate::subscription::module_subscription_actor::ModuleSubscriptions::add_subscriber`].
 pub fn compile_read_only_query(
     relational_db: &RelationalDB,
+    auth: &AuthCtx,
     tx: &Tx,
     input: &str,
 ) -> Result<Vec<SupportedQuery>, DBError> {
@@ -32,7 +34,7 @@ pub fn compile_read_only_query(
     // Remove redundant whitespace, and in particular newlines, for debug info.
     let input = WHITESPACE.replace_all(input, " ");
 
-    let compiled = compile_sql(relational_db, tx, &input)?;
+    let compiled = compile_sql(relational_db, auth, tx, &input)?;
     let mut queries = Vec::with_capacity(compiled.len());
     for q in compiled {
         return Err(SubscriptionError::SideEffect(match q {
@@ -351,7 +353,7 @@ mod tests {
         let tx = db.begin_tx();
 
         let sql = "select * from test where b = 3";
-        let mut exp = compile_sql(&db, &tx, sql)?;
+        let mut exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?;
 
         let Some(CrudExpr::Query(query)) = exp.pop() else {
             panic!("unexpected query {:#?}", exp[0]);
@@ -493,13 +495,13 @@ mod tests {
         let indexes = &[(0.into(), "entity_id")];
         db.create_table_for_test("EnemyState", schema, indexes)?;
 
-        let sql_insert = "\
-        insert into MobileEntityState (entity_id, location_x, location_z, destination_x, destination_z, is_running, timestamp, dimension) values (1, 96001, 96001, 96001, 1867045146, false, 17167179743690094247, 3926297397);\
-        insert into MobileEntityState (entity_id, location_x, location_z, destination_x, destination_z, is_running, timestamp, dimension) values (2, 96001, 191000, 191000, 1560020888, true, 2947537077064292621, 445019304);
-
-        insert into EnemyState (entity_id, herd_id, status, type, direction) values (1, 1181485940, 1633678837, 1158301365, 132191327);
-        insert into EnemyState (entity_id, herd_id, status, type, direction) values (2, 2017368418, 194072456, 34423057, 1296770410);";
-        run_for_testing(&db, sql_insert)?;
+        for sql_insert in [
+        "insert into MobileEntityState (entity_id, location_x, location_z, destination_x, destination_z, is_running, timestamp, dimension) values (1, 96001, 96001, 96001, 1867045146, false, 17167179743690094247, 3926297397)",
+        "insert into MobileEntityState (entity_id, location_x, location_z, destination_x, destination_z, is_running, timestamp, dimension) values (2, 96001, 191000, 191000, 1560020888, true, 2947537077064292621, 445019304)",
+        "insert into EnemyState (entity_id, herd_id, status, type, direction) values (1, 1181485940, 1633678837, 1158301365, 132191327)",
+        "insert into EnemyState (entity_id, herd_id, status, type, direction) values (2, 2017368418, 194072456, 34423057, 1296770410)"] {
+            run_for_testing(&db, sql_insert)?;
+        }
 
         let sql_query = "\
         SELECT EnemyState.* FROM EnemyState \
@@ -510,7 +512,7 @@ mod tests {
         AND MobileEntityState.location_z < 192000";
 
         let tx = db.begin_tx();
-        let qset = compile_read_only_query(&db, &tx, sql_query)?;
+        let qset = compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, sql_query)?;
 
         for q in qset {
             let result = run_query(
@@ -598,14 +600,18 @@ mod tests {
             "SELECT * FROM lhs WHERE id > 5",
         ];
         for scan in scans {
-            let expr = compile_read_only_query(&db, &tx, scan)?.pop().unwrap();
+            let expr = compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, scan)?
+                .pop()
+                .unwrap();
             assert_eq!(expr.kind(), Supported::Select, "{scan}\n{expr:#?}");
         }
 
         // Only index semijoins are supported
         let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
         for join in joins {
-            let expr = compile_read_only_query(&db, &tx, join)?.pop().unwrap();
+            let expr = compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, join)?
+                .pop()
+                .unwrap();
             assert_eq!(expr.kind(), Supported::Semijoin, "{join}\n{expr:#?}");
         }
 
@@ -616,8 +622,8 @@ mod tests {
             "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
         ];
         for join in joins {
-            match compile_read_only_query(&db, &tx, join) {
-                Err(DBError::Subscription(SubscriptionError::Unsupported(_))) => (),
+            match compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, join) {
+                Err(DBError::Subscription(SubscriptionError::Unsupported(_)) | DBError::TypeError(_)) => (),
                 x => panic!("Unexpected: {x:?}"),
             }
         }
@@ -653,7 +659,7 @@ mod tests {
         db.with_read_only(&ExecutionContext::default(), |tx| {
             // Should be answered using an index semijion
             let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where rhs.y >= 2 and rhs.y <= 4";
-            let mut exp = compile_sql(db, tx, sql)?;
+            let mut exp = compile_sql(db, &AuthCtx::for_testing(), tx, sql)?;
             let Some(CrudExpr::Query(query)) = exp.pop() else {
                 panic!("unexpected query {:#?}", exp[0]);
             };

@@ -263,7 +263,7 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use spacetimedb_client_api_messages::timestamp::Timestamp;
-    use spacetimedb_lib::{error::ResultTest, Address, AlgebraicType, Identity};
+    use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, Address, AlgebraicType, Identity};
     use spacetimedb_primitives::TableId;
     use spacetimedb_vm::expr::CrudExpr;
 
@@ -291,7 +291,7 @@ mod tests {
 
     fn compile_plan(db: &RelationalDB, sql: &str) -> ResultTest<Arc<ExecutionUnit>> {
         db.with_read_only(&ExecutionContext::default(), |tx| {
-            let mut exprs = compile_sql(db, tx, sql)?;
+            let mut exprs = compile_sql(db, &AuthCtx::for_testing(), tx, sql)?;
             assert_eq!(1, exprs.len());
             assert!(matches!(exprs[0], CrudExpr::Query(_)));
             let CrudExpr::Query(query) = exprs.remove(0) else {

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::{MutexGuard, PoisonError};
 
 use hex::FromHexError;
+use spacetimedb_query_planner::logical::errors::TypingError;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_schema::error::ValidationErrors;
 use spacetimedb_snapshot::SnapshotError;
@@ -215,6 +216,8 @@ pub enum DBError {
     ModuleValidationErrors(#[from] ValidationErrors),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+    #[error(transparent)]
+    TypeError(#[from] TypingError),
 }
 
 impl From<SnapshotError> for DBError {

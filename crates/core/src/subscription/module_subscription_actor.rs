@@ -6,15 +6,17 @@ use crate::client::messages::{SubscriptionUpdate, SubscriptionUpdateMessage, Tra
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::db::datastore::system_tables::StVarTable;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
-use crate::error::{DBError, SubscriptionError};
+use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
+use crate::sql::ast::SchemaViewer;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
+use spacetimedb_query_planner::logical::bind::parse_and_type_sub;
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::AuthAccess;
 use std::time::Duration;
@@ -83,14 +85,18 @@ impl ModuleSubscriptions {
             if let Some(unit) = guard.query(&hash) {
                 queries.push(unit);
             } else {
-                let mut compiled = compile_read_only_query(&self.relational_db, &tx, sql)?;
-                if compiled.len() > 1 {
-                    return Result::Err(
-                        SubscriptionError::Unsupported(String::from("Multiple statements in subscription query"))
-                            .into(),
-                    );
+                // NOTE: The following ensures compliance with the 1.0 sql api.
+                // Come 1.0, it will have replaced the current compilation stack.
+                parse_and_type_sub(sql, &SchemaViewer::new(&self.relational_db, &*tx, &auth))?;
+
+                let mut compiled = compile_read_only_query(&self.relational_db, &auth, &tx, sql)?;
+                // Note that no error path is needed here.
+                // We know this vec only has a single element,
+                // since `parse_and_type_sub` guarantees it.
+                // This check will be removed come 1.0.
+                if compiled.len() == 1 {
+                    queries.push(Arc::new(ExecutionUnit::new(compiled.remove(0), hash)?));
                 }
-                queries.push(Arc::new(ExecutionUnit::new(compiled.remove(0), hash)?));
             }
         }
 
@@ -229,10 +235,10 @@ mod tests {
     use crate::error::DBError;
     use crate::execution_context::ExecutionContext;
     use spacetimedb_client_api_messages::websocket::Subscribe;
-    use spacetimedb_lib::db::{auth::StAccess, error::AuthError};
+    use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
+    use spacetimedb_query_planner::logical::errors::{TypingError, Unresolved};
     use spacetimedb_sats::product;
-    use spacetimedb_vm::errors::ErrorVm;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
     use tokio::sync::mpsc;
@@ -325,14 +331,14 @@ mod tests {
         for sql in [
             "SELECT * FROM private",
             // Even if the query will return no rows, we still reject it.
-            "SELECT * FROM private WHERE 1 = 0",
+            "SELECT * FROM private WHERE false",
             "SELECT private.* FROM private",
             "SELECT public.* FROM public JOIN private ON public.a = private.a WHERE private.a = 1",
             "SELECT private.* FROM private JOIN public ON private.a = public.a WHERE public.a = 1",
         ] {
             assert!(matches!(
                 subscribe(sql).unwrap_err(),
-                DBError::Vm(ErrorVm::Auth(AuthError::TablePrivate { .. }))
+                DBError::TypeError(TypingError::Unresolved(Unresolved::Table(_)))
             ));
         }
 

@@ -181,7 +181,7 @@ pub fn run(
 ) -> Result<Vec<MemTable>, DBError> {
     let ctx = ctx_sql(db);
     let result = db.with_read_only(&ctx, |tx| {
-        let ast = compile_sql(db, tx, sql_text)?;
+        let ast = compile_sql(db, &AuthCtx::for_testing(), tx, sql_text)?;
         if CrudExpr::is_reads(&ast) {
             let mut updates = Vec::new();
             let result = execute(
@@ -316,44 +316,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn test_select_scalar() -> ResultTest<()> {
-        let (db, input) = create_data(1)?;
-
-        let result = run_for_testing(&db, "SELECT 1 FROM inventory")?;
-
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
-        let schema = ProductType::from([AlgebraicType::I32]);
-        let row = product!(1);
-        let input = mem_table(input.head.table_id, schema, vec![row]);
-
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Scalar"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_select_multiple() -> ResultTest<()> {
-        let (db, input) = create_data(1)?;
-
-        let result = run_for_testing(&db, "SELECT * FROM inventory;\nSELECT * FROM inventory")?;
-
-        assert_eq!(result.len(), 2, "Not return results");
-
-        for result in result {
-            assert_eq!(
-                mem_table_without_table_name(&result),
-                mem_table_without_table_name(&input),
-                "Inventory"
-            );
-        }
-        Ok(())
-    }
-
-    #[test]
     fn test_select_catalog() -> ResultTest<()> {
         let (db, _) = create_data(1)?;
 
@@ -461,7 +423,7 @@ pub(crate) mod tests {
 
         let result = run_for_testing(
             &db,
-            "SELECT (inventory_id) FROM inventory WHERE (inventory_id = 1 OR inventory_id = 2 AND (1=1))",
+            "SELECT inventory_id FROM inventory WHERE (inventory_id = 1 OR inventory_id = 2 AND (true))",
         )?;
 
         assert_eq!(result.len(), 1, "Not return results");
@@ -508,7 +470,7 @@ pub(crate) mod tests {
         Player
         JOIN Location
         ON Location.entity_id = Player.entity_id
-        WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32",
+        WHERE Location.x > 0 AND Location.x <= 32 AND Location.z > 0 AND Location.z <= 32",
         )?[0];
 
         let row1 = product!(100u64, 1u64);
@@ -530,7 +492,7 @@ pub(crate) mod tests {
         ON Inventory.inventory_id = Player.inventory_id
         JOIN Location
         ON Player.entity_id = Location.entity_id
-        WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32",
+        WHERE Location.x > 0 AND Location.x <= 32 AND Location.z > 0 AND Location.z <= 32",
         )?[0];
 
         let row1 = product!(1u64, "health");
@@ -646,24 +608,6 @@ pub(crate) mod tests {
             })
             .collect();
         assert_eq!(vec![vec!["c3"; 3]], updated);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_big_sql() -> ResultTest<()> {
-        let (db, _input) = create_data(1)?;
-
-        let result = run_for_testing(
-            &db,
-            "insert into inventory (inventory_id, name) values (1, 'Kiley');
-insert into inventory (inventory_id, name) values (2, 'Terza');
-insert into inventory (inventory_id, name) values (3, 'Alvie');
-SELECT * FROM inventory",
-        )?;
-
-        let result = result.first().unwrap().clone();
-        assert_eq!(result.data.len(), 4);
 
         Ok(())
     }
