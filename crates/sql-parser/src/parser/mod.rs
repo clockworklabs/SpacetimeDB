@@ -4,7 +4,7 @@ use sqlparser::ast::{
     TableFactor, TableWithJoins, Value, WildcardAdditionalOptions,
 };
 
-use crate::ast::{BinOp, Project, ProjectElem, RelExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral};
+use crate::ast::{BinOp, Project, ProjectElem, ProjectExpr, RelExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral};
 
 pub mod errors;
 pub mod sql;
@@ -150,14 +150,28 @@ pub(crate) fn parse_project_elem(item: SelectItem) -> SqlParseResult<ProjectElem
     match item {
         SelectItem::Wildcard(_) => Err(SqlUnsupported::MixedWildcardProject.into()),
         SelectItem::QualifiedWildcard(..) => Err(SqlUnsupported::MixedWildcardProject.into()),
-        SelectItem::UnnamedExpr(expr) => Ok(ProjectElem(parse_expr(expr)?, None)),
-        SelectItem::ExprWithAlias { expr, alias } => Ok(ProjectElem(parse_expr(expr)?, Some(alias.into()))),
+        SelectItem::UnnamedExpr(expr) => Ok(ProjectElem(parse_proj(expr)?, None)),
+        SelectItem::ExprWithAlias { expr, alias } => Ok(ProjectElem(parse_proj(expr)?, Some(alias.into()))),
+    }
+}
+
+/// Parse a column projection
+pub(crate) fn parse_proj(expr: Expr) -> SqlParseResult<ProjectExpr> {
+    match expr {
+        Expr::Identifier(ident) => Ok(ProjectExpr::Var(ident.into())),
+        Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
+            let table = idents.swap_remove(0).into();
+            let field = idents.swap_remove(0).into();
+            Ok(ProjectExpr::Field(table, field))
+        }
+        _ => Err(SqlUnsupported::ProjectionExpr(expr).into()),
     }
 }
 
 /// Parse a scalar expression
 pub(crate) fn parse_expr(expr: Expr) -> SqlParseResult<SqlExpr> {
     match expr {
+        Expr::Nested(expr) => parse_expr(*expr),
         Expr::Value(v) => Ok(SqlExpr::Lit(parse_literal(v)?)),
         Expr::Identifier(ident) => Ok(SqlExpr::Var(ident.into())),
         Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {

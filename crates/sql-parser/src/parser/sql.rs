@@ -140,7 +140,7 @@ use crate::ast::{
     sql::{
         OrderByElem, QueryAst, SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlSetOp, SqlShow, SqlUpdate, SqlValues,
     },
-    SqlLiteral,
+    SqlIdent, SqlLiteral,
 };
 
 use super::{
@@ -173,8 +173,9 @@ fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
             on: None,
             returning: None,
             ..
-        } if columns.is_empty() && after_columns.is_empty() => Ok(SqlAst::Insert(SqlInsert {
+        } if after_columns.is_empty() => Ok(SqlAst::Insert(SqlInsert {
             table: parse_ident(table_name)?,
+            fields: columns.into_iter().map(SqlIdent::from).collect(),
             values: parse_values(*source)?,
         })),
         Statement::Update {

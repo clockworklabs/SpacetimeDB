@@ -1,11 +1,18 @@
-use std::fmt::{Display, Formatter};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Formatter},
+    ops::Deref,
+};
 
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sql_parser::ast::BinOp;
+use string_interner::{backend::StringBackend, symbol::SymbolU32, StringInterner};
 use thiserror::Error;
 
 use crate::static_assert_size;
+
+use super::errors::{ExpectedRelation, InvalidOp};
 
 /// When type checking a [super::expr::RelExpr],
 /// types are stored in a typing context [TyCtx].
@@ -35,15 +42,9 @@ impl TyId {
     pub const BYTES: Self = Self(16);
 
     /// Return the [Type] for this id with its typing context.
-    /// Panics if the id is not valid for the context.
-    pub fn with_ctx(self, ctx: &TyCtx) -> TypeWithCtx {
-        TypeWithCtx(ctx.resolve(self), ctx)
-    }
-
-    /// Return the [Type] for this id with its typing context.
     /// Return an error if the id is not valid for the context.
-    pub fn try_with_ctx(self, ctx: &TyCtx) -> Result<TypeWithCtx, InvalidTyId> {
-        Ok(TypeWithCtx(ctx.try_resolve(self)?, ctx))
+    pub fn try_with_ctx(self, ctx: &TyCtx) -> Result<TypeWithCtx, InvalidTypeId> {
+        ctx.try_resolve(self)
     }
 }
 
@@ -53,21 +54,56 @@ impl Display for TyId {
     }
 }
 
-#[derive(Debug, Error)]
-#[error("Invalid type id {0}")]
-pub struct InvalidTyId(TyId);
+/// A symbol for names or identifiers in an expression tree
+pub type Symbol = SymbolU32;
+
+/// The type of a relation or scalar expression
+#[derive(Debug)]
+pub enum Type {
+    /// A base relation
+    Var(Box<[(Symbol, TyId)]>),
+    /// A derived relation
+    Row(Box<[(Symbol, TyId)]>),
+    /// A column type
+    Alg(AlgebraicType),
+}
+
+static_assert_size!(Type, 24);
+
+impl Type {
+    /// Is this type compatible with this binary operator?
+    pub fn is_compatible_with(&self, op: BinOp) -> bool {
+        match (op, self) {
+            (BinOp::And | BinOp::Or, Type::Alg(AlgebraicType::Bool)) => true,
+            (BinOp::And | BinOp::Or, _) => false,
+            (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Lte | BinOp::Gte, Type::Alg(t)) => {
+                t.is_bool()
+                    || t.is_integer()
+                    || t.is_float()
+                    || t.is_string()
+                    || t.is_bytes()
+                    || t.is_identity()
+                    || t.is_address()
+            }
+            (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Lte | BinOp::Gte, _) => false,
+        }
+    }
+}
 
 /// When type checking a [super::expr::RelExpr],
 /// types are stored in a typing context [TyCtx].
 /// It will then hold references, in the form of [TyId]s,
 /// to the types defined in the [TyCtx].
+#[derive(Debug)]
 pub struct TyCtx {
     types: Vec<Type>,
+    names: StringInterner<StringBackend>,
 }
 
 impl Default for TyCtx {
     fn default() -> Self {
         Self {
+            names: StringInterner::new(),
             types: vec![
                 Type::Alg(AlgebraicType::Bool),
                 Type::Alg(AlgebraicType::I8),
@@ -92,17 +128,23 @@ impl Default for TyCtx {
     }
 }
 
+#[derive(Debug, Error)]
+#[error("Invalid type id {0}")]
+pub struct InvalidTypeId(TyId);
+
 impl TyCtx {
     /// Try to resolve an id to its [Type].
     /// Return a resolution error if not found.
-    pub fn try_resolve(&self, id: TyId) -> Result<&Type, InvalidTyId> {
-        self.types.get(id.0 as usize).ok_or(InvalidTyId(id))
+    pub fn try_resolve(&self, id: TyId) -> Result<TypeWithCtx, InvalidTypeId> {
+        self.types
+            .get(id.0 as usize)
+            .map(|ty| TypeWithCtx(ty, self))
+            .ok_or(InvalidTypeId(id))
     }
 
-    /// Resolve an id to its [Type].
-    /// Panics if id is out of bounds.
-    pub fn resolve(&self, id: TyId) -> &Type {
-        &self.types[id.0 as usize]
+    /// Resolve a [Symbol] to its name
+    pub fn resolve_symbol(&self, id: Symbol) -> Option<&str> {
+        self.names.resolve(id)
     }
 
     /// Add a type to the context and return a [TyId] for it.
@@ -122,55 +164,136 @@ impl TyCtx {
         let n = self.types.len() - 1;
         TyId(n as u32)
     }
+
+    /// Generate a [Symbol] from a string
+    pub fn gen_symbol(&mut self, name: impl AsRef<str>) -> Symbol {
+        self.names.get_or_intern(name)
+    }
+
+    /// Get an already generated [Symbol]
+    pub fn get_symbol(&self, name: impl AsRef<str>) -> Option<Symbol> {
+        self.names.get(name)
+    }
+
+    /// A wrapped [AlgebraicType::Bool] type
+    pub fn bool(&self) -> TypeWithCtx {
+        TypeWithCtx(&Type::Alg(AlgebraicType::Bool), self)
+    }
+
+    /// A wrapped [AlgebraicType::String] type
+    pub fn str(&self) -> TypeWithCtx {
+        TypeWithCtx(&Type::Alg(AlgebraicType::String), self)
+    }
+
+    /// A wrapped [AlgebraicType::U64] type
+    pub fn u64(&self) -> TypeWithCtx {
+        TypeWithCtx(&Type::Alg(AlgebraicType::U64), self)
+    }
+
+    /// A wrapped [AlgebraicType::bytes()] type
+    pub fn bytes(&self) -> TypeWithCtx {
+        TypeWithCtx(&self.types[TyId::BYTES.0 as usize], self)
+    }
+
+    /// Are these types structurally equivalent?
+    pub fn eq(&self, a: TyId, b: TyId) -> Result<bool, InvalidTypeId> {
+        if a.0 < TyId::N as u32 || b.0 < TyId::N as u32 {
+            return Ok(a == b);
+        }
+        match (&*self.try_resolve(a)?, &*self.try_resolve(b)?) {
+            (Type::Alg(a), Type::Alg(b)) => Ok(a == b),
+            (Type::Var(a), Type::Var(b)) | (Type::Row(a), Type::Row(b)) => Ok(a.len() == b.len() && {
+                for (i, (name, id)) in a.iter().enumerate() {
+                    if name != &b[i].0 || !self.eq(*id, b[i].1)? {
+                        return Ok(false);
+                    }
+                }
+                true
+            }),
+            _ => Ok(false),
+        }
+    }
 }
 
 /// A type wrapped with its typing context
+#[derive(Debug)]
 pub struct TypeWithCtx<'a>(&'a Type, &'a TyCtx);
 
-impl<'a> Eq for TypeWithCtx<'a> {}
+impl Deref for TypeWithCtx<'_> {
+    type Target = Type;
 
-/// A [TyId] is not guaranteed to be unique for a given [Type].
-/// Hence we must fully resolve each [TyId] when testing for equality.
-impl<'a> PartialEq for TypeWithCtx<'a> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self.0, other.0) {
-            (Type::Var(a), Type::Var(b)) | (Type::Row(a), Type::Row(b)) => {
-                a.len() == b.len()
-                    && a.iter()
-                        .enumerate()
-                        .all(|(i, (name, id))| name == &b[i].0 && id.with_ctx(self.1) == b[i].1.with_ctx(other.1))
-            }
-            (Type::Tup(a), Type::Tup(b)) => {
-                a.len() == b.len()
-                    && a.iter()
-                        .enumerate()
-                        .all(|(i, id)| id.with_ctx(self.1) == b[i].with_ctx(other.1))
-            }
-            (Type::Alg(a), Type::Alg(b)) => a == b,
-            _ => false,
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl TypeWithCtx<'_> {
+    /// Expect a type compatible with this binary operator
+    pub fn expect_op(&self, op: BinOp) -> Result<(), InvalidOp> {
+        if self.0.is_compatible_with(op) {
+            return Ok(());
+        }
+        Err(InvalidOp::new(op, self))
+    }
+
+    /// Expect a relvar or base relation type
+    pub fn expect_relvar(&self) -> Result<RelType, ExpectedRelvar> {
+        match self.0 {
+            Type::Var(fields) => Ok(RelType { fields }),
+            Type::Row(_) | Type::Alg(_) => Err(ExpectedRelvar),
+        }
+    }
+
+    /// Expect a scalar or column type, not a relation type
+    pub fn expect_scalar(&self) -> Result<&AlgebraicType, ExpectedScalar> {
+        match self.0 {
+            Type::Alg(t) => Ok(t),
+            Type::Var(_) | Type::Row(_) => Err(ExpectedScalar),
+        }
+    }
+
+    /// Expect a relation, not a scalar or column type
+    pub fn expect_relation(&self) -> Result<RelType, ExpectedRelation> {
+        match self.0 {
+            Type::Var(fields) | Type::Row(fields) => Ok(RelType { fields }),
+            Type::Alg(_) => Err(ExpectedRelation::new(self)),
         }
     }
 }
+
+/// The error type of [TypeWithCtx::expect_relvar()]
+pub struct ExpectedRelvar;
+
+/// The error type of [TypeWithCtx::expect_scalar()]
+pub struct ExpectedScalar;
 
 impl<'a> Display for TypeWithCtx<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let Self(ty, ctx) = self;
-        match ty {
+        match self.0 {
             Type::Alg(ty) => write!(f, "{}", fmt_algebraic_type(ty)),
             Type::Var(fields) | Type::Row(fields) => {
+                const UNKNOWN: &str = "UNKNOWN";
                 write!(f, "(")?;
-                let (name, id) = &fields[0];
-                write!(f, "{}: {}", name, id.with_ctx(ctx))?;
-                for (name, id) in &fields[1..] {
-                    write!(f, ", {}: {}", name, id.with_ctx(ctx))?;
-                }
-                write!(f, ")")
-            }
-            Type::Tup(types) => {
-                write!(f, "(")?;
-                write!(f, "{}", types[0].with_ctx(ctx))?;
-                for id in &types[1..] {
-                    write!(f, ", {}", id.with_ctx(ctx))?;
+                let (symbol, id) = &fields[0];
+                let name = self.1.resolve_symbol(*symbol).unwrap_or(UNKNOWN);
+                match self.1.try_resolve(*id) {
+                    Ok(ty) => {
+                        write!(f, "{}: {}", name, ty)?;
+                    }
+                    Err(_) => {
+                        write!(f, "{}: {}", name, UNKNOWN)?;
+                    }
+                };
+                for (symbol, id) in &fields[1..] {
+                    let name = self.1.resolve_symbol(*symbol).unwrap_or(UNKNOWN);
+                    match self.1.try_resolve(*id) {
+                        Ok(ty) => {
+                            write!(f, "{}: {}", name, ty)?;
+                        }
+                        Err(_) => {
+                            write!(f, "{}: {}", name, UNKNOWN)?;
+                        }
+                    };
                 }
                 write!(f, ")")
             }
@@ -178,78 +301,40 @@ impl<'a> Display for TypeWithCtx<'a> {
     }
 }
 
-/// The type of a relation or scalar expression
-pub enum Type {
-    /// A base relation
-    Var(Box<[(String, TyId)]>),
-    /// A derived relation
-    Row(Box<[(String, TyId)]>),
-    /// A join relation
-    Tup(Box<[TyId]>),
-    /// A column type
-    Alg(AlgebraicType),
+/// Represents a non-scalar or column type
+#[derive(Debug)]
+pub struct RelType<'a> {
+    fields: &'a [(Symbol, TyId)],
 }
 
-static_assert_size!(Type, 24);
-
-impl Type {
-    /// A constant for the bool type
-    pub const BOOL: Self = Self::Alg(AlgebraicType::Bool);
-
-    /// A constant for the string type
-    pub const STR: Self = Self::Alg(AlgebraicType::String);
-
-    /// A constant for the U64 type
-    pub const U64: Self = Self::Alg(AlgebraicType::U64);
-
-    /// Wrap this type with its typing context
-    pub fn with_ctx<'a>(&'a self, ctx: &'a TyCtx) -> TypeWithCtx {
-        TypeWithCtx(self, ctx)
+impl<'a> RelType<'a> {
+    /// Returns an iterator over the field names and types of this row type
+    pub fn iter(&'a self) -> impl Iterator<Item = (usize, Symbol, TyId)> + '_ {
+        self.fields.iter().enumerate().map(|(i, (name, ty))| (i, *name, *ty))
     }
 
-    /// Is this type compatible with this binary operator?
-    pub fn is_compatible_with(&self, op: BinOp) -> bool {
-        match (op, self) {
-            (BinOp::And | BinOp::Or, Type::Alg(AlgebraicType::Bool)) => true,
-            (BinOp::And | BinOp::Or, _) => false,
-            (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Lte | BinOp::Gte, Type::Alg(t)) => {
-                t.is_bool()
-                    || t.is_integer()
-                    || t.is_float()
-                    || t.is_string()
-                    || t.is_bytes()
-                    || t.is_identity()
-                    || t.is_address()
-            }
-            (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Lte | BinOp::Gte, _) => false,
-        }
+    /// Find the position and type of a field in this row type if it exists
+    pub fn find(&'a self, name: Symbol) -> Option<(usize, TyId)> {
+        self.iter()
+            .find(|(_, field, _)| *field == name)
+            .map(|(i, _, ty)| (i, ty))
+    }
+}
+
+/// A typing environment for an expression.
+/// It binds in scope variables to their respective types.
+#[derive(Debug, Clone, Default)]
+pub struct TyEnv(HashMap<Symbol, TyId>);
+
+impl TyEnv {
+    /// Adds a new variable binding to the environment.
+    /// Returns the old binding if the name was already in scope.
+    pub fn add(&mut self, name: Symbol, ty: TyId) -> Option<TyId> {
+        self.0.insert(name, ty)
     }
 
-    /// Is this a numeric type?
-    pub fn is_num(&self) -> bool {
-        match self {
-            Self::Alg(t) => t.is_integer() || t.is_float(),
-            _ => false,
-        }
-    }
-
-    /// Is this a hex type?
-    pub fn is_hex(&self) -> bool {
-        match self {
-            Self::Alg(t) => t.is_bytes() || t.is_identity() || t.is_address(),
-            _ => false,
-        }
-    }
-
-    /// Find a field and its position in a Row or Var type
-    pub fn find(&self, field: &str) -> Option<(usize, TyId)> {
-        match self {
-            Self::Var(schema) | Self::Row(schema) => schema
-                .iter()
-                .enumerate()
-                .find(|(_, (name, _))| name == field)
-                .map(|(i, (_, ty))| (i, *ty)),
-            _ => None,
-        }
+    /// Find a name in the environment
+    pub fn find(&self, name: Symbol) -> Option<TyId> {
+        self.0.get(&name).copied()
     }
 }
