@@ -101,13 +101,10 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkI32TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    deletes: Vec<__ws::EncodedValue>,
-    inserts: Vec<__ws::EncodedValue>,
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<PkI32>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<i32>(deletes, inserts, |row: &PkI32| {
-        &row.n
-    })
-    .context("Failed to parse table update for table \"pk_i32\"")
+    __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<i32>(raw_updates, |row: &PkI32| &row.n)
+        .context("Failed to parse table update for table \"pk_i32\"")
 }
 
 /// Access to the `n` unique index on the table `pk_i32`,

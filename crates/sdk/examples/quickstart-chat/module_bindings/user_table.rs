@@ -101,12 +101,10 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for UserTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    deletes: Vec<__ws::EncodedValue>,
-    inserts: Vec<__ws::EncodedValue>,
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<User>> {
     __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<__sdk::Identity>(
-        deletes,
-        inserts,
+        raw_updates,
         |row: &User| &row.identity,
     )
     .context("Failed to parse table update for table \"user\"")

@@ -6,7 +6,7 @@ use spacetimedb_bench::{
     schemas::{create_sequential, u32_u64_str, u32_u64_u64, u64_u64_u32, BenchTable, RandomTable},
     spacetime_module::BENCHMARKS_MODULE,
 };
-use spacetimedb_lib::{sats, ProductValue};
+use spacetimedb_lib::{bsatn::ToBsatn as _, sats, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_testing::modules::start_runtime;
 use std::time::{Duration, Instant};

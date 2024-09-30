@@ -179,10 +179,9 @@ fn connect_to_db() -> DbConnection {
 
 /// Register subscriptions for all rows of both tables.
 fn subscribe_to_tables(ctx: &DbConnection) {
-    ctx.subscription_builder().on_applied(on_sub_applied).subscribe(vec![
-        "SELECT * FROM user;".to_string(),
-        "SELECT * FROM message;".to_string(),
-    ]);
+    ctx.subscription_builder()
+        .on_applied(on_sub_applied)
+        .subscribe(["SELECT * FROM user;", "SELECT * FROM message;"]);
 }
 
 // # Handle user input

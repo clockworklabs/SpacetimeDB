@@ -11,7 +11,8 @@
 //! to determine what change in your connection's state caused the callback to run.
 
 use crate::spacetime_module::SpacetimeModule;
-use anyhow::Context;
+use anyhow::Context as _;
+use spacetimedb_client_api_messages::websocket::BsatnFormat;
 use spacetimedb_lib::{Address, Identity};
 use std::time::SystemTime;
 
@@ -91,7 +92,7 @@ pub enum Status {
     ///
     /// The `String` payload is the error message signaled by the reducer,
     /// either as an `Err` return, a `panic` message, or a thrown exception.
-    Failed(String),
+    Failed(Box<str>),
 
     /// The reducer was aborted due to insufficient energy, and its mutations were discarded or rolled back.
     OutOfEnergy,
@@ -99,7 +100,7 @@ pub enum Status {
 
 impl Status {
     pub(crate) fn parse_status_and_update<M: SpacetimeModule>(
-        status: crate::ws_messages::UpdateStatus,
+        status: crate::ws_messages::UpdateStatus<BsatnFormat>,
     ) -> anyhow::Result<(Self, Option<M::DbUpdate>)> {
         Ok(match status {
             crate::ws_messages::UpdateStatus::Committed(update) => (

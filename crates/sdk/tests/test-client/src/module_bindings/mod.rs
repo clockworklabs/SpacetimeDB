@@ -1209,9 +1209,9 @@ impl __sdk::spacetime_module::Reducer for Reducer {
         }
     }
 }
-impl TryFrom<__ws::ReducerCallInfo> for Reducer {
+impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
     type Error = __anyhow::Error;
-    fn try_from(value: __ws::ReducerCallInfo) -> __anyhow::Result<Self> {
+    fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {
         match &value.reducer_name[..] {
             "delete_pk_address" => Ok(Reducer::DeletePkAddress(__sdk::spacetime_module::parse_reducer_args(
                 "delete_pk_address",
@@ -1924,334 +1924,138 @@ pub struct DbUpdate {
     vec_unit_struct: __sdk::spacetime_module::TableUpdate<VecUnitStruct>,
 }
 
-impl TryFrom<__ws::DatabaseUpdate> for DbUpdate {
+impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
     type Error = __anyhow::Error;
-    fn try_from(raw: __ws::DatabaseUpdate) -> Result<Self, Self::Error> {
+    fn try_from(raw: __ws::DatabaseUpdate<__ws::BsatnFormat>) -> Result<Self, Self::Error> {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
-                "large_table" => {
-                    db_update.large_table =
-                        large_table_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_address" => {
-                    db_update.one_address =
-                        one_address_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_bool" => {
-                    db_update.one_bool = one_bool_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
+                "large_table" => db_update.large_table = large_table_table::parse_table_update(table_update)?,
+                "one_address" => db_update.one_address = one_address_table::parse_table_update(table_update)?,
+                "one_bool" => db_update.one_bool = one_bool_table::parse_table_update(table_update)?,
                 "one_byte_struct" => {
-                    db_update.one_byte_struct =
-                        one_byte_struct_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.one_byte_struct = one_byte_struct_table::parse_table_update(table_update)?
                 }
                 "one_enum_with_payload" => {
-                    db_update.one_enum_with_payload =
-                        one_enum_with_payload_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.one_enum_with_payload = one_enum_with_payload_table::parse_table_update(table_update)?
                 }
                 "one_every_primitive_struct" => {
-                    db_update.one_every_primitive_struct = one_every_primitive_struct_table::parse_table_update(
-                        table_update.deletes,
-                        table_update.inserts,
-                    )?
+                    db_update.one_every_primitive_struct =
+                        one_every_primitive_struct_table::parse_table_update(table_update)?
                 }
                 "one_every_vec_struct" => {
-                    db_update.one_every_vec_struct =
-                        one_every_vec_struct_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.one_every_vec_struct = one_every_vec_struct_table::parse_table_update(table_update)?
                 }
-                "one_f32" => {
-                    db_update.one_f_32 = one_f_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_f64" => {
-                    db_update.one_f_64 = one_f_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_i128" => {
-                    db_update.one_i_128 =
-                        one_i_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_i16" => {
-                    db_update.one_i_16 = one_i_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_i256" => {
-                    db_update.one_i_256 =
-                        one_i_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_i32" => {
-                    db_update.one_i_32 = one_i_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_i64" => {
-                    db_update.one_i_64 = one_i_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_i8" => {
-                    db_update.one_i_8 = one_i_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_identity" => {
-                    db_update.one_identity =
-                        one_identity_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
+                "one_f32" => db_update.one_f_32 = one_f_32_table::parse_table_update(table_update)?,
+                "one_f64" => db_update.one_f_64 = one_f_64_table::parse_table_update(table_update)?,
+                "one_i128" => db_update.one_i_128 = one_i_128_table::parse_table_update(table_update)?,
+                "one_i16" => db_update.one_i_16 = one_i_16_table::parse_table_update(table_update)?,
+                "one_i256" => db_update.one_i_256 = one_i_256_table::parse_table_update(table_update)?,
+                "one_i32" => db_update.one_i_32 = one_i_32_table::parse_table_update(table_update)?,
+                "one_i64" => db_update.one_i_64 = one_i_64_table::parse_table_update(table_update)?,
+                "one_i8" => db_update.one_i_8 = one_i_8_table::parse_table_update(table_update)?,
+                "one_identity" => db_update.one_identity = one_identity_table::parse_table_update(table_update)?,
                 "one_simple_enum" => {
-                    db_update.one_simple_enum =
-                        one_simple_enum_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.one_simple_enum = one_simple_enum_table::parse_table_update(table_update)?
                 }
-                "one_string" => {
-                    db_update.one_string =
-                        one_string_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_u128" => {
-                    db_update.one_u_128 =
-                        one_u_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_u16" => {
-                    db_update.one_u_16 = one_u_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_u256" => {
-                    db_update.one_u_256 =
-                        one_u_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_u32" => {
-                    db_update.one_u_32 = one_u_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_u64" => {
-                    db_update.one_u_64 = one_u_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "one_u8" => {
-                    db_update.one_u_8 = one_u_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
+                "one_string" => db_update.one_string = one_string_table::parse_table_update(table_update)?,
+                "one_u128" => db_update.one_u_128 = one_u_128_table::parse_table_update(table_update)?,
+                "one_u16" => db_update.one_u_16 = one_u_16_table::parse_table_update(table_update)?,
+                "one_u256" => db_update.one_u_256 = one_u_256_table::parse_table_update(table_update)?,
+                "one_u32" => db_update.one_u_32 = one_u_32_table::parse_table_update(table_update)?,
+                "one_u64" => db_update.one_u_64 = one_u_64_table::parse_table_update(table_update)?,
+                "one_u8" => db_update.one_u_8 = one_u_8_table::parse_table_update(table_update)?,
                 "one_unit_struct" => {
-                    db_update.one_unit_struct =
-                        one_unit_struct_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.one_unit_struct = one_unit_struct_table::parse_table_update(table_update)?
                 }
                 "option_every_primitive_struct" => {
-                    db_update.option_every_primitive_struct = option_every_primitive_struct_table::parse_table_update(
-                        table_update.deletes,
-                        table_update.inserts,
-                    )?
+                    db_update.option_every_primitive_struct =
+                        option_every_primitive_struct_table::parse_table_update(table_update)?
                 }
-                "option_i32" => {
-                    db_update.option_i_32 =
-                        option_i_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
+                "option_i32" => db_update.option_i_32 = option_i_32_table::parse_table_update(table_update)?,
                 "option_identity" => {
-                    db_update.option_identity =
-                        option_identity_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.option_identity = option_identity_table::parse_table_update(table_update)?
                 }
                 "option_simple_enum" => {
-                    db_update.option_simple_enum =
-                        option_simple_enum_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.option_simple_enum = option_simple_enum_table::parse_table_update(table_update)?
                 }
-                "option_string" => {
-                    db_update.option_string =
-                        option_string_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
+                "option_string" => db_update.option_string = option_string_table::parse_table_update(table_update)?,
                 "option_vec_option_i32" => {
-                    db_update.option_vec_option_i_32 =
-                        option_vec_option_i_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.option_vec_option_i_32 = option_vec_option_i_32_table::parse_table_update(table_update)?
                 }
-                "pk_address" => {
-                    db_update.pk_address =
-                        pk_address_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_bool" => {
-                    db_update.pk_bool = pk_bool_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_i128" => {
-                    db_update.pk_i_128 = pk_i_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_i16" => {
-                    db_update.pk_i_16 = pk_i_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_i256" => {
-                    db_update.pk_i_256 = pk_i_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_i32" => {
-                    db_update.pk_i_32 = pk_i_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_i64" => {
-                    db_update.pk_i_64 = pk_i_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_i8" => {
-                    db_update.pk_i_8 = pk_i_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_identity" => {
-                    db_update.pk_identity =
-                        pk_identity_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_string" => {
-                    db_update.pk_string =
-                        pk_string_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_u128" => {
-                    db_update.pk_u_128 = pk_u_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_u16" => {
-                    db_update.pk_u_16 = pk_u_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_u256" => {
-                    db_update.pk_u_256 = pk_u_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_u32" => {
-                    db_update.pk_u_32 = pk_u_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_u64" => {
-                    db_update.pk_u_64 = pk_u_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "pk_u8" => {
-                    db_update.pk_u_8 = pk_u_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
+                "pk_address" => db_update.pk_address = pk_address_table::parse_table_update(table_update)?,
+                "pk_bool" => db_update.pk_bool = pk_bool_table::parse_table_update(table_update)?,
+                "pk_i128" => db_update.pk_i_128 = pk_i_128_table::parse_table_update(table_update)?,
+                "pk_i16" => db_update.pk_i_16 = pk_i_16_table::parse_table_update(table_update)?,
+                "pk_i256" => db_update.pk_i_256 = pk_i_256_table::parse_table_update(table_update)?,
+                "pk_i32" => db_update.pk_i_32 = pk_i_32_table::parse_table_update(table_update)?,
+                "pk_i64" => db_update.pk_i_64 = pk_i_64_table::parse_table_update(table_update)?,
+                "pk_i8" => db_update.pk_i_8 = pk_i_8_table::parse_table_update(table_update)?,
+                "pk_identity" => db_update.pk_identity = pk_identity_table::parse_table_update(table_update)?,
+                "pk_string" => db_update.pk_string = pk_string_table::parse_table_update(table_update)?,
+                "pk_u128" => db_update.pk_u_128 = pk_u_128_table::parse_table_update(table_update)?,
+                "pk_u16" => db_update.pk_u_16 = pk_u_16_table::parse_table_update(table_update)?,
+                "pk_u256" => db_update.pk_u_256 = pk_u_256_table::parse_table_update(table_update)?,
+                "pk_u32" => db_update.pk_u_32 = pk_u_32_table::parse_table_update(table_update)?,
+                "pk_u64" => db_update.pk_u_64 = pk_u_64_table::parse_table_update(table_update)?,
+                "pk_u8" => db_update.pk_u_8 = pk_u_8_table::parse_table_update(table_update)?,
                 "table_holds_table" => {
-                    db_update.table_holds_table =
-                        table_holds_table_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.table_holds_table = table_holds_table_table::parse_table_update(table_update)?
                 }
-                "unique_address" => {
-                    db_update.unique_address =
-                        unique_address_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "unique_bool" => {
-                    db_update.unique_bool =
-                        unique_bool_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "unique_i128" => {
-                    db_update.unique_i_128 =
-                        unique_i_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "unique_i16" => {
-                    db_update.unique_i_16 =
-                        unique_i_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "unique_i256" => {
-                    db_update.unique_i_256 =
-                        unique_i_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "unique_i32" => {
-                    db_update.unique_i_32 =
-                        unique_i_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "unique_i64" => {
-                    db_update.unique_i_64 =
-                        unique_i_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "unique_i8" => {
-                    db_update.unique_i_8 =
-                        unique_i_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
+                "unique_address" => db_update.unique_address = unique_address_table::parse_table_update(table_update)?,
+                "unique_bool" => db_update.unique_bool = unique_bool_table::parse_table_update(table_update)?,
+                "unique_i128" => db_update.unique_i_128 = unique_i_128_table::parse_table_update(table_update)?,
+                "unique_i16" => db_update.unique_i_16 = unique_i_16_table::parse_table_update(table_update)?,
+                "unique_i256" => db_update.unique_i_256 = unique_i_256_table::parse_table_update(table_update)?,
+                "unique_i32" => db_update.unique_i_32 = unique_i_32_table::parse_table_update(table_update)?,
+                "unique_i64" => db_update.unique_i_64 = unique_i_64_table::parse_table_update(table_update)?,
+                "unique_i8" => db_update.unique_i_8 = unique_i_8_table::parse_table_update(table_update)?,
                 "unique_identity" => {
-                    db_update.unique_identity =
-                        unique_identity_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.unique_identity = unique_identity_table::parse_table_update(table_update)?
                 }
-                "unique_string" => {
-                    db_update.unique_string =
-                        unique_string_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "unique_u128" => {
-                    db_update.unique_u_128 =
-                        unique_u_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "unique_u16" => {
-                    db_update.unique_u_16 =
-                        unique_u_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "unique_u256" => {
-                    db_update.unique_u_256 =
-                        unique_u_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "unique_u32" => {
-                    db_update.unique_u_32 =
-                        unique_u_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "unique_u64" => {
-                    db_update.unique_u_64 =
-                        unique_u_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "unique_u8" => {
-                    db_update.unique_u_8 =
-                        unique_u_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_address" => {
-                    db_update.vec_address =
-                        vec_address_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_bool" => {
-                    db_update.vec_bool = vec_bool_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
+                "unique_string" => db_update.unique_string = unique_string_table::parse_table_update(table_update)?,
+                "unique_u128" => db_update.unique_u_128 = unique_u_128_table::parse_table_update(table_update)?,
+                "unique_u16" => db_update.unique_u_16 = unique_u_16_table::parse_table_update(table_update)?,
+                "unique_u256" => db_update.unique_u_256 = unique_u_256_table::parse_table_update(table_update)?,
+                "unique_u32" => db_update.unique_u_32 = unique_u_32_table::parse_table_update(table_update)?,
+                "unique_u64" => db_update.unique_u_64 = unique_u_64_table::parse_table_update(table_update)?,
+                "unique_u8" => db_update.unique_u_8 = unique_u_8_table::parse_table_update(table_update)?,
+                "vec_address" => db_update.vec_address = vec_address_table::parse_table_update(table_update)?,
+                "vec_bool" => db_update.vec_bool = vec_bool_table::parse_table_update(table_update)?,
                 "vec_byte_struct" => {
-                    db_update.vec_byte_struct =
-                        vec_byte_struct_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.vec_byte_struct = vec_byte_struct_table::parse_table_update(table_update)?
                 }
                 "vec_enum_with_payload" => {
-                    db_update.vec_enum_with_payload =
-                        vec_enum_with_payload_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.vec_enum_with_payload = vec_enum_with_payload_table::parse_table_update(table_update)?
                 }
                 "vec_every_primitive_struct" => {
-                    db_update.vec_every_primitive_struct = vec_every_primitive_struct_table::parse_table_update(
-                        table_update.deletes,
-                        table_update.inserts,
-                    )?
+                    db_update.vec_every_primitive_struct =
+                        vec_every_primitive_struct_table::parse_table_update(table_update)?
                 }
                 "vec_every_vec_struct" => {
-                    db_update.vec_every_vec_struct =
-                        vec_every_vec_struct_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.vec_every_vec_struct = vec_every_vec_struct_table::parse_table_update(table_update)?
                 }
-                "vec_f32" => {
-                    db_update.vec_f_32 = vec_f_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_f64" => {
-                    db_update.vec_f_64 = vec_f_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_i128" => {
-                    db_update.vec_i_128 =
-                        vec_i_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_i16" => {
-                    db_update.vec_i_16 = vec_i_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_i256" => {
-                    db_update.vec_i_256 =
-                        vec_i_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_i32" => {
-                    db_update.vec_i_32 = vec_i_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_i64" => {
-                    db_update.vec_i_64 = vec_i_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_i8" => {
-                    db_update.vec_i_8 = vec_i_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_identity" => {
-                    db_update.vec_identity =
-                        vec_identity_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
+                "vec_f32" => db_update.vec_f_32 = vec_f_32_table::parse_table_update(table_update)?,
+                "vec_f64" => db_update.vec_f_64 = vec_f_64_table::parse_table_update(table_update)?,
+                "vec_i128" => db_update.vec_i_128 = vec_i_128_table::parse_table_update(table_update)?,
+                "vec_i16" => db_update.vec_i_16 = vec_i_16_table::parse_table_update(table_update)?,
+                "vec_i256" => db_update.vec_i_256 = vec_i_256_table::parse_table_update(table_update)?,
+                "vec_i32" => db_update.vec_i_32 = vec_i_32_table::parse_table_update(table_update)?,
+                "vec_i64" => db_update.vec_i_64 = vec_i_64_table::parse_table_update(table_update)?,
+                "vec_i8" => db_update.vec_i_8 = vec_i_8_table::parse_table_update(table_update)?,
+                "vec_identity" => db_update.vec_identity = vec_identity_table::parse_table_update(table_update)?,
                 "vec_simple_enum" => {
-                    db_update.vec_simple_enum =
-                        vec_simple_enum_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.vec_simple_enum = vec_simple_enum_table::parse_table_update(table_update)?
                 }
-                "vec_string" => {
-                    db_update.vec_string =
-                        vec_string_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_u128" => {
-                    db_update.vec_u_128 =
-                        vec_u_128_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_u16" => {
-                    db_update.vec_u_16 = vec_u_16_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_u256" => {
-                    db_update.vec_u_256 =
-                        vec_u_256_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_u32" => {
-                    db_update.vec_u_32 = vec_u_32_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_u64" => {
-                    db_update.vec_u_64 = vec_u_64_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "vec_u8" => {
-                    db_update.vec_u_8 = vec_u_8_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
+                "vec_string" => db_update.vec_string = vec_string_table::parse_table_update(table_update)?,
+                "vec_u128" => db_update.vec_u_128 = vec_u_128_table::parse_table_update(table_update)?,
+                "vec_u16" => db_update.vec_u_16 = vec_u_16_table::parse_table_update(table_update)?,
+                "vec_u256" => db_update.vec_u_256 = vec_u_256_table::parse_table_update(table_update)?,
+                "vec_u32" => db_update.vec_u_32 = vec_u_32_table::parse_table_update(table_update)?,
+                "vec_u64" => db_update.vec_u_64 = vec_u_64_table::parse_table_update(table_update)?,
+                "vec_u8" => db_update.vec_u_8 = vec_u_8_table::parse_table_update(table_update)?,
                 "vec_unit_struct" => {
-                    db_update.vec_unit_struct =
-                        vec_unit_struct_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                    db_update.vec_unit_struct = vec_unit_struct_table::parse_table_update(table_update)?
                 }
 
                 unknown => __anyhow::bail!("Unknown table {unknown:?} in DatabaseUpdate"),

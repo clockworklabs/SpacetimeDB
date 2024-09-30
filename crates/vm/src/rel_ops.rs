@@ -1,3 +1,5 @@
+use core::iter;
+
 use crate::relation::RelValue;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::relation::ColExpr;
@@ -84,6 +86,13 @@ pub trait RelOps<'a> {
             result.push(convert(row));
         }
         result
+    }
+
+    fn iter(&mut self) -> impl Iterator<Item = RelValue<'a>>
+    where
+        Self: Sized,
+    {
+        iter::from_fn(move || self.next())
     }
 }
 

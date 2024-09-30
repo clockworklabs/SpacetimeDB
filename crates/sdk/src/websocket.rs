@@ -3,11 +3,14 @@
 //! This module is internal, and may incompatibly change without warning.
 
 use crate::ws_messages::{ClientMessage, ServerMessage};
-use anyhow::{bail, Context, Result};
-use brotli::BrotliDecompress;
-use futures::{SinkExt, StreamExt, TryStreamExt};
+use anyhow::{anyhow, bail, Context, Result};
+use bytes::Bytes;
+use futures::{SinkExt, StreamExt as _, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
+use spacetimedb_client_api_messages::websocket::{
+    brotli_decompress, BsatnFormat, SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_NONE,
+};
 use spacetimedb_lib::{bsatn, Address, Identity};
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};
@@ -95,7 +98,7 @@ fn request_add_header(req: &mut http::Request<()>, key: &'static str, val: http:
 }
 
 const PROTOCOL_HEADER_KEY: &str = "Sec-WebSocket-Protocol";
-const PROTOCOL_HEADER_VALUE: &str = "v1.bin.spacetimedb";
+const PROTOCOL_HEADER_VALUE: &str = "v1.bsatn.spacetimedb";
 
 fn request_insert_protocol_header(req: &mut http::Request<()>) {
     request_add_header(
@@ -153,13 +156,21 @@ impl WsConnection {
         Ok(WsConnection { sock })
     }
 
-    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage> {
-        let mut decompressed = Vec::new();
-        BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
-        Ok(bsatn::from_slice(&decompressed)?)
+    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage<BsatnFormat>> {
+        let (compression, bytes) = bytes
+            .split_first()
+            .ok_or_else(|| anyhow!("Empty raw message. Must have at least a byte for the compression."))?;
+
+        Ok(match *compression {
+            SERVER_MSG_COMPRESSION_TAG_NONE => bsatn::from_slice(bytes)?,
+            SERVER_MSG_COMPRESSION_TAG_BROTLI => {
+                bsatn::from_slice(&brotli_decompress(bytes).context("Failed to Brotli decompress message")?)?
+            }
+            c => bail!("Unknown compression format `{c}`"),
+        })
     }
 
-    pub(crate) fn encode_message(msg: ClientMessage) -> WebSocketMessage {
+    pub(crate) fn encode_message(msg: ClientMessage<Bytes>) -> WebSocketMessage {
         WebSocketMessage::Binary(bsatn::to_vec(&msg).unwrap())
     }
 
@@ -171,8 +182,8 @@ impl WsConnection {
 
     async fn message_loop(
         mut self,
-        incoming_messages: mpsc::UnboundedSender<ServerMessage>,
-        outgoing_messages: mpsc::UnboundedReceiver<ClientMessage>,
+        incoming_messages: mpsc::UnboundedSender<ServerMessage<BsatnFormat>>,
+        outgoing_messages: mpsc::UnboundedReceiver<ClientMessage<Bytes>>,
     ) {
         let mut outgoing_messages = Some(outgoing_messages);
         loop {
@@ -226,8 +237,8 @@ impl WsConnection {
         runtime: &runtime::Handle,
     ) -> (
         JoinHandle<()>,
-        mpsc::UnboundedReceiver<ServerMessage>,
-        mpsc::UnboundedSender<ClientMessage>,
+        mpsc::UnboundedReceiver<ServerMessage<BsatnFormat>>,
+        mpsc::UnboundedSender<ClientMessage<Bytes>>,
     ) {
         let (outgoing_send, outgoing_recv) = mpsc::unbounded();
         let (incoming_send, incoming_recv) = mpsc::unbounded();

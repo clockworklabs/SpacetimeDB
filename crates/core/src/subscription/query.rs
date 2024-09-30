@@ -90,7 +90,6 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::Protocol;
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::db::relational_db::MutTx;
@@ -102,7 +101,8 @@ mod tests {
     use crate::vm::tests::create_table_with_rows;
     use crate::vm::DbProgram;
     use itertools::Itertools;
-    use spacetimedb_lib::bsatn::to_vec;
+    use spacetimedb_client_api_messages::websocket::{brotli_decompress_qu, BsatnFormat, CompressableQueryUpdate};
+    use spacetimedb_lib::bsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::identity::AuthCtx;
@@ -268,7 +268,7 @@ mod tests {
         let ctx = &ExecutionContext::incremental_update(db.address());
         let tx = &tx.into();
         let update = update.tables.iter().collect::<Vec<_>>();
-        let result = s.eval_incr(ctx, db, tx, &update, None);
+        let result = s.eval_incr_for_test(ctx, db, tx, &update, None);
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -277,8 +277,15 @@ mod tests {
 
         let result = result
             .tables
-            .into_iter()
-            .flat_map(|update| <Vec<ProductValue>>::from(&update.updates))
+            .iter()
+            .map(|u| &u.updates)
+            .flat_map(|u| {
+                u.deletes
+                    .iter()
+                    .chain(&*u.inserts)
+                    .map(|rv| rv.clone().into_product_value())
+                    .collect::<Vec<_>>()
+            })
             .sorted()
             .collect::<Vec<_>>();
 
@@ -295,7 +302,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval(ctx, Protocol::Binary, db, tx, None).tables;
+        let result = s.eval::<BsatnFormat>(ctx, db, tx, None).tables;
         assert_eq!(
             result.len(),
             total_tables,
@@ -304,16 +311,22 @@ mod tests {
 
         let result = result
             .into_iter()
+            .flat_map(|x| x.updates)
+            .map(|x| match x {
+                CompressableQueryUpdate::Uncompressed(qu) => qu,
+                CompressableQueryUpdate::Brotli(bytes) => brotli_decompress_qu(&bytes),
+            })
             .flat_map(|x| {
-                x.deletes
+                (&x.deletes)
                     .into_iter()
-                    .map(|row| row.into_binary().unwrap())
-                    .chain(x.inserts.into_iter().map(|row| row.into_binary().unwrap()))
+                    .chain(&x.inserts)
+                    .map(|x| x.to_owned())
+                    .collect::<Vec<_>>()
             })
             .sorted()
             .collect_vec();
 
-        let rows = rows.iter().map(|r| to_vec(r).unwrap()).collect_vec();
+        let rows = rows.iter().map(|r| bsatn::to_vec(r).unwrap()).collect_vec();
 
         assert_eq!(result, rows, "Must return the correct row(s)");
 
@@ -364,7 +377,7 @@ mod tests {
         let ctx = &ExecutionContext::incremental_update(db.address());
         let tx = (&tx).into();
         let update = update.tables.iter().collect::<Vec<_>>();
-        let result = query.eval_incr(ctx, &db, &tx, &update, None);
+        let result = query.eval_incr_for_test(ctx, &db, &tx, &update, None);
 
         assert_eq!(result.tables.len(), 1);
 
@@ -723,17 +736,17 @@ mod tests {
         db.with_read_only(ctx, |tx| {
             let tx = (&*tx).into();
             let update = update.tables.iter().collect::<Vec<_>>();
-            let result = query.eval_incr(ctx, db, &tx, &update, None);
+            let result = query.eval_incr_for_test(ctx, db, &tx, &update, None);
             let tables = result
                 .tables
-                .into_iter()
+                .iter()
                 .map(|update| {
-                    let convert = |rvs: Vec<_>| rvs.into_iter().map(RelValue::into_product_value).collect();
+                    let convert = |rvs: &[_]| rvs.iter().cloned().map(RelValue::into_product_value).collect();
                     DatabaseTableUpdate {
                         table_id: update.table_id,
-                        table_name: update.table_name,
-                        deletes: convert(update.updates.deletes),
-                        inserts: convert(update.updates.inserts),
+                        table_name: update.table_name.clone(),
+                        deletes: convert(&update.updates.deletes),
+                        inserts: convert(&update.updates.inserts),
                     }
                 })
                 .collect();

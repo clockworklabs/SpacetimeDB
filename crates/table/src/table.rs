@@ -27,7 +27,7 @@ use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId};
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
-    bsatn::{self, ser::BsatnError},
+    bsatn::{self, ser::BsatnError, ToBsatn},
     product_value::InvalidFieldError,
     satn::Satn,
     ser::{Serialize, Serializer},
@@ -772,45 +772,6 @@ impl<'a> RowRef<'a> {
         self.table.static_bsatn_layout.as_ref().map(|s| s.bsatn_length as usize)
     }
 
-    /// BSATN-encode the row referred to by `self` into a freshly-allocated `Vec<u8>`.
-    ///
-    /// This method will use a [`StaticBsatnLayout`] if one is available,
-    /// and may therefore be faster than calling [`bsatn::to_vec`].
-    pub fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
-        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
-            // Use fast path, by first fetching the row data and then using the static layout.
-            let row = self.get_row_data();
-            // SAFETY:
-            // - Existence of a `RowRef` treated as proof
-            //   of row's validity and type information's correctness.
-            Ok(unsafe { static_bsatn_layout.serialize_row_into_vec(row) })
-        } else {
-            bsatn::to_vec(self)
-        }
-    }
-
-    /// BSATN-encode the row referred to by `self` into `buf`,
-    /// pushing `self`'s bytes onto the end of `buf`, similar to [`Vec::extend`].
-    ///
-    /// This method will use a [`StaticBsatnLayout`] if one is available,
-    /// and may therefore be faster than calling [`bsatn::to_writer`].
-    pub fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
-        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
-            // Use fast path, by first fetching the row data and then using the static layout.
-            let row = self.get_row_data();
-            // SAFETY:
-            // - Existence of a `RowRef` treated as proof
-            //   of row's validity and type information's correctness.
-            unsafe {
-                static_bsatn_layout.serialize_row_extend(buf, row);
-            }
-            Ok(())
-        } else {
-            // Use the slower, but more general, `bsatn_from` serializer to write the row.
-            bsatn::to_writer(buf, self)
-        }
-    }
-
     /// Encode the row referred to by `self` into a `Vec<u8>` using BSATN and then deserialize it.
     /// The passed buffer is allowed to be in an arbitrary state before and after this operation.
     pub fn read_via_bsatn<T>(&self, scratch: &mut Vec<u8>) -> Result<T, ReadViaBsatnError>
@@ -856,6 +817,51 @@ impl Serialize for RowRef<'_> {
         let (page, offset) = table.page_and_offset(self.pointer);
         // SAFETY: `ptr` points to a valid row in this table per above check.
         unsafe { serialize_row_from_page(ser, page, self.blob_store, offset, &table.row_layout) }
+    }
+}
+
+impl ToBsatn for RowRef<'_> {
+    /// BSATN-encode the row referred to by `self` into a freshly-allocated `Vec<u8>`.
+    ///
+    /// This method will use a [`StaticBsatnLayout`] if one is available,
+    /// and may therefore be faster than calling [`bsatn::to_vec`].
+    fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
+        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
+            // Use fast path, by first fetching the row data and then using the static layout.
+            let row = self.get_row_data();
+            // SAFETY:
+            // - Existence of a `RowRef` treated as proof
+            //   of row's validity and type information's correctness.
+            Ok(unsafe { static_bsatn_layout.serialize_row_into_vec(row) })
+        } else {
+            bsatn::to_vec(self)
+        }
+    }
+
+    /// BSATN-encode the row referred to by `self` into `buf`,
+    /// pushing `self`'s bytes onto the end of `buf`, similar to [`Vec::extend`].
+    ///
+    /// This method will use a [`StaticBsatnLayout`] if one is available,
+    /// and may therefore be faster than calling [`bsatn::to_writer`].
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
+            // Use fast path, by first fetching the row data and then using the static layout.
+            let row = self.get_row_data();
+            // SAFETY:
+            // - Existence of a `RowRef` treated as proof
+            //   of row's validity and type information's correctness.
+            unsafe {
+                static_bsatn_layout.serialize_row_extend(buf, row);
+            }
+            Ok(())
+        } else {
+            // Use the slower, but more general, `bsatn_from` serializer to write the row.
+            bsatn::to_writer(buf, self)
+        }
+    }
+
+    fn static_bsatn_size(&self) -> Option<u16> {
+        self.table.static_bsatn_layout.as_ref().map(|sbl| sbl.bsatn_length)
     }
 }
 

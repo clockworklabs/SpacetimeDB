@@ -1,13 +1,15 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
-use crate::client::messages::{SerializableMessage, SubscriptionUpdate, TransactionUpdateMessage};
+use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ModuleEvent};
+use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use arrayvec::ArrayVec;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use spacetimedb_client_api_messages::websocket::EncodedValue;
+use spacetimedb_client_api_messages::websocket::{
+    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryUpdate,
+};
 use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
@@ -124,6 +126,8 @@ impl SubscriptionManager {
         sender_client: Option<&ClientConnectionSender>,
         slow_query_threshold: Option<Duration>,
     ) {
+        use FormatSwitch::{Bsatn, Json};
+
         let tables = &event.status.database_update().unwrap().tables;
 
         // Put the main work on a rayon compute thread.
@@ -161,16 +165,20 @@ impl SubscriptionManager {
                     // but we only fill `ops_bin` and `ops_json` at most once.
                     // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
-                    let mut ops_bin: Option<(Vec<EncodedValue>, Vec<EncodedValue>)> = None;
-                    let mut ops_json: Option<(Vec<EncodedValue>, Vec<EncodedValue>)> = None;
+                    let mut ops_bin: Option<(CompressableQueryUpdate<BsatnFormat>, _)> = None;
+                    let mut ops_json: Option<(QueryUpdate<JsonFormat>, _)> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {
-                            Protocol::Binary => ops_bin
-                                .get_or_insert_with(|| delta.updates.to_protocol(Protocol::Binary))
-                                .clone(),
-                            Protocol::Text => ops_json
-                                .get_or_insert_with(|| delta.updates.to_protocol(Protocol::Text))
-                                .clone(),
+                            Protocol::Binary => Bsatn(
+                                ops_bin
+                                    .get_or_insert_with(|| delta.updates.encode::<BsatnFormat>())
+                                    .clone(),
+                            ),
+                            Protocol::Text => Json(
+                                ops_json
+                                    .get_or_insert_with(|| delta.updates.encode::<JsonFormat>())
+                                    .clone(),
+                            ),
                         };
                         (id, table_id, table_name.clone(), ops)
                     })
@@ -179,23 +187,20 @@ impl SubscriptionManager {
                 .into_iter()
                 // For each subscriber, aggregate all the updates for the same table.
                 // That is, we build a map `(subscriber_id, table_id) -> updates`.
-                // A particular subscriber uses only one protocol,
+                // A particular subscriber uses only one format,
                 // so their `TableUpdate` will contain either JSON (`Protocol::Text`)
                 // or BSATN (`Protocol::Binary`).
                 .fold(
-                    HashMap::<(&Id, TableId), TableUpdate>::new(),
-                    |mut tables, (id, table_id, table_name, (deletes, inserts))| {
+                    HashMap::<(&Id, TableId), FormatSwitch<TableUpdate<_>, TableUpdate<_>>>::new(),
+                    |mut tables, (id, table_id, table_name, update)| {
                         match tables.entry((id, table_id)) {
-                            Entry::Occupied(mut entry) => {
-                                let tbl_upd = entry.get_mut();
-                                tbl_upd.deletes.extend(deletes);
-                                tbl_upd.inserts.extend(inserts);
-                            }
-                            Entry::Vacant(entry) => drop(entry.insert(TableUpdate {
-                                table_id,
-                                table_name: table_name.into(),
-                                deletes,
-                                inserts,
+                            Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(update) {
+                                Bsatn((tbl_upd, update)) => tbl_upd.push(update),
+                                Json((tbl_upd, update)) => tbl_upd.push(update),
+                            },
+                            Entry::Vacant(entry) => drop(entry.insert(match update {
+                                Bsatn(update) => Bsatn(TableUpdate::new(table_id, table_name, update)),
+                                Json(update) => Json(TableUpdate::new(table_id, table_name, update)),
                             })),
                         }
                         tables
@@ -206,10 +211,17 @@ impl SubscriptionManager {
                 // So before sending the updates to each client,
                 // we must stitch together the `TableUpdate*`s into an aggregated list.
                 .fold(
-                    HashMap::<&Id, ws::DatabaseUpdate>::new(),
+                    HashMap::<&Id, FormatSwitch<ws::DatabaseUpdate<_>, ws::DatabaseUpdate<_>>>::new(),
                     |mut updates, ((id, _), update)| {
                         let entry = updates.entry(id);
-                        entry.or_default().tables.push(update);
+                        let entry = entry.or_insert_with(|| match &update {
+                            Bsatn(_) => Bsatn(<_>::default()),
+                            Json(_) => Json(<_>::default()),
+                        });
+                        match entry.zip_mut(update) {
+                            Bsatn((list, elem)) => list.tables.push(elem),
+                            Json((list, elem)) => list.tables.push(elem),
+                        }
                         updates
                     },
                 );
@@ -224,18 +236,12 @@ impl SubscriptionManager {
             {
                 // Caller is not subscribed to any queries,
                 // but send a transaction update with an empty subscription update.
-                send_to_client(
-                    client,
-                    &event,
-                    SubscriptionUpdate::<DatabaseUpdate> {
-                        request_id: event.request_id,
-                        ..Default::default()
-                    },
-                );
+                let update = SubscriptionUpdateMessage::default_for_protocol(client.protocol, event.request_id);
+                send_to_client(client, &event, update);
             }
 
             eval.into_iter().for_each(|(id, tables)| {
-                let database_update = SubscriptionUpdate {
+                let database_update = SubscriptionUpdateMessage {
                     database_update: tables,
                     request_id: event.request_id,
                     timer: event.timer,
@@ -246,10 +252,11 @@ impl SubscriptionManager {
     }
 }
 
-fn send_to_client<T>(client: &ClientConnectionSender, event: &Arc<ModuleEvent>, database_update: SubscriptionUpdate<T>)
-where
-    SerializableMessage: From<TransactionUpdateMessage<T>>,
-{
+fn send_to_client(
+    client: &ClientConnectionSender,
+    event: &Arc<ModuleEvent>,
+    database_update: SubscriptionUpdateMessage,
+) {
     if let Err(e) = client.send_message(TransactionUpdateMessage {
         event: event.clone(),
         database_update,

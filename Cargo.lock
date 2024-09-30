@@ -4416,6 +4416,7 @@ dependencies = [
 name = "spacetimedb-client-api-messages"
 version = "0.12.0"
 dependencies = [
+ "brotli",
  "bytes",
  "bytestring",
  "chrono",
@@ -4426,6 +4427,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "smallvec",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",

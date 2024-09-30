@@ -27,9 +27,11 @@ use crate::{
     ws_messages as ws, Event, ReducerEvent, Status,
 };
 use anyhow::{bail, Context, Result};
+use bytes::Bytes;
 use futures::StreamExt;
 use futures_channel::mpsc;
 use http::Uri;
+use spacetimedb_client_api_messages::websocket::BsatnFormat;
 use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address, Identity};
 use std::{
     sync::{Arc, Mutex as StdMutex, OnceLock},
@@ -245,8 +247,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             // CallReducer: send the `CallReducer` WS message.
             PendingMutation::CallReducer { reducer, args_bsatn } => {
                 let msg = ws::ClientMessage::CallReducer(ws::CallReducer {
-                    reducer: reducer.to_string(),
-                    args: ws::EncodedValue::Binary(args_bsatn.into()),
+                    reducer: reducer.into(),
+                    args: args_bsatn.into(),
                     request_id: 0,
                 });
                 self.inner
@@ -578,7 +580,7 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     runtime: Option<Runtime>,
 
     /// None if we have disconnected.
-    send_chan: Option<mpsc::UnboundedSender<ws::ClientMessage>>,
+    send_chan: Option<mpsc::UnboundedSender<ws::ClientMessage<Bytes>>>,
 
     db_callbacks: DbCallbacks<M>,
     reducer_callbacks: ReducerCallbacks<M>,
@@ -954,12 +956,12 @@ fn enter_or_create_runtime() -> Result<(Option<Runtime>, runtime::Handle)> {
 enum ParsedMessage<M: SpacetimeModule> {
     InitialSubscription { db_update: M::DbUpdate, sub_id: u32 },
     TransactionUpdate(Event<M::Reducer>, Option<M::DbUpdate>),
-    IdentityToken(Identity, String, Address),
+    IdentityToken(Identity, Box<str>, Address),
     Error(anyhow::Error),
 }
 
 fn spawn_parse_loop<M: SpacetimeModule>(
-    raw_message_recv: mpsc::UnboundedReceiver<ws::ServerMessage>,
+    raw_message_recv: mpsc::UnboundedReceiver<ws::ServerMessage<BsatnFormat>>,
     handle: &runtime::Handle,
 ) -> (tokio::task::JoinHandle<()>, mpsc::UnboundedReceiver<ParsedMessage<M>>) {
     let (parsed_message_send, parsed_message_recv) = mpsc::unbounded();
@@ -970,7 +972,7 @@ fn spawn_parse_loop<M: SpacetimeModule>(
 /// A loop which reads raw WS messages from `recv`, parses them into domain types,
 /// and pushes the [`ParsedMessage`]s into `send`.
 async fn parse_loop<M: SpacetimeModule>(
-    mut recv: mpsc::UnboundedReceiver<ws::ServerMessage>,
+    mut recv: mpsc::UnboundedReceiver<ws::ServerMessage<BsatnFormat>>,
     send: mpsc::UnboundedSender<ParsedMessage<M>>,
 ) {
     while let Some(msg) = recv.next().await {
@@ -1029,7 +1031,7 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
     Subscribe {
         on_applied: Option<OnAppliedCallback<M>>,
         on_error: Option<OnErrorCallback<M>>,
-        queries: Vec<String>,
+        queries: Box<[Box<str>]>,
         // TODO: replace `queries` with query_sql: String,
         sub_id: u32,
     },

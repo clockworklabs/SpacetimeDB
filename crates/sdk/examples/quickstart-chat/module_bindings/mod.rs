@@ -68,9 +68,9 @@ impl __sdk::spacetime_module::Reducer for Reducer {
         }
     }
 }
-impl TryFrom<__ws::ReducerCallInfo> for Reducer {
+impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
     type Error = __anyhow::Error;
-    fn try_from(value: __ws::ReducerCallInfo) -> __anyhow::Result<Self> {
+    fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {
         match &value.reducer_name[..] {
             "__identity_connected__" => Ok(Reducer::IdentityConnected(__sdk::spacetime_module::parse_reducer_args(
                 "__identity_connected__",
@@ -104,16 +104,14 @@ pub struct DbUpdate {
     user: __sdk::spacetime_module::TableUpdate<User>,
 }
 
-impl TryFrom<__ws::DatabaseUpdate> for DbUpdate {
+impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
     type Error = __anyhow::Error;
-    fn try_from(raw: __ws::DatabaseUpdate) -> Result<Self, Self::Error> {
+    fn try_from(raw: __ws::DatabaseUpdate<__ws::BsatnFormat>) -> Result<Self, Self::Error> {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
-                "message" => {
-                    db_update.message = message_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
-                "user" => db_update.user = user_table::parse_table_update(table_update.deletes, table_update.inserts)?,
+                "message" => db_update.message = message_table::parse_table_update(table_update)?,
+                "user" => db_update.user = user_table::parse_table_update(table_update)?,
 
                 unknown => __anyhow::bail!("Unknown table {unknown:?} in DatabaseUpdate"),
             }

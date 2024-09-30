@@ -101,14 +101,11 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkU128TableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn parse_table_update(
-    deletes: Vec<__ws::EncodedValue>,
-    inserts: Vec<__ws::EncodedValue>,
+    raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<PkU128>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<u128>(
-        deletes,
-        inserts,
-        |row: &PkU128| &row.n,
-    )
+    __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<u128>(raw_updates, |row: &PkU128| {
+        &row.n
+    })
     .context("Failed to parse table update for table \"pk_u128\"")
 }
 
