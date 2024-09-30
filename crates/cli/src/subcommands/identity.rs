@@ -170,11 +170,7 @@ fn get_subcommands() -> Vec<Command> {
                     .action(ArgAction::SetTrue)
                     .conflicts_with_all(["identity", "all-server"])
             ).arg(
-                Arg::new("force")
-                    .long("force")
-                    .help("Removes all identities without prompting (for CI usage)")
-                    .action(ArgAction::SetTrue)
-                    .conflicts_with("identity")
+                common_args::yes()
             )
             // TODO: project flag?
             ,
@@ -307,12 +303,6 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
 
     if !all && identity_or_name.is_none() && all_server.is_none() {
         return Err(anyhow::anyhow!("Must provide an identity or name to remove"));
-    }
-
-    if force && !(all || all_server.is_some()) {
-        return Err(anyhow::anyhow!(
-            "The --force flag can only be used with --all or --all-server"
-        ));
     }
 
     fn should_continue(force: bool, prompt: &str) -> anyhow::Result<bool> {
