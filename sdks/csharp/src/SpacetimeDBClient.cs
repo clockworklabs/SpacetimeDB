@@ -13,7 +13,7 @@ using SpacetimeDB.ClientApi;
 using Thread = System.Threading.Thread;
 using System.Runtime.CompilerServices;
 
-[assembly:InternalsVisibleTo("SpacetimeDB.Tests")]
+[assembly: InternalsVisibleTo("SpacetimeDB.Tests")]
 
 namespace SpacetimeDB
 {
