@@ -1,7 +1,7 @@
 use crate::common_args;
 use crate::config::Config;
 use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
-use clap::{Arg, ArgAction::SetTrue, ArgMatches};
+use clap::{Arg, ArgMatches};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("describe")
