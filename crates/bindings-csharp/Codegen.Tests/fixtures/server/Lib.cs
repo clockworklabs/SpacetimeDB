@@ -146,7 +146,7 @@ public static partial class Timers
 
 [Table(Name = "MultiTable1", Public = true)]
 [Table(Name = "MultiTable2")]
-public partial struct MultiTable
+public partial struct MultiTableRow
 {
     public string Name;
 
@@ -158,7 +158,7 @@ public partial struct MultiTable
     public uint Bar;
 
     [SpacetimeDB.Reducer]
-    public static void InsertMultiData(ReducerContext ctx, MultiTable data)
+    public static void InsertMultiData(ReducerContext ctx, MultiTableRow data)
     {
         // Verify that we have both tables generated on the context.
         ctx.Db.MultiTable1.Insert(data);
