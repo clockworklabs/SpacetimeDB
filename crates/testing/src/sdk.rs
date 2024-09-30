@@ -145,7 +145,7 @@ fn compile_module(module: &str) -> String {
 // module as a separate clean database instance for isolation purposes.
 fn publish_module(wasm_file: &str) -> String {
     let name = random_module_name();
-    invoke_cli(&["publish", "--server", "local", "--wasm-file", wasm_file, &name]);
+    invoke_cli(&["publish", "--server", "local", "--bin-path", wasm_file, &name]);
     name
 }
 
@@ -187,7 +187,7 @@ fn generate_bindings(language: &str, wasm_file: &str, client_project: &str, gene
             "generate",
             "--lang",
             language,
-            "--wasm-file",
+            "--bin-path",
             wasm_file,
             "--out-dir",
             generate_dir,

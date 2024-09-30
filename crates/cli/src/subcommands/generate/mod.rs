@@ -1,5 +1,6 @@
 #![warn(clippy::uninlined_format_args)]
 
+use clap::parser::ValueSource;
 use clap::Arg;
 use clap::ArgAction::{Set, SetTrue};
 use convert_case::{Case, Casing};
@@ -37,16 +38,16 @@ const INDENT: &str = "\t";
 pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")
-        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --wasm-file <PATH>]")
+        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH>]")
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
-                .long("wasm-file")
-                .short('w')
+                .long("bin-path")
+                .short('b')
                 .group("source")
                 .conflicts_with("project_path")
                 .conflicts_with("build_options")
-                .help("The system path (absolute or relative) to the wasm file we should inspect"),
+                .help("The system path (absolute or relative) to the compiled wasm binary we should inspect"),
         )
         .arg(
             Arg::new("project_path")
@@ -62,7 +63,7 @@ pub fn cli() -> clap::Command {
                 .hide(true)
                 .num_args(0..=1)
                 .value_parser(clap::value_parser!(PathBuf))
-                .long("json-module")
+                .long("module-def")
                 .group("source")
                 .help("Generate from a ModuleDef encoded as json"),
         )
@@ -78,7 +79,6 @@ pub fn cli() -> clap::Command {
             Arg::new("namespace")
                 .default_value("SpacetimeDB.Types")
                 .long("namespace")
-                .short('n')
                 .help("The namespace that should be used"),
         )
         .arg(
@@ -91,8 +91,7 @@ pub fn cli() -> clap::Command {
         )
         .arg(Arg::new("delete_files").long("delete-files").action(SetTrue).help(
             "Delete outdated generated files whose definitions have been \
-             removed from the module. Prompts before deleting unless --force is \
-             supplied.",
+             removed from the module.",
         ))
         .arg(
             Arg::new("build_options")
@@ -117,6 +116,10 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
     let force = args.get_flag("force");
     let build_options = args.get_one::<String>("build_options").unwrap();
 
+    if args.value_source("namespace") == Some(ValueSource::CommandLine) && lang != Language::Csharp {
+        return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
+    }
+
     let module = if let Some(mut json_module) = json_module {
         let DeserializeWrapper(module) = if let Some(path) = json_module.next() {
             serde_json::from_slice(&std::fs::read(path)?)?
@@ -127,7 +130,7 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
     } else {
         let wasm_path = if !project_path.is_dir() && project_path.extension().map_or(false, |ext| ext == "wasm") {
             println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
-            println!("removed in a future release. Please use --wasm-file instead.");
+            println!("removed in a future release. Please use --bin-path instead.");
             project_path.clone()
         } else if let Some(path) = wasm_file {
             println!("Skipping build. Instead we are inspecting {}", path.display());

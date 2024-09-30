@@ -17,16 +17,8 @@ pub fn cli() -> clap::Command {
     clap::Command::new("publish")
         .about("Create and update a SpacetimeDB database")
         .arg(
-            Arg::new("host_type")
-                .long("host-type")
-                .short('t')
-                .value_parser(["wasm"])
-                .default_value("wasm")
-                .help("The type of host that should be for hosting this module"),
-        )
-        .arg(
             Arg::new("clear_database")
-                .long("clear-database")
+                .long("delete-data")
                 .short('c')
                 .action(SetTrue)
                 .requires("name|address")
@@ -51,17 +43,11 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
-                .long("wasm-file")
-                .short('w')
+                .long("bin-path")
+                .short('b')
                 .conflicts_with("project_path")
                 .conflicts_with("build_options")
-                .help("The system path (absolute or relative) to the wasm file we should publish, instead of building the project."),
-        )
-        .arg(
-            Arg::new("trace_log")
-                .long("trace_log")
-                .help("Turn on diagnostic/performance tracing for this project")
-                .action(SetTrue),
+                .help("The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project."),
         )
         .arg(
             common_args::identity()
@@ -91,10 +77,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let identity = args.get_one::<String>("identity").map(String::as_str);
     let name_or_address = args.get_one::<String>("name|address");
     let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
-    let host_type = args.get_one::<String>("host_type").unwrap();
     let clear_database = args.get_flag("clear_database");
     let force = args.get_flag("force");
-    let trace_log = args.get_flag("trace_log");
     let anon_identity = args.get_flag("anon_identity");
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
     let database_host = config.get_host_url(server)?;
@@ -109,7 +93,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .unzip();
 
     let mut query_params = Vec::<(&str, &str)>::new();
-    query_params.push(("host_type", host_type.as_str()));
+    query_params.push(("host_type", "wasm"));
     query_params.push(("register_tld", "true"));
 
     // If a domain or address was provided, we should locally make sure it looks correct and
@@ -128,13 +112,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         ));
     }
 
-    if trace_log {
-        query_params.push(("trace_log", "true"));
-    }
-
     let path_to_wasm = if !path_to_project.is_dir() && path_to_project.extension().map_or(false, |ext| ext == "wasm") {
         println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
-        println!("removed in a future release. Please use --wasm-file instead.");
+        println!("removed in a future release. Please use --bin-path instead.");
         path_to_project.clone()
     } else if let Some(path) = wasm_file {
         println!("Skipping build. Instead we are publishing {}", path.display());
