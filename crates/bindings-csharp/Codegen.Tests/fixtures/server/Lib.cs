@@ -106,7 +106,7 @@ namespace Test
     {
         public static partial class AndClasses
         {
-            [SpacetimeDB.Reducer("test_custom_name_and_reducer_ctx")]
+            [SpacetimeDB.Reducer]
             public static void InsertData2(ReducerContext ctx, PublicTable data)
             {
                 ctx.Db.PublicTable.Insert(data);

@@ -528,11 +528,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) =>
-            new(
-                "test_custom_name_and_reducer_ctx",
-                [new(nameof(data), data.GetAlgebraicType(registrar))]
-            );
+        ) => new("InsertData2", [new(nameof(data), data.GetAlgebraicType(registrar))]);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
