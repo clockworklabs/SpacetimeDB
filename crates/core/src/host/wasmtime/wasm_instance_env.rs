@@ -291,44 +291,6 @@ impl WasmInstanceEnv {
         Ok(col_id.into())
     }
 
-    /// Deletes all rows in the table identified by `table_id`
-    /// where the column identified by `cols` matches the byte string,
-    /// in WASM memory, pointed to at by `value`.
-    ///
-    /// Matching is defined by BSATN-decoding `value` to an `AlgebraicValue`
-    /// according to the column's schema and then `Ord for AlgebraicValue`.
-    ///
-    /// The number of rows deleted is written to the WASM pointer `out`.
-    ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - no columns were deleted
-    /// - `col_id` does not identify a column of the table,
-    /// - `(value, value_len)` doesn't decode from BSATN to an `AlgebraicValue`
-    ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
-    /// - `value + value_len` overflows a 64-bit integer
-    /// - writing to `out` would overflow a 32-bit integer
-    pub fn delete_by_col_eq(
-        caller: Caller<'_, Self>,
-        table_id: u32,
-        col_id: u32,
-        value: WasmPtr<u8>,
-        value_len: u32,
-        out: WasmPtr<u32>,
-    ) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::DeleteByColEq, out, |caller| {
-            let col_id = Self::convert_u32_to_col_id(col_id)?;
-
-            let (mem, env) = Self::mem_env(caller);
-            let ctx = env.reducer_context()?;
-            let value = mem.deref_slice(value, value_len)?;
-            let count = env
-                .instance_env
-                .delete_by_col_eq(&ctx, table_id.into(), col_id, value)?;
-            Ok(count)
-        })
-    }
-
     /// Queries the `table_id` associated with the given (table) `name`
     /// where `name` is the UTF-8 slice in WASM memory at `name_ptr[..name_len]`.
     ///
@@ -553,91 +515,6 @@ impl WasmInstanceEnv {
             )?;
 
             // Insert the encoded + concatenated rows into a new buffer and return its id.
-            Ok(env.iters.insert(chunks.into_iter()))
-        })
-    }
-
-    /// Finds all rows in the table identified by `table_id`,
-    /// where the row has a column, identified by `cols`,
-    /// with data matching the byte string, in WASM memory, pointed to at by `val`.
-    ///
-    /// Matching is defined BSATN-decoding `val` to an `AlgebraicValue`
-    /// according to the column's schema and then `Ord for AlgebraicValue`.
-    ///
-    /// The rows found are BSATN-encoded and then concatenated.
-    /// The resulting byte string from the concatenation is written
-    /// to a fresh buffer with the buffer's identifier written to the WASM pointer `out`.
-    ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - `col_id` does not identify a column of the table,
-    /// - `(val, val_len)` cannot be decoded to an `AlgebraicValue`
-    ///   typed at the `AlgebraicType` of the column,
-    /// - `val + val_len` overflows a 64-bit integer
-    pub fn iter_by_col_eq(
-        caller: Caller<'_, Self>,
-        table_id: u32,
-        col_id: u32,
-        val: WasmPtr<u8>,
-        val_len: u32,
-        out: WasmPtr<RowIterIdx>,
-    ) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::IterByColEq, out, |caller| {
-            let col_id = Self::convert_u32_to_col_id(col_id)?;
-
-            let (mem, env) = Self::mem_env(caller);
-            // Read the test value from WASM memory.
-            let value = mem.deref_slice(val, val_len)?;
-
-            // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context()?;
-
-            // Find the relevant rows.
-            let chunks = env
-                .instance_env
-                .iter_by_col_eq_chunks(&ctx, table_id.into(), col_id, value)?;
-
-            // Release the immutable borrow of `env.buffers` by dropping `ctx`.
-            drop(ctx);
-
-            // Insert the encoded + concatenated rows into a new buffer and return its id.
-            Ok(env.iters.insert(chunks.into_iter()))
-        })
-    }
-
-    /// Like [`WasmInstanceEnv::datastore_table_scan_bsatn`], start iteration on each row,
-    /// as bytes, of a table identified by `table_id`.
-    ///
-    /// The rows are filtered through `filter`, which is read from WASM memory
-    /// and is encoded in the embedded language defined by `spacetimedb_lib::filter::Expr`.
-    ///
-    /// The iterator is registered in the host environment
-    /// under an assigned index which is written to the `out` pointer provided.
-    ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - `(filter, filter_len)` doesn't decode to a filter expression
-    /// - `filter + filter_len` overflows a 64-bit integer
-    pub fn iter_start_filtered(
-        caller: Caller<'_, Self>,
-        table_id: u32,
-        filter: WasmPtr<u8>,
-        filter_len: u32,
-        out: WasmPtr<RowIterIdx>,
-    ) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::IterStartFiltered, out, |caller| {
-            let (mem, env) = Self::mem_env(caller);
-            // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context()?;
-
-            // Read the slice `(filter, filter_len)`.
-            let filter = mem.deref_slice(filter, filter_len)?;
-
-            // Construct the iterator.
-            let chunks = env.instance_env.iter_filtered_chunks(&ctx, table_id.into(), filter)?;
-            drop(ctx);
-            // Register the iterator and get back the index to write to `out`.
-            // Calls to the iterator are done through dynamic dispatch.
             Ok(env.iters.insert(chunks.into_iter()))
         })
     }

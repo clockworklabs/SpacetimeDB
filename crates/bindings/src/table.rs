@@ -635,7 +635,7 @@ fn insert<T: Table>(mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInse
 
     // Insert row into table.
     // When table has an auto-incrementing column, we must re-decode the changed `buf`.
-    let res = sys::insert(table_id, &mut buf).map(|gen_cols| {
+    let res = sys::datastore_insert_bsatn(table_id, &mut buf).map(|gen_cols| {
         // Let the caller handle any generated columns written back by `sys::insert` to `buf`.
         T::integrate_generated_columns(&mut row, gen_cols);
         row
