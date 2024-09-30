@@ -346,6 +346,7 @@ impl<'de, T: Copy + DeserializeSeed<'de>> VariantVisitor for BoundVisitor<T> {
         match tag {
             0 => Ok(BoundVariant::Included),
             1 => Ok(BoundVariant::Excluded),
+            // if this ever changes, edit crates/bindings/src/table.rs
             2 => Ok(BoundVariant::Unbounded),
             _ => Err(E::unknown_variant_tag(tag, &self)),
         }
