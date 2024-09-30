@@ -4723,7 +4723,6 @@ dependencies = [
  "home",
  "http",
  "im",
- "lazy_static",
  "log",
  "rand 0.8.5",
  "spacetimedb-client-api-messages",
