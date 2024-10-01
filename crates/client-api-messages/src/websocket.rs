@@ -607,6 +607,8 @@ impl<I: AsRef<[RowOffset]>> RowSizeHint<I> {
                 let size = *size as usize;
                 let start = index * size;
                 if start >= data_end {
+                    // We've reached beyond `data_end`,
+                    // so this is a row that doesn't exist, so we are beyond the count.
                     return None;
                 }
                 let end = (index + 1) * size;
