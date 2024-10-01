@@ -298,30 +298,33 @@ Requested namespace: {namespace}",
 
         out.newline();
 
-        writeln!(out, "// Import all reducer arg types");
+        writeln!(out, "// Import and reexport all reducer arg types");
         for reducer in iter_reducers(module) {
             let reducer_name = &reducer.name;
             let reducer_module_name = reducer_module_name(reducer_name) + ".ts";
             let args_type = reducer_args_type_name(&reducer.name);
             writeln!(out, "import {{ {args_type} }} from \"./{reducer_module_name}\";");
+            writeln!(out, "export {{ {args_type} }};");
         }
 
         writeln!(out);
-        writeln!(out, "// Import all table handle types");
+        writeln!(out, "// Import and reexport all table handle types");
         for table in iter_tables(module) {
             let table_name = &table.name;
             let table_module_name = table_module_name(table_name) + ".ts";
             let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
             let table_handle = table_name_pascalcase.clone() + "TableHandle";
             writeln!(out, "import {{ {table_handle} }} from \"./{table_module_name}\";");
+            writeln!(out, "export {{ {table_handle} }};");
         }
 
         writeln!(out);
-        writeln!(out, "// Import all types");
+        writeln!(out, "// Import and reexport all types");
         for ty in iter_types(module) {
             let type_name = collect_case(Case::Pascal, ty.name.name_segments());
             let type_module_name = type_module_name(&ty.name) + ".ts";
             writeln!(out, "import {{ {type_name} }} from \"./{type_module_name}\";");
+            writeln!(out, "export {{ {type_name} }};");
         }
 
         out.newline();
@@ -505,7 +508,7 @@ fn print_db_connection(_module: &ModuleDef, out: &mut Indenter) {
         "export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers>  {{"
     );
     out.indent(1);
-    writeln!(out, "static builder = () => {{");
+    writeln!(out, "static builder = (): DBConnectionBuilder<DBConnection>  => {{");
     out.indent(1);
     writeln!(
         out,
@@ -519,7 +522,7 @@ fn print_db_connection(_module: &ModuleDef, out: &mut Indenter) {
 
 fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {
     writeln!(out, "// A type representing all the possible variants of a reducer.");
-    writeln!(out, "export type Reducer = ");
+    writeln!(out, "export type Reducer = never");
     for reducer in iter_reducers(module) {
         writeln!(
             out,
@@ -600,7 +603,7 @@ fn define_namespace_and_object_type_for_product(
         writeln!(out, "}};");
     } else {
         writeln!(out);
-        out.with_indent(|out| write_arglist_no_delimiters(module, out, elements, None).unwrap());
+        out.with_indent(|out| write_arglist_no_delimiters(module, out, elements, None, true).unwrap());
         writeln!(out, "}};");
     }
 
@@ -619,18 +622,39 @@ fn define_namespace_and_object_type_for_product(
 
     writeln!(
         out,
-        "export function serialize(writer: BinaryWriter, value: {name}): void {{
-{INDENT}{name}.getAlgebraicType().serialize(writer, value);
-}}"
+        "export function serialize(writer: BinaryWriter, value: {name}): void {{"
     );
+    out.indent(1);
+    writeln!(out, "const converted = {{");
+    out.indent(1);
+    for (ident, _) in elements {
+        let name = ident.deref().to_case(Case::Camel);
+        writeln!(out, "{ident}: value.{name},");
+    }
+    out.dedent(1);
+    writeln!(out, "}};");
+    writeln!(out, "{name}.getAlgebraicType().serialize(writer, converted);");
+    out.dedent(1);
+    writeln!(out, "}}");
     writeln!(out);
 
     writeln!(
         out,
-        "export function deserialize(reader: BinaryReader): {name} {{
-{INDENT}return {name}.getAlgebraicType().deserialize(reader);
-}}"
+        "export function deserialize(reader: BinaryReader): {name} {{"
     );
+    out.indent(1);
+    writeln!(out, "const value = {name}.getAlgebraicType().deserialize(reader);");
+    writeln!(out, "return {{");
+    out.indent(1);
+    for (ident, _) in elements {
+        let name = ident.deref().to_case(Case::Camel);
+        writeln!(out, "{name}: value.{ident},");
+    }
+    out.dedent(1);
+    writeln!(out, "}};");
+    out.dedent(1);
+    writeln!(out, "}}");
+    writeln!(out);
 
     out.dedent(1);
     writeln!(out, "}}");
@@ -642,15 +666,15 @@ fn write_arglist_no_delimiters(
     module: &ModuleDef,
     out: &mut impl Write,
     elements: &[(Identifier, AlgebraicTypeUse)],
-
     prefix: Option<&str>,
+    convert_case: bool,
 ) -> anyhow::Result<()> {
     for (ident, ty) in elements {
         if let Some(prefix) = prefix {
             write!(out, "{prefix} ")?;
         }
 
-        let name = ident.deref().to_case(Case::Snake);
+        let name = if convert_case { ident.deref().to_case(Case::Camel) } else { ident.deref().into() };
 
         write!(out, "{name}: ")?;
         write_type(module, out, ty, Some("__"))?;
@@ -969,7 +993,7 @@ fn convert_product_type<'a>(
         write!(
             out,
             "new ProductTypeElement(\"{}\", ",
-            ident.deref().to_case(Case::Camel),
+            ident.deref(),
         );
         convert_algebraic_type(module, out, ty, ref_prefix);
         writeln!(out, "),");
