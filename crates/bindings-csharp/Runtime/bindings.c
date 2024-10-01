@@ -51,16 +51,8 @@ IMPORT(Status, datastore_table_row_count,
        (table_id, count));
 IMPORT(Status, datastore_table_scan_bsatn, (TableId table_id, RowIter* iter),
        (table_id, iter));
-IMPORT(Status, iter_by_col_eq,
-       (TableId table_id, ColId col_id, const uint8_t* value,
-        uint32_t value_len, RowIter* iter),
-       (table_id, col_id, value, value_len, iter));
 IMPORT(Status, datastore_insert_bsatn, (TableId table_id, const uint8_t* row_ptr, size_t* row_len_ptr),
        (table_id, row_ptr, row_len_ptr));
-IMPORT(Status, delete_by_col_eq,
-       (TableId table_id, ColId col_id, const uint8_t* value,
-        uint32_t value_len, uint32_t* num_deleted),
-       (table_id, col_id, value, value_len, num_deleted));
 IMPORT(int16_t, row_iter_bsatn_advance,
        (RowIter iter, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
        (iter, buffer_ptr, buffer_len_ptr));
