@@ -895,7 +895,7 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::Address => write!(out, "Address")?,
         AlgebraicTypeUse::ScheduleAt => write!(
             out,
-            "{{ tag: \"Interval\", value: BigInt }} | {{ tag: \"Time\", value: BigInt }}"
+            "{{ tag: \"Interval\", value: bigint }} | {{ tag: \"Time\", value: bigint }}"
         )?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write_type(module, out, inner_ty, ref_prefix)?;
@@ -909,17 +909,20 @@ pub fn write_type<W: Write>(
             PrimitiveType::U16 => write!(out, "number")?,
             PrimitiveType::I32 => write!(out, "number")?,
             PrimitiveType::U32 => write!(out, "number")?,
-            PrimitiveType::I64 => write!(out, "BigInt")?,
-            PrimitiveType::U64 => write!(out, "BigInt")?,
-            PrimitiveType::I128 => write!(out, "BigInt")?,
-            PrimitiveType::U128 => write!(out, "BigInt")?,
-            PrimitiveType::I256 => write!(out, "BigInt")?,
-            PrimitiveType::U256 => write!(out, "BigInt")?,
+            PrimitiveType::I64 => write!(out, "bigint")?,
+            PrimitiveType::U64 => write!(out, "bigint")?,
+            PrimitiveType::I128 => write!(out, "bigint")?,
+            PrimitiveType::U128 => write!(out, "bigint")?,
+            PrimitiveType::I256 => write!(out, "bigint")?,
+            PrimitiveType::U256 => write!(out, "bigint")?,
             PrimitiveType::F32 => write!(out, "number")?,
             PrimitiveType::F64 => write!(out, "number")?,
         },
         AlgebraicTypeUse::String => write!(out, "string")?,
         AlgebraicTypeUse::Array(elem_ty) => {
+            if matches!(&**elem_ty, AlgebraicTypeUse::Primitive(PrimitiveType::U8)) {
+                return write!(out, "Uint8Array");
+            }
             write_type(module, out, elem_ty, ref_prefix)?;
             write!(out, "[]")?;
         }
