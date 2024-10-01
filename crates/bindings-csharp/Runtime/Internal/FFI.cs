@@ -131,6 +131,7 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
+    [Obsolete("This needs to be removed in favour of `datastore_table_scan_bsatn`.")]
     public static partial CheckedStatus iter_by_col_eq(
         TableId table_id,
         ColId col_id,
@@ -147,6 +148,7 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
+    [Obsolete("This needs to be removed in favour of `datastore_table_scan_bsatn`.")]
     public static partial CheckedStatus delete_by_col_eq(
         TableId table_id,
         ColId col_id,

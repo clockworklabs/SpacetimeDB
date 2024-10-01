@@ -1,5 +1,6 @@
 namespace SpacetimeDB.Internal;
 
+using System.Diagnostics.CodeAnalysis;
 using SpacetimeDB.BSATN;
 
 public interface ITable<T> : IStructuralReadWrite
@@ -124,7 +125,9 @@ public interface ITableView<View, T>
         : RawTableIterBase
     {
         protected override void IterStart(out FFI.RowIter handle) =>
+#pragma warning disable CS0618 // iter_by_col_eq is obsolete
             FFI.iter_by_col_eq(tableId, colId, value, (uint)value.Length, out handle);
+#pragma warning restore CS0618
     }
 
     // Note: this must be Lazy to ensure that we don't try to get the tableId during startup, before the module is initialized.
@@ -176,7 +179,9 @@ public interface ITableView<View, T>
 
         public bool Delete()
         {
+#pragma warning disable CS0618 // delete_by_col_eq is obsolete
             FFI.delete_by_col_eq(tableId, colId, value, (uint)value.Length, out var out_);
+#pragma warning restore CS0618 //
             return out_ > 0;
         }
 
