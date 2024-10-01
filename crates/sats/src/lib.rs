@@ -8,6 +8,7 @@ pub mod bsatn;
 pub mod buffer;
 pub mod convert;
 pub mod de;
+pub mod energy;
 pub mod hash;
 pub mod hex;
 pub mod meta_type;

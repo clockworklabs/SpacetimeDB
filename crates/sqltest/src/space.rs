@@ -1,8 +1,11 @@
 use crate::db::DBRunner;
 use async_trait::async_trait;
+use spacetimedb::db::query_context::QueryContext;
 use spacetimedb::db::relational_db::tests_utils::TestDB;
+use spacetimedb::energy::NullEnergyMonitor;
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
+use spacetimedb::messages::control_db::Database;
 use spacetimedb::sql::compiler::compile_sql;
 use spacetimedb::sql::execute::execute_sql;
 use spacetimedb::subscription::module_subscription_actor::ModuleSubscriptions;
@@ -71,8 +74,23 @@ impl SpaceDb {
     pub(crate) fn run_sql(&self, sql: &str) -> anyhow::Result<Vec<MemTable>> {
         self.conn.with_read_only(&ExecutionContext::default(), |tx| {
             let ast = compile_sql(&self.conn, &AuthCtx::for_testing(), tx, sql)?;
-            let subs = ModuleSubscriptions::new(Arc::new(self.conn.db.clone()), Identity::ZERO);
-            let result = execute_sql(&self.conn, sql, ast, self.auth, Some(&subs))?;
+            let db = Database::for_testing();
+            let db_id = db.id;
+            let subs = ModuleSubscriptions::new(
+                Arc::new(self.conn.db.clone()),
+                Identity::ZERO,
+                Arc::new(NullEnergyMonitor),
+                db,
+                db_id,
+            );
+            let result = execute_sql(
+                &self.conn,
+                &QueryContext::from_subscriptions(&subs),
+                sql,
+                ast,
+                self.auth,
+                Some(&subs),
+            )?;
             //remove comments to see which SQL worked. Can't collect it outside from lack of a hook in the external `sqllogictest` crate... :(
             //append_file(&std::path::PathBuf::from(".ok.sql"), sql)?;
             Ok(result)

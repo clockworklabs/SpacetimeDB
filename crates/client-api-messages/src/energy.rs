@@ -15,6 +15,7 @@ pub struct EnergyQuanta {
 
 impl EnergyQuanta {
     pub const ZERO: Self = EnergyQuanta { quanta: 0 };
+    pub const CPU_NANO_SECONDS: u128 = 1000; //Cost of eV per nanosecond of CPU execution
 
     #[inline]
     pub fn new(quanta: u128) -> Self {
@@ -42,6 +43,12 @@ impl EnergyQuanta {
     pub fn from_memory_usage(bytes_stored: u64, storage_period: Duration) -> Self {
         let byte_seconds = Self::from_disk_usage(bytes_stored, storage_period).get();
         Self::new(byte_seconds * Self::ENERGY_PER_MEM_BYTE_SEC)
+    }
+
+    pub fn from_query_timer(cpu_time: Duration) -> Self {
+        let ns = cpu_time.as_nanos();
+        let quanta = (ns * Self::CPU_NANO_SECONDS) / 1_000_000_000;
+        Self { quanta }
     }
 }
 
