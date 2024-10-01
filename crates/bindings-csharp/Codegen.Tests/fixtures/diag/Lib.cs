@@ -301,28 +301,69 @@ public partial struct TestTypeParams<T>
 public static partial class Reducers
 {
     [SpacetimeDB.Reducer]
-    public static int TestReducerReturnType() => 0;
+    public static int TestReducerReturnType(ReducerContext ctx) => 0;
+
+    [SpacetimeDB.Reducer]
+    public static void TestReducerWithoutContext() { }
+
+    [SpacetimeDB.Reducer(ReducerKind.Init)]
+    public static void TestDuplicateReducerKind1(ReducerContext ctx) { }
+
+    [SpacetimeDB.Reducer(ReducerKind.Init)]
+    public static void TestDuplicateReducerKind2(ReducerContext ctx) { }
+
+    [SpacetimeDB.Reducer]
+    public static void TestDuplicateReducerName(ReducerContext ctx) { }
+
+    public static partial class InAnotherNamespace
+    {
+        [SpacetimeDB.Reducer]
+        public static void TestDuplicateReducerName(ReducerContext ctx) { }
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void TestIncompatibleScheduleReducer(
+        ReducerContext ctx,
+        TestIncompatibleSchedule table
+    ) { }
 }
 
 [SpacetimeDB.Table]
 public partial struct TestAutoIncNotInteger
 {
-    [SpacetimeDB.Column(ColumnAttrs.AutoInc)]
+    [AutoInc]
     public float AutoIncField;
 
-    [SpacetimeDB.Column(ColumnAttrs.Identity)]
+    [Unique]
+    [AutoInc]
     public string IdentityField;
 }
 
 [SpacetimeDB.Table]
 public partial struct TestUniqueNotEquatable
 {
-    [SpacetimeDB.Column(ColumnAttrs.Unique)]
+    [Unique]
     public int? UniqueField;
 
-    [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+    [PrimaryKey]
     public TestEnumWithExplicitValues PrimaryKeyField;
 }
 
 [SpacetimeDB.Table]
 public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y)> { }
+
+[SpacetimeDB.Table]
+public partial struct TestDuplicateTableName { }
+
+public static partial class InAnotherNamespace
+{
+    [SpacetimeDB.Table]
+    public partial struct TestDuplicateTableName { }
+}
+
+[SpacetimeDB.Table(
+    Name = "TestIncompatibleSchedule1",
+    Scheduled = nameof(Reducers.TestIncompatibleScheduleReducer)
+)]
+[SpacetimeDB.Table(Name = "TestIncompatibleSchedule2")]
+public partial struct TestIncompatibleSchedule { }

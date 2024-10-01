@@ -10,22 +10,22 @@ namespace SpacetimeDB
 {
     public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     {
-        public readonly Identity Sender;
-        public readonly Address? Address;
-        public readonly Random Random;
-        public readonly DateTimeOffset Time;
+        public readonly Identity CallerIdentity;
+        public readonly Address? CallerAddress;
+        public readonly Random Rng;
+        public readonly DateTimeOffset Timestamp;
 
         internal ReducerContext(
-            Identity sender,
+            Identity identity,
             Address? address,
             Random random,
             DateTimeOffset time
         )
         {
-            Sender = sender;
-            Address = address;
-            Random = random;
-            Time = time;
+            CallerIdentity = identity;
+            CallerAddress = address;
+            Rng = random;
+            Timestamp = time;
         }
     }
 
@@ -39,6 +39,18 @@ namespace SpacetimeDB
                 global::TestAutoIncNotInteger
             >.ReadGenFields(System.IO.BinaryReader reader, global::TestAutoIncNotInteger row)
             {
+                if (row.AutoIncField == default)
+                {
+                    row.AutoIncField = global::TestAutoIncNotInteger.BSATN.AutoIncField.Read(
+                        reader
+                    );
+                }
+                if (row.IdentityField == default)
+                {
+                    row.IdentityField = global::TestAutoIncNotInteger.BSATN.IdentityField.Read(
+                        reader
+                    );
+                }
                 return row;
             }
 
@@ -67,6 +79,223 @@ namespace SpacetimeDB
                         global::TestAutoIncNotInteger.BSATN.IdentityField
                     )
                     .Iter();
+
+            public global::TestAutoIncNotInteger? FindByIdentityField(string IdentityField) =>
+                FilterByIdentityField(IdentityField)
+                    .Cast<global::TestAutoIncNotInteger?>()
+                    .SingleOrDefault();
+
+            public bool DeleteByIdentityField(string IdentityField) =>
+                SpacetimeDB
+                    .Internal.ITableView<
+                        TestAutoIncNotInteger,
+                        global::TestAutoIncNotInteger
+                    >.ColEq.Where(
+                        1,
+                        IdentityField,
+                        global::TestAutoIncNotInteger.BSATN.IdentityField
+                    )
+                    .Delete();
+
+            public bool UpdateByIdentityField(
+                string IdentityField,
+                global::TestAutoIncNotInteger @this
+            ) =>
+                SpacetimeDB
+                    .Internal.ITableView<
+                        TestAutoIncNotInteger,
+                        global::TestAutoIncNotInteger
+                    >.ColEq.Where(
+                        1,
+                        IdentityField,
+                        global::TestAutoIncNotInteger.BSATN.IdentityField
+                    )
+                    .Update(@this);
+        }
+
+        public readonly struct TestDuplicateTableName
+            : SpacetimeDB.Internal.ITableView<
+                TestDuplicateTableName,
+                global::TestDuplicateTableName
+            >
+        {
+            static global::TestDuplicateTableName SpacetimeDB.Internal.ITableView<
+                TestDuplicateTableName,
+                global::TestDuplicateTableName
+            >.ReadGenFields(System.IO.BinaryReader reader, global::TestDuplicateTableName row)
+            {
+                return row;
+            }
+
+            public IEnumerable<global::TestDuplicateTableName> Iter() =>
+                SpacetimeDB.Internal.ITableView<
+                    TestDuplicateTableName,
+                    global::TestDuplicateTableName
+                >.Iter();
+
+            public global::TestDuplicateTableName Insert(global::TestDuplicateTableName row) =>
+                SpacetimeDB.Internal.ITableView<
+                    TestDuplicateTableName,
+                    global::TestDuplicateTableName
+                >.Insert(row);
+        }
+
+        public readonly struct TestIncompatibleSchedule1
+            : SpacetimeDB.Internal.ITableView<
+                TestIncompatibleSchedule1,
+                global::TestIncompatibleSchedule
+            >
+        {
+            static global::TestIncompatibleSchedule SpacetimeDB.Internal.ITableView<
+                TestIncompatibleSchedule1,
+                global::TestIncompatibleSchedule
+            >.ReadGenFields(System.IO.BinaryReader reader, global::TestIncompatibleSchedule row)
+            {
+                if (row.ScheduledId == default)
+                {
+                    row.ScheduledId = global::TestIncompatibleSchedule.BSATN.ScheduledId.Read(
+                        reader
+                    );
+                }
+                return row;
+            }
+
+            public IEnumerable<global::TestIncompatibleSchedule> Iter() =>
+                SpacetimeDB.Internal.ITableView<
+                    TestIncompatibleSchedule1,
+                    global::TestIncompatibleSchedule
+                >.Iter();
+
+            public global::TestIncompatibleSchedule Insert(global::TestIncompatibleSchedule row) =>
+                SpacetimeDB.Internal.ITableView<
+                    TestIncompatibleSchedule1,
+                    global::TestIncompatibleSchedule
+                >.Insert(row);
+
+            public IEnumerable<global::TestIncompatibleSchedule> FilterByScheduledId(
+                ulong ScheduledId
+            ) =>
+                SpacetimeDB
+                    .Internal.ITableView<
+                        TestIncompatibleSchedule1,
+                        global::TestIncompatibleSchedule
+                    >.ColEq.Where(
+                        0,
+                        ScheduledId,
+                        global::TestIncompatibleSchedule.BSATN.ScheduledId
+                    )
+                    .Iter();
+
+            public global::TestIncompatibleSchedule? FindByScheduledId(ulong ScheduledId) =>
+                FilterByScheduledId(ScheduledId)
+                    .Cast<global::TestIncompatibleSchedule?>()
+                    .SingleOrDefault();
+
+            public bool DeleteByScheduledId(ulong ScheduledId) =>
+                SpacetimeDB
+                    .Internal.ITableView<
+                        TestIncompatibleSchedule1,
+                        global::TestIncompatibleSchedule
+                    >.ColEq.Where(
+                        0,
+                        ScheduledId,
+                        global::TestIncompatibleSchedule.BSATN.ScheduledId
+                    )
+                    .Delete();
+
+            public bool UpdateByScheduledId(
+                ulong ScheduledId,
+                global::TestIncompatibleSchedule @this
+            ) =>
+                SpacetimeDB
+                    .Internal.ITableView<
+                        TestIncompatibleSchedule1,
+                        global::TestIncompatibleSchedule
+                    >.ColEq.Where(
+                        0,
+                        ScheduledId,
+                        global::TestIncompatibleSchedule.BSATN.ScheduledId
+                    )
+                    .Update(@this);
+        }
+
+        public readonly struct TestIncompatibleSchedule2
+            : SpacetimeDB.Internal.ITableView<
+                TestIncompatibleSchedule2,
+                global::TestIncompatibleSchedule
+            >
+        {
+            static global::TestIncompatibleSchedule SpacetimeDB.Internal.ITableView<
+                TestIncompatibleSchedule2,
+                global::TestIncompatibleSchedule
+            >.ReadGenFields(System.IO.BinaryReader reader, global::TestIncompatibleSchedule row)
+            {
+                if (row.ScheduledId == default)
+                {
+                    row.ScheduledId = global::TestIncompatibleSchedule.BSATN.ScheduledId.Read(
+                        reader
+                    );
+                }
+                return row;
+            }
+
+            public IEnumerable<global::TestIncompatibleSchedule> Iter() =>
+                SpacetimeDB.Internal.ITableView<
+                    TestIncompatibleSchedule2,
+                    global::TestIncompatibleSchedule
+                >.Iter();
+
+            public global::TestIncompatibleSchedule Insert(global::TestIncompatibleSchedule row) =>
+                SpacetimeDB.Internal.ITableView<
+                    TestIncompatibleSchedule2,
+                    global::TestIncompatibleSchedule
+                >.Insert(row);
+
+            public IEnumerable<global::TestIncompatibleSchedule> FilterByScheduledId(
+                ulong ScheduledId
+            ) =>
+                SpacetimeDB
+                    .Internal.ITableView<
+                        TestIncompatibleSchedule2,
+                        global::TestIncompatibleSchedule
+                    >.ColEq.Where(
+                        0,
+                        ScheduledId,
+                        global::TestIncompatibleSchedule.BSATN.ScheduledId
+                    )
+                    .Iter();
+
+            public global::TestIncompatibleSchedule? FindByScheduledId(ulong ScheduledId) =>
+                FilterByScheduledId(ScheduledId)
+                    .Cast<global::TestIncompatibleSchedule?>()
+                    .SingleOrDefault();
+
+            public bool DeleteByScheduledId(ulong ScheduledId) =>
+                SpacetimeDB
+                    .Internal.ITableView<
+                        TestIncompatibleSchedule2,
+                        global::TestIncompatibleSchedule
+                    >.ColEq.Where(
+                        0,
+                        ScheduledId,
+                        global::TestIncompatibleSchedule.BSATN.ScheduledId
+                    )
+                    .Delete();
+
+            public bool UpdateByScheduledId(
+                ulong ScheduledId,
+                global::TestIncompatibleSchedule @this
+            ) =>
+                SpacetimeDB
+                    .Internal.ITableView<
+                        TestIncompatibleSchedule2,
+                        global::TestIncompatibleSchedule
+                    >.ColEq.Where(
+                        0,
+                        ScheduledId,
+                        global::TestIncompatibleSchedule.BSATN.ScheduledId
+                    )
+                    .Update(@this);
         }
 
         public readonly struct TestTableTaggedEnum
@@ -140,6 +369,9 @@ namespace SpacetimeDB
     public sealed class Local
     {
         public Internal.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger => new();
+        public Internal.TableHandles.TestDuplicateTableName TestDuplicateTableName => new();
+        public Internal.TableHandles.TestIncompatibleSchedule1 TestIncompatibleSchedule1 => new();
+        public Internal.TableHandles.TestIncompatibleSchedule2 TestIncompatibleSchedule2 => new();
         public Internal.TableHandles.TestTableTaggedEnum TestTableTaggedEnum => new();
         public Internal.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable => new();
     }
@@ -147,6 +379,75 @@ namespace SpacetimeDB
 
 static class ModuleRegistration
 {
+    class TestDuplicateReducerKind1 : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new("__init__", []);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.TestDuplicateReducerKind1((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
+    class TestDuplicateReducerName : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new("TestDuplicateReducerName", []);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.TestDuplicateReducerName((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
+    class TestIncompatibleScheduleReducer : SpacetimeDB.Internal.IReducer
+    {
+        private static readonly TestIncompatibleSchedule.BSATN table = new();
+
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                "TestIncompatibleScheduleReducer",
+                [new(nameof(table), table.GetAlgebraicType(registrar))]
+            );
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.TestIncompatibleScheduleReducer(
+                (SpacetimeDB.ReducerContext)ctx,
+                table.Read(reader)
+            );
+        }
+    }
+
+    class TestReducerReturnType : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new("TestReducerReturnType", []);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.TestReducerReturnType((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
+    class TestReducerWithoutContext : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new("TestReducerWithoutContext", []);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.TestReducerWithoutContext((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
 #if EXPERIMENTAL_WASM_AOT
     // In AOT mode we're building a library.
     // Main method won't be called automatically, so we need to export it as a preinit function.
@@ -165,7 +466,14 @@ static class ModuleRegistration
                 new SpacetimeDB.ReducerContext(identity, address, random, time)
         );
 
+        SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerKind1>();
+        SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerName>();
+        SpacetimeDB.Internal.Module.RegisterReducer<TestIncompatibleScheduleReducer>();
+        SpacetimeDB.Internal.Module.RegisterReducer<TestReducerReturnType>();
+        SpacetimeDB.Internal.Module.RegisterReducer<TestReducerWithoutContext>();
         SpacetimeDB.Internal.Module.RegisterTable<global::TestAutoIncNotInteger>();
+        SpacetimeDB.Internal.Module.RegisterTable<global::TestDuplicateTableName>();
+        SpacetimeDB.Internal.Module.RegisterTable<global::TestIncompatibleSchedule>();
         SpacetimeDB.Internal.Module.RegisterTable<global::TestTableTaggedEnum>();
         SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable>();
     }

@@ -106,7 +106,7 @@ namespace Test
     {
         public static partial class AndClasses
         {
-            [SpacetimeDB.Reducer("test_custom_name_and_reducer_ctx")]
+            [SpacetimeDB.Reducer]
             public static void InsertData2(ReducerContext ctx, PublicTable data)
             {
                 ctx.Db.PublicTable.Insert(data);
@@ -139,7 +139,7 @@ public static partial class Timers
             new SendMessageTimer
             {
                 Text = "bot sending a message",
-                ScheduledAt = ctx.Time.AddSeconds(10),
+                ScheduledAt = ctx.Timestamp.AddSeconds(10),
             }
         );
     }

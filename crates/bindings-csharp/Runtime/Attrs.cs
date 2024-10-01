@@ -71,17 +71,20 @@
         internal override Internal.ColumnAttrs Mask => Internal.ColumnAttrs.Indexed;
     }
 
-    public static class ReducerKind
+    public enum ReducerKind
     {
-        public const string Init = "__init__";
-        public const string Update = "__update__";
-        public const string Connect = "__identity_connected__";
-        public const string Disconnect = "__identity_disconnected__";
+        /// <summary>
+        /// The default reducer kind, no need to specify this explicitly.
+        /// </summary>
+        UserDefined,
+        Init,
+        ClientConnected,
+        ClientDisconnected,
     }
 
     [AttributeUsage(AttributeTargets.Method, Inherited = false)]
-    public sealed class ReducerAttribute(string? name = null) : Attribute
+    public sealed class ReducerAttribute(ReducerKind kind = ReducerKind.UserDefined) : Attribute
     {
-        public string? Name => name;
+        public ReducerKind Kind => kind;
     }
 }

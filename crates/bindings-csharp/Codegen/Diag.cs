@@ -41,4 +41,47 @@ internal static class ErrorDescriptor
             table => $"Table {table.Identifier} is a tagged enum, which is not allowed.",
             table => table.BaseList!
         );
+
+    public static readonly ErrorDescriptor<(
+        string kind,
+        string exportName,
+        IEnumerable<string> fullNames
+    )> DuplicateExport =
+        new(
+            group,
+            "Duplicate exports",
+            ctx =>
+                $"{ctx.kind} with the same export name {ctx.exportName} is registered in multiple places: {string.Join(", ", ctx.fullNames)}",
+            ctx => Location.None
+        );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ReducerContextParam =
+        new(
+            group,
+            "Reducers must have a first argument of type ReducerContext",
+            method =>
+                $"Reducer method {method.Identifier} does not have a ReducerContext parameter.",
+            method => method.ParameterList
+        );
+
+    public static readonly ErrorDescriptor<(
+        MethodDeclarationSyntax method,
+        string prefix
+    )> ReducerReservedPrefix =
+        new(
+            group,
+            "Reducer method has a reserved name prefix",
+            ctx =>
+                $"Reducer method {ctx.method.Identifier} starts with '{ctx.prefix}', which is a reserved prefix.",
+            ctx => ctx.method.Identifier
+        );
+
+    public static readonly ErrorDescriptor<TypeDeclarationSyntax> IncompatibleTableSchedule =
+        new(
+            group,
+            "Incompatible `[Table(Schedule)]` attributes",
+            table =>
+                $"Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.",
+            table => table.SyntaxTree.GetLocation(table.AttributeLists.Span)
+        );
 }

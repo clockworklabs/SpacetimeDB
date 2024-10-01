@@ -56,7 +56,21 @@ partial struct TestAutoIncNotInteger : SpacetimeDB.Internal.ITable<TestAutoIncNo
                         new(nameof(IdentityField), BSATN.IdentityField.GetAlgebraicType(registrar))
                     ],
                     Indexes: [],
-                    Constraints: [],
+                    Constraints:
+                    [
+                        new(
+                            nameof(SpacetimeDB.Local.TestAutoIncNotInteger),
+                            0,
+                            nameof(AutoIncField),
+                            SpacetimeDB.Internal.ColumnAttrs.AutoInc
+                        ),
+                        new(
+                            nameof(SpacetimeDB.Local.TestAutoIncNotInteger),
+                            1,
+                            nameof(IdentityField),
+                            SpacetimeDB.Internal.ColumnAttrs.Identity
+                        )
+                    ],
                     Sequences: [],
                     // "system" | "user"
                     TableType: "user",

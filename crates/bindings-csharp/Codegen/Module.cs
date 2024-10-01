@@ -151,7 +151,6 @@ record TableView
 record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 {
     public readonly Accessibility Visibility;
-    public readonly string? Scheduled;
     public readonly EquatableArray<TableView> Views;
 
     private static ColumnDeclaration[] ScheduledColumns(string tableName) =>
@@ -204,16 +203,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
         Views = new(context.Attributes.Select(a => new TableView(this, a)).ToImmutableArray());
 
-        var schedules = Views.Select(t => t.Scheduled).Distinct();
-        if (schedules.Count() != 1)
+        var hasScheduled = Views.Select(t => t.Scheduled is not null).Distinct();
+
+        if (hasScheduled.Count() != 1)
         {
-            throw new Exception(
-                "When using multiple [Table] attributes with schedule, all [Table] must have the same schedule."
+            diag.Report(
+                ErrorDescriptor.IncompatibleTableSchedule,
+                (TypeDeclarationSyntax)context.TargetNode
             );
         }
 
-        Scheduled = schedules.First();
-        if (Scheduled != null)
+        if (hasScheduled.Any(has => has))
         {
             // For scheduled tables, we append extra fields early in the pipeline,
             // both to the type itself and to the BSATN information, as if they
@@ -304,7 +304,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     {
         var extensions = base.ToExtensions();
 
-        if (Scheduled is not null)
+        if (Views.Any(v => v.Scheduled is not null))
         {
             // For scheduled tables we're adding extra fields to the type source.
             extensions.Contents.Append(
@@ -370,7 +370,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     TableType: "user",
                     // "public" | "private"
                     TableAccess: "{{(v.IsPublic ? "public" : "private")}}",
-                    Scheduled: {{(v.Scheduled is not null ? $"nameof({v.Scheduled})" : "null")}}
+                    Scheduled: {{(v.Scheduled is not null ? $"\"{v.Scheduled}\"" : "null")}}
                 ),
                 (uint) ((SpacetimeDB.BSATN.AlgebraicType.Ref) new BSATN().GetAlgebraicType(registrar)).Ref_
             ),
@@ -401,18 +401,32 @@ record ReducerDeclaration
         {
             diag.Report(ErrorDescriptor.ReducerReturnType, methodSyntax);
         }
+
         if (
-            method.Parameters.FirstOrDefault()?.Type is not INamedTypeSymbol namedType
-            || namedType.Name != "ReducerContext"
+            method.Parameters.FirstOrDefault()?.Type
+            is not INamedTypeSymbol { Name: "ReducerContext" }
         )
         {
-            throw new Exception(
-                $"Reducer {method} must have a first argument of type ReducerContext"
-            );
+            diag.Report(ErrorDescriptor.ReducerContextParam, methodSyntax);
         }
 
         Name = method.Name;
-        ExportName = attr.Name ?? Name;
+        if (Name.Length >= 2)
+        {
+            var prefix = Name[..2];
+            if (prefix is "__" or "on" or "On")
+            {
+                diag.Report(ErrorDescriptor.ReducerReservedPrefix, (methodSyntax, prefix));
+            }
+        }
+
+        ExportName = attr.Kind switch
+        {
+            ReducerKind.Init => "__init__",
+            ReducerKind.ClientConnected => "__identity_connected__",
+            ReducerKind.ClientDisconnected => "__identity_disconnected__",
+            _ => Name,
+        };
         FullName = SymbolToName(method);
         Args = new(
             method
@@ -423,13 +437,13 @@ record ReducerDeclaration
         Scope = new Scope(methodSyntax.Parent as MemberDeclarationSyntax);
     }
 
-    public KeyValuePair<string, string> GenerateClass()
+    public string GenerateClass()
     {
         var args = string.Join(
             ", ",
             Args.Select(a => $"{a.Name}.Read(reader)").Prepend("(SpacetimeDB.ReducerContext)ctx")
         );
-        var class_ = $$"""
+        return $$"""
             class {{Name}}: SpacetimeDB.Internal.IReducer {
                 {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
 
@@ -443,8 +457,6 @@ record ReducerDeclaration
                 }
             }
             """;
-
-        return new(Name, class_);
     }
 
     public Scope.Extensions GenerateSchedule()
@@ -480,6 +492,64 @@ record ReducerDeclaration
 [Generator]
 public class Module : IIncrementalGenerator
 {
+    private static IncrementalValueProvider<EquatableArray<T>> CollectDistinct<T>(
+        string kind,
+        IncrementalGeneratorInitializationContext context,
+        IncrementalValuesProvider<T> source,
+        Func<T, string> toExportName,
+        Func<T, string> toFullName
+    )
+        where T : IEquatable<T>
+    {
+        var results = source
+            .Collect()
+            .Select(
+                (collected, ct) =>
+                    DiagReporter.With(
+                        Location.None,
+                        diag =>
+                        {
+                            var grouped = collected
+                                .GroupBy(toExportName)
+                                // Sort tables and reducers by name to match Rust behaviour.
+                                // Not really important outside of testing, but for testing
+                                // it matters because we commit module-bindings
+                                // so they need to match 1:1 between different langs.
+                                .OrderBy(g => g.Key);
+
+                            foreach (var group in grouped.Where(group => group.Count() > 1))
+                            {
+                                diag.Report(
+                                    ErrorDescriptor.DuplicateExport,
+                                    (kind, group.Key, group.Select(toFullName))
+                                );
+                            }
+
+                            return new EquatableArray<T>(
+                                // Only return first item from each group.
+                                // We already reported duplicates ourselves, and don't want MSBuild to produce lots of duplicate errors too.
+                                grouped.Select(Enumerable.First).ToImmutableArray()
+                            );
+                        }
+                    )
+            );
+
+        context.RegisterSourceOutput(
+            results,
+            (context, results) =>
+            {
+                foreach (var result in results.Diag)
+                {
+                    context.ReportDiagnostic(result);
+                }
+            }
+        );
+
+        return results
+            .Select((result, ct) => result.Parsed)
+            .WithTrackingName($"SpacetimeDB.{kind}.Collect");
+    }
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var tables = context
@@ -512,28 +582,33 @@ public class Module : IIncrementalGenerator
             .WithTrackingName("SpacetimeDB.Reducer.GenerateSchedule")
             .RegisterSourceOutputs(context);
 
-        var addReducers = reducers
-            .Select((r, ct) => r.GenerateClass())
-            .WithTrackingName("SpacetimeDB.Reducer.GenerateClass")
-            .Collect();
+        var addReducers = CollectDistinct(
+            "Reducer",
+            context,
+            reducers
+                .Select((r, ct) => (r.Name, r.ExportName, r.FullName, Class: r.GenerateClass()))
+                .WithTrackingName("SpacetimeDB.Reducer.GenerateClass"),
+            r => r.ExportName,
+            r => r.FullName
+        );
 
-        var tableViews = tables
-            .SelectMany((t, ct) => t.GenerateViews())
-            .WithTrackingName("SpacetimeDB.Table.GenerateViews")
-            .Collect();
+        var tableViews = CollectDistinct(
+            "Table",
+            context,
+            tables
+                .SelectMany((t, ct) => t.GenerateViews())
+                .WithTrackingName("SpacetimeDB.Table.GenerateViews"),
+            v => v.viewName,
+            v => v.tableName
+        );
 
         context.RegisterSourceOutput(
             tableViews.Combine(addReducers),
             (context, tuple) =>
             {
-                // Sort tables and reducers by name to match Rust behaviour.
-                // Not really important outside of testing, but for testing
-                // it matters because we commit module-bindings
-                // so they need to match 1:1 between different langs.
-                var tableViews = tuple.Left.Sort((a, b) => a.viewName.CompareTo(b.viewName));
-                var addReducers = tuple.Right.Sort((a, b) => a.Key.CompareTo(b.Key));
+                var (tableViews, addReducers) = tuple;
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
-                if (tableViews.IsEmpty && addReducers.IsEmpty)
+                if (tableViews.Array.IsEmpty && addReducers.Array.IsEmpty)
                 {
                     return;
                 }
@@ -549,16 +624,16 @@ public class Module : IIncrementalGenerator
 
                     namespace SpacetimeDB {
                         public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext {
-                            public readonly Identity Sender;
-                            public readonly Address? Address;
-                            public readonly Random Random;
-                            public readonly DateTimeOffset Time;
+                            public readonly Identity CallerIdentity;
+                            public readonly Address? CallerAddress;
+                            public readonly Random Rng;
+                            public readonly DateTimeOffset Timestamp;
 
-                            internal ReducerContext(Identity sender, Address? address, Random random, DateTimeOffset time) {
-                                Sender = sender;
-                                Address = address;
-                                Random = random;
-                                Time = time;
+                            internal ReducerContext(Identity identity, Address? address, Random random, DateTimeOffset time) {
+                                CallerIdentity = identity;
+                                CallerAddress = address;
+                                Rng = random;
+                                Timestamp = time;
                             }
                         }
 
@@ -572,7 +647,7 @@ public class Module : IIncrementalGenerator
                     }
 
                     static class ModuleRegistration {
-                        {{string.Join("\n", addReducers.Select(r => r.Value))}}
+                        {{string.Join("\n", addReducers.Select(r => r.Class))}}
 
                     #if EXPERIMENTAL_WASM_AOT
                         // In AOT mode we're building a library.
@@ -588,7 +663,7 @@ public class Module : IIncrementalGenerator
                             {{string.Join(
                                 "\n",
                                 addReducers.Select(r =>
-                                    $"SpacetimeDB.Internal.Module.RegisterReducer<{r.Key}>();"
+                                    $"SpacetimeDB.Internal.Module.RegisterReducer<{r.Name}>();"
                                 )
                             )}}
                             {{string.Join(

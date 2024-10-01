@@ -81,7 +81,7 @@ partial class Timers
                         TableType: "user",
                         // "public" | "private"
                         TableAccess: "private",
-                        Scheduled: nameof(SendScheduledMessage)
+                        Scheduled: "SendScheduledMessage"
                     ),
                     (uint)
                         (
