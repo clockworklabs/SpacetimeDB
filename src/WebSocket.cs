@@ -11,23 +11,22 @@ using System.Threading.Tasks;
 
 namespace SpacetimeDB
 {
-    public delegate void WebSocketOpenEventHandler();
-
-    public delegate void WebSocketMessageEventHandler(byte[] message, DateTime timestamp);
-
-    public delegate void WebSocketCloseEventHandler(WebSocketCloseStatus? code, WebSocketError? error);
-
-    public delegate void WebSocketConnectErrorEventHandler(WebSocketError? error, string message);
-    public delegate void WebSocketSendErrorEventHandler(Exception e);
-
-    public struct ConnectOptions
+    internal class WebSocket
     {
-        public string Protocol;
-    }
+        public delegate void OpenEventHandler();
 
+        public delegate void MessageEventHandler(byte[] message, DateTime timestamp);
 
-    public class WebSocket
-    {
+        public delegate void CloseEventHandler(WebSocketCloseStatus? code, WebSocketError? error);
+
+        public delegate void ConnectErrorEventHandler(WebSocketError? error, string message);
+        public delegate void SendErrorEventHandler(Exception e);
+
+        public struct ConnectOptions
+        {
+            public string Protocol;
+        }
+
         // WebSocket buffer for incoming messages
         private static readonly int MAXMessageSize = 0x4000000; // 64MB
 
@@ -43,11 +42,11 @@ namespace SpacetimeDB
             _options = options;
         }
 
-        public event WebSocketOpenEventHandler? OnConnect;
-        public event WebSocketConnectErrorEventHandler? OnConnectError;
-        public event WebSocketSendErrorEventHandler? OnSendError;
-        public event WebSocketMessageEventHandler? OnMessage;
-        public event WebSocketCloseEventHandler? OnClose;
+        public event OpenEventHandler? OnConnect;
+        public event ConnectErrorEventHandler? OnConnectError;
+        public event SendErrorEventHandler? OnSendError;
+        public event MessageEventHandler? OnMessage;
+        public event CloseEventHandler? OnClose;
 
         public bool IsConnected { get { return Ws != null && Ws.State == WebSocketState.Open; } }
 
