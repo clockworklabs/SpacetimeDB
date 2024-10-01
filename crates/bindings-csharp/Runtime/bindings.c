@@ -61,10 +61,6 @@ IMPORT(Status, delete_by_col_eq,
        (TableId table_id, ColId col_id, const uint8_t* value,
         uint32_t value_len, uint32_t* num_deleted),
        (table_id, col_id, value, value_len, num_deleted));
-IMPORT(Status, iter_start_filtered,
-       (TableId table_id, const uint8_t* filter, uint32_t filter_len,
-        RowIter* iter),
-       (table_id, filter, filter_len, iter));
 IMPORT(int16_t, row_iter_bsatn_advance,
        (RowIter iter, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
        (iter, buffer_ptr, buffer_len_ptr));

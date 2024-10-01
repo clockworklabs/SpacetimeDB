@@ -4,16 +4,11 @@ use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
-use crate::vm::{build_query, TxMode};
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
-use spacetimedb_lib::filter::CmpArgs;
-use spacetimedb_lib::operator::OpQuery;
-use spacetimedb_lib::relation::FieldName;
 use spacetimedb_primitives::{ColId, IndexId, TableId};
-use spacetimedb_sats::{bsatn::ToBsatn, AlgebraicValue, ProductValue, Typespace};
+use spacetimedb_sats::{bsatn::ToBsatn, AlgebraicValue, ProductValue};
 use spacetimedb_table::table::UniqueConstraintViolation;
-use spacetimedb_vm::expr::{FieldExpr, FieldOp, NoInMemUsed, QueryExpr};
 use std::ops::DerefMut;
 use std::sync::Arc;
 
@@ -309,73 +304,6 @@ impl InstanceEnv {
 
         let (_, iter) = stdb.btree_scan(tx, index_id, prefix, prefix_elems, rstart, rend)?;
         let chunks = ChunkedWriter::collect_iter(iter);
-        Ok(chunks)
-    }
-
-    pub fn iter_filtered_chunks(
-        &self,
-        ctx: &ExecutionContext,
-        table_id: TableId,
-        filter: &[u8],
-    ) -> Result<Vec<Box<[u8]>>, NodesError> {
-        use spacetimedb_lib::filter;
-
-        fn filter_to_column_op(table_id: TableId, filter: filter::Expr) -> FieldOp {
-            match filter {
-                filter::Expr::Cmp(filter::Cmp {
-                    op,
-                    args: CmpArgs { lhs_field, rhs },
-                }) => FieldOp::Cmp {
-                    op: OpQuery::Cmp(op),
-                    lhs: Box::new(FieldOp::Field(FieldExpr::Name(FieldName::new(
-                        table_id,
-                        lhs_field.into(),
-                    )))),
-                    rhs: Box::new(FieldOp::Field(match rhs {
-                        filter::Rhs::Field(rhs_field) => FieldExpr::Name(FieldName::new(table_id, rhs_field.into())),
-                        filter::Rhs::Value(rhs_value) => FieldExpr::Value(rhs_value),
-                    })),
-                },
-                filter::Expr::Logic(filter::Logic { lhs, op, rhs }) => FieldOp::new(
-                    OpQuery::Logic(op),
-                    filter_to_column_op(table_id, *lhs),
-                    filter_to_column_op(table_id, *rhs),
-                ),
-                filter::Expr::Unary(_) => todo!("unary operations are not yet supported"),
-            }
-        }
-
-        let stdb = &self.dbic.relational_db;
-        let tx = &mut *self.tx.get()?;
-
-        let schema = stdb.schema_for_table_mut(tx, table_id)?;
-        let row_type = schema.get_row_type();
-
-        let filter = filter::Expr::from_bytes(
-            // TODO: looks like module typespace is currently not hooked up to instances;
-            // use empty typespace for now which should be enough for primitives
-            // but figure this out later
-            &Typespace::default(),
-            &row_type.elements,
-            filter,
-        )
-        .map_err(NodesError::DecodeFilter)?;
-
-        // TODO(Centril): consider caching from `filter: &[u8] -> query: QueryExpr`.
-        let query = QueryExpr::new(schema.as_ref())
-            .with_select(filter_to_column_op(table_id, filter))?
-            .optimize(&|table_id, table_name| stdb.row_count(table_id, table_name));
-
-        // TODO(Centril): Conditionally dump the `query` to a file and compare against integration test.
-        // Invent a system where we can make these kinds of "optimization path tests".
-
-        let tx: TxMode = tx.into();
-        // SQL queries can never reference `MemTable`s, so pass in an empty set.
-        let mut query = build_query(ctx, stdb, &tx, &query, &mut NoInMemUsed);
-
-        // write all rows and flush at row boundaries.
-        let query_iter = std::iter::from_fn(|| query.next());
-        let chunks = ChunkedWriter::collect_iter(query_iter);
         Ok(chunks)
     }
 }

@@ -9,7 +9,6 @@ use std::collections::{btree_map, BTreeMap};
 pub mod address;
 pub mod db;
 pub mod error;
-pub mod filter;
 pub mod identity;
 pub mod operator;
 pub mod relation;

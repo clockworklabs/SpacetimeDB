@@ -5,7 +5,6 @@
     <UnmanagedEntryPointsAssembly Include="SpacetimeDB.Runtime" />
     <WasmImport Include="$(SpacetimeNamespace)!iter_by_col_eq" />
     <WasmImport Include="$(SpacetimeNamespace)!delete_by_col_eq" />
-    <WasmImport Include="$(SpacetimeNamespace)!iter_start_filtered" />
     <WasmImport Include="$(SpacetimeNamespace)!table_id_from_name" />
     <WasmImport Include="$(SpacetimeNamespace)!datastore_table_row_count" />
     <WasmImport Include="$(SpacetimeNamespace)!datastore_table_scan_bsatn" />
