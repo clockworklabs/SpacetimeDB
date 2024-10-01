@@ -87,10 +87,10 @@ namespace SpacetimeDB
     {
         public static DbConnectionBuilder<DbConnection, Reducer> Builder() => new();
 
-        struct DbValue
+        readonly struct DbValue
         {
-            public IDatabaseRow value;
-            public byte[] bytes;
+            public readonly IDatabaseRow value;
+            public readonly byte[] bytes;
 
             public DbValue(IDatabaseRow value, byte[] bytes)
             {
@@ -101,7 +101,7 @@ namespace SpacetimeDB
 
         struct DbOp
         {
-            public ClientCache.ITableCache table;
+            public IRemoteTableHandle table;
             public DbValue? delete;
             public DbValue? insert;
         }
@@ -193,12 +193,14 @@ namespace SpacetimeDB
         private readonly CancellationTokenSource _preProcessCancellationTokenSource = new();
         private CancellationToken _preProcessCancellationToken => _preProcessCancellationTokenSource.Token;
 
-        static DbValue Decode(ClientCache.ITableCache table, EncodedValue value) => value switch
+        static DbValue Decode(IRemoteTableHandle table, EncodedValue value, out object? primaryKey)
         {
-            EncodedValue.Binary(var bin) => new DbValue(table.DecodeValue(bin), bin),
-            EncodedValue.Text(var text) => throw new InvalidOperationException("JavaScript messages aren't supported."),
-            _ => throw new InvalidOperationException(),
-        };
+            // We expect only binary messages here; let type cast exception take care of any others.
+            var bin = ((EncodedValue.Binary)value).Binary_;
+            var obj = table.DecodeValue(bin);
+            primaryKey = table.GetPrimaryKey(obj);
+            return new(obj, bin);
+        }
 
         private static readonly Status Committed = new Status.Committed(default);
         private static readonly Status OutOfEnergy = new Status.OutOfEnergy(default);
@@ -337,8 +339,7 @@ namespace SpacetimeDB
 
                                 foreach (var row in update.Inserts)
                                 {
-                                    var op = new DbOp { table = table, insert = Decode(table, row) };
-                                    var pk = table.Handle.GetPrimaryKey(op.insert.Value.value);
+                                    var op = new DbOp { table = table, insert = Decode(table, row, out var pk) };
                                     if (pk != null)
                                     {
                                         // Compound key that we use for lookup.
@@ -373,8 +374,7 @@ namespace SpacetimeDB
 
                                 foreach (var row in update.Deletes)
                                 {
-                                    var op = new DbOp { table = table, delete = Decode(table, row) };
-                                    var pk = table.Handle.GetPrimaryKey(op.delete.Value.value);
+                                    var op = new DbOp { table = table, delete = Decode(table, row, out var pk) };
                                     if (pk != null)
                                     {
                                         // Compound key that we use for lookup.
@@ -454,7 +454,7 @@ namespace SpacetimeDB
                         continue;
                     }
 
-                    foreach (var (rowBytes, oldValue) in table.Where(kv => !hashSet.Contains(kv.Key)))
+                    foreach (var (rowBytes, oldValue) in table.IterEntries().Where(kv => !hashSet.Contains(kv.Key)))
                     {
                         processed.dbOps.Add(new DbOp
                         {
@@ -523,7 +523,7 @@ namespace SpacetimeDB
                 {
                     try
                     {
-                        update.table.Handle.InvokeBeforeDelete(eventContext, oldValue);
+                        update.table.InvokeBeforeDelete(eventContext, oldValue);
                     }
                     catch (Exception e)
                     {
@@ -542,7 +542,7 @@ namespace SpacetimeDB
                 {
                     if (update.table.DeleteEntry(delete.bytes))
                     {
-                        update.table.Handle.InternalInvokeValueDeleted(delete.value);
+                        update.table.InternalInvokeValueDeleted(delete.value);
                     }
                     else
                     {
@@ -555,7 +555,7 @@ namespace SpacetimeDB
                 {
                     if (update.table.InsertEntry(insert.bytes, insert.value))
                     {
-                        update.table.Handle.InternalInvokeValueInserted(insert.value);
+                        update.table.InternalInvokeValueInserted(insert.value);
                     }
                     else
                     {
@@ -573,17 +573,15 @@ namespace SpacetimeDB
                     switch (dbOp)
                     {
                         case { insert: { value: var newValue }, delete: { value: var oldValue } }:
-                            {
-                                dbOp.table.Handle.InvokeUpdate(eventContext, oldValue, newValue);
-                                break;
-                            }
+                            dbOp.table.InvokeUpdate(eventContext, oldValue, newValue);
+                            break;
 
                         case { insert: { value: var newValue } }:
-                            dbOp.table.Handle.InvokeInsert(eventContext, newValue);
+                            dbOp.table.InvokeInsert(eventContext, newValue);
                             break;
 
                         case { delete: { value: var oldValue } }:
-                            dbOp.table.Handle.InvokeDelete(eventContext, oldValue);
+                            dbOp.table.InvokeDelete(eventContext, oldValue);
                             break;
                     }
                 }
