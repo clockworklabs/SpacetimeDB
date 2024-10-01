@@ -33,8 +33,6 @@ pub mod rust;
 pub mod typescript;
 mod util;
 
-const INDENT: &str = "\t";
-
 pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")

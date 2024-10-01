@@ -17,6 +17,10 @@ use std::ops::Deref;
 /// Pairs of (module_name, TypeName).
 type Imports = BTreeSet<AlgebraicTypeRef>;
 
+// TODO(cloutiertyler): Rust should probably use four spaces instead of tabs
+// but I'm keeping this so as to not explode the diff.
+const INDENT: &str = "\t";
+
 pub struct Rust;
 
 impl Lang for Rust {
@@ -45,7 +49,7 @@ Requested namespace: {namespace}",
         );
         let type_name = collect_case(Case::Pascal, typ.name.name_segments());
 
-        let mut output = CodeIndenter::new(String::new());
+        let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out);
@@ -99,7 +103,7 @@ Requested namespace: {namespace}",
 
         let type_ref = table.product_type_ref;
 
-        let mut output = CodeIndenter::new(String::new());
+        let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out);
@@ -316,7 +320,7 @@ pub(super) fn parse_table_update(
 Requested namespace: {namespace}",
         );
 
-        let mut output = CodeIndenter::new(String::new());
+        let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out);
@@ -441,7 +445,7 @@ impl {func_name} for super::RemoteReducers {{
 Requested namespace: {namespace}",
         );
 
-        let mut output = CodeIndenter::new(String::new());
+        let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out);

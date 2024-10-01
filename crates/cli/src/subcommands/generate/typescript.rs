@@ -21,6 +21,8 @@ use super::Lang;
 
 type Imports = BTreeSet<AlgebraicTypeRef>;
 
+const INDENT: &str = "  ";
+
 pub struct TypeScript;
 
 impl Lang for TypeScript {
@@ -51,7 +53,7 @@ Requested namespace: {namespace}",
         );
         let type_name = collect_case(Case::Pascal, typ.name.name_segments());
 
-        let mut output = CodeIndenter::new(String::new());
+        let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out);
@@ -59,12 +61,10 @@ Requested namespace: {namespace}",
         match &module.typespace_for_generate()[typ.ty] {
             AlgebraicTypeDef::Product(product) => {
                 gen_and_print_imports(module, out, &product.elements, &[typ.ty]);
-                out.newline();
                 define_namespace_and_object_type_for_product(module, out, &type_name, &product.elements);
             }
             AlgebraicTypeDef::Sum(sum) => {
                 gen_and_print_imports(module, out, &sum.variants, &[typ.ty]);
-                out.newline();
                 define_namespace_and_types_for_sum(module, out, &type_name, &sum.variants);
             }
             AlgebraicTypeDef::PlainEnum(plain_enum) => {
@@ -74,7 +74,6 @@ Requested namespace: {namespace}",
                     .cloned()
                     .map(|var| (var, AlgebraicTypeUse::Unit))
                     .collect::<Vec<_>>();
-                out.newline();
                 define_namespace_and_types_for_sum(module, out, &type_name, &variants);
             }
         }
@@ -95,7 +94,7 @@ Requested namespace: {namespace}",
             .validated()
             .expect("Failed to generate table due to validation errors");
 
-        let mut output = CodeIndenter::new(String::new());
+        let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out);
@@ -110,7 +109,7 @@ Requested namespace: {namespace}",
 
         // Import the types of all fields.
         // We only need to import fields which have indices or unique constraints,
-        // but it's easier to just import all of 'em, since we have `#![allow(unused)]` anyway.
+        // but it's easier to just import all of 'em, since we have `// @ts-ignore` anyway.
         gen_and_print_imports(
             module,
             out,
@@ -125,33 +124,41 @@ Requested namespace: {namespace}",
         let table_handle = table_name_pascalcase.clone() + "TableHandle";
         let accessor_method = table_method_name(&table.name);
 
+        writeln!(out);
+
         write!(
             out,
-            "
-// Table handle for the table `{table_name}`.
-//
-// Obtain a handle from the [TODO] method on [`super::RemoteTables`],
-// like `ctx.db.TODO()`.
-//
-// Users are encouraged not to explicitly reference this type,
-// but to directly chain method calls,
-// like `ctx.db.TODO().on_insert(...)`.
+            "/**
+ * Table handle for the table `{table_name}`.
+ *
+ * Obtain a handle from the [`{accessor_method}`] property on [`RemoteTables`],
+ * like `ctx.db.{accessor_method}`.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.{accessor_method}.on_insert(...)`.
+ */
 export class {table_handle} {{
-    tableCache: TableCache<{row_type}>;
-
-    constructor(tableCache: TableCache<{row_type}>) {{
-        this.tableCache = tableCache;
-    }}
-
-    count(): number {{
-        return this.tableCache.count();
-    }}
-
-    iter(): Iterable<{row_type}> {{
-        return this.tableCache.iter();
-    }}
 "
         );
+        out.indent(1);
+        writeln!(out, "tableCache: TableCache<{row_type}>;");
+        writeln!(out);
+        writeln!(out, "constructor(tableCache: TableCache<{row_type}>) {{");
+        out.with_indent(|out| writeln!(out, "this.tableCache = tableCache;"));
+        writeln!(out, "}}");
+        writeln!(out);
+        writeln!(out, "count(): number {{");
+        out.with_indent(|out| {
+            writeln!(out, "return this.tableCache.count();");
+        });
+        writeln!(out, "}}");
+        writeln!(out);
+        writeln!(out, "iter(): Iterable<{row_type}> {{");
+        out.with_indent(|out| {
+            writeln!(out, "return this.tableCache.iter();");
+        });
+        writeln!(out, "}}");
 
         let constraints = schema.backcompat_column_constraints();
 
@@ -164,67 +171,83 @@ export class {table_handle} {{
                 let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
                 let unique_field_type = type_name(module, unique_field_type_use);
 
-                write!(
+                writeln!(
                     out,
-                    "
-    // Access to the `{unique_field_name}` unique index on the table `{table_name}`,
-    // which allows point queries on the field of the same name
-    // via the [`{unique_constraint}::find`] method.
-    //
-    // Users are encouraged not to explicitly reference this type,
-    // but to directly chain method calls,
-    // like `ctx.db.{accessor_method}().{unique_field_name}().find(...)`.
-    //
-    // Get a handle on the `{unique_field_name}` unique index on the table `{table_name}`.
-    {unique_field_name} = {{
-        /// Find the subscribed row whose `{unique_field_name}` column value is equal to `col_val`,
-        /// if such a row is present in the client cache.
-        find: (col_val: {unique_field_type}): {row_type} | undefined => {{
-            for (let row of this.tableCache.iter()) {{
-                if (row.{unique_field_name} === col_val) {{
-                    return row;
-                }}
-            }}
-        }}
-    }}
-"
+                    "/**
+ * Access to the `{unique_field_name}` unique index on the table `{table_name}`,
+ * which allows point queries on the field of the same name
+ * via the [`{unique_constraint}.find`] method.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.{accessor_method}.{unique_field_name}().find(...)`.
+ *
+ * Get a handle on the `{unique_field_name}` unique index on the table `{table_name}`.
+ */"
                 );
+                writeln!(out, "{unique_field_name} = {{");
+                out.with_indent(|out| {
+                    writeln!(
+                        out,
+                        "// Find the subscribed row whose `{unique_field_name}` column value is equal to `col_val`,"
+                    );
+                    writeln!(out, "// if such a row is present in the client cache.");
+                    writeln!(
+                        out,
+                        "find: (col_val: {unique_field_type}): {row_type} | undefined => {{"
+                    );
+                    out.with_indent(|out| {
+                        writeln!(out, "for (let row of this.tableCache.iter()) {{");
+                        out.with_indent(|out| {
+                            writeln!(out, "if (row.{unique_field_name} === col_val) {{");
+                            out.with_indent(|out| {
+                                writeln!(out, "return row;");
+                            });
+                            writeln!(out, "}}");
+                        });
+                        writeln!(out, "}}");
+                    });
+                    writeln!(out, "}},");
+                });
+                writeln!(out, "}};");
             }
         }
 
+        writeln!(out);
+
+        // TODO: expose non-unique indices.
+
         writeln!(
             out,
-            "
-    onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: {row_type}) => void) => {{
-        return this.tableCache.onInsert(cb);
-    }}
+            "onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: {row_type}) => void) => {{
+{INDENT}return this.tableCache.onInsert(cb);
+}}
 
-    removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: {row_type}) => void) => {{
-        return this.tableCache.removeOnInsert(cb);
-    }}
+removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: {row_type}) => void) => {{
+{INDENT}return this.tableCache.removeOnInsert(cb);
+}}
 
-    onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: {row_type}) => void) => {{
-        return this.tableCache.onDelete(cb);
-    }}
+onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: {row_type}) => void) => {{
+{INDENT}return this.tableCache.onDelete(cb);
+}}
 
-    removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: {row_type}) => void) => {{
-        return this.tableCache.removeOnDelete(cb);
-    }}
-"
+removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: {row_type}) => void) => {{
+{INDENT}return this.tableCache.removeOnDelete(cb);
+}}"
         );
 
         if schema.pk().is_some() {
             write!(
                 out,
-    "   // Updates are only defined for tables with primary keys.
-    onUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, oldRow: {row_type}, newRow: {row_type}) => void) => {{
-         return this.tableCache.onUpdate(cb);
-    }}
+"
+// Updates are only defined for tables with primary keys.
+onUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, oldRow: {row_type}, newRow: {row_type}) => void) => {{
+{INDENT}return this.tableCache.onUpdate(cb);
+}}
 "
             );
         }
-
-        // TODO: expose non-unique indices.
+        out.dedent(1);
 
         writeln!(out, "}}");
         output.into_inner()
@@ -238,7 +261,7 @@ export class {table_handle} {{
 Requested namespace: {namespace}",
         );
 
-        let mut output = CodeIndenter::new(String::new());
+        let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out);
@@ -252,8 +275,6 @@ Requested namespace: {namespace}",
             // No need to skip any imports; we're not emitting a type that other modules can import.
             &[],
         );
-
-        out.newline();
 
         let args_type = reducer_args_type_name(&reducer.name);
 
@@ -270,7 +291,7 @@ Requested namespace: {namespace}",
 Requested namespace: {namespace}",
         );
 
-        let mut output = CodeIndenter::new(String::new());
+        let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out);
@@ -394,50 +415,54 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
     out.newline();
 
     for reducer in iter_reducers(module) {
-        // // The reducer argument types as `ty, ty, ty`,
-        // // for use as the params in a `FnMut` closure type.
-        // let mut arg_types_ref_list = String::new();
-
-        // // The reducer argument names as `ident, ident, ident`,
-        // // for passing to function call and struct literal expressions.
-        // let mut arg_names_list = String::new();
-
-        // The reducer argument names as `ident: ty, ident: ty, ident: ty`,
+        // The reducer argument names and types as `ident: ty, ident: ty, ident: ty`,
+        // and the argument names as `ident, ident, ident`
         // for passing to function call and struct literal expressions.
-        let mut arg_list = ", ".to_string();
-
+        let mut arg_list = "".to_string();
+        let mut arg_name_list = "".to_string();
         for (arg_ident, arg_ty) in &reducer.params_for_generate.elements[..] {
-            arg_list += "";
             let arg_name = arg_ident.deref().to_case(Case::Camel);
+            arg_name_list += &arg_name;
             arg_list += &arg_name;
             arg_list += ": ";
             write_type(module, &mut arg_list, arg_ty, None).unwrap();
             arg_list += ", ";
+            arg_name_list += ", ";
         }
-
-        // Remove the trailing comma and space.
-        if arg_list.is_empty() {
-            arg_list = arg_list[2..arg_list.len()].to_string();
-        } else {
-            arg_list = arg_list[..arg_list.len() - 2].to_string();
-        }
+        let arg_list = arg_list.trim_end_matches(", ");
+        let arg_name_list = arg_name_list.trim_end_matches(", ");
 
         let reducer_name = &reducer.name;
         let reducer_name_pascal = reducer_name.deref().to_case(Case::Pascal);
         let reducer_function_name = reducer_function_name(reducer);
-        let args_type = reducer_args_type_name(&reducer.name);
         let reducer_variant = reducer_variant_name(&reducer.name);
-        writeln!(out, "{reducer_function_name}(args: {args_type}) {{");
-        out.indent(1);
-        writeln!(out, "let writer = new BinaryWriter(1024);");
-        writeln!(out, "{reducer_variant}.getAlgebraicType().serialize(writer, args);");
-        writeln!(out, "let argsBuffer = writer.getBuffer();");
-        writeln!(out, "this.connection.callReducer(\"{reducer_name}\", argsBuffer);");
-        out.dedent(1);
+        if reducer.params_for_generate.elements.is_empty() {
+            writeln!(out, "{reducer_function_name}() {{");
+            out.with_indent(|out| {
+                writeln!(
+                    out,
+                    "this.connection.callReducer(\"{reducer_name}\", new Uint8Array(0));"
+                );
+            });
+        } else {
+            writeln!(out, "{reducer_function_name}({arg_list}) {{");
+            out.with_indent(|out| {
+                writeln!(out, "const __args = {{ {arg_name_list} }};");
+                writeln!(out, "let __writer = new BinaryWriter(1024);");
+                writeln!(out, "{reducer_variant}.getAlgebraicType().serialize(__writer, __args);");
+                writeln!(out, "let __argsBuffer = writer.getBuffer();");
+                writeln!(out, "this.connection.callReducer(\"{reducer_name}\", __argsBuffer);");
+            });
+        }
         writeln!(out, "}}");
         out.newline();
 
-        writeln!(out, "on{reducer_name_pascal}(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>{arg_list}) => void) {{");
+        let arg_list_padded = if arg_list.is_empty() {
+            String::new()
+        } else {
+            format!(", {arg_list}")
+        };
+        writeln!(out, "on{reducer_name_pascal}(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>{arg_list_padded}) => void) {{");
         out.indent(1);
         writeln!(out, "this.connection.onReducer(\"{reducer_name}\", callback);");
         out.dedent(1);
@@ -453,9 +478,9 @@ fn print_remote_tables(module: &ModuleDef, out: &mut Indenter) {
     writeln!(out, "export class RemoteTables {{");
     out.indent(1);
     writeln!(out, "constructor(private connection: DBConnectionImpl) {{}}");
-    out.newline();
 
     for table in iter_tables(module) {
+        writeln!(out);
         let table_name = table.name.deref();
         let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
         let table_name_camelcase = table.name.deref().to_case(Case::Camel);
@@ -464,9 +489,9 @@ fn print_remote_tables(module: &ModuleDef, out: &mut Indenter) {
         let row_type = type_ref_name(module, type_ref);
         writeln!(out, "#{table_name_camelcase} = this.connection.clientCache.getOrCreateTable<{row_type}>(REMOTE_MODULE.tables.{table_name});");
         writeln!(out, "get {table_name_camelcase}(): {table_handle} {{");
-        out.indent(1);
-        writeln!(out, "return new {table_handle}(this.#{table_name_camelcase});");
-        out.dedent(1);
+        out.with_indent(|out| {
+            writeln!(out, "return new {table_handle}(this.#{table_name_camelcase});");
+        });
         writeln!(out, "}}");
     }
 
@@ -506,44 +531,34 @@ fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {
     writeln!(out, ";");
 }
 
-fn print_spacetimedb_imports(output: &mut Indenter) {
-    writeln!(
-        output,
-        "import {{
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
-}} from \"@clockworklabs/spacetimedb-sdk\";"
-    );
+fn print_spacetimedb_imports(out: &mut Indenter) {
+    let mut types = [
+        "AlgebraicType",
+        "ProductType",
+        "ProductTypeElement",
+        "SumType",
+        "SumTypeVariant",
+        "AlgebraicValue",
+        "Identity",
+        "Address",
+        "DBConnectionBuilder",
+        "TableCache",
+        "BinaryWriter",
+        "EventContext",
+        "BinaryReader",
+        "DBConnectionImpl",
+        "DBContext",
+        "Event",
+    ];
+    types.sort();
+    writeln!(out, "import {{");
+    out.indent(1);
+    for ty in &types {
+        writeln!(out, "// @ts-ignore");
+        writeln!(out, "{ty},");
+    }
+    out.dedent(1);
+    writeln!(out, "}} from \"@clockworklabs/spacetimedb-sdk\";");
 }
 
 fn print_file_header(output: &mut Indenter) {
@@ -558,8 +573,10 @@ fn write_get_algebraic_type_for_product(
 ) {
     writeln!(
         out,
-        "// A function which returns this type represented as an AlgebraicType.
-// This function is derived from the AlgebraicType used to generate this type."
+        "/**
+* A function which returns this type represented as an AlgebraicType.
+* This function is derived from the AlgebraicType used to generate this type.
+*/"
     );
     writeln!(out, "export function getAlgebraicType(): AlgebraicType {{");
     {
@@ -578,18 +595,23 @@ fn define_namespace_and_object_type_for_product(
     name: &str,
     elements: &[(Identifier, AlgebraicTypeUse)],
 ) {
-    write!(out, "export type {name} = ");
-
-    out.delimited_block(
-        "{",
-        |out| write_arglist_no_delimiters(module, out, elements, None).unwrap(),
-        "}",
-    );
-    writeln!(out, ";");
+    write!(out, "export type {name} = {{");
+    if elements.is_empty() {
+        writeln!(out, "}};");
+    } else {
+        writeln!(out);
+        out.with_indent(|out| write_arglist_no_delimiters(module, out, elements, None).unwrap());
+        writeln!(out, "}};");
+    }
 
     out.newline();
 
-    writeln!(out, "// A namespace for generated helper functions.");
+    writeln!(
+        out,
+        "/**
+ * A namespace for generated helper functions.
+ */"
+    );
     writeln!(out, "export namespace {name} {{");
     out.indent(1);
     write_get_algebraic_type_for_product(module, out, elements);
@@ -598,7 +620,7 @@ fn define_namespace_and_object_type_for_product(
     writeln!(
         out,
         "export function serialize(writer: BinaryWriter, value: {name}): void {{
-    {name}.getAlgebraicType().serialize(writer, value);
+{INDENT}{name}.getAlgebraicType().serialize(writer, value);
 }}"
     );
     writeln!(out);
@@ -606,7 +628,7 @@ fn define_namespace_and_object_type_for_product(
     writeln!(
         out,
         "export function deserialize(reader: BinaryReader): {name} {{
-    return {name}.getAlgebraicType().deserialize(reader);
+{INDENT}return {name}.getAlgebraicType().deserialize(reader);
 }}"
     );
 
@@ -810,7 +832,7 @@ fn table_module_name(table_name: &Identifier) -> String {
 }
 
 fn table_method_name(table_name: &Identifier) -> String {
-    table_name.deref().to_case(Case::Snake)
+    table_name.deref().to_case(Case::Camel)
 }
 
 fn reducer_args_type_name(reducer_name: &Identifier) -> String {
@@ -994,7 +1016,7 @@ fn iter_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDef> {
 ///
 /// `this_file` is passed and excluded for the case of recursive types:
 /// without it, the definition for a type like `struct Foo { foos: Vec<Foo> }`
-/// would attempt to include `import super::foo::Foo`, which fails to compile.
+/// would attempt to include `import { Foo } from "./foo"`.
 fn gen_and_print_imports(
     module: &ModuleDef,
     out: &mut Indenter,
@@ -1011,8 +1033,13 @@ fn gen_and_print_imports(
     for skip in dont_import {
         imports.remove(skip);
     }
+    let len = imports.len();
 
     print_imports(module, out, imports);
+
+    if len > 0 {
+        out.newline();
+    }
 }
 
 // const RESERVED_KEYWORDS: [&str; 36] = [
