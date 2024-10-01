@@ -160,9 +160,5 @@ pub enum AbiCall {
     ConsoleTimerStart,
     ConsoleTimerEnd,
 
-    DeleteByColEq,
-    IterByColEq,
-    IterStartFiltered,
-
     VolatileNonatomicScheduleImmediate,
 }

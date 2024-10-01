@@ -166,54 +166,6 @@ pub mod raw {
             out: *mut RowIter,
         ) -> u16;
 
-        /// Finds all rows in the table identified by `table_id`,
-        /// where the row has a column, identified by `col_id`,
-        /// with data matching the byte string, in WASM memory, pointed to at by `val`.
-        ///
-        /// Matching is defined BSATN-decoding `val` to an `AlgebraicValue`
-        /// according to the column's schema and then `Ord for AlgebraicValue`.
-        ///
-        /// On success, the iterator handle is written to the `out` pointer.
-        ///
-        /// Returns an error if
-        /// - a table with the provided `table_id` doesn't exist
-        /// - `col_id` does not identify a column of the table,
-        /// - `(val, val_len)` cannot be decoded to an `AlgebraicValue`
-        ///   typed at the `AlgebraicType` of the column,
-        /// - `val + val_len` overflows a 64-bit integer
-        pub fn iter_by_col_eq(
-            table_id: TableId,
-            col_id: ColId,
-            val: *const u8,
-            val_len: usize,
-            out: *mut RowIter,
-        ) -> u16;
-
-        /// Deletes all rows in the table identified by `table_id`
-        /// where the column identified by `col_id` matches the byte string,
-        /// in WASM memory, pointed to at by `value`.
-        ///
-        /// Matching is defined by BSATN-decoding `value` to an `AlgebraicValue`
-        /// according to the column's schema and then `Ord for AlgebraicValue`.
-        ///
-        /// The number of rows deleted is written to the WASM pointer `out`.
-        ///
-        /// Returns an error if
-        /// - a table with the provided `table_id` doesn't exist
-        /// - no columns were deleted
-        /// - `col_id` does not identify a column of the table,
-        /// - `(value, value_len)` doesn't decode from BSATN to an `AlgebraicValue`
-        ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
-        /// - `value + value_len` overflows a 64-bit integer
-        /// - writing to `out` would overflow a 32-bit integer
-        pub fn delete_by_col_eq(
-            table_id: TableId,
-            col_id: ColId,
-            value: *const u8,
-            value_len: usize,
-            out: *mut u32,
-        ) -> u16;
-
         /// Deletes all rows found in the index identified by `index_id`,
         /// according to the:
         /// - `prefix = prefix_ptr[..prefix_len]`,
@@ -294,21 +246,6 @@ pub mod raw {
             rel_len: usize,
             out: *mut u32,
         ) -> u16;
-
-        /// Like [`_datastore_table_scan_bsatn`], start iteration on each row,
-        /// as bytes, of a table identified by `table_id`.
-        ///
-        /// The rows are filtered through `filter`, which is read from WASM memory
-        /// and is encoded in the embedded language defined by `spacetimedb_lib::filter::Expr`.
-        ///
-        /// The iterator is registered in the host environment
-        /// under an assigned index which is written to the `out` pointer provided.
-        ///
-        /// Returns an error if
-        /// - a table with the provided `table_id` doesn't exist
-        /// - `(filter, filter_len)` doesn't decode to a filter expression
-        /// - `filter + filter_len` overflows a 64-bit integer
-        pub fn iter_start_filtered(table_id: TableId, filter: *const u8, filter_len: usize, out: *mut RowIter) -> u16;
 
         /// Reads rows from the given iterator registered under `iter`.
         ///
@@ -776,28 +713,6 @@ pub fn datastore_table_row_count(table_id: TableId) -> Result<u64, Errno> {
     unsafe { call(|out| raw::datastore_table_row_count(table_id, out)) }
 }
 
-/// Finds all rows in the table identified by `table_id`,
-/// where the row has a column, identified by `col_id`,
-/// with data matching the byte string `val`.
-///
-/// Matching is defined BSATN-decoding `val` to an `AlgebraicValue`
-/// according to the column's schema and then `Ord for AlgebraicValue`.
-///
-/// The rows found are BSATN encoded and then concatenated.
-/// The resulting byte string from the concatenation is written
-/// to a fresh buffer with a handle to it returned as a `Buffer`.
-///
-/// Returns an error if
-/// - a table with the provided `table_id` doesn't exist
-/// - `col_id` does not identify a column of the table
-/// - `val` cannot be BSATN-decoded to an `AlgebraicValue`
-///   typed at the `AlgebraicType` of the column
-#[inline]
-pub fn iter_by_col_eq(table_id: TableId, col_id: ColId, val: &[u8]) -> Result<RowIter, Errno> {
-    let raw = unsafe { call(|out| raw::iter_by_col_eq(table_id, col_id, val.as_ptr(), val.len(), out)) }?;
-    Ok(RowIter { raw })
-}
-
 /// Inserts a row into the table identified by `table_id`,
 /// where the row is a BSATN-encoded `ProductValue`
 /// matching the table's `ProductType` row-schema.
@@ -811,27 +726,10 @@ pub fn iter_by_col_eq(table_id: TableId, col_id: ColId, val: &[u8]) -> Result<Ro
 /// - `row` doesn't decode from BSATN to a `ProductValue`
 ///   according to the `ProductType` that the table's schema specifies.
 #[inline]
-pub fn insert(table_id: TableId, row: &mut [u8]) -> Result<&[u8], Errno> {
+pub fn datastore_insert_bsatn(table_id: TableId, row: &mut [u8]) -> Result<&[u8], Errno> {
     let row_ptr = row.as_mut_ptr();
     let row_len = &mut row.len();
     cvt(unsafe { raw::datastore_insert_bsatn(table_id, row_ptr, row_len) }).map(|()| &row[..*row_len])
-}
-
-/// Deletes all rows in the table identified by `table_id`
-/// where the column identified by `col_id` matches `value`.
-///
-/// Matching is defined by BSATN-decoding `value` to an `AlgebraicValue`
-/// according to the column's schema and then `Ord for AlgebraicValue`.
-///
-/// Returns the number of rows deleted.
-///
-/// Returns an error if
-/// - a table with the provided `table_id` doesn't exist
-/// - no columns were deleted
-/// - `col_id` does not identify a column of the table
-#[inline]
-pub fn delete_by_col_eq(table_id: TableId, col_id: ColId, value: &[u8]) -> Result<u32, Errno> {
-    unsafe { call(|out| raw::delete_by_col_eq(table_id, col_id, value.as_ptr(), value.len(), out)) }
 }
 
 /// Deletes those rows, in the table identified by `table_id`,
@@ -993,17 +891,6 @@ pub fn datastore_delete_by_btree_scan_bsatn(
             )
         })
     }
-}
-
-/// Iterate through a table, filtering by an encoded `spacetimedb_lib::filter::Expr`.
-///
-/// # Errors
-///
-/// - `NO_SUCH_TABLE`, if `table_id` doesn't exist.
-#[inline]
-pub fn iter_filtered(table_id: TableId, filter: &[u8]) -> Result<RowIter, Errno> {
-    let raw = unsafe { call(|out| raw::iter_start_filtered(table_id, filter.as_ptr(), filter.len(), out))? };
-    Ok(RowIter { raw })
 }
 
 /// A log level that can be used in `console_log`.
