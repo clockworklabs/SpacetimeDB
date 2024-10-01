@@ -6,10 +6,6 @@
     <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <WasmDebugLevel>1</WasmDebugLevel>
-    <WasmBuildNative>true</WasmBuildNative>
-    <WasmNativeDebugSymbols>true</WasmNativeDebugSymbols>
-    <WasmNativeStrip>false</WasmNativeStrip>
   </PropertyGroup>
 
   <!--
