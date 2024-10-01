@@ -158,5 +158,7 @@ namespace SpacetimeDB.Types
 				_ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
 			};
 		}
+
+        public SubscriptionBuilder<EventContext> SubscriptionBuilder() => new(this);
 	}
 }
