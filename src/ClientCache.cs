@@ -2,27 +2,31 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 
 namespace SpacetimeDB
 {
     public class ClientCache
     {
-        public interface ITableCache : IEnumerable<KeyValuePair<byte[], IDatabaseTable>>
+        public interface ITableCache : IEnumerable<KeyValuePair<byte[], IDatabaseRow>>
         {
             Type ClientTableType { get; }
-            bool InsertEntry(byte[] rowBytes, IDatabaseTable value);
+            bool InsertEntry(byte[] rowBytes, IDatabaseRow value);
             bool DeleteEntry(byte[] rowBytes);
-            IDatabaseTable DecodeValue(byte[] bytes);
+            IDatabaseRow DecodeValue(byte[] bytes);
+            IRemoteTableHandle Handle { get; }
         }
 
-        public class TableCache<T> : ITableCache
-            where T : IDatabaseTable, IStructuralReadWrite, new()
+        public class TableCache<Row> : ITableCache
+            where Row : IDatabaseRow, new()
         {
-            public Type ClientTableType => typeof(T);
+            public TableCache(IRemoteTableHandle handle) => Handle = handle;
 
-            public static readonly Dictionary<byte[], T> Entries = new(ByteArrayComparer.Instance);
+            public IRemoteTableHandle Handle { get; init; }
+
+            public Type ClientTableType => typeof(Row);
+
+            public readonly Dictionary<byte[], Row> Entries = new(ByteArrayComparer.Instance);
 
             /// <summary>
             /// Inserts the value into the table. There can be no existing value with the provided BSATN bytes.
@@ -30,7 +34,7 @@ namespace SpacetimeDB
             /// <param name="rowBytes">The BSATN encoded bytes of the row to retrieve.</param>
             /// <param name="value">The parsed row encoded by the <paramref>rowBytes</paramref>.</param>
             /// <returns>True if the row was inserted, false if the row wasn't inserted because it was a duplicate.</returns>
-            public bool InsertEntry(byte[] rowBytes, IDatabaseTable value) => Entries.TryAdd(rowBytes, (T)value);
+            public bool InsertEntry(byte[] rowBytes, IDatabaseRow value) => Entries.TryAdd(rowBytes, (Row)value);
 
             /// <summary>
             /// Deletes a value from the table.
@@ -49,21 +53,21 @@ namespace SpacetimeDB
             }
 
             // The function to use for decoding a type value.
-            public IDatabaseTable DecodeValue(byte[] bytes) => BSATNHelpers.Decode<T>(bytes);
+            public IDatabaseRow DecodeValue(byte[] bytes) => BSATNHelpers.Decode<Row>(bytes);
 
-            public IEnumerator<KeyValuePair<byte[], IDatabaseTable>> GetEnumerator() => Entries.Select(kv => new KeyValuePair<byte[], IDatabaseTable>(kv.Key, kv.Value)).GetEnumerator();
+            public IEnumerator<KeyValuePair<byte[], IDatabaseRow>> GetEnumerator() => Entries.Select(kv => new KeyValuePair<byte[], IDatabaseRow>(kv.Key, kv.Value)).GetEnumerator();
 
             IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
         }
 
         private readonly Dictionary<string, ITableCache> tables = new();
 
-        public void AddTable<T>()
-            where T : IDatabaseTable, IStructuralReadWrite, new()
+        public void AddTable<Row>(string name, IRemoteTableHandle handle)
+            where Row : IDatabaseRow, new()
         {
-            string name = typeof(T).Name;
-
-            if (!tables.TryAdd(name, new TableCache<T>()))
+            var cache = new TableCache<Row>(handle);
+            handle.SetCache(cache);
+            if (!tables.TryAdd(name, cache))
             {
                 Log.Error($"Table with name already exists: {name}");
             }

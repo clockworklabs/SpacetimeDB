@@ -2,10 +2,16 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.WebSockets;
 using System.Threading;
 using SpacetimeDB;
 using SpacetimeDB.ClientApi;
 using SpacetimeDB.Types;
+
+const string HOST = "http://localhost:3000";
+const string DBNAME = "chatqs";
+
+DbConnection? conn = null;
 
 // our local client SpacetimeDB identity
 Identity? local_identity = null;
@@ -18,7 +24,25 @@ void Main()
 {
     AuthToken.Init(".spacetime_csharp_quickstart");
 
-    RegisterCallbacks();
+    conn = DbConnection.Builder()
+        .WithUri(HOST)
+        .WithModuleName(DBNAME)
+        //.WithCredentials((null, AuthToken.Token))
+        .OnConnect(OnConnect)
+        .OnConnectError(OnConnectError)
+        .OnDisconnect(OnDisconnect)
+        .Build();
+
+    conn.RemoteTables.User.OnInsert += User_OnInsert;
+    conn.RemoteTables.User.OnUpdate += User_OnUpdate;
+
+    conn.RemoteTables.Message.OnInsert += Message_OnInsert;
+
+    conn.RemoteReducers.OnSetName += Reducer_OnSetNameEvent;
+    conn.RemoteReducers.OnSendMessage += Reducer_OnSendMessageEvent;
+
+    conn.onSubscriptionApplied += OnSubscriptionApplied;
+    conn.onUnhandledReducerError += onUnhandledReducerError;
 
     // spawn a thread to call process updates and process commands
     var thread = new Thread(ProcessThread);
@@ -31,25 +55,9 @@ void Main()
     thread.Join();
 }
 
-void RegisterCallbacks()
-{
-    SpacetimeDBClient.instance.onConnect += OnConnect;
-    SpacetimeDBClient.instance.onIdentityReceived += OnIdentityReceived;
-    SpacetimeDBClient.instance.onSubscriptionApplied += OnSubscriptionApplied;
-    SpacetimeDBClient.instance.onUnhandledReducerError += onUnhandledReducerError;
-
-    User.OnInsert += User_OnInsert;
-    User.OnUpdate += User_OnUpdate;
-
-    Message.OnInsert += Message_OnInsert;
-
-    Reducer.OnSetNameEvent += Reducer_OnSetNameEvent;
-    Reducer.OnSendMessageEvent += Reducer_OnSendMessageEvent;
-}
-
 string UserNameOrIdentity(User user) => user.Name ?? user.Identity.ToString()[..8];
 
-void User_OnInsert(User insertedValue, ReducerEvent? dbEvent)
+void User_OnInsert(EventContext ctx, User insertedValue)
 {
     if (insertedValue.Online)
     {
@@ -57,7 +65,7 @@ void User_OnInsert(User insertedValue, ReducerEvent? dbEvent)
     }
 }
 
-void User_OnUpdate(User oldValue, User newValue, ReducerEvent? dbEvent)
+void User_OnUpdate(EventContext ctx, User oldValue, User newValue)
 {
     if (oldValue.Name != newValue.Name)
     {
@@ -78,7 +86,7 @@ void User_OnUpdate(User oldValue, User newValue, ReducerEvent? dbEvent)
 
 void PrintMessage(Message message)
 {
-    var sender = User.FindByIdentity(message.Sender);
+    var sender = conn.RemoteTables.User.FindByIdentity(message.Sender);
     var senderName = "unknown";
     if (sender != null)
     {
@@ -88,44 +96,59 @@ void PrintMessage(Message message)
     Console.WriteLine($"{senderName}: {message.Text}");
 }
 
-void Message_OnInsert(Message insertedValue, ReducerEvent? dbEvent)
+void Message_OnInsert(EventContext ctx, Message insertedValue)
 {
-    if (dbEvent != null)
+    if (ctx.Reducer is not Event<Reducer>.SubscribeApplied)
     {
         PrintMessage(insertedValue);
     }
 }
 
-void Reducer_OnSetNameEvent(ReducerEvent reducerEvent, string name)
+void Reducer_OnSetNameEvent(EventContext ctx, string name)
 {
-    if (reducerEvent.Identity == local_identity && reducerEvent.Status is UpdateStatus.Failed)
+    if (ctx.Reducer is Event<Reducer>.Reducer reducer)
     {
-        Console.Write($"Failed to change name to {name}");
+        var e = reducer.ReducerEvent;
+        if (e.CallerIdentity == local_identity && e.Status is Status.Failed(var error))
+        {
+            Console.Write($"Failed to change name to {name}: {error}");
+        }
     }
 }
 
-void Reducer_OnSendMessageEvent(ReducerEvent reducerEvent, string text)
+void Reducer_OnSendMessageEvent(EventContext ctx, string text)
 {
-    if (reducerEvent.Identity == local_identity && reducerEvent.Status is UpdateStatus.Failed)
+    if (ctx.Reducer is Event<Reducer>.Reducer reducer)
     {
-        Console.Write($"Failed to send message {text}");
+        var e = reducer.ReducerEvent;
+        if (e.CallerIdentity == local_identity && e.Status is Status.Failed(var error))
+        {
+            Console.Write($"Failed to send message {text}: {error}");
+        }
     }
 }
 
-void OnConnect()
-{
-    SpacetimeDBClient.instance.Subscribe(new List<string> { "SELECT * FROM User", "SELECT * FROM Message" });
-}
-
-void OnIdentityReceived(string authToken, Identity identity, Address _address)
+void OnConnect(Identity identity, string authToken)
 {
     local_identity = identity;
     AuthToken.SaveToken(authToken);
+
+    conn!.Subscribe(new List<string> { "SELECT * FROM User", "SELECT * FROM Message" });
+}
+
+void OnConnectError(WebSocketError? error, string message)
+{
+
+}
+
+void OnDisconnect(DbConnection conn, WebSocketCloseStatus? status, WebSocketError? error)
+{
+
 }
 
 void PrintMessagesInOrder()
 {
-    foreach (Message message in Message.Iter().OrderBy(item => item.Sent))
+    foreach (Message message in conn.RemoteTables.Message.Iter().OrderBy(item => item.Sent))
     {
         PrintMessage(message);
     }
@@ -137,29 +160,29 @@ void OnSubscriptionApplied()
     PrintMessagesInOrder();
 }
 
-void onUnhandledReducerError(ReducerEvent reducerEvent)
+void onUnhandledReducerError(ReducerEvent<Reducer> reducerEvent)
 {
-    Console.WriteLine($"Unhandled reducer error in {reducerEvent.ReducerName}: {reducerEvent.ErrMessage}");
+    Console.WriteLine($"Unhandled reducer error in {reducerEvent.Reducer}: {reducerEvent.Status}");
 }
-
-const string HOST = "http://localhost:3000";
-const string DBNAME = "chatqs";
 
 void ProcessThread()
 {
-    SpacetimeDBClient.instance.Connect(AuthToken.Token, HOST, DBNAME);
-
-    // loop until cancellation token
-    while (!cancel_token.IsCancellationRequested)
+    try
     {
-        SpacetimeDBClient.instance.Update();
+        // loop until cancellation token
+        while (!cancel_token.IsCancellationRequested)
+        {
+            conn.Update();
 
-        ProcessCommands();
+            ProcessCommands();
 
-        Thread.Sleep(100);
+            Thread.Sleep(100);
+        }
     }
-
-    SpacetimeDBClient.instance.Close();
+    finally
+    {
+        conn.Close();
+    }
 }
 
 void InputLoop()
@@ -192,10 +215,10 @@ void ProcessCommands()
         switch (command.Command)
         {
             case "message":
-                Reducer.SendMessage(command.Args);
+                conn.RemoteReducers.SendMessage(command.Args);
                 break;
             case "name":
-                Reducer.SetName(command.Args);
+                conn.RemoteReducers.SetName(command.Args);
                 break;
         }
     }

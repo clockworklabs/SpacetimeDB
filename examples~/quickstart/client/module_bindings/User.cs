@@ -14,47 +14,29 @@ namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class User : SpacetimeDB.DatabaseTableWithPrimaryKey<User, SpacetimeDB.Types.ReducerEvent>
+	public partial class User : IDatabaseRow
 	{
 		[DataMember(Name = "identity")]
-		public SpacetimeDB.Identity Identity = new();
+		public SpacetimeDB.Identity Identity;
 		[DataMember(Name = "name")]
 		public string? Name;
 		[DataMember(Name = "online")]
 		public bool Online;
 
-		private static Dictionary<SpacetimeDB.Identity, User> Identity_Index = new(16);
-
-		public override void InternalOnValueInserted()
+		public User(
+			SpacetimeDB.Identity Identity,
+			string? Name,
+			bool Online
+		)
 		{
-			Identity_Index[Identity] = this;
+			this.Identity = Identity;
+			this.Name = Name;
+			this.Online = Online;
 		}
 
-		public override void InternalOnValueDeleted()
+		public User()
 		{
-			Identity_Index.Remove(Identity);
+			this.Identity = new();
 		}
-
-		public static User? FindByIdentity(SpacetimeDB.Identity value)
-		{
-			Identity_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static IEnumerable<User> FilterByIdentity(SpacetimeDB.Identity value)
-		{
-			if (FindByIdentity(value) is {} found)
-			{
-				yield return found;
-			}
-		}
-
-		public static IEnumerable<User> FilterByOnline(bool value)
-		{
-			return Query(x => x.Online == value);
-		}
-
-		public override object GetPrimaryKeyValue() => Identity;
-
 	}
 }
