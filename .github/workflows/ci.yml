@@ -80,6 +80,11 @@ jobs:
       - name: Run cargo test
         run: cargo test --all
 
+      - name: Ensure C# autogen bindings are up-to-date
+        run: |
+          cargo run --example regen-csharp-moduledef
+          git diff --exit-code -- crates/bindings-csharp
+
       - name: C# bindings tests
         working-directory: crates/bindings-csharp
         run: dotnet test -warnaserror
