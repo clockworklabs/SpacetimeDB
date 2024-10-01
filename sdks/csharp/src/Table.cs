@@ -20,53 +20,89 @@ namespace SpacetimeDB
 
     public interface IRemoteTableHandle
     {
-        void SetCache(ClientCache.ITableCache cache);
-
+        // These methods need to be overridden by autogen.
         object? GetPrimaryKey(IDatabaseRow row);
-
         void InternalInvokeValueInserted(IDatabaseRow row);
         void InternalInvokeValueDeleted(IDatabaseRow row);
-        void InvokeInsert(IEventContext context, IDatabaseRow row);
-        void InvokeDelete(IEventContext context, IDatabaseRow row);
-        void InvokeBeforeDelete(IEventContext context, IDatabaseRow row);
-        void InvokeUpdate(IEventContext context, IDatabaseRow oldRow, IDatabaseRow newRow);
+
+        // These are provided by RemoteTableHandle.
+        internal Type ClientTableType { get; }
+        internal IEnumerable<KeyValuePair<byte[], IDatabaseRow>> IterEntries();
+        internal bool InsertEntry(byte[] rowBytes, IDatabaseRow value);
+        internal bool DeleteEntry(byte[] rowBytes);
+        internal IDatabaseRow DecodeValue(byte[] bytes);
+
+        internal void InvokeInsert(IEventContext context, IDatabaseRow row);
+        internal void InvokeDelete(IEventContext context, IDatabaseRow row);
+        internal void InvokeBeforeDelete(IEventContext context, IDatabaseRow row);
+        internal void InvokeUpdate(IEventContext context, IDatabaseRow oldRow, IDatabaseRow newRow);
     }
 
     public abstract class RemoteTableHandle<EventContext, Row> : IRemoteTableHandle
         where EventContext : class, IEventContext
         where Row : IDatabaseRow, new()
     {
-        public void SetCache(ClientCache.ITableCache cache) => Cache = (ClientCache.TableCache<Row>)cache;
+        // These methods need to be overridden by autogen.
+        public virtual object? GetPrimaryKey(IDatabaseRow row) => null;
+        public virtual void InternalInvokeValueInserted(IDatabaseRow row) { }
+        public virtual void InternalInvokeValueDeleted(IDatabaseRow row) { }
 
-        internal ClientCache.TableCache<Row>? Cache;
+        // These are provided by RemoteTableHandle.
+        Type IRemoteTableHandle.ClientTableType => typeof(Row);
+
+        private readonly Dictionary<byte[], Row> Entries = new(Internal.ByteArrayComparer.Instance);
+
+        IEnumerable<KeyValuePair<byte[], IDatabaseRow>> IRemoteTableHandle.IterEntries() =>
+            Entries.Select(kv => new KeyValuePair<byte[], IDatabaseRow>(kv.Key, kv.Value));
+
+        /// <summary>
+        /// Inserts the value into the table. There can be no existing value with the provided BSATN bytes.
+        /// </summary>
+        /// <param name="rowBytes">The BSATN encoded bytes of the row to retrieve.</param>
+        /// <param name="value">The parsed row encoded by the <paramref>rowBytes</paramref>.</param>
+        /// <returns>True if the row was inserted, false if the row wasn't inserted because it was a duplicate.</returns>
+        bool IRemoteTableHandle.InsertEntry(byte[] rowBytes, IDatabaseRow value) => Entries.TryAdd(rowBytes, (Row)value);
+
+        /// <summary>
+        /// Deletes a value from the table.
+        /// </summary>
+        /// <param name="rowBytes">The BSATN encoded bytes of the row to remove.</param>
+        /// <returns>True if and only if the value was previously resident and has been deleted.</returns>
+        bool IRemoteTableHandle.DeleteEntry(byte[] rowBytes)
+        {
+            if (Entries.Remove(rowBytes))
+            {
+                return true;
+            }
+
+            Log.Warn("Deleting value that we don't have (no cached value available)");
+            return false;
+        }
+
+        // The function to use for decoding a type value.
+        IDatabaseRow IRemoteTableHandle.DecodeValue(byte[] bytes) => BSATNHelpers.Decode<Row>(bytes);
 
         public event Action<EventContext, Row>? OnInsert;
         public event Action<EventContext, Row>? OnDelete;
         public event Action<EventContext, Row>? OnBeforeDelete;
         public event Action<EventContext, Row, Row>? OnUpdate;
 
-        public virtual object? GetPrimaryKey(IDatabaseRow row) => null;
+        public int Count => Entries.Count;
 
-        public virtual void InternalInvokeValueInserted(IDatabaseRow row) { }
+        public IEnumerable<Row> Iter() => Entries.Values;
 
-        public virtual void InternalInvokeValueDeleted(IDatabaseRow row) { }
+        protected IEnumerable<Row> Query(Func<Row, bool> filter) => Iter().Where(filter);
 
-        public int Count => Cache!.Entries.Count;
-
-        public IEnumerable<Row> Iter() => Cache!.Entries.Values;
-
-        public IEnumerable<Row> Query(Func<Row, bool> filter) => Iter().Where(filter);
-
-        public void InvokeInsert(IEventContext context, IDatabaseRow row) =>
+        void IRemoteTableHandle.InvokeInsert(IEventContext context, IDatabaseRow row) =>
             OnInsert?.Invoke((EventContext)context, (Row)row);
 
-        public void InvokeDelete(IEventContext context, IDatabaseRow row) =>
+        void IRemoteTableHandle.InvokeDelete(IEventContext context, IDatabaseRow row) =>
             OnDelete?.Invoke((EventContext)context, (Row)row);
 
-        public void InvokeBeforeDelete(IEventContext context, IDatabaseRow row) =>
+        void IRemoteTableHandle.InvokeBeforeDelete(IEventContext context, IDatabaseRow row) =>
             OnBeforeDelete?.Invoke((EventContext)context, (Row)row);
 
-        public void InvokeUpdate(IEventContext context, IDatabaseRow oldRow, IDatabaseRow newRow) =>
+        void IRemoteTableHandle.InvokeUpdate(IEventContext context, IDatabaseRow oldRow, IDatabaseRow newRow) =>
             OnUpdate?.Invoke((EventContext)context, (Row)oldRow, (Row)newRow);
     }
 }
