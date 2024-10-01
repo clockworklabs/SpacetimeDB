@@ -258,7 +258,12 @@ public class SnapshotTests
 
         Log.Current = new TestLogger(events);
 
-        var client = new DbConnection();
+        var client =
+            DbConnection.Builder()
+            .WithUri("wss://spacetimedb.com")
+            .WithModuleName("example")
+            .OnConnect((conn, identity, token) => events.Add("OnConnect", new { identity, token }))
+            .Build();
 
         var sampleDumpParsed = SampleDump();
 
@@ -286,20 +291,10 @@ public class SnapshotTests
             }
         );
 
-        client.onBeforeSubscriptionApplied += () => events.Add("OnBeforeSubscriptionApplied");
-        client.onEvent += (ev) => events.Add("OnEvent", ev switch
-        {
-            ServerMessage.IdentityToken(var o) => o,
-            ServerMessage.InitialSubscription(var o) => o,
-            ServerMessage.TransactionUpdate(var o) => o,
-            ServerMessage.OneOffQueryResponse(var o) => o,
-            _ => throw new InvalidOperationException()
-        });
-        client.onConnect += (identity, _token) =>
-            events.Add("OnIdentityReceived", identity);
+#pragma warning disable CS0612 // Using obsolete API
         client.onUnhandledReducerError += (exception) =>
             events.Add("OnUnhandledReducerError", exception);
-
+#pragma warning restore CS0612 // Using obsolete API
         client.RemoteReducers.OnSendMessage += (eventContext, _text) =>
             events.Add("OnSendMessage", eventContext);
         client.RemoteReducers.OnSetName += (eventContext, _name) => events.Add("OnSetName", eventContext);
@@ -332,7 +327,7 @@ public class SnapshotTests
             // Otherwise we'll get inconsistent output order between test reruns.
             while (!client.HasPreProcessedMessage) { }
             // Once the message is in the preprocessed queue, we can invoke Update() to handle events on the main thread.
-            client.Update();
+            client.FrameTick();
         }
 
         // Verify dumped events and the final client state.

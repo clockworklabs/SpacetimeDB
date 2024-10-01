@@ -21,7 +21,7 @@ namespace SpacetimeDB
             }
         }
 
-        public IRemoteTableHandle? GetTable(string name)
+        internal IRemoteTableHandle? GetTable(string name)
         {
             if (tables.TryGetValue(name, out var table))
             {
@@ -32,6 +32,6 @@ namespace SpacetimeDB
             return null;
         }
 
-        public IEnumerable<IRemoteTableHandle> GetTables() => tables.Values;
+        internal IEnumerable<IRemoteTableHandle> GetTables() => tables.Values;
     }
 }

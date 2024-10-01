@@ -2,7 +2,7 @@
 
 namespace SpacetimeDB
 {
-    public class ConsoleLogger : ISpacetimeDBLogger
+    internal class ConsoleLogger : ISpacetimeDBLogger
     {
         [Flags]
         public enum LogLevel
