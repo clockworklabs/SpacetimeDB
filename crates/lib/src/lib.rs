@@ -10,6 +10,7 @@ pub mod address;
 pub mod db;
 pub mod error;
 pub mod filter;
+pub mod auth;
 pub mod identity;
 pub mod operator;
 pub mod relation;

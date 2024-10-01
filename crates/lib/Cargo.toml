@@ -38,6 +38,7 @@ hex.workspace = true
 itertools.workspace = true
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
+blake3.workspace = true
 
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
@@ -53,3 +54,5 @@ insta.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true
 proptest-derive.workspace = true
+rand_chacha = "0.3.1"
+rand_distr = "0.4.3"

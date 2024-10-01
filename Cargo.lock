@@ -3395,6 +3395,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_distr"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
+dependencies = [
+ "num-traits",
+ "rand 0.8.5",
+]
+
+[[package]]
 name = "rand_xorshift"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4575,6 +4585,7 @@ version = "0.12.0"
 dependencies = [
  "anyhow",
  "bitflags 2.6.0",
+ "blake3",
  "bytes",
  "derive_more",
  "enum-as-inner",
@@ -4584,6 +4595,8 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rand 0.8.5",
+ "rand_chacha",
+ "rand_distr",
  "serde",
  "serde_json",
  "spacetimedb-bindings-macro",
