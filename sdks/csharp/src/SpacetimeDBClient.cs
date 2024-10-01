@@ -58,9 +58,9 @@ namespace SpacetimeDB
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnConnect(Action<Identity, string> cb)
+        public DbConnectionBuilder<DbConnection, Reducer> OnConnect(Action<DbConnection, Identity, string> cb)
         {
-            conn.onConnect += cb;
+            conn.onConnect += (identity, token) => cb.Invoke(conn, identity, token);
             return this;
         }
 
