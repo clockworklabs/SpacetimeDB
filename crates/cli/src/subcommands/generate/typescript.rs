@@ -638,10 +638,7 @@ fn define_namespace_and_object_type_for_product(
     writeln!(out, "}}");
     writeln!(out);
 
-    writeln!(
-        out,
-        "export function deserialize(reader: BinaryReader): {name} {{"
-    );
+    writeln!(out, "export function deserialize(reader: BinaryReader): {name} {{");
     out.indent(1);
     writeln!(out, "const value = {name}.getAlgebraicType().deserialize(reader);");
     writeln!(out, "return {{");
@@ -674,7 +671,11 @@ fn write_arglist_no_delimiters(
             write!(out, "{prefix} ")?;
         }
 
-        let name = if convert_case { ident.deref().to_case(Case::Camel) } else { ident.deref().into() };
+        let name = if convert_case {
+            ident.deref().to_case(Case::Camel)
+        } else {
+            ident.deref().into()
+        };
 
         write!(out, "{name}: ")?;
         write_type(module, out, ty, Some("__"))?;
@@ -990,11 +991,7 @@ fn convert_product_type<'a>(
     writeln!(out, "AlgebraicType.createProductType([");
     out.indent(1);
     for (ident, ty) in elements {
-        write!(
-            out,
-            "new ProductTypeElement(\"{}\", ",
-            ident.deref(),
-        );
+        write!(out, "new ProductTypeElement(\"{}\", ", ident.deref(),);
         convert_algebraic_type(module, out, ty, ref_prefix);
         writeln!(out, "),");
     }
