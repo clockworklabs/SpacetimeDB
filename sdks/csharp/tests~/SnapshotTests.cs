@@ -297,7 +297,6 @@ public class SnapshotTests
         });
         client.onConnect += (identity, _token) =>
             events.Add("OnIdentityReceived", identity);
-        client.onSubscriptionApplied += () => events.Add("OnSubscriptionApplied");
         client.onUnhandledReducerError += (exception) =>
             events.Add("OnUnhandledReducerError", exception);
 
