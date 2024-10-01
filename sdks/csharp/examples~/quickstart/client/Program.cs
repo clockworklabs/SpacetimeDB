@@ -26,8 +26,7 @@ void Main()
         .WithUri(HOST)
         .WithModuleName(DBNAME)
         //.WithCredentials((null, AuthToken.Token))
-        // TODO: change this to just `(OnConnect)` when signature is fixed in #131.
-        .OnConnect((identity, authToken) => OnConnect(conn!, identity, authToken))
+        .OnConnect(OnConnect)
         .OnConnectError(OnConnectError)
         .OnDisconnect(OnDisconnect)
         .Build();
