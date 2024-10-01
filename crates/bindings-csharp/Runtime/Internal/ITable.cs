@@ -1,6 +1,5 @@
 namespace SpacetimeDB.Internal;
 
-using System.Diagnostics.CodeAnalysis;
 using SpacetimeDB.BSATN;
 
 public interface ITable<T> : IStructuralReadWrite
@@ -124,9 +123,12 @@ public interface ITableView<View, T>
     private class RawTableIterByColEq(FFI.TableId tableId, FFI.ColId colId, byte[] value)
         : RawTableIterBase
     {
-        protected override void IterStart(out FFI.RowIter handle) =>
+        protected override void IterStart(out FFI.RowIter handle)
+        {
+            _ = (tableId, colId, value);
             // Needs to be implemented via datastore_table_scan_bsatn
             throw new NotImplementedException();
+        }
     }
 
     // Note: this must be Lazy to ensure that we don't try to get the tableId during startup, before the module is initialized.
