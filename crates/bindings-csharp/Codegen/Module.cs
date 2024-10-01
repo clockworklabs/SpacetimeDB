@@ -492,7 +492,7 @@ record ReducerDeclaration
 [Generator]
 public class Module : IIncrementalGenerator
 {
-    private static IncrementalValueProvider<EquatableArray<T>> CollectAndCheckDuplicates<T>(
+    private static IncrementalValueProvider<EquatableArray<T>> CollectDistinct<T>(
         string kind,
         IncrementalGeneratorInitializationContext context,
         IncrementalValuesProvider<T> source,
@@ -509,7 +509,14 @@ public class Module : IIncrementalGenerator
                         Location.None,
                         diag =>
                         {
-                            var grouped = collected.GroupBy(item => toExportName(item));
+                            var grouped = collected
+                                .GroupBy(toExportName)
+                                // Sort tables and reducers by name to match Rust behaviour.
+                                // Not really important outside of testing, but for testing
+                                // it matters because we commit module-bindings
+                                // so they need to match 1:1 between different langs.
+                                .OrderBy(g => g.Key);
+
                             foreach (var group in grouped.Where(group => group.Count() > 1))
                             {
                                 diag.Report(
@@ -517,17 +524,11 @@ public class Module : IIncrementalGenerator
                                     (kind, group.Key, group.Select(toFullName))
                                 );
                             }
+
                             return new EquatableArray<T>(
                                 // Only return first item from each group.
                                 // We already reported duplicates ourselves, and don't want MSBuild to produce lots of duplicate errors too.
-                                grouped
-                                    .Select(g => g.First())
-                                    // Sort tables and reducers by name to match Rust behaviour.
-                                    // Not really important outside of testing, but for testing
-                                    // it matters because we commit module-bindings
-                                    // so they need to match 1:1 between different langs.
-                                    .OrderBy(toExportName)
-                                    .ToImmutableArray()
+                                grouped.Select(Enumerable.First).ToImmutableArray()
                             );
                         }
                     )
@@ -581,7 +582,7 @@ public class Module : IIncrementalGenerator
             .WithTrackingName("SpacetimeDB.Reducer.GenerateSchedule")
             .RegisterSourceOutputs(context);
 
-        var addReducers = CollectAndCheckDuplicates(
+        var addReducers = CollectDistinct(
             "Reducer",
             context,
             reducers
@@ -591,7 +592,7 @@ public class Module : IIncrementalGenerator
             r => r.FullName
         );
 
-        var tableViews = CollectAndCheckDuplicates(
+        var tableViews = CollectDistinct(
             "Table",
             context,
             tables
