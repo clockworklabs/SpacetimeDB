@@ -556,7 +556,19 @@ impl<R: Repo> Commits<R> {
         debug!("index lookup for key={tx_offset}: found key={index_key} byte-offset={byte_offset}");
 
         if index_key <= tx_offset {
-            segment.seek(byte_offset).map(|_| ()).map_err(Into::into)
+            // Check if the offset index is pointing to the right commit.
+            segment.peek_commit_header(byte_offset).map(|hdr| {
+                if hdr.min_tx_offset == index_key {
+                    // Advance the segment Seek if expected commit is found.
+                    segment.seek(byte_offset).map(|_| ()).map_err(Into::into)
+                } else {
+                    Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("mismatch key in offset file {}", segment.min_tx_offset),
+                    )
+                    .into())
+                }
+            })?
         } else {
             // Index lookup should never return key greater than the requested key.
             Err(io::Error::new(io::ErrorKind::InvalidData, "no smaller index key found").into())
@@ -598,7 +610,7 @@ impl<R: Repo> Iterator for Commits<R> {
                     // Try to use offset index to advance segment to Intial commit
                     if let CommitInfo::Initial { next_offset } = self.last_commit {
                         let _ = self.advance_segment(&mut segment, next_offset).inspect_err(|e| {
-                            warn!("commitlog offset index is not usedRu{e}");
+                            warn!("commitlog offset index is not used: {e}");
                         });
                     }
 

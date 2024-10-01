@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{self, BufWriter, SeekFrom, Write as _},
+    io::{self, BufWriter, ErrorKind, SeekFrom, Write as _},
     num::{NonZeroU16, NonZeroU64},
     ops::Range,
 };
@@ -322,6 +322,10 @@ impl<R: io::Read + io::Seek> Reader<R> {
         self.inner.seek(SeekFrom::Start(byte_offset))
     }
 
+    pub fn peek_commit_header(&mut self, byte_offset: u64) -> io::Result<commit::Header> {
+        peek_commit_header(&mut self.inner, byte_offset)
+    }
+
     #[cfg(test)]
     pub fn transactions<'a, D>(self, de: &'a D) -> impl Iterator<Item = Result<Transaction<D::Record>, D::Error>> + 'a
     where
@@ -343,6 +347,20 @@ impl<R: io::Read + io::Seek> Reader<R> {
     pub(crate) fn metadata(self) -> Result<Metadata, error::SegmentMetadata> {
         Metadata::with_header(self.min_tx_offset, self.header, io::BufReader::new(self.inner))
     }
+}
+
+/// Try to extract the commit header from the asked position without advancing seek.
+pub fn peek_commit_header<R: io::Read + io::Seek>(mut reader: R, byte_offset: u64) -> io::Result<commit::Header> {
+    let pos = reader.stream_position()?;
+    reader.seek(SeekFrom::Start(byte_offset))?;
+
+    let hdr = commit::Header::decode(&mut reader)
+        .and_then(|hdr| hdr.ok_or_else(|| io::Error::new(ErrorKind::UnexpectedEof, "unexpected EOF")));
+
+    // Restore the original position
+    reader.seek(SeekFrom::Start(pos))?;
+
+    hdr
 }
 
 /// Pair of transaction offset and payload.
