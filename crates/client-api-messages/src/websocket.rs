@@ -605,7 +605,14 @@ impl<I: AsRef<[RowOffset]>> RowSizeHint<I> {
         match self {
             Self::FixedSize(size) => {
                 let size = *size as usize;
-                Some(index * size..(index + 1) * size)
+                let start = index * size;
+                if start >= data_end {
+                    // We've reached beyond `data_end`,
+                    // so this is a row that doesn't exist, so we are beyond the count.
+                    return None;
+                }
+                let end = (index + 1) * size;
+                Some(start..end)
             }
             Self::RowOffsets(offsets) => {
                 let offsets = offsets.as_ref();
