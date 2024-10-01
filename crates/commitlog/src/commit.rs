@@ -84,7 +84,9 @@ impl Commit {
     }
 
     /// Serialize and write `self` to `out`.
-    pub fn write<W: Write>(&self, out: W) -> io::Result<()> {
+    ///
+    /// Returns the crc32 checksum of the commit on success.
+    pub fn write<W: Write>(&self, out: W) -> io::Result<u32> {
         let mut out = Crc32cWriter::new(out);
 
         let min_tx_offset = self.min_tx_offset.to_le_bytes();
@@ -100,7 +102,7 @@ impl Commit {
         let mut out = out.into_inner();
         out.write_all(&crc.to_le_bytes())?;
 
-        Ok(())
+        Ok(crc)
     }
 
     /// Attempt to read one [`Commit`] from the given [`Read`]er.

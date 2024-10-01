@@ -77,6 +77,15 @@ impl Default for Header {
     }
 }
 
+/// Metadata about a [`Commit`] which was successfully written via [`Writer::commit`].
+pub struct Committed {
+    /// The range of transaction offsets included in the commit.
+    pub tx_range: Range<u64>,
+    /// The crc32 checksum of the commit's serialized form,
+    /// as written to the commitlog.
+    pub checksum: u32,
+}
+
 #[derive(Debug)]
 pub struct Writer<W: io::Write> {
     pub(crate) commit: Commit,
@@ -114,11 +123,15 @@ impl<W: io::Write> Writer<W> {
     /// Write the current [`Commit`] to the underlying [`io::Write`].
     ///
     /// Will do nothing if the current commit is empty (i.e. `Commit::n` is zero).
-    pub fn commit(&mut self) -> io::Result<()> {
+    /// In this case, `None` is returned.
+    ///
+    /// Otherwise `Some` [`Committed`] is returned, providing some metadata about
+    /// the commit.
+    pub fn commit(&mut self) -> io::Result<Option<Committed>> {
         if self.commit.n == 0 {
-            return Ok(());
+            return Ok(None);
         }
-        self.commit.write(&mut self.inner)?;
+        let checksum = self.commit.write(&mut self.inner)?;
         self.inner.flush()?;
 
         let commit_len = self.commit.encoded_len() as u64;
@@ -130,12 +143,17 @@ impl<W: io::Write> Writer<W> {
                 })
         });
 
+        let tx_range_start = self.commit.min_tx_offset;
+
         self.bytes_written += commit_len;
         self.commit.min_tx_offset += self.commit.n as u64;
         self.commit.n = 0;
         self.commit.records.clear();
 
-        Ok(())
+        Ok(Some(Committed {
+            tx_range: tx_range_start..self.commit.min_tx_offset,
+            checksum,
+        }))
     }
 
     /// The smallest transaction offset in this segment.
