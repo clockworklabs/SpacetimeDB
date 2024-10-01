@@ -7,7 +7,7 @@ public static partial class ia_loop
     [SpacetimeDB.Table]
     public partial struct Velocity(uint entity_id, float x, float y, float z)
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [PrimaryKey]
         public uint entity_id = entity_id;
         public float x = x;
         public float y = y;
@@ -17,7 +17,7 @@ public static partial class ia_loop
     [SpacetimeDB.Table]
     public partial struct Position(uint entity_id, float x, float y, float z)
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [PrimaryKey]
         public uint entity_id = entity_id;
         public float x = x;
         public float y = y;
@@ -52,7 +52,7 @@ public static partial class ia_loop
         AgentAction action
     )
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [PrimaryKey]
         public ulong entity_id = entity_id;
         public List<ulong> last_move_timestamps = last_move_timestamps;
         public ulong next_action_timestamp = next_action_timestamp;
@@ -62,7 +62,7 @@ public static partial class ia_loop
     [SpacetimeDB.Table]
     public partial struct GameTargetableState(ulong entity_id, long quad)
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [PrimaryKey]
         public ulong entity_id = entity_id;
         public long quad = quad;
     }
@@ -70,10 +70,10 @@ public static partial class ia_loop
     [SpacetimeDB.Table]
     public partial struct GameLiveTargetableState(ulong entity_id, long quad)
     {
-        [SpacetimeDB.Column(ColumnAttrs.Unique)]
+        [Unique]
         public ulong entity_id = entity_id;
 
-        [SpacetimeDB.Column(ColumnAttrs.Indexed)]
+        [Indexed]
         public long quad = quad;
     }
 
@@ -85,10 +85,10 @@ public static partial class ia_loop
         ulong timestamp
     )
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [PrimaryKey]
         public ulong entity_id = entity_id;
 
-        [SpacetimeDB.Column(ColumnAttrs.Indexed)]
+        [Indexed]
         public int location_x = location_x;
         public int location_y = location_y;
         public ulong timestamp = timestamp;
@@ -97,7 +97,7 @@ public static partial class ia_loop
     [SpacetimeDB.Table]
     public partial struct GameEnemyState(ulong entity_id, int herd_id)
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [PrimaryKey]
         public ulong entity_id = entity_id;
         public int herd_id = herd_id;
     }
@@ -121,7 +121,7 @@ public static partial class ia_loop
         int roaming_distance
     )
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [PrimaryKey]
         public int id = id;
         public uint dimension_id = dimension_id;
         public int current_population = current_population;
@@ -132,30 +132,30 @@ public static partial class ia_loop
     }
 
     [SpacetimeDB.Reducer]
-    public static void InsertBulkPosition(uint count)
+    public static void InsertBulkPosition(ReducerContext ctx, uint count)
     {
         for (uint id = 0; id < count; id++)
         {
-            new Position(id, id, id + 5, id * 5).Insert();
+            ctx.Db.Position.Insert(new(id, id, id + 5, id * 5));
         }
         Log.Info($"INSERT POSITION: {count}");
     }
 
     [SpacetimeDB.Reducer]
-    public static void InsertBulkVelocity(uint count)
+    public static void InsertBulkVelocity(ReducerContext ctx, uint count)
     {
         for (uint id = 0; id < count; id++)
         {
-            new Velocity(id, id, id + 5, id * 5).Insert();
+            ctx.Db.Velocity.Insert(new(id, id, id + 5, id * 5));
         }
         Log.Info($"INSERT VELOCITY: {count}");
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_position_all(uint expected)
+    public static void update_position_all(ReducerContext ctx, uint expected)
     {
         uint count = 0;
-        foreach (Position position in Position.Iter())
+        foreach (Position position in ctx.Db.Position.Iter())
         {
             Position newPosition = position;
 
@@ -163,19 +163,19 @@ public static partial class ia_loop
             newPosition.y += position.vy;
             newPosition.z += position.vz;
 
-            Position.UpdateByentity_id(position.entity_id, newPosition);
+            ctx.Db.Position.UpdateByentity_id(position.entity_id, newPosition);
             count++;
         }
         Log.Info($"UPDATE POSITION ALL: {expected}, processed: {count}");
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_position_with_velocity(uint expected)
+    public static void update_position_with_velocity(ReducerContext ctx, uint expected)
     {
         uint count = 0;
-        foreach (Velocity velocity in Velocity.Iter())
+        foreach (Velocity velocity in ctx.Db.Velocity.Iter())
         {
-            if (Position.FindByentity_id(velocity.entity_id) is not { } position)
+            if (ctx.Db.Position.FindByentity_id(velocity.entity_id) is not { } position)
             {
                 continue;
             }
@@ -184,49 +184,49 @@ public static partial class ia_loop
             position.y += velocity.y;
             position.z += velocity.z;
 
-            Position.UpdateByentity_id(position.entity_id, position);
+            ctx.Db.Position.UpdateByentity_id(position.entity_id, position);
             count++;
         }
         Log.Info($"UPDATE POSITION BY VELOCITY: {expected}, processed: {count}");
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_world(ulong players)
+    public static void insert_world(ReducerContext ctx, ulong players)
     {
         for (ulong i = 0; i < players; i++)
         {
             ulong next_action_timestamp =
                 (i & 2) == 2 ? MomentMilliseconds() + 2000 : MomentMilliseconds();
 
-            new GameEnemyAiAgentState(
-                i,
-                [i, 0, i * 2],
-                next_action_timestamp,
-                AgentAction.Idle
-            ).Insert();
+            ctx.Db.GameEnemyAiAgentState.Insert(
+                new(i, [i, 0, i * 2], next_action_timestamp, AgentAction.Idle)
+            );
 
-            new GameLiveTargetableState(i, (long)i).Insert();
+            ctx.Db.GameLiveTargetableState.Insert(new(i, (long)i));
 
-            new GameTargetableState(i, (long)i).Insert();
+            ctx.Db.GameTargetableState.Insert(new(i, (long)i));
 
-            new GameMobileEntityState(i, (int)i, (int)i, next_action_timestamp).Insert();
+            ctx.Db.GameMobileEntityState.Insert(new(i, (int)i, (int)i, next_action_timestamp));
 
-            new GameEnemyState(i, (int)i).Insert();
+            ctx.Db.GameEnemyState.Insert(new(i, (int)i));
 
-            new GameHerdCache(
-                (int)i,
-                (uint)i,
-                (int)(i * 2),
-                new SmallHexTile((int)i, (int)i, (uint)(i * 2)),
-                (int)(i * 4),
-                i,
-                (int)i
-            ).Insert();
+            ctx.Db.GameHerdCache.Insert(
+                new(
+                    (int)i,
+                    (uint)i,
+                    (int)(i * 2),
+                    new SmallHexTile((int)i, (int)i, (uint)(i * 2)),
+                    (int)(i * 4),
+                    i,
+                    (int)i
+                )
+            );
         }
         Log.Info($"INSERT WORLD PLAYERS: {players}");
     }
 
     public static List<GameTargetableState> GetTargetablesNearQuad(
+        ReducerContext ctx,
         ulong entity_id,
         ulong num_players
     )
@@ -235,10 +235,12 @@ public static partial class ia_loop
 
         for (ulong id = entity_id; id < num_players; id++)
         {
-            foreach (GameLiveTargetableState t in GameLiveTargetableState.FilterByquad((long)id))
+            foreach (
+                GameLiveTargetableState t in ctx.Db.GameLiveTargetableState.FilterByquad((long)id)
+            )
             {
                 result.Add(
-                    GameTargetableState.FindByentity_id(t.entity_id)
+                    ctx.Db.GameTargetableState.FindByentity_id(t.entity_id)
                         ?? throw new Exception("Identity not found")
                 );
             }
@@ -250,6 +252,7 @@ public static partial class ia_loop
     private const int MAX_MOVE_TIMESTAMPS = 20;
 
     public static void MoveAgent(
+        ReducerContext ctx,
         ref GameEnemyAiAgentState agent,
         SmallHexTile agent_coord,
         ulong current_time_ms
@@ -258,9 +261,9 @@ public static partial class ia_loop
         ulong entity_id = agent.entity_id;
 
         GameEnemyState enemy =
-            GameEnemyState.FindByentity_id(entity_id)
+            ctx.Db.GameEnemyState.FindByentity_id(entity_id)
             ?? throw new Exception("GameEnemyState Entity ID not found");
-        GameEnemyState.UpdateByentity_id(entity_id, enemy);
+        ctx.Db.GameEnemyState.UpdateByentity_id(entity_id, enemy);
 
         agent.next_action_timestamp = current_time_ms + 2000;
 
@@ -271,30 +274,31 @@ public static partial class ia_loop
         }
 
         GameTargetableState targetable =
-            GameTargetableState.FindByentity_id(entity_id)
+            ctx.Db.GameTargetableState.FindByentity_id(entity_id)
             ?? throw new Exception("GameTargetableState Entity ID not found");
         int new_hash = targetable.quad.GetHashCode();
         targetable.quad = new_hash;
-        GameTargetableState.UpdateByentity_id(entity_id, targetable);
+        ctx.Db.GameTargetableState.UpdateByentity_id(entity_id, targetable);
 
-        if (GameLiveTargetableState.FindByentity_id(entity_id) is not null)
+        if (ctx.Db.GameLiveTargetableState.FindByentity_id(entity_id) is not null)
         {
-            GameLiveTargetableState.UpdateByentity_id(entity_id, new(entity_id, new_hash));
+            ctx.Db.GameLiveTargetableState.UpdateByentity_id(entity_id, new(entity_id, new_hash));
         }
 
         GameMobileEntityState mobile_entity =
-            GameMobileEntityState.FindByentity_id(entity_id)
+            ctx.Db.GameMobileEntityState.FindByentity_id(entity_id)
             ?? throw new Exception("GameMobileEntityState Entity ID not found");
         mobile_entity.location_x += 1;
         mobile_entity.location_y += 1;
         mobile_entity.timestamp = MomentMilliseconds();
 
-        GameEnemyAiAgentState.UpdateByentity_id(entity_id, agent);
+        ctx.Db.GameEnemyAiAgentState.UpdateByentity_id(entity_id, agent);
 
-        GameMobileEntityState.UpdateByentity_id(entity_id, mobile_entity);
+        ctx.Db.GameMobileEntityState.UpdateByentity_id(entity_id, mobile_entity);
     }
 
     public static void AgentLoop(
+        ReducerContext ctx,
         GameEnemyAiAgentState agent,
         GameTargetableState agent_targetable,
         List<GameTargetableState> surrounding_agents,
@@ -304,29 +308,29 @@ public static partial class ia_loop
         ulong entity_id = agent.entity_id;
 
         IEnumerable<GameMobileEntityState> coordinates =
-            GameMobileEntityState.FilterByentity_id(entity_id)
+            ctx.Db.GameMobileEntityState.FilterByentity_id(entity_id)
             ?? throw new Exception("GameMobileEntityState Entity ID not found");
 
         GameEnemyState agent_entity =
-            GameEnemyState.FindByentity_id(entity_id)
+            ctx.Db.GameEnemyState.FindByentity_id(entity_id)
             ?? throw new Exception("GameEnemyState Entity ID not found");
 
         GameHerdCache agent_herd =
-            GameHerdCache.FindByid(agent_entity.herd_id)
+            ctx.Db.GameHerdCache.FindByid(agent_entity.herd_id)
             ?? throw new Exception("GameHerdCache Entity ID not found");
 
         SmallHexTile agent_herd_coordinates = agent_herd.location;
 
-        MoveAgent(ref agent, agent_herd_coordinates, current_time_ms);
+        MoveAgent(ctx, ref agent, agent_herd_coordinates, current_time_ms);
     }
 
     [SpacetimeDB.Reducer]
-    public static void game_loop_enemy_ia(ulong players)
+    public static void game_loop_enemy_ia(ReducerContext ctx, ulong players)
     {
         uint count = 0;
         ulong current_time_ms = MomentMilliseconds();
 
-        foreach (GameEnemyAiAgentState agent in GameEnemyAiAgentState.Iter())
+        foreach (GameEnemyAiAgentState agent in ctx.Db.GameEnemyAiAgentState.Iter())
         {
             if (agent.next_action_timestamp > current_time_ms)
             {
@@ -334,14 +338,18 @@ public static partial class ia_loop
             }
 
             GameTargetableState agent_targetable =
-                GameTargetableState.FindByentity_id(agent.entity_id)
+                ctx.Db.GameTargetableState.FindByentity_id(agent.entity_id)
                 ?? throw new Exception("No TargetableState for AgentState entity");
 
-            List<GameTargetableState> surrounding_agents = GetTargetablesNearQuad(agent_targetable.entity_id, players);
+            List<GameTargetableState> surrounding_agents = GetTargetablesNearQuad(
+                ctx,
+                agent_targetable.entity_id,
+                players
+            );
 
             GameEnemyAiAgentState newAgent = agent with { action = AgentAction.Fighting };
 
-            AgentLoop(newAgent, agent_targetable, surrounding_agents, current_time_ms);
+            AgentLoop(ctx, newAgent, agent_targetable, surrounding_agents, current_time_ms);
 
             count++;
         }
@@ -350,23 +358,23 @@ public static partial class ia_loop
     }
 
     [SpacetimeDB.Reducer]
-    public static void init_game_ia_loop(uint initial_load)
+    public static void init_game_ia_loop(ReducerContext ctx, uint initial_load)
     {
         Load load = new(initial_load);
 
-        InsertBulkPosition(load.biggest_table);
-        InsertBulkVelocity(load.big_table);
-        update_position_all(load.biggest_table);
-        update_position_with_velocity(load.big_table);
+        InsertBulkPosition(ctx, load.biggest_table);
+        InsertBulkVelocity(ctx, load.big_table);
+        update_position_all(ctx, load.biggest_table);
+        update_position_with_velocity(ctx, load.big_table);
 
-        insert_world(load.num_players);
+        insert_world(ctx, load.num_players);
     }
 
     [SpacetimeDB.Reducer]
-    public static void run_game_ia_loop(uint initial_load)
+    public static void run_game_ia_loop(ReducerContext ctx, uint initial_load)
     {
         Load load = new(initial_load);
 
-        game_loop_enemy_ia(load.num_players);
+        game_loop_enemy_ia(ctx, load.num_players);
     }
 }

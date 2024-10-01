@@ -19,7 +19,7 @@ class CreateProject(unittest.TestCase):
         try:
 
             run_cmd("dotnet", "nuget", "locals", "all", "--clear", cwd=bindings, capture_stderr=True)
-            run_cmd("dotnet", "workload", "install", "wasi-experimental")
+            run_cmd("dotnet", "workload", "install", "wasi-experimental", "--skip-manifest-update")
             run_cmd("dotnet", "pack", cwd=bindings, capture_stderr=True)
 
             with tempfile.TemporaryDirectory() as tmpdir:
@@ -31,6 +31,10 @@ class CreateProject(unittest.TestCase):
 
                 sources = xml.SubElement(config, "packageSources")
                 mappings = xml.SubElement(config, "packageSourceMapping")
+
+                def add_mapping(source, pattern):
+                    mapping = xml.SubElement(mappings, "packageSource", key=source)
+                    xml.SubElement(mapping, "package", pattern=pattern)
 
                 for project in packed_projects:
                     # Add local build directories as NuGet repositories.
@@ -44,8 +48,10 @@ class CreateProject(unittest.TestCase):
                     #
                     # This prevents bugs where we silently used an outdated
                     # version which led to tests passing when they shouldn't.
-                    mapping = xml.SubElement(mappings, "packageSource", key=project)
-                    xml.SubElement(mapping, "package", pattern=project)
+                    add_mapping(project, project)
+
+                # Add fallback for other packages.
+                add_mapping("nuget.org", "*")
 
                 xml.indent(config)
                 config = xml.tostring(config, encoding="unicode", xml_declaration=True)

@@ -1,7 +1,7 @@
-
 using SpacetimeDB;
 
 namespace Benchmarks;
+
 public static partial class circles
 {
     [SpacetimeDB.Type]
@@ -14,7 +14,8 @@ public static partial class circles
     [SpacetimeDB.Table]
     public partial struct Entity(uint id, float x, float y, uint mass)
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKeyAuto)]
+        [AutoInc]
+        [PrimaryKey]
         public uint id = id;
         public Vector2 position = new(x, y);
         public uint mass = mass;
@@ -23,10 +24,10 @@ public static partial class circles
     [SpacetimeDB.Table]
     public partial struct Circle(uint entity_id, uint player_id, float x, float y, float magnitude)
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [PrimaryKey]
         public uint entity_id = entity_id;
 
-        [SpacetimeDB.Column(ColumnAttrs.Indexed)]
+        [Indexed]
         public uint player_id = player_id;
 
         public Vector2 direction = new(x, y);
@@ -37,7 +38,7 @@ public static partial class circles
     [SpacetimeDB.Table]
     public partial struct Food(uint entity_id)
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+        [PrimaryKey]
         public uint entity_id = entity_id;
     }
 
@@ -59,44 +60,44 @@ public static partial class circles
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_bulk_entity(uint count)
+    public static void insert_bulk_entity(ReducerContext ctx, uint count)
     {
         for (uint id = 0; id < count; id++)
         {
-            new Entity(0, id, id + 5, id * 5).Insert();
+            ctx.Db.Entity.Insert(new(0, id, id + 5, id * 5));
         }
         Log.Info($"INSERT ENTITY: {count}");
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_bulk_circle(uint count)
+    public static void insert_bulk_circle(ReducerContext ctx, uint count)
     {
         for (uint id = 0; id < count; id++)
         {
-            new Circle(id, id, id, id + 5, id * 5).Insert();
+            ctx.Db.Circle.Insert(new(id, id, id, id + 5, id * 5));
         }
         Log.Info($"INSERT CIRCLE: {count}");
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_bulk_food(uint count)
+    public static void insert_bulk_food(ReducerContext ctx, uint count)
     {
         for (uint id = 1; id <= count; id++)
         {
-            new Food(id).Insert();
+            ctx.Db.Food.Insert(new(id));
         }
         Log.Info($"INSERT FOOD: {count}");
     }
 
     [SpacetimeDB.Reducer]
-    public static void cross_join_all(uint expected)
+    public static void cross_join_all(ReducerContext ctx, uint expected)
     {
         uint count = 0;
-        foreach (Circle circle in Circle.Iter())
+        foreach (Circle circle in ctx.Db.Circle.Iter())
         {
-            foreach (Entity entity in Entity.Iter())
+            foreach (Entity entity in ctx.Db.Entity.Iter())
             {
-                foreach (Food food in Food.Iter())
+                foreach (Food food in ctx.Db.Food.Iter())
                 {
                     count++;
                 }
@@ -107,21 +108,21 @@ public static partial class circles
     }
 
     [SpacetimeDB.Reducer]
-    public static void cross_join_circle_food(uint expected)
+    public static void cross_join_circle_food(ReducerContext ctx, uint expected)
     {
         uint count = 0;
-        foreach (Circle circle in Circle.Iter())
+        foreach (Circle circle in ctx.Db.Circle.Iter())
         {
-            if (Entity.FindByid(circle.entity_id) is not { } circle_entity)
+            if (ctx.Db.Entity.FindByid(circle.entity_id) is not { } circle_entity)
             {
                 continue;
             }
 
-            foreach (Food food in Food.Iter())
+            foreach (Food food in ctx.Db.Food.Iter())
             {
                 count++;
                 Entity food_entity =
-                    Entity.FindByid(food.entity_id)
+                    ctx.Db.Entity.FindByid(food.entity_id)
                     ?? throw new Exception($"Entity not found: {food.entity_id}");
                 Bench.BlackBox(IsOverlapping(circle_entity, food_entity));
             }
@@ -131,21 +132,21 @@ public static partial class circles
     }
 
     [SpacetimeDB.Reducer]
-    public static void init_game_circles(uint initial_load)
+    public static void init_game_circles(ReducerContext ctx, uint initial_load)
     {
         Load load = new(initial_load);
 
-        insert_bulk_food(load.initial_load);
-        insert_bulk_entity(load.initial_load);
-        insert_bulk_circle(load.small_table);
+        insert_bulk_food(ctx, load.initial_load);
+        insert_bulk_entity(ctx, load.initial_load);
+        insert_bulk_circle(ctx, load.small_table);
     }
 
     [SpacetimeDB.Reducer]
-    public static void run_game_circles(uint initial_load)
+    public static void run_game_circles(ReducerContext ctx, uint initial_load)
     {
         Load load = new(initial_load);
 
-        cross_join_circle_food(initial_load * load.small_table);
-        cross_join_all(initial_load * initial_load * load.small_table);
+        cross_join_circle_food(ctx, initial_load * load.small_table);
+        cross_join_all(ctx, initial_load * initial_load * load.small_table);
     }
 }
