@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{self, BufWriter, Write as _},
+    io::{self, BufWriter, SeekFrom, Write as _},
     num::{NonZeroU16, NonZeroU64},
     ops::Range,
 };
@@ -12,7 +12,7 @@ use crate::{
     error,
     index::IndexError,
     payload::Encode,
-    repo::{TxOffset, TxOffsetIndex},
+    repo::{TxOffset, TxOffsetIndexMut},
     Options,
 };
 
@@ -205,7 +205,7 @@ impl<W: io::Write + FileLike> FileLike for Writer<W> {
 
 #[derive(Debug)]
 pub struct OffsetIndexWriter {
-    pub(crate) head: TxOffsetIndex,
+    pub(crate) head: TxOffsetIndexMut,
 
     require_segment_fsync: bool,
     min_write_interval: NonZeroU64,
@@ -216,7 +216,7 @@ pub struct OffsetIndexWriter {
 }
 
 impl OffsetIndexWriter {
-    pub fn new(head: TxOffsetIndex, opts: Options) -> Self {
+    pub fn new(head: TxOffsetIndexMut, opts: Options) -> Self {
         OffsetIndexWriter {
             head,
             require_segment_fsync: opts.offset_index_require_segment_fsync,
@@ -295,7 +295,7 @@ pub struct Reader<R> {
     inner: R,
 }
 
-impl<R: io::Read> Reader<R> {
+impl<R: io::Read + io::Seek> Reader<R> {
     pub fn new(max_log_format_version: u8, min_tx_offset: u64, mut inner: R) -> io::Result<Self> {
         let header = Header::decode(&mut inner)?;
         header
@@ -310,12 +310,16 @@ impl<R: io::Read> Reader<R> {
     }
 }
 
-impl<R: io::Read> Reader<R> {
+impl<R: io::Read + io::Seek> Reader<R> {
     pub fn commits(self) -> Commits<R> {
         Commits {
             header: self.header,
             reader: io::BufReader::new(self.inner),
         }
+    }
+
+    pub fn seek(&mut self, byte_offset: u64) -> io::Result<u64> {
+        self.inner.seek(SeekFrom::Start(byte_offset))
     }
 
     #[cfg(test)]

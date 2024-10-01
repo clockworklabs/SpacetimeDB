@@ -6,9 +6,10 @@ use log::{debug, info, trace, warn};
 use crate::{
     commit::StoredCommit,
     error,
+    index::IndexError,
     payload::Decoder,
     repo::{self, Repo},
-    segment::{self, FileLike, Transaction, Writer},
+    segment::{self, FileLike, Reader, Transaction, Writer},
     Commit, Encode, Options,
 };
 
@@ -547,6 +548,20 @@ impl<R: Repo> Commits<R> {
         };
         self.last_error = Some(last_error);
     }
+
+    /// Uses Offset Index to advance the segment to the given transaction offset.
+    fn advance_segment(&self, segment: &mut Reader<<R as Repo>::Segment>, tx_offset: u64) -> Result<(), IndexError> {
+        let index_file = self.segments.repo.get_offset_index(segment.min_tx_offset)?;
+        let (index_key, byte_offset) = index_file.key_lookup(tx_offset)?;
+        debug!("index lookup for key={tx_offset}: found key={index_key} byte-offset={byte_offset}");
+
+        if index_key <= tx_offset {
+            segment.seek(byte_offset).map(|_| ()).map_err(Into::into)
+        } else {
+            // Index lookup should never return key greater than the requested key.
+            Err(io::Error::new(io::ErrorKind::InvalidData, "no smaller index key found").into())
+        }
+    }
 }
 
 impl<R: Repo> Iterator for Commits<R> {
@@ -579,7 +594,14 @@ impl<R: Repo> Iterator for Commits<R> {
             None => self.last_error.take().map(Err),
             Some(segment) => segment.map_or_else(
                 |e| Some(Err(e.into())),
-                |segment| {
+                |mut segment| {
+                    // Try to use offset index to advance segment to Intial commit
+                    if let CommitInfo::Initial { next_offset } = self.last_commit {
+                        let _ = self.advance_segment(&mut segment, next_offset).inspect_err(|e| {
+                            warn!("commitlog offset index is not usedRu{e}");
+                        });
+                    }
+
                     self.inner = Some(segment.commits());
                     self.next()
                 },
