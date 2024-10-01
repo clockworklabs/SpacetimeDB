@@ -123,8 +123,12 @@ public interface ITableView<View, T>
     private class RawTableIterByColEq(FFI.TableId tableId, FFI.ColId colId, byte[] value)
         : RawTableIterBase
     {
-        protected override void IterStart(out FFI.RowIter handle) =>
-            FFI.iter_by_col_eq(tableId, colId, value, (uint)value.Length, out handle);
+        protected override void IterStart(out FFI.RowIter handle)
+        {
+            _ = (tableId, colId, value);
+            // Needs to be implemented via datastore_table_scan_bsatn
+            throw new NotImplementedException();
+        }
     }
 
     // Note: this must be Lazy to ensure that we don't try to get the tableId during startup, before the module is initialized.
@@ -174,11 +178,8 @@ public interface ITableView<View, T>
         // C# handles nullables on generics in a weird way, and will break if [SpacetimeDB.Type] is used on a struct.
         public IEnumerable<T> Iter() => new RawTableIterByColEq(tableId, colId, value).Parse();
 
-        public bool Delete()
-        {
-            FFI.delete_by_col_eq(tableId, colId, value, (uint)value.Length, out var out_);
-            return out_ > 0;
-        }
+        // Needs to be implemented via `datastore_delete_all_by_eq_bsatn`.
+        public bool Delete() => throw new NotImplementedException();
 
         public bool Update(T row)
         {

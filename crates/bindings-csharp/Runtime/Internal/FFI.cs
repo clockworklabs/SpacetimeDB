@@ -131,28 +131,10 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus iter_by_col_eq(
-        TableId table_id,
-        ColId col_id,
-        [In] byte[] value,
-        uint value_len,
-        out RowIter out_
-    );
-
-    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus datastore_insert_bsatn(
         TableId table_id,
         Span<byte> row,
         ref uint row_len
-    );
-
-    [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus delete_by_col_eq(
-        TableId table_id,
-        ColId col_id,
-        [In] byte[] value,
-        uint value_len,
-        out uint out_
     );
 
     [LibraryImport(StdbNamespace)]
