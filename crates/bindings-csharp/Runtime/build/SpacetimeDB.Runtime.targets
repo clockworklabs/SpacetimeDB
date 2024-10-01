@@ -35,15 +35,18 @@
   <!-- TODO: remove when https://github.com/dotnet/runtime/issues/82788 is resolved. -->
   <Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk;CheckWasmSdks">
     <PropertyGroup>
-      <WasiSdkVersion>20</WasiSdkVersion>
+      <WasiSdkVersion>24</WasiSdkVersion>
 
       <WasiSdkDownloadTempFile>$([System.IO.Path]::Combine($(IntermediateOutputPath), "wasi-sdk.$(WasiSdkVersion).tar.gz"))</WasiSdkDownloadTempFile>
 
-      <WasiSdkFilenameSuffix Condition="$([MSBuild]::IsOSPlatform('Windows'))">.m-mingw</WasiSdkFilenameSuffix>
-      <WasiSdkFilenameSuffix Condition="$([MSBuild]::IsOSPlatform('Linux'))">-linux</WasiSdkFilenameSuffix>
-      <WasiSdkFilenameSuffix Condition="$([MSBuild]::IsOSPlatform('OSX'))">-macos</WasiSdkFilenameSuffix>
+      <WasiSdkArch Condition="$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == X64">x86_64</WasiSdkArch>
+      <WasiSdkArch Condition="$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == Arm64">arm64</WasiSdkArch>
 
-      <WasiSdkUrl>https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$(WasiSdkVersion)/wasi-sdk-$(WasiSdkVersion).0$(WasiSdkFilenameSuffix).tar.gz</WasiSdkUrl>
+      <WasiSdkOS Condition="$([MSBuild]::IsOSPlatform('Windows'))">windows</WasiSdkOS>
+      <WasiSdkOS Condition="$([MSBuild]::IsOSPlatform('Linux'))">linux</WasiSdkOS>
+      <WasiSdkOS Condition="$([MSBuild]::IsOSPlatform('OSX'))">macos</WasiSdkOS>
+
+      <WasiSdkUrl>https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$(WasiSdkVersion)/wasi-sdk-$(WasiSdkVersion).0-$(WasiSdkArch)-$(WasiSdkOS).tar.gz</WasiSdkUrl>
 
       <WasiSdkRoot>$([System.IO.Path]::Combine($([System.Environment]::GetFolderPath(SpecialFolder.UserProfile)), '.wasi-sdk', "wasi-sdk-$(WasiSdkVersion)"))</WasiSdkRoot>
       <WASI_SDK_PATH>$(WasiSdkRoot)</WASI_SDK_PATH>
