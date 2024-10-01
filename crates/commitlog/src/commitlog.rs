@@ -12,6 +12,8 @@ use crate::{
     Commit, Encode, Options,
 };
 
+pub use crate::segment::Committed;
+
 /// A commitlog generic over the storage backend as well as the type of records
 /// its [`Commit`]s contain.
 #[derive(Debug)]
@@ -87,7 +89,7 @@ impl<R: Repo, T> Generic<R, T> {
     /// fail with [`io::ErrorKind::AlreadyExists`]. Encountering this error kind
     /// this means that something is seriously wrong underlying storage, and the
     /// caller should stop writing to the log.
-    pub fn commit(&mut self) -> io::Result<usize> {
+    pub fn commit(&mut self) -> io::Result<Option<Committed>> {
         self.panicked = true;
         let writer = &mut self.head;
         let sz = writer.commit.encoded_len();
@@ -102,15 +104,13 @@ impl<R: Repo, T> Generic<R, T> {
             writer
         };
 
-        let ret = if let Err(e) = writer.commit() {
+        let ret = writer.commit().or_else(|e| {
             warn!("Commit failed: {e}");
             // Nb.: Don't risk a panic by calling `self.sync()`.
             // We already gave up on the last commit, and will retry it next time.
             self.start_new_segment()?;
             Err(e)
-        } else {
-            Ok(sz)
-        };
+        });
         self.panicked = false;
         ret
     }
