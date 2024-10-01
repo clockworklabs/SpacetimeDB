@@ -1,5 +1,6 @@
 use super::util::fmt_fn;
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::ops::Deref;
 
@@ -265,7 +266,7 @@ pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> S
     writeln!(output, "// @ts-ignore");
     writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, SumTypeVariant, AlgebraicValue }} from \"@clockworklabs/spacetimedb-sdk\";");
 
-    let mut imports = Vec::new();
+    let mut imports = BTreeSet::new();
     generate_imports_variants(ctx, &sum_type.variants, &mut imports, Some("__"));
 
     for import in imports {
@@ -509,7 +510,12 @@ pub fn autogen_typescript_table(ctx: &GenCtx, table: &TableDescHack) -> String {
     )
 }
 
-fn generate_imports(ctx: &GenCtx, elements: &[ProductTypeElement], imports: &mut Vec<String>, prefix: Option<&str>) {
+fn generate_imports(
+    ctx: &GenCtx,
+    elements: &[ProductTypeElement],
+    imports: &mut BTreeSet<String>,
+    prefix: Option<&str>,
+) {
     for field in elements {
         _generate_imports(ctx, &field.algebraic_type, imports, prefix);
     }
@@ -519,7 +525,7 @@ fn generate_imports(ctx: &GenCtx, elements: &[ProductTypeElement], imports: &mut
 fn generate_imports_variants(
     ctx: &GenCtx,
     variants: &[SumTypeVariant],
-    imports: &mut Vec<String>,
+    imports: &mut BTreeSet<String>,
     prefix: Option<&str>,
 ) {
     for variant in variants {
@@ -527,7 +533,7 @@ fn generate_imports_variants(
     }
 }
 
-fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>, prefix: Option<&str>) {
+fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut BTreeSet<String>, prefix: Option<&str>) {
     match ty {
         AlgebraicType::Array(ty) => _generate_imports(ctx, &ty.elem_ty, imports, prefix),
         AlgebraicType::Map(map_type) => {
@@ -543,7 +549,7 @@ fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>
                 None => class_name,
             };
             let import = format!("import {{ {imported_as} }} from \"./{filename}\";");
-            imports.push(import);
+            imports.insert(import);
         }
         // Generate imports for the fields of anonymous sum types like `Option<T>`.
         AlgebraicType::Sum(s) => {
@@ -576,7 +582,7 @@ fn autogen_typescript_product_table_common(
     writeln!(output, "// @ts-ignore");
     writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ScheduleAt, ClientDB, SpacetimeDBClient }} from \"@clockworklabs/spacetimedb-sdk\";");
 
-    let mut imports = Vec::new();
+    let mut imports = BTreeSet::new();
     generate_imports(ctx, &product_type.elements, &mut imports, None);
 
     for import in imports {
@@ -875,7 +881,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output, "// @ts-ignore");
     writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ScheduleAt, ReducerEvent, Reducer, SpacetimeDBClient }} from \"@clockworklabs/spacetimedb-sdk\";");
 
-    let mut imports = Vec::new();
+    let mut imports = BTreeSet::new();
     generate_imports(
         ctx,
         &reducer.args.clone().into_iter().collect::<Vec<ProductTypeElement>>(),
