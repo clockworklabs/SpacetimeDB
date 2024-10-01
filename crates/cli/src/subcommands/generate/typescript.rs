@@ -450,7 +450,7 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
                 writeln!(out, "const __args = {{ {arg_name_list} }};");
                 writeln!(out, "let __writer = new BinaryWriter(1024);");
                 writeln!(out, "{reducer_variant}.getAlgebraicType().serialize(__writer, __args);");
-                writeln!(out, "let __argsBuffer = writer.getBuffer();");
+                writeln!(out, "let __argsBuffer = __writer.getBuffer();");
                 writeln!(out, "this.connection.callReducer(\"{reducer_name}\", __argsBuffer);");
             });
         }
