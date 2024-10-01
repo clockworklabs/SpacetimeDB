@@ -6,6 +6,7 @@ use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientFields, StClientRow, ST_CLIENT_ID};
 use crate::db::datastore::traits::{IsolationLevel, Program, TxData};
+use crate::db::query_context::QueryContext;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::execution_context::{ExecutionContext, ReducerContext};
@@ -355,6 +356,12 @@ pub struct ModuleHost {
     inner: Arc<dyn DynModuleHost>,
     /// Called whenever a reducer call on this host panics.
     on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
+}
+
+impl ModuleHost {
+    pub fn database_instance(&self) -> &DatabaseInstanceContext {
+        self.inner.dbic()
+    }
 }
 
 impl fmt::Debug for ModuleHost {
@@ -829,8 +836,9 @@ impl ModuleHost {
         log::debug!("One-off query: {query}");
         let ctx = &ExecutionContext::sql(db.address());
         db.with_read_only(ctx, |tx| {
+            let mut ctx_query = QueryContext::from_subscriptions(self.subscriptions());
             let ast = sql::compiler::compile_sql(db, &auth, tx, &query)?;
-            sql::execute::execute_sql_tx(db, tx, &query, ast, auth)?
+            sql::execute::execute_sql_tx(db, &mut ctx_query, tx, &query, ast, auth)?
                 .context("One-off queries are not allowed to modify the database")
         })
     }
