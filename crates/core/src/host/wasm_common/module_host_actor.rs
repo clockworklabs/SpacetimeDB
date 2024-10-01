@@ -86,7 +86,6 @@ pub(crate) struct WasmModuleHostActor<T: WasmModule> {
     scheduler: Scheduler,
     func_names: Arc<FuncNames>,
     info: Arc<ModuleInfo>,
-    energy_monitor: Arc<dyn EnergyMonitor>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -133,7 +132,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             dbic: database_instance_context,
             scheduler,
             program,
-            energy_monitor,
+            energy_monitor: _,
         } = mcc;
         let module_hash = program.hash;
         log::trace!(
@@ -178,7 +177,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             info,
             database_instance_context,
             scheduler,
-            energy_monitor,
         };
         module.initial_instance = Some(Box::new(module.make_from_instance(instance)));
 
@@ -191,7 +189,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         WasmModuleInstance {
             instance,
             info: self.info.clone(),
-            energy_monitor: self.energy_monitor.clone(),
+            energy_monitor: self.database_instance_context.subscriptions.energy_monitor.clone(),
             trapped: false,
         }
     }
