@@ -12,7 +12,7 @@ use crate::{
     error,
     index::IndexError,
     payload::Encode,
-    repo::{TxOffset, TxOffsetIndexMut},
+    repo::{TxOffset, TxOffsetIndex, TxOffsetIndexMut},
     Options,
 };
 
@@ -288,6 +288,7 @@ impl FileLike for OffsetIndexWriter {
         Ok(())
     }
 }
+
 #[derive(Debug)]
 pub struct Reader<R> {
     pub header: Header,
@@ -318,12 +319,8 @@ impl<R: io::Read + io::Seek> Reader<R> {
         }
     }
 
-    pub fn seek(&mut self, byte_offset: u64) -> io::Result<u64> {
-        self.inner.seek(SeekFrom::Start(byte_offset))
-    }
-
-    pub fn peek_commit_header(&mut self, byte_offset: u64) -> io::Result<commit::Header> {
-        peek_commit_header(&mut self.inner, byte_offset)
+    pub fn seek_to_segment(&mut self, index_file: &TxOffsetIndex, start_tx_offset: u64) -> Result<(), IndexError> {
+        seek_to_segment(&mut self.inner, index_file, self.min_tx_offset, start_tx_offset)
     }
 
     #[cfg(test)]
@@ -349,8 +346,52 @@ impl<R: io::Read + io::Seek> Reader<R> {
     }
 }
 
+/// Advances the `segment` reader to the position corresponding to the `start_tx_offset`
+/// using the `index_file` for efficient seeking.
+///
+/// Input:
+/// - `segment` - segment reader
+/// - `index_file` - offset index file
+/// - `min_tx_offset` - minimum transaction offset in the segment
+/// - `start_tx_offset` - transaction offset to advance to
+pub fn seek_to_segment<R: io::Read + io::Seek>(
+    mut segment: &mut R,
+    index_file: &TxOffsetIndex,
+    min_tx_offset: u64,
+    start_tx_offset: u64,
+) -> Result<(), IndexError> {
+    let (index_key, byte_offset) = index_file.key_lookup(start_tx_offset)?;
+    debug!("index lookup for key={start_tx_offset}: found key={index_key} at byte-offset={byte_offset}");
+
+    if index_key > start_tx_offset {
+        // returned `index_key` should never be greater than `start_tx_offset`
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "no smaller index key found").into());
+    }
+
+    // Check if the offset index is pointing to the right commit.
+    validate_commit_header(&mut segment, byte_offset).map(|hdr| {
+        if hdr.min_tx_offset == index_key {
+            // Advance the segment Seek if expected commit is found.
+            segment
+                .seek(SeekFrom::Start(byte_offset))
+                .map(|_| ())
+                .map_err(Into::into)
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("mismatch key in index offset file: {}", min_tx_offset),
+            )
+            .into())
+        }
+    })?
+}
+
 /// Try to extract the commit header from the asked position without advancing seek.
-pub fn peek_commit_header<R: io::Read + io::Seek>(mut reader: R, byte_offset: u64) -> io::Result<commit::Header> {
+/// `IndexFileMut` fsync asynchoronously, which makes it important for reader to verify its entry
+pub fn validate_commit_header<Reader: io::Read + io::Seek>(
+    mut reader: &mut Reader,
+    byte_offset: u64,
+) -> io::Result<commit::Header> {
     let pos = reader.stream_position()?;
     reader.seek(SeekFrom::Start(byte_offset))?;
 
