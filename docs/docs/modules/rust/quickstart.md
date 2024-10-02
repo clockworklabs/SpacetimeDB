@@ -2,28 +2,27 @@
 
 In this tutorial, we'll implement a simple chat server as a SpacetimeDB module.
 
-A SpacetimeDB module is code that gets compiled to a WebAssembly binary and is uploaded to SpacetimeDB. This code becomes server-side logic that interfaces directly with the SpacetimeDB relational database.
+A SpacetimeDB module is code that gets compiled to WebAssembly and is uploaded to SpacetimeDB. This code becomes server-side logic that interfaces directly with the Spacetime relational database.
 
 Each SpacetimeDB module defines a set of tables and a set of reducers.
 
-Each table is defined as a Rust struct annotated with `#[table(name = table_name)]`. An instance of the struct represents a row, and each field represents a column.
-
+Each table is defined as a Rust `struct` annotated with `#[spacetimedb(table)]`, where an instance represents a row, and each field represents a column.
 By default, tables are **private**. This means that they are only readable by the table owner, and by server module code.
-The `#[table(name = table_name, public)]` macro makes a table public. **Public** tables are readable by all users but can still only be modified by your server module code.
+The `#[spacetimedb(table(public))]` macro makes a table public. **Public** tables are readable by all users, but can still only be modified by your server module code.
 
 _Coming soon: We plan to add much more robust access controls than just public or private. Stay tuned!_
 
-A reducer is a function that traverses and updates the database. Each reducer call runs in its own transaction, and its updates to the database are only committed if the reducer returns successfully. In Rust, reducers are defined as functions annotated with `#[reducer]`, and may return a `Result<()>`, with an `Err` return aborting the transaction.
+A reducer is a function which traverses and updates the database. Each reducer call runs in its own transaction, and its updates to the database are only committed if the reducer returns successfully. In Rust, reducers are defined as functions annotated with `#[spacetimedb(reducer)]`, and may return a `Result<()>`, with an `Err` return aborting the transaction.
 
 ## Install SpacetimeDB
 
-If you haven't already, start by [installing SpacetimeDB](/install). This will install the `spacetime` command line interface (CLI), which provides all the functionality needed to interact with SpacetimeDB.
+If you haven't already, start by [installing SpacetimeDB](/install). This will install the `spacetime` command line interface (CLI), which contains all the functionality for interacting with SpacetimeDB.
 
 ## Install Rust
 
 Next we need to [install Rust](https://www.rust-lang.org/tools/install) so that we can create our database module.
 
-On macOS and Linux run this command to install the Rust compiler:
+On MacOS and Linux run this command to install the Rust compiler:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -48,19 +47,17 @@ spacetime init --lang rust server
 
 ## Declare imports
 
-`spacetime init` should have pre-populated `server/src/lib.rs` with a trivial module. Clear it out so we can write a new, simple module: a bare-bones chat server.
+`spacetime init` should have pre-populated `server/src/lib.rs` with a trivial module. Clear it out, so we can write a module that's still pretty simple: a bare-bones chat server.
 
 To the top of `server/src/lib.rs`, add some imports we'll be using:
 
 ```rust
-use spacetimedb::{table, reducer, Table, ReducerContext, Identity, Timestamp};
+use spacetimedb::{spacetimedb, ReducerContext, Identity, Timestamp};
 ```
 
 From `spacetimedb`, we import:
 
-- `table`, a macro used to define SpacetimeDB tables.
-- `reducer`, a macro used to define SpacetimeDB reducers.
-- `Table`, a rust trait which allows us to interact with tables.
+- `spacetimedb`, an attribute macro we'll use to define tables and reducers.
 - `ReducerContext`, a special argument passed to each reducer.
 - `Identity`, a unique identifier for each user.
 - `Timestamp`, a point in time. Specifically, an unsigned 64-bit count of milliseconds since the UNIX epoch.
@@ -74,9 +71,9 @@ For each `User`, we'll store their `Identity`, an optional name they can set to 
 To `server/src/lib.rs`, add the definition of the table `User`:
 
 ```rust
-#[table(name = user, public)]
+#[spacetimedb(table(public))]
 pub struct User {
-    #[primary_key]
+    #[primarykey]
     identity: Identity,
     name: Option<String>,
     online: bool,
@@ -88,7 +85,7 @@ For each `Message`, we'll store the `Identity` of the user who sent it, the `Tim
 To `server/src/lib.rs`, add the definition of the table `Message`:
 
 ```rust
-#[table(name = message, public)]
+#[spacetimedb(table(public))]
 pub struct Message {
     sender: Identity,
     sent: Timestamp,
@@ -100,19 +97,19 @@ pub struct Message {
 
 We want to allow users to set their names, because `Identity` is not a terribly user-friendly identifier. To that effect, we define a reducer `set_name` which clients can invoke to set their `User.name`. It will validate the caller's chosen name, using a function `validate_name` which we'll define next, then look up the `User` record for the caller and update it to store the validated name. If the name fails the validation, the reducer will fail.
 
-Each reducer may accept as its first argument a `ReducerContext`, which includes the `Identity` and `Address` of the client that called the reducer, and the `Timestamp` when it was invoked. It also allows us access to the `db`, which is used to read and manipulate rows in our tables. For now, we only need the `db`, `Identity`, and `ctx.sender`.
+Each reducer may accept as its first argument a `ReducerContext`, which includes the `Identity` and `Address` of the client that called the reducer, and the `Timestamp` when it was invoked. For now, we only need the `Identity`, `ctx.sender`.
 
 It's also possible to call `set_name` via the SpacetimeDB CLI's `spacetime call` command without a connection, in which case no `User` record will exist for the caller. We'll return an error in this case, but you could alter the reducer to insert a `User` row for the module owner. You'll have to decide whether the module owner is always online or always offline, though.
 
 To `server/src/lib.rs`, add:
 
 ```rust
-#[reducer]
-/// Clients invoke this reducer to set their user names.
-pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
+#[spacetimedb(reducer)]
+/// Clientss invoke this reducer to set their user names.
+pub fn set_name(ctx: ReducerContext, name: String) -> Result<(), String> {
     let name = validate_name(name)?;
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
-        ctx.db.user().identity().update(User { name: Some(name), ..user })
+    if let Some(user) = User::filter_by_identity(&ctx.sender) {
+        User::update_by_identity(&ctx.sender, User { name: Some(name), ..user });
         Ok(())
     } else {
         Err("Cannot set name for unknown user".to_string())
@@ -143,17 +140,17 @@ fn validate_name(name: String) -> Result<String, String> {
 
 ## Send messages
 
-We define a reducer `send_message`, which clients will call to send messages. It will validate the message's text, then insert a new `Message` record using `ctx.db.message().insert(..)`, with the `sender` identity and `sent` timestamp taken from the `ReducerContext`. Because the `Message` table does not have any columns with a unique constraint, `ctx.db.message().insert()` is infallible and does not return a `Result`.
+We define a reducer `send_message`, which clients will call to send messages. It will validate the message's text, then insert a new `Message` record using `Message::insert`, with the `sender` identity and `sent` timestamp taken from the `ReducerContext`. Because `Message` does not have any columns with unique constraints, `Message::insert` is infallible; it does not return a `Result`.
 
 To `server/src/lib.rs`, add:
 
 ```rust
-#[reducer]
+#[spacetimedb(reducer)]
 /// Clients invoke this reducer to send messages.
-pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
+pub fn send_message(ctx: ReducerContext, text: String) -> Result<(), String> {
     let text = validate_message(text)?;
     log::info!("{}", text);
-    ctx.db.message().insert(Message {
+    Message::insert(Message {
         sender: ctx.sender,
         text,
         sent: ctx.timestamp,
@@ -184,39 +181,40 @@ You could extend the validation in `validate_message` in similar ways to `valida
 
 ## Set users' online status
 
-Whenever a client connects, the module will run a special reducer, annotated with `#[reducer(client_connected)]`, if it's defined. By convention, it's named `client_connected`. We'll use it to create a `User` record for the client if it doesn't yet exist, and to set its online status.
+Whenever a client connects, the module will run a special reducer, annotated with `#[spacetimedb(connect)]`, if it's defined. By convention, it's named `identity_connected`. We'll use it to create a `User` record for the client if it doesn't yet exist, and to set its online status.
 
-We'll use `ctx.db.user().identity().find(ctx.sender)` to look up a `User` row for `ctx.sender`, if one exists. If we find one, we'll use `ctx.db.user().identity().update(..)` to overwrite it with a row that has `online: true`. If not, we'll use `ctx.db.user().insert(..)` to insert a new row for our new user. All three of these methods are generated by the `#[table(..)]` macro, with rows and behavior based on the row attributes. `ctx.db.user().find(..)` returns an `Option<User>`, because of the unique constraint from the `#[primary_key]` attribute. This means there will be either zero or one matching rows. If we used `try_insert` here it would return a `Result<(), UniqueConstraintViolation>` because of the same unique constraint. However, because we're already checking if there is a user with the given sender identity we know that inserting into this table will not fail. Therefore, we use `insert`, which automatically unwraps the result, simplifying the code. If we want to overwrite a `User` row, we need to do so explicitly using `ctx.db.user().identity().update(..)`.
+We'll use `User::filter_by_identity` to look up a `User` row for `ctx.sender`, if one exists. If we find one, we'll use `User::update_by_identity` to overwrite it with a row that has `online: true`. If not, we'll use `User::insert` to insert a new row for our new user. All three of these methods are generated by the `#[spacetimedb(table)]` macro, with rows and behavior based on the row attributes. `filter_by_identity` returns an `Option<User>`, because the unique constraint from the `#[primarykey]` attribute means there will be either zero or one matching rows. `insert` returns a `Result<(), UniqueConstraintViolation>` because of the same unique constraint; if we want to overwrite a `User` row, we need to do so explicitly using `update_by_identity`.
 
 To `server/src/lib.rs`, add the definition of the connect reducer:
 
 ```rust
-#[reducer(client_connected)]
+#[spacetimedb(connect)]
 // Called when a client connects to the SpacetimeDB
-pub fn client_connected(ctx: &ReducerContext) {
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+pub fn identity_connected(ctx: ReducerContext) {
+    if let Some(user) = User::filter_by_identity(&ctx.sender) {
         // If this is a returning user, i.e. we already have a `User` with this `Identity`,
         // set `online: true`, but leave `name` and `identity` unchanged.
-        ctx.db.user().identity().update(User { online: true, ..user });
+        User::update_by_identity(&ctx.sender, User { online: true, ..user });
     } else {
         // If this is a new user, create a `User` row for the `Identity`,
         // which is online, but hasn't set a name.
-        ctx.db.user().insert(User {
+        User::insert(User {
             name: None,
             identity: ctx.sender,
             online: true,
-        });
+        }).unwrap();
     }
-}```
+}
+```
 
-Similarly, whenever a client disconnects, the module will run the `#[reducer(client_disconnected)]` reducer if it's defined. By convention, it's named `client_disconnected`. We'll use it to un-set the `online` status of the `User` for the disconnected client.
+Similarly, whenever a client disconnects, the module will run the `#[spacetimedb(disconnect)]` reducer if it's defined. By convention, it's named `identity_disconnect`. We'll use it to un-set the `online` status of the `User` for the disconnected client.
 
 ```rust
-#[reducer(client_disconnected)]
+#[spacetimedb(disconnect)]
 // Called when a client disconnects from SpacetimeDB
-pub fn identity_disconnected(ctx: &ReducerContext) {
-    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
-        ctx.db.user().identity().update(User { online: false, ..user });
+pub fn identity_disconnected(ctx: ReducerContext) {
+    if let Some(user) = User::filter_by_identity(&ctx.sender) {
+        User::update_by_identity(&ctx.sender, User { online: false, ..user });
     } else {
         // This branch should be unreachable,
         // as it doesn't make sense for a client to disconnect without connecting first.
@@ -227,7 +225,7 @@ pub fn identity_disconnected(ctx: &ReducerContext) {
 
 ## Publish the module
 
-And that's all of our module code! We'll run `spacetime publish` to compile our module and publish it on SpacetimeDB. `spacetime publish` takes an optional name which will map to the database's unique address. Clients can connect either by name or by address, but names are much more user-friendly. Come up with a unique name that contains only URL-safe characters (letters, numbers, hyphens and underscores), and fill it in where we've written `<module-name>`.
+And that's all of our module code! We'll run `spacetime publish` to compile our module and publish it on SpacetimeDB. `spacetime publish` takes an optional name which will map to the database's unique address. Clients can connect either by name or by address, but names are much more pleasant. Come up with a unique name that contains only URL-safe characters (letters, numbers, hyphens and underscores), and fill it in where we've written `<module-name>`.
 
 From the `quickstart-chat` directory, run:
 
@@ -252,10 +250,7 @@ spacetime logs <module-name>
 You should now see the output that your module printed in the database.
 
 ```bash
-<timestamp>  INFO: spacetimedb: Creating table `message`
-<timestamp>  INFO: spacetimedb: Creating table `user`
-<timestamp>  INFO: spacetimedb: Database initialized
-<timestamp>  INFO: src/lib.rs:43: Hello, world!
+info: Hello, World!
 ```
 
 ## SQL Queries
@@ -263,13 +258,13 @@ You should now see the output that your module printed in the database.
 SpacetimeDB supports a subset of the SQL syntax so that you can easily query the data of your database. We can run a query using the `sql` command.
 
 ```bash
-spacetime sql <module-name> "SELECT * FROM message"
+spacetime sql <module-name> "SELECT * FROM Message"
 ```
 
 ```bash
- sender                                                             | sent             | text
---------------------------------------------------------------------+------------------+-----------------
- 0x93dda09db9a56d8fa6c024d843e805d8262191db3b4ba84c5efcd1ad451fed4e | 1727858455560802 | "Hello, world!"
+ text
+---------
+ "Hello, World!"
 ```
 
 ## What's next?

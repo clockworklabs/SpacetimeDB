@@ -241,6 +241,7 @@ fn send_message(ctx: &ReducerContext, arg: SendMessageTimer) -> Result<(), Strin
 }
 
 // Scheduling reducers inside `init` reducer
+#[reducer(init)]
 fn init(ctx: &ReducerContext) {
     // Scheduling a reducer for a specific Timestamp
     ctx.db.send_message_timer().insert(SendMessageTimer {
@@ -296,7 +297,7 @@ fn output(ctx: &ReducerContext, i: i32) {
     // before passing the value of |i| along to the calling function.
     //
     // The output is logged log::Level::Debug.
-    ctx.db.outputted_numbers().insert(dbg!(i));
+    ctx.db.outputted_number().insert(dbg!(i));
 }
 ```
 
