@@ -4,46 +4,31 @@
  */
 #if UNITY_5_3_OR_NEWER
 using System;
-using UnityEngine;
 
 namespace SpacetimeDB
 {
     internal class UnityDebugLogger : ISpacetimeDBLogger
     {
-        public void Debug(string message)
-        {
-            Debug.Log(message);
-        }
+        public void Debug(string message) =>
+            UnityEngine.Debug.Log(message);
 
-        public void Trace(string message)
-        {
-            Debug.Log(message);
-        }
+        public void Trace(string message) =>
+            UnityEngine.Debug.Log(message);
 
-        public void Info(string message)
-        {
-            Debug.Log(message);
-        }
+        public void Info(string message) =>
+            UnityEngine.Debug.Log(message);
 
-        public void Warn(string message)
-        {
-            Debug.LogWarning(message);
-        }
+        public void Warn(string message) =>
+            UnityEngine.Debug.LogWarning(message);
 
-        public void Error(string message)
-        {
-            Debug.LogError(message);
-        }
+        public void Error(string message) =>
+            UnityEngine.Debug.LogError(message);
 
-        public void Exception(string message)
-        {
-            Debug.LogError(message);
-        }
+        public void Exception(string message) =>
+            UnityEngine.Debug.LogError(message);
 
-        public void Exception(Exception e)
-        {
-            Debug.LogException(e);
-        }
+        public void Exception(Exception e) =>
+            UnityEngine.Debug.LogException(e);
     }
 }
 #endif
