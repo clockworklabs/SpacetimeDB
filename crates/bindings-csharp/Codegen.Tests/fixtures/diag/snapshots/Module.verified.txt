@@ -6,7 +6,6 @@
                  ^^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs,
       Message: Field AutoIncField is marked as AutoInc but it has a non-integer type float.,
       Severity: Error,
       Descriptor: {
@@ -24,7 +23,6 @@
                   ^^^^^^^^^^^^^
 }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs,
       Message: Field IdentityField is marked as AutoInc but it has a non-integer type string.,
       Severity: Error,
       Descriptor: {
@@ -42,7 +40,6 @@
                 ^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs,
       Message: Field UniqueField is marked as Unique but it has a type int? which is not an equatable primitive.,
       Severity: Error,
       Descriptor: {
@@ -60,7 +57,6 @@
                                       ^^^^^^^^^^^^^^^
 }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs,
       Message: Field PrimaryKeyField is marked as Unique but it has a type TestEnumWithExplicitValues which is not an equatable primitive.,
       Severity: Error,
       Descriptor: {
@@ -78,7 +74,6 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs,
       Message: Table TestTableTaggedEnum is a tagged enum, which is not allowed.,
       Severity: Error,
       Descriptor: {
@@ -104,7 +99,6 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 public partial struct TestIncompatibleSchedule
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs,
       Message: Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.,
       Severity: Error,
       Descriptor: {
@@ -122,7 +116,6 @@ public partial struct TestIncompatibleSchedule
                   ^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs,
       Message: Reducer method TestReducerReturnType returns int instead of void.,
       Severity: Error,
       Descriptor: {
@@ -140,7 +133,6 @@ public partial struct TestIncompatibleSchedule
                                                 ^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs,
       Message: Reducer method TestReducerWithoutContext does not have a ReducerContext parameter.,
       Severity: Error,
       Descriptor: {
@@ -158,7 +150,6 @@ public partial struct TestIncompatibleSchedule
                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs,
       Message: Reducer method OnReducerWithReservedPrefix starts with 'On', which is a reserved prefix.,
       Severity: Error,
       Descriptor: {
@@ -176,7 +167,6 @@ public partial struct TestIncompatibleSchedule
                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs,
       Message: Reducer method __ReducerWithReservedPrefix starts with '__', which is a reserved prefix.,
       Severity: Error,
       Descriptor: {

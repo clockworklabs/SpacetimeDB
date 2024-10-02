@@ -42,11 +42,10 @@ static class TestInit
                     }
                 }
                 writer.WriteComment(comment.ToString());
-                // Skip line and column when we render the source code snippet to make snapshots more stable.
-                writer.WriteMember(diag, source.FilePath, nameof(diag.Location));
             }
             else
             {
+                // Write location only when we don't have the source code snippet to make snapshots more stable.
                 writer.WriteMember(diag, diag.Location, nameof(diag.Location));
             }
             writer.WriteMember(diag, diag.GetMessage(), "Message");
