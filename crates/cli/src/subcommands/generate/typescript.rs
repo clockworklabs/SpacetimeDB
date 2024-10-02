@@ -513,10 +513,12 @@ fn print_remote_tables(module: &ModuleDef, out: &mut Indenter) {
         let table_handle = table_name_pascalcase.clone() + "TableHandle";
         let type_ref = table.product_type_ref;
         let row_type = type_ref_name(module, type_ref);
-        writeln!(out, "#{table_name_camelcase} = this.connection.clientCache.getOrCreateTable<{row_type}>(REMOTE_MODULE.tables.{table_name});");
         writeln!(out, "get {table_name_camelcase}(): {table_handle} {{");
         out.with_indent(|out| {
-            writeln!(out, "return new {table_handle}(this.#{table_name_camelcase});");
+            writeln!(
+                out,
+                "return this.connection.clientCache.getOrCreateTable<{row_type}>(REMOTE_MODULE.tables.{table_name});"
+            );
         });
         writeln!(out, "}}");
     }
@@ -648,30 +650,14 @@ fn define_namespace_and_object_type_for_product(
         "export function serialize(writer: BinaryWriter, value: {name}): void {{"
     );
     out.indent(1);
-    writeln!(out, "const converted = {{");
-    out.indent(1);
-    for (ident, _) in elements {
-        let name = ident.deref().to_case(Case::Camel);
-        writeln!(out, "{ident}: value.{name},");
-    }
-    out.dedent(1);
-    writeln!(out, "}};");
-    writeln!(out, "{name}.getAlgebraicType().serialize(writer, converted);");
+    writeln!(out, "{name}.getAlgebraicType().serialize(writer, value);");
     out.dedent(1);
     writeln!(out, "}}");
     writeln!(out);
 
     writeln!(out, "export function deserialize(reader: BinaryReader): {name} {{");
     out.indent(1);
-    writeln!(out, "const value = {name}.getAlgebraicType().deserialize(reader);");
-    writeln!(out, "return {{");
-    out.indent(1);
-    for (ident, _) in elements {
-        let name = ident.deref().to_case(Case::Camel);
-        writeln!(out, "{name}: value.{ident},");
-    }
-    out.dedent(1);
-    writeln!(out, "}};");
+    writeln!(out, "return {name}.getAlgebraicType().deserialize(reader);");
     out.dedent(1);
     writeln!(out, "}}");
     writeln!(out);
@@ -1017,7 +1003,11 @@ fn convert_product_type<'a>(
     writeln!(out, "AlgebraicType.createProductType([");
     out.indent(1);
     for (ident, ty) in elements {
-        write!(out, "new ProductTypeElement(\"{}\", ", ident.deref(),);
+        write!(
+            out,
+            "new ProductTypeElement(\"{}\", ",
+            ident.deref().to_case(Case::Camel)
+        );
         convert_algebraic_type(module, out, ty, ref_prefix);
         writeln!(out, "),");
     }
