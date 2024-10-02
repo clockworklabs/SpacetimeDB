@@ -117,7 +117,8 @@ Requested namespace: {namespace}",
             &[], // No need to skip any imports; we're not defining a type, so there's no chance of circular imports.
         );
 
-        writeln!(out, "import {{ Reducer, RemoteReducers, RemoteTables }} from \".\";");
+        writeln!(out, "// @ts-ignore");
+        writeln!(out, "import {{ EventContext, Reducer, RemoteReducers, RemoteTables }} from \".\";");
 
         let table_name = table.name.deref();
         let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
@@ -219,19 +220,19 @@ export class {table_handle} {{
 
         writeln!(
             out,
-            "onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: {row_type}) => void) => {{
+            "onInsert = (cb: (ctx: EventContext, row: {row_type}) => void) => {{
 {INDENT}return this.tableCache.onInsert(cb);
 }}
 
-removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: {row_type}) => void) => {{
+removeOnInsert = (cb: (ctx: EventContext, row: {row_type}) => void) => {{
 {INDENT}return this.tableCache.removeOnInsert(cb);
 }}
 
-onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: {row_type}) => void) => {{
+onDelete = (cb: (ctx: EventContext, row: {row_type}) => void) => {{
 {INDENT}return this.tableCache.onDelete(cb);
 }}
 
-removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: {row_type}) => void) => {{
+removeOnDelete = (cb: (ctx: EventContext, row: {row_type}) => void) => {{
 {INDENT}return this.tableCache.removeOnDelete(cb);
 }}"
         );
@@ -241,11 +242,11 @@ removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>,
                 out,
 "
 // Updates are only defined for tables with primary keys.
-onUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, oldRow: {row_type}, newRow: {row_type}) => void) => {{
+onUpdate = (cb: (ctx: EventContext, oldRow: {row_type}, newRow: {row_type}) => void) => {{
 {INDENT}return this.tableCache.onUpdate(cb);
 }}
 
-removeOnUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, onRow: {row_type}, newRow: {row_type}) => void) => {{
+removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type}) => void) => {{
 {INDENT}return this.tableCache.removeOnUpdate(cb);
 }}"
             );
@@ -406,9 +407,10 @@ reducersConstructor: (imp: DBConnectionImpl) => {{
         out.newline();
 
         print_db_connection(module, out);
-        // // Define `RemoteModule`, `DbConnection`, `EventContext`, `RemoteTables`, `RemoteReducers` and `SubscriptionHandle`.
-        // // Note that these do not change based on the module.
-        // print_const_db_context_types(out);
+        
+        out.newline();
+
+        writeln!(out, "export type EventContext = EventContextInterface<RemoteTables, RemoteReducers, Reducer>;");
 
         vec![("index.ts".to_string(), (output.into_inner()))]
     }
@@ -468,13 +470,13 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
         } else {
             format!(", {arg_list}")
         };
-        writeln!(out, "on{reducer_name_pascal}(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>{arg_list_padded}) => void) {{");
+        writeln!(out, "on{reducer_name_pascal}(callback: (ctx: EventContext{arg_list_padded}) => void) {{");
         out.indent(1);
         writeln!(out, "this.connection.onReducer(\"{reducer_name}\", callback);");
         out.dedent(1);
         writeln!(out, "}}");
         out.newline();
-        writeln!(out, "removeOn{reducer_name_pascal}(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>{arg_list_padded}) => void) {{");
+        writeln!(out, "removeOn{reducer_name_pascal}(callback: (ctx: EventContext{arg_list_padded}) => void) {{");
         out.indent(1);
         writeln!(out, "this.connection.offReducer(\"{reducer_name}\", callback);");
         out.dedent(1);
@@ -556,7 +558,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "DBConnectionBuilder",
         "TableCache",
         "BinaryWriter",
-        "EventContext",
+        "EventContextInterface",
         "BinaryReader",
         "DBConnectionImpl",
         "DBContext",
