@@ -17,11 +17,29 @@ namespace SpacetimeDB.ClientApi
 	public partial class IdentityToken
 	{
 		[DataMember(Name = "identity")]
-		public SpacetimeDB.Identity Identity = new();
+		public SpacetimeDB.Identity Identity;
 		[DataMember(Name = "token")]
-		public string Token = "";
+		public string Token;
 		[DataMember(Name = "address")]
-		public SpacetimeDB.Address Address = new();
+		public SpacetimeDB.Address Address;
+
+		public IdentityToken(
+			SpacetimeDB.Identity Identity,
+			string Token,
+			SpacetimeDB.Address Address
+		)
+		{
+			this.Identity = Identity;
+			this.Token = Token;
+			this.Address = Address;
+		}
+
+		public IdentityToken()
+		{
+			this.Identity = new();
+			this.Token = "";
+			this.Address = new();
+		}
 
 	}
 }

@@ -47,14 +47,6 @@ public class SnapshotTests
         }
     }
 
-    class EncodedValueConverter : WriteOnlyJsonConverter<EncodedValue.Binary>
-    {
-        public override void Write(VerifyJsonWriter writer, EncodedValue.Binary value)
-        {
-            writer.WriteValue(value.Binary_);
-        }
-    }
-
     class TestLogger(Events events) : ISpacetimeDBLogger
     {
         public void Debug(string message)
@@ -124,7 +116,7 @@ public class SnapshotTests
         ulong energyQuantaUsed,
         ulong hostExecutionDuration,
         List<TableUpdate> updates,
-        EncodedValue? args
+        byte[]? args
     ) => new(new()
     {
         Timestamp = new Timestamp { Microseconds = timestamp },
@@ -139,7 +131,7 @@ public class SnapshotTests
         {
             RequestId = requestId,
             ReducerName = reducerName,
-            Args = args ?? new EncodedValue.Binary([])
+            Args = args ?? []
         },
         Status = new UpdateStatus.Committed(new()
         {
@@ -147,55 +139,73 @@ public class SnapshotTests
         })
     });
 
-    private static TableUpdate SampleUpdate(
+    private static TableUpdate SampleUpdate<T>(
         uint tableId,
         string tableName,
-        List<EncodedValue> inserts,
-        List<EncodedValue> deletes
-    ) => new()
+        List<T> inserts,
+        List<T> deletes
+    ) where T : IStructuralReadWrite => new()
     {
         TableId = tableId,
         TableName = tableName,
-        Inserts = inserts,
-        Deletes = deletes
+        NumRows = (ulong)(inserts.Count + deletes.Count),
+        Updates = [new CompressableQueryUpdate.Uncompressed(new QueryUpdate(
+            EncodeRowList<T>(deletes), EncodeRowList<T>(inserts)))]
     };
 
-    private static EncodedValue.Binary Encode<T>(in T value) where T : IStructuralReadWrite
+    private static BsatnRowList EncodeRowList<T>(in List<T> list) where T : IStructuralReadWrite
+    {
+        var offsets = new List<ulong>();
+        var stream = new MemoryStream();
+        var writer = new BinaryWriter(stream);
+        foreach (var elem in list)
+        {
+            offsets.Add((ulong)stream.Length);
+            elem.WriteFields(writer);
+        }
+        return new BsatnRowList
+        {
+            RowsData = stream.ToArray(),
+            SizeHint = new RowSizeHint.RowOffsets(offsets)
+        };
+    }
+
+    private static byte[] Encode<T>(in T value) where T : IStructuralReadWrite
     {
         var o = new MemoryStream();
         var w = new BinaryWriter(o);
         value.WriteFields(w);
-        return new EncodedValue.Binary(o.ToArray());
+        return o.ToArray();
     }
 
     private static TableUpdate SampleUserInsert(string identity, string? name, bool online) =>
-        SampleUpdate(4097, "User", [Encode(new User
+        SampleUpdate(4097, "User", [new User
         {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Name = name,
             Online = online
-        })], []);
+        }], []);
 
     private static TableUpdate SampleUserUpdate(string identity, string? oldName, string? newName, bool oldOnline, bool newOnline) =>
-        SampleUpdate(4097, "User", [Encode(new User
+        SampleUpdate(4097, "User", [new User
         {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Name = newName,
             Online = newOnline
-        })], [Encode(new User
+        }], [new User
         {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Name = oldName,
             Online = oldOnline
-        })]);
+        }]);
 
     private static TableUpdate SampleMessage(string identity, ulong sent, string text) =>
-        SampleUpdate(4098, "Message", [Encode(new Message
+        SampleUpdate(4098, "Message", [new Message
         {
             Sender = Identity.From(Convert.FromBase64String(identity)),
             Sent = sent,
             Text = text
-        })], []);
+        }], []);
 
     private static ServerMessage[] SampleDump() => [
         SampleId(
@@ -282,6 +292,7 @@ public class SnapshotTests
                         break;
                 }
                 using var output = new MemoryStream();
+                output.WriteByte(1); // Write compression tag.
                 using (var brotli = new BrotliStream(output, CompressionMode.Compress))
                 {
                     using var w = new BinaryWriter(brotli);
@@ -346,8 +357,7 @@ public class SnapshotTests
             .AddExtraSettings(settings => settings.Converters.AddRange([
                 new EventsConverter(),
                 new TimestampConverter(),
-                new EnergyQuantaConverter(),
-                new EncodedValueConverter()
+                new EnergyQuantaConverter()
             ]))
             .ScrubMember<TransactionUpdate>(x => x.Status)
             .ScrubMember<DbContext<RemoteTables>>(x => x.Db)

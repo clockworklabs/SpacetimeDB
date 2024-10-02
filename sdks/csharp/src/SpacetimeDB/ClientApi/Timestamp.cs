@@ -19,5 +19,16 @@ namespace SpacetimeDB.ClientApi
 		[DataMember(Name = "microseconds")]
 		public ulong Microseconds;
 
+		public Timestamp(
+			ulong Microseconds
+		)
+		{
+			this.Microseconds = Microseconds;
+		}
+
+		public Timestamp()
+		{
+		}
+
 	}
 }

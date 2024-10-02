@@ -17,9 +17,24 @@ namespace SpacetimeDB.ClientApi
 	public partial class OneOffQuery
 	{
 		[DataMember(Name = "message_id")]
-		public byte[] MessageId = Array.Empty<byte>();
+		public byte[] MessageId;
 		[DataMember(Name = "query_string")]
-		public string QueryString = "";
+		public string QueryString;
+
+		public OneOffQuery(
+			byte[] MessageId,
+			string QueryString
+		)
+		{
+			this.MessageId = MessageId;
+			this.QueryString = QueryString;
+		}
+
+		public OneOffQuery()
+		{
+			this.MessageId = Array.Empty<byte>();
+			this.QueryString = "";
+		}
 
 	}
 }

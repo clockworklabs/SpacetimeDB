@@ -144,7 +144,7 @@ namespace SpacetimeDB
             {
                 //v1.bin.spacetimedb
                 //v1.text.spacetimedb
-                Protocol = "v1.bin.spacetimedb",
+                Protocol = "v1.bsatn.spacetimedb"
             };
             webSocket = new WebSocket(options);
             webSocket.OnMessage += OnMessageReceived;
@@ -185,10 +185,8 @@ namespace SpacetimeDB
         private readonly CancellationTokenSource _preProcessCancellationTokenSource = new();
         private CancellationToken _preProcessCancellationToken => _preProcessCancellationTokenSource.Token;
 
-        static DbValue Decode(IRemoteTableHandle table, EncodedValue value, out object? primaryKey)
+        static DbValue Decode(IRemoteTableHandle table, byte[] bin, out object? primaryKey)
         {
-            // We expect only binary messages here; let type cast exception take care of any others.
-            var bin = ((EncodedValue.Binary)value).Binary_;
             var obj = table.DecodeValue(bin);
             primaryKey = table.GetPrimaryKey(obj);
             return new(obj, bin);
@@ -196,6 +194,104 @@ namespace SpacetimeDB
 
         private static readonly Status Committed = new Status.Committed(default);
         private static readonly Status OutOfEnergy = new Status.OutOfEnergy(default);
+
+        enum CompressionAlgos : byte
+        {
+            None = 0,
+            Brotli = 1,
+        }
+
+        private static ServerMessage DecompressDecodeMessage(byte[] bytes)
+        {
+            using var stream = new MemoryStream(bytes, 1, bytes.Length - 1);
+
+            // The stream will never be empty. It will at least contain the compression algo.
+            var compression = (CompressionAlgos)bytes[0];
+            // Conditionally decompress and decode.
+            switch (compression)
+            {
+                case CompressionAlgos.None:
+                    {
+                        using var binaryReader = new BinaryReader(stream);
+                        return new ServerMessage.BSATN().Read(binaryReader);
+                    }
+                case CompressionAlgos.Brotli:
+                    {
+                        using var decompressedStream = new BrotliStream(stream, CompressionMode.Decompress);
+                        using var binaryReader = new BinaryReader(decompressedStream);
+                        return new ServerMessage.BSATN().Read(binaryReader);
+                    }
+                default:
+                    throw new InvalidOperationException("Unknown compression type");
+            }
+        }
+
+        private static QueryUpdate DecompressDecodeQueryUpdate(CompressableQueryUpdate update)
+        {
+            switch (update)
+            {
+                case CompressableQueryUpdate.Uncompressed(var qu):
+                    return qu;
+
+                case CompressableQueryUpdate.Brotli(var bytes):
+                    {
+                        using var stream = new MemoryStream(bytes);
+                        using var decompressedStream = new BrotliStream(stream, CompressionMode.Decompress);
+                        using var binaryReader = new BinaryReader(decompressedStream);
+                        return new QueryUpdate.BSATN().Read(binaryReader);
+                    }
+                default:
+                    throw new InvalidOperationException();
+            }
+        }
+
+        private static int BsatnRowListCount(BsatnRowList list)
+        {
+            switch (list.SizeHint)
+            {
+                case RowSizeHint.FixedSize(var size):
+                    return list.RowsData.Length / size;
+                case RowSizeHint.RowOffsets(var offsets):
+                    return offsets.Count;
+                default:
+                    throw new InvalidOperationException("Unknown RowSizeHint variant");
+            }
+        }
+
+        private static IEnumerable<byte[]> BsatnRowListIter(BsatnRowList list)
+        {
+            var count = BsatnRowListCount(list);
+            for (int index = 0; index < count; index += 1)
+            {
+                switch (list.SizeHint)
+                {
+                    case RowSizeHint.FixedSize(var size):
+                        {
+                            int start = index * size;
+                            int elemLen = size;
+                            yield return new ReadOnlySpan<byte>(list.RowsData, start, elemLen).ToArray();
+                            break;
+                        }
+                    case RowSizeHint.RowOffsets(var offsets):
+                        {
+                            int start = (int)offsets[index];
+                            // The end is either the start of the next element or the end.
+                            int end;
+                            if (index + 1 == count)
+                            {
+                                end = list.RowsData.Length;
+                            }
+                            else
+                            {
+                                end = (int)offsets[index + 1];
+                            }
+                            int elemLen = end - start;
+                            yield return new ReadOnlyMemory<byte>(list.RowsData, start, elemLen).ToArray();
+                            break;
+                        }
+                }
+            }
+        }
 
         void PreProcessMessages()
         {
@@ -216,10 +312,8 @@ namespace SpacetimeDB
             PreProcessedMessage PreProcessMessage(UnprocessedMessage unprocessed)
             {
                 var dbOps = new List<DbOp>();
-                using var compressedStream = new MemoryStream(unprocessed.bytes);
-                using var decompressedStream = new BrotliStream(compressedStream, CompressionMode.Decompress);
-                using var binaryReader = new BinaryReader(decompressedStream);
-                var message = new ServerMessage.BSATN().Read(binaryReader);
+
+                var message = DecompressDecodeMessage(unprocessed.bytes);
 
                 ReducerEvent<Reducer>? reducerEvent = default;
 
@@ -242,7 +336,8 @@ namespace SpacetimeDB
                 switch (message)
                 {
                     case ServerMessage.InitialSubscription(var initialSubscription):
-                        subscriptionInserts = new(capacity: initialSubscription.DatabaseUpdate.Tables.Sum(a => a.Inserts.Count));
+                        int cap = initialSubscription.DatabaseUpdate.Tables.Sum(a => (int)a.NumRows);
+                        subscriptionInserts = new(capacity: cap);
 
                         // First apply all of the state
                         foreach (var update in initialSubscription.DatabaseUpdate.Tables)
@@ -255,37 +350,33 @@ namespace SpacetimeDB
                                 continue;
                             }
 
-                            if (update.Deletes.Count != 0)
-                            {
-                                Log.Warn("Non-insert during a subscription update!");
-                            }
+                            var hashSet = GetInsertHashSet(table.ClientTableType, (int)update.NumRows);
 
-                            var hashSet = GetInsertHashSet(table.ClientTableType, initialSubscription.DatabaseUpdate.Tables.Count);
-
-                            foreach (var row in update.Inserts)
+                            foreach (var cqu in update.Updates)
                             {
-                                switch (row)
+                                var qu = DecompressDecodeQueryUpdate(cqu);
+                                if (BsatnRowListCount(qu.Deletes) != 0)
                                 {
-                                    case EncodedValue.Binary(var bin):
-                                        if (!hashSet.Add(bin))
-                                        {
-                                            // Ignore duplicate inserts in the same subscription update.
-                                            continue;
-                                        }
+                                    Log.Warn("Non-insert during a subscription update!");
+                                }
 
-                                        var obj = table.DecodeValue(bin);
-                                        var op = new DbOp
-                                        {
-                                            table = table,
-                                            insert = new(obj, bin),
-                                        };
+                                foreach (var bin in BsatnRowListIter(qu.Inserts))
+                                {
+                                    if (!hashSet.Add(bin))
+                                    {
+                                        // Ignore duplicate inserts in the same subscription update.
+                                        continue;
+                                    }
 
-                                        dbOps.Add(op);
-                                        break;
+                                    var obj = table.DecodeValue(bin);
+                                    var op = new DbOp
+                                    {
+                                        table = table,
+                                        insert = new(obj, bin),
+                                    };
 
-                                    case EncodedValue.Text(var txt):
-                                        Log.Warn("JavaScript messages are unsupported.");
-                                        break;
+                                    dbOps.Add(op);
+                                    break;
                                 }
                             }
                         }
@@ -329,73 +420,77 @@ namespace SpacetimeDB
                                     continue;
                                 }
 
-                                foreach (var row in update.Inserts)
+                                foreach (var cqu in update.Updates)
                                 {
-                                    var op = new DbOp { table = table, insert = Decode(table, row, out var pk) };
-                                    if (pk != null)
+                                    var qu = DecompressDecodeQueryUpdate(cqu);
+                                    foreach (var row in BsatnRowListIter(qu.Inserts))
                                     {
-                                        // Compound key that we use for lookup.
-                                        // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
-                                        var key = (table.ClientTableType, pk);
-
-                                        if (primaryKeyChanges.TryGetValue(key, out var oldOp))
+                                        var op = new DbOp { table = table, insert = Decode(table, row, out var pk) };
+                                        if (pk != null)
                                         {
-                                            if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
+                                            // Compound key that we use for lookup.
+                                            // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
+                                            var key = (table.ClientTableType, pk);
+
+                                            if (primaryKeyChanges.TryGetValue(key, out var oldOp))
                                             {
-                                                Log.Warn($"Update with the same primary key was applied multiple times! tableName={tableName}");
-                                                // TODO(jdetter): Is this a correctable error? This would be a major error on the
-                                                // SpacetimeDB side.
-                                                continue;
+                                                if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
+                                                {
+                                                    Log.Warn($"Update with the same primary key was applied multiple times! tableName={tableName}");
+                                                    // TODO(jdetter): Is this a correctable error? This would be a major error on the
+                                                    // SpacetimeDB side.
+                                                    continue;
+                                                }
+
+                                                var (insertOp, deleteOp) = op.insert is not null ? (op, oldOp) : (oldOp, op);
+                                                op = new DbOp
+                                                {
+                                                    table = insertOp.table,
+                                                    delete = deleteOp.delete,
+                                                    insert = insertOp.insert,
+                                                };
                                             }
-
-                                            var (insertOp, deleteOp) = op.insert is not null ? (op, oldOp) : (oldOp, op);
-                                            op = new DbOp
-                                            {
-                                                table = insertOp.table,
-                                                delete = deleteOp.delete,
-                                                insert = insertOp.insert,
-                                            };
+                                            primaryKeyChanges[key] = op;
                                         }
-                                        primaryKeyChanges[key] = op;
-                                    }
-                                    else
-                                    {
-                                        dbOps.Add(op);
-                                    }
-                                }
-
-                                foreach (var row in update.Deletes)
-                                {
-                                    var op = new DbOp { table = table, delete = Decode(table, row, out var pk) };
-                                    if (pk != null)
-                                    {
-                                        // Compound key that we use for lookup.
-                                        // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
-                                        var key = (table.ClientTableType, pk);
-
-                                        if (primaryKeyChanges.TryGetValue(key, out var oldOp))
+                                        else
                                         {
-                                            if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
-                                            {
-                                                Log.Warn($"Update with the same primary key was applied multiple times! tableName={tableName}");
-                                                // TODO(jdetter): Is this a correctable error? This would be a major error on the
-                                                // SpacetimeDB side.
-                                                continue;
-                                            }
-
-                                            var (insertOp, deleteOp) = op.insert is not null ? (op, oldOp) : (oldOp, op);
-                                            op = new DbOp
-                                            {
-                                                table = insertOp.table,
-                                                delete = deleteOp.delete,
-                                                insert = insertOp.insert,
-                                            };
+                                            dbOps.Add(op);
                                         }
-                                        primaryKeyChanges[key] = op;
                                     }
-                                    else
+
+                                    foreach (var row in BsatnRowListIter(qu.Deletes))
                                     {
-                                        dbOps.Add(op);
+                                        var op = new DbOp { table = table, delete = Decode(table, row, out var pk) };
+                                        if (pk != null)
+                                        {
+                                            // Compound key that we use for lookup.
+                                            // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
+                                            var key = (table.ClientTableType, pk);
+
+                                            if (primaryKeyChanges.TryGetValue(key, out var oldOp))
+                                            {
+                                                if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
+                                                {
+                                                    Log.Warn($"Update with the same primary key was applied multiple times! tableName={tableName}");
+                                                    // TODO(jdetter): Is this a correctable error? This would be a major error on the
+                                                    // SpacetimeDB side.
+                                                    continue;
+                                                }
+
+                                                var (insertOp, deleteOp) = op.insert is not null ? (op, oldOp) : (oldOp, op);
+                                                op = new DbOp
+                                                {
+                                                    table = insertOp.table,
+                                                    delete = deleteOp.delete,
+                                                    insert = insertOp.insert,
+                                                };
+                                            }
+                                            primaryKeyChanges[key] = op;
+                                        }
+                                        else
+                                        {
+                                            dbOps.Add(op);
+                                        }
                                     }
                                 }
                             }
@@ -702,7 +797,7 @@ namespace SpacetimeDB
                 {
                     RequestId = stats.ReducerRequestTracker.StartTrackingRequest(args.ReducerName),
                     Reducer = args.ReducerName,
-                    Args = new EncodedValue.Binary(IStructuralReadWrite.ToBytes(args))
+                    Args = IStructuralReadWrite.ToBytes(args)
                 }
             ));
         }
@@ -780,7 +875,9 @@ namespace SpacetimeDB
                 return LogAndThrow($"Mismatched result type, expected {type} but got {resultTable.TableName}");
             }
 
-            return resultTable.Rows.Select(BSATNHelpers.Decode<T>).ToArray();
+            return BsatnRowListIter(resultTable.Rows)
+                .Select(row => BSATNHelpers.Decode<T>(row))
+                .ToArray();
         }
 
         public bool IsActive => webSocket.IsConnected;

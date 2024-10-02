@@ -17,9 +17,24 @@ namespace SpacetimeDB.ClientApi
 	public partial class OneOffTable
 	{
 		[DataMember(Name = "table_name")]
-		public string TableName = "";
+		public string TableName;
 		[DataMember(Name = "rows")]
-		public System.Collections.Generic.List<SpacetimeDB.ClientApi.EncodedValue> Rows = new();
+		public SpacetimeDB.ClientApi.BsatnRowList Rows;
+
+		public OneOffTable(
+			string TableName,
+			SpacetimeDB.ClientApi.BsatnRowList Rows
+		)
+		{
+			this.TableName = TableName;
+			this.Rows = Rows;
+		}
+
+		public OneOffTable()
+		{
+			this.TableName = "";
+			this.Rows = new();
+		}
 
 	}
 }

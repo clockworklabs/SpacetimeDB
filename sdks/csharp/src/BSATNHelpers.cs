@@ -25,12 +25,5 @@ namespace SpacetimeDB
         {
             throw new InvalidOperationException("JSON isn't supported at the moment");
         }
-
-        public static T Decode<T>(EncodedValue value) where T : IStructuralReadWrite, new() => value switch
-        {
-            EncodedValue.Binary(var bin) => Decode<T>(bin),
-            EncodedValue.Text(var text) => Decode<T>(text),
-            _ => throw new InvalidOperationException()
-        };
     }
 }

@@ -19,11 +19,30 @@ namespace SpacetimeDB.ClientApi
 		[DataMember(Name = "table_id")]
 		public uint TableId;
 		[DataMember(Name = "table_name")]
-		public string TableName = "";
-		[DataMember(Name = "deletes")]
-		public System.Collections.Generic.List<SpacetimeDB.ClientApi.EncodedValue> Deletes = new();
-		[DataMember(Name = "inserts")]
-		public System.Collections.Generic.List<SpacetimeDB.ClientApi.EncodedValue> Inserts = new();
+		public string TableName;
+		[DataMember(Name = "num_rows")]
+		public ulong NumRows;
+		[DataMember(Name = "updates")]
+		public System.Collections.Generic.List<SpacetimeDB.ClientApi.CompressableQueryUpdate> Updates;
+
+		public TableUpdate(
+			uint TableId,
+			string TableName,
+			ulong NumRows,
+			System.Collections.Generic.List<SpacetimeDB.ClientApi.CompressableQueryUpdate> Updates
+		)
+		{
+			this.TableId = TableId;
+			this.TableName = TableName;
+			this.NumRows = NumRows;
+			this.Updates = Updates;
+		}
+
+		public TableUpdate()
+		{
+			this.TableName = "";
+			this.Updates = new();
+		}
 
 	}
 }

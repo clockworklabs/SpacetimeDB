@@ -17,13 +17,32 @@ namespace SpacetimeDB.ClientApi
 	public partial class OneOffQueryResponse
 	{
 		[DataMember(Name = "message_id")]
-		public byte[] MessageId = Array.Empty<byte>();
+		public byte[] MessageId;
 		[DataMember(Name = "error")]
 		public string? Error;
 		[DataMember(Name = "tables")]
-		public System.Collections.Generic.List<SpacetimeDB.ClientApi.OneOffTable> Tables = new();
+		public System.Collections.Generic.List<SpacetimeDB.ClientApi.OneOffTable> Tables;
 		[DataMember(Name = "total_host_execution_duration_micros")]
 		public ulong TotalHostExecutionDurationMicros;
+
+		public OneOffQueryResponse(
+			byte[] MessageId,
+			string? Error,
+			System.Collections.Generic.List<SpacetimeDB.ClientApi.OneOffTable> Tables,
+			ulong TotalHostExecutionDurationMicros
+		)
+		{
+			this.MessageId = MessageId;
+			this.Error = Error;
+			this.Tables = Tables;
+			this.TotalHostExecutionDurationMicros = TotalHostExecutionDurationMicros;
+		}
+
+		public OneOffQueryResponse()
+		{
+			this.MessageId = Array.Empty<byte>();
+			this.Tables = new();
+		}
 
 	}
 }
