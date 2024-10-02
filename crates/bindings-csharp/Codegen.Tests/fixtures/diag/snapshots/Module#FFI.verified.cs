@@ -441,7 +441,7 @@ static class ModuleRegistration
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
-            Reducers.TestIncompatibleScheduleReducer(
+            TestIncompatibleSchedule.TestIncompatibleScheduleReducer(
                 (SpacetimeDB.ReducerContext)ctx,
                 table.Read(reader)
             );

@@ -6,7 +6,7 @@
                  ^^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (340,17)-(340,29),
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (334,17)-(334,29),
       Message: Field AutoIncField is marked as AutoInc but it has a non-integer type float.,
       Severity: Error,
       Descriptor: {
@@ -24,7 +24,7 @@
                   ^^^^^^^^^^^^^
 }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (344,18)-(344,31),
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (338,18)-(338,31),
       Message: Field IdentityField is marked as AutoInc but it has a non-integer type string.,
       Severity: Error,
       Descriptor: {
@@ -42,7 +42,7 @@
                 ^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (351,16)-(351,27),
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (345,16)-(345,27),
       Message: Field UniqueField is marked as Unique but it has a type int? which is not an equatable primitive.,
       Severity: Error,
       Descriptor: {
@@ -60,7 +60,7 @@
                                       ^^^^^^^^^^^^^^^
 }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (354,38)-(354,53),
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (348,38)-(348,53),
       Message: Field PrimaryKeyField is marked as Unique but it has a type TestEnumWithExplicitValues which is not an equatable primitive.,
       Severity: Error,
       Descriptor: {
@@ -78,7 +78,7 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (358,42)-(358,82),
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (352,42)-(352,82),
       Message: Table TestTableTaggedEnum is a tagged enum, which is not allowed.,
       Severity: Error,
       Descriptor: {
@@ -96,15 +96,15 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
 ^^^^^^^^^^^^^^^^^^^
     Name = "TestIncompatibleSchedule1",
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    Scheduled = nameof(Reducers.TestIncompatibleScheduleReducer)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Scheduled = nameof(TestIncompatibleScheduleReducer)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 )]
 ^^
 [SpacetimeDB.Table(Name = "TestIncompatibleSchedule2")]
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-public partial struct TestIncompatibleSchedule { }
+public partial struct TestIncompatibleSchedule
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (369,0)-(373,55),
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (363,0)-(367,55),
       Message: Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.,
       Severity: Error,
       Descriptor: {
@@ -158,7 +158,7 @@ public partial struct TestIncompatibleSchedule { }
                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (330,23)-(330,50),
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (324,23)-(324,50),
       Message: Reducer method OnReducerWithReservedPrefix starts with 'On', which is a reserved prefix.,
       Severity: Error,
       Descriptor: {
@@ -176,7 +176,7 @@ public partial struct TestIncompatibleSchedule { }
                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (333,23)-(333,50),
+      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (327,23)-(327,50),
       Message: Reducer method __ReducerWithReservedPrefix starts with '__', which is a reserved prefix.,
       Severity: Error,
       Descriptor: {
