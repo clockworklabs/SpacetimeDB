@@ -7,62 +7,72 @@ expression: outfiles
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 
-
 export type AddPlayer = {
-	name: string,
+  name: string,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace AddPlayer {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("name", AlgebraicType.createStringType()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("name", AlgebraicType.createStringType()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: AddPlayer): void {
-	    AddPlayer.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: AddPlayer): void {
+    const converted = {
+      name: value.name,
+    };
+    AddPlayer.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): AddPlayer {
-	    return AddPlayer.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): AddPlayer {
+    const value = AddPlayer.getAlgebraicType().deserialize(reader);
+    return {
+      name: value.name,
+    };
+  }
+
 }
 
 '''
@@ -71,62 +81,72 @@ export namespace AddPlayer {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 
-
 export type AddPrivate = {
-	name: string,
+  name: string,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace AddPrivate {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("name", AlgebraicType.createStringType()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("name", AlgebraicType.createStringType()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: AddPrivate): void {
-	    AddPrivate.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: AddPrivate): void {
+    const converted = {
+      name: value.name,
+    };
+    AddPrivate.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): AddPrivate {
-	    return AddPrivate.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): AddPrivate {
+    const value = AddPrivate.getAlgebraicType().deserialize(reader);
+    return {
+      name: value.name,
+    };
+  }
+
 }
 
 '''
@@ -135,61 +155,71 @@ export namespace AddPrivate {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
-
 export type Baz = {
-	field: string,
+  field: string,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace Baz {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("field", AlgebraicType.createStringType()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("field", AlgebraicType.createStringType()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: Baz): void {
-	    Baz.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: Baz): void {
+    const converted = {
+      field: value.field,
+    };
+    Baz.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): Baz {
-	    return Baz.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): Baz {
+    const value = Baz.getAlgebraicType().deserialize(reader);
+    return {
+      field: value.field,
+    };
+  }
+
 }
 
 
@@ -199,62 +229,72 @@ export namespace Baz {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 
-
 export type DeletePlayer = {
-	id: BigInt,
+  id: bigint,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace DeletePlayer {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("id", AlgebraicType.createU64Type()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("id", AlgebraicType.createU64Type()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: DeletePlayer): void {
-	    DeletePlayer.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: DeletePlayer): void {
+    const converted = {
+      id: value.id,
+    };
+    DeletePlayer.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): DeletePlayer {
-	    return DeletePlayer.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): DeletePlayer {
+    const value = DeletePlayer.getAlgebraicType().deserialize(reader);
+    return {
+      id: value.id,
+    };
+  }
+
 }
 
 '''
@@ -263,62 +303,72 @@ export namespace DeletePlayer {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 
-
 export type DeletePlayersByName = {
-	name: string,
+  name: string,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace DeletePlayersByName {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("name", AlgebraicType.createStringType()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("name", AlgebraicType.createStringType()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: DeletePlayersByName): void {
-	    DeletePlayersByName.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: DeletePlayersByName): void {
+    const converted = {
+      name: value.name,
+    };
+    DeletePlayersByName.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): DeletePlayersByName {
-	    return DeletePlayersByName.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): DeletePlayersByName {
+    const value = DeletePlayersByName.getAlgebraicType().deserialize(reader);
+    return {
+      name: value.name,
+    };
+  }
+
 }
 
 '''
@@ -327,76 +377,76 @@ export namespace DeletePlayersByName {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 // @ts-ignore
 import { Baz as __Baz } from "./baz_type";
 
 // A namespace for generated variants and helper functions.
 export namespace Foobar {
-	// These are the generated variant types for each variant of the tagged union.
-	// One type is generated per variant and will be used in the `value` field of
-	// the tagged union.
-	export type Baz = { tag: "Baz", value: __Baz };
-	export type Bar = { tag: "Bar" };
-	export type Har = { tag: "Har", value: number };
+  // These are the generated variant types for each variant of the tagged union.
+  // One type is generated per variant and will be used in the `value` field of
+  // the tagged union.
+  export type Baz = { tag: "Baz", value: __Baz };
+  export type Bar = { tag: "Bar" };
+  export type Har = { tag: "Har", value: number };
 
-	// Helper functions for constructing each variant of the tagged union.
-	// ```
-	// const foo = Foo.A(42);
-	// assert!(foo.tag === "A");
-	// assert!(foo.value === 42);
-	// ```
-	export const Baz = (value: __Baz): Foobar => ({ tag: "Baz", value });
-	export const Bar = { tag: "Bar" };
-	export const Har = (value: number): Foobar => ({ tag: "Har", value });
+  // Helper functions for constructing each variant of the tagged union.
+  // ```
+  // const foo = Foo.A(42);
+  // assert!(foo.tag === "A");
+  // assert!(foo.value === 42);
+  // ```
+  export const Baz = (value: __Baz): Foobar => ({ tag: "Baz", value });
+  export const Bar = { tag: "Bar" };
+  export const Har = (value: number): Foobar => ({ tag: "Har", value });
 
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createSumType([
-			new SumTypeVariant("Baz", __Baz.getAlgebraicType()),
-			new SumTypeVariant("Bar", AlgebraicType.createProductType([])),
-			new SumTypeVariant("Har", AlgebraicType.createU32Type()),
-		]);
-	}
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createSumType([
+      new SumTypeVariant("Baz", __Baz.getAlgebraicType()),
+      new SumTypeVariant("Bar", AlgebraicType.createProductType([])),
+      new SumTypeVariant("Har", AlgebraicType.createU32Type()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: Foobar): void {
-	    Foobar.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: Foobar): void {
+      Foobar.getAlgebraicType().serialize(writer, value);
+  }
 
-	export function deserialize(reader: BinaryReader): Foobar {
-	    return Foobar.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): Foobar {
+      return Foobar.getAlgebraicType().deserialize(reader);
+  }
 
 }
 
@@ -411,81 +461,82 @@ export default Foobar;
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 import { HasSpecialStuff } from "./has_special_stuff_type";
 import { Reducer, RemoteReducers, RemoteTables } from ".";
 
-// Table handle for the table `has_special_stuff`.
-//
-// Obtain a handle from the [TODO] method on [`super::RemoteTables`],
-// like `ctx.db.TODO()`.
-//
-// Users are encouraged not to explicitly reference this type,
-// but to directly chain method calls,
-// like `ctx.db.TODO().on_insert(...)`.
+/**
+ * Table handle for the table `has_special_stuff`.
+ *
+ * Obtain a handle from the [`hasSpecialStuff`] property on [`RemoteTables`],
+ * like `ctx.db.hasSpecialStuff`.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.hasSpecialStuff.on_insert(...)`.
+ */
 export class HasSpecialStuffTableHandle {
-    tableCache: TableCache<HasSpecialStuff>;
+  tableCache: TableCache<HasSpecialStuff>;
 
-    constructor(tableCache: TableCache<HasSpecialStuff>) {
-        this.tableCache = tableCache;
-    }
+  constructor(tableCache: TableCache<HasSpecialStuff>) {
+    this.tableCache = tableCache;
+  }
 
-    count(): number {
-        return this.tableCache.count();
-    }
+  count(): number {
+    return this.tableCache.count();
+  }
 
-    iter(): Iterable<HasSpecialStuff> {
-        return this.tableCache.iter();
-    }
+  iter(): Iterable<HasSpecialStuff> {
+    return this.tableCache.iter();
+  }
 
-    onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: HasSpecialStuff) => void) => {
-        return this.tableCache.onInsert(cb);
-    }
+  onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: HasSpecialStuff) => void) => {
+    return this.tableCache.onInsert(cb);
+  }
 
-    removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: HasSpecialStuff) => void) => {
-        return this.tableCache.removeOnInsert(cb);
-    }
+  removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: HasSpecialStuff) => void) => {
+    return this.tableCache.removeOnInsert(cb);
+  }
 
-    onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: HasSpecialStuff) => void) => {
-        return this.tableCache.onDelete(cb);
-    }
+  onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: HasSpecialStuff) => void) => {
+    return this.tableCache.onDelete(cb);
+  }
 
-    removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: HasSpecialStuff) => void) => {
-        return this.tableCache.removeOnDelete(cb);
-    }
-
+  removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: HasSpecialStuff) => void) => {
+    return this.tableCache.removeOnDelete(cb);
+  }
 }
 '''
 "has_special_stuff_type.ts" = '''
@@ -493,63 +544,75 @@ export class HasSpecialStuffTableHandle {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
-
 export type HasSpecialStuff = {
-	identity: Identity,
-	address: Address,
+  identity: Identity,
+  address: Address,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace HasSpecialStuff {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("identity", AlgebraicType.createIdentityType()),
-			new ProductTypeElement("address", AlgebraicType.createAddressType()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("identity", AlgebraicType.createIdentityType()),
+      new ProductTypeElement("address", AlgebraicType.createAddressType()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: HasSpecialStuff): void {
-	    HasSpecialStuff.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: HasSpecialStuff): void {
+    const converted = {
+      identity: value.identity,
+      address: value.address,
+    };
+    HasSpecialStuff.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): HasSpecialStuff {
-	    return HasSpecialStuff.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): HasSpecialStuff {
+    const value = HasSpecialStuff.getAlgebraicType().deserialize(reader);
+    return {
+      identity: value.identity,
+      address: value.address,
+    };
+  }
+
 }
 
 
@@ -559,60 +622,67 @@ export namespace HasSpecialStuff {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 
+export type IdentityConnected = {};
 
-export type IdentityConnected = {
-	};
-
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace IdentityConnected {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: IdentityConnected): void {
-	    IdentityConnected.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: IdentityConnected): void {
+    const converted = {
+    };
+    IdentityConnected.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): IdentityConnected {
-	    return IdentityConnected.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): IdentityConnected {
+    const value = IdentityConnected.getAlgebraicType().deserialize(reader);
+    return {
+    };
+  }
+
 }
 
 '''
@@ -621,176 +691,208 @@ export namespace IdentityConnected {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 
-// Import all reducer arg types
+// Import and reexport all reducer arg types
 import { IdentityConnected } from "./identity_connected_reducer.ts";
+export { IdentityConnected };
 import { Init } from "./init_reducer.ts";
+export { Init };
 import { AddPlayer } from "./add_player_reducer.ts";
+export { AddPlayer };
 import { AddPrivate } from "./add_private_reducer.ts";
+export { AddPrivate };
 import { DeletePlayer } from "./delete_player_reducer.ts";
+export { DeletePlayer };
 import { DeletePlayersByName } from "./delete_players_by_name_reducer.ts";
+export { DeletePlayersByName };
 import { QueryPrivate } from "./query_private_reducer.ts";
+export { QueryPrivate };
 import { RepeatingTest } from "./repeating_test_reducer.ts";
+export { RepeatingTest };
 import { Test } from "./test_reducer.ts";
+export { Test };
 
-// Import all table handle types
+// Import and reexport all table handle types
 import { HasSpecialStuffTableHandle } from "./has_special_stuff_table.ts";
+export { HasSpecialStuffTableHandle };
 import { PkMultiIdentityTableHandle } from "./pk_multi_identity_table.ts";
+export { PkMultiIdentityTableHandle };
 import { PointsTableHandle } from "./points_table.ts";
+export { PointsTableHandle };
 import { PrivateTableHandle } from "./private_table.ts";
+export { PrivateTableHandle };
 import { RepeatingTestArgTableHandle } from "./repeating_test_arg_table.ts";
+export { RepeatingTestArgTableHandle };
 import { TestATableHandle } from "./test_a_table.ts";
+export { TestATableHandle };
 import { TestDTableHandle } from "./test_d_table.ts";
+export { TestDTableHandle };
 import { TestETableHandle } from "./test_e_table.ts";
+export { TestETableHandle };
 import { TestFTableHandle } from "./test_f_table.ts";
+export { TestFTableHandle };
 
-// Import all types
+// Import and reexport all types
 import { Baz } from "./baz_type.ts";
+export { Baz };
 import { Foobar } from "./foobar_type.ts";
+export { Foobar };
 import { HasSpecialStuff } from "./has_special_stuff_type.ts";
+export { HasSpecialStuff };
 import { PkMultiIdentity } from "./pk_multi_identity_type.ts";
+export { PkMultiIdentity };
 import { Point } from "./point_type.ts";
+export { Point };
 import { Private } from "./private_type.ts";
+export { Private };
 import { RepeatingTestArg } from "./repeating_test_arg_type.ts";
+export { RepeatingTestArg };
 import { TestA } from "./test_a_type.ts";
+export { TestA };
 import { TestB } from "./test_b_type.ts";
+export { TestB };
 import { TestD } from "./test_d_type.ts";
+export { TestD };
 import { TestE } from "./test_e_type.ts";
+export { TestE };
 import { TestFoobar } from "./test_foobar_type.ts";
+export { TestFoobar };
 import { NamespaceTestC } from "./namespace_test_c_type.ts";
+export { NamespaceTestC };
 import { NamespaceTestF } from "./namespace_test_f_type.ts";
+export { NamespaceTestF };
 
 const REMOTE_MODULE = {
-	tables: {
-		has_special_stuff: {
-			tableName: "has_special_stuff",
-			rowType: HasSpecialStuff.getAlgebraicType(),
-		},
-		pk_multi_identity: {
-			tableName: "pk_multi_identity",
-			rowType: PkMultiIdentity.getAlgebraicType(),
-			primaryKey: "id",
-		},
-		points: {
-			tableName: "points",
-			rowType: Point.getAlgebraicType(),
-		},
-		private: {
-			tableName: "private",
-			rowType: Private.getAlgebraicType(),
-		},
-		repeating_test_arg: {
-			tableName: "repeating_test_arg",
-			rowType: RepeatingTestArg.getAlgebraicType(),
-			primaryKey: "scheduled_id",
-		},
-		test_a: {
-			tableName: "test_a",
-			rowType: TestA.getAlgebraicType(),
-		},
-		test_d: {
-			tableName: "test_d",
-			rowType: TestD.getAlgebraicType(),
-		},
-		test_e: {
-			tableName: "test_e",
-			rowType: TestE.getAlgebraicType(),
-			primaryKey: "id",
-		},
-		test_f: {
-			tableName: "test_f",
-			rowType: TestFoobar.getAlgebraicType(),
-		},
-	},
-	reducers: {
-		__identity_connected__: {
-			reducerName: "__identity_connected__",
-			argsType: IdentityConnected.getAlgebraicType(),
-		},
-		__init__: {
-			reducerName: "__init__",
-			argsType: Init.getAlgebraicType(),
-		},
-		add_player: {
-			reducerName: "add_player",
-			argsType: AddPlayer.getAlgebraicType(),
-		},
-		add_private: {
-			reducerName: "add_private",
-			argsType: AddPrivate.getAlgebraicType(),
-		},
-		delete_player: {
-			reducerName: "delete_player",
-			argsType: DeletePlayer.getAlgebraicType(),
-		},
-		delete_players_by_name: {
-			reducerName: "delete_players_by_name",
-			argsType: DeletePlayersByName.getAlgebraicType(),
-		},
-		query_private: {
-			reducerName: "query_private",
-			argsType: QueryPrivate.getAlgebraicType(),
-		},
-		repeating_test: {
-			reducerName: "repeating_test",
-			argsType: RepeatingTest.getAlgebraicType(),
-		},
-		test: {
-			reducerName: "test",
-			argsType: Test.getAlgebraicType(),
-		},
-	},
-	// Constructors which are used by the DBConnectionImpl to
-	// extract type information from the generated RemoteModule.
-	eventContextConstructor: (imp: DBConnectionImpl, event: Event<Reducer>) => {
-	  return {
-	    ...(imp as DBConnection),
-	    event
-	  }
-	},
-	dbViewConstructor: (imp: DBConnectionImpl) => {
-	  return new RemoteTables(imp);
-	},
-	reducersConstructor: (imp: DBConnectionImpl) => {
-	  return new RemoteReducers(imp);
-	}
+  tables: {
+    has_special_stuff: {
+      tableName: "has_special_stuff",
+      rowType: HasSpecialStuff.getAlgebraicType(),
+    },
+    pk_multi_identity: {
+      tableName: "pk_multi_identity",
+      rowType: PkMultiIdentity.getAlgebraicType(),
+      primaryKey: "id",
+    },
+    points: {
+      tableName: "points",
+      rowType: Point.getAlgebraicType(),
+    },
+    private: {
+      tableName: "private",
+      rowType: Private.getAlgebraicType(),
+    },
+    repeating_test_arg: {
+      tableName: "repeating_test_arg",
+      rowType: RepeatingTestArg.getAlgebraicType(),
+      primaryKey: "scheduled_id",
+    },
+    test_a: {
+      tableName: "test_a",
+      rowType: TestA.getAlgebraicType(),
+    },
+    test_d: {
+      tableName: "test_d",
+      rowType: TestD.getAlgebraicType(),
+    },
+    test_e: {
+      tableName: "test_e",
+      rowType: TestE.getAlgebraicType(),
+      primaryKey: "id",
+    },
+    test_f: {
+      tableName: "test_f",
+      rowType: TestFoobar.getAlgebraicType(),
+    },
+  },
+  reducers: {
+    __identity_connected__: {
+      reducerName: "__identity_connected__",
+      argsType: IdentityConnected.getAlgebraicType(),
+    },
+    __init__: {
+      reducerName: "__init__",
+      argsType: Init.getAlgebraicType(),
+    },
+    add_player: {
+      reducerName: "add_player",
+      argsType: AddPlayer.getAlgebraicType(),
+    },
+    add_private: {
+      reducerName: "add_private",
+      argsType: AddPrivate.getAlgebraicType(),
+    },
+    delete_player: {
+      reducerName: "delete_player",
+      argsType: DeletePlayer.getAlgebraicType(),
+    },
+    delete_players_by_name: {
+      reducerName: "delete_players_by_name",
+      argsType: DeletePlayersByName.getAlgebraicType(),
+    },
+    query_private: {
+      reducerName: "query_private",
+      argsType: QueryPrivate.getAlgebraicType(),
+    },
+    repeating_test: {
+      reducerName: "repeating_test",
+      argsType: RepeatingTest.getAlgebraicType(),
+    },
+    test: {
+      reducerName: "test",
+      argsType: Test.getAlgebraicType(),
+    },
+  },
+  // Constructors which are used by the DBConnectionImpl to
+  // extract type information from the generated RemoteModule.
+  eventContextConstructor: (imp: DBConnectionImpl, event: Event<Reducer>) => {
+    return {
+      ...(imp as DBConnection),
+      event
+    }
+  },
+  dbViewConstructor: (imp: DBConnectionImpl) => {
+    return new RemoteTables(imp);
+  },
+  reducersConstructor: (imp: DBConnectionImpl) => {
+    return new RemoteReducers(imp);
+  }
 }
 
 // A type representing all the possible variants of a reducer.
-export type Reducer = 
+export type Reducer = never
 | { name: "IdentityConnected", args: IdentityConnected }
 | { name: "Init", args: Init }
 | { name: "AddPlayer", args: AddPlayer }
@@ -803,154 +905,195 @@ export type Reducer =
 ;
 
 export class RemoteReducers {
-	constructor(private connection: DBConnectionImpl) {}
+  constructor(private connection: DBConnectionImpl) {}
 
-	identityConnected(args: IdentityConnected) {
-		let writer = new BinaryWriter(1024);
-		IdentityConnected.getAlgebraicType().serialize(writer, args);
-		let argsBuffer = writer.getBuffer();
-		this.connection.callReducer("__identity_connected__", argsBuffer);
-	}
+  identityConnected() {
+    this.connection.callReducer("__identity_connected__", new Uint8Array(0));
+  }
 
-	onIdentityConnected(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>) => void) {
-		this.connection.onReducer("__identity_connected__", callback);
-	}
+  onIdentityConnected(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>) => void) {
+    this.connection.onReducer("__identity_connected__", callback);
+  }
 
-	init(args: Init) {
-		let writer = new BinaryWriter(1024);
-		Init.getAlgebraicType().serialize(writer, args);
-		let argsBuffer = writer.getBuffer();
-		this.connection.callReducer("__init__", argsBuffer);
-	}
+  removeOnIdentityConnected(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>) => void) {
+    this.connection.offReducer("__identity_connected__", callback);
+  }
 
-	onInit(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>) => void) {
-		this.connection.onReducer("__init__", callback);
-	}
+  init() {
+    this.connection.callReducer("__init__", new Uint8Array(0));
+  }
 
-	addPlayer(args: AddPlayer) {
-		let writer = new BinaryWriter(1024);
-		AddPlayer.getAlgebraicType().serialize(writer, args);
-		let argsBuffer = writer.getBuffer();
-		this.connection.callReducer("add_player", argsBuffer);
-	}
+  onInit(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>) => void) {
+    this.connection.onReducer("__init__", callback);
+  }
 
-	onAddPlayer(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, name: string) => void) {
-		this.connection.onReducer("add_player", callback);
-	}
+  removeOnInit(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>) => void) {
+    this.connection.offReducer("__init__", callback);
+  }
 
-	addPrivate(args: AddPrivate) {
-		let writer = new BinaryWriter(1024);
-		AddPrivate.getAlgebraicType().serialize(writer, args);
-		let argsBuffer = writer.getBuffer();
-		this.connection.callReducer("add_private", argsBuffer);
-	}
+  addPlayer(name: string) {
+    const __args = { name };
+    let __writer = new BinaryWriter(1024);
+    AddPlayer.getAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("add_player", __argsBuffer);
+  }
 
-	onAddPrivate(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, name: string) => void) {
-		this.connection.onReducer("add_private", callback);
-	}
+  onAddPlayer(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, name: string) => void) {
+    this.connection.onReducer("add_player", callback);
+  }
 
-	deletePlayer(args: DeletePlayer) {
-		let writer = new BinaryWriter(1024);
-		DeletePlayer.getAlgebraicType().serialize(writer, args);
-		let argsBuffer = writer.getBuffer();
-		this.connection.callReducer("delete_player", argsBuffer);
-	}
+  removeOnAddPlayer(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, name: string) => void) {
+    this.connection.offReducer("add_player", callback);
+  }
 
-	onDeletePlayer(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, id: BigInt) => void) {
-		this.connection.onReducer("delete_player", callback);
-	}
+  addPrivate(name: string) {
+    const __args = { name };
+    let __writer = new BinaryWriter(1024);
+    AddPrivate.getAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("add_private", __argsBuffer);
+  }
 
-	deletePlayersByName(args: DeletePlayersByName) {
-		let writer = new BinaryWriter(1024);
-		DeletePlayersByName.getAlgebraicType().serialize(writer, args);
-		let argsBuffer = writer.getBuffer();
-		this.connection.callReducer("delete_players_by_name", argsBuffer);
-	}
+  onAddPrivate(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, name: string) => void) {
+    this.connection.onReducer("add_private", callback);
+  }
 
-	onDeletePlayersByName(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, name: string) => void) {
-		this.connection.onReducer("delete_players_by_name", callback);
-	}
+  removeOnAddPrivate(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, name: string) => void) {
+    this.connection.offReducer("add_private", callback);
+  }
 
-	queryPrivate(args: QueryPrivate) {
-		let writer = new BinaryWriter(1024);
-		QueryPrivate.getAlgebraicType().serialize(writer, args);
-		let argsBuffer = writer.getBuffer();
-		this.connection.callReducer("query_private", argsBuffer);
-	}
+  deletePlayer(id: bigint) {
+    const __args = { id };
+    let __writer = new BinaryWriter(1024);
+    DeletePlayer.getAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("delete_player", __argsBuffer);
+  }
 
-	onQueryPrivate(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>) => void) {
-		this.connection.onReducer("query_private", callback);
-	}
+  onDeletePlayer(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, id: bigint) => void) {
+    this.connection.onReducer("delete_player", callback);
+  }
 
-	repeatingTest(args: RepeatingTest) {
-		let writer = new BinaryWriter(1024);
-		RepeatingTest.getAlgebraicType().serialize(writer, args);
-		let argsBuffer = writer.getBuffer();
-		this.connection.callReducer("repeating_test", argsBuffer);
-	}
+  removeOnDeletePlayer(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, id: bigint) => void) {
+    this.connection.offReducer("delete_player", callback);
+  }
 
-	onRepeatingTest(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, arg: RepeatingTestArg) => void) {
-		this.connection.onReducer("repeating_test", callback);
-	}
+  deletePlayersByName(name: string) {
+    const __args = { name };
+    let __writer = new BinaryWriter(1024);
+    DeletePlayersByName.getAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("delete_players_by_name", __argsBuffer);
+  }
 
-	test(args: Test) {
-		let writer = new BinaryWriter(1024);
-		Test.getAlgebraicType().serialize(writer, args);
-		let argsBuffer = writer.getBuffer();
-		this.connection.callReducer("test", argsBuffer);
-	}
+  onDeletePlayersByName(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, name: string) => void) {
+    this.connection.onReducer("delete_players_by_name", callback);
+  }
 
-	onTest(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, arg: TestA, arg2: TestB, arg3: NamespaceTestC, arg4: NamespaceTestF) => void) {
-		this.connection.onReducer("test", callback);
-	}
+  removeOnDeletePlayersByName(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, name: string) => void) {
+    this.connection.offReducer("delete_players_by_name", callback);
+  }
+
+  queryPrivate() {
+    this.connection.callReducer("query_private", new Uint8Array(0));
+  }
+
+  onQueryPrivate(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>) => void) {
+    this.connection.onReducer("query_private", callback);
+  }
+
+  removeOnQueryPrivate(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>) => void) {
+    this.connection.offReducer("query_private", callback);
+  }
+
+  repeatingTest(arg: RepeatingTestArg) {
+    const __args = { arg };
+    let __writer = new BinaryWriter(1024);
+    RepeatingTest.getAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("repeating_test", __argsBuffer);
+  }
+
+  onRepeatingTest(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, arg: RepeatingTestArg) => void) {
+    this.connection.onReducer("repeating_test", callback);
+  }
+
+  removeOnRepeatingTest(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, arg: RepeatingTestArg) => void) {
+    this.connection.offReducer("repeating_test", callback);
+  }
+
+  test(arg: TestA, arg2: TestB, arg3: NamespaceTestC, arg4: NamespaceTestF) {
+    const __args = { arg, arg2, arg3, arg4 };
+    let __writer = new BinaryWriter(1024);
+    Test.getAlgebraicType().serialize(__writer, __args);
+    let __argsBuffer = __writer.getBuffer();
+    this.connection.callReducer("test", __argsBuffer);
+  }
+
+  onTest(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, arg: TestA, arg2: TestB, arg3: NamespaceTestC, arg4: NamespaceTestF) => void) {
+    this.connection.onReducer("test", callback);
+  }
+
+  removeOnTest(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, arg: TestA, arg2: TestB, arg3: NamespaceTestC, arg4: NamespaceTestF) => void) {
+    this.connection.offReducer("test", callback);
+  }
 
 }
 
 export class RemoteTables {
-	constructor(private connection: DBConnectionImpl) {}
+  constructor(private connection: DBConnectionImpl) {}
 
-	#hasSpecialStuff = this.connection.clientCache.getOrCreateTable<HasSpecialStuff>(REMOTE_MODULE.tables.has_special_stuff);
-	get hasSpecialStuff(): HasSpecialStuffTableHandle {
-		return new HasSpecialStuffTableHandle(this.#hasSpecialStuff);
-	}
-	#pkMultiIdentity = this.connection.clientCache.getOrCreateTable<PkMultiIdentity>(REMOTE_MODULE.tables.pk_multi_identity);
-	get pkMultiIdentity(): PkMultiIdentityTableHandle {
-		return new PkMultiIdentityTableHandle(this.#pkMultiIdentity);
-	}
-	#points = this.connection.clientCache.getOrCreateTable<Point>(REMOTE_MODULE.tables.points);
-	get points(): PointsTableHandle {
-		return new PointsTableHandle(this.#points);
-	}
-	#private = this.connection.clientCache.getOrCreateTable<Private>(REMOTE_MODULE.tables.private);
-	get private(): PrivateTableHandle {
-		return new PrivateTableHandle(this.#private);
-	}
-	#repeatingTestArg = this.connection.clientCache.getOrCreateTable<RepeatingTestArg>(REMOTE_MODULE.tables.repeating_test_arg);
-	get repeatingTestArg(): RepeatingTestArgTableHandle {
-		return new RepeatingTestArgTableHandle(this.#repeatingTestArg);
-	}
-	#testA = this.connection.clientCache.getOrCreateTable<TestA>(REMOTE_MODULE.tables.test_a);
-	get testA(): TestATableHandle {
-		return new TestATableHandle(this.#testA);
-	}
-	#testD = this.connection.clientCache.getOrCreateTable<TestD>(REMOTE_MODULE.tables.test_d);
-	get testD(): TestDTableHandle {
-		return new TestDTableHandle(this.#testD);
-	}
-	#testE = this.connection.clientCache.getOrCreateTable<TestE>(REMOTE_MODULE.tables.test_e);
-	get testE(): TestETableHandle {
-		return new TestETableHandle(this.#testE);
-	}
-	#testF = this.connection.clientCache.getOrCreateTable<TestFoobar>(REMOTE_MODULE.tables.test_f);
-	get testF(): TestFTableHandle {
-		return new TestFTableHandle(this.#testF);
-	}
+  #hasSpecialStuff = this.connection.clientCache.getOrCreateTable<HasSpecialStuff>(REMOTE_MODULE.tables.has_special_stuff);
+  get hasSpecialStuff(): HasSpecialStuffTableHandle {
+    return new HasSpecialStuffTableHandle(this.#hasSpecialStuff);
+  }
+
+  #pkMultiIdentity = this.connection.clientCache.getOrCreateTable<PkMultiIdentity>(REMOTE_MODULE.tables.pk_multi_identity);
+  get pkMultiIdentity(): PkMultiIdentityTableHandle {
+    return new PkMultiIdentityTableHandle(this.#pkMultiIdentity);
+  }
+
+  #points = this.connection.clientCache.getOrCreateTable<Point>(REMOTE_MODULE.tables.points);
+  get points(): PointsTableHandle {
+    return new PointsTableHandle(this.#points);
+  }
+
+  #private = this.connection.clientCache.getOrCreateTable<Private>(REMOTE_MODULE.tables.private);
+  get private(): PrivateTableHandle {
+    return new PrivateTableHandle(this.#private);
+  }
+
+  #repeatingTestArg = this.connection.clientCache.getOrCreateTable<RepeatingTestArg>(REMOTE_MODULE.tables.repeating_test_arg);
+  get repeatingTestArg(): RepeatingTestArgTableHandle {
+    return new RepeatingTestArgTableHandle(this.#repeatingTestArg);
+  }
+
+  #testA = this.connection.clientCache.getOrCreateTable<TestA>(REMOTE_MODULE.tables.test_a);
+  get testA(): TestATableHandle {
+    return new TestATableHandle(this.#testA);
+  }
+
+  #testD = this.connection.clientCache.getOrCreateTable<TestD>(REMOTE_MODULE.tables.test_d);
+  get testD(): TestDTableHandle {
+    return new TestDTableHandle(this.#testD);
+  }
+
+  #testE = this.connection.clientCache.getOrCreateTable<TestE>(REMOTE_MODULE.tables.test_e);
+  get testE(): TestETableHandle {
+    return new TestETableHandle(this.#testE);
+  }
+
+  #testF = this.connection.clientCache.getOrCreateTable<TestFoobar>(REMOTE_MODULE.tables.test_f);
+  get testF(): TestFTableHandle {
+    return new TestFTableHandle(this.#testF);
+  }
 }
 
 export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers>  {
-	static builder = () => {
-		return new DBConnectionBuilder<DBConnection>(REMOTE_MODULE, (imp: DBConnectionImpl) => imp as DBConnection);
-	}
+  static builder = (): DBConnectionBuilder<DBConnection>  => {
+    return new DBConnectionBuilder<DBConnection>(REMOTE_MODULE, (imp: DBConnectionImpl) => imp as DBConnection);
+  }
 }
 '''
 "init_reducer.ts" = '''
@@ -958,60 +1101,67 @@ export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers>
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 
+export type Init = {};
 
-export type Init = {
-	};
-
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace Init {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: Init): void {
-	    Init.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: Init): void {
+    const converted = {
+    };
+    Init.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): Init {
-	    return Init.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): Init {
+    const value = Init.getAlgebraicType().deserialize(reader);
+    return {
+    };
+  }
+
 }
 
 '''
@@ -1020,71 +1170,70 @@ export namespace Init {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
-
 // A namespace for generated variants and helper functions.
 export namespace NamespaceTestC {
-	// These are the generated variant types for each variant of the tagged union.
-	// One type is generated per variant and will be used in the `value` field of
-	// the tagged union.
-	export type Foo = { tag: "Foo" };
-	export type Bar = { tag: "Bar" };
+  // These are the generated variant types for each variant of the tagged union.
+  // One type is generated per variant and will be used in the `value` field of
+  // the tagged union.
+  export type Foo = { tag: "Foo" };
+  export type Bar = { tag: "Bar" };
 
-	// Helper functions for constructing each variant of the tagged union.
-	// ```
-	// const foo = Foo.A(42);
-	// assert!(foo.tag === "A");
-	// assert!(foo.value === 42);
-	// ```
-	export const Foo = { tag: "Foo" };
-	export const Bar = { tag: "Bar" };
+  // Helper functions for constructing each variant of the tagged union.
+  // ```
+  // const foo = Foo.A(42);
+  // assert!(foo.tag === "A");
+  // assert!(foo.value === 42);
+  // ```
+  export const Foo = { tag: "Foo" };
+  export const Bar = { tag: "Bar" };
 
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createSumType([
-			new SumTypeVariant("Foo", AlgebraicType.createProductType([])),
-			new SumTypeVariant("Bar", AlgebraicType.createProductType([])),
-		]);
-	}
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createSumType([
+      new SumTypeVariant("Foo", AlgebraicType.createProductType([])),
+      new SumTypeVariant("Bar", AlgebraicType.createProductType([])),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: NamespaceTestC): void {
-	    NamespaceTestC.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: NamespaceTestC): void {
+      NamespaceTestC.getAlgebraicType().serialize(writer, value);
+  }
 
-	export function deserialize(reader: BinaryReader): NamespaceTestC {
-	    return NamespaceTestC.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): NamespaceTestC {
+      return NamespaceTestC.getAlgebraicType().deserialize(reader);
+  }
 
 }
 
@@ -1099,74 +1248,73 @@ export default NamespaceTestC;
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
-
 // A namespace for generated variants and helper functions.
 export namespace NamespaceTestF {
-	// These are the generated variant types for each variant of the tagged union.
-	// One type is generated per variant and will be used in the `value` field of
-	// the tagged union.
-	export type Foo = { tag: "Foo" };
-	export type Bar = { tag: "Bar" };
-	export type Baz = { tag: "Baz", value: string };
+  // These are the generated variant types for each variant of the tagged union.
+  // One type is generated per variant and will be used in the `value` field of
+  // the tagged union.
+  export type Foo = { tag: "Foo" };
+  export type Bar = { tag: "Bar" };
+  export type Baz = { tag: "Baz", value: string };
 
-	// Helper functions for constructing each variant of the tagged union.
-	// ```
-	// const foo = Foo.A(42);
-	// assert!(foo.tag === "A");
-	// assert!(foo.value === 42);
-	// ```
-	export const Foo = { tag: "Foo" };
-	export const Bar = { tag: "Bar" };
-	export const Baz = (value: string): NamespaceTestF => ({ tag: "Baz", value });
+  // Helper functions for constructing each variant of the tagged union.
+  // ```
+  // const foo = Foo.A(42);
+  // assert!(foo.tag === "A");
+  // assert!(foo.value === 42);
+  // ```
+  export const Foo = { tag: "Foo" };
+  export const Bar = { tag: "Bar" };
+  export const Baz = (value: string): NamespaceTestF => ({ tag: "Baz", value });
 
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createSumType([
-			new SumTypeVariant("Foo", AlgebraicType.createProductType([])),
-			new SumTypeVariant("Bar", AlgebraicType.createProductType([])),
-			new SumTypeVariant("Baz", AlgebraicType.createStringType()),
-		]);
-	}
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createSumType([
+      new SumTypeVariant("Foo", AlgebraicType.createProductType([])),
+      new SumTypeVariant("Bar", AlgebraicType.createProductType([])),
+      new SumTypeVariant("Baz", AlgebraicType.createStringType()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: NamespaceTestF): void {
-	    NamespaceTestF.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: NamespaceTestF): void {
+      NamespaceTestF.getAlgebraicType().serialize(writer, value);
+  }
 
-	export function deserialize(reader: BinaryReader): NamespaceTestF {
-	    return NamespaceTestF.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): NamespaceTestF {
+      return NamespaceTestF.getAlgebraicType().deserialize(reader);
+  }
 
 }
 
@@ -1181,191 +1329,210 @@ export default NamespaceTestF;
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 import { PkMultiIdentity } from "./pk_multi_identity_type";
 import { Reducer, RemoteReducers, RemoteTables } from ".";
 
-// Table handle for the table `pk_multi_identity`.
-//
-// Obtain a handle from the [TODO] method on [`super::RemoteTables`],
-// like `ctx.db.TODO()`.
-//
-// Users are encouraged not to explicitly reference this type,
-// but to directly chain method calls,
-// like `ctx.db.TODO().on_insert(...)`.
+/**
+ * Table handle for the table `pk_multi_identity`.
+ *
+ * Obtain a handle from the [`pkMultiIdentity`] property on [`RemoteTables`],
+ * like `ctx.db.pkMultiIdentity`.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.pkMultiIdentity.on_insert(...)`.
+ */
 export class PkMultiIdentityTableHandle {
-    tableCache: TableCache<PkMultiIdentity>;
+  tableCache: TableCache<PkMultiIdentity>;
 
-    constructor(tableCache: TableCache<PkMultiIdentity>) {
-        this.tableCache = tableCache;
-    }
+  constructor(tableCache: TableCache<PkMultiIdentity>) {
+    this.tableCache = tableCache;
+  }
 
-    count(): number {
-        return this.tableCache.count();
-    }
+  count(): number {
+    return this.tableCache.count();
+  }
 
-    iter(): Iterable<PkMultiIdentity> {
-        return this.tableCache.iter();
-    }
-
-    // Access to the `id` unique index on the table `pk_multi_identity`,
-    // which allows point queries on the field of the same name
-    // via the [`PkMultiIdentityIdUnique::find`] method.
-    //
-    // Users are encouraged not to explicitly reference this type,
-    // but to directly chain method calls,
-    // like `ctx.db.pk_multi_identity().id().find(...)`.
-    //
-    // Get a handle on the `id` unique index on the table `pk_multi_identity`.
-    id = {
-        /// Find the subscribed row whose `id` column value is equal to `col_val`,
-        /// if such a row is present in the client cache.
-        find: (col_val: number): PkMultiIdentity | undefined => {
-            for (let row of this.tableCache.iter()) {
-                if (row.id === col_val) {
-                    return row;
-                }
-            }
+  iter(): Iterable<PkMultiIdentity> {
+    return this.tableCache.iter();
+  }
+  /**
+   * Access to the `id` unique index on the table `pk_multi_identity`,
+   * which allows point queries on the field of the same name
+   * via the [`PkMultiIdentityIdUnique.find`] method.
+   *
+   * Users are encouraged not to explicitly reference this type,
+   * but to directly chain method calls,
+   * like `ctx.db.pkMultiIdentity.id().find(...)`.
+   *
+   * Get a handle on the `id` unique index on the table `pk_multi_identity`.
+   */
+  id = {
+    // Find the subscribed row whose `id` column value is equal to `col_val`,
+    // if such a row is present in the client cache.
+    find: (col_val: number): PkMultiIdentity | undefined => {
+      for (let row of this.tableCache.iter()) {
+        if (row.id === col_val) {
+          return row;
         }
-    }
-
-    // Access to the `other` unique index on the table `pk_multi_identity`,
-    // which allows point queries on the field of the same name
-    // via the [`PkMultiIdentityOtherUnique::find`] method.
-    //
-    // Users are encouraged not to explicitly reference this type,
-    // but to directly chain method calls,
-    // like `ctx.db.pk_multi_identity().other().find(...)`.
-    //
-    // Get a handle on the `other` unique index on the table `pk_multi_identity`.
-    other = {
-        /// Find the subscribed row whose `other` column value is equal to `col_val`,
-        /// if such a row is present in the client cache.
-        find: (col_val: number): PkMultiIdentity | undefined => {
-            for (let row of this.tableCache.iter()) {
-                if (row.other === col_val) {
-                    return row;
-                }
-            }
+      }
+    },
+  };
+  /**
+   * Access to the `other` unique index on the table `pk_multi_identity`,
+   * which allows point queries on the field of the same name
+   * via the [`PkMultiIdentityOtherUnique.find`] method.
+   *
+   * Users are encouraged not to explicitly reference this type,
+   * but to directly chain method calls,
+   * like `ctx.db.pkMultiIdentity.other().find(...)`.
+   *
+   * Get a handle on the `other` unique index on the table `pk_multi_identity`.
+   */
+  other = {
+    // Find the subscribed row whose `other` column value is equal to `col_val`,
+    // if such a row is present in the client cache.
+    find: (col_val: number): PkMultiIdentity | undefined => {
+      for (let row of this.tableCache.iter()) {
+        if (row.other === col_val) {
+          return row;
         }
-    }
+      }
+    },
+  };
 
-    onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: PkMultiIdentity) => void) => {
-        return this.tableCache.onInsert(cb);
-    }
+  onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: PkMultiIdentity) => void) => {
+    return this.tableCache.onInsert(cb);
+  }
 
-    removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: PkMultiIdentity) => void) => {
-        return this.tableCache.removeOnInsert(cb);
-    }
+  removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: PkMultiIdentity) => void) => {
+    return this.tableCache.removeOnInsert(cb);
+  }
 
-    onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: PkMultiIdentity) => void) => {
-        return this.tableCache.onDelete(cb);
-    }
+  onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: PkMultiIdentity) => void) => {
+    return this.tableCache.onDelete(cb);
+  }
 
-    removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: PkMultiIdentity) => void) => {
-        return this.tableCache.removeOnDelete(cb);
-    }
+  removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: PkMultiIdentity) => void) => {
+    return this.tableCache.removeOnDelete(cb);
+  }
 
-   // Updates are only defined for tables with primary keys.
-    onUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, oldRow: PkMultiIdentity, newRow: PkMultiIdentity) => void) => {
-         return this.tableCache.onUpdate(cb);
-    }
-}
+  // Updates are only defined for tables with primary keys.
+  onUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, oldRow: PkMultiIdentity, newRow: PkMultiIdentity) => void) => {
+    return this.tableCache.onUpdate(cb);
+  }
+
+  removeOnUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, onRow: PkMultiIdentity, newRow: PkMultiIdentity) => void) => {
+    return this.tableCache.removeOnUpdate(cb);
+  }}
 '''
 "pk_multi_identity_type.ts" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
-
 export type PkMultiIdentity = {
-	id: number,
-	other: number,
+  id: number,
+  other: number,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace PkMultiIdentity {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("id", AlgebraicType.createU32Type()),
-			new ProductTypeElement("other", AlgebraicType.createU32Type()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("id", AlgebraicType.createU32Type()),
+      new ProductTypeElement("other", AlgebraicType.createU32Type()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: PkMultiIdentity): void {
-	    PkMultiIdentity.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: PkMultiIdentity): void {
+    const converted = {
+      id: value.id,
+      other: value.other,
+    };
+    PkMultiIdentity.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): PkMultiIdentity {
-	    return PkMultiIdentity.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): PkMultiIdentity {
+    const value = PkMultiIdentity.getAlgebraicType().deserialize(reader);
+    return {
+      id: value.id,
+      other: value.other,
+    };
+  }
+
 }
 
 
@@ -1375,63 +1542,75 @@ export namespace PkMultiIdentity {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
-
 export type Point = {
-	x: BigInt,
-	y: BigInt,
+  x: bigint,
+  y: bigint,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace Point {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("x", AlgebraicType.createI64Type()),
-			new ProductTypeElement("y", AlgebraicType.createI64Type()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("x", AlgebraicType.createI64Type()),
+      new ProductTypeElement("y", AlgebraicType.createI64Type()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: Point): void {
-	    Point.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: Point): void {
+    const converted = {
+      x: value.x,
+      y: value.y,
+    };
+    Point.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): Point {
-	    return Point.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): Point {
+    const value = Point.getAlgebraicType().deserialize(reader);
+    return {
+      x: value.x,
+      y: value.y,
+    };
+  }
+
 }
 
 
@@ -1441,81 +1620,82 @@ export namespace Point {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 import { Point } from "./point_type";
 import { Reducer, RemoteReducers, RemoteTables } from ".";
 
-// Table handle for the table `points`.
-//
-// Obtain a handle from the [TODO] method on [`super::RemoteTables`],
-// like `ctx.db.TODO()`.
-//
-// Users are encouraged not to explicitly reference this type,
-// but to directly chain method calls,
-// like `ctx.db.TODO().on_insert(...)`.
+/**
+ * Table handle for the table `points`.
+ *
+ * Obtain a handle from the [`points`] property on [`RemoteTables`],
+ * like `ctx.db.points`.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.points.on_insert(...)`.
+ */
 export class PointsTableHandle {
-    tableCache: TableCache<Point>;
+  tableCache: TableCache<Point>;
 
-    constructor(tableCache: TableCache<Point>) {
-        this.tableCache = tableCache;
-    }
+  constructor(tableCache: TableCache<Point>) {
+    this.tableCache = tableCache;
+  }
 
-    count(): number {
-        return this.tableCache.count();
-    }
+  count(): number {
+    return this.tableCache.count();
+  }
 
-    iter(): Iterable<Point> {
-        return this.tableCache.iter();
-    }
+  iter(): Iterable<Point> {
+    return this.tableCache.iter();
+  }
 
-    onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Point) => void) => {
-        return this.tableCache.onInsert(cb);
-    }
+  onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Point) => void) => {
+    return this.tableCache.onInsert(cb);
+  }
 
-    removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Point) => void) => {
-        return this.tableCache.removeOnInsert(cb);
-    }
+  removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Point) => void) => {
+    return this.tableCache.removeOnInsert(cb);
+  }
 
-    onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Point) => void) => {
-        return this.tableCache.onDelete(cb);
-    }
+  onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Point) => void) => {
+    return this.tableCache.onDelete(cb);
+  }
 
-    removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Point) => void) => {
-        return this.tableCache.removeOnDelete(cb);
-    }
-
+  removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Point) => void) => {
+    return this.tableCache.removeOnDelete(cb);
+  }
 }
 '''
 "private_table.ts" = '''
@@ -1523,81 +1703,82 @@ export class PointsTableHandle {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 import { Private } from "./private_type";
 import { Reducer, RemoteReducers, RemoteTables } from ".";
 
-// Table handle for the table `private`.
-//
-// Obtain a handle from the [TODO] method on [`super::RemoteTables`],
-// like `ctx.db.TODO()`.
-//
-// Users are encouraged not to explicitly reference this type,
-// but to directly chain method calls,
-// like `ctx.db.TODO().on_insert(...)`.
+/**
+ * Table handle for the table `private`.
+ *
+ * Obtain a handle from the [`private`] property on [`RemoteTables`],
+ * like `ctx.db.private`.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.private.on_insert(...)`.
+ */
 export class PrivateTableHandle {
-    tableCache: TableCache<Private>;
+  tableCache: TableCache<Private>;
 
-    constructor(tableCache: TableCache<Private>) {
-        this.tableCache = tableCache;
-    }
+  constructor(tableCache: TableCache<Private>) {
+    this.tableCache = tableCache;
+  }
 
-    count(): number {
-        return this.tableCache.count();
-    }
+  count(): number {
+    return this.tableCache.count();
+  }
 
-    iter(): Iterable<Private> {
-        return this.tableCache.iter();
-    }
+  iter(): Iterable<Private> {
+    return this.tableCache.iter();
+  }
 
-    onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Private) => void) => {
-        return this.tableCache.onInsert(cb);
-    }
+  onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Private) => void) => {
+    return this.tableCache.onInsert(cb);
+  }
 
-    removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Private) => void) => {
-        return this.tableCache.removeOnInsert(cb);
-    }
+  removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Private) => void) => {
+    return this.tableCache.removeOnInsert(cb);
+  }
 
-    onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Private) => void) => {
-        return this.tableCache.onDelete(cb);
-    }
+  onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Private) => void) => {
+    return this.tableCache.onDelete(cb);
+  }
 
-    removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Private) => void) => {
-        return this.tableCache.removeOnDelete(cb);
-    }
-
+  removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: Private) => void) => {
+    return this.tableCache.removeOnDelete(cb);
+  }
 }
 '''
 "private_type.ts" = '''
@@ -1605,61 +1786,71 @@ export class PrivateTableHandle {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
-
 export type Private = {
-	name: string,
+  name: string,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace Private {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("name", AlgebraicType.createStringType()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("name", AlgebraicType.createStringType()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: Private): void {
-	    Private.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: Private): void {
+    const converted = {
+      name: value.name,
+    };
+    Private.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): Private {
-	    return Private.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): Private {
+    const value = Private.getAlgebraicType().deserialize(reader);
+    return {
+      name: value.name,
+    };
+  }
+
 }
 
 
@@ -1669,60 +1860,67 @@ export namespace Private {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 
+export type QueryPrivate = {};
 
-export type QueryPrivate = {
-	};
-
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace QueryPrivate {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: QueryPrivate): void {
-	    QueryPrivate.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: QueryPrivate): void {
+    const converted = {
+    };
+    QueryPrivate.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): QueryPrivate {
-	    return QueryPrivate.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): QueryPrivate {
+    const value = QueryPrivate.getAlgebraicType().deserialize(reader);
+    return {
+    };
+  }
+
 }
 
 '''
@@ -1731,172 +1929,192 @@ export namespace QueryPrivate {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 import { RepeatingTestArg } from "./repeating_test_arg_type";
 import { Reducer, RemoteReducers, RemoteTables } from ".";
 
-// Table handle for the table `repeating_test_arg`.
-//
-// Obtain a handle from the [TODO] method on [`super::RemoteTables`],
-// like `ctx.db.TODO()`.
-//
-// Users are encouraged not to explicitly reference this type,
-// but to directly chain method calls,
-// like `ctx.db.TODO().on_insert(...)`.
+/**
+ * Table handle for the table `repeating_test_arg`.
+ *
+ * Obtain a handle from the [`repeatingTestArg`] property on [`RemoteTables`],
+ * like `ctx.db.repeatingTestArg`.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.repeatingTestArg.on_insert(...)`.
+ */
 export class RepeatingTestArgTableHandle {
-    tableCache: TableCache<RepeatingTestArg>;
+  tableCache: TableCache<RepeatingTestArg>;
 
-    constructor(tableCache: TableCache<RepeatingTestArg>) {
-        this.tableCache = tableCache;
-    }
+  constructor(tableCache: TableCache<RepeatingTestArg>) {
+    this.tableCache = tableCache;
+  }
 
-    count(): number {
-        return this.tableCache.count();
-    }
+  count(): number {
+    return this.tableCache.count();
+  }
 
-    iter(): Iterable<RepeatingTestArg> {
-        return this.tableCache.iter();
-    }
-
-    // Access to the `scheduled_id` unique index on the table `repeating_test_arg`,
-    // which allows point queries on the field of the same name
-    // via the [`RepeatingTestArgScheduledIdUnique::find`] method.
-    //
-    // Users are encouraged not to explicitly reference this type,
-    // but to directly chain method calls,
-    // like `ctx.db.repeating_test_arg().scheduled_id().find(...)`.
-    //
-    // Get a handle on the `scheduled_id` unique index on the table `repeating_test_arg`.
-    scheduled_id = {
-        /// Find the subscribed row whose `scheduled_id` column value is equal to `col_val`,
-        /// if such a row is present in the client cache.
-        find: (col_val: BigInt): RepeatingTestArg | undefined => {
-            for (let row of this.tableCache.iter()) {
-                if (row.scheduled_id === col_val) {
-                    return row;
-                }
-            }
+  iter(): Iterable<RepeatingTestArg> {
+    return this.tableCache.iter();
+  }
+  /**
+   * Access to the `scheduled_id` unique index on the table `repeating_test_arg`,
+   * which allows point queries on the field of the same name
+   * via the [`RepeatingTestArgScheduledIdUnique.find`] method.
+   *
+   * Users are encouraged not to explicitly reference this type,
+   * but to directly chain method calls,
+   * like `ctx.db.repeatingTestArg.scheduled_id().find(...)`.
+   *
+   * Get a handle on the `scheduled_id` unique index on the table `repeating_test_arg`.
+   */
+  scheduled_id = {
+    // Find the subscribed row whose `scheduled_id` column value is equal to `col_val`,
+    // if such a row is present in the client cache.
+    find: (col_val: bigint): RepeatingTestArg | undefined => {
+      for (let row of this.tableCache.iter()) {
+        if (row.scheduled_id === col_val) {
+          return row;
         }
-    }
+      }
+    },
+  };
 
-    onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: RepeatingTestArg) => void) => {
-        return this.tableCache.onInsert(cb);
-    }
+  onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: RepeatingTestArg) => void) => {
+    return this.tableCache.onInsert(cb);
+  }
 
-    removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: RepeatingTestArg) => void) => {
-        return this.tableCache.removeOnInsert(cb);
-    }
+  removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: RepeatingTestArg) => void) => {
+    return this.tableCache.removeOnInsert(cb);
+  }
 
-    onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: RepeatingTestArg) => void) => {
-        return this.tableCache.onDelete(cb);
-    }
+  onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: RepeatingTestArg) => void) => {
+    return this.tableCache.onDelete(cb);
+  }
 
-    removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: RepeatingTestArg) => void) => {
-        return this.tableCache.removeOnDelete(cb);
-    }
+  removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: RepeatingTestArg) => void) => {
+    return this.tableCache.removeOnDelete(cb);
+  }
 
-   // Updates are only defined for tables with primary keys.
-    onUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, oldRow: RepeatingTestArg, newRow: RepeatingTestArg) => void) => {
-         return this.tableCache.onUpdate(cb);
-    }
-}
+  // Updates are only defined for tables with primary keys.
+  onUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, oldRow: RepeatingTestArg, newRow: RepeatingTestArg) => void) => {
+    return this.tableCache.onUpdate(cb);
+  }
+
+  removeOnUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, onRow: RepeatingTestArg, newRow: RepeatingTestArg) => void) => {
+    return this.tableCache.removeOnUpdate(cb);
+  }}
 '''
 "repeating_test_arg_type.ts" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
-
 export type RepeatingTestArg = {
-	prev_time: BigInt,
-	scheduled_id: BigInt,
-	scheduled_at: { tag: "Interval", value: BigInt } | { tag: "Time", value: BigInt },
+  prevTime: bigint,
+  scheduledId: bigint,
+  scheduledAt: { tag: "Interval", value: bigint } | { tag: "Time", value: bigint },
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace RepeatingTestArg {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("prevTime", AlgebraicType.createU64Type()),
-			new ProductTypeElement("scheduledId", AlgebraicType.createU64Type()),
-			new ProductTypeElement("scheduledAt", AlgebraicType.createScheduleAtType()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("prev_time", AlgebraicType.createU64Type()),
+      new ProductTypeElement("scheduled_id", AlgebraicType.createU64Type()),
+      new ProductTypeElement("scheduled_at", AlgebraicType.createScheduleAtType()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: RepeatingTestArg): void {
-	    RepeatingTestArg.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: RepeatingTestArg): void {
+    const converted = {
+      prev_time: value.prevTime,
+      scheduled_id: value.scheduledId,
+      scheduled_at: value.scheduledAt,
+    };
+    RepeatingTestArg.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): RepeatingTestArg {
-	    return RepeatingTestArg.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): RepeatingTestArg {
+    const value = RepeatingTestArg.getAlgebraicType().deserialize(reader);
+    return {
+      prevTime: value.prev_time,
+      scheduledId: value.scheduled_id,
+      scheduledAt: value.scheduled_at,
+    };
+  }
+
 }
 
 
@@ -1906,64 +2124,75 @@ export namespace RepeatingTestArg {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 
 // @ts-ignore
 import { RepeatingTestArg as __RepeatingTestArg } from "./repeating_test_arg_type";
 
 export type RepeatingTest = {
-	arg: __RepeatingTestArg,
+  arg: __RepeatingTestArg,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace RepeatingTest {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("arg", __RepeatingTestArg.getAlgebraicType()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("arg", __RepeatingTestArg.getAlgebraicType()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: RepeatingTest): void {
-	    RepeatingTest.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: RepeatingTest): void {
+    const converted = {
+      arg: value.arg,
+    };
+    RepeatingTest.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): RepeatingTest {
-	    return RepeatingTest.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): RepeatingTest {
+    const value = RepeatingTest.getAlgebraicType().deserialize(reader);
+    return {
+      arg: value.arg,
+    };
+  }
+
 }
 
 '''
@@ -1972,81 +2201,82 @@ export namespace RepeatingTest {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestA } from "./test_a_type";
 import { Reducer, RemoteReducers, RemoteTables } from ".";
 
-// Table handle for the table `test_a`.
-//
-// Obtain a handle from the [TODO] method on [`super::RemoteTables`],
-// like `ctx.db.TODO()`.
-//
-// Users are encouraged not to explicitly reference this type,
-// but to directly chain method calls,
-// like `ctx.db.TODO().on_insert(...)`.
+/**
+ * Table handle for the table `test_a`.
+ *
+ * Obtain a handle from the [`testA`] property on [`RemoteTables`],
+ * like `ctx.db.testA`.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.testA.on_insert(...)`.
+ */
 export class TestATableHandle {
-    tableCache: TableCache<TestA>;
+  tableCache: TableCache<TestA>;
 
-    constructor(tableCache: TableCache<TestA>) {
-        this.tableCache = tableCache;
-    }
+  constructor(tableCache: TableCache<TestA>) {
+    this.tableCache = tableCache;
+  }
 
-    count(): number {
-        return this.tableCache.count();
-    }
+  count(): number {
+    return this.tableCache.count();
+  }
 
-    iter(): Iterable<TestA> {
-        return this.tableCache.iter();
-    }
+  iter(): Iterable<TestA> {
+    return this.tableCache.iter();
+  }
 
-    onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestA) => void) => {
-        return this.tableCache.onInsert(cb);
-    }
+  onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestA) => void) => {
+    return this.tableCache.onInsert(cb);
+  }
 
-    removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestA) => void) => {
-        return this.tableCache.removeOnInsert(cb);
-    }
+  removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestA) => void) => {
+    return this.tableCache.removeOnInsert(cb);
+  }
 
-    onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestA) => void) => {
-        return this.tableCache.onDelete(cb);
-    }
+  onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestA) => void) => {
+    return this.tableCache.onDelete(cb);
+  }
 
-    removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestA) => void) => {
-        return this.tableCache.removeOnDelete(cb);
-    }
-
+  removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestA) => void) => {
+    return this.tableCache.removeOnDelete(cb);
+  }
 }
 '''
 "test_a_type.ts" = '''
@@ -2054,65 +2284,79 @@ export class TestATableHandle {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
-
 export type TestA = {
-	x: number,
-	y: number,
-	z: string,
+  x: number,
+  y: number,
+  z: string,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace TestA {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("x", AlgebraicType.createU32Type()),
-			new ProductTypeElement("y", AlgebraicType.createU32Type()),
-			new ProductTypeElement("z", AlgebraicType.createStringType()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("x", AlgebraicType.createU32Type()),
+      new ProductTypeElement("y", AlgebraicType.createU32Type()),
+      new ProductTypeElement("z", AlgebraicType.createStringType()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: TestA): void {
-	    TestA.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: TestA): void {
+    const converted = {
+      x: value.x,
+      y: value.y,
+      z: value.z,
+    };
+    TestA.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): TestA {
-	    return TestA.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): TestA {
+    const value = TestA.getAlgebraicType().deserialize(reader);
+    return {
+      x: value.x,
+      y: value.y,
+      z: value.z,
+    };
+  }
+
 }
 
 
@@ -2122,61 +2366,71 @@ export namespace TestA {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
-
 export type TestB = {
-	foo: string,
+  foo: string,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace TestB {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("foo", AlgebraicType.createStringType()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("foo", AlgebraicType.createStringType()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: TestB): void {
-	    TestB.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: TestB): void {
+    const converted = {
+      foo: value.foo,
+    };
+    TestB.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): TestB {
-	    return TestB.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): TestB {
+    const value = TestB.getAlgebraicType().deserialize(reader);
+    return {
+      foo: value.foo,
+    };
+  }
+
 }
 
 
@@ -2186,83 +2440,85 @@ export namespace TestB {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestD } from "./test_d_type";
 // @ts-ignore
 import { NamespaceTestC as __NamespaceTestC } from "./namespace_test_c_type";
+
 import { Reducer, RemoteReducers, RemoteTables } from ".";
 
-// Table handle for the table `test_d`.
-//
-// Obtain a handle from the [TODO] method on [`super::RemoteTables`],
-// like `ctx.db.TODO()`.
-//
-// Users are encouraged not to explicitly reference this type,
-// but to directly chain method calls,
-// like `ctx.db.TODO().on_insert(...)`.
+/**
+ * Table handle for the table `test_d`.
+ *
+ * Obtain a handle from the [`testD`] property on [`RemoteTables`],
+ * like `ctx.db.testD`.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.testD.on_insert(...)`.
+ */
 export class TestDTableHandle {
-    tableCache: TableCache<TestD>;
+  tableCache: TableCache<TestD>;
 
-    constructor(tableCache: TableCache<TestD>) {
-        this.tableCache = tableCache;
-    }
+  constructor(tableCache: TableCache<TestD>) {
+    this.tableCache = tableCache;
+  }
 
-    count(): number {
-        return this.tableCache.count();
-    }
+  count(): number {
+    return this.tableCache.count();
+  }
 
-    iter(): Iterable<TestD> {
-        return this.tableCache.iter();
-    }
+  iter(): Iterable<TestD> {
+    return this.tableCache.iter();
+  }
 
-    onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestD) => void) => {
-        return this.tableCache.onInsert(cb);
-    }
+  onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestD) => void) => {
+    return this.tableCache.onInsert(cb);
+  }
 
-    removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestD) => void) => {
-        return this.tableCache.removeOnInsert(cb);
-    }
+  removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestD) => void) => {
+    return this.tableCache.removeOnInsert(cb);
+  }
 
-    onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestD) => void) => {
-        return this.tableCache.onDelete(cb);
-    }
+  onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestD) => void) => {
+    return this.tableCache.onDelete(cb);
+  }
 
-    removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestD) => void) => {
-        return this.tableCache.removeOnDelete(cb);
-    }
-
+  removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestD) => void) => {
+    return this.tableCache.removeOnDelete(cb);
+  }
 }
 '''
 "test_d_type.ts" = '''
@@ -2270,63 +2526,74 @@ export class TestDTableHandle {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 // @ts-ignore
 import { NamespaceTestC as __NamespaceTestC } from "./namespace_test_c_type";
 
 export type TestD = {
-	test_c: __NamespaceTestC | undefined,
+  testC: __NamespaceTestC | undefined,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace TestD {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("testC", AlgebraicType.createOptionType(__NamespaceTestC.getAlgebraicType())),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("test_c", AlgebraicType.createOptionType(__NamespaceTestC.getAlgebraicType())),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: TestD): void {
-	    TestD.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: TestD): void {
+    const converted = {
+      test_c: value.testC,
+    };
+    TestD.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): TestD {
-	    return TestD.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): TestD {
+    const value = TestD.getAlgebraicType().deserialize(reader);
+    return {
+      testC: value.test_c,
+    };
+  }
+
 }
 
 
@@ -2336,170 +2603,188 @@ export namespace TestD {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestE } from "./test_e_type";
 import { Reducer, RemoteReducers, RemoteTables } from ".";
 
-// Table handle for the table `test_e`.
-//
-// Obtain a handle from the [TODO] method on [`super::RemoteTables`],
-// like `ctx.db.TODO()`.
-//
-// Users are encouraged not to explicitly reference this type,
-// but to directly chain method calls,
-// like `ctx.db.TODO().on_insert(...)`.
+/**
+ * Table handle for the table `test_e`.
+ *
+ * Obtain a handle from the [`testE`] property on [`RemoteTables`],
+ * like `ctx.db.testE`.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.testE.on_insert(...)`.
+ */
 export class TestETableHandle {
-    tableCache: TableCache<TestE>;
+  tableCache: TableCache<TestE>;
 
-    constructor(tableCache: TableCache<TestE>) {
-        this.tableCache = tableCache;
-    }
+  constructor(tableCache: TableCache<TestE>) {
+    this.tableCache = tableCache;
+  }
 
-    count(): number {
-        return this.tableCache.count();
-    }
+  count(): number {
+    return this.tableCache.count();
+  }
 
-    iter(): Iterable<TestE> {
-        return this.tableCache.iter();
-    }
-
-    // Access to the `id` unique index on the table `test_e`,
-    // which allows point queries on the field of the same name
-    // via the [`TestEIdUnique::find`] method.
-    //
-    // Users are encouraged not to explicitly reference this type,
-    // but to directly chain method calls,
-    // like `ctx.db.test_e().id().find(...)`.
-    //
-    // Get a handle on the `id` unique index on the table `test_e`.
-    id = {
-        /// Find the subscribed row whose `id` column value is equal to `col_val`,
-        /// if such a row is present in the client cache.
-        find: (col_val: BigInt): TestE | undefined => {
-            for (let row of this.tableCache.iter()) {
-                if (row.id === col_val) {
-                    return row;
-                }
-            }
+  iter(): Iterable<TestE> {
+    return this.tableCache.iter();
+  }
+  /**
+   * Access to the `id` unique index on the table `test_e`,
+   * which allows point queries on the field of the same name
+   * via the [`TestEIdUnique.find`] method.
+   *
+   * Users are encouraged not to explicitly reference this type,
+   * but to directly chain method calls,
+   * like `ctx.db.testE.id().find(...)`.
+   *
+   * Get a handle on the `id` unique index on the table `test_e`.
+   */
+  id = {
+    // Find the subscribed row whose `id` column value is equal to `col_val`,
+    // if such a row is present in the client cache.
+    find: (col_val: bigint): TestE | undefined => {
+      for (let row of this.tableCache.iter()) {
+        if (row.id === col_val) {
+          return row;
         }
-    }
+      }
+    },
+  };
 
-    onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestE) => void) => {
-        return this.tableCache.onInsert(cb);
-    }
+  onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestE) => void) => {
+    return this.tableCache.onInsert(cb);
+  }
 
-    removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestE) => void) => {
-        return this.tableCache.removeOnInsert(cb);
-    }
+  removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestE) => void) => {
+    return this.tableCache.removeOnInsert(cb);
+  }
 
-    onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestE) => void) => {
-        return this.tableCache.onDelete(cb);
-    }
+  onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestE) => void) => {
+    return this.tableCache.onDelete(cb);
+  }
 
-    removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestE) => void) => {
-        return this.tableCache.removeOnDelete(cb);
-    }
+  removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestE) => void) => {
+    return this.tableCache.removeOnDelete(cb);
+  }
 
-   // Updates are only defined for tables with primary keys.
-    onUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, oldRow: TestE, newRow: TestE) => void) => {
-         return this.tableCache.onUpdate(cb);
-    }
-}
+  // Updates are only defined for tables with primary keys.
+  onUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, oldRow: TestE, newRow: TestE) => void) => {
+    return this.tableCache.onUpdate(cb);
+  }
+
+  removeOnUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, onRow: TestE, newRow: TestE) => void) => {
+    return this.tableCache.removeOnUpdate(cb);
+  }}
 '''
 "test_e_type.ts" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
-
 export type TestE = {
-	id: BigInt,
-	name: string,
+  id: bigint,
+  name: string,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace TestE {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("id", AlgebraicType.createU64Type()),
-			new ProductTypeElement("name", AlgebraicType.createStringType()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("id", AlgebraicType.createU64Type()),
+      new ProductTypeElement("name", AlgebraicType.createStringType()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: TestE): void {
-	    TestE.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: TestE): void {
+    const converted = {
+      id: value.id,
+      name: value.name,
+    };
+    TestE.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): TestE {
-	    return TestE.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): TestE {
+    const value = TestE.getAlgebraicType().deserialize(reader);
+    return {
+      id: value.id,
+      name: value.name,
+    };
+  }
+
 }
 
 
@@ -2509,83 +2794,85 @@ export namespace TestE {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestFoobar } from "./test_foobar_type";
 // @ts-ignore
 import { Foobar as __Foobar } from "./foobar_type";
+
 import { Reducer, RemoteReducers, RemoteTables } from ".";
 
-// Table handle for the table `test_f`.
-//
-// Obtain a handle from the [TODO] method on [`super::RemoteTables`],
-// like `ctx.db.TODO()`.
-//
-// Users are encouraged not to explicitly reference this type,
-// but to directly chain method calls,
-// like `ctx.db.TODO().on_insert(...)`.
+/**
+ * Table handle for the table `test_f`.
+ *
+ * Obtain a handle from the [`testF`] property on [`RemoteTables`],
+ * like `ctx.db.testF`.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.testF.on_insert(...)`.
+ */
 export class TestFTableHandle {
-    tableCache: TableCache<TestFoobar>;
+  tableCache: TableCache<TestFoobar>;
 
-    constructor(tableCache: TableCache<TestFoobar>) {
-        this.tableCache = tableCache;
-    }
+  constructor(tableCache: TableCache<TestFoobar>) {
+    this.tableCache = tableCache;
+  }
 
-    count(): number {
-        return this.tableCache.count();
-    }
+  count(): number {
+    return this.tableCache.count();
+  }
 
-    iter(): Iterable<TestFoobar> {
-        return this.tableCache.iter();
-    }
+  iter(): Iterable<TestFoobar> {
+    return this.tableCache.iter();
+  }
 
-    onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestFoobar) => void) => {
-        return this.tableCache.onInsert(cb);
-    }
+  onInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestFoobar) => void) => {
+    return this.tableCache.onInsert(cb);
+  }
 
-    removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestFoobar) => void) => {
-        return this.tableCache.removeOnInsert(cb);
-    }
+  removeOnInsert = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestFoobar) => void) => {
+    return this.tableCache.removeOnInsert(cb);
+  }
 
-    onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestFoobar) => void) => {
-        return this.tableCache.onDelete(cb);
-    }
+  onDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestFoobar) => void) => {
+    return this.tableCache.onDelete(cb);
+  }
 
-    removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestFoobar) => void) => {
-        return this.tableCache.removeOnDelete(cb);
-    }
-
+  removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, row: TestFoobar) => void) => {
+    return this.tableCache.removeOnDelete(cb);
+  }
 }
 '''
 "test_foobar_type.ts" = '''
@@ -2593,63 +2880,74 @@ export class TestFTableHandle {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 // @ts-ignore
 import { Foobar as __Foobar } from "./foobar_type";
 
 export type TestFoobar = {
-	field: __Foobar,
+  field: __Foobar,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace TestFoobar {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("field", __Foobar.getAlgebraicType()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("field", __Foobar.getAlgebraicType()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: TestFoobar): void {
-	    TestFoobar.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: TestFoobar): void {
+    const converted = {
+      field: value.field,
+    };
+    TestFoobar.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): TestFoobar {
-	    return TestFoobar.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): TestFoobar {
+    const value = TestFoobar.getAlgebraicType().deserialize(reader);
+    return {
+      field: value.field,
+    };
+  }
+
 }
 
 
@@ -2659,38 +2957,38 @@ export namespace TestFoobar {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 import {
-    // @ts-ignore
-    AlgebraicType,
-    // @ts-ignore
-    ProductType,
-    // @ts-ignore
-    ProductTypeElement,
-    // @ts-ignore
-    SumType,
-    // @ts-ignore
-    SumTypeVariant,
-    // @ts-ignore
-    AlgebraicValue,
-    // @ts-ignore
-    Identity,
-    // @ts-ignore
-    Address,
-    // @ts-ignore
-    DBConnectionBuilder,
-    // @ts-ignore
-    TableCache,
-    // @ts-ignore
-    BinaryWriter,
-    // @ts-ignore
-    EventContext,
-    // @ts-ignore
-    BinaryReader,
-    // @ts-ignore
-    DBConnectionImpl,
-    // @ts-ignore
-    DBContext,
-    // @ts-ignore
-    Event,
+  // @ts-ignore
+  Address,
+  // @ts-ignore
+  AlgebraicType,
+  // @ts-ignore
+  AlgebraicValue,
+  // @ts-ignore
+  BinaryReader,
+  // @ts-ignore
+  BinaryWriter,
+  // @ts-ignore
+  DBConnectionBuilder,
+  // @ts-ignore
+  DBConnectionImpl,
+  // @ts-ignore
+  DBContext,
+  // @ts-ignore
+  Event,
+  // @ts-ignore
+  EventContext,
+  // @ts-ignore
+  Identity,
+  // @ts-ignore
+  ProductType,
+  // @ts-ignore
+  ProductTypeElement,
+  // @ts-ignore
+  SumType,
+  // @ts-ignore
+  SumTypeVariant,
+  // @ts-ignore
+  TableCache,
 } from "@clockworklabs/spacetimedb-sdk";
 
 // @ts-ignore
@@ -2703,32 +3001,49 @@ import { NamespaceTestC as __NamespaceTestC } from "./namespace_test_c_type";
 import { NamespaceTestF as __NamespaceTestF } from "./namespace_test_f_type";
 
 export type Test = {
-	arg: __TestA,
-	arg_2: __TestB,
-	arg_3: __NamespaceTestC,
-	arg_4: __NamespaceTestF,
+  arg: __TestA,
+  arg2: __TestB,
+  arg3: __NamespaceTestC,
+  arg4: __NamespaceTestF,
 };
 
-// A namespace for generated helper functions.
+/**
+ * A namespace for generated helper functions.
+ */
 export namespace Test {
-	// A function which returns this type represented as an AlgebraicType.
-	// This function is derived from the AlgebraicType used to generate this type.
-	export function getAlgebraicType(): AlgebraicType {
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("arg", __TestA.getAlgebraicType()),
-			new ProductTypeElement("arg2", __TestB.getAlgebraicType()),
-			new ProductTypeElement("arg3", __NamespaceTestC.getAlgebraicType()),
-			new ProductTypeElement("arg4", __NamespaceTestF.getAlgebraicType()),
-		]);
-	}
+  /**
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
+  export function getAlgebraicType(): AlgebraicType {
+    return AlgebraicType.createProductType([
+      new ProductTypeElement("arg", __TestA.getAlgebraicType()),
+      new ProductTypeElement("arg2", __TestB.getAlgebraicType()),
+      new ProductTypeElement("arg3", __NamespaceTestC.getAlgebraicType()),
+      new ProductTypeElement("arg4", __NamespaceTestF.getAlgebraicType()),
+    ]);
+  }
 
-	export function serialize(writer: BinaryWriter, value: Test): void {
-	    Test.getAlgebraicType().serialize(writer, value);
-	}
+  export function serialize(writer: BinaryWriter, value: Test): void {
+    const converted = {
+      arg: value.arg,
+      arg2: value.arg2,
+      arg3: value.arg3,
+      arg4: value.arg4,
+    };
+    Test.getAlgebraicType().serialize(writer, converted);
+  }
 
-	export function deserialize(reader: BinaryReader): Test {
-	    return Test.getAlgebraicType().deserialize(reader);
-	}
+  export function deserialize(reader: BinaryReader): Test {
+    const value = Test.getAlgebraicType().deserialize(reader);
+    return {
+      arg: value.arg,
+      arg2: value.arg2,
+      arg3: value.arg3,
+      arg4: value.arg4,
+    };
+  }
+
 }
 
 '''
