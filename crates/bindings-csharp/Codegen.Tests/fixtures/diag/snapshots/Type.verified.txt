@@ -6,7 +6,6 @@
                  ^^^
     EnumVariant2 = 2,
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (16,17)-(16,20),
       Message: TestEnumWithExplicitValues.EnumVariant1 has an explicit value 1 which is not allowed in SpacetimeDB enums.,
       Severity: Error,
       Descriptor: {
@@ -24,7 +23,6 @@
                  ^^^
 }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (17,17)-(17,20),
       Message: TestEnumWithExplicitValues.EnumVariant2 has an explicit value 2 which is not allowed in SpacetimeDB enums.,
       Severity: Error,
       Descriptor: {
@@ -42,7 +40,6 @@
     ^^^^^^^^^^^^^^
 }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (279,4)-(279,18),
       Message: TestEnumWithTooManyVariants has 257 variants which is more than the allowed 256 variants for SpacetimeDB enums.,
       Severity: Error,
       Descriptor: {
@@ -60,7 +57,6 @@
                     ^^^^^^^^^^^^^^^^^^^^^^
     public Exception UnsupportedSystemType;
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (7,20)-(7,42),
       Message: BSATN implementation for System.DateTime is not found: Unsupported special type System.DateTime (System_DateTime),
       Severity: Error,
       Descriptor: {
@@ -78,7 +74,6 @@
                      ^^^^^^^^^^^^^^^^^^^^^
     public UnresolvedType UnresolvedType;
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (8,21)-(8,42),
       Message: BSATN implementation for System.Exception is not found: Unsupported system type System.Exception,
       Severity: Error,
       Descriptor: {
@@ -96,7 +91,6 @@
                           ^^^^^^^^^^^^^^
     public LocalEnum UnsupportedEnum;
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (9,26)-(9,40),
       Message: BSATN implementation for UnresolvedType is not found: Could not resolve type UnresolvedType,
       Severity: Error,
       Descriptor: {
@@ -114,7 +108,6 @@
                      ^^^^^^^^^^^^^^^
 }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (10,21)-(10,36),
       Message: BSATN implementation for LocalEnum is not found: Enum LocalEnum does not have a [SpacetimeDB.Type] attribute,
       Severity: Error,
       Descriptor: {
@@ -132,7 +125,6 @@
                ^^^^^^^^^^^^^^^^^^^^^^^^
 }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (285,15)-(285,39),
       Message: ForbiddenTaggedEnumField is an instance field, which are not permitted inside SpacetimeDB tagged enums.,
       Severity: Error,
       Descriptor: {
@@ -150,7 +142,6 @@
                ^^^^^^^^^^^^^^
 }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (291,15)-(291,29),
       Message: ForbiddenField is an instance field, which are not permitted inside SpacetimeDB tagged enums.,
       Severity: Error,
       Descriptor: {
@@ -168,7 +159,6 @@ public partial struct TestTypeParams<T>
                                     ^^^
 {
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (295,36)-(295,39),
       Message: Type parameters <T> are not supported in SpacetimeDB types.,
       Severity: Error,
       Descriptor: {

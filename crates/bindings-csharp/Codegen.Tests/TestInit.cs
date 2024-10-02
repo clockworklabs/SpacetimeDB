@@ -43,7 +43,11 @@ static class TestInit
                 }
                 writer.WriteComment(comment.ToString());
             }
-            writer.WriteMember(diag, diag.Location, nameof(diag.Location));
+            else
+            {
+                // Write location only when we don't have the source code snippet to make snapshots more stable.
+                writer.WriteMember(diag, diag.Location, nameof(diag.Location));
+            }
             writer.WriteMember(diag, diag.GetMessage(), "Message");
             writer.WriteMember(diag, diag.Severity, nameof(diag.Severity));
             writer.WriteMember(diag, diag.Descriptor, nameof(diag.Descriptor));

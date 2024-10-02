@@ -6,7 +6,6 @@
                  ^^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (334,17)-(334,29),
       Message: Field AutoIncField is marked as AutoInc but it has a non-integer type float.,
       Severity: Error,
       Descriptor: {
@@ -24,7 +23,6 @@
                   ^^^^^^^^^^^^^
 }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (338,18)-(338,31),
       Message: Field IdentityField is marked as AutoInc but it has a non-integer type string.,
       Severity: Error,
       Descriptor: {
@@ -42,7 +40,6 @@
                 ^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (345,16)-(345,27),
       Message: Field UniqueField is marked as Unique but it has a type int? which is not an equatable primitive.,
       Severity: Error,
       Descriptor: {
@@ -60,7 +57,6 @@
                                       ^^^^^^^^^^^^^^^
 }
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (348,38)-(348,53),
       Message: Field PrimaryKeyField is marked as Unique but it has a type TestEnumWithExplicitValues which is not an equatable primitive.,
       Severity: Error,
       Descriptor: {
@@ -78,7 +74,6 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (352,42)-(352,82),
       Message: Table TestTableTaggedEnum is a tagged enum, which is not allowed.,
       Severity: Error,
       Descriptor: {
@@ -96,15 +91,14 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
 ^^^^^^^^^^^^^^^^^^^
     Name = "TestIncompatibleSchedule1",
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    Scheduled = nameof(Reducers.TestIncompatibleScheduleReducer)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Scheduled = nameof(TestIncompatibleScheduleReducer)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 )]
 ^^
 [SpacetimeDB.Table(Name = "TestIncompatibleSchedule2")]
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-public partial struct TestIncompatibleSchedule { }
+public partial struct TestIncompatibleSchedule
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (363,0)-(367,55),
       Message: Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.,
       Severity: Error,
       Descriptor: {
@@ -122,7 +116,6 @@ public partial struct TestIncompatibleSchedule { }
                   ^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (303,18)-(303,21),
       Message: Reducer method TestReducerReturnType returns int instead of void.,
       Severity: Error,
       Descriptor: {
@@ -140,13 +133,46 @@ public partial struct TestIncompatibleSchedule { }
                                                 ^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (306,48)-(306,50),
       Message: Reducer method TestReducerWithoutContext does not have a ReducerContext parameter.,
       Severity: Error,
       Descriptor: {
         Id: STDB0006,
         Title: Reducers must have a first argument of type ReducerContext,
         MessageFormat: Reducer method {0} does not have a ReducerContext parameter.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.Reducer]
+    public static void OnReducerWithReservedPrefix(ReducerContext ctx) { }
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+*/
+      Message: Reducer method OnReducerWithReservedPrefix starts with 'On', which is a reserved prefix.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0007,
+        Title: Reducer method has a reserved name prefix,
+        MessageFormat: Reducer method {0} starts with '{1}', which is a reserved prefix.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.Reducer]
+    public static void __ReducerWithReservedPrefix(ReducerContext ctx) { }
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+      Message: Reducer method __ReducerWithReservedPrefix starts with '__', which is a reserved prefix.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0007,
+        Title: Reducer method has a reserved name prefix,
+        MessageFormat: Reducer method {0} starts with '{1}', which is a reserved prefix.,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
