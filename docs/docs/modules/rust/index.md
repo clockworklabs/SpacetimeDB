@@ -23,7 +23,7 @@ struct Location {
 Let's start with a highly commented example, straight from the [demo]. This Rust package defines a SpacetimeDB module, with types we can operate on and functions we can run.
 
 ```rust
-// In this small example, we have two rust imports:
+// In this small example, we have two Rust imports:
 // |spacetimedb::spacetimedb| is the most important attribute we'll be using.
 // |spacetimedb::println| is like regular old |println|, but outputting to the module's logs.
 use spacetimedb::{spacetimedb, println};
@@ -52,7 +52,7 @@ pub fn add(ctx: &ReducerContext, name: String) {
 
 // Here's another reducer. Notice that this one doesn't take any arguments, while
 // |add| did take one. Reducers can take any number of arguments, as long as
-// SpacetimeDB knows about all their types. Reducers also have to be top level
+// SpacetimeDB recognizes their types. Reducers also have to be top level
 // functions, not methods.
 #[reducer]
 pub fn say_hello(ctx: &ReducerContext) {
@@ -230,7 +230,7 @@ pub enum ScheduleAt {
 }
 ```
 
-Managing timers with scheduled table is as simple as inserting or deleting rows from table.
+Managing timers with a scheduled table is as simple as inserting or deleting rows from the table.
 
 ```rust
 #[reducer]
