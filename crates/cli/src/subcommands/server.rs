@@ -174,6 +174,7 @@ pub async fn exec_list(config: Config, _args: &ArgMatches) -> Result<(), anyhow:
 pub async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").unwrap();
     config.set_default_server(server)?;
+    println!("Default server updated to {}", server);
     config.save();
     Ok(())
 }
