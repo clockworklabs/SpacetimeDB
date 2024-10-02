@@ -11,9 +11,6 @@ using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 using SpacetimeDB.ClientApi;
 using Thread = System.Threading.Thread;
-using System.Runtime.CompilerServices;
-
-[assembly: InternalsVisibleTo("SpacetimeDB.Tests")]
 
 namespace SpacetimeDB
 {
@@ -180,6 +177,7 @@ namespace SpacetimeDB
         private readonly BlockingCollection<PreProcessedMessage> _preProcessedNetworkMessages =
             new(new ConcurrentQueue<PreProcessedMessage>());
 
+        internal static bool IsTesting;
         internal bool HasPreProcessedMessage => _preProcessedNetworkMessages.Count > 0;
 
         private readonly CancellationTokenSource _preProcessCancellationTokenSource = new();
@@ -582,23 +580,26 @@ namespace SpacetimeDB
             }
 
             Log.Info($"SpacetimeDBClient: Connecting to {uri} {addressOrName}");
-            Task.Run(async () =>
+            if (!IsTesting)
             {
-                try
+                Task.Run(async () =>
                 {
-                    await webSocket.Connect(token, uri, addressOrName, Address);
-                }
-                catch (Exception e)
-                {
-                    if (connectionClosed)
+                    try
                     {
-                        Log.Info("Connection closed gracefully.");
-                        return;
+                        await webSocket.Connect(token, uri, addressOrName, Address);
                     }
+                    catch (Exception e)
+                    {
+                        if (connectionClosed)
+                        {
+                            Log.Info("Connection closed gracefully.");
+                            return;
+                        }
 
-                    Log.Exception(e);
-                }
-            });
+                        Log.Exception(e);
+                    }
+                });
+            }
         }
 
         private void OnMessageProcessCompleteUpdate(IEventContext eventContext, List<DbOp> dbOps)

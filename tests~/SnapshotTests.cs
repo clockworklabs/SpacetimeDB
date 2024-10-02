@@ -268,6 +268,8 @@ public class SnapshotTests
 
         Log.Current = new TestLogger(events);
 
+        DbConnection.IsTesting = true;
+
         var client =
             DbConnection.Builder()
             .WithUri("wss://spacetimedb.com")
