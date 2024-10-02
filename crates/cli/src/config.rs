@@ -792,14 +792,19 @@ impl Config {
 
     pub fn load() -> anyhow::Result<Self> {
         let home_path = Self::system_config_path();
-        let home = if home_path.exists() {
-            Self::load_from_file(&home_path)
-                .inspect_err(|e| eprintln!("config file {home_path:?} is invalid: {e:#?}"))?
+        let config = if home_path.exists() {
+            Self {
+                home: Self::load_from_file(&home_path)
+                    .inspect_err(|e| eprintln!("config file {home_path:?} is invalid: {e:#?}"))?,
+            }
         } else {
-            RawConfig::new_with_localhost()
+            let config = Self {
+                home: RawConfig::new_with_localhost(),
+            };
+            config.save();
+            config
         };
-
-        Ok(Self { home })
+        Ok(config)
     }
 
     #[doc(hidden)]
