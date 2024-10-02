@@ -46,7 +46,7 @@ pub trait Repo: Clone {
     /// `offset` does not exist.
     ///
     /// The method does not guarantee that the segment is non-empty -- this case
-    /// will be caught by [`open_segment_writer`] and [`open_segment_reader`]
+    /// will be caught by [`resume_segment_writer`] and [`open_segment_reader`]
     /// respectively.
     fn open_segment(&self, offset: u64) -> io::Result<Self::Segment>;
 
@@ -178,9 +178,9 @@ pub fn resume_segment_writer<R: Repo>(
 
 /// Open the existing segment at `offset` for reading.
 ///
-/// Unlike [`open_segment_writer`], this does not traverse the segment. It does,
-/// however, attempt to read the segment header and checks that the log format
-/// version and checksum algorithm are compatible.
+/// Unlike [`resume_segment_writer`], this does not traverse the segment. It
+/// does, however, attempt to read the segment header and checks that the log
+/// format version and checksum algorithm are compatible.
 pub fn open_segment_reader<R: Repo>(
     repo: &R,
     max_log_format_version: u8,

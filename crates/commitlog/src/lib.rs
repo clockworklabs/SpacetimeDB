@@ -89,7 +89,7 @@ impl Default for Options {
 /// The canonical commitlog, backed by on-disk log files.
 ///
 /// Records in the log are of type `T`, which canonically is instantiated to
-/// [`Txdata`].
+/// [`payload::Txdata`].
 pub struct Commitlog<T> {
     inner: RwLock<commitlog::Generic<repo::Fs, T>>,
 }
@@ -372,7 +372,7 @@ impl<T: Encode> Commitlog<T> {
     /// data (e.g. `Decoder<Record = ()>`), as it will not allocate the commit
     /// payload into a struct.
     ///
-    /// Note that, unlike [`Self::transaction`], this method will ignore a
+    /// Note that, unlike [`Self::transactions`], this method will ignore a
     /// corrupt commit at the very end of the traversed log.
     pub fn fold_transactions<D>(&self, de: D) -> Result<(), D::Error>
     where
