@@ -16,7 +16,7 @@ mod varchar;
 mod varint;
 
 pub use crate::{
-    commit::Commit,
+    commit::{Commit, StoredCommit},
     payload::{Decoder, Encode},
     segment::{Transaction, DEFAULT_LOG_FORMAT_VERSION},
     varchar::Varchar,
@@ -181,7 +181,7 @@ impl<T> Commitlog<T> {
     }
 
     /// Obtain an iterator which traverses the log from the start, yielding
-    /// [`Commit`]s.
+    /// [`StoredCommit`]s.
     ///
     /// The returned iterator is not aware of segment rotation. That is, if a
     /// new segment is created after this method returns, the iterator will not
@@ -192,27 +192,27 @@ impl<T> Commitlog<T> {
     /// however, a new iterator should be created using [`Self::commits_from`]
     /// with the last transaction offset yielded.
     ///
-    /// Note that the very last [`Commit`] in a commitlog may be corrupt (e.g.
-    /// due to a partial write to disk), but a subsequent `append` will bring
-    /// the log into a consistent state.
+    /// Note that the very last [`StoredCommit`] in a commitlog may be corrupt
+    /// (e.g. due to a partial write to disk), but a subsequent `append` will
+    /// bring the log into a consistent state.
     ///
     /// This means that, when this iterator yields an `Err` value, the consumer
     /// may want to check if the iterator is exhausted (by calling `next()`)
     /// before treating the `Err` value as an application error.
-    pub fn commits(&self) -> impl Iterator<Item = Result<Commit, error::Traversal>> {
+    pub fn commits(&self) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> {
         self.commits_from(0)
     }
 
     /// Obtain an iterator starting from transaction offset `offset`, yielding
-    /// [`Commit`]s.
+    /// [`StoredCommit`]s.
     ///
     /// Similar to [`Self::commits`] but will skip until the offset is contained
-    /// in the next [`Commit`] to yield.
+    /// in the next [`StoredCommit`] to yield.
     ///
-    /// Note that the first [`Commit`] yielded is the first commit containing
-    /// the given transaction offset, i.e. its `min_tx_offset` may be smaller
-    /// than `offset`.
-    pub fn commits_from(&self, offset: u64) -> impl Iterator<Item = Result<Commit, error::Traversal>> {
+    /// Note that the first [`StoredCommit`] yielded is the first commit
+    /// containing the given transaction offset, i.e. its `min_tx_offset` may be
+    /// smaller than `offset`.
+    pub fn commits_from(&self, offset: u64) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> {
         self.inner.read().unwrap().commits_from(offset)
     }
 
@@ -398,23 +398,23 @@ impl<T: Encode> Commitlog<T> {
 }
 
 /// Obtain an iterator which traverses the commitlog located at the `root`
-/// directory from the start, yielding [`Commit`]s.
+/// directory from the start, yielding [`StoredCommit`]s.
 ///
 /// Starts the traversal without the upfront I/O imposed by [`Commitlog::open`].
 /// See [`Commitlog::commits`] for more information.
-pub fn commits(root: impl Into<PathBuf>) -> io::Result<impl Iterator<Item = Result<Commit, error::Traversal>>> {
+pub fn commits(root: impl Into<PathBuf>) -> io::Result<impl Iterator<Item = Result<StoredCommit, error::Traversal>>> {
     commits_from(root, 0)
 }
 
 /// Obtain an iterator which traverses the commitlog located at the `root`
-/// directory starting from `offset` and yielding [`Commit`]s.
+/// directory starting from `offset` and yielding [`StoredCommit`]s.
 ///
 /// Starts the traversal without the upfront I/O imposed by [`Commitlog::open`].
 /// See [`Commitlog::commits_from`] for more information.
 pub fn commits_from(
     root: impl Into<PathBuf>,
     offset: u64,
-) -> io::Result<impl Iterator<Item = Result<Commit, error::Traversal>>> {
+) -> io::Result<impl Iterator<Item = Result<StoredCommit, error::Traversal>>> {
     commitlog::commits_from(repo::Fs::new(root), DEFAULT_LOG_FORMAT_VERSION, offset)
 }
 

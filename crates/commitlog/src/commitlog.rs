@@ -510,7 +510,7 @@ impl<R: Repo> Commits<R> {
     /// Helper to handle a successfully extracted commit in [`Self::next`].
     ///
     /// Checks that the offset sequence is contiguous.
-    fn next_commit(&mut self, commit: StoredCommit) -> Option<Result<Commit, error::Traversal>> {
+    fn next_commit(&mut self, commit: StoredCommit) -> Option<Result<StoredCommit, error::Traversal>> {
         // Pop the last error. Either we'll return it below, or it's no longer
         // interesting.
         let prev_error = self.last_error.take();
@@ -548,7 +548,7 @@ impl<R: Repo> Commits<R> {
                 checksum: commit.checksum,
             };
 
-            Some(Ok(Commit::from(commit)))
+            Some(Ok(commit))
         }
     }
 
@@ -572,7 +572,7 @@ impl<R: Repo> Commits<R> {
 }
 
 impl<R: Repo> Iterator for Commits<R> {
-    type Item = Result<Commit, error::Traversal>;
+    type Item = Result<StoredCommit, error::Traversal>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(commits) = self.inner.as_mut() {
@@ -642,7 +642,7 @@ impl<R: Repo> Iterator for CommitsWithVersion<R> {
                     .current_segment_header()
                     .map(|hdr| hdr.log_format_version)
                     .expect("segment header none even though segment yielded a commit");
-                Some(Ok((version, commit)))
+                Some(Ok((version, commit.into())))
             }
             Err(e) => Some(Err(e)),
         }
@@ -792,7 +792,10 @@ mod tests {
 
         assert_eq!(
             [commit1, commit2].as_slice(),
-            &log.commits_from(0).collect::<Result<Vec<_>, _>>().unwrap()
+            &log.commits_from(0)
+                .map_ok(Commit::from)
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
         );
     }
 
