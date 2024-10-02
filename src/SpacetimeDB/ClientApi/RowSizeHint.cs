@@ -10,8 +10,8 @@ using SpacetimeDB;
 namespace SpacetimeDB.ClientApi
 {
 	[SpacetimeDB.Type]
-	public partial record EncodedValue : SpacetimeDB.TaggedEnum<(
-		byte[] Binary,
-		string Text
+	public partial record RowSizeHint : SpacetimeDB.TaggedEnum<(
+		ushort FixedSize,
+		System.Collections.Generic.List<ulong> RowOffsets
 	)>;
 }

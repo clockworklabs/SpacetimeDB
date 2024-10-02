@@ -17,11 +17,28 @@ namespace SpacetimeDB.ClientApi
 	public partial class CallReducer
 	{
 		[DataMember(Name = "reducer")]
-		public string Reducer = "";
+		public string Reducer;
 		[DataMember(Name = "args")]
-		public SpacetimeDB.ClientApi.EncodedValue Args = null!;
+		public byte[] Args;
 		[DataMember(Name = "request_id")]
 		public uint RequestId;
+
+		public CallReducer(
+			string Reducer,
+			byte[] Args,
+			uint RequestId
+		)
+		{
+			this.Reducer = Reducer;
+			this.Args = Args;
+			this.RequestId = RequestId;
+		}
+
+		public CallReducer()
+		{
+			this.Reducer = "";
+			this.Args = Array.Empty<byte>();
+		}
 
 	}
 }
