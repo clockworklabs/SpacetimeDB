@@ -391,6 +391,30 @@ static class ModuleRegistration
         }
     }
 
+    class __ReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new("__ReducerWithReservedPrefix", []);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.__ReducerWithReservedPrefix((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
+    class OnReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new("OnReducerWithReservedPrefix", []);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.OnReducerWithReservedPrefix((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
     class TestDuplicateReducerName : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
@@ -467,6 +491,8 @@ static class ModuleRegistration
         );
 
         SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerKind1>();
+        SpacetimeDB.Internal.Module.RegisterReducer<__ReducerWithReservedPrefix>();
+        SpacetimeDB.Internal.Module.RegisterReducer<OnReducerWithReservedPrefix>();
         SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerName>();
         SpacetimeDB.Internal.Module.RegisterReducer<TestIncompatibleScheduleReducer>();
         SpacetimeDB.Internal.Module.RegisterReducer<TestReducerReturnType>();

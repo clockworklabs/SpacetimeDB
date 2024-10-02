@@ -1,4 +1,4 @@
-﻿using SpacetimeDB;
+using SpacetimeDB;
 
 public enum LocalEnum { }
 
@@ -326,6 +326,12 @@ public static partial class Reducers
         ReducerContext ctx,
         TestIncompatibleSchedule table
     ) { }
+
+    [SpacetimeDB.Reducer]
+    public static void OnReducerWithReservedPrefix(ReducerContext ctx) { }
+
+    [SpacetimeDB.Reducer]
+    public static void __ReducerWithReservedPrefix(ReducerContext ctx) { }
 }
 
 [SpacetimeDB.Table]
