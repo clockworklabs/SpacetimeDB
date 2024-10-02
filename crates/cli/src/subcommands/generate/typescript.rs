@@ -118,7 +118,10 @@ Requested namespace: {namespace}",
         );
 
         writeln!(out, "// @ts-ignore");
-        writeln!(out, "import {{ EventContext, Reducer, RemoteReducers, RemoteTables }} from \".\";");
+        writeln!(
+            out,
+            "import {{ EventContext, Reducer, RemoteReducers, RemoteTables }} from \".\";"
+        );
 
         let table_name = table.name.deref();
         let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
@@ -240,7 +243,7 @@ removeOnDelete = (cb: (ctx: EventContext, row: {row_type}) => void) => {{
         if schema.pk().is_some() {
             write!(
                 out,
-"
+                "
 // Updates are only defined for tables with primary keys.
 onUpdate = (cb: (ctx: EventContext, oldRow: {row_type}, newRow: {row_type}) => void) => {{
 {INDENT}return this.tableCache.onUpdate(cb);
@@ -407,10 +410,13 @@ reducersConstructor: (imp: DBConnectionImpl) => {{
         out.newline();
 
         print_db_connection(module, out);
-        
+
         out.newline();
 
-        writeln!(out, "export type EventContext = EventContextInterface<RemoteTables, RemoteReducers, Reducer>;");
+        writeln!(
+            out,
+            "export type EventContext = EventContextInterface<RemoteTables, RemoteReducers, Reducer>;"
+        );
 
         vec![("index.ts".to_string(), (output.into_inner()))]
     }
@@ -470,13 +476,19 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
         } else {
             format!(", {arg_list}")
         };
-        writeln!(out, "on{reducer_name_pascal}(callback: (ctx: EventContext{arg_list_padded}) => void) {{");
+        writeln!(
+            out,
+            "on{reducer_name_pascal}(callback: (ctx: EventContext{arg_list_padded}) => void) {{"
+        );
         out.indent(1);
         writeln!(out, "this.connection.onReducer(\"{reducer_name}\", callback);");
         out.dedent(1);
         writeln!(out, "}}");
         out.newline();
-        writeln!(out, "removeOn{reducer_name_pascal}(callback: (ctx: EventContext{arg_list_padded}) => void) {{");
+        writeln!(
+            out,
+            "removeOn{reducer_name_pascal}(callback: (ctx: EventContext{arg_list_padded}) => void) {{"
+        );
         out.indent(1);
         writeln!(out, "this.connection.offReducer(\"{reducer_name}\", callback);");
         out.dedent(1);
