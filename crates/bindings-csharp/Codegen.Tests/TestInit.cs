@@ -42,8 +42,13 @@ static class TestInit
                     }
                 }
                 writer.WriteComment(comment.ToString());
+                // Skip line and column when we render the source code snippet to make snapshots more stable.
+                writer.WriteMember(diag, source.FilePath, nameof(diag.Location));
             }
-            writer.WriteMember(diag, diag.Location, nameof(diag.Location));
+            else
+            {
+                writer.WriteMember(diag, diag.Location, nameof(diag.Location));
+            }
             writer.WriteMember(diag, diag.GetMessage(), "Message");
             writer.WriteMember(diag, diag.Severity, nameof(diag.Severity));
             writer.WriteMember(diag, diag.Descriptor, nameof(diag.Descriptor));
