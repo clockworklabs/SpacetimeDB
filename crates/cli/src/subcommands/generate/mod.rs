@@ -473,7 +473,7 @@ fn format_files(generated_files: Vec<PathBuf>, lang: Language) -> anyhow::Result
         Language::Rust => {
             cmd!("rustup", "component", "add", "rustfmt").run()?;
             for path in generated_files {
-                cmd!("rustfmt", path.to_str().unwrap()).run()?;
+                cmd!("rustfmt", "--edition", "2021", path.to_str().unwrap()).run()?;
             }
         }
         Language::Csharp => {}
