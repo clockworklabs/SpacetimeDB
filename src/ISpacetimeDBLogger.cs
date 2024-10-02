@@ -2,7 +2,7 @@
 
 namespace SpacetimeDB
 {
-    public interface ISpacetimeDBLogger
+    internal interface ISpacetimeDBLogger
     {
         void Debug(string message);
         void Trace(string message);
@@ -15,7 +15,7 @@ namespace SpacetimeDB
 
     public static class Log
     {
-        public static ISpacetimeDBLogger Current =
+        internal static ISpacetimeDBLogger Current =
 
 #if UNITY_5_3_OR_NEWER
             new UnityDebugLogger();
