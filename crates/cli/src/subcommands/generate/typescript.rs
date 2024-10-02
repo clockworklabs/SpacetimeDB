@@ -1,1037 +1,1142 @@
-use super::util::fmt_fn;
+use crate::generate::util::namespace_is_empty_or_default;
+use crate::indent_scope;
 
-use std::fmt;
+use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
+
+use std::collections::BTreeSet;
+use std::fmt::{self, Write};
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::sats::product_type::IDENTITY_TAG;
-use spacetimedb_lib::sats::{
-    AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, ProductTypeElement, SumType, SumTypeVariant,
-};
-use spacetimedb_lib::ReducerDef;
+use itertools::Itertools;
+use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColList;
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
+use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::schema::{Schema, TableSchema};
+use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, PrimitiveType};
 
-use super::code_indenter::CodeIndenter;
-use super::{GenCtx, GenItem, TableDescHack, INDENT};
+use super::code_indenter::{CodeIndenter, Indenter};
+use super::Lang;
 
-fn scalar_or_string_to_ts(ty: &AlgebraicType) -> Option<(&str, &str)> {
-    Some(match ty {
-        AlgebraicType::Bool => ("boolean", "Boolean"),
-        AlgebraicType::I8
-        | AlgebraicType::U8
-        | AlgebraicType::I16
-        | AlgebraicType::U16
-        | AlgebraicType::I32
-        | AlgebraicType::U32
-        | AlgebraicType::F32
-        | AlgebraicType::F64 => ("number", "Number"),
-        AlgebraicType::I64
-        | AlgebraicType::U64
-        | AlgebraicType::I128
-        | AlgebraicType::U128
-        | AlgebraicType::I256
-        | AlgebraicType::U256 => ("BigInt", "BigInt"),
-        AlgebraicType::String => ("string", "String"),
-        _ => return None,
-    })
-}
+type Imports = BTreeSet<AlgebraicTypeRef>;
 
-fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| match ty {
-        ty if ty.is_identity() => write!(f, "Identity"),
-        ty if ty.is_address() => write!(f, "Address"),
-        ty if ty.is_schedule_at() => write!(f, "ScheduleAt"),
-        AlgebraicType::Sum(sum_type) => {
-            if let Some(inner_ty) = sum_type.as_option() {
-                write!(f, "{} | null", ty_fmt(ctx, inner_ty, ref_prefix))
-            } else {
-                unimplemented!()
+const INDENT: &str = "  ";
+
+pub struct TypeScript;
+
+impl Lang for TypeScript {
+    fn table_filename(
+        &self,
+        _module: &spacetimedb_schema::def::ModuleDef,
+        table: &spacetimedb_schema::def::TableDef,
+    ) -> String {
+        table_module_name(&table.name) + ".ts"
+    }
+
+    fn type_filename(&self, type_name: &ScopedTypeName) -> String {
+        type_module_name(type_name) + ".ts"
+    }
+
+    fn reducer_filename(&self, reducer_name: &Identifier) -> String {
+        reducer_module_name(reducer_name) + ".ts"
+    }
+
+    fn generate_type(&self, module: &ModuleDef, namespace: &str, typ: &TypeDef) -> String {
+        // TODO(cloutiertyler): I do think TypeScript does support namespaces:
+        // https://www.typescriptlang.org/docs/handbook/namespaces.html
+        assert!(
+            namespace_is_empty_or_default(namespace),
+            "TypeScript codegen does not support namespaces, as TypeScript equates namespaces with files.
+
+Requested namespace: {namespace}",
+        );
+        let type_name = collect_case(Case::Pascal, typ.name.name_segments());
+
+        let mut output = CodeIndenter::new(String::new(), INDENT);
+        let out = &mut output;
+
+        print_file_header(out);
+
+        match &module.typespace_for_generate()[typ.ty] {
+            AlgebraicTypeDef::Product(product) => {
+                gen_and_print_imports(module, out, &product.elements, &[typ.ty]);
+                define_namespace_and_object_type_for_product(module, out, &type_name, &product.elements);
+            }
+            AlgebraicTypeDef::Sum(sum) => {
+                gen_and_print_imports(module, out, &sum.variants, &[typ.ty]);
+                define_namespace_and_types_for_sum(module, out, &type_name, &sum.variants);
+            }
+            AlgebraicTypeDef::PlainEnum(plain_enum) => {
+                let variants = plain_enum
+                    .variants
+                    .iter()
+                    .cloned()
+                    .map(|var| (var, AlgebraicTypeUse::Unit))
+                    .collect::<Vec<_>>();
+                define_namespace_and_types_for_sum(module, out, &type_name, &variants);
             }
         }
-        // All other types should fail.
-        AlgebraicType::Product(_) => unimplemented!(),
-        ty if ty.is_bytes() => f.write_str("Uint8Array"),
-        AlgebraicType::Array(ty) => write!(f, "{}[]", ty_fmt(ctx, &ty.elem_ty, ref_prefix)),
-        AlgebraicType::Map(ty) => {
-            write!(
-                f,
-                "Map<{}, {}>",
-                ty_fmt(ctx, &ty.ty, ref_prefix),
-                ty_fmt(ctx, &ty.key_ty, ref_prefix)
-            )
+        out.newline();
+
+        output.into_inner()
+    }
+
+    fn generate_table(&self, module: &ModuleDef, namespace: &str, table: &TableDef) -> String {
+        assert!(
+            namespace_is_empty_or_default(namespace),
+            "TypeScript codegen does not support namespaces, as TypeScript equates namespaces with files.
+
+Requested namespace: {namespace}",
+        );
+
+        let schema = TableSchema::from_module_def(module, table, (), 0.into())
+            .validated()
+            .expect("Failed to generate table due to validation errors");
+
+        let mut output = CodeIndenter::new(String::new(), INDENT);
+        let out = &mut output;
+
+        print_file_header(out);
+
+        let type_ref = table.product_type_ref;
+        let row_type = type_ref_name(module, type_ref);
+        let row_type_module = type_ref_module_name(module, type_ref);
+
+        writeln!(out, "import {{ {row_type} }} from \"./{row_type_module}\";");
+
+        let product_def = module.typespace_for_generate()[type_ref].as_product().unwrap();
+
+        // Import the types of all fields.
+        // We only need to import fields which have indices or unique constraints,
+        // but it's easier to just import all of 'em, since we have `// @ts-ignore` anyway.
+        gen_and_print_imports(
+            module,
+            out,
+            &product_def.elements,
+            &[], // No need to skip any imports; we're not defining a type, so there's no chance of circular imports.
+        );
+
+        writeln!(out, "// @ts-ignore");
+        writeln!(
+            out,
+            "import {{ EventContext, Reducer, RemoteReducers, RemoteTables }} from \".\";"
+        );
+
+        let table_name = table.name.deref();
+        let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
+        let table_handle = table_name_pascalcase.clone() + "TableHandle";
+        let accessor_method = table_method_name(&table.name);
+
+        writeln!(out);
+
+        write!(
+            out,
+            "/**
+ * Table handle for the table `{table_name}`.
+ *
+ * Obtain a handle from the [`{accessor_method}`] property on [`RemoteTables`],
+ * like `ctx.db.{accessor_method}`.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.{accessor_method}.on_insert(...)`.
+ */
+export class {table_handle} {{
+"
+        );
+        out.indent(1);
+        writeln!(out, "tableCache: TableCache<{row_type}>;");
+        writeln!(out);
+        writeln!(out, "constructor(tableCache: TableCache<{row_type}>) {{");
+        out.with_indent(|out| writeln!(out, "this.tableCache = tableCache;"));
+        writeln!(out, "}}");
+        writeln!(out);
+        writeln!(out, "count(): number {{");
+        out.with_indent(|out| {
+            writeln!(out, "return this.tableCache.count();");
+        });
+        writeln!(out, "}}");
+        writeln!(out);
+        writeln!(out, "iter(): Iterable<{row_type}> {{");
+        out.with_indent(|out| {
+            writeln!(out, "return this.tableCache.iter();");
+        });
+        writeln!(out, "}}");
+
+        let constraints = schema.backcompat_column_constraints();
+
+        for field in schema.columns() {
+            if constraints[&ColList::from(field.col_pos)].has_unique() {
+                let (unique_field_ident, unique_field_type_use) = &product_def.elements[field.col_pos.idx()];
+                let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
+                let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
+
+                let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
+                let unique_field_type = type_name(module, unique_field_type_use);
+
+                writeln!(
+                    out,
+                    "/**
+ * Access to the `{unique_field_name}` unique index on the table `{table_name}`,
+ * which allows point queries on the field of the same name
+ * via the [`{unique_constraint}.find`] method.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.{accessor_method}.{unique_field_name}().find(...)`.
+ *
+ * Get a handle on the `{unique_field_name}` unique index on the table `{table_name}`.
+ */"
+                );
+                writeln!(out, "{unique_field_name} = {{");
+                out.with_indent(|out| {
+                    writeln!(
+                        out,
+                        "// Find the subscribed row whose `{unique_field_name}` column value is equal to `col_val`,"
+                    );
+                    writeln!(out, "// if such a row is present in the client cache.");
+                    writeln!(
+                        out,
+                        "find: (col_val: {unique_field_type}): {row_type} | undefined => {{"
+                    );
+                    out.with_indent(|out| {
+                        writeln!(out, "for (let row of this.tableCache.iter()) {{");
+                        out.with_indent(|out| {
+                            writeln!(out, "if (row.{unique_field_name} === col_val) {{");
+                            out.with_indent(|out| {
+                                writeln!(out, "return row;");
+                            });
+                            writeln!(out, "}}");
+                        });
+                        writeln!(out, "}}");
+                    });
+                    writeln!(out, "}},");
+                });
+                writeln!(out, "}};");
+            }
         }
-        AlgebraicType::Ref(r) => write!(f, "{}{}", ref_prefix, typescript_typename(ctx, *r)),
-        ty => f.write_str(scalar_or_string_to_ts(ty).unwrap().0),
-    })
+
+        writeln!(out);
+
+        // TODO: expose non-unique indices.
+
+        writeln!(
+            out,
+            "onInsert = (cb: (ctx: EventContext, row: {row_type}) => void) => {{
+{INDENT}return this.tableCache.onInsert(cb);
+}}
+
+removeOnInsert = (cb: (ctx: EventContext, row: {row_type}) => void) => {{
+{INDENT}return this.tableCache.removeOnInsert(cb);
+}}
+
+onDelete = (cb: (ctx: EventContext, row: {row_type}) => void) => {{
+{INDENT}return this.tableCache.onDelete(cb);
+}}
+
+removeOnDelete = (cb: (ctx: EventContext, row: {row_type}) => void) => {{
+{INDENT}return this.tableCache.removeOnDelete(cb);
+}}"
+        );
+
+        if schema.pk().is_some() {
+            write!(
+                out,
+                "
+// Updates are only defined for tables with primary keys.
+onUpdate = (cb: (ctx: EventContext, oldRow: {row_type}, newRow: {row_type}) => void) => {{
+{INDENT}return this.tableCache.onUpdate(cb);
+}}
+
+removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type}) => void) => {{
+{INDENT}return this.tableCache.removeOnUpdate(cb);
+}}"
+            );
+        }
+        out.dedent(1);
+
+        writeln!(out, "}}");
+        output.into_inner()
+    }
+
+    fn generate_reducer(&self, module: &ModuleDef, namespace: &str, reducer: &ReducerDef) -> String {
+        assert!(
+            namespace_is_empty_or_default(namespace),
+            "TypeScript codegen does not support namespaces, as TypeScript equates namespaces with files.
+
+Requested namespace: {namespace}",
+        );
+
+        let mut output = CodeIndenter::new(String::new(), INDENT);
+        let out = &mut output;
+
+        print_file_header(out);
+
+        out.newline();
+
+        gen_and_print_imports(
+            module,
+            out,
+            &reducer.params_for_generate.elements,
+            // No need to skip any imports; we're not emitting a type that other modules can import.
+            &[],
+        );
+
+        let args_type = reducer_args_type_name(&reducer.name);
+
+        define_namespace_and_object_type_for_product(module, out, &args_type, &reducer.params_for_generate.elements);
+
+        output.into_inner()
+    }
+
+    fn generate_globals(&self, module: &ModuleDef, namespace: &str) -> Vec<(String, String)> {
+        assert!(
+            namespace_is_empty_or_default(namespace),
+            "TypeScript codegen does not support namespaces, as TypeScript equates namespaces with files.
+
+Requested namespace: {namespace}",
+        );
+
+        let mut output = CodeIndenter::new(String::new(), INDENT);
+        let out = &mut output;
+
+        print_file_header(out);
+
+        out.newline();
+
+        writeln!(out, "// Import and reexport all reducer arg types");
+        for reducer in iter_reducers(module) {
+            let reducer_name = &reducer.name;
+            let reducer_module_name = reducer_module_name(reducer_name) + ".ts";
+            let args_type = reducer_args_type_name(&reducer.name);
+            writeln!(out, "import {{ {args_type} }} from \"./{reducer_module_name}\";");
+            writeln!(out, "export {{ {args_type} }};");
+        }
+
+        writeln!(out);
+        writeln!(out, "// Import and reexport all table handle types");
+        for table in iter_tables(module) {
+            let table_name = &table.name;
+            let table_module_name = table_module_name(table_name) + ".ts";
+            let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
+            let table_handle = table_name_pascalcase.clone() + "TableHandle";
+            writeln!(out, "import {{ {table_handle} }} from \"./{table_module_name}\";");
+            writeln!(out, "export {{ {table_handle} }};");
+        }
+
+        writeln!(out);
+        writeln!(out, "// Import and reexport all types");
+        for ty in iter_types(module) {
+            let type_name = collect_case(Case::Pascal, ty.name.name_segments());
+            let type_module_name = type_module_name(&ty.name) + ".ts";
+            writeln!(out, "import {{ {type_name} }} from \"./{type_module_name}\";");
+            writeln!(out, "export {{ {type_name} }};");
+        }
+
+        out.newline();
+
+        // Define SpacetimeModule
+        writeln!(out, "const REMOTE_MODULE = {{");
+        out.indent(1);
+        writeln!(out, "tables: {{");
+        out.indent(1);
+        for table in iter_tables(module) {
+            let type_ref = table.product_type_ref;
+            let row_type = type_ref_name(module, type_ref);
+            let schema = TableSchema::from_module_def(module, table, (), 0.into())
+                .validated()
+                .expect("Failed to generate table due to validation errors");
+            writeln!(out, "{}: {{", table.name);
+            out.indent(1);
+            writeln!(out, "tableName: \"{}\",", table.name);
+            writeln!(out, "rowType: {row_type}.getAlgebraicType(),");
+            if let Some(pk) = schema.pk() {
+                writeln!(out, "primaryKey: \"{}\",", pk.col_name);
+            }
+            out.dedent(1);
+            writeln!(out, "}},");
+        }
+        out.dedent(1);
+        writeln!(out, "}},");
+        writeln!(out, "reducers: {{");
+        out.indent(1);
+        for reducer in iter_reducers(module) {
+            writeln!(out, "{}: {{", reducer.name);
+            out.indent(1);
+            writeln!(out, "reducerName: \"{}\",", reducer.name);
+            writeln!(
+                out,
+                "argsType: {args_type}.getAlgebraicType(),",
+                args_type = reducer_args_type_name(&reducer.name)
+            );
+            out.dedent(1);
+            writeln!(out, "}},");
+        }
+        out.dedent(1);
+        writeln!(out, "}},");
+        writeln!(
+            out,
+            "// Constructors which are used by the DBConnectionImpl to
+// extract type information from the generated RemoteModule.
+eventContextConstructor: (imp: DBConnectionImpl, event: Event<Reducer>) => {{
+  return {{
+    ...(imp as DBConnection),
+    event
+  }}
+}},
+dbViewConstructor: (imp: DBConnectionImpl) => {{
+  return new RemoteTables(imp);
+}},
+reducersConstructor: (imp: DBConnectionImpl) => {{
+  return new RemoteReducers(imp);
+}}"
+        );
+        out.dedent(1);
+        writeln!(out, "}}");
+
+        // Define `type Reducer` enum.
+        writeln!(out);
+        print_reducer_enum_defn(module, out);
+
+        out.newline();
+
+        print_remote_reducers(module, out);
+
+        out.newline();
+
+        print_remote_tables(module, out);
+
+        out.newline();
+
+        print_db_connection(module, out);
+
+        out.newline();
+
+        writeln!(
+            out,
+            "export type EventContext = EventContextInterface<RemoteTables, RemoteReducers, Reducer>;"
+        );
+
+        vec![("index.ts".to_string(), (output.into_inner()))]
+    }
 }
 
-fn convert_type<'a>(
-    ctx: &'a GenCtx,
-    ty: &'a AlgebraicType,
-    value: impl fmt::Display + 'a,
-    ref_prefix: &'a str,
-) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| {
-        match ty {
-        ty if ty.is_identity() => write!(f, "{value}.asIdentity()"),
-        ty if ty.is_address() => write!(f, "{value}.asAddress()"),
-        ty if ty.is_schedule_at() => write!(f, "{value}.asScheduleAt()"),
-        AlgebraicType::Product(_) => unimplemented!(),
-        AlgebraicType::Sum(sum_type) => match sum_type.as_option() {
-            Some(inner_ty @ AlgebraicType::Ref(_)) => fmt::Display::fmt(
-                &format!(
-                    "function() {{ const value = {}.asSumValue().tag == 1 ? null : {}.asSumValue().value; return value ? {} : null; }}()",
-                    value,
-                    value,
-                    convert_type(
-                        ctx,
-                        inner_ty,
-                        "value",
-                        ref_prefix
-                    )
-                ),
-                f,
-            ),
-            Some(inner_ty) if ty.is_scalar() => write!(
-                f,
-                "{}.asSumValue().tag == 1 ? null : {}.asSumValue().value{}",
-                value,
-                value,
-                &convert_type(ctx, inner_ty, "", ref_prefix),
-            ),
-            Some(inner_ty) => fmt::Display::fmt(
-                &convert_type(
-                    ctx,
-                    inner_ty,
-                    format_args!("{value}.asSumValue().tag == 1 ? null : {value}.asSumValue().value"),
-                    ref_prefix
-                ),
-                f,
-            ),
-            None => unimplemented!(),
+fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
+    writeln!(out, "export class RemoteReducers {{");
+    out.indent(1);
+    writeln!(out, "constructor(private connection: DBConnectionImpl) {{}}");
+    out.newline();
+
+    for reducer in iter_reducers(module) {
+        // The reducer argument names and types as `ident: ty, ident: ty, ident: ty`,
+        // and the argument names as `ident, ident, ident`
+        // for passing to function call and struct literal expressions.
+        let mut arg_list = "".to_string();
+        let mut arg_name_list = "".to_string();
+        for (arg_ident, arg_ty) in &reducer.params_for_generate.elements[..] {
+            let arg_name = arg_ident.deref().to_case(Case::Camel);
+            arg_name_list += &arg_name;
+            arg_list += &arg_name;
+            arg_list += ": ";
+            write_type(module, &mut arg_list, arg_ty, None).unwrap();
+            arg_list += ", ";
+            arg_name_list += ", ";
+        }
+        let arg_list = arg_list.trim_end_matches(", ");
+        let arg_name_list = arg_name_list.trim_end_matches(", ");
+
+        let reducer_name = &reducer.name;
+        let reducer_name_pascal = reducer_name.deref().to_case(Case::Pascal);
+        let reducer_function_name = reducer_function_name(reducer);
+        let reducer_variant = reducer_variant_name(&reducer.name);
+        if reducer.params_for_generate.elements.is_empty() {
+            writeln!(out, "{reducer_function_name}() {{");
+            out.with_indent(|out| {
+                writeln!(
+                    out,
+                    "this.connection.callReducer(\"{reducer_name}\", new Uint8Array(0));"
+                );
+            });
+        } else {
+            writeln!(out, "{reducer_function_name}({arg_list}) {{");
+            out.with_indent(|out| {
+                writeln!(out, "const __args = {{ {arg_name_list} }};");
+                writeln!(out, "let __writer = new BinaryWriter(1024);");
+                writeln!(out, "{reducer_variant}.getAlgebraicType().serialize(__writer, __args);");
+                writeln!(out, "let __argsBuffer = __writer.getBuffer();");
+                writeln!(out, "this.connection.callReducer(\"{reducer_name}\", __argsBuffer);");
+            });
+        }
+        writeln!(out, "}}");
+        out.newline();
+
+        let arg_list_padded = if arg_list.is_empty() {
+            String::new()
+        } else {
+            format!(", {arg_list}")
+        };
+        writeln!(
+            out,
+            "on{reducer_name_pascal}(callback: (ctx: EventContext{arg_list_padded}) => void) {{"
+        );
+        out.indent(1);
+        writeln!(out, "this.connection.onReducer(\"{reducer_name}\", callback);");
+        out.dedent(1);
+        writeln!(out, "}}");
+        out.newline();
+        writeln!(
+            out,
+            "removeOn{reducer_name_pascal}(callback: (ctx: EventContext{arg_list_padded}) => void) {{"
+        );
+        out.indent(1);
+        writeln!(out, "this.connection.offReducer(\"{reducer_name}\", callback);");
+        out.dedent(1);
+        writeln!(out, "}}");
+        out.newline();
+    }
+
+    out.dedent(1);
+    writeln!(out, "}}");
+}
+
+fn print_remote_tables(module: &ModuleDef, out: &mut Indenter) {
+    writeln!(out, "export class RemoteTables {{");
+    out.indent(1);
+    writeln!(out, "constructor(private connection: DBConnectionImpl) {{}}");
+
+    for table in iter_tables(module) {
+        writeln!(out);
+        let table_name = table.name.deref();
+        let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
+        let table_name_camelcase = table.name.deref().to_case(Case::Camel);
+        let table_handle = table_name_pascalcase.clone() + "TableHandle";
+        let type_ref = table.product_type_ref;
+        let row_type = type_ref_name(module, type_ref);
+        writeln!(out, "#{table_name_camelcase} = this.connection.clientCache.getOrCreateTable<{row_type}>(REMOTE_MODULE.tables.{table_name});");
+        writeln!(out, "get {table_name_camelcase}(): {table_handle} {{");
+        out.with_indent(|out| {
+            writeln!(out, "return new {table_handle}(this.#{table_name_camelcase});");
+        });
+        writeln!(out, "}}");
+    }
+
+    out.dedent(1);
+    writeln!(out, "}}");
+}
+
+fn print_db_connection(_module: &ModuleDef, out: &mut Indenter) {
+    writeln!(
+        out,
+        "export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers>  {{"
+    );
+    out.indent(1);
+    writeln!(out, "static builder = (): DBConnectionBuilder<DBConnection>  => {{");
+    out.indent(1);
+    writeln!(
+        out,
+        "return new DBConnectionBuilder<DBConnection>(REMOTE_MODULE, (imp: DBConnectionImpl) => imp as DBConnection);"
+    );
+    out.dedent(1);
+    writeln!(out, "}}");
+    out.dedent(1);
+    writeln!(out, "}}");
+}
+
+fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {
+    writeln!(out, "// A type representing all the possible variants of a reducer.");
+    writeln!(out, "export type Reducer = never");
+    for reducer in iter_reducers(module) {
+        writeln!(
+            out,
+            "| {{ name: \"{}\", args: {} }}",
+            reducer_variant_name(&reducer.name),
+            reducer_args_type_name(&reducer.name)
+        );
+    }
+    writeln!(out, ";");
+}
+
+fn print_spacetimedb_imports(out: &mut Indenter) {
+    let mut types = [
+        "AlgebraicType",
+        "ProductType",
+        "ProductTypeElement",
+        "SumType",
+        "SumTypeVariant",
+        "AlgebraicValue",
+        "Identity",
+        "Address",
+        "DBConnectionBuilder",
+        "TableCache",
+        "BinaryWriter",
+        "EventContextInterface",
+        "BinaryReader",
+        "DBConnectionImpl",
+        "DBContext",
+        "Event",
+    ];
+    types.sort();
+    writeln!(out, "import {{");
+    out.indent(1);
+    for ty in &types {
+        writeln!(out, "// @ts-ignore");
+        writeln!(out, "{ty},");
+    }
+    out.dedent(1);
+    writeln!(out, "}} from \"@clockworklabs/spacetimedb-sdk\";");
+}
+
+fn print_file_header(output: &mut Indenter) {
+    print_auto_generated_file_comment(output);
+    print_spacetimedb_imports(output);
+}
+
+fn write_get_algebraic_type_for_product(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    elements: &[(Identifier, AlgebraicTypeUse)],
+) {
+    writeln!(
+        out,
+        "/**
+* A function which returns this type represented as an AlgebraicType.
+* This function is derived from the AlgebraicType used to generate this type.
+*/"
+    );
+    writeln!(out, "export function getAlgebraicType(): AlgebraicType {{");
+    {
+        out.indent(1);
+        write!(out, "return ");
+        convert_product_type(module, out, elements, "__");
+        writeln!(out, ";");
+        out.dedent(1);
+    }
+    writeln!(out, "}}");
+}
+
+fn define_namespace_and_object_type_for_product(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    name: &str,
+    elements: &[(Identifier, AlgebraicTypeUse)],
+) {
+    write!(out, "export type {name} = {{");
+    if elements.is_empty() {
+        writeln!(out, "}};");
+    } else {
+        writeln!(out);
+        out.with_indent(|out| write_arglist_no_delimiters(module, out, elements, None, true).unwrap());
+        writeln!(out, "}};");
+    }
+
+    out.newline();
+
+    writeln!(
+        out,
+        "/**
+ * A namespace for generated helper functions.
+ */"
+    );
+    writeln!(out, "export namespace {name} {{");
+    out.indent(1);
+    write_get_algebraic_type_for_product(module, out, elements);
+    writeln!(out);
+
+    writeln!(
+        out,
+        "export function serialize(writer: BinaryWriter, value: {name}): void {{"
+    );
+    out.indent(1);
+    writeln!(out, "const converted = {{");
+    out.indent(1);
+    for (ident, _) in elements {
+        let name = ident.deref().to_case(Case::Camel);
+        writeln!(out, "{ident}: value.{name},");
+    }
+    out.dedent(1);
+    writeln!(out, "}};");
+    writeln!(out, "{name}.getAlgebraicType().serialize(writer, converted);");
+    out.dedent(1);
+    writeln!(out, "}}");
+    writeln!(out);
+
+    writeln!(out, "export function deserialize(reader: BinaryReader): {name} {{");
+    out.indent(1);
+    writeln!(out, "const value = {name}.getAlgebraicType().deserialize(reader);");
+    writeln!(out, "return {{");
+    out.indent(1);
+    for (ident, _) in elements {
+        let name = ident.deref().to_case(Case::Camel);
+        writeln!(out, "{name}: value.{ident},");
+    }
+    out.dedent(1);
+    writeln!(out, "}};");
+    out.dedent(1);
+    writeln!(out, "}}");
+    writeln!(out);
+
+    out.dedent(1);
+    writeln!(out, "}}");
+
+    out.newline();
+}
+
+fn write_arglist_no_delimiters(
+    module: &ModuleDef,
+    out: &mut impl Write,
+    elements: &[(Identifier, AlgebraicTypeUse)],
+    prefix: Option<&str>,
+    convert_case: bool,
+) -> anyhow::Result<()> {
+    for (ident, ty) in elements {
+        if let Some(prefix) = prefix {
+            write!(out, "{prefix} ")?;
+        }
+
+        let name = if convert_case {
+            ident.deref().to_case(Case::Camel)
+        } else {
+            ident.deref().into()
+        };
+
+        write!(out, "{name}: ")?;
+        write_type(module, out, ty, Some("__"))?;
+        writeln!(out, ",")?;
+    }
+
+    Ok(())
+}
+
+fn write_sum_variant_type(module: &ModuleDef, out: &mut Indenter, ident: &Identifier, ty: &AlgebraicTypeUse) {
+    let name = ident.deref().to_case(Case::Pascal);
+    write!(out, "export type {name} = ");
+
+    // If the contained type is the unit type, i.e. this variant has no members,
+    // write only the tag.
+    // ```
+    // { tag: "Foo" }
+    // ```
+    write!(out, "{{ ");
+    write!(out, "tag: \"{name}\"");
+
+    // If the contained type is not the unit type, write the tag and the value.
+    // ```
+    // { tag: "Bar", value: Bar }
+    // { tag: "Bar", value: number }
+    // { tag: "Bar", value: string }
+    // ```
+    // Note you could alternatively do:
+    // ```
+    // { tag: "Bar" } & Bar
+    // ```
+    // for non-primitive types but that doesn't extend to primitives.
+    // Another alternative would be to name the value field the same as the tag field, but lowercased
+    // ```
+    // { tag: "Bar", bar: Bar }
+    // { tag: "Bar", bar: number }
+    // { tag: "Bar", bar: string }
+    // ```
+    // but this is a departure from our previous convention and is not much different.
+    if !matches!(ty, AlgebraicTypeUse::Unit) {
+        write!(out, ", value: ");
+        write_type(module, out, ty, Some("__")).unwrap();
+    }
+
+    writeln!(out, " }};");
+}
+
+fn write_variant_types(module: &ModuleDef, out: &mut Indenter, variants: &[(Identifier, AlgebraicTypeUse)]) {
+    // Write all the variant types.
+    for (ident, ty) in variants {
+        write_sum_variant_type(module, out, ident, ty);
+    }
+}
+
+fn write_variant_constructors(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    name: &str,
+    variants: &[(Identifier, AlgebraicTypeUse)],
+) {
+    // Write all the variant constructors.
+    // Write all of the variant constructors.
+    for (ident, ty) in variants {
+        if matches!(ty, AlgebraicTypeUse::Unit) {
+            // If the variant has no members, we can export a simple object.
+            // ```
+            // export const Foo = { tag: "Foo" };
+            // ```
+            write!(out, "export const {ident} = ");
+            writeln!(out, "{{ tag: \"{ident}\" }};");
+            continue;
+        }
+        let variant_name = ident.deref().to_case(Case::Pascal);
+        write!(out, "export const {variant_name} = (value: ");
+        write_type(module, out, ty, Some("__")).unwrap();
+        writeln!(out, "): {name} => ({{ tag: \"{variant_name}\", value }});");
+    }
+}
+
+fn write_get_algebraic_type_for_sum(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    variants: &[(Identifier, AlgebraicTypeUse)],
+) {
+    writeln!(out, "export function getAlgebraicType(): AlgebraicType {{");
+    {
+        indent_scope!(out);
+        write!(out, "return ");
+        convert_sum_type(module, &mut out, variants, "__");
+        writeln!(out, ";");
+    }
+    writeln!(out, "}}");
+}
+
+fn define_namespace_and_types_for_sum(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    name: &str,
+    variants: &[(Identifier, AlgebraicTypeUse)],
+) {
+    writeln!(out, "// A namespace for generated variants and helper functions.");
+    writeln!(out, "export namespace {name} {{");
+    out.indent(1);
+
+    // Write all of the variant types.
+    writeln!(
+        out,
+        "// These are the generated variant types for each variant of the tagged union.
+// One type is generated per variant and will be used in the `value` field of
+// the tagged union."
+    );
+    write_variant_types(module, out, variants);
+    writeln!(out);
+
+    // Write all of the variant constructors.
+    writeln!(
+        out,
+        "// Helper functions for constructing each variant of the tagged union.
+// ```
+// const foo = Foo.A(42);
+// assert!(foo.tag === \"A\");
+// assert!(foo.value === 42);
+// ```"
+    );
+    write_variant_constructors(module, out, name, variants);
+    writeln!(out);
+
+    // Write the function that generates the algebraic type.
+    write_get_algebraic_type_for_sum(module, out, variants);
+    writeln!(out);
+
+    writeln!(
+        out,
+        "export function serialize(writer: BinaryWriter, value: {name}): void {{
+    {name}.getAlgebraicType().serialize(writer, value);
+}}"
+    );
+    writeln!(out);
+
+    writeln!(
+        out,
+        "export function deserialize(reader: BinaryReader): {name} {{
+    return {name}.getAlgebraicType().deserialize(reader);
+}}"
+    );
+    writeln!(out);
+
+    out.dedent(1);
+
+    writeln!(out, "}}");
+    out.newline();
+
+    writeln!(out, "// The tagged union or sum type for the algebraic type `{name}`.");
+    write!(out, "export type {name} = ");
+
+    let names = variants
+        .iter()
+        .map(|(ident, _)| format!("{name}.{}", ident.deref().to_case(Case::Pascal)))
+        .collect::<Vec<String>>()
+        .join(" | ");
+
+    writeln!(out, "{names};");
+    out.newline();
+
+    writeln!(out, "export default {name};");
+}
+
+fn type_ref_module_name(module: &ModuleDef, type_ref: AlgebraicTypeRef) -> String {
+    let (name, _) = module.type_def_from_ref(type_ref).unwrap();
+    type_module_name(name)
+}
+
+fn type_module_name(type_name: &ScopedTypeName) -> String {
+    collect_case(Case::Snake, type_name.name_segments()) + "_type"
+}
+
+fn table_module_name(table_name: &Identifier) -> String {
+    table_name.deref().to_case(Case::Snake) + "_table"
+}
+
+fn table_method_name(table_name: &Identifier) -> String {
+    table_name.deref().to_case(Case::Camel)
+}
+
+fn reducer_args_type_name(reducer_name: &Identifier) -> String {
+    reducer_name.deref().to_case(Case::Pascal)
+}
+
+fn reducer_variant_name(reducer_name: &Identifier) -> String {
+    reducer_name.deref().to_case(Case::Pascal)
+}
+
+fn reducer_module_name(reducer_name: &Identifier) -> String {
+    reducer_name.deref().to_case(Case::Snake) + "_reducer"
+}
+
+fn reducer_function_name(reducer: &ReducerDef) -> String {
+    reducer.name.deref().to_case(Case::Camel)
+}
+
+pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
+    let mut s = String::new();
+    write_type(module, &mut s, ty, None).unwrap();
+    s
+}
+
+pub fn write_type<W: Write>(
+    module: &ModuleDef,
+    out: &mut W,
+    ty: &AlgebraicTypeUse,
+    ref_prefix: Option<&str>,
+) -> fmt::Result {
+    match ty {
+        AlgebraicTypeUse::Unit => write!(out, "void")?,
+        AlgebraicTypeUse::Never => write!(out, "never")?,
+        AlgebraicTypeUse::Identity => write!(out, "Identity")?,
+        AlgebraicTypeUse::Address => write!(out, "Address")?,
+        AlgebraicTypeUse::ScheduleAt => write!(
+            out,
+            "{{ tag: \"Interval\", value: bigint }} | {{ tag: \"Time\", value: bigint }}"
+        )?,
+        AlgebraicTypeUse::Option(inner_ty) => {
+            write_type(module, out, inner_ty, ref_prefix)?;
+            write!(out, " | undefined")?;
+        }
+        AlgebraicTypeUse::Primitive(prim) => match prim {
+            PrimitiveType::Bool => write!(out, "boolean")?,
+            PrimitiveType::I8 => write!(out, "number")?,
+            PrimitiveType::U8 => write!(out, "number")?,
+            PrimitiveType::I16 => write!(out, "number")?,
+            PrimitiveType::U16 => write!(out, "number")?,
+            PrimitiveType::I32 => write!(out, "number")?,
+            PrimitiveType::U32 => write!(out, "number")?,
+            PrimitiveType::I64 => write!(out, "bigint")?,
+            PrimitiveType::U64 => write!(out, "bigint")?,
+            PrimitiveType::I128 => write!(out, "bigint")?,
+            PrimitiveType::U128 => write!(out, "bigint")?,
+            PrimitiveType::I256 => write!(out, "bigint")?,
+            PrimitiveType::U256 => write!(out, "bigint")?,
+            PrimitiveType::F32 => write!(out, "number")?,
+            PrimitiveType::F64 => write!(out, "number")?,
         },
-        ty if ty.is_bytes() => write!(f, "{value}.asBytes()"),
-        AlgebraicType::Array(ArrayType { elem_ty }) => {
-            let typescript_type = ty_fmt(ctx, elem_ty, ref_prefix);
-            let el_conv = convert_type(ctx, elem_ty, "el", ref_prefix);
-            writeln!(f, "{value}.asArray().map(el => {el_conv}) as {typescript_type}[];")
+        AlgebraicTypeUse::String => write!(out, "string")?,
+        AlgebraicTypeUse::Array(elem_ty) => {
+            if matches!(&**elem_ty, AlgebraicTypeUse::Primitive(PrimitiveType::U8)) {
+                return write!(out, "Uint8Array");
+            }
+            write_type(module, out, elem_ty, ref_prefix)?;
+            write!(out, "[]")?;
         }
-        AlgebraicType::Map(_) => todo!(),
-        AlgebraicType::Ref(r) => {
-            let name = typescript_typename(ctx, *r);
-            write!(f, "{ref_prefix}{name}.fromValue({value})")
-        }
-        ty => {
-            let typescript_as_type = scalar_or_string_to_ts(ty).unwrap().1;
-            write!(f, "{value}.as{typescript_as_type}()")
+        AlgebraicTypeUse::Map { .. } => unimplemented!("AlgebraicType::Map is unsupported and will be removed"),
+        AlgebraicTypeUse::Ref(r) => {
+            if let Some(prefix) = ref_prefix {
+                write!(out, "{prefix}")?;
+            }
+            write!(out, "{}", type_ref_name(module, *r))?;
         }
     }
-    })
+    Ok(())
 }
 
-// can maybe do something fancy with this in the future
-fn typescript_typename(ctx: &GenCtx, typeref: AlgebraicTypeRef) -> &str {
-    ctx.names[typeref.idx()].as_deref().expect("tuples should have names")
+fn convert_algebraic_type<'a>(
+    module: &'a ModuleDef,
+    out: &mut Indenter,
+    ty: &'a AlgebraicTypeUse,
+    ref_prefix: &'a str,
+) {
+    match ty {
+        AlgebraicTypeUse::ScheduleAt => write!(out, "AlgebraicType.createScheduleAtType()"),
+        AlgebraicTypeUse::Identity => write!(out, "AlgebraicType.createIdentityType()"),
+        AlgebraicTypeUse::Address => write!(out, "AlgebraicType.createAddressType()"),
+        AlgebraicTypeUse::Option(inner_ty) => {
+            write!(out, "AlgebraicType.createOptionType(");
+            convert_algebraic_type(module, out, inner_ty, ref_prefix);
+            write!(out, ")");
+        }
+        AlgebraicTypeUse::Array(ty) => {
+            write!(out, "AlgebraicType.createArrayType(");
+            convert_algebraic_type(module, out, ty, ref_prefix);
+            write!(out, ")");
+        }
+        AlgebraicTypeUse::Ref(r) => write!(out, "{ref_prefix}{}.getAlgebraicType()", type_ref_name(module, *r)),
+        AlgebraicTypeUse::Primitive(prim) => {
+            write!(out, "AlgebraicType.create{prim:?}Type()");
+        }
+        AlgebraicTypeUse::Map { .. } => unimplemented!(),
+        AlgebraicTypeUse::Unit => write!(out, "AlgebraicType.createProductType([])"),
+        AlgebraicTypeUse::Never => unimplemented!(),
+        AlgebraicTypeUse::String => write!(out, "AlgebraicType.createStringType()"),
+    }
 }
 
-fn typescript_filename(ctx: &GenCtx, typeref: AlgebraicTypeRef) -> String {
-    ctx.names[typeref.idx()]
-        .as_deref()
-        .expect("tuples should have names")
-        .to_case(Case::Snake)
-}
-
-macro_rules! indent_scope {
-    ($x:ident) => {
-        let mut $x = $x.indented(1);
-    };
-}
-
-fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| match ty {
-        ty if ty.is_schedule_at() => write!(f, "ScheduleAt.getAlgebraicType()"),
-        AlgebraicType::Product(product_type) => write!(f, "{}", convert_product_type(ctx, product_type, ref_prefix)),
-        AlgebraicType::Sum(sum_type) => write!(f, "{}", convert_sum_type(ctx, sum_type, ref_prefix)),
-        AlgebraicType::Array(ty) => write!(
-            f,
-            "AlgebraicType.createArrayType({})",
-            convert_algebraic_type(ctx, &ty.elem_ty, ref_prefix)
-        ),
-        AlgebraicType::Map(_) => todo!(),
-        AlgebraicType::Ref(r) => write!(f, "{ref_prefix}{}.getAlgebraicType()", typescript_typename(ctx, *r)),
-        ty => write!(f, "AlgebraicType.create{ty:?}Type()"),
-    })
+fn convert_sum_type<'a>(
+    module: &'a ModuleDef,
+    out: &mut Indenter,
+    variants: &'a [(Identifier, AlgebraicTypeUse)],
+    ref_prefix: &'a str,
+) {
+    writeln!(out, "AlgebraicType.createSumType([");
+    out.indent(1);
+    for (ident, ty) in variants {
+        write!(out, "new SumTypeVariant(\"{ident}\", ",);
+        convert_algebraic_type(module, out, ty, ref_prefix);
+        writeln!(out, "),");
+    }
+    out.dedent(1);
+    write!(out, "])")
 }
 
 fn convert_product_type<'a>(
-    ctx: &'a GenCtx,
-    product_type: &'a ProductType,
+    module: &'a ModuleDef,
+    out: &mut Indenter,
+    elements: &'a [(Identifier, AlgebraicTypeUse)],
     ref_prefix: &'a str,
-) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| {
-        writeln!(f, "AlgebraicType.createProductType([")?;
-        for elem in &*product_type.elements {
-            writeln!(
-                f,
-                "{INDENT}new ProductTypeElement(\"{}\", {}),",
-                elem.name
-                    .to_owned()
-                    .map(|s| {
-                        if &*s == IDENTITY_TAG {
-                            s.into()
-                        } else {
-                            typescript_field_name(s.deref().to_case(Case::Camel))
-                        }
-                    })
-                    .unwrap_or("null".into()),
-                convert_algebraic_type(ctx, &elem.algebraic_type, ref_prefix)
-            )?;
-        }
-        write!(f, "])")
-    })
-}
-
-fn convert_sum_type<'a>(ctx: &'a GenCtx, sum_type: &'a SumType, ref_prefix: &'a str) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| {
-        writeln!(f, "AlgebraicType.createSumType([")?;
-        for elem in &*sum_type.variants {
-            writeln!(
-                f,
-                "\tnew SumTypeVariant({}, {}),",
-                elem.name
-                    .to_owned()
-                    .map(|s| format!("\"{s}\""))
-                    .unwrap_or("null".into()),
-                convert_algebraic_type(ctx, &elem.algebraic_type, ref_prefix)
-            )?;
-        }
-        write!(f, "])")
-    })
-}
-
-fn serialize_type<'a>(
-    ctx: &'a GenCtx,
-    ty: &'a AlgebraicType,
-    value: &'a str,
-    prefix: &'a str,
-) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| match ty {
-        AlgebraicType::Product(prod) => {
-            if prod.is_special() {
-                write!(f, "Array.from({value}.toUint8Array())")
-            } else {
-                unimplemented!()
-            }
-        }
-        AlgebraicType::Sum(sum_type) => {
-            if let Some(inner_ty) = sum_type.as_option() {
-                write!(
-                    f,
-                    "{value} ? {{ \"some\": {} }} : {{ \"none\": [] }}",
-                    serialize_type(ctx, inner_ty, value, prefix)
-                )
-            } else if sum_type.is_schedule_at() {
-                write!(f, "ScheduleAt.serialize({value})")
-            } else {
-                unimplemented!()
-            }
-        }
-        AlgebraicType::Ref(r) => {
-            let typename = typescript_typename(ctx, *r);
-            write!(f, "{prefix}{typename}.serialize({value})")
-        }
-        ty if ty.is_bytes() => write!(f, "Array.from({value})"),
-        AlgebraicType::Array(ArrayType { elem_ty }) => match &**elem_ty {
-            ty if ty.is_scalar_or_string() || ty.is_map() => write!(f, "{value}"),
-            t => write!(f, "{value}.map(el => {})", serialize_type(ctx, t, "el", prefix)),
-        },
-        _ => write!(f, "{value}"),
-    })
-}
-
-pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> String {
-    let mut output = CodeIndenter::new(String::new());
-
-    let sum_type_name = name.replace("r#", "").to_case(Case::Pascal);
-
-    writeln!(
-        output,
-        "// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE",
-    );
-    writeln!(output, "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.");
-    writeln!(output);
-
-    writeln!(output, "// @ts-ignore");
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, SumTypeVariant, AlgebraicValue }} from \"@clockworklabs/spacetimedb-sdk\";");
-
-    let mut imports = Vec::new();
-    generate_imports_variants(ctx, &sum_type.variants, &mut imports, Some("__"));
-
-    for import in imports {
-        writeln!(output, "// @ts-ignore");
-        writeln!(output, "{import}");
-    }
-
-    writeln!(output);
-
-    writeln!(output, "export namespace {sum_type_name} {{");
-
-    let mut names = Vec::new();
-    {
-        indent_scope!(output);
-
-        writeln!(output, "export function getAlgebraicType(): AlgebraicType {{");
-
-        {
-            indent_scope!(output);
-
-            writeln!(output, "return {};", convert_sum_type(ctx, sum_type, "__"));
-        }
-        writeln!(output, "}}\n");
-
-        let serialize = format!("export function serialize(value: {sum_type_name}): object {{");
-        writeln!(output, "{serialize}");
-
-        {
-            indent_scope!(output);
-
-            if sum_type.is_simple_enum() {
-                // for a simple enum we can simplify the fromValue function
-                writeln!(output, "const result: {{[key: string]: any}} = {{}};");
-                writeln!(output, "result[value.tag] = [];");
-                writeln!(output, "return result;");
-            } else {
-                writeln!(output, "switch(value.tag) {{");
-                {
-                    indent_scope!(output);
-
-                    for variant in sum_type.variants.iter() {
-                        let variant_name = variant
-                            .name
-                            .as_ref()
-                            .expect("All sum variants should have names!")
-                            .replace("r#", "")
-                            .to_case(Case::Pascal);
-                        writeln!(output, "case \"{variant_name}\":");
-
-                        let field_type = &variant.algebraic_type;
-                        let to_return = match field_type {
-                            AlgebraicType::Product(p) if p.elements.is_empty() => {
-                                format!("{{ \"{variant_name}\": [] }}")
-                            }
-                            _ => format!(
-                                "{{ \"{variant_name}\": {} }}",
-                                serialize_type(ctx, field_type, "value.value", "__")
-                            ),
-                        };
-                        writeln!(output, "\treturn {to_return};");
-                    }
-
-                    writeln!(output, "default:");
-                    writeln!(output, "\tthrow(\"unreachable\");");
-                }
-                writeln!(output, "}}");
-            }
-        }
-        writeln!(output, "}}");
-
-        writeln!(output);
-
-        for variant in &*sum_type.variants {
-            let variant_name = variant
-                .name
-                .as_ref()
-                .expect("All sum variants should have names!")
-                .replace("r#", "")
-                .to_case(Case::Pascal);
-
-            names.push(variant_name.clone());
-
-            let a_type = match variant.algebraic_type {
-                AlgebraicType::Product(_) => "undefined".to_string(),
-                _ => {
-                    format!("{}", ty_fmt(ctx, &variant.algebraic_type, "__"))
-                }
-            };
-            writeln!(
-                output,
-                "export type {variant_name} = {{ tag: \"{variant_name}\", value: {a_type} }};"
-            );
-
-            // export an object or a function representing an enum value, so people
-            // can pass it as an argument
-            match variant.algebraic_type {
-                AlgebraicType::Product(_) => writeln!(
-                    output,
-                    "export const {variant_name} = {{ tag: \"{variant_name}\", value: undefined }};"
-                ),
-                _ => writeln!(
-                    output,
-                    "export const {variant_name} = (value: {a_type}): {variant_name} => ({{ tag: \"{variant_name}\", value }});"
-                ),
-            };
-        }
-
-        writeln!(output);
-
-        let from_value = format!("export function fromValue(value: AlgebraicValue): {sum_type_name} {{");
-        writeln!(output, "{from_value}");
-
-        {
-            indent_scope!(output);
-
-            writeln!(output, "let sumValue = value.asSumValue();");
-
-            if sum_type.is_simple_enum() {
-                // for a simple enum we can simplify the fromValue function
-                writeln!(output, "let tag = sumValue.tag;");
-                writeln!(
-                    output,
-                    "let variant = {sum_type_name}.getAlgebraicType().sum.variants[tag];"
-                );
-                writeln!(
-                    output,
-                    "return {{ tag: variant.name, value: undefined }} as {sum_type_name};"
-                );
-            } else {
-                writeln!(output, "switch(sumValue.tag) {{");
-                {
-                    indent_scope!(output);
-
-                    for (i, variant) in sum_type.variants.iter().enumerate() {
-                        let variant_name = variant
-                            .name
-                            .as_ref()
-                            .expect("All sum variants should have names!")
-                            .replace("r#", "")
-                            .to_case(Case::Pascal);
-                        writeln!(output, "case {i}:");
-
-                        let field_type = &variant.algebraic_type;
-                        let result = match field_type {
-                            AlgebraicType::Product(product_type) if product_type.elements.is_empty() => {
-                                format!("{{ tag: \"{variant_name}\", value: undefined }}")
-                            }
-                            _ => format!(
-                                "{{ tag: \"{variant_name}\", value: {} }}",
-                                convert_type(ctx, field_type, "sumValue.value", "__")
-                            ),
-                        };
-                        writeln!(output, "\treturn {result};");
-                    }
-
-                    writeln!(output, "default:");
-                    writeln!(output, "\tthrow(\"unreachable\");");
-                }
-                writeln!(output, "}}");
-            }
-        }
-        writeln!(output, "}}");
-    }
-
-    writeln!(output, "}}");
-
-    let names = names
-        .iter()
-        .map(|s| format!("{sum_type_name}.{s}"))
-        .collect::<Vec<String>>()
-        .join(" | ");
-    writeln!(output, "\nexport type {sum_type_name} = {names};");
-    writeln!(output, "export default {sum_type_name};");
-
-    output.into_inner()
-}
-
-const RESERVED_KEYWORDS: [&str; 36] = [
-    "break",
-    "case",
-    "catch",
-    "class",
-    "const",
-    "continue",
-    "debugger",
-    "default",
-    "delete",
-    "do",
-    "else",
-    "enum",
-    "export",
-    "extends",
-    "false",
-    "finally",
-    "for",
-    "function",
-    "if",
-    "import",
-    "in",
-    "instanceof",
-    "new",
-    "null",
-    "return",
-    "super",
-    "switch",
-    "this",
-    "throw",
-    "true",
-    "try",
-    "typeof",
-    "var",
-    "void",
-    "while",
-    "with",
-];
-
-fn typescript_field_name(field_name: String) -> String {
-    if RESERVED_KEYWORDS
-        .into_iter()
-        .map(String::from)
-        .collect::<Vec<String>>()
-        .contains(&field_name)
-    {
-        return format!("_{field_name}");
-    }
-
-    field_name
-}
-
-pub fn autogen_typescript_tuple(ctx: &GenCtx, name: &str, tuple: &ProductType) -> String {
-    autogen_typescript_product_table_common(ctx, name, tuple, None)
-}
-#[allow(deprecated)]
-pub fn autogen_typescript_table(ctx: &GenCtx, table: &TableDescHack) -> String {
-    let tuple = ctx.typespace[table.data].as_product().unwrap();
-    autogen_typescript_product_table_common(
-        ctx,
-        typescript_typename(ctx, table.data),
-        tuple,
-        Some(table.schema.clone()),
-    )
-}
-
-fn generate_imports(ctx: &GenCtx, elements: &[ProductTypeElement], imports: &mut Vec<String>, prefix: Option<&str>) {
-    for field in elements {
-        _generate_imports(ctx, &field.algebraic_type, imports, prefix);
-    }
-}
-
-// TODO: refactor to allow passing both elements and variants
-fn generate_imports_variants(
-    ctx: &GenCtx,
-    variants: &[SumTypeVariant],
-    imports: &mut Vec<String>,
-    prefix: Option<&str>,
 ) {
-    for variant in variants {
-        _generate_imports(ctx, &variant.algebraic_type, imports, prefix);
+    writeln!(out, "AlgebraicType.createProductType([");
+    out.indent(1);
+    for (ident, ty) in elements {
+        write!(out, "new ProductTypeElement(\"{}\", ", ident.deref(),);
+        convert_algebraic_type(module, out, ty, ref_prefix);
+        writeln!(out, "),");
     }
+    out.dedent(1);
+    write!(out, "])")
 }
 
-fn _generate_imports(ctx: &GenCtx, ty: &AlgebraicType, imports: &mut Vec<String>, prefix: Option<&str>) {
-    match ty {
-        AlgebraicType::Array(ty) => _generate_imports(ctx, &ty.elem_ty, imports, prefix),
-        AlgebraicType::Map(map_type) => {
-            _generate_imports(ctx, &map_type.key_ty, imports, prefix);
-            _generate_imports(ctx, &map_type.ty, imports, prefix);
-        }
-        AlgebraicType::Ref(r) => {
-            let class_name = typescript_typename(ctx, *r).to_string();
-            let filename = typescript_filename(ctx, *r);
-
-            let imported_as = match prefix {
-                Some(prefix) => format!("{class_name} as {prefix}{class_name}"),
-                None => class_name,
-            };
-            let import = format!("import {{ {imported_as} }} from \"./{filename}\";");
-            imports.push(import);
-        }
-        // Generate imports for the fields of anonymous sum types like `Option<T>`.
-        AlgebraicType::Sum(s) => {
-            for variant in &*s.variants {
-                _generate_imports(ctx, &variant.algebraic_type, imports, prefix);
-            }
-        }
-        // Do we need to generate imports for fields of anonymous product types as well?
-        _ => {}
-    }
-}
-
-fn autogen_typescript_product_table_common(
-    ctx: &GenCtx,
-    name: &str,
-    product_type: &ProductType,
-    schema: Option<TableSchema>,
-) -> String {
-    let mut output = CodeIndenter::new(String::new());
-
-    let struct_name_pascal_case = name.replace("r#", "").to_case(Case::Pascal);
-
-    writeln!(
-        output,
-        "// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE",
-    );
-    writeln!(output, "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.");
-    writeln!(output);
-
-    writeln!(output, "// @ts-ignore");
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ScheduleAt, ClientDB, SpacetimeDBClient }} from \"@clockworklabs/spacetimedb-sdk\";");
-
-    let mut imports = Vec::new();
-    generate_imports(ctx, &product_type.elements, &mut imports, None);
-
-    for import in imports {
-        writeln!(output, "// @ts-ignore");
-        writeln!(output, "{import}");
-    }
-
-    writeln!(output);
-
-    writeln!(output, "export class {struct_name_pascal_case} extends DatabaseTable");
-    writeln!(output, "{{");
-    {
-        indent_scope!(output);
-
-        writeln!(output, "public static db: ClientDB = __SPACETIMEDB__.clientDB;");
-        writeln!(output, "public static tableName = \"{struct_name_pascal_case}\";");
-
-        let mut constructor_signature = Vec::new();
-        let mut constructor_assignments = Vec::new();
-        for field in &*product_type.elements {
-            let field_name = field
-                .name
-                .as_ref()
-                .expect("autogen'd tuples should have field names")
-                .replace("r#", "");
-            let field_name_camel_case = typescript_field_name(field_name.to_case(Case::Camel));
-            let arg = format!("{}: {}", field_name_camel_case, ty_fmt(ctx, &field.algebraic_type, ""));
-            let assignment = format!("this.{field_name_camel_case} = {field_name_camel_case};");
-
-            writeln!(output, "public {arg};");
-
-            constructor_signature.push(arg);
-            constructor_assignments.push(assignment);
-        }
-
-        writeln!(output);
-
-        if let Some(schema) = &schema {
-            // if this table has a primary key add it to the codegen
-            if let Some(primary_key) = schema
-                .pk()
-                .map(|field| format!("\"{}\"", field.col_name.deref().to_case(Case::Camel)))
-            {
-                writeln!(output, "public static primaryKey: string | undefined = {primary_key};");
-                writeln!(output);
-            }
-        } else {
-            writeln!(output, "public static primaryKey: string | undefined = undefined;");
-            writeln!(output);
-        }
-
-        writeln!(output, "constructor({}) {{", constructor_signature.join(", "));
-        writeln!(output, "super();");
-        {
-            indent_scope!(output);
-
-            for assignment in constructor_assignments {
-                writeln!(output, "{assignment}");
-            }
-        }
-
-        writeln!(output, "}}");
-
-        writeln!(output);
-
+/// Print imports for each of the `imports`.
+fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports) {
+    for typeref in imports {
+        let module_name = type_ref_module_name(module, typeref);
+        let type_name = type_ref_name(module, typeref);
+        writeln!(out, "// @ts-ignore");
         writeln!(
-            output,
-            "public static serialize(value: {struct_name_pascal_case}): object {{"
+            out,
+            "import {{ {type_name} as __{type_name} }} from \"./{module_name}\";"
         );
-
-        {
-            indent_scope!(output);
-
-            writeln!(output, "return [");
-
-            let mut args = Vec::new();
-            for field in &*product_type.elements {
-                let field_name = field
-                    .name
-                    .as_ref()
-                    .expect("autogen'd tuples should have field names")
-                    .replace("r#", "");
-
-                let field_name_camel_case = typescript_field_name(field_name.to_case(Case::Camel));
-                let value_field = format!("value.{field_name_camel_case}");
-                let arg = format!("{}", serialize_type(ctx, &field.algebraic_type, &value_field, ""));
-                args.push(arg);
-            }
-
-            writeln!(output, "{}", args.join(", "));
-
-            writeln!(output, "];");
-        }
-
-        writeln!(output, "}}");
-
-        writeln!(output);
-
-        writeln!(output, "public static getAlgebraicType(): AlgebraicType");
-        writeln!(output, "{{");
-        {
-            indent_scope!(output);
-            writeln!(output, "return {};", convert_product_type(ctx, product_type, ""));
-        }
-        writeln!(output, "}}");
-        writeln!(output);
-
-        write!(
-            output,
-            "{}",
-            autogen_typescript_product_value_to_struct(ctx, &struct_name_pascal_case, product_type)
-        );
-
-        writeln!(output);
-
-        if let Some(schema) = &schema {
-            autogen_typescript_access_funcs_for_struct(
-                &mut output,
-                &struct_name_pascal_case,
-                product_type,
-                &schema.table_name,
-                schema,
-            );
-
-            writeln!(output);
-        }
     }
-    writeln!(output, "}}");
-
-    writeln!(output, "\nexport default {struct_name_pascal_case};");
-
-    output.into_inner()
 }
 
-fn autogen_typescript_product_value_to_struct(
-    ctx: &GenCtx,
-    struct_name_pascal_case: &str,
-    product_type: &ProductType,
-) -> String {
-    let mut output = CodeIndenter::new(String::new());
-
-    writeln!(
-        output,
-        "public static fromValue(value: AlgebraicValue): {struct_name_pascal_case}",
-    );
-    writeln!(output, "{{");
-    {
-        indent_scope!(output);
-        writeln!(output, "let productValue = value.asProductValue();");
-
-        let mut constructor_args = Vec::new();
-        // vec conversion go here
-        for (idx, field) in product_type.elements.iter().enumerate() {
-            let field_name = field
-                .name
-                .as_ref()
-                .expect("autogen'd product types should have field names");
-            let field_type = &field.algebraic_type;
-            let typescript_field_name = typescript_field_name(field_name.to_string().replace("r#", ""));
-            constructor_args.push(format!("__{typescript_field_name}"));
-
-            writeln!(
-                output,
-                "let __{typescript_field_name} = {};",
-                convert_type(ctx, field_type, format_args!("productValue.elements[{idx}]"), "")
-            );
-        }
-
-        writeln!(output, "return new this({});", constructor_args.join(", "));
-    }
-    writeln!(output, "}}");
-
-    output.into_inner()
+/// Iterate over all the [`ReducerDef`]s defined by the module, in alphabetical order by name.
+///
+/// Sorting is necessary to have deterministic reproducable codegen.
+fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &ReducerDef> {
+    module.reducers().sorted_by_key(|reducer| &reducer.name)
 }
 
-#[allow(dead_code)]
-fn indented_block<R>(output: &mut CodeIndenter<String>, f: impl FnOnce(&mut CodeIndenter<String>) -> R) -> R {
-    writeln!(output, "{{");
-    let res = f(&mut output.indented(1));
-    writeln!(output, "}}");
-    res
+/// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.
+///
+/// Sorting is necessary to have deterministic reproducable codegen.
+fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
+    module.tables().sorted_by_key(|table| &table.name)
 }
 
-fn autogen_typescript_access_funcs_for_struct(
-    output: &mut CodeIndenter<String>,
-    struct_name_pascal_case: &str,
-    product_type: &ProductType,
-    table_name: &str,
-    table: &TableSchema,
+/// Iterate over all the [`TypeDef`]s defined by the module, in alphabetical order by name.
+///
+/// Sorting is necessary to have deterministic reproducable codegen.
+fn iter_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDef> {
+    module.types().sorted_by_key(|table| &table.name)
+}
+
+/// Use `search_function` on `roots` to detect required imports, then print them with `print_imports`.
+///
+/// `this_file` is passed and excluded for the case of recursive types:
+/// without it, the definition for a type like `struct Foo { foos: Vec<Foo> }`
+/// would attempt to include `import { Foo } from "./foo"`.
+fn gen_and_print_imports(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    roots: &[(Identifier, AlgebraicTypeUse)],
+    dont_import: &[AlgebraicTypeRef],
 ) {
-    let constraints = table.backcompat_column_constraints();
-    for col in table.columns() {
-        let is_unique = constraints[&ColList::new(col.col_pos)].has_unique();
-        let field = &product_type.elements[col.col_pos.idx()];
-        let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
-        let field_type = &field.algebraic_type;
-        let typescript_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
-        let typescript_field_name_camel = field_name.replace("r#", "").to_case(Case::Camel);
+    let mut imports = BTreeSet::new();
 
-        let typescript_field_type = match field_type {
-            ty if ty.is_identity() => "Identity",
-            ty if ty.is_address() => "Address",
-            AlgebraicType::Product(_)
-            | AlgebraicType::Ref(_)
-            | AlgebraicType::Sum(_)
-            | AlgebraicType::Array(_)
-            | AlgebraicType::Map(_) => {
-                // TODO: We don't allow filtering on enums, tuples, arrays, and maps right now.
-                // Its possible we may consider it for the future.
-                continue;
-            }
-            ty => scalar_or_string_to_ts(ty).unwrap().0,
-        };
+    for (_, ty) in roots {
+        ty.for_each_ref(|r| {
+            imports.insert(r);
+        });
+    }
+    for skip in dont_import {
+        imports.remove(skip);
+    }
+    let len = imports.len();
 
-        writeln!(
-            output,
-            "public static *filterBy{typescript_field_name_pascal}(value: {typescript_field_type}): IterableIterator<{struct_name_pascal_case}>"
-        );
+    print_imports(module, out, imports);
 
-        writeln!(output, "{{");
-        {
-            indent_scope!(output);
-            writeln!(
-                output,
-                "for (let instance of this.db.getTable(\"{table_name}\").getInstances())"
-            );
-            writeln!(output, "{{");
-            {
-                indent_scope!(output);
-                let condition = if typescript_field_type == "Identity" || typescript_field_type == "Address" {
-                    ".isEqual(value)"
-                } else {
-                    " === value"
-                };
-                writeln!(output, "if (instance.{typescript_field_name_camel}{condition}) {{");
-                {
-                    indent_scope!(output);
-                    writeln!(output, "yield instance;");
-                }
-                writeln!(output, "}}");
-            }
-            // End foreach
-            writeln!(output, "}}");
-        }
-        // End Func
-        writeln!(output, "}}");
-        writeln!(output);
-
-        if is_unique {
-            writeln!(
-                output,
-                "public static findBy{typescript_field_name_pascal}(value: {typescript_field_type}): {struct_name_pascal_case} | undefined"
-            );
-
-            writeln!(output, "{{");
-            {
-                indent_scope!(output);
-                writeln!(
-                    output,
-                    "return this.filterBy{typescript_field_name_pascal}(value).next().value;"
-                );
-            }
-            // End Func
-            writeln!(output, "}}");
-            writeln!(output);
-        }
+    if len > 0 {
+        out.newline();
     }
 }
 
-// fn convert_enumdef(tuple: &SumType) -> impl fmt::Display + '_ {
-//     fmt_fn(move |f| {
-//         writeln!(f, "AlgebraicType.Tuple(new ProductTypeElement[]")?;
-//         writeln!(f, "{{")?;
-//         for (i, elem) in tuple.elements.iter().enumerate() {
-//             let comma = if i == tuple.elements.len() - 1 { "" } else { "," };
-//             writeln!(f, "{INDENT}{}{}", convert_elementdef(elem), comma)?;
-//         }
-//         writeln!(f, "}}")
-//     })
+// const RESERVED_KEYWORDS: [&str; 36] = [
+//     "break",
+//     "case",
+//     "catch",
+//     "class",
+//     "const",
+//     "continue",
+//     "debugger",
+//     "default",
+//     "delete",
+//     "do",
+//     "else",
+//     "enum",
+//     "export",
+//     "extends",
+//     "false",
+//     "finally",
+//     "for",
+//     "function",
+//     "if",
+//     "import",
+//     "in",
+//     "instanceof",
+//     "new",
+//     "null",
+//     "return",
+//     "super",
+//     "switch",
+//     "this",
+//     "throw",
+//     "true",
+//     "try",
+//     "typeof",
+//     "var",
+//     "void",
+//     "while",
+//     "with",
+// ];
+
+// fn typescript_field_name(field_name: String) -> String {
+//     if RESERVED_KEYWORDS
+//         .into_iter()
+//         .map(String::from)
+//         .collect::<Vec<String>>()
+//         .contains(&field_name)
+//     {
+//         return format!("_{field_name}");
+//     }
+
+//     field_name
 // }
-
-pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
-    let func_name = &*reducer.name;
-    // let reducer_pascal_name = func_name.to_case(Case::Pascal);
-    let reducer_name_pascal_case = func_name.to_case(Case::Pascal);
-
-    let mut output = CodeIndenter::new(String::new());
-
-    writeln!(
-        output,
-        "// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE"
-    );
-    writeln!(output, "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.");
-    writeln!(output);
-
-    writeln!(output, "// @ts-ignore");
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ScheduleAt, ReducerEvent, Reducer, SpacetimeDBClient }} from \"@clockworklabs/spacetimedb-sdk\";");
-
-    let mut imports = Vec::new();
-    generate_imports(
-        ctx,
-        &reducer.args.clone().into_iter().collect::<Vec<ProductTypeElement>>(),
-        &mut imports,
-        None,
-    );
-
-    for import in imports {
-        writeln!(output, "// @ts-ignore");
-        writeln!(output, "{import}");
-    }
-
-    writeln!(output);
-
-    let mut func_arguments = Vec::new();
-    let mut arg_names = Vec::new();
-    for arg in reducer.args.iter() {
-        let name = arg
-            .name
-            .as_deref()
-            .unwrap_or_else(|| panic!("reducer args should have names: {func_name}"));
-        let arg_name = format!("_{}", name.to_case(Case::Camel));
-        let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, "");
-
-        func_arguments.push(format!("{arg_name}: {arg_type_str}"));
-        arg_names.push(arg_name.to_string());
-    }
-
-    let full_reducer_name = format!("{reducer_name_pascal_case}Reducer");
-
-    writeln!(output, "export class {full_reducer_name} extends Reducer");
-    writeln!(output, "{{");
-
-    {
-        indent_scope!(output);
-
-        writeln!(
-            output,
-            "public static reducerName: string = \"{reducer_name_pascal_case}\";"
-        );
-        writeln!(output, "public static call({}) {{", func_arguments.join(", "));
-        {
-            indent_scope!(output);
-
-            writeln!(output, "this.getReducer().call({});", arg_names.join(", "));
-        }
-        writeln!(output, "}}\n");
-
-        writeln!(output, "public call({}) {{", func_arguments.join(", "));
-        {
-            indent_scope!(output);
-
-            writeln!(output, "const serializer = this.client.getSerializer();");
-
-            let mut arg_names = Vec::new();
-            for arg in reducer.args.iter() {
-                let ty = &arg.algebraic_type;
-                let name = arg
-                    .name
-                    .as_deref()
-                    .unwrap_or_else(|| panic!("reducer args should have names: {func_name}"));
-                let arg_name = name.to_case(Case::Camel);
-
-                writeln!(output, "let _{arg_name}Type = {};", convert_algebraic_type(ctx, ty, ""));
-                writeln!(output, "serializer.write(_{arg_name}Type, _{arg_name});");
-
-                arg_names.push(arg_name);
-            }
-
-            writeln!(output, "this.client.call(\"{func_name}\", serializer);");
-        }
-        // Closing brace for reducer
-        writeln!(output, "}}");
-        writeln!(output);
-
-        let args: &str = if reducer.args.is_empty() {
-            "_adapter: ReducerArgsAdapter"
-        } else {
-            "adapter: ReducerArgsAdapter"
-        };
-        writeln!(output, "public static deserializeArgs({args}): any[] {{");
-
-        {
-            indent_scope!(output);
-
-            let mut arg_names = Vec::new();
-            for arg in reducer.args.iter() {
-                let ty = &arg.algebraic_type;
-                let name = arg
-                    .name
-                    .as_deref()
-                    .unwrap_or_else(|| panic!("reducer args should have names: {func_name}"));
-                let arg_name = typescript_field_name(name.to_case(Case::Camel));
-
-                writeln!(output, "let {arg_name}Type = {};", convert_algebraic_type(ctx, ty, ""));
-                writeln!(
-                    output,
-                    "let {arg_name}Value = AlgebraicValue.deserialize({arg_name}Type, adapter.next())"
-                );
-                writeln!(
-                    output,
-                    "let {arg_name} = {};",
-                    convert_type(ctx, ty, format_args!("{arg_name}Value"), "")
-                );
-
-                arg_names.push(arg_name);
-            }
-
-            writeln!(output, "return [{}];", arg_names.join(", "));
-        }
-
-        writeln!(output, "}}");
-
-        writeln!(output);
-
-        writeln!(
-            output,
-            "public static on(callback: (reducerEvent: ReducerEvent, {}) => void) {{",
-            func_arguments.join(", ")
-        );
-        {
-            indent_scope!(output);
-
-            writeln!(output, "this.getReducer().on(callback);");
-        }
-        writeln!(output, "}}");
-
-        // OnCreatePlayerEvent(dbEvent.Status, Identity.From(dbEvent.CallerIdentity.ToByteArray()), args[0].ToObject<string>());
-        writeln!(
-            output,
-            "public on(callback: (reducerEvent: ReducerEvent, {}) => void)",
-            func_arguments.join(", ")
-        );
-        writeln!(output, "{{");
-        {
-            indent_scope!(output);
-
-            writeln!(
-                output,
-                "this.client.on(\"reducer:{reducer_name_pascal_case}\", callback);"
-            );
-        }
-
-        // Closing brace for Event parsing function
-        writeln!(output, "}}");
-    }
-    // Closing brace for class
-    writeln!(output, "}}");
-
-    writeln!(output);
-
-    writeln!(output, "\nexport default {reducer_name_pascal_case}Reducer");
-
-    output.into_inner()
-}
-
-pub fn autogen_typescript_globals(_ctx: &GenCtx, _items: &[GenItem]) -> Vec<(String, String)> {
-    vec![] //TODO
-}

@@ -1,5 +1,7 @@
-use super::code_indenter::CodeIndenter;
+use super::code_indenter::{CodeIndenter, Indenter};
+use super::util::{collect_case, print_lines, type_ref_name};
 use super::Lang;
+use crate::generate::util::{namespace_is_empty_or_default, print_auto_generated_file_comment};
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
@@ -12,24 +14,12 @@ use std::collections::BTreeSet;
 use std::fmt::{self, Write};
 use std::ops::Deref;
 
-type Indenter = CodeIndenter<String>;
-
 /// Pairs of (module_name, TypeName).
 type Imports = BTreeSet<AlgebraicTypeRef>;
 
-fn collect_case<'a>(case: Case, segs: impl Iterator<Item = &'a Identifier>) -> String {
-    segs.map(|s| s.deref().to_case(case)).join(case.delim())
-}
-
-fn namespace_is_acceptable(requested_namespace: &str) -> bool {
-    // The `spacetime generate` CLI sets a default namespace of `SpacetimeDB.Types`,
-    // which is intended to be consumed only by C# codegen,
-    // but is passed to all codegen languages including Rust.
-    // We want to assert that the user did not explicitly request a different namespace,
-    // since we have no way to emit one.
-    // So, check that the namespace either is empty or is the default.
-    requested_namespace.is_empty() || requested_namespace == "SpacetimeDB.Types"
-}
+// TODO(cloutiertyler): Rust should probably use four spaces instead of tabs
+// but I'm keeping this so as to not explode the diff.
+const INDENT: &str = "\t";
 
 pub struct Rust;
 
@@ -52,14 +42,14 @@ impl Lang for Rust {
 
     fn generate_type(&self, module: &ModuleDef, namespace: &str, typ: &TypeDef) -> String {
         assert!(
-            namespace_is_acceptable(namespace),
+            namespace_is_empty_or_default(namespace),
             "Rust codegen does not support namespaces, as Rust equates namespaces with `mod`s.
 
 Requested namespace: {namespace}",
         );
         let type_name = collect_case(Case::Pascal, typ.name.name_segments());
 
-        let mut output = CodeIndenter::new(String::new());
+        let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out);
@@ -101,7 +91,7 @@ impl __sdk::spacetime_module::InModule for {type_name} {{
     }
     fn generate_table(&self, module: &ModuleDef, namespace: &str, table: &TableDef) -> String {
         assert!(
-            namespace_is_acceptable(namespace),
+            namespace_is_empty_or_default(namespace),
             "Rust codegen does not support namespaces, as Rust equates namespaces with `mod`s.
 
 Requested namespace: {namespace}",
@@ -113,7 +103,7 @@ Requested namespace: {namespace}",
 
         let type_ref = table.product_type_ref;
 
-        let mut output = CodeIndenter::new(String::new());
+        let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out);
@@ -324,13 +314,13 @@ pub(super) fn parse_table_update(
     }
     fn generate_reducer(&self, module: &ModuleDef, namespace: &str, reducer: &ReducerDef) -> String {
         assert!(
-            namespace_is_acceptable(namespace),
+            namespace_is_empty_or_default(namespace),
             "Rust codegen does not support namespaces, as Rust equates namespaces with `mod`s.
 
 Requested namespace: {namespace}",
         );
 
-        let mut output = CodeIndenter::new(String::new());
+        let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out);
@@ -449,13 +439,13 @@ impl {func_name} for super::RemoteReducers {{
 
     fn generate_globals(&self, module: &ModuleDef, namespace: &str) -> Vec<(String, String)> {
         assert!(
-            namespace_is_acceptable(namespace),
+            namespace_is_empty_or_default(namespace),
             "Rust codegen does not support namespaces, as Rust equates namespaces with `mod`s.
 
 Requested namespace: {namespace}",
         );
 
-        let mut output = CodeIndenter::new(String::new());
+        let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
         print_file_header(out);
@@ -533,36 +523,10 @@ pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeU
     Ok(())
 }
 
-// This is (effectively) duplicated in [typescript.rs] as `typescript_typename` and in
-// [csharp.rs] as `csharp_typename`, and should probably be lifted to a shared utils
-// module.
-fn type_ref_name(module: &ModuleDef, typeref: AlgebraicTypeRef) -> String {
-    let (name, _def) = module.type_def_from_ref(typeref).unwrap();
-    collect_case(Case::Pascal, name.name_segments())
-}
-
 pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
     let mut s = String::new();
     write_type(module, &mut s, ty).unwrap();
     s
-}
-
-fn print_lines(output: &mut Indenter, lines: &[&str]) {
-    for line in lines {
-        writeln!(output, "{line}");
-    }
-}
-
-// This is (effectively) duplicated in both [typescript.rs] and [csharp.rs], and should
-// probably be lifted to a shared module.
-const AUTO_GENERATED_FILE_COMMENT: &[&str] = &[
-    "// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE",
-    "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.",
-    "",
-];
-
-fn print_auto_generated_file_comment(output: &mut Indenter) {
-    print_lines(output, AUTO_GENERATED_FILE_COMMENT);
 }
 
 const ALLOW_UNUSED: &str = "#![allow(unused)]";

@@ -13,6 +13,8 @@ use spacetimedb_schema::schema::TableSchema;
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem, TableDescHack};
 
+const INDENT: &str = "\t";
+
 fn scalar_or_string_name(b: &AlgebraicType) -> Option<&str> {
     Some(match b {
         AlgebraicType::Bool => "bool",
@@ -147,7 +149,7 @@ impl std::ops::DerefMut for CsharpAutogen {
 
 impl CsharpAutogen {
     pub fn new(namespace: &str, extra_usings: &[&str]) -> Self {
-        let mut output = CodeIndenter::new(String::new());
+        let mut output = CodeIndenter::new(String::new(), INDENT);
 
         writeln!(
             output,
