@@ -200,11 +200,7 @@ fn on_user_inserted(_ctx: &EventContext, user: &User) {
 fn user_name_or_identity(user: &User) -> String {
     user.name
         .clone()
-        .unwrap_or_else(|| identity_leading_hex(&user.identity))
-}
-
-fn identity_leading_hex(id: &Identity) -> String {
-    id.to_hex().to_string()
+        .unwrap_or_else(|| user.identity.to_hex().to_string())
 }
 ```
 
