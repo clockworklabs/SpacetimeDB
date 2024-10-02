@@ -244,7 +244,10 @@ removeOnDelete = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>,
 onUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, oldRow: {row_type}, newRow: {row_type}) => void) => {{
 {INDENT}return this.tableCache.onUpdate(cb);
 }}
-"
+
+removeOnUpdate = (cb: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>, onRow: {row_type}, newRow: {row_type}) => void) => {{
+{INDENT}return this.tableCache.removeOnUpdate(cb);
+}}"
             );
         }
         out.dedent(1);
@@ -468,6 +471,12 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
         writeln!(out, "on{reducer_name_pascal}(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>{arg_list_padded}) => void) {{");
         out.indent(1);
         writeln!(out, "this.connection.onReducer(\"{reducer_name}\", callback);");
+        out.dedent(1);
+        writeln!(out, "}}");
+        out.newline();
+        writeln!(out, "removeOn{reducer_name_pascal}(callback: (ctx: EventContext<RemoteTables, RemoteReducers, Reducer>{arg_list_padded}) => void) {{");
+        out.indent(1);
+        writeln!(out, "this.connection.offReducer(\"{reducer_name}\", callback);");
         out.dedent(1);
         writeln!(out, "}}");
         out.newline();
