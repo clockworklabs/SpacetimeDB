@@ -36,28 +36,9 @@ jobs:
         # available. Otherwise, `spacetimedb-csharp-sdk` will use the NuGet versions of the packages.
         # This means that (if version numbers match) we will test the local versions of the C# packages, even
         # if they're not pushed to NuGet.
-        # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file,
-        # and https://tldp.org/LDP/abs/html/here-docs.html for more info on this bash feature.
-        cat >nuget.config <<EOF
-        <?xml version="1.0" encoding="utf-8"?>
-        <configuration>
-          <packageSources>
-            <!-- Local NuGet repositories -->
-            <add key="Local SpacetimeDB.BSATN.Runtime" value="../SpacetimeDB/crates/bindings-csharp/BSATN.Runtime/bin/Release" />
-          </packageSources>
-          <packageSourceMapping>
-            <!-- Ensure that SpacetimeDB.BSATN.Runtime is used from the local folder. -->
-            <!-- Otherwise we risk an outdated version being quietly pulled from NuGet for testing. -->
-            <packageSource key="Local SpacetimeDB.BSATN.Runtime">
-              <package pattern="SpacetimeDB.BSATN.Runtime" />
-            </packageSource>
-            <!-- Fallback for other packages (e.g. test deps). -->
-            <packageSource key="nuget.org">
-              <package pattern="*" />
-            </packageSource>
-          </packageSourceMapping>
-        </configuration>
-        EOF
+        # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
+        ./tools~/write-nuget-config.sh ../SpacetimeDB
+
     - name: Restore dependencies
       working-directory: spacetimedb-csharp-sdk
       run: dotnet restore
