@@ -350,7 +350,7 @@ Requested namespace: {namespace}",
             writeln!(out, "{}: {{", table.name);
             out.indent(1);
             writeln!(out, "tableName: \"{}\",", table.name);
-            writeln!(out, "rowType: {row_type}.getAlgebraicType(),");
+            writeln!(out, "rowType: {row_type}.getTypeScriptAlgebraicType(),");
             if let Some(pk) = schema.pk() {
                 writeln!(out, "primaryKey: \"{}\",", pk.col_name);
             }
@@ -367,7 +367,7 @@ Requested namespace: {namespace}",
             writeln!(out, "reducerName: \"{}\",", reducer.name);
             writeln!(
                 out,
-                "argsType: {args_type}.getAlgebraicType(),",
+                "argsType: {args_type}.getTypeScriptAlgebraicType(),",
                 args_type = reducer_args_type_name(&reducer.name)
             );
             out.dedent(1);
@@ -463,7 +463,10 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
             out.with_indent(|out| {
                 writeln!(out, "const __args = {{ {arg_name_list} }};");
                 writeln!(out, "let __writer = new BinaryWriter(1024);");
-                writeln!(out, "{reducer_variant}.getAlgebraicType().serialize(__writer, __args);");
+                writeln!(
+                    out,
+                    "{reducer_variant}.getTypeScriptAlgebraicType().serialize(__writer, __args);"
+                );
                 writeln!(out, "let __argsBuffer = __writer.getBuffer();");
                 writeln!(out, "this.connection.callReducer(\"{reducer_name}\", __argsBuffer);");
             });
@@ -607,7 +610,7 @@ fn write_get_algebraic_type_for_product(
 * This function is derived from the AlgebraicType used to generate this type.
 */"
     );
-    writeln!(out, "export function getAlgebraicType(): AlgebraicType {{");
+    writeln!(out, "export function getTypeScriptAlgebraicType(): AlgebraicType {{");
     {
         out.indent(1);
         write!(out, "return ");
@@ -651,14 +654,14 @@ fn define_namespace_and_object_type_for_product(
         "export function serialize(writer: BinaryWriter, value: {name}): void {{"
     );
     out.indent(1);
-    writeln!(out, "{name}.getAlgebraicType().serialize(writer, value);");
+    writeln!(out, "{name}.getTypeScriptAlgebraicType().serialize(writer, value);");
     out.dedent(1);
     writeln!(out, "}}");
     writeln!(out);
 
     writeln!(out, "export function deserialize(reader: BinaryReader): {name} {{");
     out.indent(1);
-    writeln!(out, "return {name}.getAlgebraicType().deserialize(reader);");
+    writeln!(out, "return {name}.getTypeScriptAlgebraicType().deserialize(reader);");
     out.dedent(1);
     writeln!(out, "}}");
     writeln!(out);
@@ -770,7 +773,7 @@ fn write_get_algebraic_type_for_sum(
     out: &mut Indenter,
     variants: &[(Identifier, AlgebraicTypeUse)],
 ) {
-    writeln!(out, "export function getAlgebraicType(): AlgebraicType {{");
+    writeln!(out, "export function getTypeScriptAlgebraicType(): AlgebraicType {{");
     {
         indent_scope!(out);
         write!(out, "return ");
@@ -820,7 +823,7 @@ fn define_namespace_and_types_for_sum(
     writeln!(
         out,
         "export function serialize(writer: BinaryWriter, value: {name}): void {{
-    {name}.getAlgebraicType().serialize(writer, value);
+    {name}.getTypeScriptAlgebraicType().serialize(writer, value);
 }}"
     );
     writeln!(out);
@@ -828,7 +831,7 @@ fn define_namespace_and_types_for_sum(
     writeln!(
         out,
         "export function deserialize(reader: BinaryReader): {name} {{
-    return {name}.getAlgebraicType().deserialize(reader);
+    return {name}.getTypeScriptAlgebraicType().deserialize(reader);
 }}"
     );
     writeln!(out);
@@ -967,7 +970,11 @@ fn convert_algebraic_type<'a>(
             convert_algebraic_type(module, out, ty, ref_prefix);
             write!(out, ")");
         }
-        AlgebraicTypeUse::Ref(r) => write!(out, "{ref_prefix}{}.getAlgebraicType()", type_ref_name(module, *r)),
+        AlgebraicTypeUse::Ref(r) => write!(
+            out,
+            "{ref_prefix}{}.getTypeScriptAlgebraicType()",
+            type_ref_name(module, *r)
+        ),
         AlgebraicTypeUse::Primitive(prim) => {
             write!(out, "AlgebraicType.create{prim:?}Type()");
         }
