@@ -55,18 +55,18 @@ export namespace AddPlayer {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("name", AlgebraicType.createStringType()),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: AddPlayer): void {
-    AddPlayer.getAlgebraicType().serialize(writer, value);
+    AddPlayer.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): AddPlayer {
-    return AddPlayer.getAlgebraicType().deserialize(reader);
+    return AddPlayer.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -125,18 +125,18 @@ export namespace AddPrivate {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("name", AlgebraicType.createStringType()),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: AddPrivate): void {
-    AddPrivate.getAlgebraicType().serialize(writer, value);
+    AddPrivate.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): AddPrivate {
-    return AddPrivate.getAlgebraicType().deserialize(reader);
+    return AddPrivate.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -194,18 +194,18 @@ export namespace Baz {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("field", AlgebraicType.createStringType()),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: Baz): void {
-    Baz.getAlgebraicType().serialize(writer, value);
+    Baz.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): Baz {
-    return Baz.getAlgebraicType().deserialize(reader);
+    return Baz.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -265,18 +265,18 @@ export namespace DeletePlayer {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("id", AlgebraicType.createU64Type()),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: DeletePlayer): void {
-    DeletePlayer.getAlgebraicType().serialize(writer, value);
+    DeletePlayer.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): DeletePlayer {
-    return DeletePlayer.getAlgebraicType().deserialize(reader);
+    return DeletePlayer.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -335,18 +335,18 @@ export namespace DeletePlayersByName {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("name", AlgebraicType.createStringType()),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: DeletePlayersByName): void {
-    DeletePlayersByName.getAlgebraicType().serialize(writer, value);
+    DeletePlayersByName.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): DeletePlayersByName {
-    return DeletePlayersByName.getAlgebraicType().deserialize(reader);
+    return DeletePlayersByName.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -414,20 +414,20 @@ export namespace Foobar {
   export const Bar = { tag: "Bar" };
   export const Har = (value: number): Foobar => ({ tag: "Har", value });
 
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createSumType([
-      new SumTypeVariant("Baz", __Baz.getAlgebraicType()),
+      new SumTypeVariant("Baz", __Baz.getTypeScriptAlgebraicType()),
       new SumTypeVariant("Bar", AlgebraicType.createProductType([])),
       new SumTypeVariant("Har", AlgebraicType.createU32Type()),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: Foobar): void {
-      Foobar.getAlgebraicType().serialize(writer, value);
+      Foobar.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): Foobar {
-      return Foobar.getAlgebraicType().deserialize(reader);
+      return Foobar.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -577,7 +577,7 @@ export namespace HasSpecialStuff {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("identity", AlgebraicType.createIdentityType()),
       new ProductTypeElement("address", AlgebraicType.createAddressType()),
@@ -585,11 +585,11 @@ export namespace HasSpecialStuff {
   }
 
   export function serialize(writer: BinaryWriter, value: HasSpecialStuff): void {
-    HasSpecialStuff.getAlgebraicType().serialize(writer, value);
+    HasSpecialStuff.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): HasSpecialStuff {
-    return HasSpecialStuff.getAlgebraicType().deserialize(reader);
+    return HasSpecialStuff.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -647,17 +647,17 @@ export namespace IdentityConnected {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: IdentityConnected): void {
-    IdentityConnected.getAlgebraicType().serialize(writer, value);
+    IdentityConnected.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): IdentityConnected {
-    return IdentityConnected.getAlgebraicType().deserialize(reader);
+    return IdentityConnected.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -778,80 +778,80 @@ const REMOTE_MODULE = {
   tables: {
     has_special_stuff: {
       tableName: "has_special_stuff",
-      rowType: HasSpecialStuff.getAlgebraicType(),
+      rowType: HasSpecialStuff.getTypeScriptAlgebraicType(),
     },
     pk_multi_identity: {
       tableName: "pk_multi_identity",
-      rowType: PkMultiIdentity.getAlgebraicType(),
+      rowType: PkMultiIdentity.getTypeScriptAlgebraicType(),
       primaryKey: "id",
     },
     points: {
       tableName: "points",
-      rowType: Point.getAlgebraicType(),
+      rowType: Point.getTypeScriptAlgebraicType(),
     },
     private: {
       tableName: "private",
-      rowType: Private.getAlgebraicType(),
+      rowType: Private.getTypeScriptAlgebraicType(),
     },
     repeating_test_arg: {
       tableName: "repeating_test_arg",
-      rowType: RepeatingTestArg.getAlgebraicType(),
+      rowType: RepeatingTestArg.getTypeScriptAlgebraicType(),
       primaryKey: "scheduled_id",
     },
     test_a: {
       tableName: "test_a",
-      rowType: TestA.getAlgebraicType(),
+      rowType: TestA.getTypeScriptAlgebraicType(),
     },
     test_d: {
       tableName: "test_d",
-      rowType: TestD.getAlgebraicType(),
+      rowType: TestD.getTypeScriptAlgebraicType(),
     },
     test_e: {
       tableName: "test_e",
-      rowType: TestE.getAlgebraicType(),
+      rowType: TestE.getTypeScriptAlgebraicType(),
       primaryKey: "id",
     },
     test_f: {
       tableName: "test_f",
-      rowType: TestFoobar.getAlgebraicType(),
+      rowType: TestFoobar.getTypeScriptAlgebraicType(),
     },
   },
   reducers: {
     __identity_connected__: {
       reducerName: "__identity_connected__",
-      argsType: IdentityConnected.getAlgebraicType(),
+      argsType: IdentityConnected.getTypeScriptAlgebraicType(),
     },
     __init__: {
       reducerName: "__init__",
-      argsType: Init.getAlgebraicType(),
+      argsType: Init.getTypeScriptAlgebraicType(),
     },
     add_player: {
       reducerName: "add_player",
-      argsType: AddPlayer.getAlgebraicType(),
+      argsType: AddPlayer.getTypeScriptAlgebraicType(),
     },
     add_private: {
       reducerName: "add_private",
-      argsType: AddPrivate.getAlgebraicType(),
+      argsType: AddPrivate.getTypeScriptAlgebraicType(),
     },
     delete_player: {
       reducerName: "delete_player",
-      argsType: DeletePlayer.getAlgebraicType(),
+      argsType: DeletePlayer.getTypeScriptAlgebraicType(),
     },
     delete_players_by_name: {
       reducerName: "delete_players_by_name",
-      argsType: DeletePlayersByName.getAlgebraicType(),
+      argsType: DeletePlayersByName.getTypeScriptAlgebraicType(),
     },
     query_private: {
       reducerName: "query_private",
-      argsType: QueryPrivate.getAlgebraicType(),
+      argsType: QueryPrivate.getTypeScriptAlgebraicType(),
     },
     repeating_test: {
       reducerName: "repeating_test",
-      argsType: RepeatingTest.getAlgebraicType(),
+      argsType: RepeatingTest.getTypeScriptAlgebraicType(),
     },
     test: {
       reducerName: "test",
-      argsType: Test.getAlgebraicType(),
+      argsType: Test.getTypeScriptAlgebraicType(),
     },
   },
   // Constructors which are used by the DBConnectionImpl to
@@ -913,7 +913,7 @@ export class RemoteReducers {
   addPlayer(name: string) {
     const __args = { name };
     let __writer = new BinaryWriter(1024);
-    AddPlayer.getAlgebraicType().serialize(__writer, __args);
+    AddPlayer.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("add_player", __argsBuffer);
   }
@@ -929,7 +929,7 @@ export class RemoteReducers {
   addPrivate(name: string) {
     const __args = { name };
     let __writer = new BinaryWriter(1024);
-    AddPrivate.getAlgebraicType().serialize(__writer, __args);
+    AddPrivate.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("add_private", __argsBuffer);
   }
@@ -945,7 +945,7 @@ export class RemoteReducers {
   deletePlayer(id: bigint) {
     const __args = { id };
     let __writer = new BinaryWriter(1024);
-    DeletePlayer.getAlgebraicType().serialize(__writer, __args);
+    DeletePlayer.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("delete_player", __argsBuffer);
   }
@@ -961,7 +961,7 @@ export class RemoteReducers {
   deletePlayersByName(name: string) {
     const __args = { name };
     let __writer = new BinaryWriter(1024);
-    DeletePlayersByName.getAlgebraicType().serialize(__writer, __args);
+    DeletePlayersByName.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("delete_players_by_name", __argsBuffer);
   }
@@ -989,7 +989,7 @@ export class RemoteReducers {
   repeatingTest(arg: RepeatingTestArg) {
     const __args = { arg };
     let __writer = new BinaryWriter(1024);
-    RepeatingTest.getAlgebraicType().serialize(__writer, __args);
+    RepeatingTest.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("repeating_test", __argsBuffer);
   }
@@ -1005,7 +1005,7 @@ export class RemoteReducers {
   test(arg: TestA, arg2: TestB, arg3: NamespaceTestC, arg4: NamespaceTestF) {
     const __args = { arg, arg2, arg3, arg4 };
     let __writer = new BinaryWriter(1024);
-    Test.getAlgebraicType().serialize(__writer, __args);
+    Test.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer("test", __argsBuffer);
   }
@@ -1119,17 +1119,17 @@ export namespace Init {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: Init): void {
-    Init.getAlgebraicType().serialize(writer, value);
+    Init.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): Init {
-    return Init.getAlgebraicType().deserialize(reader);
+    return Init.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -1192,7 +1192,7 @@ export namespace NamespaceTestC {
   export const Foo = { tag: "Foo" };
   export const Bar = { tag: "Bar" };
 
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createSumType([
       new SumTypeVariant("Foo", AlgebraicType.createProductType([])),
       new SumTypeVariant("Bar", AlgebraicType.createProductType([])),
@@ -1200,11 +1200,11 @@ export namespace NamespaceTestC {
   }
 
   export function serialize(writer: BinaryWriter, value: NamespaceTestC): void {
-      NamespaceTestC.getAlgebraicType().serialize(writer, value);
+      NamespaceTestC.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): NamespaceTestC {
-      return NamespaceTestC.getAlgebraicType().deserialize(reader);
+      return NamespaceTestC.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -1274,7 +1274,7 @@ export namespace NamespaceTestF {
   export const Bar = { tag: "Bar" };
   export const Baz = (value: string): NamespaceTestF => ({ tag: "Baz", value });
 
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createSumType([
       new SumTypeVariant("Foo", AlgebraicType.createProductType([])),
       new SumTypeVariant("Bar", AlgebraicType.createProductType([])),
@@ -1283,11 +1283,11 @@ export namespace NamespaceTestF {
   }
 
   export function serialize(writer: BinaryWriter, value: NamespaceTestF): void {
-      NamespaceTestF.getAlgebraicType().serialize(writer, value);
+      NamespaceTestF.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): NamespaceTestF {
-      return NamespaceTestF.getAlgebraicType().deserialize(reader);
+      return NamespaceTestF.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -1489,7 +1489,7 @@ export namespace PkMultiIdentity {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("id", AlgebraicType.createU32Type()),
       new ProductTypeElement("other", AlgebraicType.createU32Type()),
@@ -1497,11 +1497,11 @@ export namespace PkMultiIdentity {
   }
 
   export function serialize(writer: BinaryWriter, value: PkMultiIdentity): void {
-    PkMultiIdentity.getAlgebraicType().serialize(writer, value);
+    PkMultiIdentity.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): PkMultiIdentity {
-    return PkMultiIdentity.getAlgebraicType().deserialize(reader);
+    return PkMultiIdentity.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -1561,7 +1561,7 @@ export namespace Point {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("x", AlgebraicType.createI64Type()),
       new ProductTypeElement("y", AlgebraicType.createI64Type()),
@@ -1569,11 +1569,11 @@ export namespace Point {
   }
 
   export function serialize(writer: BinaryWriter, value: Point): void {
-    Point.getAlgebraicType().serialize(writer, value);
+    Point.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): Point {
-    return Point.getAlgebraicType().deserialize(reader);
+    return Point.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -1804,18 +1804,18 @@ export namespace Private {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("name", AlgebraicType.createStringType()),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: Private): void {
-    Private.getAlgebraicType().serialize(writer, value);
+    Private.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): Private {
-    return Private.getAlgebraicType().deserialize(reader);
+    return Private.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -1873,17 +1873,17 @@ export namespace QueryPrivate {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: QueryPrivate): void {
-    QueryPrivate.getAlgebraicType().serialize(writer, value);
+    QueryPrivate.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): QueryPrivate {
-    return QueryPrivate.getAlgebraicType().deserialize(reader);
+    return QueryPrivate.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -2059,7 +2059,7 @@ export namespace RepeatingTestArg {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("prevTime", AlgebraicType.createU64Type()),
       new ProductTypeElement("scheduledId", AlgebraicType.createU64Type()),
@@ -2068,11 +2068,11 @@ export namespace RepeatingTestArg {
   }
 
   export function serialize(writer: BinaryWriter, value: RepeatingTestArg): void {
-    RepeatingTestArg.getAlgebraicType().serialize(writer, value);
+    RepeatingTestArg.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): RepeatingTestArg {
-    return RepeatingTestArg.getAlgebraicType().deserialize(reader);
+    return RepeatingTestArg.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -2135,18 +2135,18 @@ export namespace RepeatingTest {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("arg", __RepeatingTestArg.getAlgebraicType()),
+      new ProductTypeElement("arg", __RepeatingTestArg.getTypeScriptAlgebraicType()),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: RepeatingTest): void {
-    RepeatingTest.getAlgebraicType().serialize(writer, value);
+    RepeatingTest.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): RepeatingTest {
-    return RepeatingTest.getAlgebraicType().deserialize(reader);
+    return RepeatingTest.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -2292,7 +2292,7 @@ export namespace TestA {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("x", AlgebraicType.createU32Type()),
       new ProductTypeElement("y", AlgebraicType.createU32Type()),
@@ -2301,11 +2301,11 @@ export namespace TestA {
   }
 
   export function serialize(writer: BinaryWriter, value: TestA): void {
-    TestA.getAlgebraicType().serialize(writer, value);
+    TestA.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): TestA {
-    return TestA.getAlgebraicType().deserialize(reader);
+    return TestA.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -2364,18 +2364,18 @@ export namespace TestB {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("foo", AlgebraicType.createStringType()),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: TestB): void {
-    TestB.getAlgebraicType().serialize(writer, value);
+    TestB.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): TestB {
-    return TestB.getAlgebraicType().deserialize(reader);
+    return TestB.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -2526,18 +2526,18 @@ export namespace TestD {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("testC", AlgebraicType.createOptionType(__NamespaceTestC.getAlgebraicType())),
+      new ProductTypeElement("testC", AlgebraicType.createOptionType(__NamespaceTestC.getTypeScriptAlgebraicType())),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: TestD): void {
-    TestD.getAlgebraicType().serialize(writer, value);
+    TestD.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): TestD {
-    return TestD.getAlgebraicType().deserialize(reader);
+    return TestD.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -2713,7 +2713,7 @@ export namespace TestE {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement("id", AlgebraicType.createU64Type()),
       new ProductTypeElement("name", AlgebraicType.createStringType()),
@@ -2721,11 +2721,11 @@ export namespace TestE {
   }
 
   export function serialize(writer: BinaryWriter, value: TestE): void {
-    TestE.getAlgebraicType().serialize(writer, value);
+    TestE.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): TestE {
-    return TestE.getAlgebraicType().deserialize(reader);
+    return TestE.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -2876,18 +2876,18 @@ export namespace TestFoobar {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("field", __Foobar.getAlgebraicType()),
+      new ProductTypeElement("field", __Foobar.getTypeScriptAlgebraicType()),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: TestFoobar): void {
-    TestFoobar.getAlgebraicType().serialize(writer, value);
+    TestFoobar.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): TestFoobar {
-    return TestFoobar.getAlgebraicType().deserialize(reader);
+    return TestFoobar.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
@@ -2959,21 +2959,21 @@ export namespace Test {
   * A function which returns this type represented as an AlgebraicType.
   * This function is derived from the AlgebraicType used to generate this type.
   */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("arg", __TestA.getAlgebraicType()),
-      new ProductTypeElement("arg2", __TestB.getAlgebraicType()),
-      new ProductTypeElement("arg3", __NamespaceTestC.getAlgebraicType()),
-      new ProductTypeElement("arg4", __NamespaceTestF.getAlgebraicType()),
+      new ProductTypeElement("arg", __TestA.getTypeScriptAlgebraicType()),
+      new ProductTypeElement("arg2", __TestB.getTypeScriptAlgebraicType()),
+      new ProductTypeElement("arg3", __NamespaceTestC.getTypeScriptAlgebraicType()),
+      new ProductTypeElement("arg4", __NamespaceTestF.getTypeScriptAlgebraicType()),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: Test): void {
-    Test.getAlgebraicType().serialize(writer, value);
+    Test.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): Test {
-    return Test.getAlgebraicType().deserialize(reader);
+    return Test.getTypeScriptAlgebraicType().deserialize(reader);
   }
 
 }
