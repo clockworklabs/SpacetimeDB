@@ -66,6 +66,9 @@ importers:
 
   packages/sdk:
     devDependencies:
+      '@clockworklabs/test-app':
+        specifier: file:../test-app
+        version: file:packages/test-app
       '@types/brotli':
         specifier: 1.3.3
         version: 1.3.3
@@ -75,15 +78,18 @@ importers:
       buffer:
         specifier: ^6.0.3
         version: 6.0.3
+      tsup:
+        specifier: ^8.1.0
+        version: 8.2.4(postcss@8.4.41)(tsx@4.17.0)(typescript@5.5.4)
       undici:
         specifier: ^6.19.2
         version: 6.19.7
 
-  packages/sdk/test-app:
+  packages/test-app:
     dependencies:
       '@clockworklabs/spacetimedb-sdk':
         specifier: workspace:*
-        version: link:..
+        version: link:../sdk
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -100,25 +106,6 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^4.3.1
         version: 4.3.1(vite@5.4.0(@types/node@22.3.0)(terser@5.31.6))
-      typescript:
-        specifier: ^5.2.2
-        version: 5.5.4
-      vite:
-        specifier: ^5.3.4
-        version: 5.4.0(@types/node@22.3.0)(terser@5.31.6)
-
-  playground/node:
-    dependencies:
-      '@clockworklabs/spacetimedb-sdk':
-        specifier: workspace:*
-        version: link:../../packages/sdk
-
-  playground/vanilla-ts:
-    dependencies:
-      '@clockworklabs/spacetimedb-sdk':
-        specifier: workspace:*
-        version: link:../../packages/sdk
-    devDependencies:
       typescript:
         specifier: ^5.2.2
         version: 5.5.4
@@ -283,6 +270,9 @@ packages:
 
   '@changesets/write@0.3.1':
     resolution: {integrity: sha512-SyGtMXzH3qFqlHKcvFY2eX+6b0NGiFcNav8AFsYwy5l8hejOeoeTDemu5Yjmke2V5jpzY+pBvM0vCCQ3gdZpfw==}
+
+  '@clockworklabs/test-app@file:packages/test-app':
+    resolution: {directory: packages/test-app, type: directory}
 
   '@esbuild/aix-ppc64@0.21.5':
     resolution: {integrity: sha512-1SDgH6ZSPTlggy1yI6+Dbkiz8xzpHJEVAlF/AM1tHPLsf5STom9rwtjE4hKAF20FfXXNTFqEYXyJNWh1GiZedQ==}
@@ -2105,6 +2095,12 @@ snapshots:
       fs-extra: 7.0.1
       human-id: 1.0.2
       prettier: 2.8.8
+
+  '@clockworklabs/test-app@file:packages/test-app':
+    dependencies:
+      '@clockworklabs/spacetimedb-sdk': link:packages/sdk
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
 
   '@esbuild/aix-ppc64@0.21.5':
     optional: true

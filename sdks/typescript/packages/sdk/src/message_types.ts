@@ -1,65 +1,35 @@
 import { Address } from './address.ts';
+import type { Timestamp, UpdateStatus } from './client_api/index.ts';
 import { Identity } from './identity.ts';
-import { TableUpdate } from './table.ts';
+import type { TableUpdate } from './table_cache.ts';
 
-export class SubscriptionUpdateMessage {
+export type InitialSubscriptionMessage = {
+  tag: 'InitialSubscription';
   tableUpdates: TableUpdate[];
+};
 
-  constructor(tableUpdates: TableUpdate[]) {
-    this.tableUpdates = tableUpdates;
-  }
-}
-
-export class TransactionUpdateEvent {
+export type TransactionUpdateMessage = {
+  tag: 'TransactionUpdate';
+  tableUpdates: TableUpdate[];
   identity: Identity;
   address: Address | null;
   originalReducerName: string;
   reducerName: string;
   args: Uint8Array;
-  status: string;
+  status: UpdateStatus;
   message: string;
+  timestamp: Timestamp;
+  energyConsumed: bigint;
+};
 
-  constructor(
-    identity: Identity,
-    address: Address | null,
-    originalReducerName: string,
-    reducerName: string,
-    args: Uint8Array,
-    status: string,
-    message: string
-  ) {
-    this.identity = identity;
-    this.address = address;
-    this.originalReducerName = originalReducerName;
-    this.reducerName = reducerName;
-    this.args = args;
-    this.status = status;
-    this.message = message;
-  }
-}
-
-export class TransactionUpdateMessage {
-  tableUpdates: TableUpdate[];
-  event: TransactionUpdateEvent;
-
-  constructor(tableUpdates: TableUpdate[], event: TransactionUpdateEvent) {
-    this.tableUpdates = tableUpdates;
-    this.event = event;
-  }
-}
-
-export class IdentityTokenMessage {
+export type IdentityTokenMessage = {
+  tag: 'IdentityToken';
   identity: Identity;
   token: string;
   address: Address;
+};
 
-  constructor(identity: Identity, token: string, address: Address) {
-    this.identity = identity;
-    this.token = token;
-    this.address = address;
-  }
-}
 export type Message =
-  | SubscriptionUpdateMessage
+  | InitialSubscriptionMessage
   | TransactionUpdateMessage
   | IdentityTokenMessage;

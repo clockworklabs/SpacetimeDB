@@ -16,7 +16,7 @@ function uint8ArrayToHexString(array: Uint8Array): string {
  * A unique identifier for a user connected to a database.
  */
 export class Identity {
-  #data: string;
+  data: Uint8Array;
 
   get __identity_bytes(): Uint8Array {
     return this.toUint8Array();
@@ -28,10 +28,10 @@ export class Identity {
   constructor(data: string | Uint8Array) {
     // we get a JSON with __identity_bytes when getting a token with a JSON API
     // and an Uint8Array when using BSATN
-    this.#data =
+    this.data =
       data.constructor === Uint8Array
-        ? uint8ArrayToHexString(data as Uint8Array)
-        : (data as string);
+        ? data
+        : hexStringToUint8Array(data as string);
   }
 
   /**
@@ -45,11 +45,11 @@ export class Identity {
    * Print the identity as a hexadecimal string.
    */
   toHexString(): string {
-    return this.#data;
+    return uint8ArrayToHexString(this.data);
   }
 
   toUint8Array(): Uint8Array {
-    return hexStringToUint8Array(this.toHexString());
+    return this.data;
   }
 
   /**

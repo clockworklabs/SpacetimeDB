@@ -7,7 +7,12 @@ export default class BinaryReader {
     this.#offset = input.byteOffset;
   }
 
-  readUInt8Array(length: number): Uint8Array {
+  get offset(): number {
+    return this.#offset;
+  }
+
+  readUInt8Array(): Uint8Array {
+    const length = this.readU32();
     const value: Uint8Array = new Uint8Array(
       this.#buffer.buffer,
       this.#offset,
@@ -115,7 +120,8 @@ export default class BinaryReader {
     return value;
   }
 
-  readString(length: number): string {
+  readString(): string {
+    const length = this.readU32();
     const uint8Array = new Uint8Array(
       this.#buffer.buffer,
       this.#offset,

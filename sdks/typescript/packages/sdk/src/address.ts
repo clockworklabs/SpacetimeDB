@@ -2,7 +2,7 @@
  * A unique identifier for a client connected to a database.
  */
 export class Address {
-  #data: Uint8Array;
+  data: Uint8Array;
 
   get __address_bytes(): Uint8Array {
     return this.toUint8Array();
@@ -12,15 +12,15 @@ export class Address {
    * Creates a new `Address`.
    */
   constructor(data: Uint8Array) {
-    this.#data = data;
+    this.data = data;
   }
 
-  #isZero(): boolean {
-    return this.#data.every(b => b == 0);
+  isZero(): boolean {
+    return this.data.every(b => b == 0);
   }
 
   static nullIfZero(addr: Address): Address | null {
-    if (addr.#isZero()) {
+    if (addr.isZero()) {
       return null;
     } else {
       return addr;
@@ -42,11 +42,11 @@ export class Address {
    * Compare two addresses for equality.
    */
   isEqual(other: Address): boolean {
-    if (this.#data.length !== other.#data.length) {
+    if (this.data.length !== other.data.length) {
       return false;
     }
-    for (let i = 0; i < this.#data.length; i++) {
-      if (this.#data[i] !== other.#data[i]) {
+    for (let i = 0; i < this.data.length; i++) {
+      if (this.data[i] !== other.data[i]) {
         return false;
       }
     }
@@ -58,12 +58,12 @@ export class Address {
    */
   toHexString(): string {
     return Array.prototype.map
-      .call(this.#data, x => ('00' + x.toString(16)).slice(-2))
+      .call(this.data, x => ('00' + x.toString(16)).slice(-2))
       .join('');
   }
 
   toUint8Array(): Uint8Array {
-    return this.#data;
+    return this.data;
   }
 
   /**
@@ -79,7 +79,7 @@ export class Address {
 
   static fromStringOrNull(str: string): Address | null {
     let addr = Address.fromString(str);
-    if (addr.#isZero()) {
+    if (addr.isZero()) {
       return null;
     } else {
       return addr;

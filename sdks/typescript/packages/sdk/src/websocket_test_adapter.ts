@@ -1,5 +1,5 @@
-import { ServerMessage } from './client_api.ts';
-import { BinarySerializer } from './serializer.ts';
+import BinaryWriter from './binary_writer.ts';
+import { ServerMessage } from './client_api/index.ts';
 
 class WebsocketTestAdapter {
   onclose: any;
@@ -28,9 +28,9 @@ class WebsocketTestAdapter {
   }
 
   sendToClient(message: ServerMessage): void {
-    const serializer = new BinarySerializer();
-    serializer.write(ServerMessage.getAlgebraicType(), message);
-    const rawBytes = serializer.args();
+    const writer = new BinaryWriter(1024);
+    ServerMessage.getTypeScriptAlgebraicType().serialize(writer, message);
+    const rawBytes = writer.getBuffer();
     // The brotli library's `compress` is somehow broken: it returns `null` for some inputs.
     // See https://github.com/foliojs/brotli.js/issues/36, which is closed but not actually fixed.
     // So we send the uncompressed data here, and in `spacetimedb.ts`,
