@@ -168,15 +168,16 @@ impl SubscriptionManager {
                     let mut ops_bin: Option<(CompressableQueryUpdate<BsatnFormat>, _)> = None;
                     let mut ops_json: Option<(QueryUpdate<JsonFormat>, _)> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
-                        let ops = match self.clients[id].protocol {
+                        let client = &*self.clients[id];
+                        let ops = match client.protocol {
                             Protocol::Binary => Bsatn(
                                 ops_bin
-                                    .get_or_insert_with(|| delta.updates.encode::<BsatnFormat>())
+                                    .get_or_insert_with(|| delta.updates.encode::<BsatnFormat>(client.compression))
                                     .clone(),
                             ),
                             Protocol::Text => Json(
                                 ops_json
-                                    .get_or_insert_with(|| delta.updates.encode::<JsonFormat>())
+                                    .get_or_insert_with(|| delta.updates.encode::<JsonFormat>(client.compression))
                                     .clone(),
                             ),
                         };

@@ -4422,6 +4422,7 @@ dependencies = [
  "chrono",
  "derive_more",
  "enum-as-inner",
+ "flate2",
  "hex",
  "itertools 0.12.1",
  "proptest",
