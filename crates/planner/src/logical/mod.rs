@@ -146,7 +146,7 @@ pub(crate) fn type_proj(
                     ProjectElem(ProjectExpr::Var(SqlIdent(field)), None) => {
                         let name = ctx.gen_symbol(&field);
                         if !names.insert(name) {
-                            return Err(DuplicateName(field).into());
+                            return Err(DuplicateName(field.into_string()).into());
                         }
                         let expr = type_expr(ctx, &tenv, SqlExpr::Var(SqlIdent(field)), None)?;
                         field_types.push((name, expr.ty_id()));
@@ -155,7 +155,7 @@ pub(crate) fn type_proj(
                     ProjectElem(ProjectExpr::Var(field), Some(SqlIdent(alias))) => {
                         let name = ctx.gen_symbol(&alias);
                         if !names.insert(name) {
-                            return Err(DuplicateName(alias).into());
+                            return Err(DuplicateName(alias.into_string()).into());
                         }
                         let expr = type_expr(ctx, &tenv, SqlExpr::Var(field), None)?;
                         field_types.push((name, expr.ty_id()));
@@ -164,7 +164,7 @@ pub(crate) fn type_proj(
                     ProjectElem(ProjectExpr::Field(table, SqlIdent(field)), None) => {
                         let name = ctx.gen_symbol(&field);
                         if !names.insert(name) {
-                            return Err(DuplicateName(field).into());
+                            return Err(DuplicateName(field.into_string()).into());
                         }
                         let expr = type_expr(ctx, &tenv, SqlExpr::Field(table, SqlIdent(field)), None)?;
                         field_types.push((name, expr.ty_id()));
@@ -173,7 +173,7 @@ pub(crate) fn type_proj(
                     ProjectElem(ProjectExpr::Field(table, field), Some(SqlIdent(alias))) => {
                         let name = ctx.gen_symbol(&alias);
                         if !names.insert(name) {
-                            return Err(DuplicateName(alias).into());
+                            return Err(DuplicateName(alias.into_string()).into());
                         }
                         let expr = type_expr(ctx, &tenv, SqlExpr::Field(table, field), None)?;
                         field_types.push((name, expr.ty_id()));
@@ -215,7 +215,7 @@ pub(crate) fn type_expr(ctx: &TyCtx, vars: &TyEnv, expr: SqlExpr, expected: Opti
         (SqlExpr::Lit(SqlLiteral::Num(_) | SqlLiteral::Hex(_)), None) => Err(Unresolved::Literal.into()),
         (SqlExpr::Lit(SqlLiteral::Num(v) | SqlLiteral::Hex(v)), Some(id)) => {
             let t = id.try_with_ctx(ctx)?;
-            let v = parse(v, t)?;
+            let v = parse(v.into_string(), t)?;
             Ok(Expr::Lit(v, id))
         }
         (SqlExpr::Var(SqlIdent(var)), None) => {

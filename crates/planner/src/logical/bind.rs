@@ -75,7 +75,7 @@ pub trait TypeChecker {
 
                     // New join variable is now in scope
                     if env.add(name, ty).is_some() {
-                        return Err(DuplicateName(alias).into());
+                        return Err(DuplicateName(alias.into_string()).into());
                     }
 
                     inputs.push(input);

@@ -76,7 +76,7 @@ pub fn type_insert(ctx: &mut TyCtx, insert: SqlInsert, tx: &impl SchemaView) -> 
     let n = schema.columns().len();
     if fields.len() != schema.columns().len() {
         return Err(TypingError::from(InsertFieldsError {
-            table: table_name,
+            table: table_name.into_string(),
             nfields: fields.len(),
             ncols: schema.columns().len(),
         }));
@@ -93,7 +93,7 @@ pub fn type_insert(ctx: &mut TyCtx, insert: SqlInsert, tx: &impl SchemaView) -> 
         // Expect each row to have n values
         if row.len() != n {
             return Err(TypingError::from(InsertValuesError {
-                table: table_name,
+                table: table_name.into_string(),
                 values: row.len(),
                 fields: n,
             }));
@@ -105,7 +105,7 @@ pub fn type_insert(ctx: &mut TyCtx, insert: SqlInsert, tx: &impl SchemaView) -> 
                     values.push(AlgebraicValue::Bool(v));
                 }
                 (SqlLiteral::Str(v), TyId::STR) => {
-                    values.push(AlgebraicValue::String(v.into_boxed_str()));
+                    values.push(AlgebraicValue::String(v));
                 }
                 (SqlLiteral::Bool(_), id) => {
                     return Err(UnexpectedType::new(&ctx.bool(), &id.try_with_ctx(ctx)?).into());
@@ -115,7 +115,7 @@ pub fn type_insert(ctx: &mut TyCtx, insert: SqlInsert, tx: &impl SchemaView) -> 
                 }
                 (SqlLiteral::Hex(v), id) | (SqlLiteral::Num(v), id) => {
                     let ty = id.try_with_ctx(ctx)?;
-                    values.push(parse(v, ty)?);
+                    values.push(parse(v.into_string(), ty)?);
                 }
             }
         }
@@ -194,7 +194,7 @@ pub fn type_update(ctx: &mut TyCtx, update: SqlUpdate, tx: &impl SchemaView) -> 
                 values.push((col_id, AlgebraicValue::Bool(v)));
             }
             (SqlLiteral::Str(v), TyId::STR) => {
-                values.push((col_id, AlgebraicValue::String(v.into_boxed_str())));
+                values.push((col_id, AlgebraicValue::String(v)));
             }
             (SqlLiteral::Bool(_), id) => {
                 return Err(UnexpectedType::new(&ctx.bool(), &id.try_with_ctx(ctx)?).into());
@@ -204,7 +204,7 @@ pub fn type_update(ctx: &mut TyCtx, update: SqlUpdate, tx: &impl SchemaView) -> 
             }
             (SqlLiteral::Hex(v), id) | (SqlLiteral::Num(v), id) => {
                 let ty = id.try_with_ctx(ctx)?;
-                values.push((col_id, parse(v, ty)?));
+                values.push((col_id, parse(v.into_string(), ty)?));
             }
         }
     }
@@ -233,15 +233,18 @@ fn is_var_valid(var: &str) -> bool {
 pub fn type_set(ctx: &TyCtx, set: SqlSet) -> TypingResult<SetVar> {
     let SqlSet(SqlIdent(name), lit) = set;
     if !is_var_valid(&name) {
-        return Err(InvalidVar { name }.into());
+        return Err(InvalidVar {
+            name: name.into_string(),
+        }
+        .into());
     }
     match lit {
         SqlLiteral::Bool(_) => Err(UnexpectedType::new(&ctx.u64(), &ctx.bool()).into()),
         SqlLiteral::Str(_) => Err(UnexpectedType::new(&ctx.u64(), &ctx.str()).into()),
         SqlLiteral::Hex(_) => Err(UnexpectedType::new(&ctx.u64(), &ctx.bytes()).into()),
         SqlLiteral::Num(n) => Ok(SetVar {
-            name,
-            value: parse(n, ctx.u64())?,
+            name: name.into_string(),
+            value: parse(n.into_string(), ctx.u64())?,
         }),
     }
 }
@@ -249,9 +252,14 @@ pub fn type_set(ctx: &TyCtx, set: SqlSet) -> TypingResult<SetVar> {
 pub fn type_show(show: SqlShow) -> TypingResult<ShowVar> {
     let SqlShow(SqlIdent(name)) = show;
     if !is_var_valid(&name) {
-        return Err(InvalidVar { name }.into());
+        return Err(InvalidVar {
+            name: name.into_string(),
+        }
+        .into());
     }
-    Ok(ShowVar { name })
+    Ok(ShowVar {
+        name: name.into_string(),
+    })
 }
 
 /// Type-checker for regular `SQL` queries

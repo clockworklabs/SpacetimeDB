@@ -64,12 +64,12 @@ pub enum SqlExpr {
 /// A SQL identifier or named reference.
 /// Currently case sensitive.
 #[derive(Debug, Clone)]
-pub struct SqlIdent(pub String);
+pub struct SqlIdent(pub Box<str>);
 
 /// Case insensitivity should be implemented here if at all
 impl From<Ident> for SqlIdent {
     fn from(Ident { value, .. }: Ident) -> Self {
-        SqlIdent(value)
+        SqlIdent(value.into_boxed_str())
     }
 }
 
@@ -79,11 +79,11 @@ pub enum SqlLiteral {
     /// A boolean constant
     Bool(bool),
     /// A hex value like 0xFF or x'FF'
-    Hex(String),
+    Hex(Box<str>),
     /// An integer or float value
-    Num(String),
+    Num(Box<str>),
     /// A string value
-    Str(String),
+    Str(Box<str>),
 }
 
 /// Binary infix operators
