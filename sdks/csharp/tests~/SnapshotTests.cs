@@ -12,9 +12,20 @@ public class SnapshotTests
 {
     class Events : List<KeyValuePair<string, object?>>
     {
+        private bool frozen;
+
         public void Add(string name, object? value = null)
         {
+            if (frozen)
+            {
+                throw new InvalidOperationException("This is a bug. We have snapshotted the events and don't expect any more to arrive.");
+            }
             base.Add(new(name, value));
+        }
+
+        public void Freeze()
+        {
+            frozen = true;
         }
     }
 
@@ -344,6 +355,7 @@ public class SnapshotTests
         }
 
         // Verify dumped events and the final client state.
+        events.Freeze();
         await Verify(
                 new
                 {
