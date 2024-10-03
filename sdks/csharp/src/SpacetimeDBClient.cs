@@ -395,7 +395,7 @@ namespace SpacetimeDB
                                 },
                                 transactionUpdate.CallerIdentity,
                                 transactionUpdate.CallerAddress,
-                                transactionUpdate.EnergyQuantaUsed.Quanta,
+                                // transactionUpdate.EnergyQuantaUsed.Quanta,
                                 ToReducer(transactionUpdate));
                         }
                         catch (Exception e)

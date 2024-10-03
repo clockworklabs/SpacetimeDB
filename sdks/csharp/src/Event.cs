@@ -21,7 +21,7 @@ namespace SpacetimeDB
         Status Status,
         Identity CallerIdentity,
         Address? CallerAddress,
-        U128? EnergyConsumed,
+        // U128? EnergyConsumed,
         R Reducer
     );
 

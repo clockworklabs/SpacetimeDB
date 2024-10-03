@@ -26,8 +26,8 @@ namespace SpacetimeDB.ClientApi
 		public SpacetimeDB.Address CallerAddress;
 		[DataMember(Name = "reducer_call")]
 		public SpacetimeDB.ClientApi.ReducerCallInfo ReducerCall;
-		[DataMember(Name = "energy_quanta_used")]
-		public SpacetimeDB.ClientApi.EnergyQuanta EnergyQuantaUsed;
+		// [DataMember(Name = "energy_quanta_used")]
+		// public SpacetimeDB.ClientApi.EnergyQuanta EnergyQuantaUsed;
 		[DataMember(Name = "host_execution_duration_micros")]
 		public ulong HostExecutionDurationMicros;
 
@@ -37,7 +37,7 @@ namespace SpacetimeDB.ClientApi
 			SpacetimeDB.Identity CallerIdentity,
 			SpacetimeDB.Address CallerAddress,
 			SpacetimeDB.ClientApi.ReducerCallInfo ReducerCall,
-			SpacetimeDB.ClientApi.EnergyQuanta EnergyQuantaUsed,
+			// SpacetimeDB.ClientApi.EnergyQuanta EnergyQuantaUsed,
 			ulong HostExecutionDurationMicros
 		)
 		{
@@ -46,7 +46,7 @@ namespace SpacetimeDB.ClientApi
 			this.CallerIdentity = CallerIdentity;
 			this.CallerAddress = CallerAddress;
 			this.ReducerCall = ReducerCall;
-			this.EnergyQuantaUsed = EnergyQuantaUsed;
+			// this.EnergyQuantaUsed = EnergyQuantaUsed;
 			this.HostExecutionDurationMicros = HostExecutionDurationMicros;
 		}
 
@@ -57,7 +57,7 @@ namespace SpacetimeDB.ClientApi
 			this.CallerIdentity = new();
 			this.CallerAddress = new();
 			this.ReducerCall = new();
-			this.EnergyQuantaUsed = new();
+			// this.EnergyQuantaUsed = new();
 		}
 
 	}

@@ -12,23 +12,23 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.ClientApi
 {
-	[SpacetimeDB.Type]
-	[DataContract]
-	public partial class EnergyQuanta
-	{
-		[DataMember(Name = "quanta")]
-		public U128 Quanta;
-
-		public EnergyQuanta(
-			U128 Quanta
-		)
-		{
-			this.Quanta = Quanta;
-		}
-
-		public EnergyQuanta()
-		{
-		}
-
-	}
+	// [SpacetimeDB.Type]
+	// [DataContract]
+	// public partial class EnergyQuanta
+	// {
+	// 	[DataMember(Name = "quanta")]
+	// 	public U128 Quanta;
+	//
+	// 	public EnergyQuanta(
+	// 		U128 Quanta
+	// 	)
+	// 	{
+	// 		this.Quanta = Quanta;
+	// 	}
+	//
+	// 	public EnergyQuanta()
+	// 	{
+	// 	}
+	//
+	// }
 }
