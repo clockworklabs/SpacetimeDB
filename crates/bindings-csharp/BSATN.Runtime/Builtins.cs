@@ -9,8 +9,11 @@ using System.Runtime.InteropServices;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 
+<<<<<<< HEAD
 namespace SpacetimeDB;
 
+=======
+>>>>>>> 70e8539e (Fix C#?)
 internal static class Util
 {
     // Same as `Convert.ToHexString`, but that method is not available in .NET Standard
