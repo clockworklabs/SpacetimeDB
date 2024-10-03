@@ -203,7 +203,7 @@ export class {table_handle} {{
                     out.with_indent(|out| {
                         writeln!(out, "for (let row of this.tableCache.iter()) {{");
                         out.with_indent(|out| {
-                            writeln!(out, "if (row.{unique_field_name} === col_val) {{");
+                            writeln!(out, "if (deepEqual(row.{unique_field_name}, col_val)) {{");
                             out.with_indent(|out| {
                                 writeln!(out, "return row;");
                             });
@@ -350,7 +350,7 @@ Requested namespace: {namespace}",
             writeln!(out, "{}: {{", table.name);
             out.indent(1);
             writeln!(out, "tableName: \"{}\",", table.name);
-            writeln!(out, "rowType: {row_type}.getAlgebraicType(),");
+            writeln!(out, "rowType: {row_type}.getTypeScriptAlgebraicType(),");
             if let Some(pk) = schema.pk() {
                 writeln!(out, "primaryKey: \"{}\",", pk.col_name);
             }
@@ -367,7 +367,7 @@ Requested namespace: {namespace}",
             writeln!(out, "reducerName: \"{}\",", reducer.name);
             writeln!(
                 out,
-                "argsType: {args_type}.getAlgebraicType(),",
+                "argsType: {args_type}.getTypeScriptAlgebraicType(),",
                 args_type = reducer_args_type_name(&reducer.name)
             );
             out.dedent(1);
@@ -463,7 +463,10 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
             out.with_indent(|out| {
                 writeln!(out, "const __args = {{ {arg_name_list} }};");
                 writeln!(out, "let __writer = new BinaryWriter(1024);");
-                writeln!(out, "{reducer_variant}.getAlgebraicType().serialize(__writer, __args);");
+                writeln!(
+                    out,
+                    "{reducer_variant}.getTypeScriptAlgebraicType().serialize(__writer, __args);"
+                );
                 writeln!(out, "let __argsBuffer = __writer.getBuffer();");
                 writeln!(out, "this.connection.callReducer(\"{reducer_name}\", __argsBuffer);");
             });
@@ -513,10 +516,12 @@ fn print_remote_tables(module: &ModuleDef, out: &mut Indenter) {
         let table_handle = table_name_pascalcase.clone() + "TableHandle";
         let type_ref = table.product_type_ref;
         let row_type = type_ref_name(module, type_ref);
-        writeln!(out, "#{table_name_camelcase} = this.connection.clientCache.getOrCreateTable<{row_type}>(REMOTE_MODULE.tables.{table_name});");
         writeln!(out, "get {table_name_camelcase}(): {table_handle} {{");
         out.with_indent(|out| {
-            writeln!(out, "return new {table_handle}(this.#{table_name_camelcase});");
+            writeln!(
+                out,
+                "return new {table_handle}(this.connection.clientCache.getOrCreateTable<{row_type}>(REMOTE_MODULE.tables.{table_name}));"
+            );
         });
         writeln!(out, "}}");
     }
@@ -575,6 +580,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "DBConnectionImpl",
         "DBContext",
         "Event",
+        "deepEqual",
     ];
     types.sort();
     writeln!(out, "import {{");
@@ -604,7 +610,7 @@ fn write_get_algebraic_type_for_product(
 * This function is derived from the AlgebraicType used to generate this type.
 */"
     );
-    writeln!(out, "export function getAlgebraicType(): AlgebraicType {{");
+    writeln!(out, "export function getTypeScriptAlgebraicType(): AlgebraicType {{");
     {
         out.indent(1);
         write!(out, "return ");
@@ -648,30 +654,14 @@ fn define_namespace_and_object_type_for_product(
         "export function serialize(writer: BinaryWriter, value: {name}): void {{"
     );
     out.indent(1);
-    writeln!(out, "const converted = {{");
-    out.indent(1);
-    for (ident, _) in elements {
-        let name = ident.deref().to_case(Case::Camel);
-        writeln!(out, "{ident}: value.{name},");
-    }
-    out.dedent(1);
-    writeln!(out, "}};");
-    writeln!(out, "{name}.getAlgebraicType().serialize(writer, converted);");
+    writeln!(out, "{name}.getTypeScriptAlgebraicType().serialize(writer, value);");
     out.dedent(1);
     writeln!(out, "}}");
     writeln!(out);
 
     writeln!(out, "export function deserialize(reader: BinaryReader): {name} {{");
     out.indent(1);
-    writeln!(out, "const value = {name}.getAlgebraicType().deserialize(reader);");
-    writeln!(out, "return {{");
-    out.indent(1);
-    for (ident, _) in elements {
-        let name = ident.deref().to_case(Case::Camel);
-        writeln!(out, "{name}: value.{ident},");
-    }
-    out.dedent(1);
-    writeln!(out, "}};");
+    writeln!(out, "return {name}.getTypeScriptAlgebraicType().deserialize(reader);");
     out.dedent(1);
     writeln!(out, "}}");
     writeln!(out);
@@ -783,7 +773,7 @@ fn write_get_algebraic_type_for_sum(
     out: &mut Indenter,
     variants: &[(Identifier, AlgebraicTypeUse)],
 ) {
-    writeln!(out, "export function getAlgebraicType(): AlgebraicType {{");
+    writeln!(out, "export function getTypeScriptAlgebraicType(): AlgebraicType {{");
     {
         indent_scope!(out);
         write!(out, "return ");
@@ -833,7 +823,7 @@ fn define_namespace_and_types_for_sum(
     writeln!(
         out,
         "export function serialize(writer: BinaryWriter, value: {name}): void {{
-    {name}.getAlgebraicType().serialize(writer, value);
+    {name}.getTypeScriptAlgebraicType().serialize(writer, value);
 }}"
     );
     writeln!(out);
@@ -841,7 +831,7 @@ fn define_namespace_and_types_for_sum(
     writeln!(
         out,
         "export function deserialize(reader: BinaryReader): {name} {{
-    return {name}.getAlgebraicType().deserialize(reader);
+    return {name}.getTypeScriptAlgebraicType().deserialize(reader);
 }}"
     );
     writeln!(out);
@@ -980,7 +970,11 @@ fn convert_algebraic_type<'a>(
             convert_algebraic_type(module, out, ty, ref_prefix);
             write!(out, ")");
         }
-        AlgebraicTypeUse::Ref(r) => write!(out, "{ref_prefix}{}.getAlgebraicType()", type_ref_name(module, *r)),
+        AlgebraicTypeUse::Ref(r) => write!(
+            out,
+            "{ref_prefix}{}.getTypeScriptAlgebraicType()",
+            type_ref_name(module, *r)
+        ),
         AlgebraicTypeUse::Primitive(prim) => {
             write!(out, "AlgebraicType.create{prim:?}Type()");
         }
@@ -1017,7 +1011,11 @@ fn convert_product_type<'a>(
     writeln!(out, "AlgebraicType.createProductType([");
     out.indent(1);
     for (ident, ty) in elements {
-        write!(out, "new ProductTypeElement(\"{}\", ", ident.deref(),);
+        write!(
+            out,
+            "new ProductTypeElement(\"{}\", ",
+            ident.deref().to_case(Case::Camel)
+        );
         convert_algebraic_type(module, out, ty, ref_prefix);
         writeln!(out, "),");
     }
