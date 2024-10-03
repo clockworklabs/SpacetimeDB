@@ -131,6 +131,8 @@ namespace SpacetimeDB
 
         private readonly Dictionary<Guid, TaskCompletionSource<OneOffQueryResponse>> waitingOneOffQueries = new();
 
+	this should not build!
+
         private bool isClosing;
         private readonly Thread networkMessageProcessThread;
         public readonly Stats stats = new();
