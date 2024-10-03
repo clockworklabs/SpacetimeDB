@@ -7,23 +7,22 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
-namespace SpacetimeDB.ClientApi
+namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
 	public partial class QueryUpdate
 	{
 		[DataMember(Name = "deletes")]
-		public SpacetimeDB.ClientApi.BsatnRowList Deletes;
+		public SpacetimeDB.Types.BsatnRowList Deletes;
 		[DataMember(Name = "inserts")]
-		public SpacetimeDB.ClientApi.BsatnRowList Inserts;
+		public SpacetimeDB.Types.BsatnRowList Inserts;
 
 		public QueryUpdate(
-			SpacetimeDB.ClientApi.BsatnRowList Deletes,
-			SpacetimeDB.ClientApi.BsatnRowList Inserts
+			SpacetimeDB.Types.BsatnRowList Deletes,
+			SpacetimeDB.Types.BsatnRowList Inserts
 		)
 		{
 			this.Deletes = Deletes;

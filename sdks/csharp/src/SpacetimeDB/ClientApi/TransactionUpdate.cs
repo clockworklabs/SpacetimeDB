@@ -7,37 +7,36 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
-namespace SpacetimeDB.ClientApi
+namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
 	public partial class TransactionUpdate
 	{
 		[DataMember(Name = "status")]
-		public SpacetimeDB.ClientApi.UpdateStatus Status;
+		public SpacetimeDB.Types.UpdateStatus Status;
 		[DataMember(Name = "timestamp")]
-		public SpacetimeDB.ClientApi.Timestamp Timestamp;
+		public SpacetimeDB.Types.Timestamp Timestamp;
 		[DataMember(Name = "caller_identity")]
 		public SpacetimeDB.Identity CallerIdentity;
 		[DataMember(Name = "caller_address")]
 		public SpacetimeDB.Address CallerAddress;
 		[DataMember(Name = "reducer_call")]
-		public SpacetimeDB.ClientApi.ReducerCallInfo ReducerCall;
+		public SpacetimeDB.Types.ReducerCallInfo ReducerCall;
 		[DataMember(Name = "energy_quanta_used")]
-		public SpacetimeDB.ClientApi.EnergyQuanta EnergyQuantaUsed;
+		public SpacetimeDB.Types.EnergyQuanta EnergyQuantaUsed;
 		[DataMember(Name = "host_execution_duration_micros")]
 		public ulong HostExecutionDurationMicros;
 
 		public TransactionUpdate(
-			SpacetimeDB.ClientApi.UpdateStatus Status,
-			SpacetimeDB.ClientApi.Timestamp Timestamp,
+			SpacetimeDB.Types.UpdateStatus Status,
+			SpacetimeDB.Types.Timestamp Timestamp,
 			SpacetimeDB.Identity CallerIdentity,
 			SpacetimeDB.Address CallerAddress,
-			SpacetimeDB.ClientApi.ReducerCallInfo ReducerCall,
-			SpacetimeDB.ClientApi.EnergyQuanta EnergyQuantaUsed,
+			SpacetimeDB.Types.ReducerCallInfo ReducerCall,
+			SpacetimeDB.Types.EnergyQuanta EnergyQuantaUsed,
 			ulong HostExecutionDurationMicros
 		)
 		{

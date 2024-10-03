@@ -7,12 +7,12 @@
 using System;
 using SpacetimeDB;
 
-namespace SpacetimeDB.ClientApi
+namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	public partial record ClientMessage : SpacetimeDB.TaggedEnum<(
-		SpacetimeDB.ClientApi.CallReducer CallReducer,
-		SpacetimeDB.ClientApi.Subscribe Subscribe,
-		SpacetimeDB.ClientApi.OneOffQuery OneOffQuery
+		SpacetimeDB.Types.CallReducer CallReducer,
+		SpacetimeDB.Types.Subscribe Subscribe,
+		SpacetimeDB.Types.OneOffQuery OneOffQuery
 	)>;
 }

@@ -7,22 +7,21 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
-namespace SpacetimeDB.ClientApi
+namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
 	public partial class OneOffQuery
 	{
 		[DataMember(Name = "message_id")]
-		public byte[] MessageId;
+		public System.Collections.Generic.List<byte> MessageId;
 		[DataMember(Name = "query_string")]
 		public string QueryString;
 
 		public OneOffQuery(
-			byte[] MessageId,
+			System.Collections.Generic.List<byte> MessageId,
 			string QueryString
 		)
 		{
@@ -32,7 +31,7 @@ namespace SpacetimeDB.ClientApi
 
 		public OneOffQuery()
 		{
-			this.MessageId = Array.Empty<byte>();
+			this.MessageId = new();
 			this.QueryString = "";
 		}
 

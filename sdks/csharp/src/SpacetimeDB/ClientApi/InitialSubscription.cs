@@ -7,24 +7,23 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
-namespace SpacetimeDB.ClientApi
+namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
 	public partial class InitialSubscription
 	{
 		[DataMember(Name = "database_update")]
-		public SpacetimeDB.ClientApi.DatabaseUpdate DatabaseUpdate;
+		public SpacetimeDB.Types.DatabaseUpdate DatabaseUpdate;
 		[DataMember(Name = "request_id")]
 		public uint RequestId;
 		[DataMember(Name = "total_host_execution_duration_micros")]
 		public ulong TotalHostExecutionDurationMicros;
 
 		public InitialSubscription(
-			SpacetimeDB.ClientApi.DatabaseUpdate DatabaseUpdate,
+			SpacetimeDB.Types.DatabaseUpdate DatabaseUpdate,
 			uint RequestId,
 			ulong TotalHostExecutionDurationMicros
 		)

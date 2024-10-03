@@ -7,11 +7,11 @@
 using System;
 using SpacetimeDB;
 
-namespace SpacetimeDB.ClientApi
+namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	public partial record CompressableQueryUpdate : SpacetimeDB.TaggedEnum<(
-		SpacetimeDB.ClientApi.QueryUpdate Uncompressed,
-		byte[] Brotli
+		SpacetimeDB.Types.QueryUpdate Uncompressed,
+		System.Collections.Generic.List<byte> Brotli
 	)>;
 }

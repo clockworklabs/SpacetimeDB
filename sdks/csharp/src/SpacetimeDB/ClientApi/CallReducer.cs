@@ -7,10 +7,9 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
-namespace SpacetimeDB.ClientApi
+namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
@@ -19,13 +18,13 @@ namespace SpacetimeDB.ClientApi
 		[DataMember(Name = "reducer")]
 		public string Reducer;
 		[DataMember(Name = "args")]
-		public byte[] Args;
+		public System.Collections.Generic.List<byte> Args;
 		[DataMember(Name = "request_id")]
 		public uint RequestId;
 
 		public CallReducer(
 			string Reducer,
-			byte[] Args,
+			System.Collections.Generic.List<byte> Args,
 			uint RequestId
 		)
 		{
@@ -37,7 +36,7 @@ namespace SpacetimeDB.ClientApi
 		public CallReducer()
 		{
 			this.Reducer = "";
-			this.Args = Array.Empty<byte>();
+			this.Args = new();
 		}
 
 	}

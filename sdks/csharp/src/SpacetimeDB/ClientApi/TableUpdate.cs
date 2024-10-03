@@ -7,10 +7,9 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
-namespace SpacetimeDB.ClientApi
+namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
@@ -23,13 +22,13 @@ namespace SpacetimeDB.ClientApi
 		[DataMember(Name = "num_rows")]
 		public ulong NumRows;
 		[DataMember(Name = "updates")]
-		public System.Collections.Generic.List<SpacetimeDB.ClientApi.CompressableQueryUpdate> Updates;
+		public System.Collections.Generic.List<SpacetimeDB.Types.CompressableQueryUpdate> Updates;
 
 		public TableUpdate(
 			uint TableId,
 			string TableName,
 			ulong NumRows,
-			System.Collections.Generic.List<SpacetimeDB.ClientApi.CompressableQueryUpdate> Updates
+			System.Collections.Generic.List<SpacetimeDB.Types.CompressableQueryUpdate> Updates
 		)
 		{
 			this.TableId = TableId;
