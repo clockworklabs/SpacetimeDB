@@ -1,15 +1,16 @@
 use std::collections::HashSet;
 
-use bind::TypingResult;
+use check::TypingResult;
 use errors::{DuplicateName, InvalidLiteral, InvalidWildcard, UnexpectedType, Unresolved};
 use expr::{Expr, Let, RelExpr};
 use spacetimedb_lib::{from_hex_pad, Address, AlgebraicType, AlgebraicValue, Identity};
 use spacetimedb_sql_parser::ast::{self, ProjectElem, ProjectExpr, SqlExpr, SqlIdent, SqlLiteral};
 use ty::{Symbol, TyCtx, TyEnv, TyId, Type, TypeWithCtx};
 
-pub mod bind;
+pub mod check;
 pub mod errors;
 pub mod expr;
+pub mod plan;
 pub mod stmt;
 pub mod ty;
 

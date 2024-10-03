@@ -4524,10 +4524,10 @@ dependencies = [
  "spacetimedb-commitlog",
  "spacetimedb-data-structures",
  "spacetimedb-durability",
+ "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-primitives",
- "spacetimedb-query-planner",
  "spacetimedb-sats",
  "spacetimedb-schema",
  "spacetimedb-snapshot",
@@ -4577,6 +4577,20 @@ dependencies = [
  "spacetimedb-sats",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "spacetimedb-expr"
+version = "1.0.0-rc1"
+dependencies = [
+ "derive_more",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-sats",
+ "spacetimedb-schema",
+ "spacetimedb-sql-parser",
+ "string-interner",
+ "thiserror",
 ]
 
 [[package]]
@@ -4635,20 +4649,6 @@ dependencies = [
  "itertools 0.12.1",
  "nohash-hasher",
  "proptest",
-]
-
-[[package]]
-name = "spacetimedb-query-planner"
-version = "1.0.0-rc1"
-dependencies = [
- "derive_more",
- "spacetimedb-lib",
- "spacetimedb-primitives",
- "spacetimedb-sats",
- "spacetimedb-schema",
- "spacetimedb-sql-parser",
- "string-interner",
- "thiserror",
 ]
 
 [[package]]

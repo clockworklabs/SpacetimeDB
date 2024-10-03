@@ -10,6 +10,8 @@ use spacetimedb_sql_parser::{
     parser::sub::parse_subscription,
 };
 
+use crate::plan::LogicalPlan;
+
 use super::{
     assert_eq_types,
     errors::{DuplicateName, TypingError, Unresolved, Unsupported},
@@ -175,10 +177,11 @@ impl TypeChecker for SubChecker {
 }
 
 /// Parse and type check a subscription query
-pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<RelExpr> {
+pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<LogicalPlan> {
     let mut ctx = TyCtx::default();
     let expr = SubChecker::type_ast(&mut ctx, parse_subscription(sql)?, tx)?;
-    expect_table_type(&ctx, expr)
+    let expr = expect_table_type(&ctx, expr)?;
+    Ok(LogicalPlan { ctx, expr })
 }
 
 /// Returns an error if the input type is not a table type or relvar

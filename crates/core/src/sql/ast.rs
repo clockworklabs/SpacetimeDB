@@ -1,13 +1,13 @@
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
+use spacetimedb_expr::check::SchemaView;
+use spacetimedb_expr::stmt::parse_and_type_sql;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::error::RelationError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::{ColExpr, FieldName};
 use spacetimedb_primitives::ColId;
-use spacetimedb_query_planner::logical::bind::SchemaView;
-use spacetimedb_query_planner::logical::stmt::parse_and_type_sql;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_vm::errors::ErrorVm;

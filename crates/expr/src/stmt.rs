@@ -14,7 +14,7 @@ use thiserror::Error;
 
 use super::{
     assert_eq_types,
-    bind::{SchemaView, TypeChecker, TypingResult},
+    check::{SchemaView, TypeChecker, TypingResult},
     errors::{InsertFieldsError, InsertValuesError, TypingError, UnexpectedType, Unresolved, Unsupported},
     expr::{Expr, RelExpr},
     parse,

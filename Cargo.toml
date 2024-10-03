@@ -11,9 +11,9 @@ members = [
   "crates/core",
   "crates/data-structures",
   "crates/durability",
+  "crates/expr",
   "crates/fs-utils",
   "crates/lib",
-  "crates/planner",
   "crates/metrics",
   "crates/primitives",
   "crates/sats",
@@ -96,10 +96,10 @@ spacetimedb-commitlog = { path = "crates/commitlog", version = "1.0.0-rc1" }
 spacetimedb-core = { path = "crates/core", version = "1.0.0-rc1" }
 spacetimedb-data-structures = { path = "crates/data-structures", version = "1.0.0-rc1" }
 spacetimedb-durability = { path = "crates/durability", version = "1.0.0-rc1" }
+spacetimedb-expr = { path = "crates/expr", version = "1.0.0-rc1" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "1.0.0-rc1" }
 spacetimedb-metrics = { path = "crates/metrics", version = "1.0.0-rc1" }
 spacetimedb-primitives = { path = "crates/primitives", version = "1.0.0-rc1" }
-spacetimedb-query-planner = { path = "crates/planner", version = "1.0.0-rc1" }
 spacetimedb-sats = { path = "crates/sats", version = "1.0.0-rc1" }
 spacetimedb-schema = { path = "crates/schema", version = "1.0.0-rc1" }
 spacetimedb-standalone = { path = "crates/standalone", version = "1.0.0-rc1" }
