@@ -422,51 +422,9 @@ export namespace Foobar {
     ]);
   }
 
-<<<<<<< HEAD
   export function serialize(writer: BinaryWriter, value: Foobar): void {
       Foobar.getTypeScriptAlgebraicType().serialize(writer, value);
   }
-=======
-	public static getAlgebraicType(): AlgebraicType
-	{
-		return AlgebraicType.createProductType([
-			new ProductTypeElement("identity", AlgebraicType.createProductType([
-			new ProductTypeElement("__identity__", AlgebraicType.createU256Type()),
-		])),
-			new ProductTypeElement("address", AlgebraicType.createProductType([
-			new ProductTypeElement("address", AlgebraicType.createU128Type()),
-		])),
-		]);
-	}
-
-	public static fromValue(value: AlgebraicValue): HasSpecialStuff
-	{
-		let productValue = value.asProductValue();
-		let __identity = productValue.elements[0].asIdentity();
-		let __address = productValue.elements[1].asAddress();
-		return new this(__identity, __address);
-	}
-
-	public static *filterByIdentity(value: Identity): IterableIterator<HasSpecialStuff>
-	{
-		for (let instance of this.db.getTable("HasSpecialStuff").getInstances())
-		{
-			if (instance.identity.isEqual(value)) {
-				yield instance;
-			}
-		}
-	}
-
-	public static *filterByAddress(value: Address): IterableIterator<HasSpecialStuff>
-	{
-		for (let instance of this.db.getTable("HasSpecialStuff").getInstances())
-		{
-			if (instance.address.isEqual(value)) {
-				yield instance;
-			}
-		}
-	}
->>>>>>> 035bfd6a (define Address as u128)
 
   export function deserialize(reader: BinaryReader): Foobar {
       return Foobar.getTypeScriptAlgebraicType().deserialize(reader);
