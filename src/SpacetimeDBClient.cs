@@ -374,7 +374,6 @@ namespace SpacetimeDB
                                     };
 
                                     dbOps.Add(op);
-                                    break;
                                 }
                             }
                         }
