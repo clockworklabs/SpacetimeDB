@@ -517,7 +517,7 @@ fn print_remote_tables(module: &ModuleDef, out: &mut Indenter) {
         out.with_indent(|out| {
             writeln!(
                 out,
-                "return this.connection.clientCache.getOrCreateTable<{row_type}>(REMOTE_MODULE.tables.{table_name});"
+                "return new {table_handle}(this.connection.clientCache.getOrCreateTable<{row_type}>(REMOTE_MODULE.tables.{table_name}));"
             );
         });
         writeln!(out, "}}");
