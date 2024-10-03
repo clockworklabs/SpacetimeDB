@@ -5,12 +5,11 @@ use std::{
 };
 
 use spacetimedb_lib::AlgebraicType;
+use spacetimedb_primitives::TableId;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sql_parser::ast::BinOp;
 use string_interner::{backend::StringBackend, symbol::SymbolU32, StringInterner};
 use thiserror::Error;
-
-use crate::static_assert_size;
 
 use super::errors::{ExpectedRelation, InvalidOp};
 
@@ -61,14 +60,12 @@ pub type Symbol = SymbolU32;
 #[derive(Debug)]
 pub enum Type {
     /// A base relation
-    Var(Box<[(Symbol, TyId)]>),
+    Var(TableId, Box<[(Symbol, TyId)]>),
     /// A derived relation
     Row(Box<[(Symbol, TyId)]>),
     /// A column type
     Alg(AlgebraicType),
 }
-
-static_assert_size!(Type, 24);
 
 impl Type {
     /// Is this type compatible with this binary operator?
@@ -202,7 +199,8 @@ impl TyCtx {
         }
         match (&*self.try_resolve(a)?, &*self.try_resolve(b)?) {
             (Type::Alg(a), Type::Alg(b)) => Ok(a == b),
-            (Type::Var(a), Type::Var(b)) | (Type::Row(a), Type::Row(b)) => Ok(a.len() == b.len() && {
+            (Type::Var(a, _), Type::Var(b, _)) => Ok(a == b),
+            (Type::Row(a), Type::Row(b)) => Ok(a.len() == b.len() && {
                 for (i, (name, id)) in a.iter().enumerate() {
                     if name != &b[i].0 || !self.eq(*id, b[i].1)? {
                         return Ok(false);
@@ -239,7 +237,7 @@ impl TypeWithCtx<'_> {
     /// Expect a relvar or base relation type
     pub fn expect_relvar(&self) -> Result<RelType, ExpectedRelvar> {
         match self.0 {
-            Type::Var(fields) => Ok(RelType { fields }),
+            Type::Var(_, fields) => Ok(RelType { fields }),
             Type::Row(_) | Type::Alg(_) => Err(ExpectedRelvar),
         }
     }
@@ -248,14 +246,14 @@ impl TypeWithCtx<'_> {
     pub fn expect_scalar(&self) -> Result<&AlgebraicType, ExpectedScalar> {
         match self.0 {
             Type::Alg(t) => Ok(t),
-            Type::Var(_) | Type::Row(_) => Err(ExpectedScalar),
+            Type::Var(..) | Type::Row(..) => Err(ExpectedScalar),
         }
     }
 
     /// Expect a relation, not a scalar or column type
     pub fn expect_relation(&self) -> Result<RelType, ExpectedRelation> {
         match self.0 {
-            Type::Var(fields) | Type::Row(fields) => Ok(RelType { fields }),
+            Type::Var(_, fields) | Type::Row(fields) => Ok(RelType { fields }),
             Type::Alg(_) => Err(ExpectedRelation::new(self)),
         }
     }
@@ -271,7 +269,7 @@ impl<'a> Display for TypeWithCtx<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.0 {
             Type::Alg(ty) => write!(f, "{}", fmt_algebraic_type(ty)),
-            Type::Var(fields) | Type::Row(fields) => {
+            Type::Var(_, fields) | Type::Row(fields) => {
                 const UNKNOWN: &str = "UNKNOWN";
                 write!(f, "(")?;
                 let (symbol, id) = &fields[0];

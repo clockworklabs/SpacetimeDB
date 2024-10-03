@@ -150,7 +150,7 @@ pub fn type_delete(ctx: &mut TyCtx, delete: SqlDelete, tx: &impl SchemaView) -> 
         types.push((name, id));
     }
 
-    let ty = Type::Var(types.into_boxed_slice());
+    let ty = Type::Var(schema.table_id, types.into_boxed_slice());
     let ty = ctx.add(ty);
     env.add(table_name, ty);
 

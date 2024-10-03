@@ -118,7 +118,7 @@ pub trait TypeChecker {
                     let name = ctx.gen_symbol(col_name);
                     types.push((name, id));
                 }
-                let ty = Type::Var(types.into_boxed_slice());
+                let ty = Type::Var(schema.table_id, types.into_boxed_slice());
                 let id = ctx.add(ty);
                 let symbol = ctx.gen_symbol(var);
                 Ok((RelExpr::RelVar(schema, id), Some(symbol)))
