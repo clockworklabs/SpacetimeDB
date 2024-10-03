@@ -1,3 +1,9 @@
+import { Address } from './address';
+import { ProductValue, SumValue, type ValueAdapter } from './algebraic_value';
+import type BinaryReader from './binary_reader';
+import type BinaryWriter from './binary_writer';
+import { Identity } from './identity';
+
 /**
  * A variant of a sum type.
  *
@@ -44,6 +50,56 @@ export class SumType {
   constructor(variants: SumTypeVariant[]) {
     this.variants = variants;
   }
+
+  serialize = (writer: BinaryWriter, value: any): void => {
+    // In TypeScript we handle Option values as a special case
+    // we don't represent the some and none variants, but instead
+    // we represent the value directly.
+    if (
+      this.variants.length == 2 &&
+      this.variants[0].name === 'some' &&
+      this.variants[1].name === 'none'
+    ) {
+      if (value) {
+        writer.writeByte(0);
+        this.variants[0].algebraicType.serialize(writer, value);
+      } else {
+        writer.writeByte(1);
+      }
+    } else {
+      let variant = value['tag'];
+      const index = this.variants.findIndex(v => v.name === variant);
+      if (index < 0) {
+        throw `Can't serialize a sum type, couldn't find ${value.tag} tag`;
+      }
+      writer.writeU8(index);
+      this.variants[index].algebraicType.serialize(writer, value['value']);
+    }
+  };
+
+  deserialize = (reader: BinaryReader): any => {
+    let tag = reader.readU8();
+    // In TypeScript we handle Option values as a special case
+    // we don't represent the some and none variants, but instead
+    // we represent the value directly.
+    if (
+      this.variants.length == 2 &&
+      this.variants[0].name === 'some' &&
+      this.variants[1].name === 'none'
+    ) {
+      if (tag === 0) {
+        return this.variants[0].algebraicType.deserialize(reader);
+      } else if (tag === 1) {
+        return undefined;
+      } else {
+        throw `Can't deserialize an option type, couldn't find ${tag} tag`;
+      }
+    } else {
+      let variant = this.variants[tag];
+      let value = variant.algebraicType.deserialize(reader);
+      return { tag: variant.name, value };
+    }
+  };
 }
 
 /**
@@ -99,6 +155,30 @@ export class ProductType {
   isEmpty(): boolean {
     return this.elements.length === 0;
   }
+
+  serialize = (writer: BinaryWriter, value: object): void => {
+    for (let element of this.elements) {
+      element.algebraicType.serialize(writer, value[element.name]);
+    }
+  };
+
+  deserialize = (reader: BinaryReader): object => {
+    let result: { [key: string]: any } = {};
+    if (this.elements.length === 1) {
+      if (this.elements[0].name === '__identity_bytes') {
+        return new Identity(reader.readUInt8Array());
+      }
+
+      if (this.elements[0].name === '__address_bytes') {
+        return new Address(reader.readUInt8Array());
+      }
+    }
+
+    for (let element of this.elements) {
+      result[element.name] = element.algebraicType.deserialize(reader);
+    }
+    return result;
+  };
 }
 
 /* A map type from keys of type `keyType` to values of type `valueType`. */
@@ -250,6 +330,28 @@ export class AlgebraicType {
   static createBytesType(): AlgebraicType {
     return this.createArrayType(this.createU8Type());
   }
+  static createOptionType(innerType: AlgebraicType): AlgebraicType {
+    return this.createSumType([
+      new SumTypeVariant('some', innerType),
+      new SumTypeVariant('none', this.createProductType([])),
+    ]);
+  }
+  static createIdentityType(): AlgebraicType {
+    return this.createProductType([
+      new ProductTypeElement('__identity_bytes', this.createBytesType()),
+    ]);
+  }
+  static createAddressType(): AlgebraicType {
+    return this.createProductType([
+      new ProductTypeElement('__address_bytes', this.createBytesType()),
+    ]);
+  }
+  static createScheduleAtType(): AlgebraicType {
+    return AlgebraicType.createSumType([
+      new SumTypeVariant('Interval', AlgebraicType.createU64Type()),
+      new SumTypeVariant('Time', AlgebraicType.createU64Type()),
+    ]);
+  }
 
   isProductType(): boolean {
     return this.type === Type.ProductType;
@@ -286,6 +388,128 @@ export class AlgebraicType {
 
   isAddress(): boolean {
     return this.#isBytesNewtype('__address_bytes');
+  }
+
+  serialize(writer: BinaryWriter, value: any): void {
+    switch (this.type) {
+      case Type.ProductType:
+        this.product.serialize(writer, value);
+        break;
+      case Type.SumType:
+        this.sum.serialize(writer, value);
+        break;
+      case Type.ArrayType:
+        if (this.#isBytes()) {
+          writer.writeUInt8Array(value);
+        } else {
+          const elemType = this.array;
+          writer.writeU32(value.length);
+          for (let elem of value) {
+            elemType.serialize(writer, elem);
+          }
+        }
+        break;
+      case Type.MapType:
+        throw new Error('not implemented');
+      case Type.Bool:
+        writer.writeBool(value);
+        break;
+      case Type.I8:
+        writer.writeI8(value);
+        break;
+      case Type.U8:
+        writer.writeU8(value);
+        break;
+      case Type.I16:
+        writer.writeI16(value);
+        break;
+      case Type.U16:
+        writer.writeU16(value);
+        break;
+      case Type.I32:
+        writer.writeI32(value);
+        break;
+      case Type.U32:
+        writer.writeU32(value);
+        break;
+      case Type.I64:
+        writer.writeI64(value);
+        break;
+      case Type.U64:
+        writer.writeU64(value);
+        break;
+      case Type.I128:
+        writer.writeI128(value);
+        break;
+      case Type.U128:
+        writer.writeU128(value);
+        break;
+      case Type.F32:
+        writer.writeF32(value);
+        break;
+      case Type.F64:
+        writer.writeF64(value);
+        break;
+      case Type.String:
+        writer.writeString(value);
+        break;
+      default:
+        throw new Error(`not implemented, ${this.type}`);
+    }
+  }
+
+  deserialize(reader: BinaryReader): any {
+    switch (this.type) {
+      case Type.ProductType:
+        return this.product.deserialize(reader);
+      case Type.SumType:
+        return this.sum.deserialize(reader);
+      case Type.ArrayType:
+        if (this.#isBytes()) {
+          return reader.readUInt8Array();
+        } else {
+          const elemType = this.array;
+          const length = reader.readU32();
+          let result: any[] = [];
+          for (let i = 0; i < length; i++) {
+            result.push(elemType.deserialize(reader));
+          }
+          return result;
+        }
+      case Type.MapType:
+        // TODO: MapType is being removed
+        throw new Error('not implemented');
+      case Type.Bool:
+        return reader.readBool();
+      case Type.I8:
+        return reader.readI8();
+      case Type.U8:
+        return reader.readU8();
+      case Type.I16:
+        return reader.readI16();
+      case Type.U16:
+        return reader.readU16();
+      case Type.I32:
+        return reader.readI32();
+      case Type.U32:
+        return reader.readU32();
+      case Type.I64:
+        return reader.readI64();
+      case Type.U64:
+        return reader.readU64();
+      case Type.I128:
+        return reader.readI128();
+      case Type.U128:
+        return reader.readU128();
+      case Type.F32:
+        return reader.readF32();
+      case Type.F64:
+        return reader.readF64();
+      case Type.String:
+        return reader.readString();
+      default:
+        throw new Error(`not implemented, ${this.type}`);
+    }
   }
 }
 

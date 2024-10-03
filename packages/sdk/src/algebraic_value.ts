@@ -58,8 +58,7 @@ export class BinaryAdapter implements ValueAdapter {
   }
 
   readUInt8Array(): Uint8Array {
-    const length = this.#reader.readU32();
-    return this.#reader.readUInt8Array(length);
+    return this.#reader.readUInt8Array();
   }
 
   readArray(type: AlgebraicType): AlgebraicValue[] {
@@ -85,8 +84,7 @@ export class BinaryAdapter implements ValueAdapter {
   }
 
   readString(): string {
-    const strLength = this.#reader.readU32();
-    return this.#reader.readString(strLength);
+    return this.#reader.readString();
   }
 
   readSum(type: SumType): SumValue {
@@ -166,15 +164,7 @@ export class SumValue {
     this.value = value;
   }
 
-  static deserialize(
-    type: SumType | undefined,
-    adapter: ValueAdapter
-  ): SumValue {
-    if (type === undefined) {
-      // TODO: get rid of undefined here
-      throw 'sum type is undefined';
-    }
-
+  static deserialize(type: SumType, adapter: ValueAdapter): SumValue {
     return adapter.readSum(type);
   }
 }
@@ -192,14 +182,7 @@ export class ProductValue {
     this.elements = elements;
   }
 
-  static deserialize(
-    type: ProductType | undefined,
-    adapter: ValueAdapter
-  ): ProductValue {
-    if (type === undefined) {
-      throw 'type is undefined';
-    }
-
+  static deserialize(type: ProductType, adapter: ValueAdapter): ProductValue {
     return adapter.readProduct(type);
   }
 }
@@ -330,17 +313,11 @@ export class AlgebraicValue {
   }
 }
 
-export interface ParseableType<ParsedType> {
-  getAlgebraicType: () => AlgebraicType;
-  fromValue: (value: AlgebraicValue) => ParsedType;
+export interface ParseableType<T> {
+  deserialize: (reader: BinaryReader) => T;
 }
 
-export function parseValue<ParsedType>(
-  ty: ParseableType<ParsedType>,
-  src: Uint8Array
-): ParsedType {
-  const algebraicType = ty.getAlgebraicType();
-  const adapter = new BinaryAdapter(new BinaryReader(src));
-  const algebraicValue = AlgebraicValue.deserialize(algebraicType, adapter);
-  return ty.fromValue(algebraicValue);
+export function parseValue<T>(ty: ParseableType<T>, src: Uint8Array): T {
+  const reader = new BinaryReader(src);
+  return ty.deserialize(reader);
 }

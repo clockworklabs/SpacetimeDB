@@ -17,8 +17,8 @@ jobs:
           version: 9.7
           run_install: true
 
-      - name: Compile
+      - name: Build
         run: pnpm compile
 
       - name: Release
-        run: cd packages/sdk && pnpm dlx pkg-pr-new publish --compact
+        run: cd packages/sdk && pnpm dlx pkg-pr-new publish --compact --pnpm
