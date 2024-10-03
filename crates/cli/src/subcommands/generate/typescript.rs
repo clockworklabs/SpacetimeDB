@@ -203,7 +203,7 @@ export class {table_handle} {{
                     out.with_indent(|out| {
                         writeln!(out, "for (let row of this.tableCache.iter()) {{");
                         out.with_indent(|out| {
-                            writeln!(out, "if (row.{unique_field_name} === col_val) {{");
+                            writeln!(out, "if (deepEqual(row.{unique_field_name}, col_val)) {{");
                             out.with_indent(|out| {
                                 writeln!(out, "return row;");
                             });
@@ -577,6 +577,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "DBConnectionImpl",
         "DBContext",
         "Event",
+        "deepEqual",
     ];
     types.sort();
     writeln!(out, "import {{");
