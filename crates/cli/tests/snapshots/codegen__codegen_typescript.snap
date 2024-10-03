@@ -39,6 +39,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type AddPlayer = {
@@ -60,17 +62,11 @@ export namespace AddPlayer {
   }
 
   export function serialize(writer: BinaryWriter, value: AddPlayer): void {
-    const converted = {
-      name: value.name,
-    };
-    AddPlayer.getAlgebraicType().serialize(writer, converted);
+    AddPlayer.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): AddPlayer {
-    const value = AddPlayer.getAlgebraicType().deserialize(reader);
-    return {
-      name: value.name,
-    };
+    return AddPlayer.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -113,6 +109,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type AddPrivate = {
@@ -134,17 +132,11 @@ export namespace AddPrivate {
   }
 
   export function serialize(writer: BinaryWriter, value: AddPrivate): void {
-    const converted = {
-      name: value.name,
-    };
-    AddPrivate.getAlgebraicType().serialize(writer, converted);
+    AddPrivate.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): AddPrivate {
-    const value = AddPrivate.getAlgebraicType().deserialize(reader);
-    return {
-      name: value.name,
-    };
+    return AddPrivate.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -187,6 +179,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type Baz = {
   field: string,
@@ -207,17 +201,11 @@ export namespace Baz {
   }
 
   export function serialize(writer: BinaryWriter, value: Baz): void {
-    const converted = {
-      field: value.field,
-    };
-    Baz.getAlgebraicType().serialize(writer, converted);
+    Baz.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): Baz {
-    const value = Baz.getAlgebraicType().deserialize(reader);
-    return {
-      field: value.field,
-    };
+    return Baz.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -261,6 +249,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type DeletePlayer = {
@@ -282,17 +272,11 @@ export namespace DeletePlayer {
   }
 
   export function serialize(writer: BinaryWriter, value: DeletePlayer): void {
-    const converted = {
-      id: value.id,
-    };
-    DeletePlayer.getAlgebraicType().serialize(writer, converted);
+    DeletePlayer.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): DeletePlayer {
-    const value = DeletePlayer.getAlgebraicType().deserialize(reader);
-    return {
-      id: value.id,
-    };
+    return DeletePlayer.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -335,6 +319,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type DeletePlayersByName = {
@@ -356,17 +342,11 @@ export namespace DeletePlayersByName {
   }
 
   export function serialize(writer: BinaryWriter, value: DeletePlayersByName): void {
-    const converted = {
-      name: value.name,
-    };
-    DeletePlayersByName.getAlgebraicType().serialize(writer, converted);
+    DeletePlayersByName.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): DeletePlayersByName {
-    const value = DeletePlayersByName.getAlgebraicType().deserialize(reader);
-    return {
-      name: value.name,
-    };
+    return DeletePlayersByName.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -409,6 +389,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 // @ts-ignore
 import { Baz as __Baz } from "./baz_type";
@@ -493,6 +475,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 import { HasSpecialStuff } from "./has_special_stuff_type";
 // @ts-ignore
@@ -577,6 +561,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type HasSpecialStuff = {
   identity: Identity,
@@ -599,19 +585,11 @@ export namespace HasSpecialStuff {
   }
 
   export function serialize(writer: BinaryWriter, value: HasSpecialStuff): void {
-    const converted = {
-      identity: value.identity,
-      address: value.address,
-    };
-    HasSpecialStuff.getAlgebraicType().serialize(writer, converted);
+    HasSpecialStuff.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): HasSpecialStuff {
-    const value = HasSpecialStuff.getAlgebraicType().deserialize(reader);
-    return {
-      identity: value.identity,
-      address: value.address,
-    };
+    return HasSpecialStuff.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -655,6 +633,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type IdentityConnected = {};
@@ -673,15 +653,11 @@ export namespace IdentityConnected {
   }
 
   export function serialize(writer: BinaryWriter, value: IdentityConnected): void {
-    const converted = {
-    };
-    IdentityConnected.getAlgebraicType().serialize(writer, converted);
+    IdentityConnected.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): IdentityConnected {
-    const value = IdentityConnected.getAlgebraicType().deserialize(reader);
-    return {
-    };
+    return IdentityConnected.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -724,6 +700,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
 // Import and reexport all reducer arg types
@@ -1045,49 +1023,40 @@ export class RemoteReducers {
 export class RemoteTables {
   constructor(private connection: DBConnectionImpl) {}
 
-  #hasSpecialStuff = this.connection.clientCache.getOrCreateTable<HasSpecialStuff>(REMOTE_MODULE.tables.has_special_stuff);
   get hasSpecialStuff(): HasSpecialStuffTableHandle {
-    return new HasSpecialStuffTableHandle(this.#hasSpecialStuff);
+    return new HasSpecialStuffTableHandle(this.connection.clientCache.getOrCreateTable<HasSpecialStuff>(REMOTE_MODULE.tables.has_special_stuff));
   }
 
-  #pkMultiIdentity = this.connection.clientCache.getOrCreateTable<PkMultiIdentity>(REMOTE_MODULE.tables.pk_multi_identity);
   get pkMultiIdentity(): PkMultiIdentityTableHandle {
-    return new PkMultiIdentityTableHandle(this.#pkMultiIdentity);
+    return new PkMultiIdentityTableHandle(this.connection.clientCache.getOrCreateTable<PkMultiIdentity>(REMOTE_MODULE.tables.pk_multi_identity));
   }
 
-  #points = this.connection.clientCache.getOrCreateTable<Point>(REMOTE_MODULE.tables.points);
   get points(): PointsTableHandle {
-    return new PointsTableHandle(this.#points);
+    return new PointsTableHandle(this.connection.clientCache.getOrCreateTable<Point>(REMOTE_MODULE.tables.points));
   }
 
-  #private = this.connection.clientCache.getOrCreateTable<Private>(REMOTE_MODULE.tables.private);
   get private(): PrivateTableHandle {
-    return new PrivateTableHandle(this.#private);
+    return new PrivateTableHandle(this.connection.clientCache.getOrCreateTable<Private>(REMOTE_MODULE.tables.private));
   }
 
-  #repeatingTestArg = this.connection.clientCache.getOrCreateTable<RepeatingTestArg>(REMOTE_MODULE.tables.repeating_test_arg);
   get repeatingTestArg(): RepeatingTestArgTableHandle {
-    return new RepeatingTestArgTableHandle(this.#repeatingTestArg);
+    return new RepeatingTestArgTableHandle(this.connection.clientCache.getOrCreateTable<RepeatingTestArg>(REMOTE_MODULE.tables.repeating_test_arg));
   }
 
-  #testA = this.connection.clientCache.getOrCreateTable<TestA>(REMOTE_MODULE.tables.test_a);
   get testA(): TestATableHandle {
-    return new TestATableHandle(this.#testA);
+    return new TestATableHandle(this.connection.clientCache.getOrCreateTable<TestA>(REMOTE_MODULE.tables.test_a));
   }
 
-  #testD = this.connection.clientCache.getOrCreateTable<TestD>(REMOTE_MODULE.tables.test_d);
   get testD(): TestDTableHandle {
-    return new TestDTableHandle(this.#testD);
+    return new TestDTableHandle(this.connection.clientCache.getOrCreateTable<TestD>(REMOTE_MODULE.tables.test_d));
   }
 
-  #testE = this.connection.clientCache.getOrCreateTable<TestE>(REMOTE_MODULE.tables.test_e);
   get testE(): TestETableHandle {
-    return new TestETableHandle(this.#testE);
+    return new TestETableHandle(this.connection.clientCache.getOrCreateTable<TestE>(REMOTE_MODULE.tables.test_e));
   }
 
-  #testF = this.connection.clientCache.getOrCreateTable<TestFoobar>(REMOTE_MODULE.tables.test_f);
   get testF(): TestFTableHandle {
-    return new TestFTableHandle(this.#testF);
+    return new TestFTableHandle(this.connection.clientCache.getOrCreateTable<TestFoobar>(REMOTE_MODULE.tables.test_f));
   }
 }
 
@@ -1136,6 +1105,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type Init = {};
@@ -1154,15 +1125,11 @@ export namespace Init {
   }
 
   export function serialize(writer: BinaryWriter, value: Init): void {
-    const converted = {
-    };
-    Init.getAlgebraicType().serialize(writer, converted);
+    Init.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): Init {
-    const value = Init.getAlgebraicType().deserialize(reader);
-    return {
-    };
+    return Init.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -1205,6 +1172,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 // A namespace for generated variants and helper functions.
 export namespace NamespaceTestC {
@@ -1283,6 +1252,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 // A namespace for generated variants and helper functions.
 export namespace NamespaceTestF {
@@ -1364,6 +1335,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 import { PkMultiIdentity } from "./pk_multi_identity_type";
 // @ts-ignore
@@ -1409,7 +1382,7 @@ export class PkMultiIdentityTableHandle {
     // if such a row is present in the client cache.
     find: (col_val: number): PkMultiIdentity | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (row.id === col_val) {
+        if (deepEqual(row.id, col_val)) {
           return row;
         }
       }
@@ -1431,7 +1404,7 @@ export class PkMultiIdentityTableHandle {
     // if such a row is present in the client cache.
     find: (col_val: number): PkMultiIdentity | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (row.other === col_val) {
+        if (deepEqual(row.other, col_val)) {
           return row;
         }
       }
@@ -1500,6 +1473,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type PkMultiIdentity = {
   id: number,
@@ -1522,19 +1497,11 @@ export namespace PkMultiIdentity {
   }
 
   export function serialize(writer: BinaryWriter, value: PkMultiIdentity): void {
-    const converted = {
-      id: value.id,
-      other: value.other,
-    };
-    PkMultiIdentity.getAlgebraicType().serialize(writer, converted);
+    PkMultiIdentity.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): PkMultiIdentity {
-    const value = PkMultiIdentity.getAlgebraicType().deserialize(reader);
-    return {
-      id: value.id,
-      other: value.other,
-    };
+    return PkMultiIdentity.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -1578,6 +1545,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type Point = {
   x: bigint,
@@ -1600,19 +1569,11 @@ export namespace Point {
   }
 
   export function serialize(writer: BinaryWriter, value: Point): void {
-    const converted = {
-      x: value.x,
-      y: value.y,
-    };
-    Point.getAlgebraicType().serialize(writer, converted);
+    Point.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): Point {
-    const value = Point.getAlgebraicType().deserialize(reader);
-    return {
-      x: value.x,
-      y: value.y,
-    };
+    return Point.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -1656,6 +1617,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 import { Point } from "./point_type";
 // @ts-ignore
@@ -1740,6 +1703,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 import { Private } from "./private_type";
 // @ts-ignore
@@ -1824,6 +1789,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type Private = {
   name: string,
@@ -1844,17 +1811,11 @@ export namespace Private {
   }
 
   export function serialize(writer: BinaryWriter, value: Private): void {
-    const converted = {
-      name: value.name,
-    };
-    Private.getAlgebraicType().serialize(writer, converted);
+    Private.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): Private {
-    const value = Private.getAlgebraicType().deserialize(reader);
-    return {
-      name: value.name,
-    };
+    return Private.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -1898,6 +1859,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
 export type QueryPrivate = {};
@@ -1916,15 +1879,11 @@ export namespace QueryPrivate {
   }
 
   export function serialize(writer: BinaryWriter, value: QueryPrivate): void {
-    const converted = {
-    };
-    QueryPrivate.getAlgebraicType().serialize(writer, converted);
+    QueryPrivate.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): QueryPrivate {
-    const value = QueryPrivate.getAlgebraicType().deserialize(reader);
-    return {
-    };
+    return QueryPrivate.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -1967,6 +1926,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 import { RepeatingTestArg } from "./repeating_test_arg_type";
 // @ts-ignore
@@ -2012,7 +1973,7 @@ export class RepeatingTestArgTableHandle {
     // if such a row is present in the client cache.
     find: (col_val: bigint): RepeatingTestArg | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (row.scheduled_id === col_val) {
+        if (deepEqual(row.scheduled_id, col_val)) {
           return row;
         }
       }
@@ -2081,6 +2042,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type RepeatingTestArg = {
   prevTime: bigint,
@@ -2098,28 +2061,18 @@ export namespace RepeatingTestArg {
   */
   export function getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("prev_time", AlgebraicType.createU64Type()),
-      new ProductTypeElement("scheduled_id", AlgebraicType.createU64Type()),
-      new ProductTypeElement("scheduled_at", AlgebraicType.createScheduleAtType()),
+      new ProductTypeElement("prevTime", AlgebraicType.createU64Type()),
+      new ProductTypeElement("scheduledId", AlgebraicType.createU64Type()),
+      new ProductTypeElement("scheduledAt", AlgebraicType.createScheduleAtType()),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: RepeatingTestArg): void {
-    const converted = {
-      prev_time: value.prevTime,
-      scheduled_id: value.scheduledId,
-      scheduled_at: value.scheduledAt,
-    };
-    RepeatingTestArg.getAlgebraicType().serialize(writer, converted);
+    RepeatingTestArg.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): RepeatingTestArg {
-    const value = RepeatingTestArg.getAlgebraicType().deserialize(reader);
-    return {
-      prevTime: value.prev_time,
-      scheduledId: value.scheduled_id,
-      scheduledAt: value.scheduled_at,
-    };
+    return RepeatingTestArg.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -2163,6 +2116,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
 // @ts-ignore
@@ -2187,17 +2142,11 @@ export namespace RepeatingTest {
   }
 
   export function serialize(writer: BinaryWriter, value: RepeatingTest): void {
-    const converted = {
-      arg: value.arg,
-    };
-    RepeatingTest.getAlgebraicType().serialize(writer, converted);
+    RepeatingTest.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): RepeatingTest {
-    const value = RepeatingTest.getAlgebraicType().deserialize(reader);
-    return {
-      arg: value.arg,
-    };
+    return RepeatingTest.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -2240,6 +2189,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestA } from "./test_a_type";
 // @ts-ignore
@@ -2324,6 +2275,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type TestA = {
   x: number,
@@ -2348,21 +2301,11 @@ export namespace TestA {
   }
 
   export function serialize(writer: BinaryWriter, value: TestA): void {
-    const converted = {
-      x: value.x,
-      y: value.y,
-      z: value.z,
-    };
-    TestA.getAlgebraicType().serialize(writer, converted);
+    TestA.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): TestA {
-    const value = TestA.getAlgebraicType().deserialize(reader);
-    return {
-      x: value.x,
-      y: value.y,
-      z: value.z,
-    };
+    return TestA.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -2406,6 +2349,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type TestB = {
   foo: string,
@@ -2426,17 +2371,11 @@ export namespace TestB {
   }
 
   export function serialize(writer: BinaryWriter, value: TestB): void {
-    const converted = {
-      foo: value.foo,
-    };
-    TestB.getAlgebraicType().serialize(writer, converted);
+    TestB.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): TestB {
-    const value = TestB.getAlgebraicType().deserialize(reader);
-    return {
-      foo: value.foo,
-    };
+    return TestB.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -2480,6 +2419,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestD } from "./test_d_type";
 // @ts-ignore
@@ -2567,6 +2508,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 // @ts-ignore
 import { NamespaceTestC as __NamespaceTestC } from "./namespace_test_c_type";
@@ -2585,22 +2528,16 @@ export namespace TestD {
   */
   export function getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("test_c", AlgebraicType.createOptionType(__NamespaceTestC.getAlgebraicType())),
+      new ProductTypeElement("testC", AlgebraicType.createOptionType(__NamespaceTestC.getAlgebraicType())),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: TestD): void {
-    const converted = {
-      test_c: value.testC,
-    };
-    TestD.getAlgebraicType().serialize(writer, converted);
+    TestD.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): TestD {
-    const value = TestD.getAlgebraicType().deserialize(reader);
-    return {
-      testC: value.test_c,
-    };
+    return TestD.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -2644,6 +2581,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestE } from "./test_e_type";
 // @ts-ignore
@@ -2689,7 +2628,7 @@ export class TestETableHandle {
     // if such a row is present in the client cache.
     find: (col_val: bigint): TestE | undefined => {
       for (let row of this.tableCache.iter()) {
-        if (row.id === col_val) {
+        if (deepEqual(row.id, col_val)) {
           return row;
         }
       }
@@ -2758,6 +2697,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type TestE = {
   id: bigint,
@@ -2780,19 +2721,11 @@ export namespace TestE {
   }
 
   export function serialize(writer: BinaryWriter, value: TestE): void {
-    const converted = {
-      id: value.id,
-      name: value.name,
-    };
-    TestE.getAlgebraicType().serialize(writer, converted);
+    TestE.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): TestE {
-    const value = TestE.getAlgebraicType().deserialize(reader);
-    return {
-      id: value.id,
-      name: value.name,
-    };
+    return TestE.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -2836,6 +2769,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 import { TestFoobar } from "./test_foobar_type";
 // @ts-ignore
@@ -2923,6 +2858,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 // @ts-ignore
 import { Foobar as __Foobar } from "./foobar_type";
@@ -2946,17 +2883,11 @@ export namespace TestFoobar {
   }
 
   export function serialize(writer: BinaryWriter, value: TestFoobar): void {
-    const converted = {
-      field: value.field,
-    };
-    TestFoobar.getAlgebraicType().serialize(writer, converted);
+    TestFoobar.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): TestFoobar {
-    const value = TestFoobar.getAlgebraicType().deserialize(reader);
-    return {
-      field: value.field,
-    };
+    return TestFoobar.getAlgebraicType().deserialize(reader);
   }
 
 }
@@ -3000,6 +2931,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 
 // @ts-ignore
@@ -3036,23 +2969,11 @@ export namespace Test {
   }
 
   export function serialize(writer: BinaryWriter, value: Test): void {
-    const converted = {
-      arg: value.arg,
-      arg2: value.arg2,
-      arg3: value.arg3,
-      arg4: value.arg4,
-    };
-    Test.getAlgebraicType().serialize(writer, converted);
+    Test.getAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): Test {
-    const value = Test.getAlgebraicType().deserialize(reader);
-    return {
-      arg: value.arg,
-      arg2: value.arg2,
-      arg3: value.arg3,
-      arg4: value.arg4,
-    };
+    return Test.getAlgebraicType().deserialize(reader);
   }
 
 }
