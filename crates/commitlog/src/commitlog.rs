@@ -169,7 +169,6 @@ impl<R: Repo, T> Generic<R, T> {
 
     pub fn commits_from(&self, offset: u64) -> Commits<R> {
         let offsets = self.segment_offsets_from(offset);
-        let next_offset = offsets.first().cloned().unwrap_or(offset);
         let segments = Segments {
             offs: offsets.into_iter(),
             repo: self.repo.clone(),
@@ -178,7 +177,7 @@ impl<R: Repo, T> Generic<R, T> {
         Commits {
             inner: None,
             segments,
-            last_commit: CommitInfo::Initial { next_offset },
+            last_commit: CommitInfo::Initial { next_offset: offset },
             last_error: None,
         }
     }
@@ -468,6 +467,15 @@ impl CommitInfo {
             Self::LastSeen { tx_range, .. } => &tx_range.end,
         }
     }
+
+    fn offset_before_initial(&self, next_commit_offset: &u64) -> bool {
+        if let Self::Initial { next_offset: offset } = self {
+            if offset > next_commit_offset {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 pub struct Commits<R: Repo> {
@@ -496,8 +504,11 @@ impl<R: Repo> Commits<R> {
         // interesting.
         let prev_error = self.last_error.take();
 
+        // Skip entries before the initial commit.
+        if self.last_commit.offset_before_initial(&commit.min_tx_offset) {
+            self.next()
         // Same offset: ignore if duplicate (same crc), else report a "fork".
-        if self.last_commit.same_offset_as(&commit) {
+        } else if self.last_commit.same_offset_as(&commit) {
             if !self.last_commit.same_checksum_as(&commit) {
                 warn!(
                     "forked: commit={:?} last-error={:?} last-crc={:?}",
@@ -586,9 +597,10 @@ impl<R: Repo> Iterator for Commits<R> {
                             .segments
                             .repo
                             .get_offset_index(segment.min_tx_offset)
-                            .map(|index_file| segment.seek_to_segment(&index_file, next_offset))
+                            .map_err(Into::into)
+                            .and_then(|index_file| segment.seek_to_segment(&index_file, next_offset))
                             .inspect_err(|e| {
-                                warn!("commitlog offset index is not used: {e}");
+                                debug!("commitlog offset index is not used: {e}");
                             });
                     }
 

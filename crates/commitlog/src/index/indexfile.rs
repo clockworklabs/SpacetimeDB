@@ -245,7 +245,10 @@ pub struct IndexFile<Key: Into<u64> + From<u64>> {
 
 impl<Key: Into<u64> + From<u64>> IndexFile<Key> {
     pub fn open_index_file(path: &Path, offset: u64) -> io::Result<Self> {
-        let file = File::options().read(true).open(offset_index_file_path(path, offset))?;
+        let file = File::options()
+            .read(true)
+            .append(true)
+            .open(offset_index_file_path(path, offset))?;
         let mmap = unsafe { MmapMut::map_mut(&file)? };
 
         let mut inner = IndexFileMut {
