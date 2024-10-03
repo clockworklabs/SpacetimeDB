@@ -9,7 +9,7 @@ using SpacetimeDB;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 
-namespace SpacetimeDB.Types
+namespace SpacetimeDB.ClientApi
 {
 	[SpacetimeDB.Type]
 	[DataContract]

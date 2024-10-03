@@ -7,13 +7,13 @@
 using System;
 using SpacetimeDB;
 
-namespace SpacetimeDB.Types
+namespace SpacetimeDB.ClientApi
 {
 	[SpacetimeDB.Type]
 	public partial record ServerMessage : SpacetimeDB.TaggedEnum<(
-		SpacetimeDB.Types.InitialSubscription InitialSubscription,
-		SpacetimeDB.Types.TransactionUpdate TransactionUpdate,
-		SpacetimeDB.Types.IdentityToken IdentityToken,
-		SpacetimeDB.Types.OneOffQueryResponse OneOffQueryResponse
+		SpacetimeDB.ClientApi.InitialSubscription InitialSubscription,
+		SpacetimeDB.ClientApi.TransactionUpdate TransactionUpdate,
+		SpacetimeDB.ClientApi.IdentityToken IdentityToken,
+		SpacetimeDB.ClientApi.OneOffQueryResponse OneOffQueryResponse
 	)>;
 }

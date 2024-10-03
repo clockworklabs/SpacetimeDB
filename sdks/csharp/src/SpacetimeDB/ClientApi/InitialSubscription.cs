@@ -9,21 +9,21 @@ using SpacetimeDB;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 
-namespace SpacetimeDB.Types
+namespace SpacetimeDB.ClientApi
 {
 	[SpacetimeDB.Type]
 	[DataContract]
 	public partial class InitialSubscription
 	{
 		[DataMember(Name = "database_update")]
-		public SpacetimeDB.Types.DatabaseUpdate DatabaseUpdate;
+		public SpacetimeDB.ClientApi.DatabaseUpdate DatabaseUpdate;
 		[DataMember(Name = "request_id")]
 		public uint RequestId;
 		[DataMember(Name = "total_host_execution_duration_micros")]
 		public ulong TotalHostExecutionDurationMicros;
 
 		public InitialSubscription(
-			SpacetimeDB.Types.DatabaseUpdate DatabaseUpdate,
+			SpacetimeDB.ClientApi.DatabaseUpdate DatabaseUpdate,
 			uint RequestId,
 			ulong TotalHostExecutionDurationMicros
 		)

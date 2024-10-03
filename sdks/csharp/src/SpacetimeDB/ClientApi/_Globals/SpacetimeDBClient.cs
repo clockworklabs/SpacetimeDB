@@ -9,7 +9,7 @@ using SpacetimeDB;
 using SpacetimeDB.ClientApi;
 using System.Collections.Generic;
 
-namespace SpacetimeDB.Types
+namespace SpacetimeDB.ClientApi
 {
 	public sealed class RemoteTables
 	{

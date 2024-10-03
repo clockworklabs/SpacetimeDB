@@ -7,11 +7,11 @@
 using System;
 using SpacetimeDB;
 
-namespace SpacetimeDB.Types
+namespace SpacetimeDB.ClientApi
 {
 	[SpacetimeDB.Type]
 	public partial record UpdateStatus : SpacetimeDB.TaggedEnum<(
-		SpacetimeDB.Types.DatabaseUpdate Committed,
+		SpacetimeDB.ClientApi.DatabaseUpdate Committed,
 		string Failed,
 		SpacetimeDB.Unit OutOfEnergy
 	)>;

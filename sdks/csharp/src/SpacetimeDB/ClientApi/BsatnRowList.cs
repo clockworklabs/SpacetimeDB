@@ -9,19 +9,19 @@ using SpacetimeDB;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 
-namespace SpacetimeDB.Types
+namespace SpacetimeDB.ClientApi
 {
 	[SpacetimeDB.Type]
 	[DataContract]
 	public partial class BsatnRowList
 	{
 		[DataMember(Name = "size_hint")]
-		public SpacetimeDB.Types.RowSizeHint SizeHint;
+		public SpacetimeDB.ClientApi.RowSizeHint SizeHint;
 		[DataMember(Name = "rows_data")]
 		public System.Collections.Generic.List<byte> RowsData;
 
 		public BsatnRowList(
-			SpacetimeDB.Types.RowSizeHint SizeHint,
+			SpacetimeDB.ClientApi.RowSizeHint SizeHint,
 			System.Collections.Generic.List<byte> RowsData
 		)
 		{

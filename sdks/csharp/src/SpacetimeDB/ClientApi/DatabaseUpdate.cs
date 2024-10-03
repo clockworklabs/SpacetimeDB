@@ -9,17 +9,17 @@ using SpacetimeDB;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 
-namespace SpacetimeDB.Types
+namespace SpacetimeDB.ClientApi
 {
 	[SpacetimeDB.Type]
 	[DataContract]
 	public partial class DatabaseUpdate
 	{
 		[DataMember(Name = "tables")]
-		public System.Collections.Generic.List<SpacetimeDB.Types.TableUpdate> Tables;
+		public System.Collections.Generic.List<SpacetimeDB.ClientApi.TableUpdate> Tables;
 
 		public DatabaseUpdate(
-			System.Collections.Generic.List<SpacetimeDB.Types.TableUpdate> Tables
+			System.Collections.Generic.List<SpacetimeDB.ClientApi.TableUpdate> Tables
 		)
 		{
 			this.Tables = Tables;

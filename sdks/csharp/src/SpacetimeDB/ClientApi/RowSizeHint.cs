@@ -7,7 +7,7 @@
 using System;
 using SpacetimeDB;
 
-namespace SpacetimeDB.Types
+namespace SpacetimeDB.ClientApi
 {
 	[SpacetimeDB.Type]
 	public partial record RowSizeHint : SpacetimeDB.TaggedEnum<(

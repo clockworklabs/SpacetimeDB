@@ -9,7 +9,7 @@ using SpacetimeDB;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 
-namespace SpacetimeDB.Types
+namespace SpacetimeDB.ClientApi
 {
 	[SpacetimeDB.Type]
 	[DataContract]
@@ -18,11 +18,11 @@ namespace SpacetimeDB.Types
 		[DataMember(Name = "table_name")]
 		public string TableName;
 		[DataMember(Name = "rows")]
-		public SpacetimeDB.Types.BsatnRowList Rows;
+		public SpacetimeDB.ClientApi.BsatnRowList Rows;
 
 		public OneOffTable(
 			string TableName,
-			SpacetimeDB.Types.BsatnRowList Rows
+			SpacetimeDB.ClientApi.BsatnRowList Rows
 		)
 		{
 			this.TableName = TableName;

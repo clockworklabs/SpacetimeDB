@@ -9,7 +9,7 @@ using SpacetimeDB;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 
-namespace SpacetimeDB.Types
+namespace SpacetimeDB.ClientApi
 {
 	[SpacetimeDB.Type]
 	[DataContract]
@@ -20,14 +20,14 @@ namespace SpacetimeDB.Types
 		[DataMember(Name = "error")]
 		public string? Error;
 		[DataMember(Name = "tables")]
-		public System.Collections.Generic.List<SpacetimeDB.Types.OneOffTable> Tables;
+		public System.Collections.Generic.List<SpacetimeDB.ClientApi.OneOffTable> Tables;
 		[DataMember(Name = "total_host_execution_duration_micros")]
 		public ulong TotalHostExecutionDurationMicros;
 
 		public OneOffQueryResponse(
 			System.Collections.Generic.List<byte> MessageId,
 			string? Error,
-			System.Collections.Generic.List<SpacetimeDB.Types.OneOffTable> Tables,
+			System.Collections.Generic.List<SpacetimeDB.ClientApi.OneOffTable> Tables,
 			ulong TotalHostExecutionDurationMicros
 		)
 		{
