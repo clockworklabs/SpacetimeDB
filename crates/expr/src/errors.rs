@@ -2,7 +2,7 @@ use spacetimedb_sql_parser::{ast::BinOp, parser::errors::SqlParseError};
 use thiserror::Error;
 
 use super::{
-    stmt::InvalidVar,
+    statement::InvalidVar,
     ty::{InvalidTypeId, TypeWithCtx},
 };
 
