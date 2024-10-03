@@ -10,34 +10,10 @@ using SpacetimeDB;
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
-	public partial class CircleDecayArgsStruct : IReducerArgs
+	public partial class CircleDecay : IReducerArgs
 	{
-		ReducerType IReducerArgs.ReducerType => ReducerType.CircleDecay;
-		string IReducerArgsBase.ReducerName => "circle_decay";
-		bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.OnCircleDecay(reducerEvent, this);
+		string IReducerArgs.ReducerName => "circle_decay";
 
 		public SpacetimeDB.Types.CircleDecayTimer Timer = new();
 	}
-
-	public static partial class Reducer
-	{
-		public delegate void CircleDecayHandler(ReducerEvent reducerEvent, SpacetimeDB.Types.CircleDecayTimer timer);
-		public static event CircleDecayHandler? OnCircleDecayEvent;
-
-		public static void CircleDecay(SpacetimeDB.Types.CircleDecayTimer timer)
-		{
-			SpacetimeDBClient.instance.InternalCallReducer(new CircleDecayArgsStruct { Timer = timer });
-		}
-
-		public static bool OnCircleDecay(ReducerEvent reducerEvent, CircleDecayArgsStruct args)
-		{
-			if (OnCircleDecayEvent == null) return false;
-			OnCircleDecayEvent(
-				reducerEvent,
-				args.Timer
-			);
-			return true;
-		}
-	}
-
 }

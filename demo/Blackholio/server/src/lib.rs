@@ -175,6 +175,7 @@ pub fn create_player(ctx: &ReducerContext, name: String) -> Result<(), String> {
 
 #[spacetimedb::reducer]
 pub fn respawn(ctx: &ReducerContext) -> Result<(), String> {
+
     let player = ctx.db.player().identity().find(&ctx.sender).ok_or("No such player found")?;
     spawn_circle(ctx, player.player_id, ctx.timestamp)?;
     Ok(())
@@ -241,7 +242,7 @@ fn mass_to_max_move_speed(mass: u32) -> f32 {
 
 #[spacetimedb::reducer]
 pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Result<(), String> {
-    let span = spacetimedb::log_stopwatch::LogStopwatch::new("tick");
+    // let span = spacetimedb::log_stopwatch::LogStopwatch::new("tick");
     let world_size = ctx.db.config().id().find(0).ok_or("Config not found")?.world_size;
     for circle in ctx.db.circle().iter() {
         let Some(mut circle_entity) = ctx.db.entity().id().find(&circle.entity_id) else {
@@ -286,7 +287,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         ctx.db.entity().id().update(circle_entity);
     }
 
-    span.end();
+    // span.end();
     Ok(())
 }
 
@@ -308,6 +309,8 @@ pub fn player_split(ctx: &ReducerContext) -> Result<(), String> {
             ctx.db.entity().id().update(circle_entity);
         }
     }
+
+    log::warn!("Player split!");
 
     Ok(())
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 using Unity.VisualScripting;
@@ -17,9 +18,9 @@ public class FoodController : MonoBehaviour
     public void Spawn(uint entityId)
     {
         this.entityId = entityId;
-        Food.OnDelete += OnDelete;
-
-        var entity = Entity.FindById(entityId);
+        GameManager.conn.RemoteTables.food.OnDelete += OnDelete;
+        
+        var entity = GameManager.conn.RemoteTables.entity.FindById(entityId);
         var position = new UnityEngine.Vector2
         {
             x = entity.Position.X,
@@ -38,10 +39,10 @@ public class FoodController : MonoBehaviour
 
     private void OnDestroy()
     {
-        Food.OnDelete -= OnDelete;
+        GameManager.conn.RemoteTables.food.OnDelete -= OnDelete;
     }
 
-    private void OnDelete(Food food, ReducerEvent e)
+    private void OnDelete(EventContext context, Food food)
     {
         if (food.EntityId == entityId)
         {

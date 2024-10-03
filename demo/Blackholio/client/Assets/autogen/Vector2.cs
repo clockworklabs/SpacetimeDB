@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
@@ -20,6 +19,19 @@ namespace SpacetimeDB.Types
 		public float X;
 		[DataMember(Name = "y")]
 		public float Y;
+
+		public Vector2(
+			float X,
+			float Y
+		)
+		{
+			this.X = X;
+			this.Y = Y;
+		}
+
+		public Vector2()
+		{
+		}
 
 	}
 }

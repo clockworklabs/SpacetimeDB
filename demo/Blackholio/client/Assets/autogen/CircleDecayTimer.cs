@@ -7,47 +7,32 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class CircleDecayTimer : SpacetimeDB.DatabaseTableWithPrimaryKey<CircleDecayTimer, SpacetimeDB.Types.ReducerEvent>
+	public partial class CircleDecayTimer : IDatabaseRow
 	{
 		[DataMember(Name = "scheduled_id")]
 		public ulong ScheduledId;
 		[DataMember(Name = "scheduled_at")]
-		public SpacetimeDB.Types.ScheduleAt ScheduledAt = null!;
+		public SpacetimeDB.ScheduleAt ScheduledAt;
 
-		private static Dictionary<ulong, CircleDecayTimer> ScheduledId_Index = new(16);
-
-		public override void InternalOnValueInserted()
+		public CircleDecayTimer(
+			ulong ScheduledId,
+			SpacetimeDB.ScheduleAt ScheduledAt
+		)
 		{
-			ScheduledId_Index[ScheduledId] = this;
+			this.ScheduledId = ScheduledId;
+			this.ScheduledAt = ScheduledAt;
 		}
 
-		public override void InternalOnValueDeleted()
+		public CircleDecayTimer()
 		{
-			ScheduledId_Index.Remove(ScheduledId);
+			this.ScheduledAt = null!;
 		}
-
-		public static CircleDecayTimer? FindByScheduledId(ulong value)
-		{
-			ScheduledId_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static IEnumerable<CircleDecayTimer> FilterByScheduledId(ulong value)
-		{
-			if (FindByScheduledId(value) is {} found)
-			{
-				yield return found;
-			}
-		}
-
-		public override object GetPrimaryKeyValue() => ScheduledId;
 
 	}
 }

@@ -23,7 +23,7 @@ public class PlayerController : MonoBehaviour
     public void Spawn(Identity identity)
     {
         this.identity = identity;
-        playerId = Player.FindByIdentity(identity).PlayerId;
+        playerId = GameManager.conn.RemoteTables.player.FindByIdentity(identity)!.PlayerId;
         if (IsLocalPlayer())
         {
             Local = this;
@@ -59,7 +59,7 @@ public class PlayerController : MonoBehaviour
         }
 
         // If the player has no more circles remaining, show the death screen
-        if (IsLocalPlayer() && !Circle.FilterByPlayerId(playerId).Any())
+        if (IsLocalPlayer() && GameManager.conn.RemoteTables.circle.FindByEntityId(playerId) == null)
         {
             GameManager.instance.deathScreen.SetActive(true);
         }
@@ -82,7 +82,7 @@ public class PlayerController : MonoBehaviour
         uint mass = 0;
         foreach (var circle in circlesByEntityId.Values)
         {
-            var entity = Entity.FindById(circle.GetEntityId());
+            var entity = GameManager.conn.RemoteTables.entity.FindById(circle.GetEntityId());
             // If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
             if (entity == null)
             {
@@ -95,7 +95,7 @@ public class PlayerController : MonoBehaviour
         return mass;
     }
 
-    public string GetUsername() => Player.FindByIdentity(identity).Name;
+    public string GetUsername() => GameManager.conn.RemoteTables.player.FindByIdentity(identity)!.Name;
 
     private void OnGUI()
     {
@@ -135,7 +135,7 @@ public class PlayerController : MonoBehaviour
     {
         if (IsLocalPlayer() && Input.GetKeyDown(KeyCode.Space))
         {
-            Reducer.PlayerSplit();
+            GameManager.conn.RemoteReducers.PlayerSplit();
             Debug.LogWarning("Player Split!");
         }
         
@@ -170,7 +170,7 @@ public class PlayerController : MonoBehaviour
         };
         var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
         var magnitude = Mathf.Clamp01(direction.magnitude);
-        Reducer.UpdatePlayerInput(new Vector2
+        GameManager.conn.RemoteReducers.UpdatePlayerInput(new Vector2
         {
             X = direction.x,
             Y = direction.y,

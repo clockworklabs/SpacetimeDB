@@ -7,52 +7,31 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class Config : SpacetimeDB.DatabaseTableWithPrimaryKey<Config, SpacetimeDB.Types.ReducerEvent>
+	public partial class Config : IDatabaseRow
 	{
 		[DataMember(Name = "id")]
 		public uint Id;
 		[DataMember(Name = "world_size")]
 		public ulong WorldSize;
 
-		private static Dictionary<uint, Config> Id_Index = new(16);
-
-		public override void InternalOnValueInserted()
+		public Config(
+			uint Id,
+			ulong WorldSize
+		)
 		{
-			Id_Index[Id] = this;
+			this.Id = Id;
+			this.WorldSize = WorldSize;
 		}
 
-		public override void InternalOnValueDeleted()
+		public Config()
 		{
-			Id_Index.Remove(Id);
 		}
-
-		public static Config? FindById(uint value)
-		{
-			Id_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static IEnumerable<Config> FilterById(uint value)
-		{
-			if (FindById(value) is {} found)
-			{
-				yield return found;
-			}
-		}
-
-		public static IEnumerable<Config> FilterByWorldSize(ulong value)
-		{
-			return Query(x => x.WorldSize == value);
-		}
-
-		public override object GetPrimaryKeyValue() => Id;
 
 	}
 }

@@ -10,31 +10,8 @@ using SpacetimeDB;
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
-	public partial class PlayerSplitArgsStruct : IReducerArgs
+	public partial class PlayerSplit : IReducerArgs
 	{
-		ReducerType IReducerArgs.ReducerType => ReducerType.PlayerSplit;
-		string IReducerArgsBase.ReducerName => "player_split";
-		bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.OnPlayerSplit(reducerEvent, this);
+		string IReducerArgs.ReducerName => "player_split";
 	}
-
-	public static partial class Reducer
-	{
-		public delegate void PlayerSplitHandler(ReducerEvent reducerEvent);
-		public static event PlayerSplitHandler? OnPlayerSplitEvent;
-
-		public static void PlayerSplit()
-		{
-			SpacetimeDBClient.instance.InternalCallReducer(new PlayerSplitArgsStruct {  });
-		}
-
-		public static bool OnPlayerSplit(ReducerEvent reducerEvent, PlayerSplitArgsStruct args)
-		{
-			if (OnPlayerSplitEvent == null) return false;
-			OnPlayerSplitEvent(
-				reducerEvent
-			);
-			return true;
-		}
-	}
-
 }

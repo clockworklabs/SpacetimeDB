@@ -10,36 +10,11 @@ using SpacetimeDB;
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
-	public partial class UpdatePlayerInputArgsStruct : IReducerArgs
+	public partial class UpdatePlayerInput : IReducerArgs
 	{
-		ReducerType IReducerArgs.ReducerType => ReducerType.UpdatePlayerInput;
-		string IReducerArgsBase.ReducerName => "update_player_input";
-		bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.OnUpdatePlayerInput(reducerEvent, this);
+		string IReducerArgs.ReducerName => "update_player_input";
 
 		public SpacetimeDB.Types.Vector2 Direction = new();
 		public float Magnitude;
 	}
-
-	public static partial class Reducer
-	{
-		public delegate void UpdatePlayerInputHandler(ReducerEvent reducerEvent, SpacetimeDB.Types.Vector2 direction, float magnitude);
-		public static event UpdatePlayerInputHandler? OnUpdatePlayerInputEvent;
-
-		public static void UpdatePlayerInput(SpacetimeDB.Types.Vector2 direction, float magnitude)
-		{
-			SpacetimeDBClient.instance.InternalCallReducer(new UpdatePlayerInputArgsStruct { Direction = direction, Magnitude = magnitude });
-		}
-
-		public static bool OnUpdatePlayerInput(ReducerEvent reducerEvent, UpdatePlayerInputArgsStruct args)
-		{
-			if (OnUpdatePlayerInputEvent == null) return false;
-			OnUpdatePlayerInputEvent(
-				reducerEvent,
-				args.Direction,
-				args.Magnitude
-			);
-			return true;
-		}
-	}
-
 }
