@@ -17,7 +17,6 @@ public class UIUsernameChooser : MonoBehaviour
     {
         GameManager.conn.RemoteTables.player.OnInsert += (ctx, newPlayer) =>
         {
-            Debug.Log("Start - Checking identity");
             if (newPlayer.Identity == GameManager.localIdentity)
             {
                 // We have a player

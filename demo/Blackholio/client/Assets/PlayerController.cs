@@ -136,7 +136,6 @@ public class PlayerController : MonoBehaviour
         if (IsLocalPlayer() && Input.GetKeyDown(KeyCode.Space))
         {
             GameManager.conn.RemoteReducers.PlayerSplit();
-            Debug.LogWarning("Player Split!");
         }
         
         if (IsLocalPlayer() && previousCameraSize.HasValue)
