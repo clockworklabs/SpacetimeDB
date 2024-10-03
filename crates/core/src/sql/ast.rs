@@ -480,7 +480,7 @@ pub struct SchemaViewer<'a, T> {
 }
 
 impl<T: TableSchemaView> SchemaView for SchemaViewer<'_, T> {
-    fn schema(&self, name: &str, _: bool) -> Option<Arc<TableSchema>> {
+    fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
         let name = name.to_owned().into_boxed_str();
         let schema = self
             .tx

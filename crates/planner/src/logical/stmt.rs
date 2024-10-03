@@ -62,21 +62,21 @@ pub struct ShowVar {
 /// Type check an INSERT statement
 pub fn type_insert(ctx: &mut TyCtx, insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<TableInsert> {
     let SqlInsert {
-        table: SqlIdent { name, case_sensitive },
+        table: SqlIdent(table_name),
         fields,
         values,
     } = insert;
 
     let schema = tx
-        .schema(&name, case_sensitive)
-        .ok_or_else(|| Unresolved::table(&name))
+        .schema(&table_name)
+        .ok_or_else(|| Unresolved::table(&table_name))
         .map_err(TypingError::from)?;
 
     // Expect n fields
     let n = schema.columns().len();
     if fields.len() != schema.columns().len() {
         return Err(TypingError::from(InsertFieldsError {
-            table: name,
+            table: table_name,
             nfields: fields.len(),
             ncols: schema.columns().len(),
         }));
@@ -93,7 +93,7 @@ pub fn type_insert(ctx: &mut TyCtx, insert: SqlInsert, tx: &impl SchemaView) -> 
         // Expect each row to have n values
         if row.len() != n {
             return Err(TypingError::from(InsertValuesError {
-                table: name,
+                table: table_name,
                 values: row.len(),
                 fields: n,
             }));
@@ -129,15 +129,15 @@ pub fn type_insert(ctx: &mut TyCtx, insert: SqlInsert, tx: &impl SchemaView) -> 
 /// Type check a DELETE statement
 pub fn type_delete(ctx: &mut TyCtx, delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<TableDelete> {
     let SqlDelete {
-        table: SqlIdent { name, case_sensitive },
+        table: SqlIdent(table_name),
         filter,
     } = delete;
     let schema = tx
-        .schema(&name, case_sensitive)
-        .ok_or_else(|| Unresolved::table(&name))
+        .schema(&table_name)
+        .ok_or_else(|| Unresolved::table(&table_name))
         .map_err(TypingError::from)?;
 
-    let table_name = ctx.gen_symbol(name);
+    let table_name = ctx.gen_symbol(table_name);
 
     let mut types = Vec::new();
     let mut env = TyEnv::default();
@@ -164,13 +164,13 @@ pub fn type_delete(ctx: &mut TyCtx, delete: SqlDelete, tx: &impl SchemaView) -> 
 /// Type check an UPDATE statement
 pub fn type_update(ctx: &mut TyCtx, update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<TableUpdate> {
     let SqlUpdate {
-        table,
+        table: SqlIdent(table_name),
         assignments,
         filter,
     } = update;
     let schema = tx
-        .schema(&table.name, table.case_sensitive)
-        .ok_or_else(|| Unresolved::table(&table.name))
+        .schema(&table_name)
+        .ok_or_else(|| Unresolved::table(&table_name))
         .map_err(TypingError::from)?;
     let mut env = TyEnv::default();
     for ColumnSchema { col_name, col_type, .. } in schema.columns() {
@@ -179,16 +179,16 @@ pub fn type_update(ctx: &mut TyCtx, update: SqlUpdate, tx: &impl SchemaView) -> 
         env.add(name, id);
     }
     let mut values = Vec::new();
-    for SqlSet(field, lit) in assignments {
+    for SqlSet(SqlIdent(field), lit) in assignments {
         let col_id = schema
-            .get_column_id_by_name(&field.name)
-            .ok_or_else(|| Unresolved::field(&table.name, &field.name))?;
+            .get_column_id_by_name(&field)
+            .ok_or_else(|| Unresolved::field(&table_name, &field))?;
         let field_name = ctx
-            .get_symbol(&field.name)
-            .ok_or_else(|| Unresolved::field(&table.name, &field.name))?;
+            .get_symbol(&field)
+            .ok_or_else(|| Unresolved::field(&table_name, &field))?;
         let ty = env
             .find(field_name)
-            .ok_or_else(|| Unresolved::field(&table.name, &field.name))?;
+            .ok_or_else(|| Unresolved::field(&table_name, &field))?;
         match (lit, ty) {
             (SqlLiteral::Bool(v), TyId::BOOL) => {
                 values.push((col_id, AlgebraicValue::Bool(v)));
@@ -231,7 +231,7 @@ fn is_var_valid(var: &str) -> bool {
 }
 
 pub fn type_set(ctx: &TyCtx, set: SqlSet) -> TypingResult<SetVar> {
-    let SqlSet(SqlIdent { name, .. }, lit) = set;
+    let SqlSet(SqlIdent(name), lit) = set;
     if !is_var_valid(&name) {
         return Err(InvalidVar { name }.into());
     }
@@ -247,7 +247,7 @@ pub fn type_set(ctx: &TyCtx, set: SqlSet) -> TypingResult<SetVar> {
 }
 
 pub fn type_show(show: SqlShow) -> TypingResult<ShowVar> {
-    let SqlShow(SqlIdent { name, .. }) = show;
+    let SqlShow(SqlIdent(name)) = show;
     if !is_var_valid(&name) {
         return Err(InvalidVar { name }.into());
     }

@@ -61,31 +61,15 @@ pub enum SqlExpr {
     Bin(Box<SqlExpr>, Box<SqlExpr>, BinOp),
 }
 
-/// A SQL identifier or named reference
+/// A SQL identifier or named reference.
+/// Currently case sensitive.
 #[derive(Debug, Clone)]
-pub struct SqlIdent {
-    pub name: String,
-    pub case_sensitive: bool,
-}
+pub struct SqlIdent(pub String);
 
+/// Case insensitivity should be implemented here if at all
 impl From<Ident> for SqlIdent {
-    fn from(value: Ident) -> Self {
-        match value {
-            Ident {
-                value: name,
-                quote_style: None,
-            } => SqlIdent {
-                name,
-                case_sensitive: false,
-            },
-            Ident {
-                value: name,
-                quote_style: Some(_),
-            } => SqlIdent {
-                name,
-                case_sensitive: true,
-            },
-        }
+    fn from(Ident { value, .. }: Ident) -> Self {
+        SqlIdent(value)
     }
 }
 

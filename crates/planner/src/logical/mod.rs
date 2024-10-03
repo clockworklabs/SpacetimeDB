@@ -4,7 +4,7 @@ use bind::TypingResult;
 use errors::{DuplicateName, InvalidLiteral, InvalidWildcard, UnexpectedType, Unresolved};
 use expr::{Expr, Let, RelExpr};
 use spacetimedb_lib::{from_hex_pad, Address, AlgebraicType, AlgebraicValue, Identity};
-use spacetimedb_sql_parser::ast::{self, ProjectElem, ProjectExpr, SqlExpr, SqlLiteral};
+use spacetimedb_sql_parser::ast::{self, ProjectElem, ProjectExpr, SqlExpr, SqlIdent, SqlLiteral};
 use ty::{Symbol, TyCtx, TyEnv, TyId, Type, TypeWithCtx};
 
 pub mod bind;
@@ -71,9 +71,9 @@ pub(crate) fn type_proj(
             }
             Ok(input)
         }
-        ast::Project::Star(Some(var)) => {
+        ast::Project::Star(Some(SqlIdent(var))) => {
             // Get the symbol for this variable
-            let name = ctx.get_symbol(&var.name).ok_or_else(|| Unresolved::var(&var.name))?;
+            let name = ctx.get_symbol(&var).ok_or_else(|| Unresolved::var(&var))?;
 
             match alias {
                 Some(alias) if alias == name => {
@@ -101,7 +101,7 @@ pub(crate) fn type_proj(
                         .ty(ctx)?
                         .expect_relation()?
                         .find(name)
-                        .ok_or_else(|| Unresolved::var(&var.name))?;
+                        .ok_or_else(|| Unresolved::var(&var))?;
 
                     // Check that * is applied to a row type
                     ctx.try_resolve(ty)?
@@ -143,37 +143,37 @@ pub(crate) fn type_proj(
 
             for elem in elems {
                 match elem {
-                    ProjectElem(ProjectExpr::Var(field), None) => {
-                        let name = ctx.gen_symbol(&field.name);
+                    ProjectElem(ProjectExpr::Var(SqlIdent(field)), None) => {
+                        let name = ctx.gen_symbol(&field);
                         if !names.insert(name) {
-                            return Err(DuplicateName(field.name).into());
+                            return Err(DuplicateName(field).into());
+                        }
+                        let expr = type_expr(ctx, &tenv, SqlExpr::Var(SqlIdent(field)), None)?;
+                        field_types.push((name, expr.ty_id()));
+                        field_exprs.push((name, expr));
+                    }
+                    ProjectElem(ProjectExpr::Var(field), Some(SqlIdent(alias))) => {
+                        let name = ctx.gen_symbol(&alias);
+                        if !names.insert(name) {
+                            return Err(DuplicateName(alias).into());
                         }
                         let expr = type_expr(ctx, &tenv, SqlExpr::Var(field), None)?;
                         field_types.push((name, expr.ty_id()));
                         field_exprs.push((name, expr));
                     }
-                    ProjectElem(ProjectExpr::Var(field), Some(alias)) => {
-                        let name = ctx.gen_symbol(&alias.name);
+                    ProjectElem(ProjectExpr::Field(table, SqlIdent(field)), None) => {
+                        let name = ctx.gen_symbol(&field);
                         if !names.insert(name) {
-                            return Err(DuplicateName(alias.name).into());
+                            return Err(DuplicateName(field).into());
                         }
-                        let expr = type_expr(ctx, &tenv, SqlExpr::Var(field), None)?;
+                        let expr = type_expr(ctx, &tenv, SqlExpr::Field(table, SqlIdent(field)), None)?;
                         field_types.push((name, expr.ty_id()));
                         field_exprs.push((name, expr));
                     }
-                    ProjectElem(ProjectExpr::Field(table, field), None) => {
-                        let name = ctx.gen_symbol(&field.name);
+                    ProjectElem(ProjectExpr::Field(table, field), Some(SqlIdent(alias))) => {
+                        let name = ctx.gen_symbol(&alias);
                         if !names.insert(name) {
-                            return Err(DuplicateName(field.name).into());
-                        }
-                        let expr = type_expr(ctx, &tenv, SqlExpr::Field(table, field), None)?;
-                        field_types.push((name, expr.ty_id()));
-                        field_exprs.push((name, expr));
-                    }
-                    ProjectElem(ProjectExpr::Field(table, field), Some(alias)) => {
-                        let name = ctx.gen_symbol(&alias.name);
-                        if !names.insert(name) {
-                            return Err(DuplicateName(alias.name).into());
+                            return Err(DuplicateName(alias).into());
                         }
                         let expr = type_expr(ctx, &tenv, SqlExpr::Field(table, field), None)?;
                         field_types.push((name, expr.ty_id()));
@@ -218,52 +218,44 @@ pub(crate) fn type_expr(ctx: &TyCtx, vars: &TyEnv, expr: SqlExpr, expected: Opti
             let v = parse(v, t)?;
             Ok(Expr::Lit(v, id))
         }
-        (SqlExpr::Var(var), None) => {
+        (SqlExpr::Var(SqlIdent(var)), None) => {
             // Is this variable in scope?
-            let var_name = ctx.get_symbol(&var.name).ok_or_else(|| Unresolved::var(&var.name))?;
-            let var_type = vars.find(var_name).ok_or_else(|| Unresolved::var(&var.name))?;
+            let var_name = ctx.get_symbol(&var).ok_or_else(|| Unresolved::var(&var))?;
+            let var_type = vars.find(var_name).ok_or_else(|| Unresolved::var(&var))?;
             Ok(Expr::Var(var_name, var_type))
         }
-        (SqlExpr::Var(var), Some(id)) => {
+        (SqlExpr::Var(SqlIdent(var)), Some(id)) => {
             // Is this variable in scope?
-            let var_name = ctx.get_symbol(&var.name).ok_or_else(|| Unresolved::var(&var.name))?;
-            let var_type = vars.find(var_name).ok_or_else(|| Unresolved::var(&var.name))?;
+            let var_name = ctx.get_symbol(&var).ok_or_else(|| Unresolved::var(&var))?;
+            let var_type = vars.find(var_name).ok_or_else(|| Unresolved::var(&var))?;
             // Is it the correct type?
             assert_eq_types(ctx, var_type, id)?;
             Ok(Expr::Var(var_name, var_type))
         }
-        (SqlExpr::Field(table, field), None) => {
+        (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), None) => {
             // Is the table variable in scope?
-            let table_name = ctx
-                .get_symbol(&table.name)
-                .ok_or_else(|| Unresolved::var(&table.name))?;
-            let field_name = ctx
-                .get_symbol(&field.name)
-                .ok_or_else(|| Unresolved::var(&field.name))?;
-            let table_type = vars.find(table_name).ok_or_else(|| Unresolved::var(&table.name))?;
+            let table_name = ctx.get_symbol(&table).ok_or_else(|| Unresolved::var(&table))?;
+            let field_name = ctx.get_symbol(&field).ok_or_else(|| Unresolved::var(&field))?;
+            let table_type = vars.find(table_name).ok_or_else(|| Unresolved::var(&table))?;
             // Is it a row type, and if so, does it have this field?
             let (i, field_type) = ctx
                 .try_resolve(table_type)?
                 .expect_relation()?
                 .find(field_name)
-                .ok_or_else(|| Unresolved::field(&table.name, &field.name))?;
+                .ok_or_else(|| Unresolved::field(&table, &field))?;
             Ok(Expr::Field(Box::new(Expr::Var(table_name, table_type)), i, field_type))
         }
-        (SqlExpr::Field(table, field), Some(id)) => {
+        (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), Some(id)) => {
             // Is the table variable in scope?
-            let table_name = ctx
-                .get_symbol(&table.name)
-                .ok_or_else(|| Unresolved::var(&table.name))?;
-            let field_name = ctx
-                .get_symbol(&field.name)
-                .ok_or_else(|| Unresolved::var(&field.name))?;
-            let table_type = vars.find(table_name).ok_or_else(|| Unresolved::var(&table.name))?;
+            let table_name = ctx.get_symbol(&table).ok_or_else(|| Unresolved::var(&table))?;
+            let field_name = ctx.get_symbol(&field).ok_or_else(|| Unresolved::var(&field))?;
+            let table_type = vars.find(table_name).ok_or_else(|| Unresolved::var(&table))?;
             // Is it a row type, and if so, does it have this field?
             let (i, field_type) = ctx
                 .try_resolve(table_type)?
                 .expect_relation()?
                 .find(field_name)
-                .ok_or_else(|| Unresolved::field(&table.name, &field.name))?;
+                .ok_or_else(|| Unresolved::field(&table, &field))?;
             // Is the field type correct?
             assert_eq_types(ctx, field_type, id)?;
             Ok(Expr::Field(Box::new(Expr::Var(table_name, table_type)), i, field_type))
