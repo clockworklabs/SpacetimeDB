@@ -737,15 +737,15 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
     );
     indented_block(&mut output, |output| {
         writeln!(output, "public readonly RemoteReducers Reducers;");
-        writeln!(output, "public readonly Event<Reducer> Reducer;");
+        writeln!(output, "public readonly Event<Reducer> Event;");
         writeln!(output);
         writeln!(
             output,
-            "internal EventContext(DbConnection conn, Event<Reducer> reducer) : base(conn.Db)"
+            "internal EventContext(DbConnection conn, Event<Reducer> reducerEvent) : base(conn.Db)"
         );
         indented_block(output, |output| {
             writeln!(output, "Reducers = conn.Reducers;");
-            writeln!(output, "Reducer = reducer;");
+            writeln!(output, "Event = reducerEvent;");
         });
     });
     writeln!(output);

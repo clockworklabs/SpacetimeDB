@@ -989,12 +989,12 @@ namespace SpacetimeDB
 	public partial record EventContext : DbContext<RemoteTables>, IEventContext
 	{
 		public readonly RemoteReducers Reducers;
-		public readonly Event<Reducer> Reducer;
+		public readonly Event<Reducer> Event;
 
-		internal EventContext(DbConnection conn, Event<Reducer> reducer) : base(conn.Db)
+		internal EventContext(DbConnection conn, Event<Reducer> reducerEvent) : base(conn.Db)
 		{
 			Reducers = conn.Reducers;
-			Reducer = reducer;
+			Event = reducerEvent;
 		}
 	}
 
