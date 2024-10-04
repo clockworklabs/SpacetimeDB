@@ -63,10 +63,9 @@ partial struct TestIncompatibleSchedule : SpacetimeDB.Internal.ITable<TestIncomp
                     Constraints:
                     [
                         new(
-                            nameof(SpacetimeDB.Local.TestIncompatibleSchedule1),
-                            0,
-                            nameof(ScheduledId),
-                            SpacetimeDB.Internal.ColumnAttrs.PrimaryKeyAuto
+                            "TestIncompatibleSchedule1_ScheduledId",
+                            (byte)SpacetimeDB.Internal.ColumnAttrs.PrimaryKeyAuto,
+                            [0]
                         )
                     ],
                     Sequences: [],
@@ -93,10 +92,9 @@ partial struct TestIncompatibleSchedule : SpacetimeDB.Internal.ITable<TestIncomp
                     Constraints:
                     [
                         new(
-                            nameof(SpacetimeDB.Local.TestIncompatibleSchedule2),
-                            0,
-                            nameof(ScheduledId),
-                            SpacetimeDB.Internal.ColumnAttrs.PrimaryKeyAuto
+                            "TestIncompatibleSchedule2_ScheduledId",
+                            (byte)SpacetimeDB.Internal.ColumnAttrs.PrimaryKeyAuto,
+                            [0]
                         )
                     ],
                     Sequences: [],

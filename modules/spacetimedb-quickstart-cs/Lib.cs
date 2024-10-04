@@ -3,6 +3,7 @@ namespace SpacetimeDB.Examples.QuickStart.Server;
 using SpacetimeDB;
 
 [Table(Public = true)]
+[Index(Name = "Age", BTree = ["Age"])]
 public partial struct Person
 {
     [AutoInc]
@@ -33,8 +34,7 @@ static partial class Module
     [SpacetimeDB.Reducer]
     public static void list_over_age(ReducerContext ctx, byte age)
     {
-        // TODO: convert this to use BTree index.
-        foreach (var person in ctx.Db.Person.Iter().Where(person => person.Age >= age))
+        foreach (var person in ctx.Db.Person.Age.Filter((age, byte.MaxValue)))
         {
             Log.Info($"{person.Name} has age {person.Age} >= {age}");
         }

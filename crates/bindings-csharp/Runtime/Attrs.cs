@@ -51,6 +51,16 @@
         public string? Scheduled { get; init; }
     }
 
+    [AttributeUsage(AttributeTargets.Struct | AttributeTargets.Class, AllowMultiple = true)]
+    public sealed class IndexAttribute : Attribute
+    {
+        public string? Table { get; init; }
+
+        public string? Name { get; init; }
+
+        public required string[] BTree { get; init; }
+    }
+
     public sealed class AutoIncAttribute : Internal.ColumnAttribute
     {
         internal override Internal.ColumnAttrs Mask => Internal.ColumnAttrs.AutoInc;

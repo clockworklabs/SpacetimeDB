@@ -184,18 +184,28 @@ public static class Utils
         return sb;
     }
 
-    private static object? ResolveConstant(TypedConstant constant) =>
-        constant.Kind switch
+    private static object? ResolveConstant(TypedConstant constant, System.Type targetType)
+    {
+        if (constant.Kind == TypedConstantKind.Array)
         {
-            TypedConstantKind.Array => constant.Values.Select(ResolveConstant).ToArray(),
-            _ => constant.Value,
-        };
+            // We can't use LINQ ToArray() here because it doesn't support dynamic Type
+            // and will build `object[]` instead of the desired `T[]`.
+            var elementType = targetType.GetElementType();
+            var array = Array.CreateInstance(elementType, constant.Values.Length);
+            for (var i = 0; i < constant.Values.Length; i++)
+            {
+                array.SetValue(ResolveConstant(constant.Values[i], elementType), i);
+            }
+            return array;
+        }
+        return constant.Value;
+    }
 
     public static T ParseAs<T>(this AttributeData attrData, System.Type? type = null)
         where T : Attribute
     {
         type ??= typeof(T);
-        var ctorArgs = attrData.ConstructorArguments.Select(ResolveConstant).ToArray();
+
         // For now only support attributes with a single constructor.
         //
         // Proper overload resolution is complicated due to implicit casts
@@ -203,10 +213,19 @@ public static class Utils
         // which prevent APIs like `Activator.CreateInstance` from finding the constructor.
         //
         // Expand logic in the future if it ever becomes actually necessary.
-        var attr = (T)type.GetConstructors().Single().Invoke(ctorArgs);
+        var ctor = type.GetConstructors().Single();
+
+        var ctorArgs = attrData
+            .ConstructorArguments.Zip(
+                ctor.GetParameters().Select(param => param.ParameterType),
+                ResolveConstant
+            )
+            .ToArray();
+        var attr = (T)ctor.Invoke(ctorArgs);
         foreach (var arg in attrData.NamedArguments)
         {
-            type.GetProperty(arg.Key).SetValue(attr, ResolveConstant(arg.Value));
+            var prop = type.GetProperty(arg.Key);
+            prop.SetValue(attr, ResolveConstant(arg.Value, prop.PropertyType));
         }
         return attr;
     }

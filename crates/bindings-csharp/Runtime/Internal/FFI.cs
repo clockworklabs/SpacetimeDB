@@ -26,6 +26,7 @@ public enum Errno : short
     NOT_IN_TRANSACTION = 2,
     BSATN_DECODE_ERROR = 3,
     NO_SUCH_TABLE = 4,
+    NO_SUCH_INDEX = 5,
     NO_SUCH_ITER = 6,
     NO_SUCH_CONSOLE_TIMER = 7,
     NO_SUCH_BYTES = 8,
@@ -75,12 +76,13 @@ internal static partial class FFI
                     Errno.NOT_IN_TRANSACTION => new NotInTransactionException(),
                     Errno.BSATN_DECODE_ERROR => new BsatnDecodeException(),
                     Errno.NO_SUCH_TABLE => new NoSuchTableException(),
+                    Errno.NO_SUCH_INDEX => new NoSuchIndexException(),
                     Errno.NO_SUCH_ITER => new NoSuchIterException(),
                     Errno.NO_SUCH_CONSOLE_TIMER => new NoSuchLogStopwatch(),
                     Errno.NO_SUCH_BYTES => new NoSuchBytesException(),
                     Errno.NO_SPACE => new NoSpaceException(),
                     Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
-                    Errno.UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
+                    Errno.UNIQUE_ALREADY_EXISTS => new UniqueConstraintViolationException(),
                     Errno.SCHEDULE_AT_DELAY_TOO_LONG => new ScheduleAtDelayTooLongException(),
                     _ => new UnknownException(status),
                 };
@@ -92,6 +94,12 @@ internal static partial class FFI
     public readonly struct TableId
     {
         private readonly uint table_id;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct IndexId
+    {
+        private readonly uint index_id;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -122,6 +130,13 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
+    public static partial CheckedStatus index_id_from_name(
+        [In] byte[] name,
+        uint name_len,
+        out IndexId out_
+    );
+
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus datastore_table_row_count(TableId table_id, out ulong out_);
 
     [LibraryImport(StdbNamespace)]
@@ -131,10 +146,16 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus datastore_insert_bsatn(
-        TableId table_id,
-        Span<byte> row,
-        ref uint row_len
+    public static partial CheckedStatus datastore_btree_scan_bsatn(
+        IndexId index_id,
+        ReadOnlySpan<byte> prefix,
+        uint prefix_len,
+        ColId prefix_elems,
+        ReadOnlySpan<byte> rstart,
+        uint rstart_len,
+        ReadOnlySpan<byte> rend,
+        uint rend_len,
+        out RowIter out_
     );
 
     [LibraryImport(StdbNamespace)]
@@ -148,6 +169,26 @@ internal static partial class FFI
     public static partial CheckedStatus row_iter_bsatn_close(RowIter iter_handle);
 
     [LibraryImport(StdbNamespace)]
+    public static partial CheckedStatus datastore_insert_bsatn(
+        TableId table_id,
+        Span<byte> row,
+        ref uint row_len
+    );
+
+    [LibraryImport(StdbNamespace)]
+    public static partial CheckedStatus datastore_delete_by_btree_scan_bsatn(
+        IndexId index_id,
+        ReadOnlySpan<byte> prefix,
+        uint prefix_len,
+        ColId prefix_elems,
+        ReadOnlySpan<byte> rstart,
+        uint rstart_len,
+        ReadOnlySpan<byte> rend,
+        uint rend_len,
+        out uint out_
+    );
+
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus datastore_delete_all_by_eq_bsatn(
         TableId table_id,
         [In] byte[] relation,
@@ -156,11 +197,17 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial void volatile_nonatomic_schedule_immediate(
-        [In] byte[] name,
-        uint name_len,
-        [In] byte[] args,
-        uint args_len
+    public static partial Errno bytes_source_read(
+        BytesSource source,
+        Span<byte> buffer,
+        ref uint buffer_len
+    );
+
+    [LibraryImport(StdbNamespace)]
+    public static partial CheckedStatus bytes_sink_write(
+        BytesSink sink,
+        ReadOnlySpan<byte> buffer,
+        ref uint buffer_len
     );
 
     public enum LogLevel : byte
@@ -183,20 +230,6 @@ internal static partial class FFI
         uint line_number,
         [In] byte[] message,
         uint message_len
-    );
-
-    [LibraryImport(StdbNamespace)]
-    public static partial Errno bytes_source_read(
-        BytesSource source,
-        Span<byte> buffer,
-        ref uint buffer_len
-    );
-
-    [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus bytes_sink_write(
-        BytesSink sink,
-        ReadOnlySpan<byte> buffer,
-        ref uint buffer_len
     );
 
     [NativeMarshalling(typeof(ConsoleTimerIdMarshaller))]
@@ -229,4 +262,12 @@ internal static partial class FFI
 
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus console_timer_end(ConsoleTimerId stopwatch_id);
+
+    [LibraryImport(StdbNamespace)]
+    public static partial void volatile_nonatomic_schedule_immediate(
+        [In] byte[] name,
+        uint name_len,
+        [In] byte[] args,
+        uint args_len
+    );
 }

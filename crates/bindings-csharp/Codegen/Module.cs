@@ -148,10 +148,49 @@ record TableView
     }
 }
 
+abstract record ViewIndex
+{
+    public EquatableArray<string> Columns;
+    public string? Table;
+    public string Name;
+
+    protected abstract string Type { get; }
+
+    public ViewIndex(AttributeData data, TypeDeclarationSyntax decl, DiagReporter diag)
+    {
+        var attr = data.ParseAs<IndexAttribute>();
+        Columns = new((attr.BTree ?? []).ToImmutableArray());
+        Table = attr.Table;
+        Name = attr.Name ?? string.Join("", Columns);
+
+        if (Columns.Length == 0)
+        {
+            diag.Report(ErrorDescriptor.EmptyIndexColumns, decl);
+        }
+    }
+
+    public string GenerateIndexDef(string viewName, IEnumerable<ColumnDeclaration> columns)
+    {
+        var cols = Columns.Select(c =>
+            columns.Select((c, i) => (c, i)).First(cd => cd.c.Name == c).i
+        );
+        return $"new(\"bt_{viewName}_{Name}\", false, SpacetimeDB.Internal.IndexType.{Type}, [{string.Join(", ", cols)}])";
+    }
+}
+
+record ViewBTree : ViewIndex
+{
+    public ViewBTree(AttributeData data, TypeDeclarationSyntax decl, DiagReporter diag)
+        : base(data, decl, diag) { }
+
+    protected override string Type => "BTree";
+}
+
 record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 {
     public readonly Accessibility Visibility;
     public readonly EquatableArray<TableView> Views;
+    public readonly EquatableArray<ViewBTree> BTrees;
 
     private static ColumnDeclaration[] ScheduledColumns(string tableName) =>
         [
@@ -191,8 +230,16 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 case Accessibility.NotApplicable:
                 case Accessibility.Internal:
                 case Accessibility.Public:
+                    if (Visibility < container.DeclaredAccessibility)
+                    {
+                        Visibility = container.DeclaredAccessibility;
+                    }
                     break;
                 default:
+                    diag.Report(
+                        ErrorDescriptor.InvalidTableVisibility,
+                        (TypeDeclarationSyntax)context.TargetNode
+                    );
                     throw new Exception(
                         "Table row type visibility must be public or internal, including containing types."
                     );
@@ -202,6 +249,13 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
 
         Views = new(context.Attributes.Select(a => new TableView(this, a)).ToImmutableArray());
+        BTrees = new(
+            context
+                .TargetSymbol.GetAttributes()
+                .Where(a => a.AttributeClass?.ToString() == typeof(IndexAttribute).FullName)
+                .Select(a => new ViewBTree(a, (TypeDeclarationSyntax)context.TargetNode, diag))
+                .ToImmutableArray()
+        );
 
         var hasScheduled = Views.Select(t => t.Scheduled is not null).Distinct();
 
@@ -225,37 +279,83 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     protected override ColumnDeclaration ConvertMember(IFieldSymbol field, DiagReporter diag) =>
         new(FullName, field, diag);
 
-    public IEnumerable<string> GenerateViewFilters(string viewName, string iTable)
+    public IEnumerable<string> GenerateViewFilters(string viewName)
     {
+        var vis = SyntaxFacts.GetText(Visibility);
+        var globalName = $"global::{FullName}";
+
         foreach (
-            var (f, i) in Members
-                .Select((field, i) => (field, i))
-                .Where(pair => pair.field.IsEquatable)
+            var ct in GetConstraints(viewName)
+                .Where(tuple => tuple.attr.HasFlag(ColumnAttrs.Unique))
         )
         {
-            var globalName = $"global::{FullName}";
-            var colEqWhere = $"{iTable}.ColEq.Where({i}, {f.Name}, {globalName}.BSATN.{f.Name})";
-
-            yield return $"""
-                public IEnumerable<{globalName}> FilterBy{f.Name}({f.Type} {f.Name}) =>
-                    {colEqWhere}.Iter();
-                """;
-
+            var f = ct.col;
             if (f.GetAttrs(viewName).HasFlag(ColumnAttrs.Unique))
             {
-                yield return $"""
-                    public {globalName}? FindBy{f.Name}({f.Type} {f.Name}) =>
-                        FilterBy{f.Name}({f.Name})
-                        .Cast<{globalName}?>()
-                        .SingleOrDefault();
-
-                    public bool DeleteBy{f.Name}({f.Type} {f.Name}) =>
-                        {colEqWhere}.Delete();
-
-                    public bool UpdateBy{f.Name}({f.Type} {f.Name}, {globalName} @this) =>
-                        {colEqWhere}.Update(@this);
+                var iUniqueIndex = $"";
+                yield return $$"""
+                    {{vis}} sealed class {{viewName}}UniqueIndex : UniqueIndex<{{viewName}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
+                        internal {{viewName}}UniqueIndex({{viewName}} handle) : base(handle, "idx_{{viewName}}_{{viewName}}_{{ct.col.Name}}_unique") {}
+                        public bool Update({{globalName}} row) => DoUpdate(row.{{f.Name}}, row);
+                    }
+                    {{vis}} {{viewName}}UniqueIndex {{f.Name}} => new(this);
                     """;
             }
+        }
+
+        foreach (var btree in BTrees)
+        {
+            if (btree.Table != null && btree.Table != viewName)
+            {
+                continue;
+            }
+
+            yield return $$"""
+                    {{vis}} sealed class {{btree.Name}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("bt_{{viewName}}_{{btree.Name}}") {
+                """;
+
+            var members = btree.Columns.Select(s => Members.First(x => x.Name == s)).ToArray();
+
+            for (var n = 0; n < members.Length; n++)
+            {
+                var types = string.Join(
+                    ", ",
+                    members.Take(n + 1).Select(m => $"{m.Type}, {m.TypeInfo}")
+                );
+                var scalars = members.Take(n).Select(m => $"{m.Type} {m.Name}");
+                var lastScalar = $"{members[n].Type} {members[n].Name}";
+                var lastBounds = $"Bound<{members[n].Type}> {members[n].Name}";
+                var argsScalar = string.Join(", ", scalars.Append(lastScalar));
+                var argsBounds = string.Join(", ", scalars.Append(lastBounds));
+                string argName;
+                if (n > 0)
+                {
+                    argName = "f";
+                    argsScalar = $"({argsScalar}) f";
+                    argsBounds = $"({argsBounds}) f";
+                }
+                else
+                {
+                    argName = members[0].Name;
+                }
+
+                yield return $$"""
+                        public IEnumerable<{{globalName}}> Filter({{argsScalar}}) =>
+                            DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<{{types}}>({{argName}}));
+
+                        public ulong Delete({{argsScalar}}) =>
+                            DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<{{types}}>({{argName}}));
+
+                        public IEnumerable<{{globalName}}> Filter({{argsBounds}}) =>
+                            DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<{{types}}>({{argName}}));
+
+                        public ulong Delete({{argsBounds}}) =>
+                            DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<{{types}}>({{argName}}));
+                    
+                    """;
+            }
+
+            yield return $"}}\n {vis} {btree.Name}Index {btree.Name} => new();\n";
         }
     }
 
@@ -290,15 +390,27 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     )}}
                     return row;
                 }
-                public IEnumerable<{{globalName}}> Iter() => {{iTable}}.Iter();
-                public {{globalName}} Insert({{globalName}} row) => {{iTable}}.Insert(row);
-                {{string.Join("\n", GenerateViewFilters(v.Name, iTable))}}
+
+                public ulong Count => {{iTable}}.DoCount();
+                public IEnumerable<{{globalName}}> Iter() => {{iTable}}.DoIter();
+                public {{globalName}} Insert({{globalName}} row) => {{iTable}}.DoInsert(row);
+                public bool Delete({{globalName}} row) => {{iTable}}.DoDelete(row);
+
+                {{string.Join("\n", GenerateViewFilters(v.Name))}}
             }
             """,
                 $"{SyntaxFacts.GetText(Visibility)} Internal.TableHandles.{v.Name} {v.Name} => new();"
             );
         }
     }
+
+    public record struct Constraint(ColumnDeclaration col, int pos, ColumnAttrs attr);
+
+    public IEnumerable<Constraint> GetConstraints(string viewName) =>
+        Members
+            // Important: the position must be stored here, before filtering.
+            .Select((col, pos) => new Constraint(col, pos, col.GetAttrs(viewName)))
+            .Where(c => c.attr != ColumnAttrs.UnSet);
 
     public override Scope.Extensions ToExtensions()
     {
@@ -345,21 +457,21 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     Columns: [
                         {{string.Join(",\n", Members.Select(m => m.GenerateColumnDef()))}}
                     ],
-                    Indexes: [],
+                    Indexes: [
+                        {{string.Join(",\n", BTrees
+                        .Where(b => b.Table == null || b.Table == v.Name)
+                        .Select(b => b.GenerateIndexDef(v.Name, Members)))}}
+                    ],
                     Constraints: [
                         {{string.Join(
                             ",\n",
-                            Members
-                            // Important: the position must be stored here, before filtering.
-                            .Select((col, pos) => (col, pos, attr: col.GetAttrs(v.Name)))
-                            .Where(tuple => tuple.attr != ColumnAttrs.UnSet)
-                            .Select(tuple =>
+                            GetConstraints(v.Name)
+                            .Select(ct =>
                                 $$"""
                                 new (
-                                    nameof(SpacetimeDB.Local.{{v.Name}}),
-                                    {{tuple.pos}},
-                                    nameof({{tuple.col.Name}}),
-                                    SpacetimeDB.Internal.ColumnAttrs.{{tuple.attr}}
+                                    "{{v.Name}}_{{ct.col.Name}}",
+                                    (byte)SpacetimeDB.Internal.ColumnAttrs.{{ct.attr}},
+                                    [{{ct.pos}}]
                                 )
                                 """
                             )

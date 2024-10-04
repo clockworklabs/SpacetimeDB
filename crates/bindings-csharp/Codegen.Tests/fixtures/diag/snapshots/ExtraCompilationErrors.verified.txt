@@ -23,6 +23,29 @@
     }
   },
   {/*
+[SpacetimeDB.Table]
+[SpacetimeDB.Index]
+ ^^^^^^^^^^^^^^^^^
+public partial struct TestIndexWithoutColumns { }
+*/
+    Message: Required member 'IndexAttribute.BTree' must be set in the object initializer or attribute constructor.,
+    Severity: Error,
+    Descriptor: {
+      Id: CS9035,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS9035),
+      MessageFormat: Required member '{0}' must be set in the object initializer or attribute constructor.,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
 {
     internal static readonly TRW Field = new();
                              ^^^
@@ -150,6 +173,29 @@ internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> Unsuppor
       Title: ,
       HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0144),
       MessageFormat: Cannot create an instance of the abstract type or interface '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+}
+public TestUniqueNotEquatableUniqueIndex PrimaryKeyField => new(this);
+                                                            ^^^^^^^^^
+}
+*/
+    Message: The call is ambiguous between the following methods or properties: 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex.TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable)' and 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex.TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable)',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0121,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0121),
+      MessageFormat: The call is ambiguous between the following methods or properties: '{0}' and '{1}',
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,
@@ -322,10 +368,56 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
     }
   },
   {/*
+
+    public ulong Count => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoCount();
+                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoIter();
+*/
+    Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0311,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0311),
+      MessageFormat: The type '{3}' cannot be used as type parameter '{2}' in the generic type or method '{0}'. There is no implicit reference conversion from '{3}' to '{1}'.,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
     }
-    public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Iter();
+  },
+  {/*
+
+    public ulong Count => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoCount();
+                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoIter();
+*/
+    Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0310,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0310),
+      MessageFormat: '{2}' must be a non-abstract type with a public parameterless constructor in order to use it as parameter '{1}' in the generic type or method '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public ulong Count => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoCount();
+    public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoIter();
                                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
+    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoInsert(row);
 */
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
@@ -345,10 +437,10 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
     }
   },
   {/*
-    }
-    public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Iter();
+    public ulong Count => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoCount();
+    public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoIter();
                                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
+    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoInsert(row);
 */
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
@@ -368,10 +460,10 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
     }
   },
   {/*
-    public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Iter();
-    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
+    public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoIter();
+    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoInsert(row);
                                                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    public IEnumerable<global::TestTableTaggedEnum> FilterByX(int X) =>
+    public bool Delete(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoDelete(row);
 */
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
@@ -391,10 +483,10 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
     }
   },
   {/*
-    public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Iter();
-    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
+    public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoIter();
+    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoInsert(row);
                                                                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    public IEnumerable<global::TestTableTaggedEnum> FilterByX(int X) =>
+    public bool Delete(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoDelete(row);
 */
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
@@ -414,10 +506,10 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
     }
   },
   {/*
-    public IEnumerable<global::TestTableTaggedEnum> FilterByX(int X) =>
-    SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ColEq.Where(0, X, global::TestTableTaggedEnum.BSATN.X).Iter();
-                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
+    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoInsert(row);
+    public bool Delete(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoDelete(row);
+                                                                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 */
     Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
     Severity: Error,
@@ -437,10 +529,10 @@ public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
     }
   },
   {/*
-    public IEnumerable<global::TestTableTaggedEnum> FilterByX(int X) =>
-    SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ColEq.Where(0, X, global::TestTableTaggedEnum.BSATN.X).Iter();
-                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
+    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoInsert(row);
+    public bool Delete(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.DoDelete(row);
+                                                                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 */
     Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
     Severity: Error,
@@ -460,18 +552,64 @@ public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
     }
   },
   {/*
-public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
-    SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ColEq.Where(1, Y, global::TestTableTaggedEnum.BSATN.Y).Iter();
-                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+    public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, int?, SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>> {
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique") {}
+*/
+    Message: Partial declarations of 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex' must not specify different base classes,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0263,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0263),
+      MessageFormat: Partial declarations of '{0}' must not specify different base classes,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, int?, SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>> {
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique") {}
+                                                                                ^^^^
+    public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.UniqueField, row);
+*/
+    Message: 'UniqueIndex<TestUniqueNotEquatable, TestUniqueNotEquatable, int?, ValueOption<int, I32>>.UniqueIndex(TestUniqueNotEquatable, string)' is inaccessible due to its protection level,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0122,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0122),
+      MessageFormat: '{0}' is inaccessible due to its protection level,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique") {}
+    public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.UniqueField, row);
+                                                              ^^^^^^^^
 }
 */
-    Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
+    Message: The name 'DoUpdate' does not exist in the current context,
     Severity: Error,
     Descriptor: {
-      Id: CS0311,
+      Id: CS0103,
       Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0311),
-      MessageFormat: The type '{3}' cannot be used as type parameter '{2}' in the generic type or method '{0}'. There is no implicit reference conversion from '{3}' to '{1}'.,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0103),
+      MessageFormat: The name '{0}' does not exist in the current context,
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,
@@ -483,18 +621,133 @@ public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
     }
   },
   {/*
-public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
-    SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ColEq.Where(1, Y, global::TestTableTaggedEnum.BSATN.Y).Iter();
-                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 }
+public TestUniqueNotEquatableUniqueIndex UniqueField => new(this);
+                                                        ^^^^^^^^^
+public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, TestEnumWithExplicitValues, SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>> {
 */
-    Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
+    Message: The call is ambiguous between the following methods or properties: 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex.TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable)' and 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex.TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable)',
     Severity: Error,
     Descriptor: {
-      Id: CS0310,
+      Id: CS0121,
       Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0310),
-      MessageFormat: '{2}' must be a non-abstract type with a public parameterless constructor in order to use it as parameter '{1}' in the generic type or method '{0}',
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0121),
+      MessageFormat: The call is ambiguous between the following methods or properties: '{0}' and '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+public TestUniqueNotEquatableUniqueIndex UniqueField => new(this);
+public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, TestEnumWithExplicitValues, SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>> {
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+*/
+    Message: The type 'TestUniqueNotEquatable' already contains a definition for 'TestUniqueNotEquatableUniqueIndex',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0102,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0102),
+      MessageFormat: The type '{0}' already contains a definition for '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, TestEnumWithExplicitValues, SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>> {
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.PrimaryKeyField, row);
+*/
+    Message: Type 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex' already defines a member called 'TestUniqueNotEquatableUniqueIndex' with the same parameter types,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0111,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
+      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, TestEnumWithExplicitValues, SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>> {
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+                                                                                ^^^^
+    public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.PrimaryKeyField, row);
+*/
+    Message: 'UniqueIndex<TestUniqueNotEquatable, TestUniqueNotEquatable, int?, ValueOption<int, I32>>.UniqueIndex(TestUniqueNotEquatable, string)' is inaccessible due to its protection level,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0122,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0122),
+      MessageFormat: '{0}' is inaccessible due to its protection level,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+    public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.PrimaryKeyField, row);
+                ^^^^^^
+}
+*/
+    Message: Type 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex' already defines a member called 'Update' with the same parameter types,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0111,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
+      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+    public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.PrimaryKeyField, row);
+                                                              ^^^^^^^^
+}
+*/
+    Message: The name 'DoUpdate' does not exist in the current context,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0103,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0103),
+      MessageFormat: The name '{0}' does not exist in the current context,
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,

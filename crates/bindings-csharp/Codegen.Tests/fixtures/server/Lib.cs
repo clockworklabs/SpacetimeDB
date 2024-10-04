@@ -145,17 +145,18 @@ public static partial class Timers
     }
 }
 
-[Table(Name = "MultiTable1", Public = true)]
-[Table(Name = "MultiTable2")]
+[SpacetimeDB.Table(Name = "MultiTable1", Public = true)]
+[SpacetimeDB.Table(Name = "MultiTable2")]
+[SpacetimeDB.Index(Table = "MultiTable1", BTree = ["Name"])]
 public partial struct MultiTableRow
 {
     public string Name;
 
-    [AutoInc]
-    [PrimaryKey(Table = "MultiTable1")]
+    [SpacetimeDB.AutoInc]
+    [SpacetimeDB.PrimaryKey(Table = "MultiTable1")]
     public uint Foo;
 
-    [Unique(Table = "MultiTable2")]
+    [SpacetimeDB.Unique(Table = "MultiTable2")]
     public uint Bar;
 
     [SpacetimeDB.Reducer]
@@ -165,4 +166,27 @@ public partial struct MultiTableRow
         ctx.Db.MultiTable1.Insert(data);
         ctx.Db.MultiTable2.Insert(data);
     }
+}
+
+[SpacetimeDB.Table]
+[SpacetimeDB.Index(Name = "Location", BTree = ["X", "Y", "Z"])]
+partial struct BTreeMultiColumn
+{
+    public uint X;
+    public uint Y;
+    public uint Z;
+}
+
+[SpacetimeDB.Table]
+[SpacetimeDB.Index(Name = "Location", BTree = ["X", "Y"])]
+[SpacetimeDB.Index(Name = "Faction", BTree = ["Faction"])]
+partial struct BTreeViews
+{
+    [SpacetimeDB.PrimaryKey]
+    public Identity Id;
+
+    public uint X;
+    public uint Y;
+
+    public string Faction;
 }

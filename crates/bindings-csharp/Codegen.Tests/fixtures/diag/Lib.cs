@@ -374,3 +374,11 @@ public partial struct TestIncompatibleSchedule
         TestIncompatibleSchedule table
     ) { }
 }
+
+[SpacetimeDB.Table]
+[SpacetimeDB.Index]
+public partial struct TestIndexWithoutColumns { }
+
+[SpacetimeDB.Table]
+[SpacetimeDB.Index(BTree = [])]
+public partial struct TestIndexWithEmptyColumns { }

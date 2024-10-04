@@ -31,6 +31,300 @@ namespace SpacetimeDB
 
     namespace Internal.TableHandles
     {
+        internal readonly struct BTreeMultiColumn
+            : SpacetimeDB.Internal.ITableView<BTreeMultiColumn, global::BTreeMultiColumn>
+        {
+            static global::BTreeMultiColumn SpacetimeDB.Internal.ITableView<
+                BTreeMultiColumn,
+                global::BTreeMultiColumn
+            >.ReadGenFields(System.IO.BinaryReader reader, global::BTreeMultiColumn row)
+            {
+                return row;
+            }
+
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<
+                    BTreeMultiColumn,
+                    global::BTreeMultiColumn
+                >.DoCount();
+
+            public IEnumerable<global::BTreeMultiColumn> Iter() =>
+                SpacetimeDB.Internal.ITableView<
+                    BTreeMultiColumn,
+                    global::BTreeMultiColumn
+                >.DoIter();
+
+            public global::BTreeMultiColumn Insert(global::BTreeMultiColumn row) =>
+                SpacetimeDB.Internal.ITableView<
+                    BTreeMultiColumn,
+                    global::BTreeMultiColumn
+                >.DoInsert(row);
+
+            public bool Delete(global::BTreeMultiColumn row) =>
+                SpacetimeDB.Internal.ITableView<
+                    BTreeMultiColumn,
+                    global::BTreeMultiColumn
+                >.DoDelete(row);
+
+            internal sealed class LocationIndex()
+                : SpacetimeDB.Internal.IndexBase<global::BTreeMultiColumn>(
+                    "bt_BTreeMultiColumn_Location"
+                )
+            {
+                public IEnumerable<global::BTreeMultiColumn> Filter(uint X) =>
+                    DoFilter(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                    );
+
+                public ulong Delete(uint X) =>
+                    DoDelete(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                    );
+
+                public IEnumerable<global::BTreeMultiColumn> Filter(Bound<uint> X) =>
+                    DoFilter(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                    );
+
+                public ulong Delete(Bound<uint> X) =>
+                    DoDelete(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                    );
+
+                public IEnumerable<global::BTreeMultiColumn> Filter((uint X, uint Y) f) =>
+                    DoFilter(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32
+                        >(f)
+                    );
+
+                public ulong Delete((uint X, uint Y) f) =>
+                    DoDelete(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32
+                        >(f)
+                    );
+
+                public IEnumerable<global::BTreeMultiColumn> Filter((uint X, Bound<uint> Y) f) =>
+                    DoFilter(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32
+                        >(f)
+                    );
+
+                public ulong Delete((uint X, Bound<uint> Y) f) =>
+                    DoDelete(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32
+                        >(f)
+                    );
+
+                public IEnumerable<global::BTreeMultiColumn> Filter((uint X, uint Y, uint Z) f) =>
+                    DoFilter(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32
+                        >(f)
+                    );
+
+                public ulong Delete((uint X, uint Y, uint Z) f) =>
+                    DoDelete(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32
+                        >(f)
+                    );
+
+                public IEnumerable<global::BTreeMultiColumn> Filter(
+                    (uint X, uint Y, Bound<uint> Z) f
+                ) =>
+                    DoFilter(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32
+                        >(f)
+                    );
+
+                public ulong Delete((uint X, uint Y, Bound<uint> Z) f) =>
+                    DoDelete(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32
+                        >(f)
+                    );
+            }
+
+            internal LocationIndex Location => new();
+        }
+
+        internal readonly struct BTreeViews
+            : SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>
+        {
+            static global::BTreeViews SpacetimeDB.Internal.ITableView<
+                BTreeViews,
+                global::BTreeViews
+            >.ReadGenFields(System.IO.BinaryReader reader, global::BTreeViews row)
+            {
+                return row;
+            }
+
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoCount();
+
+            public IEnumerable<global::BTreeViews> Iter() =>
+                SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoIter();
+
+            public global::BTreeViews Insert(global::BTreeViews row) =>
+                SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoInsert(row);
+
+            public bool Delete(global::BTreeViews row) =>
+                SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoDelete(row);
+
+            internal sealed class BTreeViewsUniqueIndex
+                : UniqueIndex<
+                    BTreeViews,
+                    global::BTreeViews,
+                    SpacetimeDB.Identity,
+                    SpacetimeDB.Identity.BSATN
+                >
+            {
+                internal BTreeViewsUniqueIndex(BTreeViews handle)
+                    : base(handle, "idx_BTreeViews_BTreeViews_Id_unique") { }
+
+                public bool Update(global::BTreeViews row) => DoUpdate(row.Id, row);
+            }
+
+            internal BTreeViewsUniqueIndex Id => new(this);
+
+            internal sealed class LocationIndex()
+                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("bt_BTreeViews_Location")
+            {
+                public IEnumerable<global::BTreeViews> Filter(uint X) =>
+                    DoFilter(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                    );
+
+                public ulong Delete(uint X) =>
+                    DoDelete(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                    );
+
+                public IEnumerable<global::BTreeViews> Filter(Bound<uint> X) =>
+                    DoFilter(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                    );
+
+                public ulong Delete(Bound<uint> X) =>
+                    DoDelete(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
+                    );
+
+                public IEnumerable<global::BTreeViews> Filter((uint X, uint Y) f) =>
+                    DoFilter(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32
+                        >(f)
+                    );
+
+                public ulong Delete((uint X, uint Y) f) =>
+                    DoDelete(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32
+                        >(f)
+                    );
+
+                public IEnumerable<global::BTreeViews> Filter((uint X, Bound<uint> Y) f) =>
+                    DoFilter(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32
+                        >(f)
+                    );
+
+                public ulong Delete((uint X, Bound<uint> Y) f) =>
+                    DoDelete(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<
+                            uint,
+                            SpacetimeDB.BSATN.U32,
+                            uint,
+                            SpacetimeDB.BSATN.U32
+                        >(f)
+                    );
+            }
+
+            internal LocationIndex Location => new();
+
+            internal sealed class FactionIndex()
+                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("bt_BTreeViews_Faction")
+            {
+                public IEnumerable<global::BTreeViews> Filter(string Faction) =>
+                    DoFilter(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                            Faction
+                        )
+                    );
+
+                public ulong Delete(string Faction) =>
+                    DoDelete(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                            Faction
+                        )
+                    );
+
+                public IEnumerable<global::BTreeViews> Filter(Bound<string> Faction) =>
+                    DoFilter(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                            Faction
+                        )
+                    );
+
+                public ulong Delete(Bound<string> Faction) =>
+                    DoDelete(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                            Faction
+                        )
+                    );
+            }
+
+            internal FactionIndex Faction => new();
+        }
+
         public readonly struct MultiTable1
             : SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>
         {
@@ -46,59 +340,62 @@ namespace SpacetimeDB
                 return row;
             }
 
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoCount();
+
             public IEnumerable<global::MultiTableRow> Iter() =>
-                SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.Iter();
+                SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoIter();
 
             public global::MultiTableRow Insert(global::MultiTableRow row) =>
-                SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.Insert(row);
+                SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoInsert(row);
 
-            public IEnumerable<global::MultiTableRow> FilterByName(string Name) =>
-                SpacetimeDB
-                    .Internal.ITableView<MultiTable1, global::MultiTableRow>.ColEq.Where(
-                        0,
-                        Name,
-                        global::MultiTableRow.BSATN.Name
-                    )
-                    .Iter();
+            public bool Delete(global::MultiTableRow row) =>
+                SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoDelete(row);
 
-            public IEnumerable<global::MultiTableRow> FilterByFoo(uint Foo) =>
-                SpacetimeDB
-                    .Internal.ITableView<MultiTable1, global::MultiTableRow>.ColEq.Where(
-                        1,
-                        Foo,
-                        global::MultiTableRow.BSATN.Foo
-                    )
-                    .Iter();
+            public sealed class MultiTable1UniqueIndex
+                : UniqueIndex<MultiTable1, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
+            {
+                internal MultiTable1UniqueIndex(MultiTable1 handle)
+                    : base(handle, "idx_MultiTable1_MultiTable1_Foo_unique") { }
 
-            public global::MultiTableRow? FindByFoo(uint Foo) =>
-                FilterByFoo(Foo).Cast<global::MultiTableRow?>().SingleOrDefault();
+                public bool Update(global::MultiTableRow row) => DoUpdate(row.Foo, row);
+            }
 
-            public bool DeleteByFoo(uint Foo) =>
-                SpacetimeDB
-                    .Internal.ITableView<MultiTable1, global::MultiTableRow>.ColEq.Where(
-                        1,
-                        Foo,
-                        global::MultiTableRow.BSATN.Foo
-                    )
-                    .Delete();
+            public MultiTable1UniqueIndex Foo => new(this);
 
-            public bool UpdateByFoo(uint Foo, global::MultiTableRow @this) =>
-                SpacetimeDB
-                    .Internal.ITableView<MultiTable1, global::MultiTableRow>.ColEq.Where(
-                        1,
-                        Foo,
-                        global::MultiTableRow.BSATN.Foo
-                    )
-                    .Update(@this);
+            public sealed class NameIndex()
+                : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>("bt_MultiTable1_Name")
+            {
+                public IEnumerable<global::MultiTableRow> Filter(string Name) =>
+                    DoFilter(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                            Name
+                        )
+                    );
 
-            public IEnumerable<global::MultiTableRow> FilterByBar(uint Bar) =>
-                SpacetimeDB
-                    .Internal.ITableView<MultiTable1, global::MultiTableRow>.ColEq.Where(
-                        2,
-                        Bar,
-                        global::MultiTableRow.BSATN.Bar
-                    )
-                    .Iter();
+                public ulong Delete(string Name) =>
+                    DoDelete(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                            Name
+                        )
+                    );
+
+                public IEnumerable<global::MultiTableRow> Filter(Bound<string> Name) =>
+                    DoFilter(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                            Name
+                        )
+                    );
+
+                public ulong Delete(Bound<string> Name) =>
+                    DoDelete(
+                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                            Name
+                        )
+                    );
+            }
+
+            public NameIndex Name => new();
         }
 
         public readonly struct MultiTable2
@@ -116,59 +413,28 @@ namespace SpacetimeDB
                 return row;
             }
 
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoCount();
+
             public IEnumerable<global::MultiTableRow> Iter() =>
-                SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.Iter();
+                SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoIter();
 
             public global::MultiTableRow Insert(global::MultiTableRow row) =>
-                SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.Insert(row);
+                SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoInsert(row);
 
-            public IEnumerable<global::MultiTableRow> FilterByName(string Name) =>
-                SpacetimeDB
-                    .Internal.ITableView<MultiTable2, global::MultiTableRow>.ColEq.Where(
-                        0,
-                        Name,
-                        global::MultiTableRow.BSATN.Name
-                    )
-                    .Iter();
+            public bool Delete(global::MultiTableRow row) =>
+                SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoDelete(row);
 
-            public IEnumerable<global::MultiTableRow> FilterByFoo(uint Foo) =>
-                SpacetimeDB
-                    .Internal.ITableView<MultiTable2, global::MultiTableRow>.ColEq.Where(
-                        1,
-                        Foo,
-                        global::MultiTableRow.BSATN.Foo
-                    )
-                    .Iter();
+            public sealed class MultiTable2UniqueIndex
+                : UniqueIndex<MultiTable2, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
+            {
+                internal MultiTable2UniqueIndex(MultiTable2 handle)
+                    : base(handle, "idx_MultiTable2_MultiTable2_Bar_unique") { }
 
-            public IEnumerable<global::MultiTableRow> FilterByBar(uint Bar) =>
-                SpacetimeDB
-                    .Internal.ITableView<MultiTable2, global::MultiTableRow>.ColEq.Where(
-                        2,
-                        Bar,
-                        global::MultiTableRow.BSATN.Bar
-                    )
-                    .Iter();
+                public bool Update(global::MultiTableRow row) => DoUpdate(row.Bar, row);
+            }
 
-            public global::MultiTableRow? FindByBar(uint Bar) =>
-                FilterByBar(Bar).Cast<global::MultiTableRow?>().SingleOrDefault();
-
-            public bool DeleteByBar(uint Bar) =>
-                SpacetimeDB
-                    .Internal.ITableView<MultiTable2, global::MultiTableRow>.ColEq.Where(
-                        2,
-                        Bar,
-                        global::MultiTableRow.BSATN.Bar
-                    )
-                    .Delete();
-
-            public bool UpdateByBar(uint Bar, global::MultiTableRow @this) =>
-                SpacetimeDB
-                    .Internal.ITableView<MultiTable2, global::MultiTableRow>.ColEq.Where(
-                        2,
-                        Bar,
-                        global::MultiTableRow.BSATN.Bar
-                    )
-                    .Update(@this);
+            public MultiTable2UniqueIndex Bar => new(this);
         }
 
         public readonly struct PrivateTable
@@ -182,11 +448,17 @@ namespace SpacetimeDB
                 return row;
             }
 
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoCount();
+
             public IEnumerable<global::PrivateTable> Iter() =>
-                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.Iter();
+                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoIter();
 
             public global::PrivateTable Insert(global::PrivateTable row) =>
-                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.Insert(row);
+                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoInsert(row);
+
+            public bool Delete(global::PrivateTable row) =>
+                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoDelete(row);
         }
 
         public readonly struct PublicTable
@@ -204,211 +476,28 @@ namespace SpacetimeDB
                 return row;
             }
 
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoCount();
+
             public IEnumerable<global::PublicTable> Iter() =>
-                SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.Iter();
+                SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoIter();
 
             public global::PublicTable Insert(global::PublicTable row) =>
-                SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.Insert(row);
+                SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoInsert(row);
 
-            public IEnumerable<global::PublicTable> FilterById(int Id) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        0,
-                        Id,
-                        global::PublicTable.BSATN.Id
-                    )
-                    .Iter();
+            public bool Delete(global::PublicTable row) =>
+                SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoDelete(row);
 
-            public global::PublicTable? FindById(int Id) =>
-                FilterById(Id).Cast<global::PublicTable?>().SingleOrDefault();
+            public sealed class PublicTableUniqueIndex
+                : UniqueIndex<PublicTable, global::PublicTable, int, SpacetimeDB.BSATN.I32>
+            {
+                internal PublicTableUniqueIndex(PublicTable handle)
+                    : base(handle, "idx_PublicTable_PublicTable_Id_unique") { }
 
-            public bool DeleteById(int Id) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        0,
-                        Id,
-                        global::PublicTable.BSATN.Id
-                    )
-                    .Delete();
+                public bool Update(global::PublicTable row) => DoUpdate(row.Id, row);
+            }
 
-            public bool UpdateById(int Id, global::PublicTable @this) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        0,
-                        Id,
-                        global::PublicTable.BSATN.Id
-                    )
-                    .Update(@this);
-
-            public IEnumerable<global::PublicTable> FilterByByteField(byte ByteField) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        1,
-                        ByteField,
-                        global::PublicTable.BSATN.ByteField
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByUshortField(ushort UshortField) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        2,
-                        UshortField,
-                        global::PublicTable.BSATN.UshortField
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByUintField(uint UintField) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        3,
-                        UintField,
-                        global::PublicTable.BSATN.UintField
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByUlongField(ulong UlongField) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        4,
-                        UlongField,
-                        global::PublicTable.BSATN.UlongField
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByUInt128Field(
-                System.UInt128 UInt128Field
-            ) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        5,
-                        UInt128Field,
-                        global::PublicTable.BSATN.UInt128Field
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByU128Field(SpacetimeDB.U128 U128Field) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        6,
-                        U128Field,
-                        global::PublicTable.BSATN.U128Field
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByU256Field(SpacetimeDB.U256 U256Field) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        7,
-                        U256Field,
-                        global::PublicTable.BSATN.U256Field
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterBySbyteField(sbyte SbyteField) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        8,
-                        SbyteField,
-                        global::PublicTable.BSATN.SbyteField
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByShortField(short ShortField) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        9,
-                        ShortField,
-                        global::PublicTable.BSATN.ShortField
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByIntField(int IntField) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        10,
-                        IntField,
-                        global::PublicTable.BSATN.IntField
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByLongField(long LongField) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        11,
-                        LongField,
-                        global::PublicTable.BSATN.LongField
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByInt128Field(
-                System.Int128 Int128Field
-            ) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        12,
-                        Int128Field,
-                        global::PublicTable.BSATN.Int128Field
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByI128Field(SpacetimeDB.I128 I128Field) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        13,
-                        I128Field,
-                        global::PublicTable.BSATN.I128Field
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByI256Field(SpacetimeDB.I256 I256Field) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        14,
-                        I256Field,
-                        global::PublicTable.BSATN.I256Field
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByBoolField(bool BoolField) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        15,
-                        BoolField,
-                        global::PublicTable.BSATN.BoolField
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByStringField(string StringField) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        18,
-                        StringField,
-                        global::PublicTable.BSATN.StringField
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByIdentityField(
-                SpacetimeDB.Identity IdentityField
-            ) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        19,
-                        IdentityField,
-                        global::PublicTable.BSATN.IdentityField
-                    )
-                    .Iter();
-
-            public IEnumerable<global::PublicTable> FilterByAddressField(
-                SpacetimeDB.Address AddressField
-            ) =>
-                SpacetimeDB
-                    .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
-                        20,
-                        AddressField,
-                        global::PublicTable.BSATN.AddressField
-                    )
-                    .Iter();
+            public PublicTableUniqueIndex Id => new(this);
         }
 
         public readonly struct SendMessageTimer
@@ -428,64 +517,53 @@ namespace SpacetimeDB
                 return row;
             }
 
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<
+                    SendMessageTimer,
+                    global::Timers.SendMessageTimer
+                >.DoCount();
+
             public IEnumerable<global::Timers.SendMessageTimer> Iter() =>
                 SpacetimeDB.Internal.ITableView<
                     SendMessageTimer,
                     global::Timers.SendMessageTimer
-                >.Iter();
+                >.DoIter();
 
             public global::Timers.SendMessageTimer Insert(global::Timers.SendMessageTimer row) =>
                 SpacetimeDB.Internal.ITableView<
                     SendMessageTimer,
                     global::Timers.SendMessageTimer
-                >.Insert(row);
+                >.DoInsert(row);
 
-            public IEnumerable<global::Timers.SendMessageTimer> FilterByText(string Text) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        SendMessageTimer,
-                        global::Timers.SendMessageTimer
-                    >.ColEq.Where(0, Text, global::Timers.SendMessageTimer.BSATN.Text)
-                    .Iter();
+            public bool Delete(global::Timers.SendMessageTimer row) =>
+                SpacetimeDB.Internal.ITableView<
+                    SendMessageTimer,
+                    global::Timers.SendMessageTimer
+                >.DoDelete(row);
 
-            public IEnumerable<global::Timers.SendMessageTimer> FilterByScheduledId(
-                ulong ScheduledId
-            ) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        SendMessageTimer,
-                        global::Timers.SendMessageTimer
-                    >.ColEq.Where(1, ScheduledId, global::Timers.SendMessageTimer.BSATN.ScheduledId)
-                    .Iter();
+            public sealed class SendMessageTimerUniqueIndex
+                : UniqueIndex<
+                    SendMessageTimer,
+                    global::Timers.SendMessageTimer,
+                    ulong,
+                    SpacetimeDB.BSATN.U64
+                >
+            {
+                internal SendMessageTimerUniqueIndex(SendMessageTimer handle)
+                    : base(handle, "idx_SendMessageTimer_SendMessageTimer_ScheduledId_unique") { }
 
-            public global::Timers.SendMessageTimer? FindByScheduledId(ulong ScheduledId) =>
-                FilterByScheduledId(ScheduledId)
-                    .Cast<global::Timers.SendMessageTimer?>()
-                    .SingleOrDefault();
+                public bool Update(global::Timers.SendMessageTimer row) =>
+                    DoUpdate(row.ScheduledId, row);
+            }
 
-            public bool DeleteByScheduledId(ulong ScheduledId) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        SendMessageTimer,
-                        global::Timers.SendMessageTimer
-                    >.ColEq.Where(1, ScheduledId, global::Timers.SendMessageTimer.BSATN.ScheduledId)
-                    .Delete();
-
-            public bool UpdateByScheduledId(
-                ulong ScheduledId,
-                global::Timers.SendMessageTimer @this
-            ) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        SendMessageTimer,
-                        global::Timers.SendMessageTimer
-                    >.ColEq.Where(1, ScheduledId, global::Timers.SendMessageTimer.BSATN.ScheduledId)
-                    .Update(@this);
+            public SendMessageTimerUniqueIndex ScheduledId => new(this);
         }
     }
 
     public sealed class Local
     {
+        internal Internal.TableHandles.BTreeMultiColumn BTreeMultiColumn => new();
+        internal Internal.TableHandles.BTreeViews BTreeViews => new();
         public Internal.TableHandles.MultiTable1 MultiTable1 => new();
         public Internal.TableHandles.MultiTable2 MultiTable2 => new();
         public Internal.TableHandles.PrivateTable PrivateTable => new();
@@ -605,6 +683,8 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterReducer<InsertMultiData>();
         SpacetimeDB.Internal.Module.RegisterReducer<ScheduleImmediate>();
         SpacetimeDB.Internal.Module.RegisterReducer<SendScheduledMessage>();
+        SpacetimeDB.Internal.Module.RegisterTable<global::BTreeMultiColumn>();
+        SpacetimeDB.Internal.Module.RegisterTable<global::BTreeViews>();
         SpacetimeDB.Internal.Module.RegisterTable<global::MultiTableRow>();
         SpacetimeDB.Internal.Module.RegisterTable<global::PrivateTable>();
         SpacetimeDB.Internal.Module.RegisterTable<global::PublicTable>();

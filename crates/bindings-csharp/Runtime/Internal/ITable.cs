@@ -7,16 +7,8 @@ public interface ITable<T> : IStructuralReadWrite
 {
     // These are the methods that codegen needs to implement.
     static abstract IEnumerable<TableDesc> MakeTableDesc(ITypeRegistrar registrar);
-}
 
-public interface ITableView<View, T>
-    where View : ITableView<View, T>
-    where T : ITable<T>, new()
-{
-    static abstract T ReadGenFields(BinaryReader reader, T row);
-
-    // These are static helpers that codegen can use.
-    private abstract class RawTableIterBase
+    internal abstract class RawTableIterBase
     {
         public class Enumerator(FFI.RowIter handle) : IDisposable
         {
@@ -108,27 +100,25 @@ public interface ITableView<View, T>
                 using var reader = new BinaryReader(stream);
                 while (stream.Position < stream.Length)
                 {
-                    yield return IStructuralReadWrite.Read<T>(reader);
+                    yield return Read<T>(reader);
                 }
             }
         }
     }
+}
 
-    private class RawTableIter(FFI.TableId tableId) : RawTableIterBase
+public interface ITableView<View, T>
+    where View : ITableView<View, T>
+    where T : ITable<T>, new()
+{
+    static abstract T ReadGenFields(BinaryReader reader, T row);
+
+    // These are static helpers that codegen can use.
+
+    private class RawTableIter(FFI.TableId tableId) : ITable<T>.RawTableIterBase
     {
         protected override void IterStart(out FFI.RowIter handle) =>
             FFI.datastore_table_scan_bsatn(tableId, out handle);
-    }
-
-    private class RawTableIterByColEq(FFI.TableId tableId, FFI.ColId colId, byte[] value)
-        : RawTableIterBase
-    {
-        protected override void IterStart(out FFI.RowIter handle)
-        {
-            _ = (tableId, colId, value);
-            // Needs to be implemented via datastore_table_scan_bsatn
-            throw new NotImplementedException();
-        }
     }
 
     // Note: this must be Lazy to ensure that we don't try to get the tableId during startup, before the module is initialized.
@@ -142,9 +132,23 @@ public interface ITableView<View, T>
 
     private static FFI.TableId tableId => tableId_.Value;
 
-    public static IEnumerable<T> Iter() => new RawTableIter(tableId).Parse();
+    ulong Count { get; }
 
-    protected static T Insert(T row)
+    IEnumerable<T> Iter();
+
+    T Insert(T row);
+
+    bool Delete(T row);
+
+    protected static ulong DoCount()
+    {
+        FFI.datastore_table_row_count(tableId, out var count);
+        return count;
+    }
+
+    protected static IEnumerable<T> DoIter() => new RawTableIter(tableId).Parse();
+
+    protected static T DoInsert(T row)
     {
         // Insert the row.
         var bytes = IStructuralReadWrite.ToBytes(row);
@@ -157,39 +161,10 @@ public interface ITableView<View, T>
         return View.ReadGenFields(reader, row);
     }
 
-    protected readonly ref struct ColEq
+    protected static bool DoDelete(T row)
     {
-        private readonly FFI.ColId colId;
-        private readonly byte[] value;
-
-        private ColEq(FFI.ColId colId, byte[] value)
-        {
-            this.colId = colId;
-            this.value = value;
-        }
-
-        public static ColEq Where<TCol, TColRW>(ushort colId, TCol colValue, TColRW rw)
-            where TColRW : IReadWrite<TCol>
-        {
-            return new(new FFI.ColId(colId), IStructuralReadWrite.ToBytes(rw, colValue));
-        }
-
-        // Note: do not inline FindBy from the Codegen as a helper API here.
-        // C# handles nullables on generics in a weird way, and will break if [SpacetimeDB.Type] is used on a struct.
-        public IEnumerable<T> Iter() => new RawTableIterByColEq(tableId, colId, value).Parse();
-
-        // Needs to be implemented via `datastore_delete_all_by_eq_bsatn`.
-        public bool Delete() => throw new NotImplementedException();
-
-        public bool Update(T row)
-        {
-            // Just like in Rust bindings, updating is just deleting and inserting for now.
-            if (!Delete())
-            {
-                return false;
-            }
-            Insert(row);
-            return true;
-        }
+        var bytes = IStructuralReadWrite.ToBytes(row);
+        FFI.datastore_delete_all_by_eq_bsatn(tableId, bytes, (uint)bytes.Length, out var out_);
+        return out_ > 0;
     }
 }
