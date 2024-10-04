@@ -92,7 +92,7 @@ export class SubscriptionBuilder {
   /// Consumes the `SubscriptionBuilder`,
   /// because the callbacks are not necessarily `Clone`.
   subscribe(query_sql: string[]): void {
-    this.db.subscribe(query_sql, this.#onApplied, this.#onError);
+    this.db['subscribe'](query_sql, this.#onApplied, this.#onError);
   }
 }
 

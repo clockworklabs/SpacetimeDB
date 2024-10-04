@@ -45,8 +45,10 @@ describe('SpacetimeDBClient', () => {
       .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter))
       .build();
 
-    client.subscribe('SELECT * FROM Player');
-    client.subscribe(['SELECT * FROM Position', 'SELECT * FROM Coin']);
+    client.subscriptionBuilder().subscribe(['SELECT * FROM Player']);
+    client
+      .subscriptionBuilder()
+      .subscribe(['SELECT * FROM Position', 'SELECT * FROM Coin']);
 
     let called = false;
     client.onConnect(() => {
