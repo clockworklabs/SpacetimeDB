@@ -35,6 +35,9 @@ const nav: Nav = {
 
     section('Deploying'),
     page('Testnet', 'deploying/testnet', 'deploying/testnet.md'),
+    
+    section('Migration Guides'),
+    page('v0.12', 'migration/v0.12', 'migration/v0.12.md'),
 
     section('Unity Tutorial - Basic Multiplayer'),
     page('Overview', 'unity-tutorial', 'unity/index.md'),
