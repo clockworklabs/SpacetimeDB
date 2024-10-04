@@ -65,7 +65,7 @@ def build_template_target():
 
         BuildModule.setUpClass()
         env = { **os.environ, "CARGO_TARGET_DIR": str(TEMPLATE_TARGET_DIR) }
-        spacetime("build", "--project-path", BuildModule.project_path, env=env, capture_stderr=False)
+        spacetime("build", "--project-path", BuildModule.project_path, env=env)
         BuildModule.tearDownClass()
         BuildModule.doClassCleanups()
 
@@ -276,7 +276,7 @@ class Smoketest(unittest.TestCase):
         if "address" in self.__dict__:
             try:
                 # TODO: save the credentials in publish_module()
-                self.spacetime("delete", self.address, capture_stderr=False)
+                self.spacetime("delete", self.address)
             except Exception:
                 pass
 
@@ -285,7 +285,7 @@ class Smoketest(unittest.TestCase):
         if hasattr(cls, "address"):
             try:
                 # TODO: save the credentials in publish_module()
-                cls.spacetime("delete", cls.address, capture_stderr=False)
+                cls.spacetime("delete", cls.address)
             except Exception:
                 pass
 
