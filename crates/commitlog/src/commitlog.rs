@@ -468,12 +468,17 @@ impl CommitInfo {
         }
     }
 
-    fn offset_before_initial(&self, next_commit_offset: &u64) -> bool {
-        if let Self::Initial { next_offset: offset } = self {
-            if offset > next_commit_offset {
+    // If initial offset falls within a commit, adjust it to the commit boundary
+    fn adjust_initial_offset(&mut self, commit: &StoredCommit) -> bool {
+        if let Self::Initial { next_offset } = self {
+            let last_tx_offset = commit.min_tx_offset + commit.n as u64 - 1;
+            if *next_offset > last_tx_offset {
                 return true;
+            } else {
+                *next_offset = commit.min_tx_offset;
             }
         }
+
         false
     }
 }
@@ -505,7 +510,7 @@ impl<R: Repo> Commits<R> {
         let prev_error = self.last_error.take();
 
         // Skip entries before the initial commit.
-        if self.last_commit.offset_before_initial(&commit.min_tx_offset) {
+        if self.last_commit.adjust_initial_offset(&commit) {
             self.next()
         // Same offset: ignore if duplicate (same crc), else report a "fork".
         } else if self.last_commit.same_offset_as(&commit) {
@@ -600,7 +605,7 @@ impl<R: Repo> Iterator for Commits<R> {
                             .map_err(Into::into)
                             .and_then(|index_file| segment.seek_to_segment(&index_file, next_offset))
                             .inspect_err(|e| {
-                                debug!("commitlog offset index is not used: {e}");
+                                warn!("commitlog offset index is not used: {e}");
                             });
                     }
 
