@@ -10,7 +10,7 @@ using Random = UnityEngine.Random;
 
 public class GameManager : MonoBehaviour
 {
-    [FormerlySerializedAs("playerPrefab")] public CircleController circlePrefab;
+    public CircleController circlePrefab;
     public FoodController foodPrefab;
     public GameObject deathScreen;
     public PlayerController playerPrefab;
@@ -51,16 +51,19 @@ public class GameManager : MonoBehaviour
             AuthToken.SaveToken(token);
             localIdentity = identity;
 
-            conn.RemoteTables.circle.OnInsert += CircleOnInsert;
-            conn.RemoteTables.circle.OnDelete += CircleOnDelete;
-            conn.RemoteTables.entity.OnUpdate += EntityOnUpdate;
-            conn.RemoteTables.food.OnInsert += FoodOnInsert;
-            conn.RemoteTables.player.OnInsert += PlayerOnInsert;
-            conn.RemoteTables.player.OnDelete += PlayerOnDelete;
+            conn.Db.Circle.OnInsert += CircleOnInsert;
+            conn.Db.Circle.OnDelete += CircleOnDelete;
+            conn.Db.Entity.OnUpdate += EntityOnUpdate;
+            conn.Db.Food.OnInsert += FoodOnInsert;
+            conn.Db.Player.OnInsert += PlayerOnInsert;
+            conn.Db.Player.OnDelete += PlayerOnDelete;
             
             // Request all tables
             // TODO(jdetter): This needs to be updated for 0.12 - this will be changed to string[]
-            conn.SubscriptionBuilder().Subscribe("SELECT * FROM *");
+            conn.SubscriptionBuilder().OnApplied(ctx =>
+            {
+                Debug.Log("Subscription applied!");
+            }).Subscribe("SELECT * FROM *");
         }).OnConnectError((status, message) =>
         {
             // Called when we have an error connecting to SpacetimeDB
@@ -72,7 +75,7 @@ public class GameManager : MonoBehaviour
         }).WithUri("http://localhost:3000")
             .WithModuleName("untitled-circle-game")
             .Build();
-
+        
 #pragma warning disable CS0612 // Type or member is obsolete
         conn.onUnhandledReducerError += InstanceOnUnhandledReducerError;
 #pragma warning restore CS0612 // Type or member is obsolete
@@ -82,7 +85,6 @@ public class GameManager : MonoBehaviour
 
     private void InstanceOnUnhandledReducerError(ReducerEvent<Reducer> reducerEvent)
     {
-        // Debug.LogError(reducer);
         Debug.LogError("There was an error!");
     }
     
@@ -96,7 +98,7 @@ public class GameManager : MonoBehaviour
 
     private void PlayerOnInsert(EventContext context, Player insertedPlayer)
     {
-        if (insertedPlayer.Identity == localIdentity && !conn.RemoteTables.circle.FilterByPlayerId(insertedPlayer.PlayerId).Any())
+        if (insertedPlayer.Identity == localIdentity && !conn.Db.Circle.PlayerId.Filter(insertedPlayer.PlayerId).Any())
         {
             // We have a player, but no circle, let's respawn
             Respawn();
@@ -105,7 +107,7 @@ public class GameManager : MonoBehaviour
 
     private void EntityOnUpdate(EventContext context, Entity oldEntity, Entity newEntity)
     {
-        var circle = conn.RemoteTables.circle.FindByEntityId(newEntity.Id);
+        var circle = conn.Db.Circle.EntityId.Find(newEntity.Id);
         if (circle == null)
         {
             return;
@@ -130,7 +132,7 @@ public class GameManager : MonoBehaviour
 
     PlayerController GetOrCreatePlayer(uint playerId)
     {
-        var player = conn.RemoteTables.player.FindByPlayerId(playerId);
+        var player = conn.Db.Player.PlayerId.Find(playerId);
         // Get the PlayerController for this circle
         if (!playerIdToPlayerController.TryGetValue(playerId, out var playerController))
         {
@@ -163,6 +165,6 @@ public class GameManager : MonoBehaviour
     public void Respawn()
     {
         deathScreen.SetActive(false);
-        conn.RemoteReducers.Respawn();
+        conn.Reducers.Respawn();
     }
 }

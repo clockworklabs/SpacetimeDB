@@ -30,11 +30,11 @@ public class CircleController : MonoBehaviour
 
     public void Spawn(Circle circle)
     {
-        var player = GameManager.conn.RemoteTables.player.FindByPlayerId(circle.PlayerId);
+        var player = GameManager.conn.Db.Player.PlayerId.Find(circle.PlayerId);
         entityId = circle.EntityId;
         playerIdentity = player.Identity;
 
-        var entity = GameManager.conn.RemoteTables.entity.FindById(circle.EntityId);
+        var entity = GameManager.conn.Db.Entity.Id.Find(circle.EntityId);
         targetPosition = positionLerp1 = positionLerp2 = transform.position = new UnityEngine.Vector2
         {
             x = entity.Position.X,
@@ -53,7 +53,7 @@ public class CircleController : MonoBehaviour
     }
 
     public uint GetEntityId() => entityId;
-    public Entity GetEntity() => GameManager.conn.RemoteTables.entity.FindById(entityId);
+    public Entity GetEntity() => GameManager.conn.Db.Entity.Id.Find(entityId);
 
     public void Despawn()
     {

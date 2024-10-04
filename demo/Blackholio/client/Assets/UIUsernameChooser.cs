@@ -15,7 +15,7 @@ public class UIUsernameChooser : MonoBehaviour
 
     private void Start()
     {
-        GameManager.conn.RemoteTables.player.OnInsert += (ctx, newPlayer) =>
+        GameManager.conn.Db.Player.OnInsert += (ctx, newPlayer) =>
         {
             if (newPlayer.Identity == GameManager.localIdentity)
             {
@@ -35,7 +35,7 @@ public class UIUsernameChooser : MonoBehaviour
         Debug.Log("Creating player");
 
         sentCreatePlayer = true;
-        GameManager.conn.RemoteReducers.CreatePlayer(usernameInputField.text);
+        GameManager.conn.Reducers.CreatePlayer(usernameInputField.text);
         playButton.interactable = false;
     }
 }

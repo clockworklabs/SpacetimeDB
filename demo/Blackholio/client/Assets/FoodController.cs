@@ -18,9 +18,9 @@ public class FoodController : MonoBehaviour
     public void Spawn(uint entityId)
     {
         this.entityId = entityId;
-        GameManager.conn.RemoteTables.food.OnDelete += OnDelete;
+        GameManager.conn.Db.Food.OnDelete += OnDelete;
         
-        var entity = GameManager.conn.RemoteTables.entity.FindById(entityId);
+        var entity = GameManager.conn.Db.Entity.Id.Find(entityId);
         var position = new UnityEngine.Vector2
         {
             x = entity.Position.X,
@@ -39,7 +39,7 @@ public class FoodController : MonoBehaviour
 
     private void OnDestroy()
     {
-        GameManager.conn.RemoteTables.food.OnDelete -= OnDelete;
+        GameManager.conn.Db.Food.OnDelete -= OnDelete;
     }
 
     private void OnDelete(EventContext context, Food food)

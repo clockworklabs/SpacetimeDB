@@ -13,9 +13,9 @@ namespace SpacetimeDB.Types
 {
 	public sealed class RemoteTables
 	{
-		public class circleHandle : RemoteTableHandle<EventContext, Circle>
+		public class CircleHandle : RemoteTableHandle<EventContext, Circle>
 		{
-			private Dictionary<uint, Circle> EntityId_Index = new(16);
+			private static Dictionary<uint, Circle> EntityId_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -28,44 +28,41 @@ namespace SpacetimeDB.Types
 				EntityId_Index.Remove(((Circle)row).EntityId);
 			}
 
-			public Circle? FindByEntityId(uint value)
+			public readonly ref struct EntityIdUniqueIndex
 			{
-				EntityId_Index.TryGetValue(value, out var r);
-				return r;
-			}
-
-			public IEnumerable<Circle> FilterByEntityId(uint value)
-			{
-				if (FindByEntityId(value) is {} found)
+				public Circle? Find(uint value)
 				{
-					yield return found;
+					EntityId_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
-			public IEnumerable<Circle> FilterByPlayerId(uint value)
+			public EntityIdUniqueIndex EntityId => new();
+
+			public class PlayerIdIndex
 			{
-				return Query(x => x.PlayerId == value);
+				CircleHandle Handle;
+				internal PlayerIdIndex(CircleHandle handle) => Handle = handle;
+				public IEnumerable<Circle> Filter(uint value) =>
+					Handle.Query(x => x.PlayerId == value);
 			}
 
-			public IEnumerable<Circle> FilterByMagnitude(float value)
+			public PlayerIdIndex PlayerId { get; init; }
+
+			internal CircleHandle()
 			{
-				return Query(x => x.Magnitude == value);
+				PlayerId = new(this);
 			}
-
-			public IEnumerable<Circle> FilterByLastSplitTime(ulong value)
-			{
-				return Query(x => x.LastSplitTime == value);
-			}
-
 			public override object GetPrimaryKey(IDatabaseRow row) => ((Circle)row).EntityId;
 
 		}
 
-		public readonly circleHandle circle = new();
+		public readonly CircleHandle Circle = new();
 
-		public class circle_decay_timerHandle : RemoteTableHandle<EventContext, CircleDecayTimer>
+		public class CircleDecayTimerHandle : RemoteTableHandle<EventContext, CircleDecayTimer>
 		{
-			private Dictionary<ulong, CircleDecayTimer> ScheduledId_Index = new(16);
+			private static Dictionary<ulong, CircleDecayTimer> ScheduledId_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -78,29 +75,30 @@ namespace SpacetimeDB.Types
 				ScheduledId_Index.Remove(((CircleDecayTimer)row).ScheduledId);
 			}
 
-			public CircleDecayTimer? FindByScheduledId(ulong value)
+			public readonly ref struct ScheduledIdUniqueIndex
 			{
-				ScheduledId_Index.TryGetValue(value, out var r);
-				return r;
-			}
-
-			public IEnumerable<CircleDecayTimer> FilterByScheduledId(ulong value)
-			{
-				if (FindByScheduledId(value) is {} found)
+				public CircleDecayTimer? Find(ulong value)
 				{
-					yield return found;
+					ScheduledId_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
+			public ScheduledIdUniqueIndex ScheduledId => new();
+
+			internal CircleDecayTimerHandle()
+			{
+			}
 			public override object GetPrimaryKey(IDatabaseRow row) => ((CircleDecayTimer)row).ScheduledId;
 
 		}
 
-		public readonly circle_decay_timerHandle circle_decay_timer = new();
+		public readonly CircleDecayTimerHandle CircleDecayTimer = new();
 
-		public class configHandle : RemoteTableHandle<EventContext, Config>
+		public class ConfigHandle : RemoteTableHandle<EventContext, Config>
 		{
-			private Dictionary<uint, Config> Id_Index = new(16);
+			private static Dictionary<uint, Config> Id_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -113,34 +111,30 @@ namespace SpacetimeDB.Types
 				Id_Index.Remove(((Config)row).Id);
 			}
 
-			public Config? FindById(uint value)
+			public readonly ref struct IdUniqueIndex
 			{
-				Id_Index.TryGetValue(value, out var r);
-				return r;
-			}
-
-			public IEnumerable<Config> FilterById(uint value)
-			{
-				if (FindById(value) is {} found)
+				public Config? Find(uint value)
 				{
-					yield return found;
+					Id_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
-			public IEnumerable<Config> FilterByWorldSize(ulong value)
+			public IdUniqueIndex Id => new();
+
+			internal ConfigHandle()
 			{
-				return Query(x => x.WorldSize == value);
 			}
-
 			public override object GetPrimaryKey(IDatabaseRow row) => ((Config)row).Id;
 
 		}
 
-		public readonly configHandle config = new();
+		public readonly ConfigHandle Config = new();
 
-		public class entityHandle : RemoteTableHandle<EventContext, Entity>
+		public class EntityHandle : RemoteTableHandle<EventContext, Entity>
 		{
-			private Dictionary<uint, Entity> Id_Index = new(16);
+			private static Dictionary<uint, Entity> Id_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -153,34 +147,30 @@ namespace SpacetimeDB.Types
 				Id_Index.Remove(((Entity)row).Id);
 			}
 
-			public Entity? FindById(uint value)
+			public readonly ref struct IdUniqueIndex
 			{
-				Id_Index.TryGetValue(value, out var r);
-				return r;
-			}
-
-			public IEnumerable<Entity> FilterById(uint value)
-			{
-				if (FindById(value) is {} found)
+				public Entity? Find(uint value)
 				{
-					yield return found;
+					Id_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
-			public IEnumerable<Entity> FilterByMass(uint value)
+			public IdUniqueIndex Id => new();
+
+			internal EntityHandle()
 			{
-				return Query(x => x.Mass == value);
 			}
-
 			public override object GetPrimaryKey(IDatabaseRow row) => ((Entity)row).Id;
 
 		}
 
-		public readonly entityHandle entity = new();
+		public readonly EntityHandle Entity = new();
 
-		public class foodHandle : RemoteTableHandle<EventContext, Food>
+		public class FoodHandle : RemoteTableHandle<EventContext, Food>
 		{
-			private Dictionary<uint, Food> EntityId_Index = new(16);
+			private static Dictionary<uint, Food> EntityId_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -193,29 +183,30 @@ namespace SpacetimeDB.Types
 				EntityId_Index.Remove(((Food)row).EntityId);
 			}
 
-			public Food? FindByEntityId(uint value)
+			public readonly ref struct EntityIdUniqueIndex
 			{
-				EntityId_Index.TryGetValue(value, out var r);
-				return r;
-			}
-
-			public IEnumerable<Food> FilterByEntityId(uint value)
-			{
-				if (FindByEntityId(value) is {} found)
+				public Food? Find(uint value)
 				{
-					yield return found;
+					EntityId_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
+			public EntityIdUniqueIndex EntityId => new();
+
+			internal FoodHandle()
+			{
+			}
 			public override object GetPrimaryKey(IDatabaseRow row) => ((Food)row).EntityId;
 
 		}
 
-		public readonly foodHandle food = new();
+		public readonly FoodHandle Food = new();
 
-		public class logged_out_circleHandle : RemoteTableHandle<EventContext, LoggedOutCircle>
+		public class LoggedOutCircleHandle : RemoteTableHandle<EventContext, LoggedOutCircle>
 		{
-			private Dictionary<uint, LoggedOutCircle> LoggedOutId_Index = new(16);
+			private static Dictionary<uint, LoggedOutCircle> LoggedOutId_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -228,34 +219,41 @@ namespace SpacetimeDB.Types
 				LoggedOutId_Index.Remove(((LoggedOutCircle)row).LoggedOutId);
 			}
 
-			public LoggedOutCircle? FindByLoggedOutId(uint value)
+			public readonly ref struct LoggedOutIdUniqueIndex
 			{
-				LoggedOutId_Index.TryGetValue(value, out var r);
-				return r;
-			}
-
-			public IEnumerable<LoggedOutCircle> FilterByLoggedOutId(uint value)
-			{
-				if (FindByLoggedOutId(value) is {} found)
+				public LoggedOutCircle? Find(uint value)
 				{
-					yield return found;
+					LoggedOutId_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
-			public IEnumerable<LoggedOutCircle> FilterByPlayerId(uint value)
+			public LoggedOutIdUniqueIndex LoggedOutId => new();
+
+			public class PlayerIdIndex
 			{
-				return Query(x => x.PlayerId == value);
+				LoggedOutCircleHandle Handle;
+				internal PlayerIdIndex(LoggedOutCircleHandle handle) => Handle = handle;
+				public IEnumerable<LoggedOutCircle> Filter(uint value) =>
+					Handle.Query(x => x.PlayerId == value);
 			}
 
+			public PlayerIdIndex PlayerId { get; init; }
+
+			internal LoggedOutCircleHandle()
+			{
+				PlayerId = new(this);
+			}
 			public override object GetPrimaryKey(IDatabaseRow row) => ((LoggedOutCircle)row).LoggedOutId;
 
 		}
 
-		public readonly logged_out_circleHandle logged_out_circle = new();
+		public readonly LoggedOutCircleHandle LoggedOutCircle = new();
 
-		public class logged_out_playerHandle : RemoteTableHandle<EventContext, LoggedOutPlayer>
+		public class LoggedOutPlayerHandle : RemoteTableHandle<EventContext, LoggedOutPlayer>
 		{
-			private Dictionary<SpacetimeDB.Identity, LoggedOutPlayer> Identity_Index = new(16);
+			private static Dictionary<SpacetimeDB.Identity, LoggedOutPlayer> Identity_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -268,29 +266,30 @@ namespace SpacetimeDB.Types
 				Identity_Index.Remove(((LoggedOutPlayer)row).Identity);
 			}
 
-			public LoggedOutPlayer? FindByIdentity(SpacetimeDB.Identity value)
+			public readonly ref struct IdentityUniqueIndex
 			{
-				Identity_Index.TryGetValue(value, out var r);
-				return r;
-			}
-
-			public IEnumerable<LoggedOutPlayer> FilterByIdentity(SpacetimeDB.Identity value)
-			{
-				if (FindByIdentity(value) is {} found)
+				public LoggedOutPlayer? Find(SpacetimeDB.Identity value)
 				{
-					yield return found;
+					Identity_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
+			public IdentityUniqueIndex Identity => new();
+
+			internal LoggedOutPlayerHandle()
+			{
+			}
 			public override object GetPrimaryKey(IDatabaseRow row) => ((LoggedOutPlayer)row).Identity;
 
 		}
 
-		public readonly logged_out_playerHandle logged_out_player = new();
+		public readonly LoggedOutPlayerHandle LoggedOutPlayer = new();
 
-		public class move_all_players_timerHandle : RemoteTableHandle<EventContext, MoveAllPlayersTimer>
+		public class MoveAllPlayersTimerHandle : RemoteTableHandle<EventContext, MoveAllPlayersTimer>
 		{
-			private Dictionary<ulong, MoveAllPlayersTimer> ScheduledId_Index = new(16);
+			private static Dictionary<ulong, MoveAllPlayersTimer> ScheduledId_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -303,30 +302,31 @@ namespace SpacetimeDB.Types
 				ScheduledId_Index.Remove(((MoveAllPlayersTimer)row).ScheduledId);
 			}
 
-			public MoveAllPlayersTimer? FindByScheduledId(ulong value)
+			public readonly ref struct ScheduledIdUniqueIndex
 			{
-				ScheduledId_Index.TryGetValue(value, out var r);
-				return r;
-			}
-
-			public IEnumerable<MoveAllPlayersTimer> FilterByScheduledId(ulong value)
-			{
-				if (FindByScheduledId(value) is {} found)
+				public MoveAllPlayersTimer? Find(ulong value)
 				{
-					yield return found;
+					ScheduledId_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
+			public ScheduledIdUniqueIndex ScheduledId => new();
+
+			internal MoveAllPlayersTimerHandle()
+			{
+			}
 			public override object GetPrimaryKey(IDatabaseRow row) => ((MoveAllPlayersTimer)row).ScheduledId;
 
 		}
 
-		public readonly move_all_players_timerHandle move_all_players_timer = new();
+		public readonly MoveAllPlayersTimerHandle MoveAllPlayersTimer = new();
 
-		public class playerHandle : RemoteTableHandle<EventContext, Player>
+		public class PlayerHandle : RemoteTableHandle<EventContext, Player>
 		{
-			private Dictionary<SpacetimeDB.Identity, Player> Identity_Index = new(16);
-			private Dictionary<uint, Player> PlayerId_Index = new(16);
+			private static Dictionary<SpacetimeDB.Identity, Player> Identity_Index = new(16);
+			private static Dictionary<uint, Player> PlayerId_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -341,48 +341,42 @@ namespace SpacetimeDB.Types
 				PlayerId_Index.Remove(((Player)row).PlayerId);
 			}
 
-			public Player? FindByIdentity(SpacetimeDB.Identity value)
+			public readonly ref struct IdentityUniqueIndex
 			{
-				Identity_Index.TryGetValue(value, out var r);
-				return r;
-			}
-
-			public IEnumerable<Player> FilterByIdentity(SpacetimeDB.Identity value)
-			{
-				if (FindByIdentity(value) is {} found)
+				public Player? Find(SpacetimeDB.Identity value)
 				{
-					yield return found;
+					Identity_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
-			public Player? FindByPlayerId(uint value)
-			{
-				PlayerId_Index.TryGetValue(value, out var r);
-				return r;
-			}
+			public IdentityUniqueIndex Identity => new();
 
-			public IEnumerable<Player> FilterByPlayerId(uint value)
+			public readonly ref struct PlayerIdUniqueIndex
 			{
-				if (FindByPlayerId(value) is {} found)
+				public Player? Find(uint value)
 				{
-					yield return found;
+					PlayerId_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
-			public IEnumerable<Player> FilterByName(string value)
+			public PlayerIdUniqueIndex PlayerId => new();
+
+			internal PlayerHandle()
 			{
-				return Query(x => x.Name == value);
 			}
-
 			public override object GetPrimaryKey(IDatabaseRow row) => ((Player)row).Identity;
 
 		}
 
-		public readonly playerHandle player = new();
+		public readonly PlayerHandle Player = new();
 
-		public class spawn_food_timerHandle : RemoteTableHandle<EventContext, SpawnFoodTimer>
+		public class SpawnFoodTimerHandle : RemoteTableHandle<EventContext, SpawnFoodTimer>
 		{
-			private Dictionary<ulong, SpawnFoodTimer> ScheduledId_Index = new(16);
+			private static Dictionary<ulong, SpawnFoodTimer> ScheduledId_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -395,25 +389,26 @@ namespace SpacetimeDB.Types
 				ScheduledId_Index.Remove(((SpawnFoodTimer)row).ScheduledId);
 			}
 
-			public SpawnFoodTimer? FindByScheduledId(ulong value)
+			public readonly ref struct ScheduledIdUniqueIndex
 			{
-				ScheduledId_Index.TryGetValue(value, out var r);
-				return r;
-			}
-
-			public IEnumerable<SpawnFoodTimer> FilterByScheduledId(ulong value)
-			{
-				if (FindByScheduledId(value) is {} found)
+				public SpawnFoodTimer? Find(ulong value)
 				{
-					yield return found;
+					ScheduledId_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
+			public ScheduledIdUniqueIndex ScheduledId => new();
+
+			internal SpawnFoodTimerHandle()
+			{
+			}
 			public override object GetPrimaryKey(IDatabaseRow row) => ((SpawnFoodTimer)row).ScheduledId;
 
 		}
 
-		public readonly spawn_food_timerHandle spawn_food_timer = new();
+		public readonly SpawnFoodTimerHandle SpawnFoodTimer = new();
 
 	}
 
@@ -543,12 +538,12 @@ namespace SpacetimeDB.Types
 	public partial record EventContext : DbContext<RemoteTables>, IEventContext
 	{
 		public readonly RemoteReducers Reducers;
-		public readonly Event<Reducer> Reducer;
+		public readonly Event<Reducer> Event;
 
-		internal EventContext(DbConnection conn, Event<Reducer> reducer) : base(conn.RemoteTables)
+		internal EventContext(DbConnection conn, Event<Reducer> reducerEvent) : base(conn.Db)
 		{
-			Reducers = conn.RemoteReducers;
-			Reducer = reducer;
+			Reducers = conn.Reducers;
+			Event = reducerEvent;
 		}
 	}
 
@@ -567,23 +562,23 @@ namespace SpacetimeDB.Types
 	)>;
 	public class DbConnection : DbConnectionBase<DbConnection, Reducer>
 	{
-		public readonly RemoteTables RemoteTables = new();
-		public readonly RemoteReducers RemoteReducers;
+		public readonly RemoteTables Db = new();
+		public readonly RemoteReducers Reducers;
 
 		public DbConnection()
 		{
-			RemoteReducers = new(this);
+			Reducers = new(this);
 
-			clientDB.AddTable<Circle>("circle", RemoteTables.circle);
-			clientDB.AddTable<CircleDecayTimer>("circle_decay_timer", RemoteTables.circle_decay_timer);
-			clientDB.AddTable<Config>("config", RemoteTables.config);
-			clientDB.AddTable<Entity>("entity", RemoteTables.entity);
-			clientDB.AddTable<Food>("food", RemoteTables.food);
-			clientDB.AddTable<LoggedOutCircle>("logged_out_circle", RemoteTables.logged_out_circle);
-			clientDB.AddTable<LoggedOutPlayer>("logged_out_player", RemoteTables.logged_out_player);
-			clientDB.AddTable<MoveAllPlayersTimer>("move_all_players_timer", RemoteTables.move_all_players_timer);
-			clientDB.AddTable<Player>("player", RemoteTables.player);
-			clientDB.AddTable<SpawnFoodTimer>("spawn_food_timer", RemoteTables.spawn_food_timer);
+			clientDB.AddTable<Circle>("circle", Db.Circle);
+			clientDB.AddTable<CircleDecayTimer>("circle_decay_timer", Db.CircleDecayTimer);
+			clientDB.AddTable<Config>("config", Db.Config);
+			clientDB.AddTable<Entity>("entity", Db.Entity);
+			clientDB.AddTable<Food>("food", Db.Food);
+			clientDB.AddTable<LoggedOutCircle>("logged_out_circle", Db.LoggedOutCircle);
+			clientDB.AddTable<LoggedOutPlayer>("logged_out_player", Db.LoggedOutPlayer);
+			clientDB.AddTable<MoveAllPlayersTimer>("move_all_players_timer", Db.MoveAllPlayersTimer);
+			clientDB.AddTable<Player>("player", Db.Player);
+			clientDB.AddTable<SpawnFoodTimer>("spawn_food_timer", Db.SpawnFoodTimer);
 		}
 
 		protected override Reducer ToReducer(TransactionUpdate update)
@@ -612,13 +607,13 @@ namespace SpacetimeDB.Types
 		{
 			var eventContext = (EventContext)context;
 			return reducer switch {
-				Reducer.CircleDecay(var args) => RemoteReducers.InvokeCircleDecay(eventContext, args),
-				Reducer.CreatePlayer(var args) => RemoteReducers.InvokeCreatePlayer(eventContext, args),
-				Reducer.MoveAllPlayers(var args) => RemoteReducers.InvokeMoveAllPlayers(eventContext, args),
-				Reducer.PlayerSplit(var args) => RemoteReducers.InvokePlayerSplit(eventContext, args),
-				Reducer.Respawn(var args) => RemoteReducers.InvokeRespawn(eventContext, args),
-				Reducer.SpawnFood(var args) => RemoteReducers.InvokeSpawnFood(eventContext, args),
-				Reducer.UpdatePlayerInput(var args) => RemoteReducers.InvokeUpdatePlayerInput(eventContext, args),
+				Reducer.CircleDecay(var args) => Reducers.InvokeCircleDecay(eventContext, args),
+				Reducer.CreatePlayer(var args) => Reducers.InvokeCreatePlayer(eventContext, args),
+				Reducer.MoveAllPlayers(var args) => Reducers.InvokeMoveAllPlayers(eventContext, args),
+				Reducer.PlayerSplit(var args) => Reducers.InvokePlayerSplit(eventContext, args),
+				Reducer.Respawn(var args) => Reducers.InvokeRespawn(eventContext, args),
+				Reducer.SpawnFood(var args) => Reducers.InvokeSpawnFood(eventContext, args),
+				Reducer.UpdatePlayerInput(var args) => Reducers.InvokeUpdatePlayerInput(eventContext, args),
 				Reducer.StdbNone or
 				Reducer.StdbIdentityConnected or
 				Reducer.StdbIdentityDisconnected => true,
