@@ -642,27 +642,20 @@ namespace SpacetimeDB
 {
 	public sealed class RemoteTables
 	{
-		public class has_special_stuffHandle : RemoteTableHandle<EventContext, HasSpecialStuff>
+		public class HasSpecialStuffHandle : RemoteTableHandle<EventContext, HasSpecialStuff>
 		{
-			public IEnumerable<HasSpecialStuff> FilterByIdentity(SpacetimeDB.Identity value)
+			internal HasSpecialStuffHandle()
 			{
-				return Query(x => x.Identity == value);
 			}
-
-			public IEnumerable<HasSpecialStuff> FilterByAddress(SpacetimeDB.Address value)
-			{
-				return Query(x => x.Address == value);
-			}
-
 
 		}
 
-		public readonly has_special_stuffHandle has_special_stuff = new();
+		public readonly HasSpecialStuffHandle HasSpecialStuff = new();
 
-		public class pk_multi_identityHandle : RemoteTableHandle<EventContext, PkMultiIdentity>
+		public class PkMultiIdentityHandle : RemoteTableHandle<EventContext, PkMultiIdentity>
 		{
-			private Dictionary<uint, PkMultiIdentity> Id_Index = new(16);
-			private Dictionary<uint, PkMultiIdentity> Other_Index = new(16);
+			private static Dictionary<uint, PkMultiIdentity> Id_Index = new(16);
+			private static Dictionary<uint, PkMultiIdentity> Other_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -677,72 +670,73 @@ namespace SpacetimeDB
 				Other_Index.Remove(((PkMultiIdentity)row).Other);
 			}
 
-			public PkMultiIdentity? FindById(uint value)
+			public readonly ref struct IdUniqueIndex
 			{
-				Id_Index.TryGetValue(value, out var r);
-				return r;
-			}
-
-			public IEnumerable<PkMultiIdentity> FilterById(uint value)
-			{
-				if (FindById(value) is {} found)
+				public PkMultiIdentity? Find(uint value)
 				{
-					yield return found;
+					Id_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
-			public PkMultiIdentity? FindByOther(uint value)
-			{
-				Other_Index.TryGetValue(value, out var r);
-				return r;
-			}
+			public IdUniqueIndex Id => new();
 
-			public IEnumerable<PkMultiIdentity> FilterByOther(uint value)
+			public readonly ref struct OtherUniqueIndex
 			{
-				if (FindByOther(value) is {} found)
+				public PkMultiIdentity? Find(uint value)
 				{
-					yield return found;
+					Other_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
+			public OtherUniqueIndex Other => new();
+
+			internal PkMultiIdentityHandle()
+			{
+			}
 			public override object GetPrimaryKey(IDatabaseRow row) => ((PkMultiIdentity)row).Id;
 
 		}
 
-		public readonly pk_multi_identityHandle pk_multi_identity = new();
+		public readonly PkMultiIdentityHandle PkMultiIdentity = new();
 
-		public class pointsHandle : RemoteTableHandle<EventContext, Point>
+		public class PointsHandle : RemoteTableHandle<EventContext, Point>
 		{
-			public IEnumerable<Point> FilterByX(long value)
+			public class XYIndex
 			{
-				return Query(x => x.X == value);
+				PointsHandle Handle;
+				internal XYIndex(PointsHandle handle) => Handle = handle;
+				public IEnumerable<Point> Filter(long value) =>
+					Handle.Query(x => x.X == value);
 			}
 
-			public IEnumerable<Point> FilterByY(long value)
-			{
-				return Query(x => x.Y == value);
-			}
+			public XYIndex XY { get; init; }
 
+			internal PointsHandle()
+			{
+				XY = new(this);
+			}
 
 		}
 
-		public readonly pointsHandle points = new();
+		public readonly PointsHandle Points = new();
 
-		public class privateHandle : RemoteTableHandle<EventContext, Private>
+		public class PrivateHandle : RemoteTableHandle<EventContext, Private>
 		{
-			public IEnumerable<Private> FilterByName(string value)
+			internal PrivateHandle()
 			{
-				return Query(x => x.Name == value);
 			}
-
 
 		}
 
-		public readonly privateHandle private = new();
+		public readonly PrivateHandle Private = new();
 
-		public class repeating_test_argHandle : RemoteTableHandle<EventContext, RepeatingTestArg>
+		public class RepeatingTestArgHandle : RemoteTableHandle<EventContext, RepeatingTestArg>
 		{
-			private Dictionary<ulong, RepeatingTestArg> ScheduledId_Index = new(16);
+			private static Dictionary<ulong, RepeatingTestArg> ScheduledId_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -755,63 +749,61 @@ namespace SpacetimeDB
 				ScheduledId_Index.Remove(((RepeatingTestArg)row).ScheduledId);
 			}
 
-			public IEnumerable<RepeatingTestArg> FilterByPrevTime(ulong value)
+			public readonly ref struct ScheduledIdUniqueIndex
 			{
-				return Query(x => x.PrevTime == value);
-			}
-
-			public RepeatingTestArg? FindByScheduledId(ulong value)
-			{
-				ScheduledId_Index.TryGetValue(value, out var r);
-				return r;
-			}
-
-			public IEnumerable<RepeatingTestArg> FilterByScheduledId(ulong value)
-			{
-				if (FindByScheduledId(value) is {} found)
+				public RepeatingTestArg? Find(ulong value)
 				{
-					yield return found;
+					ScheduledId_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
+			public ScheduledIdUniqueIndex ScheduledId => new();
+
+			internal RepeatingTestArgHandle()
+			{
+			}
 			public override object GetPrimaryKey(IDatabaseRow row) => ((RepeatingTestArg)row).ScheduledId;
 
 		}
 
-		public readonly repeating_test_argHandle repeating_test_arg = new();
+		public readonly RepeatingTestArgHandle RepeatingTestArg = new();
 
-		public class test_aHandle : RemoteTableHandle<EventContext, TestA>
+		public class TestAHandle : RemoteTableHandle<EventContext, TestA>
 		{
-			public IEnumerable<TestA> FilterByX(uint value)
+			public class XIndex
 			{
-				return Query(x => x.X == value);
+				TestAHandle Handle;
+				internal XIndex(TestAHandle handle) => Handle = handle;
+				public IEnumerable<TestA> Filter(uint value) =>
+					Handle.Query(x => x.X == value);
 			}
 
-			public IEnumerable<TestA> FilterByY(uint value)
-			{
-				return Query(x => x.Y == value);
-			}
+			public XIndex X { get; init; }
 
-			public IEnumerable<TestA> FilterByZ(string value)
+			internal TestAHandle()
 			{
-				return Query(x => x.Z == value);
+				X = new(this);
 			}
-
 
 		}
 
-		public readonly test_aHandle test_a = new();
+		public readonly TestAHandle TestA = new();
 
-		public class test_dHandle : RemoteTableHandle<EventContext, TestD>
+		public class TestDHandle : RemoteTableHandle<EventContext, TestD>
 		{
+			internal TestDHandle()
+			{
+			}
 
 		}
 
-		public readonly test_dHandle test_d = new();
+		public readonly TestDHandle TestD = new();
 
-		public class test_eHandle : RemoteTableHandle<EventContext, TestE>
+		public class TestEHandle : RemoteTableHandle<EventContext, TestE>
 		{
-			private Dictionary<ulong, TestE> Id_Index = new(16);
+			private static Dictionary<ulong, TestE> Id_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -824,37 +816,47 @@ namespace SpacetimeDB
 				Id_Index.Remove(((TestE)row).Id);
 			}
 
-			public TestE? FindById(ulong value)
+			public readonly ref struct IdUniqueIndex
 			{
-				Id_Index.TryGetValue(value, out var r);
-				return r;
-			}
-
-			public IEnumerable<TestE> FilterById(ulong value)
-			{
-				if (FindById(value) is {} found)
+				public TestE? Find(ulong value)
 				{
-					yield return found;
+					Id_Index.TryGetValue(value, out var r);
+					return r;
 				}
+
 			}
 
-			public IEnumerable<TestE> FilterByName(string value)
+			public IdUniqueIndex Id => new();
+
+			public class NameIndex
 			{
-				return Query(x => x.Name == value);
+				TestEHandle Handle;
+				internal NameIndex(TestEHandle handle) => Handle = handle;
+				public IEnumerable<TestE> Filter(string value) =>
+					Handle.Query(x => x.Name == value);
 			}
 
+			public NameIndex Name { get; init; }
+
+			internal TestEHandle()
+			{
+				Name = new(this);
+			}
 			public override object GetPrimaryKey(IDatabaseRow row) => ((TestE)row).Id;
 
 		}
 
-		public readonly test_eHandle test_e = new();
+		public readonly TestEHandle TestE = new();
 
-		public class test_fHandle : RemoteTableHandle<EventContext, TestFoobar>
+		public class TestFHandle : RemoteTableHandle<EventContext, TestFoobar>
 		{
+			internal TestFHandle()
+			{
+			}
 
 		}
 
-		public readonly test_fHandle test_f = new();
+		public readonly TestFHandle TestF = new();
 
 	}
 
@@ -989,9 +991,9 @@ namespace SpacetimeDB
 		public readonly RemoteReducers Reducers;
 		public readonly Event<Reducer> Reducer;
 
-		internal EventContext(DbConnection conn, Event<Reducer> reducer) : base(conn.RemoteTables)
+		internal EventContext(DbConnection conn, Event<Reducer> reducer) : base(conn.Db)
 		{
-			Reducers = conn.RemoteReducers;
+			Reducers = conn.Reducers;
 			Reducer = reducer;
 		}
 	}
@@ -1011,22 +1013,22 @@ namespace SpacetimeDB
 	)>;
 	public class DbConnection : DbConnectionBase<DbConnection, Reducer>
 	{
-		public readonly RemoteTables RemoteTables = new();
-		public readonly RemoteReducers RemoteReducers;
+		public readonly RemoteTables Db = new();
+		public readonly RemoteReducers Reducers;
 
 		public DbConnection()
 		{
-			RemoteReducers = new(this);
+			Reducers = new(this);
 
-			clientDB.AddTable<HasSpecialStuff>("has_special_stuff", RemoteTables.has_special_stuff);
-			clientDB.AddTable<PkMultiIdentity>("pk_multi_identity", RemoteTables.pk_multi_identity);
-			clientDB.AddTable<Point>("points", RemoteTables.points);
-			clientDB.AddTable<Private>("private", RemoteTables.private);
-			clientDB.AddTable<RepeatingTestArg>("repeating_test_arg", RemoteTables.repeating_test_arg);
-			clientDB.AddTable<TestA>("test_a", RemoteTables.test_a);
-			clientDB.AddTable<TestD>("test_d", RemoteTables.test_d);
-			clientDB.AddTable<TestE>("test_e", RemoteTables.test_e);
-			clientDB.AddTable<TestFoobar>("test_f", RemoteTables.test_f);
+			clientDB.AddTable<HasSpecialStuff>("has_special_stuff", Db.HasSpecialStuff);
+			clientDB.AddTable<PkMultiIdentity>("pk_multi_identity", Db.PkMultiIdentity);
+			clientDB.AddTable<Point>("points", Db.Points);
+			clientDB.AddTable<Private>("private", Db.Private);
+			clientDB.AddTable<RepeatingTestArg>("repeating_test_arg", Db.RepeatingTestArg);
+			clientDB.AddTable<TestA>("test_a", Db.TestA);
+			clientDB.AddTable<TestD>("test_d", Db.TestD);
+			clientDB.AddTable<TestE>("test_e", Db.TestE);
+			clientDB.AddTable<TestFoobar>("test_f", Db.TestF);
 		}
 
 		protected override Reducer ToReducer(TransactionUpdate update)
@@ -1055,13 +1057,13 @@ namespace SpacetimeDB
 		{
 			var eventContext = (EventContext)context;
 			return reducer switch {
-				Reducer.AddPlayer(var args) => RemoteReducers.InvokeAddPlayer(eventContext, args),
-				Reducer.AddPrivate(var args) => RemoteReducers.InvokeAddPrivate(eventContext, args),
-				Reducer.DeletePlayer(var args) => RemoteReducers.InvokeDeletePlayer(eventContext, args),
-				Reducer.DeletePlayersByName(var args) => RemoteReducers.InvokeDeletePlayersByName(eventContext, args),
-				Reducer.QueryPrivate(var args) => RemoteReducers.InvokeQueryPrivate(eventContext, args),
-				Reducer.RepeatingTest(var args) => RemoteReducers.InvokeRepeatingTest(eventContext, args),
-				Reducer.Test(var args) => RemoteReducers.InvokeTest(eventContext, args),
+				Reducer.AddPlayer(var args) => Reducers.InvokeAddPlayer(eventContext, args),
+				Reducer.AddPrivate(var args) => Reducers.InvokeAddPrivate(eventContext, args),
+				Reducer.DeletePlayer(var args) => Reducers.InvokeDeletePlayer(eventContext, args),
+				Reducer.DeletePlayersByName(var args) => Reducers.InvokeDeletePlayersByName(eventContext, args),
+				Reducer.QueryPrivate(var args) => Reducers.InvokeQueryPrivate(eventContext, args),
+				Reducer.RepeatingTest(var args) => Reducers.InvokeRepeatingTest(eventContext, args),
+				Reducer.Test(var args) => Reducers.InvokeTest(eventContext, args),
 				Reducer.StdbNone or
 				Reducer.StdbIdentityConnected or
 				Reducer.StdbIdentityDisconnected => true,
