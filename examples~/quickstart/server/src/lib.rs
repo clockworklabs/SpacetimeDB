@@ -1,7 +1,7 @@
-use spacetimedb::{ReducerContext, Identity, Timestamp};
+use spacetimedb::{ReducerContext, Identity, Table, Timestamp};
 use anyhow::{Result, anyhow};
 
-#[spacetimedb::table(name = User, public)]
+#[spacetimedb::table(name = user, public)]
 pub struct User {
     #[primary_key]
     identity: Identity,
@@ -9,7 +9,7 @@ pub struct User {
     online: bool,
 }
 
-#[spacetimedb::table(name = Message, public)]
+#[spacetimedb::table(name = message, public)]
 pub struct Message {
     sender: Identity,
     sent: Timestamp,
@@ -17,20 +17,20 @@ pub struct Message {
 }
 
 #[spacetimedb::reducer(init)]
-pub fn init() {
-    // Called when the module is initially published
+pub fn init(_ctx: &ReducerContext) {
+	
 }
 
 #[spacetimedb::reducer(client_connected)]
-pub fn identity_connected(ctx: ReducerContext) {
-    if let Some(user) = User::filter_by_identity(&ctx.sender) {
+pub fn identity_connected(ctx: &ReducerContext) {
+    if let Some(user) = ctx.db.user().identity().find(&ctx.sender) {
         // If this is a returning user, i.e. we already have a `User` with this `Identity`,
         // set `online: true`, but leave `name` and `identity` unchanged.
-        User::update_by_identity(&ctx.sender, User { online: true, ..user });
+        ctx.db.user().identity().update(User { online: true, ..user });
     } else {
         // If this is a new user, create a `User` row for the `Identity`,
         // which is online, but hasn't set a name.
-        User::insert(User {
+        ctx.db.user().try_insert(User {
             name: None,
             identity: ctx.sender,
             online: true,
@@ -39,9 +39,9 @@ pub fn identity_connected(ctx: ReducerContext) {
 }
 
 #[spacetimedb::reducer(client_disconnected)]
-pub fn identity_disconnected(ctx: ReducerContext) {
-    if let Some(user) = User::filter_by_identity(&ctx.sender) {
-        User::update_by_identity(&ctx.sender, User { online: false, ..user });
+pub fn identity_disconnected(ctx: &ReducerContext) {
+    if let Some(user) = ctx.db.user().identity().find(&ctx.sender) {
+        ctx.db.user().identity().update(User { online: false, ..user });
     } else {
         // This branch should be unreachable,
         // as it doesn't make sense for a client to disconnect without connecting first.
@@ -58,10 +58,10 @@ fn validate_name(name: String) -> Result<String> {
 }
 
 #[spacetimedb::reducer]
-pub fn set_name(ctx: ReducerContext, name: String) -> Result<()> {
+pub fn set_name(ctx: &ReducerContext, name: String) -> Result<()> {
     let name = validate_name(name)?;
-    if let Some(user) = User::filter_by_identity(&ctx.sender) {
-        User::update_by_identity(&ctx.sender, User { name: Some(name), ..user });
+    if let Some(user) = ctx.db.user().identity().find(&ctx.sender) {
+        ctx.db.user().identity().update(User { name: Some(name), ..user });
         Ok(())
     } else {
         Err(anyhow!("Cannot set name for unknown user"))
@@ -77,12 +77,12 @@ fn validate_message(text: String) -> Result<String> {
 }
 
 #[spacetimedb::reducer]
-pub fn send_message(ctx: ReducerContext, text: String) -> Result<()> {
+pub fn send_message(ctx: &ReducerContext, text: String) -> Result<()> {
     // Things to consider:
     // - Rate-limit messages per-user.
     // - Reject messages from unnamed users.
     let text = validate_message(text)?;
-    Message::insert(Message {
+    ctx.db.message().insert(Message {
         sender: ctx.sender,
         text,
         sent: ctx.timestamp,

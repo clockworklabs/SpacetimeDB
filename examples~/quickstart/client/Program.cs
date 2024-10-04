@@ -31,13 +31,13 @@ void Main()
         .OnDisconnect(OnDisconnect)
         .Build();
 
-    conn.RemoteTables.User.OnInsert += User_OnInsert;
-    conn.RemoteTables.User.OnUpdate += User_OnUpdate;
+    conn.Db.User.OnInsert += User_OnInsert;
+    conn.Db.User.OnUpdate += User_OnUpdate;
 
-    conn.RemoteTables.Message.OnInsert += Message_OnInsert;
+    conn.Db.Message.OnInsert += Message_OnInsert;
 
-    conn.RemoteReducers.OnSetName += Reducer_OnSetNameEvent;
-    conn.RemoteReducers.OnSendMessage += Reducer_OnSendMessageEvent;
+    conn.Reducers.OnSetName += Reducer_OnSetNameEvent;
+    conn.Reducers.OnSendMessage += Reducer_OnSendMessageEvent;
 
 #pragma warning disable CS0612 // Using obsolete API
     conn.onUnhandledReducerError += onUnhandledReducerError;
@@ -88,7 +88,7 @@ void User_OnUpdate(EventContext ctx, User oldValue, User newValue)
 
 void PrintMessage(RemoteTables tables, Message message)
 {
-    var sender = tables.User.FindByIdentity(message.Sender);
+    var sender = tables.User.Identity.Find(message.Sender);
     var senderName = "unknown";
     if (sender != null)
     {
@@ -100,7 +100,7 @@ void PrintMessage(RemoteTables tables, Message message)
 
 void Message_OnInsert(EventContext ctx, Message insertedValue)
 {
-    if (ctx.Reducer is not Event<Reducer>.SubscribeApplied)
+    if (ctx.Event is not Event<Reducer>.SubscribeApplied)
     {
         PrintMessage(ctx.Db, insertedValue);
     }
@@ -108,7 +108,7 @@ void Message_OnInsert(EventContext ctx, Message insertedValue)
 
 void Reducer_OnSetNameEvent(EventContext ctx, string name)
 {
-    if (ctx.Reducer is Event<Reducer>.Reducer reducer)
+    if (ctx.Event is Event<Reducer>.Reducer reducer)
     {
         var e = reducer.ReducerEvent;
         if (e.CallerIdentity == local_identity && e.Status is Status.Failed(var error))
@@ -120,7 +120,7 @@ void Reducer_OnSetNameEvent(EventContext ctx, string name)
 
 void Reducer_OnSendMessageEvent(EventContext ctx, string text)
 {
-    if (ctx.Reducer is Event<Reducer>.Reducer reducer)
+    if (ctx.Event is Event<Reducer>.Reducer reducer)
     {
         var e = reducer.ReducerEvent;
         if (e.CallerIdentity == local_identity && e.Status is Status.Failed(var error))
@@ -182,7 +182,7 @@ void ProcessThread(DbConnection conn, CancellationToken ct)
         {
             conn.FrameTick();
 
-            ProcessCommands(conn.RemoteReducers);
+            ProcessCommands(conn.Reducers);
 
             Thread.Sleep(100);
         }

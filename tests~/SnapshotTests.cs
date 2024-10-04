@@ -190,7 +190,7 @@ public class SnapshotTests
     }
 
     private static TableUpdate SampleUserInsert(string identity, string? name, bool online) =>
-        SampleUpdate(4097, "User", [new User
+        SampleUpdate(4097, "user", [new User
         {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Name = name,
@@ -198,7 +198,7 @@ public class SnapshotTests
         }], []);
 
     private static TableUpdate SampleUserUpdate(string identity, string? oldName, string? newName, bool oldOnline, bool newOnline) =>
-        SampleUpdate(4097, "User", [new User
+        SampleUpdate(4097, "user", [new User
         {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Name = newName,
@@ -211,7 +211,7 @@ public class SnapshotTests
         }]);
 
     private static TableUpdate SampleMessage(string identity, ulong sent, string text) =>
-        SampleUpdate(4098, "Message", [new Message
+        SampleUpdate(4098, "message", [new Message
         {
             Sender = Identity.From(Convert.FromBase64String(identity)),
             Sent = sent,
@@ -238,27 +238,27 @@ public class SnapshotTests
         SampleTransactionUpdate(
             1718487768057579, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
             1, "set_name", 4345615, 70, [SampleUserUpdate("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, "A", true, true)],
-            Encode(new SetNameArgsStruct { Name = "A" })
+            Encode(new SetName { Name = "A" })
         ),
         SampleTransactionUpdate(
             1718487775346381, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
             1, "send_message", 2779615, 57, [SampleMessage("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", 1718487775346381, "Hello, A!")],
-            Encode(new SendMessageArgsStruct { Text = "Hello, A!" })
+            Encode(new SendMessage { Text = "Hello, A!" })
         ),
         SampleTransactionUpdate(
             1718487777307855, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
             2, "set_name", 4268615, 98, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, "B", true, true)],
-            Encode(new SetNameArgsStruct { Name = "B" })
+            Encode(new SetName { Name = "B" })
         ),
         SampleTransactionUpdate(
             1718487783175083, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
             2, "send_message", 2677615, 40, [SampleMessage("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", 1718487783175083, "Hello, B!")],
-            Encode(new SendMessageArgsStruct { Text = "Hello, B!" })
+            Encode(new SendMessage { Text = "Hello, B!" })
         ),
         SampleTransactionUpdate(
             1718487787645364, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
             3, "send_message", 2636615, 28, [SampleMessage("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", 1718487787645364, "Goodbye!")],
-            Encode(new SendMessageArgsStruct { Text = "Goodbye!" })
+            Encode(new SendMessage { Text = "Goodbye!" })
         ),
         SampleTransactionUpdate(
             1718487791901504, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
@@ -268,7 +268,7 @@ public class SnapshotTests
         SampleTransactionUpdate(
             1718487794937841, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
             3, "send_message", 2636615, 34, [SampleMessage("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", 1718487794937841, "Goodbye!")],
-            Encode(new SendMessageArgsStruct { Text = "Goodbye!" })
+            Encode(new SendMessage { Text = "Goodbye!" })
         ),
     ];
 
@@ -319,15 +319,15 @@ public class SnapshotTests
         client.onUnhandledReducerError += (exception) =>
             events.Add("OnUnhandledReducerError", exception);
 #pragma warning restore CS0612 // Using obsolete API
-        client.RemoteReducers.OnSendMessage += (eventContext, _text) =>
+        client.Reducers.OnSendMessage += (eventContext, _text) =>
             events.Add("OnSendMessage", eventContext);
-        client.RemoteReducers.OnSetName += (eventContext, _name) => events.Add("OnSetName", eventContext);
+        client.Reducers.OnSetName += (eventContext, _name) => events.Add("OnSetName", eventContext);
 
-        client.RemoteTables.User.OnDelete += (eventContext, user) =>
+        client.Db.User.OnDelete += (eventContext, user) =>
             events.Add("OnDeleteUser", new { eventContext, user });
-        client.RemoteTables.User.OnInsert += (eventContext, user) =>
+        client.Db.User.OnInsert += (eventContext, user) =>
             events.Add("OnInsertUser", new { eventContext, user });
-        client.RemoteTables.User.OnUpdate += (eventContext, oldUser, newUser) =>
+        client.Db.User.OnUpdate += (eventContext, oldUser, newUser) =>
             events.Add(
                 "OnUpdateUser",
                 new
@@ -338,9 +338,9 @@ public class SnapshotTests
                 }
             );
 
-        client.RemoteTables.Message.OnDelete += (eventContext, message) =>
+        client.Db.Message.OnDelete += (eventContext, message) =>
             events.Add("OnDeleteMessage", new { eventContext, message });
-        client.RemoteTables.Message.OnInsert += (eventContext, message) =>
+        client.Db.Message.OnInsert += (eventContext, message) =>
             events.Add("OnInsertMessage", new { eventContext, message });
 
         // Simulate receiving WebSocket messages.
@@ -362,8 +362,8 @@ public class SnapshotTests
                     Events = events,
                     FinalSnapshot = new
                     {
-                        User = client.RemoteTables.User.Iter().ToList(),
-                        Message = client.RemoteTables.Message.Iter().ToList()
+                        User = client.Db.User.Iter().ToList(),
+                        Message = client.Db.Message.Iter().ToList()
                     },
                     Stats = client.stats
                 }

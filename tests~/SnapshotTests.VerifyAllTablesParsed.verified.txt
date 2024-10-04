@@ -8,7 +8,7 @@
     OnInsertUser: {
       eventContext: {
         Reducers: {Scrubbed},
-        Reducer: {},
+        Event: {},
         Db: {Scrubbed}
       },
       user: {
@@ -20,7 +20,7 @@
     OnInsertUser: {
       eventContext: {
         Reducers: {Scrubbed},
-        Reducer: {
+        Event: {
           ReducerEvent: {
             Timestamp: DateTimeOffset_1,
             Status: {},
@@ -40,7 +40,7 @@
     OnUpdateUser: {
       eventContext: {
         Reducers: {Scrubbed},
-        Reducer: {
+        Event: {
           ReducerEvent: {
             Timestamp: DateTimeOffset_2,
             Status: {},
@@ -68,7 +68,7 @@
     },
     OnSetName: {
       Reducers: {Scrubbed},
-      Reducer: {
+      Event: {
         ReducerEvent: {
           Timestamp: DateTimeOffset_2,
           Status: {},
@@ -87,7 +87,7 @@
     OnInsertMessage: {
       eventContext: {
         Reducers: {Scrubbed},
-        Reducer: {
+        Event: {
           ReducerEvent: {
             Timestamp: DateTimeOffset_3,
             Status: {},
@@ -111,7 +111,7 @@
     },
     OnSendMessage: {
       Reducers: {Scrubbed},
-      Reducer: {
+      Event: {
         ReducerEvent: {
           Timestamp: DateTimeOffset_3,
           Status: {},
@@ -130,7 +130,7 @@
     OnUpdateUser: {
       eventContext: {
         Reducers: {Scrubbed},
-        Reducer: {
+        Event: {
           ReducerEvent: {
             Timestamp: DateTimeOffset_4,
             Status: {},
@@ -158,7 +158,7 @@
     },
     OnSetName: {
       Reducers: {Scrubbed},
-      Reducer: {
+      Event: {
         ReducerEvent: {
           Timestamp: DateTimeOffset_4,
           Status: {},
@@ -177,7 +177,7 @@
     OnInsertMessage: {
       eventContext: {
         Reducers: {Scrubbed},
-        Reducer: {
+        Event: {
           ReducerEvent: {
             Timestamp: DateTimeOffset_5,
             Status: {},
@@ -201,7 +201,7 @@
     },
     OnSendMessage: {
       Reducers: {Scrubbed},
-      Reducer: {
+      Event: {
         ReducerEvent: {
           Timestamp: DateTimeOffset_5,
           Status: {},
@@ -220,7 +220,7 @@
     OnInsertMessage: {
       eventContext: {
         Reducers: {Scrubbed},
-        Reducer: {
+        Event: {
           ReducerEvent: {
             Timestamp: DateTimeOffset_6,
             Status: {},
@@ -244,7 +244,7 @@
     },
     OnSendMessage: {
       Reducers: {Scrubbed},
-      Reducer: {
+      Event: {
         ReducerEvent: {
           Timestamp: DateTimeOffset_6,
           Status: {},
@@ -263,7 +263,7 @@
     OnUpdateUser: {
       eventContext: {
         Reducers: {Scrubbed},
-        Reducer: {
+        Event: {
           ReducerEvent: {
             Timestamp: DateTimeOffset_7,
             Status: {},
@@ -289,7 +289,7 @@
     OnInsertMessage: {
       eventContext: {
         Reducers: {Scrubbed},
-        Reducer: {
+        Event: {
           ReducerEvent: {
             Timestamp: DateTimeOffset_8,
             Status: {},
@@ -313,7 +313,7 @@
     },
     OnSendMessage: {
       Reducers: {Scrubbed},
-      Reducer: {
+      Event: {
         ReducerEvent: {
           Timestamp: DateTimeOffset_8,
           Status: {},
