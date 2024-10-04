@@ -10,7 +10,7 @@ using SpacetimeDB;
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
-	public partial class SetNameArgsStruct : IReducerArgs
+	public partial class SetName : IReducerArgs
 	{
 		string IReducerArgs.ReducerName => "set_name";
 

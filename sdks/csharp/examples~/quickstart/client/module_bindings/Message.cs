@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
@@ -39,5 +38,6 @@ namespace SpacetimeDB.Types
 			this.Sender = new();
 			this.Text = "";
 		}
+
 	}
 }

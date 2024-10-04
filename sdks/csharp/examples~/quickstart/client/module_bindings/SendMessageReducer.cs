@@ -10,7 +10,7 @@ using SpacetimeDB;
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
-	public partial class SendMessageArgsStruct : IReducerArgs
+	public partial class SendMessage : IReducerArgs
 	{
 		string IReducerArgs.ReducerName => "send_message";
 
