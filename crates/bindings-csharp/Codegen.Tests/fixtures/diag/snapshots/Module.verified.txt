@@ -120,7 +120,6 @@ public partial struct TestIndexWithoutColumns { }
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (370,0)-(372,49),
       Message: An internal error occurred during codegen: Object reference not set to an instance of an object.,
       Severity: Error,
       Descriptor: {
@@ -142,7 +141,6 @@ public partial struct TestIndexWithEmptyColumns { }
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 */
-      Location: {ProjectDirectory}fixtures\diag\Lib.cs: (374,0)-(376,51),
       Message: An internal error occurred during codegen: Object reference not set to an instance of an object.,
       Severity: Error,
       Descriptor: {
@@ -197,7 +195,7 @@ public partial struct TestIndexWithEmptyColumns { }
       Message: Reducer method OnReducerWithReservedPrefix starts with 'On', which is a reserved prefix.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0007,
+        Id: STDB0009,
         Title: Reducer method has a reserved name prefix,
         MessageFormat: Reducer method {0} starts with '{1}', which is a reserved prefix.,
         Category: SpacetimeDB,
@@ -214,7 +212,7 @@ public partial struct TestIndexWithEmptyColumns { }
       Message: Reducer method __ReducerWithReservedPrefix starts with '__', which is a reserved prefix.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0007,
+        Id: STDB0009,
         Title: Reducer method has a reserved name prefix,
         MessageFormat: Reducer method {0} starts with '{1}', which is a reserved prefix.,
         Category: SpacetimeDB,
