@@ -59,7 +59,6 @@ public class GameManager : MonoBehaviour
             conn.Db.Player.OnDelete += PlayerOnDelete;
             
             // Request all tables
-            // TODO(jdetter): This needs to be updated for 0.12 - this will be changed to string[]
             conn.SubscriptionBuilder().OnApplied(ctx =>
             {
                 Debug.Log("Subscription applied!");
