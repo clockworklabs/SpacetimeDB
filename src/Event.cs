@@ -61,7 +61,7 @@ namespace SpacetimeDB
             return this;
         }
 
-        public SubscriptionHandle<EventContext> Subscribe(string querySql) => new(conn, Applied, Error, querySql);
+        public SubscriptionHandle<EventContext> Subscribe(params string[] querySqls) => new(conn, Applied, Error, querySqls);
     }
 
     public interface ISubscriptionHandle
@@ -80,10 +80,10 @@ namespace SpacetimeDB
             onApplied?.Invoke((EventContext)ctx);
         }
 
-        internal SubscriptionHandle(IDbConnection conn, Action<EventContext>? onApplied, Action<EventContext>? onError, string querySql)
+        internal SubscriptionHandle(IDbConnection conn, Action<EventContext>? onApplied, Action<EventContext>? onError, string[] querySqls)
         {
             this.onApplied = onApplied;
-            conn.Subscribe(this, querySql);
+            conn.Subscribe(this, querySqls);
         }
 
         public void Unsubscribe() => throw new NotImplementedException();
