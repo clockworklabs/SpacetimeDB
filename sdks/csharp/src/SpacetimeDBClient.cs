@@ -14,15 +14,87 @@ using Thread = System.Threading.Thread;
 
 namespace SpacetimeDB
 {
-    public abstract class SpacetimeDBClientBase<ReducerEvent>
-        where ReducerEvent : ReducerEventBase
+    public sealed class DbConnectionBuilder<DbConnection, Reducer>
+        where DbConnection : DbConnectionBase<DbConnection, Reducer>, new()
     {
-        struct DbValue
-        {
-            public IDatabaseTable value;
-            public byte[] bytes;
+        readonly DbConnection conn = new();
 
-            public DbValue(IDatabaseTable value, byte[] bytes)
+        string? uri;
+        string? nameOrAddress;
+        string? token;
+
+        public DbConnection Build()
+        {
+            if (uri == null)
+            {
+                throw new InvalidOperationException("Building DbConnection with a null uri. Call WithUri() first.");
+            }
+            if (nameOrAddress == null)
+            {
+                throw new InvalidOperationException("Building DbConnection with a null nameOrAddress. Call WithModuleName() first.");
+            }
+            conn.Connect(token, uri, nameOrAddress);
+#if UNITY_5_3_OR_NEWER
+            SpacetimeDBNetworkManager.ActiveConnections.Add(conn);
+#endif
+            return conn;
+        }
+
+        public DbConnectionBuilder<DbConnection, Reducer> WithUri(string uri)
+        {
+            this.uri = uri;
+            return this;
+        }
+
+        public DbConnectionBuilder<DbConnection, Reducer> WithModuleName(string nameOrAddress)
+        {
+            this.nameOrAddress = nameOrAddress;
+            return this;
+        }
+
+        public DbConnectionBuilder<DbConnection, Reducer> WithCredentials(in (Identity identity, string token)? creds)
+        {
+            token = creds?.token;
+            return this;
+        }
+
+        public DbConnectionBuilder<DbConnection, Reducer> OnConnect(Action<DbConnection, Identity, string> cb)
+        {
+            conn.onConnect += (identity, token) => cb.Invoke(conn, identity, token);
+            return this;
+        }
+
+        public DbConnectionBuilder<DbConnection, Reducer> OnConnectError(Action<WebSocketError?, string> cb)
+        {
+            conn.webSocket.OnConnectError += (a, b) => cb.Invoke(a, b);
+            return this;
+        }
+
+        public DbConnectionBuilder<DbConnection, Reducer> OnDisconnect(Action<DbConnection, WebSocketCloseStatus?, WebSocketError?> cb)
+        {
+            conn.webSocket.OnClose += (code, error) => cb.Invoke(conn, code, error);
+            return this;
+        }
+    }
+
+    public interface IDbConnection
+    {
+        internal void Subscribe(ISubscriptionHandle handle, string[] querySqls);
+        void FrameTick();
+        void Disconnect();
+    }
+
+    public abstract class DbConnectionBase<DbConnection, Reducer> : IDbConnection
+        where DbConnection : DbConnectionBase<DbConnection, Reducer>, new()
+    {
+        public static DbConnectionBuilder<DbConnection, Reducer> Builder() => new();
+
+        readonly struct DbValue
+        {
+            public readonly IDatabaseRow value;
+            public readonly byte[] bytes;
+
+            public DbValue(IDatabaseRow value, byte[] bytes)
             {
                 this.value = value;
                 this.bytes = bytes;
@@ -31,64 +103,36 @@ namespace SpacetimeDB
 
         struct DbOp
         {
-            public ClientCache.ITableCache table;
+            public IRemoteTableHandle table;
             public DbValue? delete;
             public DbValue? insert;
         }
 
-        /// <summary>
-        /// Called when a connection is established to a spacetimedb instance.
-        /// </summary>
-        public event Action? onConnect;
-
-        /// <summary>
-        /// Called when a connection attempt fails.
-        /// </summary>
-        public event Action<WebSocketError?, string>? onConnectError;
+        internal event Action<Identity, string>? onConnect;
 
         /// <summary>
         /// Called when an exception occurs when sending a message.
         /// </summary>
+        [Obsolete]
         public event Action<Exception>? onSendError;
 
-        /// <summary>
-        /// Called when a connection that was established has disconnected.
-        /// </summary>
-        public event Action<WebSocketCloseStatus?, WebSocketError?>? onDisconnect;
-
-        /// <summary>
-        /// Invoked when a subscription is about to start being processed. This is called even before OnBeforeDelete.
-        /// </summary>
-        public event Action? onBeforeSubscriptionApplied;
-
-        /// <summary>
-        /// Invoked when the local client cache is updated as a result of changes made to the subscription queries.
-        /// </summary>
-        public event Action? onSubscriptionApplied;
+        private readonly Dictionary<uint, ISubscriptionHandle> subscriptions = new();
 
         /// <summary>
         /// Invoked when a reducer is returned with an error and has no client-side handler.
         /// </summary>
-        public event Action<ReducerEvent>? onUnhandledReducerError;
+        [Obsolete]
+        public event Action<ReducerEvent<Reducer>>? onUnhandledReducerError;
 
-        /// <summary>
-        /// Called when we receive an identity from the server
-        /// </summary>
-        public event Action<string, Identity, Address>? onIdentityReceived;
+        public readonly Address Address = Address.Random();
+        public Identity? Identity { get; private set; }
 
-        /// <summary>
-        /// Invoked when an event message is received or at the end of a transaction update.
-        /// </summary>
-        public event Action<ServerMessage>? onEvent;
-
-        public readonly Address clientAddress = Address.Random();
-        public Identity? clientIdentity { get; private set; }
-
-        private SpacetimeDB.WebSocket webSocket;
+        internal WebSocket webSocket;
         private bool connectionClosed;
         protected readonly ClientCache clientDB = new();
 
-        protected abstract ReducerEvent ReducerEventFromDbEvent(TransactionUpdate dbEvent);
+        protected abstract Reducer ToReducer(TransactionUpdate update);
+        protected abstract IEventContext ToEventContext(Event<Reducer> reducerEvent);
 
         private readonly Dictionary<Guid, TaskCompletionSource<OneOffQueryResponse>> waitingOneOffQueries = new();
 
@@ -96,20 +140,20 @@ namespace SpacetimeDB
         private readonly Thread networkMessageProcessThread;
         public readonly Stats stats = new();
 
-        protected SpacetimeDBClientBase()
+        protected DbConnectionBase()
         {
-            var options = new ConnectOptions
+            var options = new WebSocket.ConnectOptions
             {
                 //v1.bin.spacetimedb
                 //v1.text.spacetimedb
-                Protocol = "v1.bin.spacetimedb",
+                Protocol = "v1.bsatn.spacetimedb"
             };
             webSocket = new WebSocket(options);
             webSocket.OnMessage += OnMessageReceived;
-            webSocket.OnClose += (code, error) => onDisconnect?.Invoke(code, error);
-            webSocket.OnConnect += () => onConnect?.Invoke();
-            webSocket.OnConnectError += (a, b) => onConnectError?.Invoke(a, b);
             webSocket.OnSendError += a => onSendError?.Invoke(a);
+#if UNITY_5_3_OR_NEWER
+            webSocket.OnClose += (a, b) => SpacetimeDBNetworkManager.ActiveConnections.Remove(this);
+#endif
 
             networkMessageProcessThread = new Thread(PreProcessMessages);
             networkMessageProcessThread.Start();
@@ -126,7 +170,7 @@ namespace SpacetimeDB
             public ServerMessage message;
             public List<DbOp> dbOps;
             public DateTime timestamp;
-            public ReducerEvent? reducerEvent;
+            public ReducerEvent<Reducer>? reducerEvent;
         }
 
         struct PreProcessedMessage
@@ -141,17 +185,119 @@ namespace SpacetimeDB
         private readonly BlockingCollection<PreProcessedMessage> _preProcessedNetworkMessages =
             new(new ConcurrentQueue<PreProcessedMessage>());
 
+        internal static bool IsTesting;
         internal bool HasPreProcessedMessage => _preProcessedNetworkMessages.Count > 0;
 
         private readonly CancellationTokenSource _preProcessCancellationTokenSource = new();
         private CancellationToken _preProcessCancellationToken => _preProcessCancellationTokenSource.Token;
 
-        static DbValue Decode(ClientCache.ITableCache table, EncodedValue value) => value switch
+        static DbValue Decode(IRemoteTableHandle table, byte[] bin, out object? primaryKey)
         {
-            EncodedValue.Binary(var bin) => new DbValue(table.DecodeValue(bin), bin),
-            EncodedValue.Text(var text) => throw new InvalidOperationException("JavaScript messages aren't supported."),
-            _ => throw new InvalidOperationException(),
-        };
+            var obj = table.DecodeValue(bin);
+            primaryKey = table.GetPrimaryKey(obj);
+            return new(obj, bin);
+        }
+
+        private static readonly Status Committed = new Status.Committed(default);
+        private static readonly Status OutOfEnergy = new Status.OutOfEnergy(default);
+
+        enum CompressionAlgos : byte
+        {
+            None = 0,
+            Brotli = 1,
+        }
+
+        private static ServerMessage DecompressDecodeMessage(byte[] bytes)
+        {
+            using var stream = new MemoryStream(bytes, 1, bytes.Length - 1);
+
+            // The stream will never be empty. It will at least contain the compression algo.
+            var compression = (CompressionAlgos)bytes[0];
+            // Conditionally decompress and decode.
+            switch (compression)
+            {
+                case CompressionAlgos.None:
+                    {
+                        using var binaryReader = new BinaryReader(stream);
+                        return new ServerMessage.BSATN().Read(binaryReader);
+                    }
+                case CompressionAlgos.Brotli:
+                    {
+                        using var decompressedStream = new BrotliStream(stream, CompressionMode.Decompress);
+                        using var binaryReader = new BinaryReader(decompressedStream);
+                        return new ServerMessage.BSATN().Read(binaryReader);
+                    }
+                default:
+                    throw new InvalidOperationException("Unknown compression type");
+            }
+        }
+
+        private static QueryUpdate DecompressDecodeQueryUpdate(CompressableQueryUpdate update)
+        {
+            switch (update)
+            {
+                case CompressableQueryUpdate.Uncompressed(var qu):
+                    return qu;
+
+                case CompressableQueryUpdate.Brotli(var bytes):
+                    {
+                        using var stream = new MemoryStream(bytes);
+                        using var decompressedStream = new BrotliStream(stream, CompressionMode.Decompress);
+                        using var binaryReader = new BinaryReader(decompressedStream);
+                        return new QueryUpdate.BSATN().Read(binaryReader);
+                    }
+                default:
+                    throw new InvalidOperationException();
+            }
+        }
+
+        private static int BsatnRowListCount(BsatnRowList list)
+        {
+            switch (list.SizeHint)
+            {
+                case RowSizeHint.FixedSize(var size):
+                    return list.RowsData.Length / size;
+                case RowSizeHint.RowOffsets(var offsets):
+                    return offsets.Count;
+                default:
+                    throw new InvalidOperationException("Unknown RowSizeHint variant");
+            }
+        }
+
+        private static IEnumerable<byte[]> BsatnRowListIter(BsatnRowList list)
+        {
+            var count = BsatnRowListCount(list);
+            for (int index = 0; index < count; index += 1)
+            {
+                switch (list.SizeHint)
+                {
+                    case RowSizeHint.FixedSize(var size):
+                        {
+                            int start = index * size;
+                            int elemLen = size;
+                            yield return new ReadOnlySpan<byte>(list.RowsData, start, elemLen).ToArray();
+                            break;
+                        }
+                    case RowSizeHint.RowOffsets(var offsets):
+                        {
+                            int start = (int)offsets[index];
+                            // The end is either the start of the next element or the end.
+                            int end;
+                            if (index + 1 == count)
+                            {
+                                end = list.RowsData.Length;
+                            }
+                            else
+                            {
+                                end = (int)offsets[index + 1];
+                            }
+                            int elemLen = end - start;
+                            yield return new ReadOnlyMemory<byte>(list.RowsData, start, elemLen).ToArray();
+                            break;
+                        }
+                }
+            }
+        }
 
         void PreProcessMessages()
         {
@@ -172,12 +318,10 @@ namespace SpacetimeDB
             PreProcessedMessage PreProcessMessage(UnprocessedMessage unprocessed)
             {
                 var dbOps = new List<DbOp>();
-                using var compressedStream = new MemoryStream(unprocessed.bytes);
-                using var decompressedStream = new BrotliStream(compressedStream, CompressionMode.Decompress);
-                using var binaryReader = new BinaryReader(decompressedStream);
-                var message = new ServerMessage.BSATN().Read(binaryReader);
 
-                ReducerEvent? reducerEvent = null;
+                var message = DecompressDecodeMessage(unprocessed.bytes);
+
+                ReducerEvent<Reducer>? reducerEvent = default;
 
                 // This is all of the inserts
                 Dictionary<System.Type, HashSet<byte[]>>? subscriptionInserts = null;
@@ -198,7 +342,8 @@ namespace SpacetimeDB
                 switch (message)
                 {
                     case ServerMessage.InitialSubscription(var initialSubscription):
-                        subscriptionInserts = new(capacity: initialSubscription.DatabaseUpdate.Tables.Sum(a => a.Inserts.Count));
+                        int cap = initialSubscription.DatabaseUpdate.Tables.Sum(a => (int)a.NumRows);
+                        subscriptionInserts = new(capacity: cap);
 
                         // First apply all of the state
                         foreach (var update in initialSubscription.DatabaseUpdate.Tables)
@@ -207,79 +352,96 @@ namespace SpacetimeDB
                             var table = clientDB.GetTable(tableName);
                             if (table == null)
                             {
-                                Logger.LogError($"Unknown table name: {tableName}");
+                                Log.Error($"Unknown table name: {tableName}");
                                 continue;
                             }
 
-                            if (update.Deletes.Count != 0)
-                            {
-                                Logger.LogWarning("Non-insert during a subscription update!");
-                            }
+                            var hashSet = GetInsertHashSet(table.ClientTableType, (int)update.NumRows);
 
-                            var hashSet = GetInsertHashSet(table.ClientTableType, initialSubscription.DatabaseUpdate.Tables.Count);
-
-                            foreach (var row in update.Inserts)
+                            foreach (var cqu in update.Updates)
                             {
-                                switch (row)
+                                var qu = DecompressDecodeQueryUpdate(cqu);
+                                if (BsatnRowListCount(qu.Deletes) != 0)
                                 {
-                                    case EncodedValue.Binary(var bin):
-                                        if (!hashSet.Add(bin))
-                                        {
-                                            // Ignore duplicate inserts in the same subscription update.
-                                            continue;
-                                        }
-
-                                        var obj = table.DecodeValue(bin);
-                                        var op = new DbOp
-                                        {
-                                            table = table,
-                                            insert = new(obj, bin),
-                                        };
-
-                                        dbOps.Add(op);
-                                        break;
-
-                                    case EncodedValue.Text(var txt):
-                                        Logger.LogWarning("JavaScript messages are unsupported.");
-                                        break;
+                                    Log.Warn("Non-insert during a subscription update!");
                                 }
-                            }
-                        }
 
-                        break;
-
-                    case ServerMessage.TransactionUpdate(var transactionUpdate):
-                        switch (transactionUpdate.Status)
-                        {
-                            case UpdateStatus.Committed(var committed):
-                                primaryKeyChanges = new();
-
-                                // First apply all of the state
-                                foreach (var update in committed.Tables)
+                                foreach (var bin in BsatnRowListIter(qu.Inserts))
                                 {
-                                    var tableName = update.TableName;
-                                    var table = clientDB.GetTable(tableName);
-                                    if (table == null)
+                                    if (!hashSet.Add(bin))
                                     {
-                                        Logger.LogError($"Unknown table name: {tableName}");
+                                        // Ignore duplicate inserts in the same subscription update.
                                         continue;
                                     }
 
-                                    foreach (var row in update.Inserts)
+                                    var obj = table.DecodeValue(bin);
+                                    var op = new DbOp
                                     {
-                                        var op = new DbOp { table = table, insert = Decode(table, row) };
+                                        table = table,
+                                        insert = new(obj, bin),
+                                    };
 
-                                        if (op.insert.Value.value is IDatabaseTableWithPrimaryKey objWithPk)
+                                    dbOps.Add(op);
+                                }
+                            }
+                        }
+                        break;
+
+                    case ServerMessage.TransactionUpdate(var transactionUpdate):
+                        // Convert the generic event arguments in to a domain specific event object
+                        try
+                        {
+                            reducerEvent = new(
+                                DateTimeOffset.FromUnixTimeMilliseconds((long)transactionUpdate.Timestamp.Microseconds / 1000),
+                                transactionUpdate.Status switch
+                                {
+                                    UpdateStatus.Committed => Committed,
+                                    UpdateStatus.OutOfEnergy => OutOfEnergy,
+                                    UpdateStatus.Failed(var reason) => new Status.Failed(reason),
+                                    _ => throw new InvalidOperationException()
+                                },
+                                transactionUpdate.CallerIdentity,
+                                transactionUpdate.CallerAddress,
+                                transactionUpdate.EnergyQuantaUsed.Quanta,
+                                ToReducer(transactionUpdate));
+                        }
+                        catch (Exception e)
+                        {
+                            Log.Exception(e);
+                        }
+
+                        if (transactionUpdate.Status is UpdateStatus.Committed(var committed))
+                        {
+                            primaryKeyChanges = new();
+
+                            // First apply all of the state
+                            foreach (var update in committed.Tables)
+                            {
+                                var tableName = update.TableName;
+                                var table = clientDB.GetTable(tableName);
+                                if (table == null)
+                                {
+                                    Log.Error($"Unknown table name: {tableName}");
+                                    continue;
+                                }
+
+                                foreach (var cqu in update.Updates)
+                                {
+                                    var qu = DecompressDecodeQueryUpdate(cqu);
+                                    foreach (var row in BsatnRowListIter(qu.Inserts))
+                                    {
+                                        var op = new DbOp { table = table, insert = Decode(table, row, out var pk) };
+                                        if (pk != null)
                                         {
                                             // Compound key that we use for lookup.
                                             // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
-                                            var key = (table.ClientTableType, objWithPk.GetPrimaryKeyValue());
+                                            var key = (table.ClientTableType, pk);
 
                                             if (primaryKeyChanges.TryGetValue(key, out var oldOp))
                                             {
                                                 if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
                                                 {
-                                                    Logger.LogWarning($"Update with the same primary key was applied multiple times! tableName={tableName}");
+                                                    Log.Warn($"Update with the same primary key was applied multiple times! tableName={tableName}");
                                                     // TODO(jdetter): Is this a correctable error? This would be a major error on the
                                                     // SpacetimeDB side.
                                                     continue;
@@ -301,21 +463,20 @@ namespace SpacetimeDB
                                         }
                                     }
 
-                                    foreach (var row in update.Deletes)
+                                    foreach (var row in BsatnRowListIter(qu.Deletes))
                                     {
-                                        var op = new DbOp { table = table, delete = Decode(table, row) };
-
-                                        if (op.delete.Value.value is IDatabaseTableWithPrimaryKey objWithPk)
+                                        var op = new DbOp { table = table, delete = Decode(table, row, out var pk) };
+                                        if (pk != null)
                                         {
                                             // Compound key that we use for lookup.
                                             // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
-                                            var key = (table.ClientTableType, objWithPk.GetPrimaryKeyValue());
+                                            var key = (table.ClientTableType, pk);
 
                                             if (primaryKeyChanges.TryGetValue(key, out var oldOp))
                                             {
                                                 if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
                                                 {
-                                                    Logger.LogWarning($"Update with the same primary key was applied multiple times! tableName={tableName}");
+                                                    Log.Warn($"Update with the same primary key was applied multiple times! tableName={tableName}");
                                                     // TODO(jdetter): Is this a correctable error? This would be a major error on the
                                                     // SpacetimeDB side.
                                                     continue;
@@ -337,27 +498,10 @@ namespace SpacetimeDB
                                         }
                                     }
                                 }
+                            }
 
-                                // Combine primary key updates and non-primary key updates
-                                dbOps.AddRange(primaryKeyChanges.Values);
-
-                                // Convert the generic event arguments in to a domain specific event object
-                                try
-                                {
-                                    reducerEvent = ReducerEventFromDbEvent(transactionUpdate);
-                                }
-                                catch (Exception e)
-                                {
-                                    Logger.LogException(e);
-                                }
-                                break;
-                            case UpdateStatus.Failed(var failed):
-                                break;
-                            case UpdateStatus.OutOfEnergy(var outOfEnergy):
-                                Logger.LogWarning("Failed to execute reducer: out of energy.");
-                                break;
-                            default:
-                                throw new InvalidOperationException();
+                            // Combine primary key updates and non-primary key updates
+                            dbOps.AddRange(primaryKeyChanges.Values);
                         }
                         break;
                     case ServerMessage.IdentityToken(var identityToken):
@@ -368,7 +512,7 @@ namespace SpacetimeDB
 
                         if (!waitingOneOffQueries.Remove(messageId, out var resultSource))
                         {
-                            Logger.LogError($"Response to unknown one-off-query: {messageId}");
+                            Log.Error($"Response to unknown one-off-query: {messageId}");
                             break;
                         }
 
@@ -402,7 +546,7 @@ namespace SpacetimeDB
                         continue;
                     }
 
-                    foreach (var (rowBytes, oldValue) in table.Where(kv => !hashSet.Contains(kv.Key)))
+                    foreach (var (rowBytes, oldValue) in table.IterEntries().Where(kv => !hashSet.Contains(kv.Key)))
                     {
                         processed.dbOps.Add(new DbOp
                         {
@@ -418,7 +562,7 @@ namespace SpacetimeDB
             return processed;
         }
 
-        public void Close()
+        public void Disconnect()
         {
             isClosing = true;
             connectionClosed = true;
@@ -431,7 +575,7 @@ namespace SpacetimeDB
         /// </summary>
         /// <param name="uri"> URI of the SpacetimeDB server (ex: https://testnet.spacetimedb.com)
         /// <param name="addressOrName">The name or address of the database to connect to</param>
-        public void Connect(string? token, string uri, string addressOrName)
+        internal void Connect(string? token, string uri, string addressOrName)
         {
             isClosing = false;
 
@@ -442,28 +586,30 @@ namespace SpacetimeDB
                 uri = $"ws://{uri}";
             }
 
-            Logger.Log($"SpacetimeDBClient: Connecting to {uri} {addressOrName}");
-            Task.Run(async () =>
+            Log.Info($"SpacetimeDBClient: Connecting to {uri} {addressOrName}");
+            if (!IsTesting)
             {
-                try
+                Task.Run(async () =>
                 {
-                    await webSocket.Connect(token, uri, addressOrName, clientAddress);
-                }
-                catch (Exception e)
-                {
-                    if (connectionClosed)
+                    try
                     {
-                        Logger.Log("Connection closed gracefully.");
-                        return;
+                        await webSocket.Connect(token, uri, addressOrName, Address);
                     }
+                    catch (Exception e)
+                    {
+                        if (connectionClosed)
+                        {
+                            Log.Info("Connection closed gracefully.");
+                            return;
+                        }
 
-                    Logger.LogException(e);
-                }
-            });
+                        Log.Exception(e);
+                    }
+                });
+            }
         }
 
-
-        private void OnMessageProcessCompleteUpdate(ReducerEvent? dbEvent, List<DbOp> dbOps)
+        private void OnMessageProcessCompleteUpdate(IEventContext eventContext, List<DbOp> dbOps)
         {
             // First trigger OnBeforeDelete
             foreach (var update in dbOps)
@@ -472,11 +618,11 @@ namespace SpacetimeDB
                 {
                     try
                     {
-                        oldValue.OnBeforeDeleteEvent(dbEvent!);
+                        update.table.InvokeBeforeDelete(eventContext, oldValue);
                     }
                     catch (Exception e)
                     {
-                        Logger.LogException(e);
+                        Log.Exception(e);
                     }
                 }
             }
@@ -491,7 +637,7 @@ namespace SpacetimeDB
                 {
                     if (update.table.DeleteEntry(delete.bytes))
                     {
-                        delete.value.InternalOnValueDeleted();
+                        update.table.InternalInvokeValueDeleted(delete.value);
                     }
                     else
                     {
@@ -504,7 +650,7 @@ namespace SpacetimeDB
                 {
                     if (update.table.InsertEntry(insert.bytes, insert.value))
                     {
-                        insert.value.InternalOnValueInserted();
+                        update.table.InternalInvokeValueInserted(insert.value);
                     }
                     else
                     {
@@ -522,29 +668,26 @@ namespace SpacetimeDB
                     switch (dbOp)
                     {
                         case { insert: { value: var newValue }, delete: { value: var oldValue } }:
-                            {
-                                // If we matched an update, these values must have primary keys.
-                                var newValue_ = (IDatabaseTableWithPrimaryKey)newValue;
-                                var oldValue_ = (IDatabaseTableWithPrimaryKey)oldValue;
-                                oldValue_.OnUpdateEvent(newValue_, dbEvent);
-                                break;
-                            }
+                            dbOp.table.InvokeUpdate(eventContext, oldValue, newValue);
+                            break;
 
                         case { insert: { value: var newValue } }:
-                            newValue.OnInsertEvent(dbEvent);
+                            dbOp.table.InvokeInsert(eventContext, newValue);
                             break;
 
                         case { delete: { value: var oldValue } }:
-                            oldValue.OnDeleteEvent(dbEvent);
+                            dbOp.table.InvokeDelete(eventContext, oldValue);
                             break;
                     }
                 }
                 catch (Exception e)
                 {
-                    Logger.LogException(e);
+                    Log.Exception(e);
                 }
             }
         }
+
+        protected abstract bool Dispatch(IEventContext context, Reducer reducer);
 
         private void OnMessageProcessComplete(PreProcessedMessage preProcessed)
         {
@@ -556,95 +699,89 @@ namespace SpacetimeDB
             switch (message)
             {
                 case ServerMessage.InitialSubscription(var initialSubscription):
-                    onBeforeSubscriptionApplied?.Invoke();
-                    stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.InitialSubscription)}");
-                    stats.SubscriptionRequestTracker.FinishTrackingRequest(initialSubscription.RequestId);
-                    OnMessageProcessCompleteUpdate(null, dbOps);
-                    try
                     {
-                        onSubscriptionApplied?.Invoke();
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.LogException(e);
-                    }
-                    break;
-                case ServerMessage.TransactionUpdate(var transactionUpdate):
-                    var reducer = transactionUpdate.ReducerCall.ReducerName;
-                    stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.TransactionUpdate)},reducer={reducer}");
-                    var hostDuration = TimeSpan.FromMilliseconds(transactionUpdate.HostExecutionDurationMicros / 1000.0d);
-                    stats.AllReducersTracker.InsertRequest(hostDuration, $"reducer={reducer}");
-                    var callerIdentity = transactionUpdate.CallerIdentity;
-                    if (callerIdentity == clientIdentity)
-                    {
-                        // This was a request that we initiated
-                        var requestId = transactionUpdate.ReducerCall.RequestId;
-                        if (!stats.ReducerRequestTracker.FinishTrackingRequest(requestId))
+                        stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.InitialSubscription)}");
+                        stats.SubscriptionRequestTracker.FinishTrackingRequest(initialSubscription.RequestId);
+                        var eventContext = ToEventContext(new Event<Reducer>.SubscribeApplied());
+                        OnMessageProcessCompleteUpdate(eventContext, dbOps);
+                        if (subscriptions.TryGetValue(initialSubscription.RequestId, out var subscription))
                         {
-                            Logger.LogWarning($"Failed to finish tracking reducer request: {requestId}");
+                            try
+                            {
+                                subscription.OnApplied(eventContext);
+                            }
+                            catch (Exception e)
+                            {
+                                Log.Exception(e);
+                            }
                         }
-                    }
-                    OnMessageProcessCompleteUpdate(processed.reducerEvent, dbOps);
-                    try
-                    {
-                        onEvent?.Invoke(message);
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.LogException(e);
-                    }
-
-                    if (processed.reducerEvent is not { } reducerEvent)
-                    {
-                        // If we are here, an error about unknown reducer should have already been logged, so nothing to do.
                         break;
                     }
+                case ServerMessage.TransactionUpdate(var transactionUpdate):
+                    {
+                        var reducer = transactionUpdate.ReducerCall.ReducerName;
+                        stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.TransactionUpdate)},reducer={reducer}");
+                        var hostDuration = TimeSpan.FromMilliseconds(transactionUpdate.HostExecutionDurationMicros / 1000.0d);
+                        stats.AllReducersTracker.InsertRequest(hostDuration, $"reducer={reducer}");
+                        var callerIdentity = transactionUpdate.CallerIdentity;
+                        if (callerIdentity == Identity)
+                        {
+                            // This was a request that we initiated
+                            var requestId = transactionUpdate.ReducerCall.RequestId;
+                            if (!stats.ReducerRequestTracker.FinishTrackingRequest(requestId))
+                            {
+                                Log.Warn($"Failed to finish tracking reducer request: {requestId}");
+                            }
+                        }
 
-                    var reducerFound = false;
-                    try
-                    {
-                        reducerFound = reducerEvent.InvokeHandler();
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.LogException(e);
-                    }
+                        if (processed.reducerEvent is not { } reducerEvent)
+                        {
+                            // If we are here, an error about unknown reducer should have already been logged, so nothing to do.
+                            break;
+                        }
 
-                    if (!reducerFound && transactionUpdate.Status is UpdateStatus.Failed(var failed))
-                    {
+                        var eventContext = ToEventContext(new Event<Reducer>.Reducer(reducerEvent));
+                        OnMessageProcessCompleteUpdate(eventContext, dbOps);
+
+                        var reducerFound = false;
                         try
                         {
-                            onUnhandledReducerError?.Invoke(reducerEvent);
+                            reducerFound = Dispatch(eventContext, reducerEvent.Reducer);
                         }
                         catch (Exception e)
                         {
-                            Logger.LogException(e);
+                            Log.Exception(e);
                         }
+
+                        if (!reducerFound && transactionUpdate.Status is UpdateStatus.Failed(var failed))
+                        {
+                            try
+                            {
+                                onUnhandledReducerError?.Invoke(reducerEvent);
+                            }
+                            catch (Exception e)
+                            {
+                                Log.Exception(e);
+                            }
+                        }
+                        break;
                     }
-                    break;
                 case ServerMessage.IdentityToken(var identityToken):
                     try
                     {
-                        clientIdentity = identityToken.Identity;
-                        var address = identityToken.Address;
-                        onIdentityReceived?.Invoke(identityToken.Token, clientIdentity, address);
+                        Identity = identityToken.Identity;
+                        onConnect?.Invoke(identityToken.Identity, identityToken.Token);
                     }
                     catch (Exception e)
                     {
-                        Logger.LogException(e);
+                        Log.Exception(e);
                     }
                     break;
-                case ServerMessage.OneOffQueryResponse:
-                    try
-                    {
-                        onEvent?.Invoke(message);
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.LogException(e);
-                    }
 
+                case ServerMessage.OneOffQueryResponse:
+                    /* OneOffQuery is async and handles its own responses */
                     break;
+
                 default:
                     throw new InvalidOperationException();
             }
@@ -654,12 +791,13 @@ namespace SpacetimeDB
         internal void OnMessageReceived(byte[] bytes, DateTime timestamp) =>
             _messageQueue.Add(new UnprocessedMessage { bytes = bytes, timestamp = timestamp });
 
+        // TODO: this should become [Obsolete] but for now is used by autogenerated code.
         public void InternalCallReducer<T>(T args)
-            where T : IReducerArgsBase, new()
+            where T : IReducerArgs, new()
         {
             if (!webSocket.IsConnected)
             {
-                Logger.LogError("Cannot call reducer, not connected to server!");
+                Log.Error("Cannot call reducer, not connected to server!");
                 return;
             }
 
@@ -668,30 +806,33 @@ namespace SpacetimeDB
                 {
                     RequestId = stats.ReducerRequestTracker.StartTrackingRequest(args.ReducerName),
                     Reducer = args.ReducerName,
-                    Args = new EncodedValue.Binary(IStructuralReadWrite.ToBytes(args))
+                    Args = IStructuralReadWrite.ToBytes(args)
                 }
             ));
         }
 
-        public void Subscribe(List<string> queries)
+        void IDbConnection.Subscribe(ISubscriptionHandle handle, string[] querySqls)
         {
             if (!webSocket.IsConnected)
             {
-                Logger.LogError("Cannot subscribe, not connected to server!");
+                Log.Error("Cannot subscribe, not connected to server!");
                 return;
             }
 
-            var request = new Subscribe
-            {
-                RequestId = stats.SubscriptionRequestTracker.StartTrackingRequest(),
-            };
-            request.QueryStrings.AddRange(queries);
-            webSocket.Send(new ClientMessage.Subscribe(request));
+            var id = stats.SubscriptionRequestTracker.StartTrackingRequest();
+            subscriptions[id] = handle;
+            webSocket.Send(new ClientMessage.Subscribe(
+                new Subscribe
+                {
+                    RequestId = id,
+                    QueryStrings = querySqls.ToList()
+                }
+            ));
         }
 
         /// Usage: SpacetimeDBClientBase.instance.OneOffQuery<Message>("WHERE sender = \"bob\"");
         public async Task<T[]> OneOffQuery<T>(string query)
-            where T : IDatabaseTable, IStructuralReadWrite, new()
+            where T : IDatabaseRow, new()
         {
             var messageId = Guid.NewGuid();
             var type = typeof(T);
@@ -714,13 +855,13 @@ namespace SpacetimeDB
 
             if (!stats.OneOffRequestTracker.FinishTrackingRequest(requestId))
             {
-                Logger.LogWarning($"Failed to finish tracking one off request: {requestId}");
+                Log.Warn($"Failed to finish tracking one off request: {requestId}");
             }
 
             T[] LogAndThrow(string error)
             {
                 error = $"While processing one-off-query `{queryString}`, ID {messageId}: {error}";
-                Logger.LogError(error);
+                Log.Error(error);
                 throw new Exception(error);
             }
 
@@ -743,12 +884,14 @@ namespace SpacetimeDB
                 return LogAndThrow($"Mismatched result type, expected {type} but got {resultTable.TableName}");
             }
 
-            return resultTable.Rows.Select(BSATNHelpers.Decode<T>).ToArray();
+            return BsatnRowListIter(resultTable.Rows)
+                .Select(row => BSATNHelpers.Decode<T>(row))
+                .ToArray();
         }
 
-        public bool IsConnected() => webSocket.IsConnected;
+        public bool IsActive => webSocket.IsConnected;
 
-        public void Update()
+        public void FrameTick()
         {
             webSocket.Update();
             while (_preProcessedNetworkMessages.TryTake(out var preProcessedMessage))

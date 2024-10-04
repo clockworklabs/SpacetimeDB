@@ -81,7 +81,5 @@ static class VerifyInit
                 ]
             )
         );
-
-        VerifierSettings.IgnoreMember<ReducerEvent>(_ => _.ReducerName);
     }
 }

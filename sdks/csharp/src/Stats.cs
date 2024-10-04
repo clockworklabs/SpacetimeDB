@@ -12,7 +12,7 @@ namespace SpacetimeDB
         private uint _nextRequestId;
         private readonly Dictionary<uint, (DateTime Start, string Metadata)> _requests = new();
 
-        public uint StartTrackingRequest(string metadata = "")
+        internal uint StartTrackingRequest(string metadata = "")
         {
             // Record the start time of the request
             var newRequestId = ++_nextRequestId;
@@ -20,7 +20,7 @@ namespace SpacetimeDB
             return newRequestId;
         }
 
-        public bool FinishTrackingRequest(uint requestId)
+        internal bool FinishTrackingRequest(uint requestId)
         {
             if (!_requests.Remove(requestId, out var entry))
             {
@@ -40,12 +40,12 @@ namespace SpacetimeDB
             return true;
         }
 
-        public void InsertRequest(TimeSpan duration, string metadata)
+        internal void InsertRequest(TimeSpan duration, string metadata)
         {
             _requestDurations.Enqueue((DateTime.UtcNow, duration, metadata));
         }
 
-        public void InsertRequest(DateTime start, string metadata)
+        internal void InsertRequest(DateTime start, string metadata)
         {
             InsertRequest(DateTime.UtcNow - start, metadata);
         }
@@ -69,10 +69,10 @@ namespace SpacetimeDB
 
     public class Stats
     {
-        public NetworkRequestTracker ReducerRequestTracker = new();
-        public NetworkRequestTracker OneOffRequestTracker = new();
-        public NetworkRequestTracker SubscriptionRequestTracker = new();
-        public NetworkRequestTracker AllReducersTracker = new();
-        public NetworkRequestTracker ParseMessageTracker = new();
+        public readonly NetworkRequestTracker ReducerRequestTracker = new();
+        public readonly NetworkRequestTracker OneOffRequestTracker = new();
+        public readonly NetworkRequestTracker SubscriptionRequestTracker = new();
+        public readonly NetworkRequestTracker AllReducersTracker = new();
+        public readonly NetworkRequestTracker ParseMessageTracker = new();
     }
 }

@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.ClientApi
@@ -17,9 +16,23 @@ namespace SpacetimeDB.ClientApi
 	public partial class Subscribe
 	{
 		[DataMember(Name = "query_strings")]
-		public System.Collections.Generic.List<string> QueryStrings = new();
+		public System.Collections.Generic.List<string> QueryStrings;
 		[DataMember(Name = "request_id")]
 		public uint RequestId;
+
+		public Subscribe(
+			System.Collections.Generic.List<string> QueryStrings,
+			uint RequestId
+		)
+		{
+			this.QueryStrings = QueryStrings;
+			this.RequestId = RequestId;
+		}
+
+		public Subscribe()
+		{
+			this.QueryStrings = new();
+		}
 
 	}
 }

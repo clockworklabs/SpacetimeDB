@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.ClientApi
@@ -18,6 +17,17 @@ namespace SpacetimeDB.ClientApi
 	{
 		[DataMember(Name = "quanta")]
 		public U128 Quanta;
+
+		public EnergyQuanta(
+			U128 Quanta
+		)
+		{
+			this.Quanta = Quanta;
+		}
+
+		public EnergyQuanta()
+		{
+		}
 
 	}
 }

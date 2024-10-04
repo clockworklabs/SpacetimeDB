@@ -1,11 +1,10 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
     <LangVersion>9</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <PackageId>SpacetimeDB.ClientSDK</PackageId>
     <Title>SpacetimeDB SDK</Title>
     <Authors>jdetter</Authors>
@@ -16,8 +15,8 @@
     <PackageProjectUrl>https://spacetimedb.com</PackageProjectUrl>
     <PackageIcon>logo.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryUrl>https://github.com/clockworklabs/spacetimedb-csharp-sdk</RepositoryUrl>
-    <AssemblyVersion>0.11.0</AssemblyVersion>
+    <RepositoryUrl>https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk</RepositoryUrl>
+    <AssemblyVersion>0.12.0</AssemblyVersion>
     <Version>$(AssemblyVersion)</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
     <!-- We want to save DLLs for Unity which doesn't support NuGet. -->
@@ -25,7 +24,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="0.11.*" />
+    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="0.12.*" />
 
     <InternalsVisibleTo Include="SpacetimeDB.Tests" />
   </ItemGroup>
