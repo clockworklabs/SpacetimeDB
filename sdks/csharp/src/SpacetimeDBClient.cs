@@ -76,7 +76,7 @@ namespace SpacetimeDB
 
     public interface IDbConnection
     {
-        void Subscribe(ISubscriptionHandle handle, string query);
+        void Subscribe(ISubscriptionHandle handle, string[] querySqls);
     }
 
     public abstract class DbConnectionBase<DbConnection, Reducer> : IDbConnection
@@ -803,7 +803,7 @@ namespace SpacetimeDB
             ));
         }
 
-        void IDbConnection.Subscribe(ISubscriptionHandle handle, string query)
+        void IDbConnection.Subscribe(ISubscriptionHandle handle, string[] querySqls)
         {
             if (!webSocket.IsConnected)
             {
@@ -817,7 +817,7 @@ namespace SpacetimeDB
                 new Subscribe
                 {
                     RequestId = id,
-                    QueryStrings = { query }
+                    QueryStrings = querySqls.ToList()
                 }
             ));
         }
