@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.12.0
+
+### Minor Changes
+
+- [#92](https://github.com/clockworklabs/spacetimedb-typescript-sdk/pull/92) [`ab1f463`](https://github.com/clockworklabs/spacetimedb-typescript-sdk/commit/ab1f463d7da6e530a6cd47e2433141bfd16addd1) Thanks [@PuruVJ](https://github.com/PuruVJ)! - breaking: Flatten AlgebraicType & Simplify some codegen
+
+- [#102](https://github.com/clockworklabs/spacetimedb-typescript-sdk/pull/102) [`b8c944c`](https://github.com/clockworklabs/spacetimedb-typescript-sdk/commit/b8c944cd23d3b53c72131803a775127bf0a95213) Thanks [@cloutiertyler](https://github.com/cloutiertyler)! - internal: Remove global instance, allow multiple connections
+
+### Patch Changes
+
+- [#91](https://github.com/clockworklabs/spacetimedb-typescript-sdk/pull/91) [`5adb557`](https://github.com/clockworklabs/spacetimedb-typescript-sdk/commit/5adb55776c81d0760cf0268df0fa5dee600f0ef8) Thanks [@PuruVJ](https://github.com/PuruVJ)! - types: Allow autocomplete in .on and .off types
+
+- [#96](https://github.com/clockworklabs/spacetimedb-typescript-sdk/pull/96) [`17227c0`](https://github.com/clockworklabs/spacetimedb-typescript-sdk/commit/17227c0f65def3a9d5e767756ccf46777210041a) Thanks [@PuruVJ](https://github.com/PuruVJ)! - (fix) Synchronous WS Processing
+
 ## [0.8.0](https://github.com/clockworklabs/spacetimedb-typescript-sdk/compare/0.7.2...0.8.0) (2023-12-11)
 
 ### Bug Fixes
