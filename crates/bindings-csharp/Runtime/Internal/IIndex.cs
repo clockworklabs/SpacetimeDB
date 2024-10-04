@@ -83,7 +83,7 @@ public abstract class IndexBase<Row>
     }
 }
 
-public sealed class UniqueIndex<Handle, Row, T, RW>(Handle table, string name)
+public abstract class UniqueIndex<Handle, Row, T, RW>(Handle table, string name)
     : IndexBase<Row>(name)
     where Handle : ITableView<Handle, Row>
     where Row : ITable<Row>, new()
@@ -96,7 +96,7 @@ public sealed class UniqueIndex<Handle, Row, T, RW>(Handle table, string name)
 
     public bool Delete(T key) => DoDelete(ToBounds(key)) > 0;
 
-    public bool Update(T key, Row row)
+    protected bool DoUpdate(T key, Row row)
     {
         if (!Delete(key))
         {

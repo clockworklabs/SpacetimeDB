@@ -294,8 +294,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             {
                 var iUniqueIndex = $"";
                 yield return $$"""
-                    {{vis}} UniqueIndex<{{viewName}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {{f.Name}} =>
-                        new(this, "idx_{{viewName}}_{{viewName}}_{{ct.col.Name}}_unique");
+                    {{vis}} sealed class {{viewName}}UniqueIndex : UniqueIndex<{{viewName}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
+                        internal {{viewName}}UniqueIndex({{viewName}} handle) : base(handle, "idx_{{viewName}}_{{viewName}}_{{ct.col.Name}}_unique") {}
+                        public bool Update({{globalName}} row) => DoUpdate(row.{{f.Name}}, row);
+                    }
+                    {{vis}} {{viewName}}UniqueIndex {{f.Name}} => new(this);
                     """;
             }
         }
