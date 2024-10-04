@@ -35,7 +35,7 @@ namespace SpacetimeDB
             }
             conn.Connect(token, uri, nameOrAddress);
 #if UNITY_5_3_OR_NEWER
-            UnityNetworkManager.ActiveConnections.Add(conn);
+            SpacetimeDBNetworkManager.ActiveConnections.Add(conn);
 #endif
             return conn;
         }
@@ -152,7 +152,7 @@ namespace SpacetimeDB
             webSocket.OnMessage += OnMessageReceived;
             webSocket.OnSendError += a => onSendError?.Invoke(a);
 #if UNITY_5_3_OR_NEWER
-            webSocket.OnClose += (a, b) => UnityNetworkManager.ActiveConnections.Remove(this);
+            webSocket.OnClose += (a, b) => SpacetimeDBNetworkManager.ActiveConnections.Remove(this);
 #endif
 
             networkMessageProcessThread = new Thread(PreProcessMessages);
