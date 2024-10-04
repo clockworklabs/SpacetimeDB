@@ -14,11 +14,11 @@ namespace SpacetimeDB
 
 		public void Awake()
 		{
-			// Ensure that users don't create several UnityNetworkManager instances.
+			// Ensure that users don't create several SpacetimeDBNetworkManager instances.
 			// We're using a global (static) list of active connections and we don't want several instances to walk over it several times.
 			if (_alreadyInitialized)
 			{
-				throw new InvalidOperationException("UnityNetworkManager is a singleton and should only be attached once.");
+				throw new InvalidOperationException("SpacetimeDBNetworkManager is a singleton and should only be attached once.");
 			}
 			else
 			{

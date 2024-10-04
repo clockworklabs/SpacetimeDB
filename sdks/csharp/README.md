@@ -26,9 +26,9 @@ Download the [.unitypackage release](https://github.com/clockworklabs/SpacetimeD
 
 ## Usage
 
-### UnityNetworkManager
+### SpacetimeDBNetworkManager
 
-The Unity SDK for SpacetimeDB requires that there is a `UnityNetworkManager` component attached to a GameObject in the scene. The `UnityNetworkManager` component is responsible for connecting to SpacetimeDB and managing the connection. The `UnityNetworkManager` component is a singleton and there can only be one instance of it in the scene.
+The Unity SDK for SpacetimeDB requires that there is a `SpacetimeDBNetworkManager` component attached to a GameObject in the scene. The `UnityNetworkManager` component is responsible for connecting to SpacetimeDB and managing the connection. The `UnityNetworkManager` component is a singleton and there can only be one instance of it in the scene.
 
 ### Connecting to SpacetimeDB
 
