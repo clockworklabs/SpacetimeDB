@@ -271,7 +271,8 @@ export class DBConnectionImpl<DBView = any, Reducers = any>
    * spacetimeDBClient.subscribe(["SELECT * FROM User","SELECT * FROM Message"]);
    * ```
    */
-  subscribe(
+  // This is marked private but not # because we need to use it from the builder
+  private subscribe(
     queryOrQueries: string | string[],
     onApplied?: (ctx: EventContextInterface) => void,
     _onError?: (ctx: EventContextInterface) => void
