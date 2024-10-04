@@ -158,8 +158,8 @@ abstract record ViewIndex
 
     public ViewIndex(AttributeData data, TypeDeclarationSyntax decl, DiagReporter diag)
     {
-        var attr = data.ParseAs<Index.BTreeAttribute>();
-        Columns = new((attr.Columns ?? []).ToImmutableArray());
+        var attr = data.ParseAs<IndexAttribute>();
+        Columns = new((attr.BTree ?? []).ToImmutableArray());
         Table = attr.Table;
         Name = attr.Name ?? string.Join("", Columns);
 
@@ -252,7 +252,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         BTrees = new(
             context
                 .TargetSymbol.GetAttributes()
-                .Where(a => a.AttributeClass?.ToString() == typeof(Index.BTreeAttribute).FullName)
+                .Where(a => a.AttributeClass?.ToString() == typeof(IndexAttribute).FullName)
                 .Select(a => new ViewBTree(a, (TypeDeclarationSyntax)context.TargetNode, diag))
                 .ToImmutableArray()
         );

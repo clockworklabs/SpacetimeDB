@@ -3,7 +3,7 @@ namespace SpacetimeDB.Examples.QuickStart.Server;
 using SpacetimeDB;
 
 [Table(Public = true)]
-[Index.BTree(Name = "Age", Columns = ["Age"])]
+[Index(Name = "Age", BTree = ["Age"])]
 public partial struct Person
 {
     [AutoInc]
