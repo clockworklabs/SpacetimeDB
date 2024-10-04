@@ -24,11 +24,11 @@
   },
   {/*
 [SpacetimeDB.Table]
-[SpacetimeDB.Index.BTree]
- ^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Index]
+ ^^^^^^^^^^^^^^^^^
 public partial struct TestIndexWithoutColumns { }
 */
-    Message: Required member 'BTreeAttribute.Columns' must be set in the object initializer or attribute constructor.,
+    Message: Required member 'IndexAttribute.BTree' must be set in the object initializer or attribute constructor.,
     Severity: Error,
     Descriptor: {
       Id: CS9035,
@@ -173,6 +173,29 @@ internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> Unsuppor
       Title: ,
       HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0144),
       MessageFormat: Cannot create an instance of the abstract type or interface '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+}
+public TestUniqueNotEquatableUniqueIndex PrimaryKeyField => new(this);
+                                                            ^^^^^^^^^
+}
+*/
+    Message: The call is ambiguous between the following methods or properties: 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex.TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable)' and 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex.TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable)',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0121,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0121),
+      MessageFormat: The call is ambiguous between the following methods or properties: '{0}' and '{1}',
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,
@@ -530,17 +553,17 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
   },
   {/*
 
-    public UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, int?, SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>> UniqueField =>
-                                                                                                                                                ^^^^^^^^^^^
-    new(this, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique");
+    public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, int?, SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>> {
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique") {}
 */
-    Message: The type 'int?' cannot be used as type parameter 'T' in the generic type or method 'UniqueIndex<Handle, Row, T, RW>'. The nullable type 'int?' does not satisfy the constraint of 'System.IEquatable<int?>'. Nullable types can not satisfy any interface constraints.,
+    Message: Partial declarations of 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex' must not specify different base classes,
     Severity: Error,
     Descriptor: {
-      Id: CS0313,
+      Id: CS0263,
       Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0313),
-      MessageFormat: The type '{3}' cannot be used as type parameter '{2}' in the generic type or method '{0}'. The nullable type '{3}' does not satisfy the constraint of '{1}'. Nullable types can not satisfy any interface constraints.,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0263),
+      MessageFormat: Partial declarations of '{0}' must not specify different base classes,
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,
@@ -552,18 +575,179 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
     }
   },
   {/*
-    new(this, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique");
-public UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, TestEnumWithExplicitValues, SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>> PrimaryKeyField =>
-                                                                                                                                                           ^^^^^^^^^^^^^^^
-    new(this, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique");
+    public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, int?, SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>> {
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique") {}
+                                                                                ^^^^
+    public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.UniqueField, row);
 */
-    Message: The type 'TestEnumWithExplicitValues' cannot be used as type parameter 'T' in the generic type or method 'UniqueIndex<Handle, Row, T, RW>'. There is no boxing conversion from 'TestEnumWithExplicitValues' to 'System.IEquatable<TestEnumWithExplicitValues>'.,
+    Message: 'UniqueIndex<TestUniqueNotEquatable, TestUniqueNotEquatable, int?, ValueOption<int, I32>>.UniqueIndex(TestUniqueNotEquatable, string)' is inaccessible due to its protection level,
     Severity: Error,
     Descriptor: {
-      Id: CS0315,
+      Id: CS0122,
       Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0315),
-      MessageFormat: The type '{3}' cannot be used as type parameter '{2}' in the generic type or method '{0}'. There is no boxing conversion from '{3}' to '{1}'.,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0122),
+      MessageFormat: '{0}' is inaccessible due to its protection level,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique") {}
+    public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.UniqueField, row);
+                                                              ^^^^^^^^
+}
+*/
+    Message: The name 'DoUpdate' does not exist in the current context,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0103,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0103),
+      MessageFormat: The name '{0}' does not exist in the current context,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+}
+public TestUniqueNotEquatableUniqueIndex UniqueField => new(this);
+                                                        ^^^^^^^^^
+public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, TestEnumWithExplicitValues, SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>> {
+*/
+    Message: The call is ambiguous between the following methods or properties: 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex.TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable)' and 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex.TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable)',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0121,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0121),
+      MessageFormat: The call is ambiguous between the following methods or properties: '{0}' and '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+public TestUniqueNotEquatableUniqueIndex UniqueField => new(this);
+public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, TestEnumWithExplicitValues, SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>> {
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+*/
+    Message: The type 'TestUniqueNotEquatable' already contains a definition for 'TestUniqueNotEquatableUniqueIndex',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0102,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0102),
+      MessageFormat: The type '{0}' already contains a definition for '{1}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, TestEnumWithExplicitValues, SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>> {
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.PrimaryKeyField, row);
+*/
+    Message: Type 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex' already defines a member called 'TestUniqueNotEquatableUniqueIndex' with the same parameter types,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0111,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
+      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, TestEnumWithExplicitValues, SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>> {
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+                                                                                ^^^^
+    public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.PrimaryKeyField, row);
+*/
+    Message: 'UniqueIndex<TestUniqueNotEquatable, TestUniqueNotEquatable, int?, ValueOption<int, I32>>.UniqueIndex(TestUniqueNotEquatable, string)' is inaccessible due to its protection level,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0122,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0122),
+      MessageFormat: '{0}' is inaccessible due to its protection level,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+    public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.PrimaryKeyField, row);
+                ^^^^^^
+}
+*/
+    Message: Type 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex' already defines a member called 'Update' with the same parameter types,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0111,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0111),
+      MessageFormat: Type '{1}' already defines a member called '{0}' with the same parameter types,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+    public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.PrimaryKeyField, row);
+                                                              ^^^^^^^^
+}
+*/
+    Message: The name 'DoUpdate' does not exist in the current context,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0103,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0103),
+      MessageFormat: The name '{0}' does not exist in the current context,
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,

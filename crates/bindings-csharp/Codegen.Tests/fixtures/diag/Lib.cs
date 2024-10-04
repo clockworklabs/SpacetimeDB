@@ -376,9 +376,9 @@ public partial struct TestIncompatibleSchedule
 }
 
 [SpacetimeDB.Table]
-[SpacetimeDB.Index.BTree]
+[SpacetimeDB.Index]
 public partial struct TestIndexWithoutColumns { }
 
 [SpacetimeDB.Table]
-[SpacetimeDB.Index.BTree(Columns = [])]
+[SpacetimeDB.Index(BTree = [])]
 public partial struct TestIndexWithEmptyColumns { }
