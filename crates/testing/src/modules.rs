@@ -75,7 +75,7 @@ impl ModuleHandle {
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
-        let filepath = DatabaseLogger::filepath(&self.db_address, self.client.database_instance_id);
+        let filepath = DatabaseLogger::filepath(&self.db_address, self.client.replica_id);
         DatabaseLogger::read_latest(&filepath, size).await
     }
 }
@@ -172,7 +172,7 @@ impl CompiledModule {
         .unwrap();
 
         let database = env.get_database_by_address(&db_address).unwrap().unwrap();
-        let instance = env.get_leader_database_instance_by_database(database.id).unwrap();
+        let instance = env.get_leader_replica_by_database(database.id).unwrap();
 
         let client_id = ClientActorId {
             identity,

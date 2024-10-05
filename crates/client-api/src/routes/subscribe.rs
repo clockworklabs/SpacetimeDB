@@ -88,10 +88,10 @@ where
         .get_database_by_address(&db_address)
         .unwrap()
         .ok_or(StatusCode::NOT_FOUND)?;
-    let database_instance = ctx
-        .get_leader_database_instance_by_database(database.id)
+    let replica = ctx
+        .get_leader_replica_by_database(database.id)
         .ok_or(StatusCode::NOT_FOUND)?;
-    let instance_id = database_instance.id;
+    let instance_id = replica.id;
 
     let identity_token = auth.creds.token().into();
 

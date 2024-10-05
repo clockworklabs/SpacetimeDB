@@ -1,7 +1,7 @@
 use super::wasm_common::{CLIENT_CONNECTED_DUNDER, CLIENT_DISCONNECTED_DUNDER};
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId};
 use crate::client::{ClientActorId, ClientConnectionSender};
-use crate::database_instance_context::DatabaseInstanceContext;
+use crate::replica_context::ReplicaContext;
 use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientFields, StClientRow, ST_CLIENT_ID};
@@ -274,7 +274,7 @@ pub trait Module: Send + Sync + 'static {
     fn initial_instances(&mut self) -> Self::InitialInstances<'_>;
     fn info(&self) -> Arc<ModuleInfo>;
     fn create_instance(&self) -> Self::Instance;
-    fn dbic(&self) -> &DatabaseInstanceContext;
+    fn dbic(&self) -> &ReplicaContext;
     fn close(self);
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
@@ -369,7 +369,7 @@ impl fmt::Debug for ModuleHost {
 #[async_trait::async_trait]
 trait DynModuleHost: Send + Sync + 'static {
     async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
-    fn dbic(&self) -> &DatabaseInstanceContext;
+    fn dbic(&self) -> &ReplicaContext;
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
 }
@@ -428,7 +428,7 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         }))
     }
 
-    fn dbic(&self) -> &DatabaseInstanceContext {
+    fn dbic(&self) -> &ReplicaContext {
         self.module.dbic()
     }
 
@@ -866,7 +866,7 @@ impl ModuleHost {
         &self.dbic().database
     }
 
-    pub(crate) fn dbic(&self) -> &DatabaseInstanceContext {
+    pub(crate) fn dbic(&self) -> &ReplicaContext {
         self.inner.dbic()
     }
 }

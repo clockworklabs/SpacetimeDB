@@ -101,7 +101,7 @@ impl ClientConnectionSender {
 #[non_exhaustive]
 pub struct ClientConnection {
     sender: Arc<ClientConnectionSender>,
-    pub database_instance_id: u64,
+    pub replica_id: u64,
     pub module: ModuleHost,
     module_rx: watch::Receiver<ModuleHost>,
 }
@@ -143,7 +143,7 @@ impl ClientConnection {
     pub async fn spawn<F, Fut>(
         id: ClientActorId,
         protocol: Protocol,
-        database_instance_id: u64,
+        replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
         actor: F,
     ) -> Result<ClientConnection, ReducerCallError>
@@ -184,7 +184,7 @@ impl ClientConnection {
         });
         let this = Self {
             sender,
-            database_instance_id,
+            replica_id,
             module,
             module_rx,
         };
@@ -199,13 +199,13 @@ impl ClientConnection {
     pub fn dummy(
         id: ClientActorId,
         protocol: Protocol,
-        database_instance_id: u64,
+        replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
     ) -> Self {
         let module = module_rx.borrow_and_update().clone();
         Self {
             sender: Arc::new(ClientConnectionSender::dummy(id, protocol)),
-            database_instance_id,
+            replica_id,
             module,
             module_rx,
         }

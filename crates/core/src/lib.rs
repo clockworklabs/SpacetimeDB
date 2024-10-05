@@ -31,7 +31,7 @@ pub use spacetimedb_sats::hash;
 pub mod callgrind_flag;
 pub mod client;
 pub mod config;
-pub mod database_instance_context;
+pub mod replica_context;
 pub mod database_logger;
 pub mod estimation;
 pub mod execution_context;

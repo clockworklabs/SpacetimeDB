@@ -1258,15 +1258,15 @@ pub async fn local_durability(db_path: &Path) -> io::Result<(Arc<durability::Loc
 }
 
 /// Open a [`SnapshotRepository`] at `db_path/snapshots`,
-/// configured to store snapshots of the database `database_address`/`database_instance_id`.
+/// configured to store snapshots of the database `database_address`/`replica_id`.
 pub fn open_snapshot_repo(
     db_path: &Path,
     database_address: Address,
-    database_instance_id: u64,
+    replica_id: u64,
 ) -> Result<Arc<SnapshotRepository>, Box<SnapshotError>> {
     let snapshot_dir = db_path.join("snapshots");
     std::fs::create_dir_all(&snapshot_dir).map_err(|e| Box::new(SnapshotError::from(e)))?;
-    SnapshotRepository::open(snapshot_dir, database_address, database_instance_id)
+    SnapshotRepository::open(snapshot_dir, database_address, replica_id)
         .map(Arc::new)
         .map_err(Box::new)
 }

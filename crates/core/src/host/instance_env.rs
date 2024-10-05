@@ -1,5 +1,5 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
-use crate::database_instance_context::DatabaseInstanceContext;
+use crate::replica_context::ReplicaContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::{IndexError, NodesError};
@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct InstanceEnv {
-    pub dbic: Arc<DatabaseInstanceContext>,
+    pub dbic: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
     pub tx: TxSlot,
 }
@@ -73,7 +73,7 @@ impl ChunkedWriter {
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
-    pub fn new(dbic: Arc<DatabaseInstanceContext>, scheduler: Scheduler) -> Self {
+    pub fn new(dbic: Arc<ReplicaContext>, scheduler: Scheduler) -> Self {
         Self {
             dbic,
             scheduler,

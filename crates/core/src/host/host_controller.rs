@@ -1,7 +1,7 @@
 use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
 use super::{Scheduler, UpdateDatabaseResult};
-use crate::database_instance_context::DatabaseInstanceContext;
+use crate::replica_context::ReplicaContext;
 use crate::database_logger::DatabaseLogger;
 use crate::db::datastore::traits::Program;
 use crate::db::db_metrics::DB_METRICS;
@@ -64,12 +64,12 @@ pub struct HostController {
     /// Map of all hosts managed by this controller,
     /// keyed by database instance id.
     hosts: Hosts,
-    /// The directory to create database instances in.
+    /// The directory to create replicas in.
     ///
     /// For example:
     ///
-    /// - `$STDB_PATH/worker_node/database_instances`
-    /// - `$STDB_PATH/database_instances`
+    /// - `$STDB_PATH/worker_node/replicas`
+    /// - `$STDB_PATH/replicas`
     root_dir: Arc<Path>,
     /// The default configuration to use for databases created by this
     /// controller.
@@ -501,14 +501,14 @@ async fn make_dbic(
     database: Database,
     instance_id: u64,
     relational_db: Arc<RelationalDB>,
-) -> anyhow::Result<DatabaseInstanceContext> {
+) -> anyhow::Result<ReplicaContext> {
     let log_path = DatabaseLogger::filepath(&database.address, instance_id);
     let logger = tokio::task::block_in_place(|| Arc::new(DatabaseLogger::open(log_path)));
     let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.owner_identity);
 
-    Ok(DatabaseInstanceContext {
+    Ok(ReplicaContext {
         database,
-        database_instance_id: instance_id,
+        replica_id: instance_id,
         logger,
         relational_db,
         subscriptions,
@@ -519,7 +519,7 @@ async fn make_dbic(
 /// The passed dbic may not be configured for this version of the program's database schema yet.
 async fn make_module_host(
     host_type: HostType,
-    dbic: Arc<DatabaseInstanceContext>,
+    dbic: Arc<ReplicaContext>,
     scheduler: Scheduler,
     program: Program,
     energy_monitor: Arc<dyn EnergyMonitor>,
@@ -554,7 +554,7 @@ async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Pr
 }
 
 struct LaunchedModule {
-    dbic: Arc<DatabaseInstanceContext>,
+    dbic: Arc<ReplicaContext>,
     module_host: ModuleHost,
     scheduler: Scheduler,
     scheduler_starter: SchedulerStarter,
@@ -637,11 +637,11 @@ struct Host {
     /// clients may subscribe to the channel, so they get the most recent
     /// [`ModuleHost`] version or an error if the [`Host`] was dropped.
     module: watch::Sender<ModuleHost>,
-    /// Pointer to the `module`'s [`DatabaseInstanceContext`].
+    /// Pointer to the `module`'s [`ReplicaContext`].
     ///
     /// The database stays the same if and when the module is updated via
     /// [`Host::update_module`].
-    dbic: Arc<DatabaseInstanceContext>,
+    dbic: Arc<ReplicaContext>,
     /// Scheduler for repeating reducers, operating on the current `module`.
     scheduler: Scheduler,
     /// Handle to the metrics collection task started via [`disk_monitor`].
@@ -768,7 +768,7 @@ impl Host {
     /// Attempt to replace this [`Host`]'s [`ModuleHost`] with a new one running
     /// the program `program_hash`.
     ///
-    /// The associated [`DatabaseInstanceContext`] stays the same.
+    /// The associated [`ReplicaContext`] stays the same.
     ///
     /// Executes [`ModuleHost::update_database`] on the newly instantiated
     /// module, updating the database schema and invoking the `__update__`
@@ -828,7 +828,7 @@ const DISK_METERING_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Periodically collect the disk usage of `dbic` and update metrics as well as
 /// the `energy_monitor` accordingly.
-async fn disk_monitor(dbic: Arc<DatabaseInstanceContext>, energy_monitor: Arc<dyn EnergyMonitor>) {
+async fn disk_monitor(dbic: Arc<ReplicaContext>, energy_monitor: Arc<dyn EnergyMonitor>) {
     let mut interval = tokio::time::interval(DISK_METERING_INTERVAL);
     // We don't care about happening precisely every 5 seconds - it just matters
     // that the time between ticks is accurate.
@@ -853,7 +853,7 @@ async fn disk_monitor(dbic: Arc<DatabaseInstanceContext>, energy_monitor: Arc<dy
                 .set(num_bytes as i64);
         }
         let disk_usage = disk_usage.or(prev_disk_usage);
-        energy_monitor.record_disk_usage(&dbic.database, dbic.database_instance_id, disk_usage.sum(), dt);
+        energy_monitor.record_disk_usage(&dbic.database, dbic.replica_id, disk_usage.sum(), dt);
         prev_disk_usage = disk_usage;
         prev_tick = tick;
     }

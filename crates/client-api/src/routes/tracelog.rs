@@ -6,7 +6,7 @@ use serde::Deserialize;
 use tempfile::TempDir;
 
 use spacetimedb::address::Address;
-use spacetimedb::database_instance_context::DatabaseInstanceContext;
+use spacetimedb::replica_context::ReplicaContext;
 use spacetimedb::db::Storage;
 use spacetimedb::hash::hash_bytes;
 use spacetimedb::host::instance_env::InstanceEnv;
@@ -28,13 +28,13 @@ pub async fn get_tracelog<S: ControlStateReadAccess + NodeDelegate>(
         .get_database_by_address(&address)
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
-    let database_instance = ctx.get_leader_database_instance_by_database(database.id);
-    let instance_id = database_instance.unwrap().id;
+    let replica = ctx.get_leader_replica_by_database(database.id);
+    let instance_id = replica.unwrap().id;
 
     let host = ctx.host_controller();
     let trace = host.get_trace(instance_id).await.map_err(|e| {
         log::error!("Unable to retrieve tracelog {}", e);
-        (StatusCode::SERVICE_UNAVAILABLE, "Database instance not ready.")
+        (StatusCode::SERVICE_UNAVAILABLE, "Replica not ready.")
     })?;
 
     let trace = trace.ok_or(StatusCode::NOT_FOUND)?;
@@ -54,13 +54,13 @@ pub async fn stop_tracelog<S: ControlStateReadAccess + NodeDelegate>(
         .get_database_by_address(&address)
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
-    let database_instance = ctx.get_leader_database_instance_by_database(database.id);
-    let instance_id = database_instance.unwrap().id;
+    let replica = ctx.get_leader_replica_by_database(database.id);
+    let instance_id = replica.unwrap().id;
 
     let host = ctx.host_controller();
     host.stop_trace(instance_id).await.map_err(|e| {
         log::error!("Unable to retrieve tracelog {}", e);
-        (StatusCode::SERVICE_UNAVAILABLE, "Database instance not ready.")
+        (StatusCode::SERVICE_UNAVAILABLE, "Replica not ready.")
     })?;
 
     Ok(())
@@ -74,7 +74,7 @@ pub async fn perform_tracelog_replay(body: Bytes) -> axum::response::Result<impl
     let logger_path = tmp_dir.path();
     let identity = Identity::from_byte_array(hash_bytes(b"This is a fake identity.").data);
     let address = Address::from_slice(&identity.as_bytes()[0..16]);
-    let dbic = DatabaseInstanceContext::new(
+    let dbic = ReplicaContext::new(
         storage,
         0,
         0,

@@ -163,7 +163,7 @@ pub struct Snapshot {
     /// The address of the snapshotted database.
     pub database_address: Address,
     /// The instance ID of the snapshotted database.
-    pub database_instance_id: u64,
+    pub replica_id: u64,
 
     /// ABI version of the module from which this snapshot was created, as [MAJOR, MINOR].
     ///
@@ -470,7 +470,7 @@ pub struct SnapshotRepository {
     database_address: Address,
 
     /// The database instance ID of the database instance for which this repository stores snapshots.
-    database_instance_id: u64,
+    replica_id: u64,
     // TODO(deduplication): track the most recent successful snapshot
     // (possibly in a file)
     // and hardlink its objects into the next snapshot for deduplication.
@@ -563,7 +563,7 @@ impl SnapshotRepository {
             magic: MAGIC,
             version: CURRENT_SNAPSHOT_VERSION,
             database_address: self.database_address,
-            database_instance_id: self.database_instance_id,
+            replica_id: self.replica_id,
             module_abi_version: CURRENT_MODULE_ABI_VERSION,
             tx_offset,
             blobs: vec![],
@@ -678,7 +678,7 @@ impl SnapshotRepository {
 
         Ok(ReconstructedSnapshot {
             database_address: snapshot.database_address,
-            database_instance_id: snapshot.database_instance_id,
+            replica_id: snapshot.replica_id,
             tx_offset: snapshot.tx_offset,
             module_abi_version: snapshot.module_abi_version,
             blob_store,
@@ -690,14 +690,14 @@ impl SnapshotRepository {
     ///
     /// Calls [`Path::is_dir`] and requires that the result is `true`.
     /// See that method for more detailed preconditions on this function.
-    pub fn open(root: PathBuf, database_address: Address, database_instance_id: u64) -> Result<Self, SnapshotError> {
+    pub fn open(root: PathBuf, database_address: Address, replica_id: u64) -> Result<Self, SnapshotError> {
         if !root.is_dir() {
             return Err(SnapshotError::NotDirectory { root });
         }
         Ok(Self {
             root,
             database_address,
-            database_instance_id,
+            replica_id,
         })
     }
 
@@ -778,7 +778,7 @@ pub struct ReconstructedSnapshot {
     /// The address of the snapshotted database.
     pub database_address: Address,
     /// The instance ID of the snapshotted database.
-    pub database_instance_id: u64,
+    pub replica_id: u64,
     /// The transaction offset of the state this snapshot reflects.
     pub tx_offset: TxOffset,
     /// ABI version of the module from which this snapshot was created, as [MAJOR, MINOR].

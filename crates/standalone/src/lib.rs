@@ -21,7 +21,7 @@ use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, IdentityEmail, Node};
+use spacetimedb::messages::control_db::{Database, Replica, IdentityEmail, Node};
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
@@ -52,7 +52,7 @@ impl StandaloneEnv {
         let program_store = Arc::new(DiskStorage::new(stdb_path("control_node/program_bytes")).await?);
 
         let host_controller = HostController::new(
-            stdb_path("worker_node/database_instances").into(),
+            stdb_path("worker_node/replicas").into(),
             config,
             program_store.clone(),
             energy_monitor,
@@ -215,17 +215,17 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
         Ok(self.control_db.get_databases()?)
     }
 
-    // Database instances
-    fn get_database_instance_by_id(&self, id: u64) -> anyhow::Result<Option<DatabaseInstance>> {
-        Ok(self.control_db.get_database_instance_by_id(id)?)
+    // Replicas
+    fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>> {
+        Ok(self.control_db.get_replica_by_id(id)?)
     }
 
-    fn get_database_instances(&self) -> anyhow::Result<Vec<DatabaseInstance>> {
-        Ok(self.control_db.get_database_instances()?)
+    fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
+        Ok(self.control_db.get_replicas()?)
     }
 
-    fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance> {
-        self.control_db.get_leader_database_instance_by_database(database_id)
+    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+        self.control_db.get_leader_replica_by_database(database_id)
     }
 
     // Identities
@@ -302,7 +302,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 
                 let leader = self
                     .control_db
-                    .get_leader_database_instance_by_database(database_id)
+                    .get_leader_replica_by_database(database_id)
                     .with_context(|| format!("Not found: leader instance for database `{}`", database_addr))?;
                 let update_result = self
                     .host_controller
@@ -310,12 +310,12 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .await?;
 
                 if update_result.was_successful() {
-                    let instances = self.control_db.get_database_instances_by_database(database_id)?;
+                    let instances = self.control_db.get_replicas_by_database(database_id)?;
                     let desired_instances = spec.num_replicas as usize;
                     if desired_instances == 0 {
                         log::info!("Decommissioning all instances of database {}", database_addr);
                         for instance in instances {
-                            self.delete_database_instance(instance.id).await?;
+                            self.delete_replica(instance.id).await?;
                         }
                     } else if desired_instances > instances.len() {
                         let n = desired_instances - instances.len();
@@ -326,7 +326,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                             n
                         );
                         for _ in 0..n {
-                            self.insert_database_instance(DatabaseInstance {
+                            self.insert_replica(Replica {
                                 id: 0,
                                 database_id,
                                 node_id: 0,
@@ -343,7 +343,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                             n
                         );
                         for instance in instances.into_iter().filter(|instance| !instance.leader).take(n) {
-                            self.delete_database_instance(instance.id).await?;
+                            self.delete_replica(instance.id).await?;
                         }
                     } else {
                         log::debug!(
@@ -373,8 +373,8 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         );
 
         self.control_db.delete_database(database.id)?;
-        for instance in self.control_db.get_database_instances_by_database(database.id)? {
-            self.delete_database_instance(instance.id).await?;
+        for instance in self.control_db.get_replicas_by_database(database.id)? {
+            self.delete_replica(instance.id).await?;
         }
 
         Ok(())
@@ -427,19 +427,19 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 }
 
 impl StandaloneEnv {
-    async fn insert_database_instance(&self, database_instance: DatabaseInstance) -> Result<(), anyhow::Error> {
-        let mut new_database_instance = database_instance.clone();
-        let id = self.control_db.insert_database_instance(database_instance)?;
-        new_database_instance.id = id;
+    async fn insert_replica(&self, replica: Replica) -> Result<(), anyhow::Error> {
+        let mut new_replica = replica.clone();
+        let id = self.control_db.insert_replica(replica)?;
+        new_replica.id = id;
 
-        self.on_insert_database_instance(&new_database_instance).await?;
+        self.on_insert_replica(&new_replica).await?;
 
         Ok(())
     }
 
-    async fn delete_database_instance(&self, database_instance_id: u64) -> Result<(), anyhow::Error> {
-        self.control_db.delete_database_instance(database_instance_id)?;
-        self.on_delete_database_instance(database_instance_id).await?;
+    async fn delete_replica(&self, replica_id: u64) -> Result<(), anyhow::Error> {
+        self.control_db.delete_replica(replica_id)?;
+        self.on_delete_replica(replica_id).await?;
 
         Ok(())
     }
@@ -447,19 +447,19 @@ impl StandaloneEnv {
     async fn schedule_replicas(&self, database_id: u64, num_replicas: u32) -> Result<(), anyhow::Error> {
         // Just scheduling a bunch of replicas to the only machine
         for i in 0..num_replicas {
-            let database_instance = DatabaseInstance {
+            let replica = Replica {
                 id: 0,
                 database_id,
                 node_id: 0,
                 leader: i == 0,
             };
-            self.insert_database_instance(database_instance).await?;
+            self.insert_replica(replica).await?;
         }
 
         Ok(())
     }
 
-    async fn on_insert_database_instance(&self, instance: &DatabaseInstance) -> Result<(), anyhow::Error> {
+    async fn on_insert_replica(&self, instance: &Replica) -> Result<(), anyhow::Error> {
         if instance.leader {
             let database = self
                 .control_db
@@ -479,9 +479,9 @@ impl StandaloneEnv {
         Ok(())
     }
 
-    async fn on_delete_database_instance(&self, instance_id: u64) -> anyhow::Result<()> {
+    async fn on_delete_replica(&self, instance_id: u64) -> anyhow::Result<()> {
         // TODO(cloutiertyler): We should think about how to clean up
-        // database instances which have been deleted. This will just drop
+        // replicas which have been deleted. This will just drop
         // them from memory, but will not remove them from disk.  We need
         // some kind of database lifecycle manager long term.
         self.host_controller.exit_module_host(instance_id).await?;
