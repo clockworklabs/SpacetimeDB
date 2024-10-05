@@ -132,7 +132,7 @@ pub enum PlanError {
 
 #[derive(Error, Debug)]
 pub enum DatabaseError {
-    #[error("Database instance not found: {0}")]
+    #[error("Replica not found: {0}")]
     NotFound(u64),
     #[error("Database is already opened. Path:`{0}`. Error:{1}")]
     DatabasedOpened(PathBuf, anyhow::Error),

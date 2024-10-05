@@ -10,7 +10,7 @@ use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, IdentityEmail, Node};
+use spacetimedb::messages::control_db::{Database, HostType, IdentityEmail, Node, Replica};
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_client_api_messages::recovery::RecoveryCode;
@@ -92,10 +92,10 @@ pub trait ControlStateReadAccess {
     fn get_database_by_address(&self, address: &Address) -> anyhow::Result<Option<Database>>;
     fn get_databases(&self) -> anyhow::Result<Vec<Database>>;
 
-    // Database instances
-    fn get_database_instance_by_id(&self, id: u64) -> anyhow::Result<Option<DatabaseInstance>>;
-    fn get_database_instances(&self) -> anyhow::Result<Vec<DatabaseInstance>>;
-    fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance>;
+    // Replicas
+    fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>>;
+    fn get_replicas(&self) -> anyhow::Result<Vec<Replica>>;
+    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica>;
 
     // Identities
     fn get_identities_for_email(&self, email: &str) -> anyhow::Result<Vec<IdentityEmail>>;
@@ -174,15 +174,15 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
         (**self).get_databases()
     }
 
-    // Database instances
-    fn get_database_instance_by_id(&self, id: u64) -> anyhow::Result<Option<DatabaseInstance>> {
-        (**self).get_database_instance_by_id(id)
+    // Replicas
+    fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>> {
+        (**self).get_replica_by_id(id)
     }
-    fn get_database_instances(&self) -> anyhow::Result<Vec<DatabaseInstance>> {
-        (**self).get_database_instances()
+    fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
+        (**self).get_replicas()
     }
-    fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance> {
-        (**self).get_leader_database_instance_by_database(database_id)
+    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+        (**self).get_leader_replica_by_database(database_id)
     }
 
     // Identities

@@ -45,14 +45,14 @@ pub struct DatabaseStatus {
     pub state: String,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct DatabaseInstance {
+pub struct Replica {
     pub id: u64,
     pub database_id: u64,
     pub node_id: u64,
     pub leader: bool,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct DatabaseInstanceStatus {
+pub struct ReplicaStatus {
     pub state: String,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

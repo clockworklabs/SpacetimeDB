@@ -1,9 +1,9 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
-use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
+use crate::replica_context::ReplicaContext;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, IndexId, TableId};
@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct InstanceEnv {
-    pub dbic: Arc<DatabaseInstanceContext>,
+    pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
     pub tx: TxSlot,
 }
@@ -73,9 +73,9 @@ impl ChunkedWriter {
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
-    pub fn new(dbic: Arc<DatabaseInstanceContext>, scheduler: Scheduler) -> Self {
+    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler) -> Self {
         Self {
-            dbic,
+            replica_ctx,
             scheduler,
             tx: TxSlot::default(),
         }
@@ -91,8 +91,12 @@ impl InstanceEnv {
 
     #[tracing::instrument(skip_all)]
     pub fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
-        self.dbic.logger.write(level, record, bt);
-        log::trace!("MOD({}): {}", self.dbic.address.to_abbreviated_hex(), record.message);
+        self.replica_ctx.logger.write(level, record, bt);
+        log::trace!(
+            "MOD({}): {}",
+            self.replica_ctx.address.to_abbreviated_hex(),
+            record.message
+        );
     }
 
     pub fn insert(
@@ -101,7 +105,7 @@ impl InstanceEnv {
         table_id: TableId,
         buffer: &[u8],
     ) -> Result<AlgebraicValue, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
 
         let (gen_cols, row_ptr) = stdb
@@ -149,7 +153,7 @@ impl InstanceEnv {
         col_id: ColId,
         value: &[u8],
     ) -> Result<u32, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
 
         // Interpret the `value` using the schema of the column.
@@ -176,7 +180,7 @@ impl InstanceEnv {
         rstart: &[u8],
         rend: &[u8],
     ) -> Result<u32, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.tx.get()?;
 
         // Find all rows in the table to delete.
@@ -198,7 +202,7 @@ impl InstanceEnv {
     /// - a row couldn't be decoded to the table schema type.
     #[tracing::instrument(skip(self, relation))]
     pub fn datastore_delete_all_by_eq_bsatn(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
 
         // Find the row schema using it to decode a vector of product values.
@@ -217,7 +221,7 @@ impl InstanceEnv {
     /// and `TableNotFound` if the table does not exist.
     #[tracing::instrument(skip_all)]
     pub fn table_id_from_name(&self, table_name: &str) -> Result<TableId, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
 
         // Query the table id from the name.
@@ -231,7 +235,7 @@ impl InstanceEnv {
     /// and `IndexNotFound` if the index does not exist.
     #[tracing::instrument(skip_all)]
     pub fn index_id_from_name(&self, index_name: &str) -> Result<IndexId, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
 
         // Query the index id from the name.
@@ -245,7 +249,7 @@ impl InstanceEnv {
     /// and `TableNotFound` if the table does not exist.
     #[tracing::instrument(skip_all)]
     pub fn datastore_table_row_count(&self, table_id: TableId) -> Result<u64, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
 
         // Query the row count for id.
@@ -266,7 +270,7 @@ impl InstanceEnv {
         col_id: ColId,
         value: &[u8],
     ) -> Result<Vec<Box<[u8]>>, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
 
         // Interpret the `value` using the schema of the column.
@@ -283,7 +287,7 @@ impl InstanceEnv {
         ctx: &ExecutionContext,
         table_id: TableId,
     ) -> Result<Vec<Box<[u8]>>, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.tx.get()?;
 
         let chunks = ChunkedWriter::collect_iter(stdb.iter_mut(ctx, tx, table_id)?);
@@ -299,7 +303,7 @@ impl InstanceEnv {
         rstart: &[u8],
         rend: &[u8],
     ) -> Result<Vec<Box<[u8]>>, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.tx.get()?;
 
         let (_, iter) = stdb.btree_scan(tx, index_id, prefix, prefix_elems, rstart, rend)?;

@@ -1,7 +1,7 @@
 use spacetimedb::address::Address;
 use spacetimedb::hash::hash_bytes;
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
+use spacetimedb::messages::control_db::{Database, EnergyBalance, IdentityEmail, Node, Replica};
 use spacetimedb::{energy, stdb_path};
 
 use spacetimedb_client_api_messages::name::{
@@ -368,35 +368,35 @@ impl ControlDb {
         Ok(None)
     }
 
-    pub fn get_database_instances(&self) -> Result<Vec<DatabaseInstance>> {
-        let tree = self.db.open_tree("database_instance")?;
-        let mut database_instances = Vec::new();
+    pub fn get_replicas(&self) -> Result<Vec<Replica>> {
+        let tree = self.db.open_tree("replica")?;
+        let mut replicas = Vec::new();
         let scan_key: &[u8] = b"";
         for result in tree.range(scan_key..) {
             let (_key, value) = result?;
-            let database_instance = bsatn::from_slice(&value[..]).unwrap();
-            database_instances.push(database_instance);
+            let replica = bsatn::from_slice(&value[..]).unwrap();
+            replicas.push(replica);
         }
-        Ok(database_instances)
+        Ok(replicas)
     }
 
-    pub fn get_database_instance_by_id(&self, database_instance_id: u64) -> Result<Option<DatabaseInstance>> {
-        for di in self.get_database_instances()? {
-            if di.id == database_instance_id {
+    pub fn get_replica_by_id(&self, replica_id: u64) -> Result<Option<Replica>> {
+        for di in self.get_replicas()? {
+            if di.id == replica_id {
                 return Ok(Some(di));
             }
         }
         Ok(None)
     }
 
-    pub fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance> {
-        self.get_database_instances()
+    pub fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+        self.get_replicas()
             .unwrap()
             .into_iter()
             .find(|instance| instance.database_id == database_id && instance.leader)
     }
 
-    pub fn get_database_instances_by_database(&self, database_id: u64) -> Result<Vec<DatabaseInstance>> {
+    pub fn get_replicas_by_database(&self, database_id: u64) -> Result<Vec<Replica>> {
         // TODO: because we don't have foreign key constraints it's actually possible to have
         // instances in here with no database. Although we'd be in a bit of a corrupted state
         // in that case
@@ -406,30 +406,30 @@ impl ControlDb {
         //     return Err(anyhow::anyhow!("No such database."));
         // }
         //
-        let database_instances = self
-            .get_database_instances()?
+        let replicas = self
+            .get_replicas()?
             .iter()
             .filter(|instance| instance.database_id == database_id)
             .cloned()
             .collect::<Vec<_>>();
-        Ok(database_instances)
+        Ok(replicas)
     }
 
-    pub fn insert_database_instance(&self, mut database_instance: DatabaseInstance) -> Result<u64> {
-        let tree = self.db.open_tree("database_instance")?;
+    pub fn insert_replica(&self, mut replica: Replica) -> Result<u64> {
+        let tree = self.db.open_tree("replica")?;
 
         let id = self.db.generate_id()?;
 
-        database_instance.id = id;
-        let buf = bsatn::to_vec(&database_instance).unwrap();
+        replica.id = id;
+        let buf = bsatn::to_vec(&replica).unwrap();
 
         tree.insert(id.to_be_bytes(), buf)?;
 
         Ok(id)
     }
 
-    pub fn delete_database_instance(&self, id: u64) -> Result<()> {
-        let tree = self.db.open_tree("database_instance")?;
+    pub fn delete_replica(&self, id: u64) -> Result<()> {
+        let tree = self.db.open_tree("replica")?;
         tree.remove(id.to_be_bytes())?;
         Ok(())
     }

@@ -22,7 +22,7 @@ use spacetimedb::host::{DescribedEntityType, UpdateDatabaseResult};
 use spacetimedb::host::{ModuleHost, ReducerArgs};
 use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType};
+use spacetimedb::messages::control_db::{Database, HostType, Replica};
 use spacetimedb::sql;
 use spacetimedb::sql::execute::{ctx_sql, translate_col};
 use spacetimedb_client_api_messages::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
@@ -74,16 +74,13 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         (StatusCode::NOT_FOUND, "No such database.")
     })?;
     let identity = database.owner_identity;
-    let database_instance = worker_ctx
-        .get_leader_database_instance_by_database(database.id)
-        .ok_or((
-            StatusCode::NOT_FOUND,
-            "Database instance not scheduled to this node yet.",
-        ))?;
-    let instance_id = database_instance.id;
+    let replica = worker_ctx
+        .get_leader_replica_by_database(database.id)
+        .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
+    let replica_id = replica.id;
     let host = worker_ctx.host_controller();
     let module = host
-        .get_or_launch_module_host(database, instance_id)
+        .get_or_launch_module_host(database, replica_id)
         .await
         .map_err(log_and_500)?;
 
@@ -172,7 +169,7 @@ pub enum DBCallErr {
 }
 
 pub struct DatabaseInformation {
-    database_instance: DatabaseInstance,
+    replica: Replica,
     auth: SpacetimeAuth,
 }
 /// Extract some common parameters that most API call invocations to the database will use.
@@ -191,15 +188,11 @@ async fn extract_db_call_info(
         (StatusCode::NOT_FOUND, "No such database.")
     })?;
 
-    let database_instance = ctx.get_leader_database_instance_by_database(database.id).ok_or((
-        StatusCode::NOT_FOUND,
-        "Database instance not scheduled to this node yet.",
-    ))?;
+    let replica = ctx
+        .get_leader_replica_by_database(database.id)
+        .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
 
-    Ok(DatabaseInformation {
-        database_instance,
-        auth,
-    })
+    Ok(DatabaseInformation { replica, auth })
 }
 
 pub enum EntityDef<'a> {
@@ -280,10 +273,10 @@ where
 
     let call_info = extract_db_call_info(&worker_ctx, auth, &address).await?;
 
-    let instance_id = call_info.database_instance.id;
+    let replica_id = call_info.replica.id;
     let module = worker_ctx
         .host_controller()
-        .get_or_launch_module_host(database, instance_id)
+        .get_or_launch_module_host(database, replica_id)
         .await
         .map_err(log_and_500)?;
 
@@ -348,10 +341,10 @@ where
 
     let call_info = extract_db_call_info(&worker_ctx, auth, &address).await?;
 
-    let instance_id = call_info.database_instance.id;
+    let replica_id = call_info.replica.id;
     let host = worker_ctx.host_controller();
     let module = host
-        .get_or_launch_module_host(database, instance_id)
+        .get_or_launch_module_host(database, replica_id)
         .await
         .map_err(log_and_500)?;
 
@@ -448,21 +441,18 @@ where
             .into());
     }
 
-    let database_instance = worker_ctx
-        .get_leader_database_instance_by_database(database.id)
-        .ok_or((
-            StatusCode::NOT_FOUND,
-            "Database instance not scheduled to this node yet.",
-        ))?;
-    let instance_id = database_instance.id;
+    let replica = worker_ctx
+        .get_leader_replica_by_database(database.id)
+        .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
+    let replica_id = replica.id;
 
-    let filepath = DatabaseLogger::filepath(&address, instance_id);
+    let filepath = DatabaseLogger::filepath(&address, replica_id);
     let lines = DatabaseLogger::read_latest(&filepath, num_lines).await;
 
     let body = if follow {
         let host = worker_ctx.host_controller();
         let module = host
-            .get_or_launch_module_host(database, instance_id)
+            .get_or_launch_module_host(database, replica_id)
             .await
             .map_err(log_and_500)?;
         let log_rx = module.subscribe_to_logs().map_err(log_and_500)?;
@@ -533,23 +523,20 @@ where
 
     let auth = AuthCtx::new(database.owner_identity, auth.identity);
     log::debug!("auth: {auth:?}");
-    let database_instance = worker_ctx
-        .get_leader_database_instance_by_database(database.id)
-        .ok_or((
-            StatusCode::NOT_FOUND,
-            "Database instance not scheduled to this node yet.",
-        ))?;
-    let instance_id = database_instance.id;
+    let replica = worker_ctx
+        .get_leader_replica_by_database(database.id)
+        .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
+    let replica_id = replica.id;
 
     let host = worker_ctx.host_controller();
     let module_host = host
-        .get_or_launch_module_host(database.clone(), instance_id)
+        .get_or_launch_module_host(database.clone(), replica_id)
         .await
         .map_err(log_and_500)?;
     let json = host
         .using_database(
             database,
-            instance_id,
+            replica_id,
             move |db| -> axum::response::Result<_, (StatusCode, String)> {
                 tracing::info!(sql = body);
                 let results =

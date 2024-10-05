@@ -12,18 +12,18 @@ pub type Result<T> = anyhow::Result<T>;
 
 /// A "live" database.
 #[derive(Clone)]
-pub struct DatabaseInstanceContext {
+pub struct ReplicaContext {
     pub database: Database,
-    pub database_instance_id: u64,
+    pub replica_id: u64,
     pub logger: Arc<DatabaseLogger>,
     pub subscriptions: ModuleSubscriptions,
     pub relational_db: Arc<RelationalDB>,
 }
 
-impl DatabaseInstanceContext {
+impl ReplicaContext {
     pub fn scheduler_db_path(&self, root_db_path: PathBuf) -> PathBuf {
         let mut scheduler_db_path = root_db_path;
-        scheduler_db_path.extend([&*self.address.to_hex(), &*self.database_instance_id.to_string()]);
+        scheduler_db_path.extend([&*self.address.to_hex(), &*self.replica_id.to_string()]);
         scheduler_db_path.push("scheduler");
         scheduler_db_path
     }
@@ -51,7 +51,7 @@ impl DatabaseInstanceContext {
     }
 }
 
-impl Deref for DatabaseInstanceContext {
+impl Deref for ReplicaContext {
     type Target = Database;
 
     fn deref(&self) -> &Self::Target {

@@ -109,17 +109,17 @@ fn test_decode() -> ResultTest<()> {
     assert_eq!(dbs.len(), 1);
     assert_eq!(dbs[0].owner_identity, id);
 
-    let mut new_database_instance = DatabaseInstance {
+    let mut new_replica = Replica {
         id: 0,
         database_id: 1,
         node_id: 0,
         leader: true,
     };
 
-    let id = cdb.insert_database_instance(new_database_instance.clone())?;
-    new_database_instance.id = id;
+    let id = cdb.insert_replica(new_replica.clone())?;
+    new_replica.id = id;
 
-    let dbs = cdb.get_database_instances()?;
+    let dbs = cdb.get_replicas()?;
 
     assert_eq!(dbs.len(), 1);
     assert_eq!(dbs[0].id, id);

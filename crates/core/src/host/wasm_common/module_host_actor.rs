@@ -13,7 +13,6 @@ use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::{bsatn, Address, RawModuleDef};
 
 use super::instrumentation::CallTimes;
-use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::SystemLogger;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientRow, ST_CLIENT_ID};
@@ -28,6 +27,7 @@ use crate::host::{ArgsTuple, ReducerCallResult, ReducerId, ReducerOutcome, Sched
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
+use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
@@ -82,7 +82,7 @@ pub struct ExecuteResult<E> {
 pub(crate) struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
     initial_instance: Option<Box<WasmModuleInstance<T::Instance>>>,
-    database_instance_context: Arc<DatabaseInstanceContext>,
+    replica_context: Arc<ReplicaContext>,
     scheduler: Scheduler,
     func_names: Arc<FuncNames>,
     info: Arc<ModuleInfo>,
@@ -130,7 +130,7 @@ pub enum DescribeError {
 impl<T: WasmModule> WasmModuleHostActor<T> {
     pub fn new(mcc: ModuleCreationContext, module: T) -> Result<Self, InitializationError> {
         let ModuleCreationContext {
-            dbic: database_instance_context,
+            replica_ctx: replica_context,
             scheduler,
             program,
             energy_monitor,
@@ -138,10 +138,10 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let module_hash = program.hash;
         log::trace!(
             "Making new module host actor for database {} with module {}",
-            database_instance_context.address,
+            replica_context.address,
             module_hash,
         );
-        let log_tx = database_instance_context.logger.tx.clone();
+        let log_tx = replica_context.logger.tx.clone();
 
         FuncNames::check_required(|name| module.get_export(name))?;
         let mut func_names = FuncNames::default();
@@ -150,7 +150,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         let uninit_instance = module.instantiate_pre()?;
         let mut instance = uninit_instance.instantiate(
-            InstanceEnv::new(database_instance_context.clone(), scheduler.clone()),
+            InstanceEnv::new(replica_context.clone(), scheduler.clone()),
             &func_names,
         )?;
 
@@ -163,11 +163,11 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         // Note: assigns Reducer IDs based on the alphabetical order of reducer names.
         let info = ModuleInfo::new(
             def,
-            database_instance_context.owner_identity,
-            database_instance_context.address,
+            replica_context.owner_identity,
+            replica_context.address,
             module_hash,
             log_tx,
-            database_instance_context.subscriptions.clone(),
+            replica_context.subscriptions.clone(),
         );
 
         let func_names = Arc::new(func_names);
@@ -176,7 +176,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             initial_instance: None,
             func_names,
             info,
-            database_instance_context,
+            replica_context,
             scheduler,
             energy_monitor,
         };
@@ -211,7 +211,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
     }
 
     fn create_instance(&self) -> Self::Instance {
-        let env = InstanceEnv::new(self.database_instance_context.clone(), self.scheduler.clone());
+        let env = InstanceEnv::new(self.replica_context.clone(), self.scheduler.clone());
         // this shouldn't fail, since we already called module.create_instance()
         // before and it didn't error, and ideally they should be deterministic
         let mut instance = self
@@ -222,8 +222,8 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         self.make_from_instance(instance)
     }
 
-    fn dbic(&self) -> &DatabaseInstanceContext {
-        &self.database_instance_context
+    fn replica_ctx(&self) -> &ReplicaContext {
+        &self.replica_context
     }
 
     fn close(self) {
@@ -247,8 +247,8 @@ impl<T: WasmInstance> std::fmt::Debug for WasmModuleInstance<T> {
 }
 
 impl<T: WasmInstance> WasmModuleInstance<T> {
-    fn database_instance_context(&self) -> &DatabaseInstanceContext {
-        &self.instance.instance_env().dbic
+    fn replica_context(&self) -> &ReplicaContext {
+        &self.instance.instance_env().replica_ctx
     }
 }
 
@@ -257,11 +257,11 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         self.trapped
     }
 
-    #[tracing::instrument(skip_all, fields(db_id = self.instance.instance_env().dbic.id))]
+    #[tracing::instrument(skip_all, fields(db_id = self.instance.instance_env().replica_ctx.id))]
     fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
         log::debug!("init database");
         let timestamp = Timestamp::now();
-        let stdb = &*self.database_instance_context().relational_db;
+        let stdb = &*self.replica_context().relational_db;
         let ctx = ExecutionContext::internal(stdb.address());
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let (tx, ()) = stdb
@@ -291,7 +291,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
             Some(reducer_id) => {
                 self.system_logger().info("Invoking `init` reducer");
-                let caller_identity = self.database_instance_context().database.owner_identity;
+                let caller_identity = self.replica_context().database.owner_identity;
                 let client = None;
                 Some(self.call_reducer_with_tx(
                     Some(tx),
@@ -327,7 +327,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 return Ok(UpdateDatabaseResult::AutoMigrateError(errs));
             }
         };
-        let stdb = &*self.database_instance_context().relational_db;
+        let stdb = &*self.replica_context().relational_db;
         let ctx = Lazy::new(|| ExecutionContext::internal(stdb.address()));
 
         let program_hash = program.hash;
@@ -389,9 +389,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         } = params;
         let caller_address_opt = (caller_address != Address::__DUMMY).then_some(caller_address);
 
-        let dbic = self.database_instance_context();
-        let stdb = &*dbic.relational_db.clone();
-        let address = dbic.address;
+        let replica_ctx = self.replica_context();
+        let stdb = &*replica_ctx.relational_db.clone();
+        let address = replica_ctx.address;
         let reducer_name = self
             .info
             .reducers_map
@@ -538,11 +538,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
     // Helpers - NOT API
     fn system_logger(&self) -> &SystemLogger {
-        self.database_instance_context().logger.system_logger()
+        self.replica_context().logger.system_logger()
     }
 
     fn insert_st_client(&self, tx: &mut MutTxId, identity: Identity, address: Address) -> Result<(), DBError> {
-        let db = &*self.database_instance_context().relational_db;
+        let db = &*self.replica_context().relational_db;
         let row = &StClientRow {
             identity: identity.into(),
             address: address.into(),

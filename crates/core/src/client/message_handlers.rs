@@ -36,12 +36,12 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
 
     WORKER_METRICS
         .websocket_request_msg_size
-        .with_label_values(&client.database_instance_id, message_kind)
+        .with_label_values(&client.replica_id, message_kind)
         .observe(message.len() as f64);
 
     WORKER_METRICS
         .websocket_requests
-        .with_label_values(&client.database_instance_id, message_kind)
+        .with_label_values(&client.replica_id, message_kind)
         .inc();
 
     let message = match message {

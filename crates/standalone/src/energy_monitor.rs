@@ -36,7 +36,7 @@ impl EnergyMonitor for StandaloneEnergyMonitor {
         self.withdraw_energy(fingerprint.module_identity, energy_used)
     }
 
-    fn record_disk_usage(&self, database: &Database, _instance_id: u64, disk_usage: u64, period: Duration) {
+    fn record_disk_usage(&self, database: &Database, _replica_id: u64, disk_usage: u64, period: Duration) {
         let amount = EnergyQuanta::from_disk_usage(disk_usage, period);
         self.withdraw_energy(database.owner_identity, amount)
     }
