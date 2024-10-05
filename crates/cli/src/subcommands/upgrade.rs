@@ -4,7 +4,7 @@ use std::{env, fs};
 extern crate regex;
 
 use crate::util::y_or_n;
-use crate::{version, Config};
+use crate::{common_args, version, Config};
 use clap::{Arg, ArgMatches};
 use flate2::read::GzDecoder;
 use futures::stream::StreamExt;
@@ -19,13 +19,7 @@ pub fn cli() -> clap::Command {
     clap::Command::new("upgrade")
         .about("Checks for updates for the currently running spacetime CLI tool")
         .arg(Arg::new("version").help("The specific version to upgrade to"))
-        .arg(
-            Arg::new("force")
-                .short('f')
-                .long("force")
-                .help("If this flag is present, the upgrade will be performed even if the version is the same")
-                .action(clap::ArgAction::SetTrue),
-        )
+        .arg(common_args::yes())
         .after_help("Run `spacetime help upgrade` for more detailed information.\n")
 }
 
