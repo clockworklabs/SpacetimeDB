@@ -21,7 +21,7 @@ use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, Replica, IdentityEmail, Node};
+use spacetimedb::messages::control_db::{Database, IdentityEmail, Node, Replica};
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
@@ -310,19 +310,19 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .await?;
 
                 if update_result.was_successful() {
-                    let instances = self.control_db.get_replicas_by_database(database_id)?;
-                    let desired_instances = spec.num_replicas as usize;
-                    if desired_instances == 0 {
-                        log::info!("Decommissioning all instances of database {}", database_addr);
-                        for instance in instances {
+                    let replicas = self.control_db.get_replicas_by_database(database_id)?;
+                    let desired_replicas = spec.num_replicas as usize;
+                    if desired_replicas == 0 {
+                        log::info!("Decommissioning all replicas of database {}", database_addr);
+                        for instance in replicas {
                             self.delete_replica(instance.id).await?;
                         }
-                    } else if desired_instances > instances.len() {
-                        let n = desired_instances - instances.len();
+                    } else if desired_replicas > replicas.len() {
+                        let n = desired_replicas - replicas.len();
                         log::info!(
-                            "Scaling up database {} from {} to {} instances",
+                            "Scaling up database {} from {} to {} replicas",
                             database_addr,
-                            instances.len(),
+                            replicas.len(),
                             n
                         );
                         for _ in 0..n {
@@ -334,21 +334,21 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                             })
                             .await?;
                         }
-                    } else if desired_instances < instances.len() {
-                        let n = instances.len() - desired_instances;
+                    } else if desired_replicas < replicas.len() {
+                        let n = replicas.len() - desired_replicas;
                         log::info!(
-                            "Scaling down database {} from {} to {} instances",
+                            "Scaling down database {} from {} to {} replicas",
                             database_addr,
-                            instances.len(),
+                            replicas.len(),
                             n
                         );
-                        for instance in instances.into_iter().filter(|instance| !instance.leader).take(n) {
+                        for instance in replicas.into_iter().filter(|instance| !instance.leader).take(n) {
                             self.delete_replica(instance.id).await?;
                         }
                     } else {
                         log::debug!(
                             "Desired replica count {} for database {} already satisfied",
-                            desired_instances,
+                            desired_replicas,
                             database_addr
                         );
                     }
@@ -479,12 +479,12 @@ impl StandaloneEnv {
         Ok(())
     }
 
-    async fn on_delete_replica(&self, instance_id: u64) -> anyhow::Result<()> {
+    async fn on_delete_replica(&self, replica_id: u64) -> anyhow::Result<()> {
         // TODO(cloutiertyler): We should think about how to clean up
         // replicas which have been deleted. This will just drop
         // them from memory, but will not remove them from disk.  We need
         // some kind of database lifecycle manager long term.
-        self.host_controller.exit_module_host(instance_id).await?;
+        self.host_controller.exit_module_host(replica_id).await?;
 
         Ok(())
     }

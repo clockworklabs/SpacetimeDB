@@ -274,7 +274,7 @@ impl SchedulerActor {
         let Some(module_host) = self.module_host.upgrade() else {
             return;
         };
-        let db = module_host.dbic().relational_db.clone();
+        let db = module_host.replica_ctx().relational_db.clone();
         let ctx = ExecutionContext::internal(db.address());
         let caller_identity = module_host.info().identity;
         let module_info = module_host.info.clone();
@@ -332,7 +332,7 @@ impl SchedulerActor {
             }))
         };
 
-        let db = module_host.dbic().relational_db.clone();
+        let db = module_host.replica_ctx().relational_db.clone();
         let module_host_clone = module_host.clone();
         let ctx = ExecutionContext::internal(db.address());
 

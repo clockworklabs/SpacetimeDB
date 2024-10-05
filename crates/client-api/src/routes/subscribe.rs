@@ -91,13 +91,13 @@ where
     let replica = ctx
         .get_leader_replica_by_database(database.id)
         .ok_or(StatusCode::NOT_FOUND)?;
-    let instance_id = replica.id;
+    let replica_id = replica.id;
 
     let identity_token = auth.creds.token().into();
 
     let host = ctx.host_controller();
     let module_rx = host
-        .watch_maybe_launch_module_host(database, instance_id)
+        .watch_maybe_launch_module_host(database, replica_id)
         .await
         .map_err(log_and_500)?;
 
@@ -131,7 +131,7 @@ where
         }
 
         let actor = |client, sendrx| ws_client_actor(client, ws, sendrx);
-        let client = match ClientConnection::spawn(client_id, protocol, instance_id, module_rx, actor).await {
+        let client = match ClientConnection::spawn(client_id, protocol, replica_id, module_rx, actor).await {
             Ok(s) => s,
             Err(e) => {
                 log::warn!("ModuleHost died while we were connecting: {e:#}");

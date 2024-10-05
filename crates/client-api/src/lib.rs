@@ -10,7 +10,7 @@ use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, Replica, HostType, IdentityEmail, Node};
+use spacetimedb::messages::control_db::{Database, HostType, IdentityEmail, Node, Replica};
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_client_api_messages::recovery::RecoveryCode;

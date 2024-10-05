@@ -1040,7 +1040,7 @@ impl WasmInstanceEnv {
                 message: &message,
             };
 
-            // Write the log record to the `DatabaseLogger` in the database instance context (dbic).
+            // Write the log record to the `DatabaseLogger` in the database instance context (replica_ctx).
             env.instance_env
                 .console_log((level as u8).into(), &record, &caller.as_context());
             Ok(())

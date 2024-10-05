@@ -13,7 +13,6 @@ use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::{bsatn, Address, RawModuleDef};
 
 use super::instrumentation::CallTimes;
-use crate::replica_context::ReplicaContext;
 use crate::database_logger::SystemLogger;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientRow, ST_CLIENT_ID};
@@ -28,6 +27,7 @@ use crate::host::{ArgsTuple, ReducerCallResult, ReducerId, ReducerOutcome, Sched
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
+use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
@@ -130,7 +130,7 @@ pub enum DescribeError {
 impl<T: WasmModule> WasmModuleHostActor<T> {
     pub fn new(mcc: ModuleCreationContext, module: T) -> Result<Self, InitializationError> {
         let ModuleCreationContext {
-            dbic: replica_context,
+            replica_ctx: replica_context,
             scheduler,
             program,
             energy_monitor,
@@ -222,7 +222,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         self.make_from_instance(instance)
     }
 
-    fn dbic(&self) -> &ReplicaContext {
+    fn replica_ctx(&self) -> &ReplicaContext {
         &self.replica_context
     }
 
@@ -248,7 +248,7 @@ impl<T: WasmInstance> std::fmt::Debug for WasmModuleInstance<T> {
 
 impl<T: WasmInstance> WasmModuleInstance<T> {
     fn replica_context(&self) -> &ReplicaContext {
-        &self.instance.instance_env().dbic
+        &self.instance.instance_env().replica_ctx
     }
 }
 
@@ -257,7 +257,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         self.trapped
     }
 
-    #[tracing::instrument(skip_all, fields(db_id = self.instance.instance_env().dbic.id))]
+    #[tracing::instrument(skip_all, fields(db_id = self.instance.instance_env().replica_ctx.id))]
     fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
         log::debug!("init database");
         let timestamp = Timestamp::now();
@@ -389,9 +389,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         } = params;
         let caller_address_opt = (caller_address != Address::__DUMMY).then_some(caller_address);
 
-        let dbic = self.replica_context();
-        let stdb = &*dbic.relational_db.clone();
-        let address = dbic.address;
+        let replica_ctx = self.replica_context();
+        let stdb = &*replica_ctx.relational_db.clone();
+        let address = replica_ctx.address;
         let reducer_name = self
             .info
             .reducers_map

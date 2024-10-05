@@ -126,10 +126,10 @@ impl DatabaseLogger {
     //     PathBuf::from(path)
     // }
 
-    pub fn filepath(address: &Address, instance_id: u64) -> PathBuf {
+    pub fn filepath(address: &Address, replica_id: u64) -> PathBuf {
         let root = crate::stdb_path("worker_node/replicas");
         root.join(&*address.to_hex())
-            .join(instance_id.to_string())
+            .join(replica_id.to_string())
             .join("module_logs")
     }
 

@@ -1,7 +1,6 @@
 use super::wasm_common::{CLIENT_CONNECTED_DUNDER, CLIENT_DISCONNECTED_DUNDER};
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId};
 use crate::client::{ClientActorId, ClientConnectionSender};
-use crate::replica_context::ReplicaContext;
 use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientFields, StClientRow, ST_CLIENT_ID};
@@ -12,6 +11,7 @@ use crate::execution_context::{ExecutionContext, ReducerContext};
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
+use crate::replica_context::ReplicaContext;
 use crate::sql;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
@@ -274,7 +274,7 @@ pub trait Module: Send + Sync + 'static {
     fn initial_instances(&mut self) -> Self::InitialInstances<'_>;
     fn info(&self) -> Arc<ModuleInfo>;
     fn create_instance(&self) -> Self::Instance;
-    fn dbic(&self) -> &ReplicaContext;
+    fn replica_ctx(&self) -> &ReplicaContext;
     fn close(self);
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
@@ -285,7 +285,7 @@ pub trait Module: Send + Sync + 'static {
 pub trait ModuleInstance: Send + 'static {
     fn trapped(&self) -> bool;
 
-    /// If the module instance's dbic is uninitialized, initialize it.
+    /// If the module instance's replica_ctx is uninitialized, initialize it.
     fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>>;
 
     /// Update the module instance's database to match the schema of the module instance.
@@ -369,7 +369,7 @@ impl fmt::Debug for ModuleHost {
 #[async_trait::async_trait]
 trait DynModuleHost: Send + Sync + 'static {
     async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
-    fn dbic(&self) -> &ReplicaContext;
+    fn replica_ctx(&self) -> &ReplicaContext;
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
 }
@@ -428,8 +428,8 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         }))
     }
 
-    fn dbic(&self) -> &ReplicaContext {
-        self.module.dbic()
+    fn replica_ctx(&self) -> &ReplicaContext {
+        self.module.replica_ctx()
     }
 
     fn exit(&self) -> Closed<'_> {
@@ -566,7 +566,7 @@ impl ModuleHost {
             CLIENT_DISCONNECTED_DUNDER
         };
 
-        let db = &self.inner.dbic().relational_db;
+        let db = &self.inner.replica_ctx().relational_db;
         let ctx = || {
             ExecutionContext::reducer(
                 db.address(),
@@ -637,7 +637,7 @@ impl ModuleHost {
         caller_address: Address,
         connected: bool,
     ) -> Result<(), DBError> {
-        let db = &*self.inner.dbic().relational_db;
+        let db = &*self.inner.replica_ctx().relational_db;
         let ctx = &ExecutionContext::internal(db.address());
         let row = &StClientRow {
             identity: caller_identity.into(),
@@ -757,7 +757,7 @@ impl ModuleHost {
         &self,
         call_reducer_params: impl FnOnce(&MutTxId) -> anyhow::Result<Option<CallReducerParams>> + Send + 'static,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let db = self.inner.dbic().relational_db.clone();
+        let db = self.inner.replica_ctx().relational_db.clone();
         // scheduled reducer name not fetched yet, anyway this is only for logging purpose
         const REDUCER: &str = "scheduled_reducer";
         self.call(REDUCER, move |inst: &mut dyn ModuleInstance| {
@@ -808,7 +808,7 @@ impl ModuleHost {
     }
 
     pub fn inject_logs(&self, log_level: LogLevel, message: &str) {
-        self.dbic().logger.write(
+        self.replica_ctx().logger.write(
             log_level,
             &Record {
                 ts: chrono::Utc::now(),
@@ -823,9 +823,9 @@ impl ModuleHost {
 
     #[tracing::instrument(skip_all)]
     pub fn one_off_query(&self, caller_identity: Identity, query: String) -> Result<Vec<MemTable>, anyhow::Error> {
-        let dbic = self.dbic();
-        let db = &dbic.relational_db;
-        let auth = AuthCtx::new(dbic.owner_identity, caller_identity);
+        let replica_ctx = self.replica_ctx();
+        let db = &replica_ctx.relational_db;
+        let auth = AuthCtx::new(replica_ctx.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
         let ctx = &ExecutionContext::sql(db.address());
         db.with_read_only(ctx, |tx| {
@@ -839,7 +839,7 @@ impl ModuleHost {
     /// for tables without primary keys. It is only used in the benchmarks.
     /// Note: this doesn't drop the table, it just clears it!
     pub fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
-        let db = &*self.dbic().relational_db;
+        let db = &*self.replica_ctx().relational_db;
         db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
             let tables = db.get_all_tables_mut(tx)?;
             // We currently have unique table names,
@@ -863,11 +863,11 @@ impl ModuleHost {
     }
 
     pub fn database_info(&self) -> &Database {
-        &self.dbic().database
+        &self.replica_ctx().database
     }
 
-    pub(crate) fn dbic(&self) -> &ReplicaContext {
-        self.inner.dbic()
+    pub(crate) fn replica_ctx(&self) -> &ReplicaContext {
+        self.inner.replica_ctx()
     }
 }
 

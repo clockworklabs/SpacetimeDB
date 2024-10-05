@@ -152,8 +152,8 @@ impl ClientConnection {
         Fut: Future<Output = ()> + Send + 'static,
     {
         // Add this client as a subscriber
-        // TODO: Right now this is connecting clients directly to an instance, but their requests should be
-        // logically subscribed to the database, not any particular instance. We should handle failover for
+        // TODO: Right now this is connecting clients directly to a replica, but their requests should be
+        // logically subscribed to the database, not any particular replica. We should handle failover for
         // them and stuff. Not right now though.
         let module = module_rx.borrow_and_update().clone();
         module
