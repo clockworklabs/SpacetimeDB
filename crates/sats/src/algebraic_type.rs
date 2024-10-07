@@ -449,7 +449,7 @@ impl AlgebraicType {
     ///
     /// - If `self` is a sum, this implies that `other` is a sum, with the same variant names in the same order,
     ///     but possibly additional variants after the variants of `self`.
-    ///     The types of the variants in `self` are SATN-subtypes of the corresponding variants in `other`.
+    ///     The types of the variants in `self` are BSATN-subtypes of the corresponding variants in `other`.
     ///
     /// Similar logic applies to other cases.
     pub fn is_bsatn_subtype(&self, other: &AlgebraicType) -> bool {
