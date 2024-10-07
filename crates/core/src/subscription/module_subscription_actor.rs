@@ -119,20 +119,20 @@ impl ModuleSubscriptions {
         )?;
 
         let slow_query_threshold = StVarTable::sub_limit(&ctx, &self.relational_db, &tx)?.map(Duration::from_millis);
-        let database_update = match sender.protocol {
+        let database_update = match sender.config.protocol {
             Protocol::Text => FormatSwitch::Json(execution_set.eval(
                 &ctx,
                 &self.relational_db,
                 &tx,
                 slow_query_threshold,
-                sender.compression,
+                sender.config.compression,
             )),
             Protocol::Binary => FormatSwitch::Bsatn(execution_set.eval(
                 &ctx,
                 &self.relational_db,
                 &tx,
                 slow_query_threshold,
-                sender.compression,
+                sender.config.compression,
             )),
         };
 
@@ -223,8 +223,8 @@ impl ModuleSubscriptions {
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
                     let message = TransactionUpdateMessage {
-                        event: event.clone(),
-                        database_update: SubscriptionUpdateMessage::default_for_protocol(client.protocol, None),
+                        event: Some(event.clone()),
+                        database_update: SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, None),
                     };
                     let _ = client.send_message(message);
                 } else {
@@ -243,7 +243,7 @@ pub struct WriteConflict;
 #[cfg(test)]
 mod tests {
     use super::{AssertTxFn, ModuleSubscriptions};
-    use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
+    use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender};
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
@@ -260,7 +260,8 @@ mod tests {
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         let owner = Identity::from_byte_array([1; 32]);
         let client = ClientActorId::for_test(Identity::ZERO);
-        let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let config = ClientConfig::for_test();
+        let sender = Arc::new(ClientConnectionSender::dummy(client, config));
         let module_subscriptions = ModuleSubscriptions::new(db.clone(), owner);
 
         let subscribe = Subscribe {
