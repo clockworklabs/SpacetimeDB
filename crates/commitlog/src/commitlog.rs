@@ -468,7 +468,13 @@ impl CommitInfo {
         }
     }
 
-    // If initial offset falls within a commit, adjust it to the commit boundary
+    // If initial offset falls within a commit, adjust it to the commit boundary.
+    //
+    // Returns `true` if the initial offset is past `commit`.
+    // Returns `false` if `self` isn't `Self::Initial`,
+    // or the initial offset has been adjusted to the starting offset of `commit`.
+    //
+    // For iteration, `true` means to skip the commit, `false` to yield it.
     fn adjust_initial_offset(&mut self, commit: &StoredCommit) -> bool {
         if let Self::Initial { next_offset } = self {
             let last_tx_offset = commit.min_tx_offset + commit.n as u64 - 1;
@@ -603,9 +609,12 @@ impl<R: Repo> Iterator for Commits<R> {
                             .repo
                             .get_offset_index(segment.min_tx_offset)
                             .map_err(Into::into)
-                            .and_then(|index_file| segment.seek_to_segment(&index_file, next_offset))
+                            .and_then(|index_file| segment.seek_to_offset(&index_file, next_offset))
                             .inspect_err(|e| {
-                                warn!("commitlog offset index is not used: {e}");
+                                warn!(
+                                    "commitlog offset index is not used: {}, at: segment {}",
+                                    e, segment.min_tx_offset
+                                );
                             });
                     }
 
@@ -700,9 +709,7 @@ mod tests {
                 assert!(commit.min_tx_offset >= offset);
             }
         }
-        // Nb.: the head commit is always returned,
-        // because we don't know its offset upper bound
-        assert_eq!(1, log.commits_from(10).count());
+        assert_eq!(0, log.commits_from(10).count());
     }
 
     #[test]

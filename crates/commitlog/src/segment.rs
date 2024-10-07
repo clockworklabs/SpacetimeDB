@@ -319,8 +319,8 @@ impl<R: io::Read + io::Seek> Reader<R> {
         }
     }
 
-    pub fn seek_to_segment(&mut self, index_file: &TxOffsetIndex, start_tx_offset: u64) -> Result<(), IndexError> {
-        seek_to_segment(&mut self.inner, index_file, self.min_tx_offset, start_tx_offset)
+    pub fn seek_to_offset(&mut self, index_file: &TxOffsetIndex, start_tx_offset: u64) -> Result<(), IndexError> {
+        seek_to_offset(&mut self.inner, index_file, start_tx_offset)
     }
 
     #[cfg(test)]
@@ -351,22 +351,17 @@ impl<R: io::Read + io::Seek> Reader<R> {
 ///
 /// Input:
 /// - `segment` - segment reader
-/// - `index_file` - offset index file
 /// - `min_tx_offset` - minimum transaction offset in the segment
 /// - `start_tx_offset` - transaction offset to advance to
-pub fn seek_to_segment<R: io::Read + io::Seek>(
+pub fn seek_to_offset<R: io::Read + io::Seek>(
     mut segment: &mut R,
     index_file: &TxOffsetIndex,
-    min_tx_offset: u64,
     start_tx_offset: u64,
 ) -> Result<(), IndexError> {
     let (index_key, byte_offset) = index_file.key_lookup(start_tx_offset)?;
     debug!("index lookup for key={start_tx_offset}: found key={index_key} at byte-offset={byte_offset}");
-
-    if index_key > start_tx_offset {
-        // returned `index_key` should never be greater than `start_tx_offset`
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "no smaller index key found").into());
-    }
+    // returned `index_key` should never be greater than `start_tx_offset`
+    debug_assert!(index_key <= start_tx_offset);
 
     // Check if the offset index is pointing to the right commit.
     validate_commit_header(&mut segment, byte_offset).map(|hdr| {
@@ -377,11 +372,7 @@ pub fn seek_to_segment<R: io::Read + io::Seek>(
                 .map(|_| ())
                 .map_err(Into::into)
         } else {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("mismatch key in index offset file: {}", min_tx_offset),
-            )
-            .into())
+            Err(io::Error::new(io::ErrorKind::InvalidData, "mismatch key in index offset file").into())
         }
     })?
 }
