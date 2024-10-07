@@ -144,7 +144,7 @@ impl ToProtocol for MessageExecutionError {
     type Encoded = SwitchedServerMessage;
     fn to_protocol(self, protocol: super::Protocol) -> Self::Encoded {
         TransactionUpdateMessage {
-            event: Arc::new(self.into_event()),
+            event: Some(Arc::new(self.into_event())),
             database_update: SubscriptionUpdateMessage::default_for_protocol(protocol, None),
         }
         .to_protocol(protocol)
