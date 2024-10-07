@@ -11,7 +11,7 @@ use spacetimedb_client_api::routes::subscribe::generate_random_address;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use tokio::runtime::{Builder, Runtime};
 
-use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
+use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
@@ -195,7 +195,7 @@ impl CompiledModule {
         // for stuff like "get logs" or "get message log"
         ModuleHandle {
             _env: env,
-            client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module_rx),
+            client: ClientConnection::dummy(client_id, ClientConfig::for_test(), instance.id, module_rx),
             db_identity,
         }
     }

@@ -1027,6 +1027,12 @@ async fn parse_loop<M: SpacetimeModule>(
                     ParsedMessage::TransactionUpdate(event, db_update)
                 }
             },
+            ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { update, request_id: _ }) => {
+                match M::DbUpdate::parse_update(update) {
+                    Err(e) => ParsedMessage::Error(e.context("Failed to parse update from TransactionUpdateLight")),
+                    Ok(db_update) => ParsedMessage::TransactionUpdate(Event::UnknownTransaction, Some(db_update)),
+                }
+            }
             ws::ServerMessage::IdentityToken(ws::IdentityToken {
                 identity,
                 token,

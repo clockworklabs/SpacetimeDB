@@ -182,6 +182,8 @@ pub enum ServerMessage<F: WebsocketFormat> {
     InitialSubscription(InitialSubscription<F>),
     /// Upon reducer run.
     TransactionUpdate(TransactionUpdate<F>),
+    /// Upon reducer run, but limited to just the table updates.
+    TransactionUpdateLight(TransactionUpdateLight<F>),
     /// After connecting, to inform client of its identity.
     IdentityToken(IdentityToken),
     /// Return results to a one off SQL query.
@@ -250,6 +252,22 @@ pub struct TransactionUpdate<F: WebsocketFormat> {
     pub energy_quanta_used: EnergyQuanta,
     /// How long the reducer took to run.
     pub host_execution_duration_micros: u64,
+}
+
+/// Received by client from database upon a reducer run.
+///
+/// Clients receive `TransactionUpdateLight`s only for reducers
+/// which update at least one of their subscribed rows.
+/// Failed reducers result in full [`TransactionUpdate`]s
+#[derive(SpacetimeType, Debug)]
+#[sats(crate = spacetimedb_lib)]
+pub struct TransactionUpdateLight<F: WebsocketFormat> {
+    /// An identifier for a client request
+    pub request_id: u32,
+
+    /// The reducer ran successfully and its changes were committed to the database.
+    /// The rows altered in the database/ are recorded in this `DatabaseUpdate`.
+    pub update: DatabaseUpdate<F>,
 }
 
 /// Contained in a [`TransactionUpdate`], metadata about a reducer invocation.
