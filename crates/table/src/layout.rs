@@ -468,6 +468,7 @@ impl AlgebraicTypeLayout {
     ///     - `self`'s variant names must be a *prefix* of `other`'s variant names.
     ///     - `self`'s variant layouts in the prefix must be sub-layouts of the corresponding variant layouts in `other`.
     ///     - The additional layouts in `other` must not have alignment requirements larger than the alignment of `self`.
+    ///       (This is actually implied by the above requirement `self.align() >= other.align()`).
     ///
     /// - If `self` is a primitive type, then `other` must be the same primitive type in the same position.
     ///
