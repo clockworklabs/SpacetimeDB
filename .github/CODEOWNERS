@@ -2,3 +2,4 @@
 /rust-toolchain.toml @jdetter @cloutiertyler
 /.github/CODEOWNERS @cloutiertyler
 LICENSE.txt @cloutiertyler
+/crates/client-api-messages/src/websocket.rs @centril @gefjon
