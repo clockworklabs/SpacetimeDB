@@ -3,10 +3,8 @@ use std::io;
 use thiserror::Error;
 mod indexfile;
 
-pub use indexfile::create_index_file;
-pub use indexfile::delete_index_file;
 pub use indexfile::offset_index_file_path;
-pub use indexfile::IndexFileMut;
+pub use indexfile::{IndexFile, IndexFileMut};
 
 #[derive(Error, Debug)]
 pub enum IndexError {

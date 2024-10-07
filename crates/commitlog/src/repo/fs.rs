@@ -6,9 +6,9 @@ use std::{
 
 use log::{debug, warn};
 
-use crate::index::{create_index_file, delete_index_file, offset_index_file_path};
+use crate::index::offset_index_file_path;
 
-use super::{Repo, TxOffset, TxOffsetIndex};
+use super::{Repo, TxOffset, TxOffsetIndex, TxOffsetIndexMut};
 
 const SEGMENT_FILE_EXT: &str = ".stdb.log";
 
@@ -128,11 +128,15 @@ impl Repo for Fs {
         Ok(segments)
     }
 
-    fn get_offset_index(&self, offset: TxOffset, cap: u64) -> io::Result<TxOffsetIndex> {
-        create_index_file(&self.root, offset, cap)
+    fn create_offset_index(&self, offset: TxOffset, cap: u64) -> io::Result<TxOffsetIndexMut> {
+        TxOffsetIndexMut::create_index_file(&self.root, offset, cap)
     }
 
     fn remove_offset_index(&self, offset: TxOffset) -> io::Result<()> {
-        delete_index_file(&self.root, offset)
+        TxOffsetIndexMut::delete_index_file(&self.root, offset)
+    }
+
+    fn get_offset_index(&self, offset: TxOffset) -> io::Result<TxOffsetIndex> {
+        TxOffsetIndex::open_index_file(&self.root, offset)
     }
 }

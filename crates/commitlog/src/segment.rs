@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{self, BufWriter, Write as _},
+    io::{self, BufWriter, ErrorKind, SeekFrom, Write as _},
     num::{NonZeroU16, NonZeroU64},
     ops::Range,
 };
@@ -12,7 +12,7 @@ use crate::{
     error,
     index::IndexError,
     payload::Encode,
-    repo::{TxOffset, TxOffsetIndex},
+    repo::{TxOffset, TxOffsetIndex, TxOffsetIndexMut},
     Options,
 };
 
@@ -223,7 +223,7 @@ impl<W: io::Write + FileLike> FileLike for Writer<W> {
 
 #[derive(Debug)]
 pub struct OffsetIndexWriter {
-    pub(crate) head: TxOffsetIndex,
+    pub(crate) head: TxOffsetIndexMut,
 
     require_segment_fsync: bool,
     min_write_interval: NonZeroU64,
@@ -234,7 +234,7 @@ pub struct OffsetIndexWriter {
 }
 
 impl OffsetIndexWriter {
-    pub fn new(head: TxOffsetIndex, opts: Options) -> Self {
+    pub fn new(head: TxOffsetIndexMut, opts: Options) -> Self {
         OffsetIndexWriter {
             head,
             require_segment_fsync: opts.offset_index_require_segment_fsync,
@@ -306,6 +306,7 @@ impl FileLike for OffsetIndexWriter {
         Ok(())
     }
 }
+
 #[derive(Debug)]
 pub struct Reader<R> {
     pub header: Header,
@@ -313,7 +314,7 @@ pub struct Reader<R> {
     inner: R,
 }
 
-impl<R: io::Read> Reader<R> {
+impl<R: io::Read + io::Seek> Reader<R> {
     pub fn new(max_log_format_version: u8, min_tx_offset: u64, mut inner: R) -> io::Result<Self> {
         let header = Header::decode(&mut inner)?;
         header
@@ -328,12 +329,16 @@ impl<R: io::Read> Reader<R> {
     }
 }
 
-impl<R: io::Read> Reader<R> {
+impl<R: io::Read + io::Seek> Reader<R> {
     pub fn commits(self) -> Commits<R> {
         Commits {
             header: self.header,
             reader: io::BufReader::new(self.inner),
         }
+    }
+
+    pub fn seek_to_offset(&mut self, index_file: &TxOffsetIndex, start_tx_offset: u64) -> Result<(), IndexError> {
+        seek_to_offset(&mut self.inner, index_file, start_tx_offset)
     }
 
     #[cfg(test)]
@@ -357,6 +362,55 @@ impl<R: io::Read> Reader<R> {
     pub(crate) fn metadata(self) -> Result<Metadata, error::SegmentMetadata> {
         Metadata::with_header(self.min_tx_offset, self.header, io::BufReader::new(self.inner))
     }
+}
+
+/// Advances the `segment` reader to the position corresponding to the `start_tx_offset`
+/// using the `index_file` for efficient seeking.
+///
+/// Input:
+/// - `segment` - segment reader
+/// - `min_tx_offset` - minimum transaction offset in the segment
+/// - `start_tx_offset` - transaction offset to advance to
+pub fn seek_to_offset<R: io::Read + io::Seek>(
+    mut segment: &mut R,
+    index_file: &TxOffsetIndex,
+    start_tx_offset: u64,
+) -> Result<(), IndexError> {
+    let (index_key, byte_offset) = index_file.key_lookup(start_tx_offset)?;
+    debug!("index lookup for key={start_tx_offset}: found key={index_key} at byte-offset={byte_offset}");
+    // returned `index_key` should never be greater than `start_tx_offset`
+    debug_assert!(index_key <= start_tx_offset);
+
+    // Check if the offset index is pointing to the right commit.
+    validate_commit_header(&mut segment, byte_offset).map(|hdr| {
+        if hdr.min_tx_offset == index_key {
+            // Advance the segment Seek if expected commit is found.
+            segment
+                .seek(SeekFrom::Start(byte_offset))
+                .map(|_| ())
+                .map_err(Into::into)
+        } else {
+            Err(io::Error::new(io::ErrorKind::InvalidData, "mismatch key in index offset file").into())
+        }
+    })?
+}
+
+/// Try to extract the commit header from the asked position without advancing seek.
+/// `IndexFileMut` fsync asynchoronously, which makes it important for reader to verify its entry
+pub fn validate_commit_header<Reader: io::Read + io::Seek>(
+    mut reader: &mut Reader,
+    byte_offset: u64,
+) -> io::Result<commit::Header> {
+    let pos = reader.stream_position()?;
+    reader.seek(SeekFrom::Start(byte_offset))?;
+
+    let hdr = commit::Header::decode(&mut reader)
+        .and_then(|hdr| hdr.ok_or_else(|| io::Error::new(ErrorKind::UnexpectedEof, "unexpected EOF")));
+
+    // Restore the original position
+    reader.seek(SeekFrom::Start(pos))?;
+
+    hdr
 }
 
 /// Pair of transaction offset and payload.

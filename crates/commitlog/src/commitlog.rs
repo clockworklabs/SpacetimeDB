@@ -169,7 +169,6 @@ impl<R: Repo, T> Generic<R, T> {
 
     pub fn commits_from(&self, offset: u64) -> Commits<R> {
         let offsets = self.segment_offsets_from(offset);
-        let next_offset = offsets.first().cloned().unwrap_or(offset);
         let segments = Segments {
             offs: offsets.into_iter(),
             repo: self.repo.clone(),
@@ -178,7 +177,7 @@ impl<R: Repo, T> Generic<R, T> {
         Commits {
             inner: None,
             segments,
-            last_commit: CommitInfo::Initial { next_offset },
+            last_commit: CommitInfo::Initial { next_offset: offset },
             last_error: None,
         }
     }
@@ -468,6 +467,26 @@ impl CommitInfo {
             Self::LastSeen { tx_range, .. } => &tx_range.end,
         }
     }
+
+    // If initial offset falls within a commit, adjust it to the commit boundary.
+    //
+    // Returns `true` if the initial offset is past `commit`.
+    // Returns `false` if `self` isn't `Self::Initial`,
+    // or the initial offset has been adjusted to the starting offset of `commit`.
+    //
+    // For iteration, `true` means to skip the commit, `false` to yield it.
+    fn adjust_initial_offset(&mut self, commit: &StoredCommit) -> bool {
+        if let Self::Initial { next_offset } = self {
+            let last_tx_offset = commit.min_tx_offset + commit.n as u64 - 1;
+            if *next_offset > last_tx_offset {
+                return true;
+            } else {
+                *next_offset = commit.min_tx_offset;
+            }
+        }
+
+        false
+    }
 }
 
 pub struct Commits<R: Repo> {
@@ -496,8 +515,11 @@ impl<R: Repo> Commits<R> {
         // interesting.
         let prev_error = self.last_error.take();
 
+        // Skip entries before the initial commit.
+        if self.last_commit.adjust_initial_offset(&commit) {
+            self.next()
         // Same offset: ignore if duplicate (same crc), else report a "fork".
-        if self.last_commit.same_offset_as(&commit) {
+        } else if self.last_commit.same_offset_as(&commit) {
             if !self.last_commit.same_checksum_as(&commit) {
                 warn!(
                     "forked: commit={:?} last-error={:?} last-crc={:?}",
@@ -579,7 +601,23 @@ impl<R: Repo> Iterator for Commits<R> {
             None => self.last_error.take().map(Err),
             Some(segment) => segment.map_or_else(
                 |e| Some(Err(e.into())),
-                |segment| {
+                |mut segment| {
+                    // Try to use offset index to advance segment to Intial commit
+                    if let CommitInfo::Initial { next_offset } = self.last_commit {
+                        let _ = self
+                            .segments
+                            .repo
+                            .get_offset_index(segment.min_tx_offset)
+                            .map_err(Into::into)
+                            .and_then(|index_file| segment.seek_to_offset(&index_file, next_offset))
+                            .inspect_err(|e| {
+                                warn!(
+                                    "commitlog offset index is not used: {}, at: segment {}",
+                                    e, segment.min_tx_offset
+                                );
+                            });
+                    }
+
                     self.inner = Some(segment.commits());
                     self.next()
                 },
@@ -671,9 +709,7 @@ mod tests {
                 assert!(commit.min_tx_offset >= offset);
             }
         }
-        // Nb.: the head commit is always returned,
-        // because we don't know its offset upper bound
-        assert_eq!(1, log.commits_from(10).count());
+        assert_eq!(0, log.commits_from(10).count());
     }
 
     #[test]

@@ -5,7 +5,7 @@ use log::{debug, warn};
 use crate::{
     commit::Commit,
     error,
-    index::IndexFileMut,
+    index::{IndexFile, IndexFileMut},
     segment::{FileLike, Header, Metadata, OffsetIndexWriter, Reader, Writer},
     Options,
 };
@@ -19,7 +19,8 @@ pub use fs::Fs;
 pub use mem::Memory;
 
 pub type TxOffset = u64;
-pub type TxOffsetIndex = IndexFileMut<TxOffset>;
+pub type TxOffsetIndexMut = IndexFileMut<TxOffset>;
+pub type TxOffsetIndex = IndexFile<TxOffset>;
 
 /// A repository of log segments.
 ///
@@ -27,7 +28,7 @@ pub type TxOffsetIndex = IndexFileMut<TxOffset>;
 /// representation.
 pub trait Repo: Clone {
     /// The type of log segments managed by this repo, which must behave like a file.
-    type Segment: io::Read + io::Write + FileLike;
+    type Segment: io::Read + io::Write + FileLike + io::Seek;
 
     /// Create a new segment with the minimum transaction offset `offset`.
     ///
@@ -58,14 +59,19 @@ pub trait Repo: Clone {
     /// offsets, sorted in ascending order.
     fn existing_offsets(&self) -> io::Result<Vec<u64>>;
 
-    /// Create or get an existing `TxOffsetIndex` for the given `offset`.
+    /// Create [`TxOffsetIndexMut`] for the given `offset` or open it if already exist.
     /// The `cap` parameter is the maximum number of entries in the index.
-    fn get_offset_index(&self, _offset: TxOffset, _cap: u64) -> io::Result<TxOffsetIndex> {
+    fn create_offset_index(&self, _offset: TxOffset, _cap: u64) -> io::Result<TxOffsetIndexMut> {
         Err(io::Error::new(io::ErrorKind::Other, "not implemented"))
     }
 
-    /// Remove `TxOffsetIndex` named with `offset`.
+    /// Remove [`TxOffsetIndexMut`] named with `offset`.
     fn remove_offset_index(&self, _offset: TxOffset) -> io::Result<()> {
+        Err(io::Error::new(io::ErrorKind::Other, "not implemented"))
+    }
+
+    /// Get [`TxOffsetIndex`] for the given `offset`.
+    fn get_offset_index(&self, _offset: TxOffset) -> io::Result<TxOffsetIndex> {
         Err(io::Error::new(io::ErrorKind::Other, "not implemented"))
     }
 }
@@ -74,8 +80,8 @@ fn offset_index_len(opts: Options) -> u64 {
     opts.max_segment_size / opts.offset_index_interval_bytes
 }
 
-fn get_offset_index_writer<R: Repo>(repo: &R, offset: u64, opts: Options) -> Option<OffsetIndexWriter> {
-    repo.get_offset_index(offset, offset_index_len(opts))
+fn create_offset_index_writer<R: Repo>(repo: &R, offset: u64, opts: Options) -> Option<OffsetIndexWriter> {
+    repo.create_offset_index(offset, offset_index_len(opts))
         .map(|index| OffsetIndexWriter::new(index, opts))
         .map_err(|e| {
             warn!("failed to get offset index for segment {offset}: {e}");
@@ -111,7 +117,7 @@ pub fn create_segment_writer<R: Repo>(repo: &R, opts: Options, offset: u64) -> i
 
         max_records_in_commit: opts.max_records_in_commit,
 
-        offset_index_head: get_offset_index_writer(repo, offset, opts),
+        offset_index_head: create_offset_index_writer(repo, offset, opts),
     })
 }
 
@@ -166,7 +172,7 @@ pub fn resume_segment_writer<R: Repo>(
 
         max_records_in_commit: opts.max_records_in_commit,
 
-        offset_index_head: get_offset_index_writer(repo, offset, opts),
+        offset_index_head: create_offset_index_writer(repo, offset, opts),
     }))
 }
 
