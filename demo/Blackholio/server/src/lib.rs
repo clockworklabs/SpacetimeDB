@@ -2,9 +2,6 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table};
 
 #[spacetimedb::table(name = entity, public)]
 pub struct Entity {
-    #[auto_inc]
-    #[primary_key]
-    pub id: u32,
     pub position: Vector2,
 }
 
@@ -19,11 +16,8 @@ pub fn spawn_food(ctx: &ReducerContext) -> Result<(), String> {
     let count = ctx.db.entity().count();
 
     if count < 600 as u64 {
-        let x = 1.0;
-        let y = 1.0;
         ctx.db.entity().try_insert(Entity {
-            id: 0,
-            position: Vector2 { x, y },
+            position: Vector2 { x: 0.0, y: 0.0 },
         })?;
     }
 
