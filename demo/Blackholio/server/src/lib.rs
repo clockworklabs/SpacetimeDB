@@ -23,11 +23,8 @@ pub struct Vector2 {
     pub y: f32,
 }
 
-#[spacetimedb::table(name = spawn_food_timer, scheduled(spawn_food))]
-pub struct SpawnFoodTimer {}
-
 #[spacetimedb::reducer]
-pub fn spawn_food(ctx: &ReducerContext, _timer: SpawnFoodTimer) -> Result<(), String> {
+pub fn spawn_food(ctx: &ReducerContext) -> Result<(), String> {
     let mut food_count = ctx.db.food().count();
 
     while food_count < TARGET_FOOD_COUNT as u64 {
