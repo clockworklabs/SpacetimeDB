@@ -7,7 +7,8 @@ use syn::punctuated::Pair;
 use syn::spanned::Spanned;
 use syn::{LitStr, Token};
 
-use crate::{check_duplicate, sym};
+use crate::sym;
+use crate::util::{check_duplicate, match_meta};
 
 pub(crate) struct SatsType<'a> {
     pub ident: &'a syn::Ident,

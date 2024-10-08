@@ -3,16 +3,12 @@
 
 #![crate_type = "proc-macro"]
 
-#[macro_use]
-mod macros;
+mod sats;
+mod util;
 
-mod module;
-
-extern crate core;
-extern crate proc_macro;
-
+use crate::sats::{derive_deserialize, derive_satstype, derive_serialize};
+use crate::util::{check_duplicate, check_duplicate_msg, cvt_attr, ident_to_litstr, match_meta, MutItem};
 use heck::ToSnakeCase;
-use module::{derive_deserialize, derive_satstype, derive_serialize};
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, ToTokens};
@@ -21,7 +17,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::time::Duration;
 use syn::ext::IdentExt;
 use syn::meta::ParseNestedMeta;
-use syn::parse::{Parse, ParseStream, Parser as _};
+use syn::parse::{ParseStream, Parser as _};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{parse_quote, FnArg, Ident, ItemFn, Path, Token};
@@ -89,90 +85,6 @@ mod sym {
         fn borrow(&self) -> &str {
             self.0
         }
-    }
-}
-
-/// Parses `item`, passing it and `args` to `f`,
-/// which should return only whats newly added, excluding the `item`.
-/// Returns the full token stream `extra_attr item newly_added`.
-fn cvt_attr<Item: Parse + quote::ToTokens>(
-    args: StdTokenStream,
-    item: StdTokenStream,
-    extra_attr: TokenStream,
-    f: impl FnOnce(TokenStream, MutItem<'_, Item>) -> syn::Result<TokenStream>,
-) -> StdTokenStream {
-    let item: TokenStream = item.into();
-    let mut parsed_item = match syn::parse2::<Item>(item.clone()) {
-        Ok(i) => i,
-        Err(e) => return TokenStream::from_iter([item, e.into_compile_error()]).into(),
-    };
-    let mut modified = false;
-    let mut_item = MutItem {
-        val: &mut parsed_item,
-        modified: &mut modified,
-    };
-    let generated = f(args.into(), mut_item).unwrap_or_else(syn::Error::into_compile_error);
-    let item = if modified {
-        parsed_item.into_token_stream()
-    } else {
-        item
-    };
-    TokenStream::from_iter([extra_attr, item, generated]).into()
-}
-
-fn ident_to_litstr(ident: &Ident) -> syn::LitStr {
-    syn::LitStr::new(&ident.to_string(), ident.span())
-}
-
-struct MutItem<'a, T> {
-    val: &'a mut T,
-    modified: &'a mut bool,
-}
-impl<T> std::ops::Deref for MutItem<'_, T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        self.val
-    }
-}
-impl<T> std::ops::DerefMut for MutItem<'_, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        *self.modified = true;
-        self.val
-    }
-}
-
-/// Convert the `dur`ation to a `TokenStream` corresponding to it.
-fn duration_totokens(dur: Duration) -> TokenStream {
-    let (secs, nanos) = (dur.as_secs(), dur.subsec_nanos());
-    quote!({
-        const DUR: ::core::time::Duration = ::core::time::Duration::new(#secs, #nanos);
-        DUR
-    })
-}
-
-trait ErrorSource {
-    fn error(self, msg: impl std::fmt::Display) -> syn::Error;
-}
-impl ErrorSource for Span {
-    fn error(self, msg: impl std::fmt::Display) -> syn::Error {
-        syn::Error::new(self, msg)
-    }
-}
-impl ErrorSource for &syn::meta::ParseNestedMeta<'_> {
-    fn error(self, msg: impl std::fmt::Display) -> syn::Error {
-        self.error(msg)
-    }
-}
-
-/// Ensures that `x` is `None` or returns an error.
-fn check_duplicate<T>(x: &Option<T>, src: impl ErrorSource) -> syn::Result<()> {
-    check_duplicate_msg(x, src, "duplicate attribute")
-}
-fn check_duplicate_msg<T>(x: &Option<T>, src: impl ErrorSource, msg: impl std::fmt::Display) -> syn::Result<()> {
-    if x.is_none() {
-        Ok(())
-    } else {
-        Err(src.error(msg))
     }
 }
 
@@ -844,7 +756,7 @@ pub fn table_helper(_input: StdTokenStream) -> StdTokenStream {
 #[derive(Copy, Clone)]
 struct Column<'a> {
     index: u16,
-    field: &'a module::SatsField<'a>,
+    field: &'a sats::SatsField<'a>,
     ty: &'a syn::Type,
 }
 
@@ -888,12 +800,12 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
     });
 
     let vis = &item.vis;
-    let sats_ty = module::sats_type_from_derive(&item, quote!(spacetimedb::spacetimedb_lib))?;
+    let sats_ty = sats::sats_type_from_derive(&item, quote!(spacetimedb::spacetimedb_lib))?;
 
     let original_struct_ident = sats_ty.ident;
     let table_ident = &args.name;
     let table_name = table_ident.unraw().to_string();
-    let module::SatsTypeData::Product(fields) = &sats_ty.data else {
+    let sats::SatsTypeData::Product(fields) = &sats_ty.data else {
         return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
     };
 
@@ -1179,7 +1091,12 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
 #[proc_macro]
 pub fn duration(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let dur = syn::parse_macro_input!(input with parse_duration);
-    duration_totokens(dur).into()
+    let (secs, nanos) = (dur.as_secs(), dur.subsec_nanos());
+    quote!({
+        const DUR: ::core::time::Duration = ::core::time::Duration::new(#secs, #nanos);
+        DUR
+    })
+    .into()
 }
 
 fn parse_duration(input: ParseStream) -> syn::Result<Duration> {
@@ -1199,7 +1116,7 @@ fn parse_duration(input: ParseStream) -> syn::Result<Duration> {
 #[proc_macro_derive(Deserialize, attributes(sats))]
 pub fn deserialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    module::sats_type_from_derive(&input, quote!(spacetimedb_lib))
+    sats::sats_type_from_derive(&input, quote!(spacetimedb_lib))
         .map(|ty| derive_deserialize(&ty))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
@@ -1208,7 +1125,7 @@ pub fn deserialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 #[proc_macro_derive(Serialize, attributes(sats))]
 pub fn serialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    module::sats_type_from_derive(&input, quote!(spacetimedb_lib))
+    sats::sats_type_from_derive(&input, quote!(spacetimedb_lib))
         .map(|ty| derive_serialize(&ty))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
@@ -1219,7 +1136,7 @@ pub fn schema_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 
     (|| {
-        let ty = module::sats_type_from_derive(&input, quote!(spacetimedb::spacetimedb_lib))?;
+        let ty = sats::sats_type_from_derive(&input, quote!(spacetimedb::spacetimedb_lib))?;
 
         let ident = ty.ident;
         let name = &ty.name;
