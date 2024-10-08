@@ -14,12 +14,10 @@ pub struct Vector2 {
 #[spacetimedb::reducer]
 pub fn spawn_food(ctx: &ReducerContext) -> Result<(), String> {
     let count = ctx.db.entity().count();
-
     if count < 600 as u64 {
         ctx.db.entity().try_insert(Entity {
             position: Vector2 { x: 0.0, y: 0.0 },
         })?;
     }
-
     Ok(())
 }
