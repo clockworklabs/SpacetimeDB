@@ -80,9 +80,6 @@ pub struct Vector2 {
     pub y: f32,
 }
 
-#[spacetimedb::table(name = move_all_players_timer, scheduled(move_all_players))]
-pub struct MoveAllPlayersTimer {}
-
 #[spacetimedb::table(name = spawn_food_timer, scheduled(spawn_food))]
 pub struct SpawnFoodTimer {}
 
@@ -110,10 +107,6 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
     ctx.db.spawn_food_timer().try_insert(SpawnFoodTimer {
         scheduled_id: 0,
         scheduled_at: ScheduleAt::Interval(Duration::from_millis(500).as_micros() as u64),
-    })?;
-    ctx.db.move_all_players_timer().try_insert(MoveAllPlayersTimer {
-        scheduled_id: 0,
-        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).as_micros() as u64),
     })?;
     Ok(())
 }
@@ -229,77 +222,6 @@ fn mass_to_radius(mass: u32) -> f32 {
 
 fn mass_to_max_move_speed(mass: u32) -> f32 {
     2.0 * START_PLAYER_SPEED as f32 / (1.0 + (mass as f32 / START_PLAYER_MASS as f32).sqrt())
-}
-
-#[spacetimedb::reducer]
-pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Result<(), String> {
-    let span = spacetimedb::log_stopwatch::LogStopwatch::new("tick");
-    let world_size = ctx.db.config().id().find(0).ok_or("Config not found")?.world_size;
-    for circle in ctx.db.circle().iter() {
-        let Some(mut circle_entity) = ctx.db.entity().id().find(&circle.entity_id) else {
-            continue;
-        };
-        let circle_radius = mass_to_radius(circle_entity.mass);
-        let x = circle_entity.position.x + circle.direction.x * circle.magnitude * mass_to_max_move_speed(circle_entity.mass);
-        let y = circle_entity.position.y + circle.direction.y * circle.magnitude * mass_to_max_move_speed(circle_entity.mass);
-        circle_entity.position.x = x.clamp(circle_radius, world_size as f32 - circle_radius);
-        circle_entity.position.y = y.clamp(circle_radius, world_size as f32 - circle_radius);
-
-        // Check collisions
-        // let span = spacetimedb::time_span::Span::start("collisions");
-        for entity in ctx.db.entity().iter() {
-            if entity.id == circle_entity.id {
-                continue;
-            }
-            if is_overlapping(&circle_entity, &entity) {
-                // Check to see if we're overlapping with food
-                if ctx.db.food().entity_id().find(&entity.id).is_some() {
-                    ctx.db.entity().id().delete(&entity.id);
-                    ctx.db.food().entity_id().delete(&entity.id);
-                    circle_entity.mass += entity.mass;
-                }
-
-                // Check to see if we're overlapping with another circle owned by another player
-                let other_circle = ctx.db.circle().entity_id().find(&entity.id);
-                if let Some(other_circle) = other_circle {
-                    if other_circle.player_id != circle.player_id {
-                        let mass_ratio = entity.mass as f32 / circle_entity.mass as f32;
-                        if mass_ratio < MINIMUM_SAFE_MASS_RATIO {
-                            ctx.db.entity().id().delete(&entity.id);
-                            ctx.db.circle().entity_id().delete(&entity.id);
-                            circle_entity.mass += entity.mass;
-                        }
-                    }
-                }
-            }
-        }
-        // span.end();
-
-        ctx.db.entity().id().update(circle_entity);
-    }
-
-    span.end();
-    Ok(())
-}
-
-#[spacetimedb::reducer]
-pub fn player_split(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("Sender has no player")?;
-    for mut circle in ctx.db.circle().player_id().filter(&player.player_id) {
-        let mut circle_entity = ctx.db.entity().id().find(&circle.entity_id).ok_or("Circle has no entity")?;
-        if circle_entity.mass >= START_PLAYER_MASS * 2 {
-            let half_mass = circle_entity.mass / 2;
-            let extra_mass = circle_entity.mass % 2;
-            spawn_circle_at(ctx, circle.player_id, half_mass, circle_entity.position.x,
-                                                   circle_entity.position.y, ctx.timestamp)?;
-            circle_entity.mass = half_mass + extra_mass;
-            circle.last_split_time = ctx.timestamp;
-            ctx.db.circle().entity_id().update(circle);
-            ctx.db.entity().id().update(circle_entity);
-        }
-    }
-
-    Ok(())
 }
 
 #[spacetimedb::reducer]
