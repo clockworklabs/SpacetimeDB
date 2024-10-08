@@ -4532,7 +4532,7 @@ dependencies = [
  "spacetimedb-snapshot",
  "spacetimedb-table",
  "spacetimedb-vm",
- "sqlparser",
+ "sqlparser 0.38.0",
  "strum",
  "tempfile",
  "thin-vec",
@@ -4760,7 +4760,7 @@ name = "spacetimedb-sql-parser"
 version = "1.0.0-rc1"
 dependencies = [
  "derive_more",
- "sqlparser",
+ "sqlparser 0.50.0",
  "thiserror",
 ]
 
@@ -4935,6 +4935,15 @@ name = "sqlparser"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0272b7bb0a225320170c99901b4b5fb3a4384e255a7f2cc228f61e2ba3893e75"
+dependencies = [
+ "log",
+]
+
+[[package]]
+name = "sqlparser"
+version = "0.50.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2e5b515a2bd5168426033e9efbfd05500114833916f1d5c268f938b4ee130ac"
 dependencies = [
  "log",
 ]
