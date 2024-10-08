@@ -1,5 +1,5 @@
-import { Address } from './address.ts';
 import decompress from 'brotli/decompress';
+import { Address } from './address.ts';
 import {
   AlgebraicType,
   ProductType,
@@ -18,43 +18,40 @@ import BinaryReader from './binary_reader.ts';
 import BinaryWriter from './binary_writer.ts';
 import * as ws from './client_api/index.ts';
 import { ClientCache } from './client_cache.ts';
+import { DBConnectionBuilder } from './db_connection_builder.ts';
 import { SubscriptionBuilder, type DBContext } from './db_context.ts';
+import type { Event } from './event.ts';
 import { type EventContextInterface } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
 import type { Identity } from './identity.ts';
-import { stdbLogger } from './logger.ts';
 import type { IdentityTokenMessage, Message } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import type SpacetimeModule from './spacetime_module.ts';
 import { TableCache, type Operation, type TableUpdate } from './table_cache.ts';
-import { toPascalCase } from './utils.ts';
+import { deepEqual, toPascalCase } from './utils.ts';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter.ts';
 import type { WebsocketTestAdapter } from './websocket_test_adapter.ts';
-import type { Event } from './event.ts';
-import { DBConnectionBuilder } from './db_connection_builder.ts';
-import { deepEqual } from './utils.ts';
 
 export {
   AlgebraicType,
   AlgebraicValue,
+  BinaryReader,
+  BinaryWriter,
+  DBConnectionBuilder,
+  deepEqual,
   ProductType,
   ProductTypeElement,
   ProductValue,
+  SubscriptionBuilder,
   SumType,
   SumTypeVariant,
+  TableCache,
+  type Event,
   type ReducerArgsAdapter,
   type ValueAdapter,
-  BinaryReader,
-  BinaryWriter,
-  TableCache,
-  DBConnectionBuilder,
-  SubscriptionBuilder,
-  type Event,
-  deepEqual,
 };
 
-export type { DBContext, EventContextInterface };
-export type { ReducerEvent };
+export type { DBContext, EventContextInterface, ReducerEvent };
 
 export type ConnectionEvent = 'connect' | 'disconnect' | 'connectError';
 
@@ -105,9 +102,8 @@ export class DBConnectionImpl<DBView = any, Reducers = any>
    * @example
    *
    * ```ts
-   * var spacetimeDBClient = new SpacetimeDBClient("ws://localhost:3000", "database_name");
-   *
-   * spacetimeDBClient.disconnect()
+   * const connection = DBConnection.builder().build();
+   * connection.disconnect()
    * ```
    */
   disconnect(): void {

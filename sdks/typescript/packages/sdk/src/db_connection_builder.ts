@@ -1,4 +1,4 @@
-import { DBConnectionImpl, type ConnectionEvent } from './db_connection_impl';
+import { DBConnectionImpl } from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
 import type { Identity } from './identity';
 import { stdbLogger } from './logger';

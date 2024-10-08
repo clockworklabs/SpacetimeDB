@@ -6,6 +6,6 @@ export interface EventContextInterface<
   Reducers = any,
   Reducer extends { name: string; args?: any } = { name: string; args?: any },
 > extends DBContext<DBView, Reducers> {
-  /// Enum with variants for all possible events.
+  /** Enum with variants for all possible events. */
   event: Event<Reducer>;
 }
