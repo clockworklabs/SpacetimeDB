@@ -7,9 +7,9 @@ mod sats;
 mod table;
 mod util;
 
-use crate::sats::{derive_deserialize, derive_satstype, derive_serialize};
 use crate::util::cvt_attr;
 use proc_macro::TokenStream as StdTokenStream;
+use proc_macro2::TokenStream;
 use quote::quote;
 use std::time::Duration;
 use syn::parse::ParseStream;
@@ -271,59 +271,48 @@ fn parse_duration(input: ParseStream) -> syn::Result<Duration> {
     humantime::parse_duration(&s).map_err(|e| syn::Error::new(span, format_args!("can't parse as duration: {e}")))
 }
 
-#[proc_macro_derive(Deserialize, attributes(sats))]
-pub fn deserialize(input: StdTokenStream) -> StdTokenStream {
+/// A helper for the common bits of the derive macros.
+fn sats_derive(
+    input: StdTokenStream,
+    assume_in_module: bool,
+    logic: impl FnOnce(&sats::SatsType) -> TokenStream,
+) -> StdTokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    sats::sats_type_from_derive(&input, quote!(spacetimedb_lib))
-        .map(|ty| derive_deserialize(&ty))
+    let crate_fallback = if assume_in_module {
+        quote!(spacetimedb::spacetimedb_lib)
+    } else {
+        quote!(spacetimedb_lib)
+    };
+    sats::sats_type_from_derive(&input, crate_fallback)
+        .map(|ty| logic(&ty))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
+}
+
+#[proc_macro_derive(Deserialize, attributes(sats))]
+pub fn deserialize(input: StdTokenStream) -> StdTokenStream {
+    sats_derive(input, false, sats::derive_deserialize)
 }
 
 #[proc_macro_derive(Serialize, attributes(sats))]
 pub fn serialize(input: StdTokenStream) -> StdTokenStream {
-    let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    sats::sats_type_from_derive(&input, quote!(spacetimedb_lib))
-        .map(|ty| derive_serialize(&ty))
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+    sats_derive(input, false, sats::derive_serialize)
 }
 
 #[proc_macro_derive(SpacetimeType, attributes(sats))]
 pub fn schema_type(input: StdTokenStream) -> StdTokenStream {
-    let input = syn::parse_macro_input!(input as syn::DeriveInput);
-
-    (|| {
-        let ty = sats::sats_type_from_derive(&input, quote!(spacetimedb::spacetimedb_lib))?;
-
+    sats_derive(input, true, |ty| {
         let ident = ty.ident;
         let name = &ty.name;
         let krate = &ty.krate;
-
-        let schema_impl = derive_satstype(&ty);
-        let deserialize_impl = derive_deserialize(&ty);
-        let serialize_impl = derive_serialize(&ty);
-
-        let emission = quote! {
-            #schema_impl
-            #deserialize_impl
-            #serialize_impl
-
+        TokenStream::from_iter([
+            sats::derive_satstype(ty),
+            sats::derive_deserialize(ty),
+            sats::derive_serialize(ty),
             // unfortunately, generic types don't work in modules at the moment.
-            #krate::__make_register_reftype!(#ident, #name);
-        };
-
-        if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-            {
-                #![allow(clippy::disallowed_macros)]
-                println!("{}", emission);
-            }
-        }
-
-        Ok(emission)
-    })()
-    .unwrap_or_else(syn::Error::into_compile_error)
-    .into()
+            quote!(#krate::__make_register_reftype!(#ident, #name);),
+        ])
+    })
 }
 
 /// Generates code for registering a row-level security `SQL` function.
