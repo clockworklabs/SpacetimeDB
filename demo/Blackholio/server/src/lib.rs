@@ -1,5 +1,5 @@
 use rand::Rng;
-use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, Timestamp};
+use spacetimedb::{ReducerContext, SpacetimeType, Table};
 
 const TARGET_FOOD_COUNT: usize = 600;
 
@@ -17,27 +17,6 @@ pub struct Entity {
     pub id: u32,
     pub position: Vector2,
     pub mass: u32,
-}
-
-#[spacetimedb::table(name = circle, public)]
-pub struct Circle {
-    #[primary_key]
-    pub entity_id: u32,
-    #[index(btree)]
-    pub player_id: u32,
-    pub direction: Vector2,
-    pub magnitude: f32,
-    pub last_split_time: Timestamp,
-}
-
-#[spacetimedb::table(name = player, public)]
-pub struct Player {
-    #[primary_key]
-    identity: Identity,
-    #[unique]
-    #[auto_inc]
-    player_id: u32,
-    name: String,
 }
 
 #[spacetimedb::table(name = food, public)]
@@ -64,11 +43,9 @@ fn mass_to_radius(mass: u32) -> f32 {
 
 #[spacetimedb::reducer]
 pub fn spawn_food(ctx: &ReducerContext, _timer: SpawnFoodTimer) -> Result<(), String> {
-    // Is there too much food already? Are there no players yet?
     let mut food_count = ctx.db.food().count();
-    let player_count = ctx.db.player().count();
 
-    while food_count < TARGET_FOOD_COUNT as u64 && player_count > 0 {
+    while food_count < TARGET_FOOD_COUNT as u64 {
         let mut rng = ctx.rng();
         let food_mass = rng.gen_range(FOOD_MASS_MIN..FOOD_MASS_MAX);
         let world_size = ctx.db.config().id().find(0).ok_or("Config not found")?.world_size;

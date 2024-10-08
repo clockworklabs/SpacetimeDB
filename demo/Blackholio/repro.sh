@@ -12,7 +12,9 @@ echo >/dev/stderr "Updating count.."
 sed -i'' -e 's/\<600\>/6000/' src/lib.rs
 
 echo >/dev/stderr "Republishing.."
-spacetime publish -s local circle-test --build-options="--skip-println-checks" || true
+if spacetime publish -s local circle-test --build-options="--skip-println-checks"; then
+  echo "---- THIS DID NOT FAIL!!!!! ----"
+fi
 
 echo >/dev/stderr "Reverting count.."
 sed -i'' -e 's/\<6000\>/600/' src/lib.rs
