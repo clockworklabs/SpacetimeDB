@@ -1,0 +1,20 @@
+[package]
+name = "spacetimedb-platforms"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+description = "Platform utilities used in SpacetimeDB"
+
+[dependencies]
+spacetimedb-lib.workspace = true
+
+anyhow.workspace = true
+etcetera.workspace = true
+glob.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
