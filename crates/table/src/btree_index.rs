@@ -445,7 +445,7 @@ mod test {
     use core::ops::Bound::*;
     use proptest::prelude::*;
     use proptest::{collection::vec, test_runner::TestCaseResult};
-    use spacetimedb_data_structures::map::HashMap;
+    use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
     use spacetimedb_primitives::ColId;
     use spacetimedb_sats::{
         product,

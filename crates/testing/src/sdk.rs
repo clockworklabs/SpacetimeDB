@@ -1,7 +1,7 @@
 use duct::cmd;
 use lazy_static::lazy_static;
 use rand::distributions::{Alphanumeric, DistString};
-use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use std::fs::create_dir_all;
 use std::sync::Mutex;
 use std::thread::JoinHandle;

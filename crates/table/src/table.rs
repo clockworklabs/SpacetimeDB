@@ -22,7 +22,7 @@ use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
 use core::{fmt, ptr};
 use derive_more::{Add, AddAssign, From, Sub};
-use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId};
 use spacetimedb_sats::{
