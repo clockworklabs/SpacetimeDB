@@ -82,19 +82,6 @@ pub struct Vector2 {
 #[spacetimedb::table(name = spawn_food_timer, scheduled(spawn_food))]
 pub struct SpawnFoodTimer {}
 
-impl Vector2 {
-    // Function to normalize the vector
-    fn normalize(&self) -> Vector2 {
-        let mag = (self.x * self.x + self.y * self.y).sqrt();
-        if mag != 0.0 {
-            Vector2 { x: self.x / mag, y: self.y / mag, }
-        } else {
-            Vector2 { x: 0.0, y: 0.0 }
-        }
-    }
-}
-
-const START_PLAYER_MASS: u32 = 12;
 const FOOD_MASS_MIN: u32 = 2;
 const FOOD_MASS_MAX: u32 = 4;
 
@@ -142,32 +129,6 @@ pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
     }
     ctx.db.player().insert(player.player);
     Ok(())
-}
-
-fn spawn_circle(ctx: &ReducerContext, player_id: u32, current_time: Timestamp) -> Result<Entity, String> {
-    let mut rng = ctx.rng();
-    let world_size = ctx.db.config().id().find(&0).ok_or("Config not found")?.world_size;
-    let player_start_radius = mass_to_radius(START_PLAYER_MASS);
-    let x = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
-    let y = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
-    spawn_circle_at(ctx, player_id, START_PLAYER_MASS, x, y, current_time)
-}
-
-fn spawn_circle_at(ctx: &ReducerContext, player_id: u32, mass: u32, x: f32, y: f32, current_time: Timestamp) -> Result<Entity, String> {
-    let entity = ctx.db.entity().try_insert(Entity {
-        id: 0,
-        position: Vector2 { x, y },
-        mass,
-    })?;
-
-    ctx.db.circle().try_insert(Circle {
-        entity_id: entity.id,
-        player_id,
-        direction: Vector2 { x: 0.0, y: 1.0 },
-        magnitude: 0.0,
-        last_split_time: current_time
-    })?;
-    Ok(entity)
 }
 
 fn mass_to_radius(mass: u32) -> f32 {
