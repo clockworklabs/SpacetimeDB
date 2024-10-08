@@ -1,4 +1,3 @@
-use rand::Rng;
 use spacetimedb::{ReducerContext, SpacetimeType, Table};
 
 const TARGET_FOOD_COUNT: usize = 600;
@@ -28,11 +27,8 @@ pub fn spawn_food(ctx: &ReducerContext) -> Result<(), String> {
     let mut food_count = ctx.db.food().count();
 
     while food_count < TARGET_FOOD_COUNT as u64 {
-        let mut rng = ctx.rng();
-        let world_size = 1000;
-        let food_radius: f32 = 2.0;
-        let x = rng.gen_range(food_radius..world_size as f32 - food_radius);
-        let y = rng.gen_range(food_radius..world_size as f32 - food_radius);
+        let x = 1.0;
+        let y = 1.0;
         let entity = ctx.db.entity().try_insert(Entity {
             id: 0,
             position: Vector2 { x, y },
