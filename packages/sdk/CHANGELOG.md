@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12.1
+
+### Patch Changes
+
+- [#107](https://github.com/clockworklabs/spacetimedb-typescript-sdk/pull/107) [`2f6c82c`](https://github.com/clockworklabs/spacetimedb-typescript-sdk/commit/2f6c82c724b9f9407c7bedee13252ca8ffab8f7d) Thanks [@PuruVJ](https://github.com/PuruVJ)! - fix: websocket message handling, Buffer, onConnect
+
+- [#108](https://github.com/clockworklabs/spacetimedb-typescript-sdk/pull/108) [`b9db9b6`](https://github.com/clockworklabs/spacetimedb-typescript-sdk/commit/b9db9b6e46d8c98b29327d97c12c07b7a2fc96bf) Thanks [@PuruVJ](https://github.com/PuruVJ)! - docs: Public facing docs for 0.12
+
+- [#105](https://github.com/clockworklabs/spacetimedb-typescript-sdk/pull/105) [`79c278b`](https://github.com/clockworklabs/spacetimedb-typescript-sdk/commit/79c278be71b2dfd82106ada983fd81d395b1d912) Thanks [@PuruVJ](https://github.com/PuruVJ)! - fix: temporary token path invocation
+
 ## 0.12.0
 
 ### Minor Changes
