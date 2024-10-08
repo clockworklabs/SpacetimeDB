@@ -28,9 +28,10 @@ use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
-    de::Deserialize,
+    de::{Deserialize, Error},
+    impl_deserialize, impl_serialize, impl_st,
     ser::{serde::SerializeWrapper, Serialize},
-    SpacetimeType,
+    AlgebraicType, SpacetimeType,
 };
 use std::{
     io::{self, Read as _, Write as _},
@@ -98,10 +99,12 @@ impl<Args> ClientMessage<Args> {
                 reducer,
                 args,
                 request_id,
+                flags,
             }) => ClientMessage::CallReducer(CallReducer {
                 reducer,
                 args: f(args),
                 request_id,
+                flags,
             }),
             ClientMessage::Subscribe(x) => ClientMessage::Subscribe(x),
             ClientMessage::OneOffQuery(x) => ClientMessage::OneOffQuery(x),
@@ -126,7 +129,30 @@ pub struct CallReducer<Args> {
     ///
     /// The server will include the same ID in the response [`TransactionUpdate`].
     pub request_id: u32,
+    /// Assorted flags that can be passed when calling a reducer.
+    ///
+    /// Currently accepts 0 or 1 where the latter means
+    /// that the caller does not want to be notified about the reducer
+    /// without being subscribed to any relevant queries.
+    pub flags: CallReducerFlags,
 }
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum CallReducerFlags {
+    #[default]
+    None,
+    /// The reducer's caller does not want to be notified about the reducer completing successfully
+    /// without having subscribed to any of the relevant queries.
+    NoSuccessNotify,
+}
+
+impl_st!([] CallReducerFlags, AlgebraicType::U8);
+impl_serialize!([] CallReducerFlags, (self, ser) => ser.serialize_u8(*self as u8));
+impl_deserialize!([] CallReducerFlags, de => match de.deserialize_u8()? {
+    0 => Ok(Self::None),
+    1 => Ok(Self::NoSuccessNotify),
+    x => Err(D::Error::custom(format_args!("invalid call reducer flag {x}"))),
+});
 
 /// Sent by client to database to register a set of queries, about which the client will
 /// receive `TransactionUpdate`s.
