@@ -110,7 +110,7 @@ pub(crate) fn extract_sats_type<'a>(
         })?;
     }
     let krate = krate.unwrap_or(crate_fallback);
-    let name = name.unwrap_or_else(|| crate::ident_to_litstr(ident));
+    let name = name.unwrap_or_else(|| crate::util::ident_to_litstr(ident));
 
     Ok(SatsType {
         ident,
