@@ -1,5 +1,5 @@
 use rand::Rng;
-use spacetimedb::{reducer, spacetimedb_lib::ScheduleAt, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
+use spacetimedb::{spacetimedb_lib::ScheduleAt, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 use std::time::Duration;
 
 // TODO:
@@ -213,7 +213,6 @@ pub fn update_player_input(ctx: &ReducerContext,
     for mut circle in ctx.db.circle().player_id().filter(&player.player_id) {
         circle.direction = direction.normalize();
         circle.magnitude = magnitude.clamp(0.0, 1.0);
-        let id = circle.entity_id;
         ctx.db.circle().entity_id().update(circle);
     }
     Ok(())
@@ -302,9 +301,7 @@ pub fn player_split(ctx: &ReducerContext) -> Result<(), String> {
                                                    circle_entity.position.y, ctx.timestamp)?;
             circle_entity.mass = half_mass + extra_mass;
             circle.last_split_time = ctx.timestamp;
-            let circle_id = circle.entity_id;
             ctx.db.circle().entity_id().update(circle);
-            let entity_id = circle_entity.id;
             ctx.db.entity().id().update(circle_entity);
         }
     }
@@ -346,7 +343,6 @@ pub fn circle_decay(ctx: &ReducerContext, _timer: CircleDecayTimer) -> Result<()
             continue;
         }
         circle_entity.mass = (circle_entity.mass as f32 * 0.99) as u32;
-        let id = circle_entity.id;
         ctx.db.entity().id().update(circle_entity);
     }
 
