@@ -4570,6 +4570,7 @@ name = "spacetimedb-durability"
 version = "1.0.0-rc1"
 dependencies = [
  "anyhow",
+ "itertools 0.12.1",
  "log",
  "spacetimedb-commitlog",
  "spacetimedb-sats",
