@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -u
+set -ueo pipefail
 
 cd "$(readlink -f "$(dirname "$0")")"
 cd server
@@ -12,7 +12,7 @@ echo >/dev/stderr "Updating count.."
 sed -i'' -e 's/\<600\>/6000/' src/lib.rs
 
 echo >/dev/stderr "Republishing.."
-spacetime publish -s local circle-test
+spacetime publish -s local circle-test || true
 
 echo >/dev/stderr "Reverting count.."
 sed -i'' -e 's/\<6000\>/600/' src/lib.rs
