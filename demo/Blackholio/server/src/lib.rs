@@ -86,9 +86,6 @@ pub struct MoveAllPlayersTimer {}
 #[spacetimedb::table(name = spawn_food_timer, scheduled(spawn_food))]
 pub struct SpawnFoodTimer {}
 
-#[spacetimedb::table(name = circle_decay_timer, scheduled(circle_decay))]
-pub struct CircleDecayTimer {}
-
 impl Vector2 {
     // Function to normalize the vector
     fn normalize(&self) -> Vector2 {
@@ -110,10 +107,6 @@ const FOOD_MASS_MAX: u32 = 4;
 pub fn init(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Initializing...");
     ctx.db.config().try_insert(Config { id: 0, world_size: 1000 })?;
-    ctx.db.circle_decay_timer().try_insert(CircleDecayTimer {
-        scheduled_id: 0,
-        scheduled_at: ScheduleAt::Interval(Duration::from_secs(5).as_micros() as u64),
-    })?;
     ctx.db.spawn_food_timer().try_insert(SpawnFoodTimer {
         scheduled_id: 0,
         scheduled_at: ScheduleAt::Interval(Duration::from_millis(500).as_micros() as u64),
@@ -330,20 +323,6 @@ pub fn spawn_food(ctx: &ReducerContext, _timer: SpawnFoodTimer) -> Result<(), St
         ctx.db.food().try_insert(Food { entity_id: entity.id })?;
         food_count += 1;
         log::info!("Spawned food! {}", entity.id);
-    }
-
-    Ok(())
-}
-
-#[spacetimedb::reducer]
-pub fn circle_decay(ctx: &ReducerContext, _timer: CircleDecayTimer) -> Result<(), String> {
-    for circle in ctx.db.circle().iter() {
-        let mut circle_entity = ctx.db.entity().id().find(&circle.entity_id).ok_or("Entity not found")?;
-        if circle_entity.mass <= START_PLAYER_MASS {
-            continue;
-        }
-        circle_entity.mass = (circle_entity.mass as f32 * 0.99) as u32;
-        ctx.db.entity().id().update(circle_entity);
     }
 
     Ok(())
