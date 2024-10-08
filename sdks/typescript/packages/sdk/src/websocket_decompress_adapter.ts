@@ -14,10 +14,10 @@ export class WebsocketDecompressAdapter {
     let decompressed: Uint8Array;
     switch (buffer[0]) {
       case 0:
-        decompressed = msg.data.slice(1);
+        decompressed = buffer.slice(1);
         break;
       case 1:
-        decompressed = decompress(new Buffer(buffer.slice(1)));
+        decompressed = decompress(Buffer.from(buffer.slice(1)));
         break;
       default:
         throw new Error('Invalid message type');

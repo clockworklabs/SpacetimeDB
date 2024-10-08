@@ -34,6 +34,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from '@clockworklabs/spacetimedb-sdk';
 export type Point = {
   x: number;
@@ -48,7 +50,7 @@ export namespace Point {
    * A function which returns this type represented as an AlgebraicType.
    * This function is derived from the AlgebraicType used to generate this type.
    */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement('x', AlgebraicType.createU16Type()),
       new ProductTypeElement('y', AlgebraicType.createU16Type()),
@@ -56,10 +58,10 @@ export namespace Point {
   }
 
   export function serialize(writer: BinaryWriter, value: Point): void {
-    Point.getAlgebraicType().serialize(writer, value);
+    Point.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): Point {
-    return Point.getAlgebraicType().deserialize(reader);
+    return Point.getTypeScriptAlgebraicType().deserialize(reader);
   }
 }

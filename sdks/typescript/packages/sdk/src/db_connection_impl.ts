@@ -31,6 +31,7 @@ import { TableCache, type Operation, type TableUpdate } from './table_cache.ts';
 import { deepEqual, toPascalCase } from './utils.ts';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter.ts';
 import type { WebsocketTestAdapter } from './websocket_test_adapter.ts';
+import { Buffer } from 'buffer';
 
 export {
   AlgebraicType,
@@ -146,7 +147,7 @@ export class DBConnectionImpl<DBView = any, Reducers = any>
       for (const update of rawTableUpdate.updates) {
         let decompressed: ws.QueryUpdate;
         if (update.tag === 'Brotli') {
-          const decompressedBuffer = decompress(new Buffer(update.value));
+          const decompressedBuffer = decompress(Buffer.from(update.value));
           decompressed = ws.QueryUpdate.deserialize(
             new BinaryReader(decompressedBuffer)
           );
@@ -390,12 +391,7 @@ export class DBConnectionImpl<DBView = any, Reducers = any>
           this.token = message.token;
         }
         this.clientAddress = message.address;
-        this.#emitter.emit(
-          'connect',
-          this.token,
-          this.identity,
-          this.clientAddress
-        );
+        this.#emitter.emit('connect', this, this.identity, this.token);
       }
     });
   }

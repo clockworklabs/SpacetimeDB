@@ -3,8 +3,6 @@
 
 import {
   // @ts-ignore
-  deepEqual,
-  // @ts-ignore
   Address,
   // @ts-ignore
   AlgebraicType,
@@ -36,6 +34,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from '@clockworklabs/spacetimedb-sdk';
 import { User } from './user_type';
 // @ts-ignore
