@@ -831,6 +831,7 @@ namespace SpacetimeDB
         }
 
         /// Usage: SpacetimeDBClientBase.instance.OneOffQuery<Message>("WHERE sender = \"bob\"");
+	[ObsoleteAttribute("This is replaced by ctx.Db.TableName.OneOffQuery(\"WHERE ...\")", false)]
         public async Task<T[]> OneOffQuery<T>(string query)
             where T : IDatabaseRow, new()
         {
