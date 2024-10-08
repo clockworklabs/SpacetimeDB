@@ -11,7 +11,6 @@ use std::time::Duration;
 // - [ ] Leaderboard
 
 const TARGET_FOOD_COUNT: usize = 600;
-const MINIMUM_SAFE_MASS_RATIO: f32 = 0.85;
 
 #[spacetimedb::table(name = config, public)]
 pub struct Config {
@@ -96,7 +95,6 @@ impl Vector2 {
 }
 
 const START_PLAYER_MASS: u32 = 12;
-const START_PLAYER_SPEED: u32 = 10;
 const FOOD_MASS_MIN: u32 = 2;
 const FOOD_MASS_MAX: u32 = 4;
 
@@ -204,24 +202,8 @@ pub fn update_player_input(ctx: &ReducerContext,
     Ok(())
 }
 
-fn is_overlapping(a: &Entity, b: &Entity) -> bool {
-    let dx = a.position.x - b.position.x;
-    let dy = a.position.y - b.position.y;
-    let distance_sq = dx * dx + dy * dy;
-
-    let radius_a = mass_to_radius(a.mass);
-    let radius_b = mass_to_radius(b.mass);
-    let radius_sum = radius_a + radius_b;
-
-    distance_sq <= radius_sum * radius_sum
-}
-
 fn mass_to_radius(mass: u32) -> f32 {
     (mass as f32).sqrt()
-}
-
-fn mass_to_max_move_speed(mass: u32) -> f32 {
-    2.0 * START_PLAYER_SPEED as f32 / (1.0 + (mass as f32 / START_PLAYER_MASS as f32).sqrt())
 }
 
 #[spacetimedb::reducer]
