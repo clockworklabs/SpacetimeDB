@@ -49,24 +49,6 @@ pub struct Player {
     name: String,
 }
 
-#[spacetimedb::table(name = logged_out_player, public)]
-pub struct LoggedOutPlayer {
-    #[primary_key]
-    identity: Identity,
-    player: Player,
-}
-
-#[spacetimedb::table(name = logged_out_circle, public)]
-pub struct LoggedOutCircle {
-    #[auto_inc]
-    #[primary_key]
-    logged_out_id: u32,
-    #[index(btree)]
-    player_id: u32,
-    circle: Circle,
-    entity: Entity,
-}
-
 #[spacetimedb::table(name = food, public)]
 pub struct Food {
     #[primary_key]
@@ -93,41 +75,6 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
         scheduled_id: 0,
         scheduled_at: ScheduleAt::Interval(Duration::from_millis(500).as_micros() as u64),
     })?;
-    Ok(())
-}
-
-#[spacetimedb::reducer(client_disconnected)]
-pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("Player not found")?;
-    for circle in ctx.db.circle().player_id().filter(&player.player_id) {
-        let entity = ctx.db.entity().id().find(&circle.entity_id).ok_or("Could not find circle")?;
-        ctx.db.entity().id().delete(&entity.id);
-        ctx.db.circle().entity_id().delete(&entity.id);
-        ctx.db.logged_out_circle().try_insert(LoggedOutCircle {
-            logged_out_id: 0,
-            player_id: player.player_id,
-            circle,
-            entity,
-        })?;
-    }
-    ctx.db.logged_out_player().insert(LoggedOutPlayer {
-        identity: player.identity,
-        player,
-    });
-    ctx.db.player().identity().delete(&ctx.sender);
-
-    Ok(())
-}
-
-#[spacetimedb::reducer(client_connected)]
-pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx.db.logged_out_player().identity().find(&ctx.sender).ok_or("No player for identity.")?;
-    for logged_out_circle in ctx.db.logged_out_circle().player_id().filter(&player.player.player_id) {
-        ctx.db.circle().try_insert(logged_out_circle.circle)?;
-        ctx.db.entity().try_insert(logged_out_circle.entity)?;
-        ctx.db.logged_out_circle().logged_out_id().delete(&logged_out_circle.logged_out_id);
-    }
-    ctx.db.player().insert(player.player);
     Ok(())
 }
 
