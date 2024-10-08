@@ -1,5 +1,5 @@
 use core::marker::PhantomData;
-use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_data_structures::map::{HashCollectionExt, HashSet};
 use spacetimedb_sats::ProductValue;
 
 // NOTE
