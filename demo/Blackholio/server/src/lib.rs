@@ -3,13 +3,6 @@ use spacetimedb::{ReducerContext, SpacetimeType, Table};
 
 const TARGET_FOOD_COUNT: usize = 600;
 
-#[spacetimedb::table(name = config, public)]
-pub struct Config {
-    #[primary_key]
-    pub id: u32,
-    pub world_size: u64,
-}
-
 #[spacetimedb::table(name = entity, public)]
 pub struct Entity {
     #[auto_inc]
@@ -48,7 +41,7 @@ pub fn spawn_food(ctx: &ReducerContext, _timer: SpawnFoodTimer) -> Result<(), St
     while food_count < TARGET_FOOD_COUNT as u64 {
         let mut rng = ctx.rng();
         let food_mass = rng.gen_range(FOOD_MASS_MIN..FOOD_MASS_MAX);
-        let world_size = ctx.db.config().id().find(0).ok_or("Config not found")?.world_size;
+        let world_size = 1000;
         let food_radius = mass_to_radius(food_mass);
         let x = rng.gen_range(food_radius..world_size as f32 - food_radius);
         let y = rng.gen_range(food_radius..world_size as f32 - food_radius);
