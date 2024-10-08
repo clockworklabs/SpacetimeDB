@@ -24,9 +24,9 @@ pub struct Vector2 {
 
 #[spacetimedb::reducer]
 pub fn spawn_food(ctx: &ReducerContext) -> Result<(), String> {
-    let food_count = ctx.db.food().count();
+    let count = ctx.db.entity().count();
 
-    if food_count < TARGET_FOOD_COUNT as u64 {
+    if count < TARGET_FOOD_COUNT as u64 {
         let x = 1.0;
         let y = 1.0;
         ctx.db.entity().try_insert(Entity {
