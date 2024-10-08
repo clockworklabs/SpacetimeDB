@@ -835,19 +835,17 @@ namespace SpacetimeDB
             where T : IDatabaseRow, new()
         {
             var messageId = Guid.NewGuid();
-            var type = typeof(T);
             var resultSource = new TaskCompletionSource<OneOffQueryResponse>();
             waitingOneOffQueries[messageId] = resultSource;
 
             // unsanitized here, but writes will be prevented serverside.
             // the best they can do is send multiple selects, which will just result in them getting no data back.
-            string queryString = $"SELECT * FROM {type.Name} {query}";
 
             var requestId = stats.OneOffRequestTracker.StartTrackingRequest();
             webSocket.Send(new ClientMessage.OneOffQuery(new OneOffQuery
             {
                 MessageId = messageId.ToByteArray(),
-                QueryString = queryString,
+                QueryString = query,
             }));
 
             // Suspend for an arbitrary amount of time
@@ -860,7 +858,7 @@ namespace SpacetimeDB
 
             T[] LogAndThrow(string error)
             {
-                error = $"While processing one-off-query `{queryString}`, ID {messageId}: {error}";
+                error = $"While processing one-off-query `{query}`, ID {messageId}: {error}";
                 Log.Error(error);
                 throw new Exception(error);
             }
@@ -879,9 +877,9 @@ namespace SpacetimeDB
             var resultTable = result.Tables[0];
             var cacheTable = clientDB.GetTable(resultTable.TableName);
 
-            if (cacheTable?.ClientTableType != type)
+            if (cacheTable?.ClientTableType != typeof(T))
             {
-                return LogAndThrow($"Mismatched result type, expected {type} but got {resultTable.TableName}");
+                return LogAndThrow($"Mismatched result type, expected {typeof(T)} but got {resultTable.TableName}");
             }
 
             return BsatnRowListIter(resultTable.Rows)
