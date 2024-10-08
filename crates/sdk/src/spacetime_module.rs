@@ -39,6 +39,9 @@ pub trait SpacetimeModule: Send + Sync + 'static {
     /// Return type of [`crate::DbContext::reducers`].
     type Reducers: InModule<Module = Self> + Send + 'static;
 
+    /// Return type of [`crate::DbContext::set_reducer_flags`].
+    type SetReducerFlags: InModule<Module = Self> + Send + 'static;
+
     /// Parsed and typed analogue of [`crate::ws::DatabaseUpdate`].
     type DbUpdate: DbUpdate<Module = Self>;
 

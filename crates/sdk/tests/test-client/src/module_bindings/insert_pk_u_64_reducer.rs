@@ -68,3 +68,25 @@ impl insert_pk_u_64 for super::RemoteReducers {
         self.imp.remove_on_reducer::<InsertPkU64>("insert_pk_u64", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_pk_u64`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+/// The ability to send over call-reducer flags in the protocol will however remain.
+pub trait set_flags_for_insert_pk_u_64 {
+    /// Set the call-reducer flags for the reducer `insert_pk_u64` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    /// The ability to send over call-reducer flags in the protocol will however remain.
+    fn insert_pk_u_64(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_pk_u_64 for super::SetReducerFlags {
+    fn insert_pk_u_64(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_pk_u64", flags);
+    }
+}

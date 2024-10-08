@@ -179,7 +179,7 @@ impl ModuleSubscriptions {
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
     pub fn commit_and_broadcast_event(
         &self,
-        client: Option<&ClientConnectionSender>,
+        caller: Option<&ClientConnectionSender>,
         mut event: ModuleEvent,
         tx: MutTx,
     ) -> Result<Result<Arc<ModuleEvent>, WriteConflict>, DBError> {
@@ -211,10 +211,10 @@ impl ModuleSubscriptions {
         match &event.status {
             EventStatus::Committed(_) => {
                 let slow_query_threshold = StVarTable::incr_limit(stdb, &read_tx)?.map(Duration::from_millis);
-                subscriptions.eval_updates(stdb, &read_tx, event.clone(), client, slow_query_threshold)
+                subscriptions.eval_updates(stdb, &read_tx, event.clone(), caller, slow_query_threshold)
             }
             EventStatus::Failed(_) => {
-                if let Some(client) = client {
+                if let Some(client) = caller {
                     let message = TransactionUpdateMessage {
                         event: Some(event.clone()),
                         database_update: SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, None),

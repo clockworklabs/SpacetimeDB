@@ -121,7 +121,7 @@ impl SubscriptionManager {
         db: &RelationalDB,
         tx: &Tx,
         event: Arc<ModuleEvent>,
-        sender_client: Option<&ClientConnectionSender>,
+        caller: Option<&ClientConnectionSender>,
         slow_query_threshold: Option<Duration>,
     ) {
         use FormatSwitch::{Bsatn, Json};
@@ -231,10 +231,9 @@ impl SubscriptionManager {
 
             let _span = tracing::info_span!("eval_send").entered();
 
-            if let Some((_, client)) = event
-                .caller_address
-                .zip(sender_client)
-                .filter(|(addr, _)| !eval.contains_key(&(event.caller_identity, *addr)))
+            if let Some((client, _)) = caller
+                .zip(event.caller_address)
+                .filter(|(_, addr)| !eval.contains_key(&(event.caller_identity, *addr)))
             {
                 // Caller is not subscribed to any queries,
                 // but send a transaction update with an empty subscription update.
@@ -259,7 +258,7 @@ fn send_to_client(
     event: &Arc<ModuleEvent>,
     database_update: SubscriptionUpdateMessage,
 ) {
-    let event = client.config.tx_update_light.then(|| event.clone());
+    let event = client.config.tx_update_full.then(|| event.clone());
     if let Err(e) = client.send_message(TransactionUpdateMessage { event, database_update }) {
         tracing::warn!(%client.id, "failed to send update message to client: {e}")
     }

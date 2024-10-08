@@ -12,7 +12,7 @@ use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
-use spacetimedb_client_api_messages::websocket::{Compression, FormatSwitch};
+use spacetimedb_client_api_messages::websocket::{CallReducerFlags, Compression, FormatSwitch};
 use spacetimedb_lib::identity::RequestId;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
@@ -38,17 +38,18 @@ pub struct ClientConfig {
     pub protocol: Protocol,
     /// The client's desired (conditional) compression algorithm, if any.
     pub compression: Compression,
-    /// Whether the client prefers [`TransactionUpdateLight`]s rather than
-    /// full [`TransactionUpdate`]s on a successful update.
-    // TODO(centril): As more knobs are added, make this into a bitfield.
-    pub tx_update_light: bool,
+    /// Whether the client prefers full [`TransactionUpdate`]s
+    /// rather than  [`TransactionUpdateLight`]s on a successful update.
+    // TODO(centril): As more knobs are added, make this into a bitfield (when there's time).
+    pub tx_update_full: bool,
 }
+
 impl ClientConfig {
     pub fn for_test() -> ClientConfig {
         Self {
             protocol: Protocol::Binary,
             compression: <_>::default(),
-            tx_update_light: false,
+            tx_update_full: true,
         }
     }
 }
@@ -260,12 +261,20 @@ impl ClientConnection {
         args: ReducerArgs,
         request_id: RequestId,
         timer: Instant,
+        flags: CallReducerFlags,
     ) -> Result<ReducerCallResult, ReducerCallError> {
+        let caller = match flags {
+            CallReducerFlags::None => Some(self.sender()),
+            // Setting `sender = None` causes `eval_updates` to skip sending to the caller
+            // as it has no access to the caller other than by id/addr.
+            CallReducerFlags::NoSuccessNotify => None,
+        };
+
         self.module
             .call_reducer(
                 self.id.identity,
                 Some(self.id.address),
-                Some(self.sender()),
+                caller,
                 Some(request_id),
                 Some(timer),
                 reducer,

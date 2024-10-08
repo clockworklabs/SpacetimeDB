@@ -64,8 +64,9 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             ref reducer,
             args,
             request_id,
+            flags,
         }) => {
-            let res = client.call_reducer(reducer, args, request_id, timer).await;
+            let res = client.call_reducer(reducer, args, request_id, timer, flags).await;
             WORKER_METRICS
                 .request_round_trip
                 .with_label_values(&WorkloadType::Reducer, &address, reducer)

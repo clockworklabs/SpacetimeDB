@@ -70,3 +70,25 @@ impl update_unique_i_128 for super::RemoteReducers {
             .remove_on_reducer::<UpdateUniqueI128>("update_unique_i128", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `update_unique_i128`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+/// The ability to send over call-reducer flags in the protocol will however remain.
+pub trait set_flags_for_update_unique_i_128 {
+    /// Set the call-reducer flags for the reducer `update_unique_i128` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    /// The ability to send over call-reducer flags in the protocol will however remain.
+    fn update_unique_i_128(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_update_unique_i_128 for super::SetReducerFlags {
+    fn update_unique_i_128(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("update_unique_i128", flags);
+    }
+}

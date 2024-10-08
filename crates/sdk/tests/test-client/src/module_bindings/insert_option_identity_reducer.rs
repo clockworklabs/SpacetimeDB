@@ -69,3 +69,25 @@ impl insert_option_identity for super::RemoteReducers {
             .remove_on_reducer::<InsertOptionIdentity>("insert_option_identity", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_option_identity`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+/// The ability to send over call-reducer flags in the protocol will however remain.
+pub trait set_flags_for_insert_option_identity {
+    /// Set the call-reducer flags for the reducer `insert_option_identity` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    /// The ability to send over call-reducer flags in the protocol will however remain.
+    fn insert_option_identity(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_option_identity for super::SetReducerFlags {
+    fn insert_option_identity(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_option_identity", flags);
+    }
+}
