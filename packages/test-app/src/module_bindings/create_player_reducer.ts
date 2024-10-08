@@ -34,6 +34,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from '@clockworklabs/spacetimedb-sdk';
 
 // @ts-ignore
@@ -52,18 +54,18 @@ export namespace CreatePlayer {
    * A function which returns this type represented as an AlgebraicType.
    * This function is derived from the AlgebraicType used to generate this type.
    */
-  export function getAlgebraicType(): AlgebraicType {
+  export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement('name', AlgebraicType.createStringType()),
-      new ProductTypeElement('location', __Point.getAlgebraicType()),
+      new ProductTypeElement('location', __Point.getTypeScriptAlgebraicType()),
     ]);
   }
 
   export function serialize(writer: BinaryWriter, value: CreatePlayer): void {
-    CreatePlayer.getAlgebraicType().serialize(writer, value);
+    CreatePlayer.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
   export function deserialize(reader: BinaryReader): CreatePlayer {
-    return CreatePlayer.getAlgebraicType().deserialize(reader);
+    return CreatePlayer.getTypeScriptAlgebraicType().deserialize(reader);
   }
 }

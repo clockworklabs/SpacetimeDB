@@ -34,6 +34,8 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
+  // @ts-ignore
+  deepEqual,
 } from '@clockworklabs/spacetimedb-sdk';
 
 // Import and reexport all reducer arg types
@@ -58,19 +60,19 @@ const REMOTE_MODULE = {
   tables: {
     player: {
       tableName: 'player',
-      rowType: Player.getAlgebraicType(),
+      rowType: Player.getTypeScriptAlgebraicType(),
       primaryKey: 'owner_id',
     },
     user: {
       tableName: 'user',
-      rowType: User.getAlgebraicType(),
+      rowType: User.getTypeScriptAlgebraicType(),
       primaryKey: 'identity',
     },
   },
   reducers: {
     create_player: {
       reducerName: 'create_player',
-      argsType: CreatePlayer.getAlgebraicType(),
+      argsType: CreatePlayer.getTypeScriptAlgebraicType(),
     },
   },
   // Constructors which are used by the DBConnectionImpl to
@@ -98,7 +100,7 @@ export class RemoteReducers {
   createPlayer(name: string, location: Point) {
     const __args = { name, location };
     let __writer = new BinaryWriter(1024);
-    CreatePlayer.getAlgebraicType().serialize(__writer, __args);
+    CreatePlayer.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
     this.connection.callReducer('create_player', __argsBuffer);
   }
