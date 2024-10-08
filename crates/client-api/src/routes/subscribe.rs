@@ -94,7 +94,7 @@ where
     let client_config = ClientConfig {
         protocol,
         compression,
-        tx_update_light: light,
+        tx_update_full: !light,
     };
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
