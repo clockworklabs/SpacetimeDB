@@ -1,6 +1,5 @@
 use rand::Rng;
-use spacetimedb::{spacetimedb_lib::ScheduleAt, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
-use std::time::Duration;
+use spacetimedb::{Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 
 const TARGET_FOOD_COUNT: usize = 600;
 
@@ -58,17 +57,6 @@ pub struct SpawnFoodTimer {}
 
 const FOOD_MASS_MIN: u32 = 2;
 const FOOD_MASS_MAX: u32 = 4;
-
-#[spacetimedb::reducer(init)]
-pub fn init(ctx: &ReducerContext) -> Result<(), String> {
-    log::info!("Initializing...");
-    ctx.db.config().try_insert(Config { id: 0, world_size: 1000 })?;
-    ctx.db.spawn_food_timer().try_insert(SpawnFoodTimer {
-        scheduled_id: 0,
-        scheduled_at: ScheduleAt::Interval(Duration::from_millis(500).as_micros() as u64),
-    })?;
-    Ok(())
-}
 
 fn mass_to_radius(mass: u32) -> f32 {
     (mass as f32).sqrt()
