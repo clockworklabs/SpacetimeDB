@@ -1892,7 +1892,6 @@ mod tests {
 
         let rls = RowLevelSecuritySchema {
             row_level_security_id: RowLevelSecurityId::SENTINEL,
-            row_level_security_name: "rls_foo".into(),
             sql: "SELECT * FROM bar".into(),
             table_id,
         };
@@ -1902,19 +1901,16 @@ mod tests {
 
         let stdb = stdb.reopen()?;
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let rls = tx.row_level_security_id_from_name(&ctx, "rls_foo")?;
-        assert_eq!(rls, Some(rls_id));
 
-        let table = stdb.schema_for_table_mut(&tx, table_id)?;
         assert_eq!(
-            table.row_level_security,
+            tx.row_level_security_for_table_id(&ctx, table_id)?,
             vec![RowLevelSecuritySchema {
                 row_level_security_id: rls_id,
-                row_level_security_name: "rls_foo".into(),
-                table_id,
                 sql: "SELECT * FROM bar".into(),
+                table_id,
             }]
         );
+
         Ok(())
     }
 

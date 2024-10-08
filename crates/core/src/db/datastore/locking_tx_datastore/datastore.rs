@@ -451,13 +451,13 @@ impl MutTxDatastore for Locking {
         tx.drop_row_level_security(ctx, row_level_security_policy_id)
     }
 
-    fn row_level_security_id_from_name(
+    fn row_level_security_for_table_id(
         &self,
         tx: &Self::MutTx,
-        row_level_security_name: &str,
-    ) -> crate::db::datastore::Result<Option<RowLevelSecurityId>> {
+        table_id: TableId,
+    ) -> crate::db::datastore::Result<Vec<RowLevelSecuritySchema>> {
         let ctx = &ExecutionContext::internal(self.database_address);
-        tx.row_level_security_id_from_name(ctx, row_level_security_name)
+        tx.row_level_security_for_table_id(ctx, table_id)
     }
 
     fn iter_mut_tx<'a>(
@@ -1061,15 +1061,6 @@ mod tests {
                 .sorted_by_key(|x| x.index_id)
                 .collect::<Vec<_>>())
         }
-
-        pub fn scan_st_row_level_security(&self) -> Result<Vec<StRowLevelSecurityRow>> {
-            Ok(self
-                .db
-                .iter(self.ctx, ST_ROW_LEVEL_SECURITY_ID)?
-                .map(|row| StRowLevelSecurityRow::try_from(row).unwrap())
-                .sorted_by_key(|x| x.row_level_security_id)
-                .collect::<Vec<_>>())
-        }
     }
 
     fn u32_str_u32(a: u32, b: &str, c: u32) -> ProductValue {
@@ -1229,7 +1220,6 @@ mod tests {
     struct RowLevelRow<'a> {
         id: u32,
         table: u32,
-        name: &'a str,
         sql: &'a str,
     }
     impl From<RowLevelRow<'_>> for StRowLevelSecurityRow {
@@ -1237,7 +1227,6 @@ mod tests {
             Self {
                 row_level_security_id: value.id.into(),
                 table_id: value.table.into(),
-                row_level_security_name: value.name.into(),
                 sql: value.sql.into(),
             }
         }
@@ -1290,7 +1279,6 @@ mod tests {
                     }),
                 },
             ],
-            vec![],
             vec![SequenceSchema {
                 sequence_id: SequenceId::SENTINEL,
                 table_id: TableId::SENTINEL,
@@ -1326,7 +1314,6 @@ mod tests {
                 ConstraintRow { constraint_id: seq_start,     table_id: table, unique_columns: col(0), constraint_name: "id_constraint" },
                 ConstraintRow { constraint_id: seq_start + 1, table_id: table, unique_columns: col(1), constraint_name: "name_constraint" }
             ]),
-              vec![],
              map_array([
                 SequenceRow { id: seq_start, table, col_pos: 0, name: "id_sequence", start: 1 }
             ]),
@@ -1431,9 +1418,8 @@ mod tests {
             ColRow { table: ST_SCHEDULED_ID.into(), pos: 3, name: "schedule_name", ty: AlgebraicType::String },
 
             ColRow { table: ST_ROW_LEVEL_SECURITY_ID.into(), pos: 0, name: "row_level_security_id", ty: RowLevelSecurityId::get_type() },
-            ColRow { table: ST_ROW_LEVEL_SECURITY_ID.into(), pos: 1, name: "row_level_security_name", ty: AlgebraicType::String },
-            ColRow { table: ST_ROW_LEVEL_SECURITY_ID.into(), pos: 2, name: "table_id", ty: TableId::get_type() },
-            ColRow { table: ST_ROW_LEVEL_SECURITY_ID.into(), pos: 3, name: "sql", ty: AlgebraicType::String },
+            ColRow { table: ST_ROW_LEVEL_SECURITY_ID.into(), pos: 1, name: "table_id", ty: TableId::get_type() },
+            ColRow { table: ST_ROW_LEVEL_SECURITY_ID.into(), pos: 2, name: "sql", ty: AlgebraicType::String },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1447,8 +1433,9 @@ mod tests {
             IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "idx_st_var_name_unique", },
             IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_schedule_id_unique", },
             IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "idx_st_scheduled_table_id_unique", },
-            IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "idx_st_row_level_security_row_level_security_id_unique" },
-            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "idx_st_row_level_security_row_level_security_name_unique"},
+            IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "idx_st_row_level_security_row_level_security_id_unique"},
+            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "idx_st_row_level_security_btree_table_id"},
+            IndexRow { id: 13, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(2), name: "idx_st_row_level_security_sql_unique"},
         ]));
         let start = FIRST_NON_SYSTEM_ID as i128;
         #[rustfmt::skip]
@@ -1479,7 +1466,7 @@ mod tests {
             ConstraintRow { constraint_id: 9, table_id: ST_SCHEDULED_ID.into(), unique_columns: col(0), constraint_name: "ct_st_scheduled_schedule_id_unique" },
             ConstraintRow { constraint_id: 10, table_id: ST_SCHEDULED_ID.into(), unique_columns: col(1), constraint_name: "ct_st_scheduled_table_id_unique" },
             ConstraintRow { constraint_id: 11, table_id: ST_ROW_LEVEL_SECURITY_ID.into(), unique_columns: col(0), constraint_name: "ct_st_row_level_security_row_level_security_id_unique" },
-            ConstraintRow { constraint_id: 12, table_id: ST_ROW_LEVEL_SECURITY_ID.into(), unique_columns: col(1), constraint_name: "ct_st_row_level_security_row_level_security_name_unique" },
+            ConstraintRow { constraint_id: 12, table_id: ST_ROW_LEVEL_SECURITY_ID.into(), unique_columns: col(2), constraint_name: "ct_st_row_level_security_sql_unique" },
         ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -1892,7 +1879,8 @@ mod tests {
             IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_schedule_id_unique", },
             IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "idx_st_scheduled_table_id_unique", },
             IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "idx_st_row_level_security_row_level_security_id_unique" },
-            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "idx_st_row_level_security_row_level_security_name_unique"},
+            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "idx_st_row_level_security_btree_table_id"},
+            IndexRow { id: 13, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(2), name: "idx_st_row_level_security_sql_unique"},
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx",  },
@@ -1947,7 +1935,8 @@ mod tests {
             IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_schedule_id_unique", },
             IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "idx_st_scheduled_table_id_unique", },
             IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "idx_st_row_level_security_row_level_security_id_unique" },
-            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "idx_st_row_level_security_row_level_security_name_unique"},
+            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "idx_st_row_level_security_btree_table_id"},
+            IndexRow { id: 13, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(2), name: "idx_st_row_level_security_sql_unique"},
             IndexRow { id: seq_start    , table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx" },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx" },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx" },
@@ -2003,7 +1992,8 @@ mod tests {
             IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_schedule_id_unique", },
             IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "idx_st_scheduled_table_id_unique", },
             IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "idx_st_row_level_security_row_level_security_id_unique" },
-            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "idx_st_row_level_security_row_level_security_name_unique"},
+            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "idx_st_row_level_security_btree_table_id"},
+            IndexRow { id: 13, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(2), name: "idx_st_row_level_security_sql_unique"},
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx" },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx" },
         ].map(Into::into));
@@ -2099,24 +2089,23 @@ mod tests {
 
         let rls = RowLevelSecuritySchema {
             row_level_security_id: RowLevelSecurityId::SENTINEL,
-            row_level_security_name: "rls_foo".into(),
             sql: "SELECT * FROM bar".into(),
             table_id,
         };
-        let ctx = ExecutionContext::default();
+        let rls_id = datastore.create_row_level_security_mut_tx(&mut tx, table_id, rls.clone())?;
 
-        let id = datastore.create_row_level_security_mut_tx(&mut tx, table_id, rls)?;
-        let query = query_st_tables(&ctx, &tx);
+        let result = datastore.row_level_security_for_table_id(&tx, table_id)?;
+        assert_eq!(
+            result,
+            vec![RowLevelSecuritySchema {
+                row_level_security_id: rls_id,
+                sql: "SELECT * FROM bar".into(),
+                table_id,
+            }]
+        );
 
-        #[rustfmt::skip]
-        assert_eq!(query.scan_st_row_level_security()?, [
-            RowLevelRow { id:id.into(), table: table_id.into(), name: "rls_foo", sql: "SELECT * FROM bar" },
-        ].map(Into::into));
-
-        let id = datastore.row_level_security_id_from_name(&tx, "rls_foo")?.unwrap();
-        datastore.drop_row_level_security_mut_tx(&mut tx, id)?;
-        let query = query_st_tables(&ctx, &tx);
-        assert_eq!(query.scan_st_row_level_security()?, []);
+        datastore.drop_row_level_security_mut_tx(&mut tx, rls_id)?;
+        assert_eq!(datastore.row_level_security_for_table_id(&tx, table_id)?, []);
 
         Ok(())
     }

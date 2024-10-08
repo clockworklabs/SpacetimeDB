@@ -4,9 +4,6 @@ use super::{
     state_view::{Iter, IterByColRange, ScanIterByColRange, StateView},
     tx_state::{DeleteTable, IndexIdMap, RemovedIndexIdSet, TxState},
 };
-use crate::db::datastore::system_tables::{
-    StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_ROW_LEVEL_SECURITY_NAME,
-};
 use crate::{
     db::{
         datastore::{
@@ -14,9 +11,9 @@ use crate::{
                 system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexAlgorithm, StIndexRow,
                 StSequenceRow, StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID,
                 ST_COLUMN_IDX, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID,
-                ST_INDEX_IDX, ST_INDEX_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_SCHEDULED_ID,
-                ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX,
-                ST_VAR_ID, ST_VAR_IDX,
+                ST_INDEX_IDX, ST_INDEX_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE,
+                ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID, ST_SCHEDULED_IDX, ST_SEQUENCE_ID,
+                ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
             },
             traits::TxData,
         },
@@ -228,23 +225,7 @@ impl CommittedState {
 
         self.create_table(ST_SCHEDULED_ID, schemas[ST_SCHEDULED_IDX].clone());
 
-        // Insert the rls into `st_row_level_security`
-        let (st_rls, blob_store) =
-            self.get_table_and_blob_store_or_create(ST_ROW_LEVEL_SECURITY_ID, &schemas[ST_ROW_LEVEL_SECURITY_IDX]);
-        for rls in ref_schemas.iter().flat_map(|x| &x.row_level_security).cloned() {
-            let row = StRowLevelSecurityRow {
-                table_id: rls.table_id,
-                row_level_security_id: rls.row_level_security_id,
-                row_level_security_name: rls.row_level_security_name,
-                sql: rls.sql,
-            };
-            let row = ProductValue::from(row);
-            // Insert the meta-row into the in-memory ST_ROW_LEVEL_SECURITY.
-            // If the row is already there, no-op.
-            ignore_duplicate_insert_error(st_rls.insert(blob_store, &row))?;
-            // Increment row count for st_row_level_security.
-            with_label_values(ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_NAME).inc();
-        }
+        self.create_table(ST_ROW_LEVEL_SECURITY_ID, schemas[ST_ROW_LEVEL_SECURITY_IDX].clone());
 
         // IMPORTANT: It is crucial that the `st_sequences` table is created last
 

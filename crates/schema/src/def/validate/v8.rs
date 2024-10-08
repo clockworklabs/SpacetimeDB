@@ -58,6 +58,7 @@ fn upgrade_module(def: RawModuleDefV8, extra_errors: &mut Vec<ValidationError>) 
         reducers,
         types,
         misc_exports: Default::default(),
+        row_level_security: vec![], // v8 doesn't have row-level security
     }
 }
 
@@ -113,7 +114,6 @@ fn upgrade_table(
         indexes,
         constraints: unique_constraints,
         sequences,
-        row_level_security: vec![],
         schedule,
         table_type,
         table_access,

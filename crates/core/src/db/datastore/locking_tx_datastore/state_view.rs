@@ -1,7 +1,6 @@
 use super::{
     committed_state::CommittedIndexIter, committed_state::CommittedState, datastore::Result, tx_state::TxState,
 };
-use crate::db::datastore::system_tables::{StRowLevelSecurityFields, StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
 use crate::{
     db::datastore::system_tables::{
         StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields,
@@ -124,26 +123,12 @@ pub trait StateView {
             })
             .transpose()?;
 
-        let row_level_security = self
-            .iter_by_col_eq(
-                ctx,
-                ST_ROW_LEVEL_SECURITY_ID,
-                StRowLevelSecurityFields::TableId,
-                value_eq,
-            )?
-            .map(|row| {
-                let row = StRowLevelSecurityRow::try_from(row)?;
-                Ok(row.into())
-            })
-            .collect::<Result<Vec<_>>>()?;
-
         Ok(TableSchema::new(
             table_id,
             table_name,
             columns,
             indexes,
             constraints,
-            row_level_security,
             sequences,
             table_type,
             table_access,

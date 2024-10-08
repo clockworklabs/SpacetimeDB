@@ -630,7 +630,6 @@ pub(crate) mod tests {
                 vec![],
                 vec![],
                 vec![],
-                vec![],
                 StTableType::User,
                 access,
                 None,

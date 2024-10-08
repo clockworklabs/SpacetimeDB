@@ -25,6 +25,9 @@ use crate::db::auth::StTableType;
 /// A not-yet-validated identifier.
 pub type RawIdentifier = Box<str>;
 
+/// A not-yet-validated `sql`.
+pub type RawSql = Box<str>;
+
 /// A possibly-invalid raw module definition.
 ///
 /// ABI Version 9.
@@ -79,6 +82,11 @@ pub struct RawModuleDefV9 {
 
     /// Miscellaneous additional module exports.
     pub misc_exports: Vec<RawMiscModuleExportV9>,
+
+    /// Low level security definitions.
+    ///
+    /// Each definition must have a unique name.
+    pub row_level_security: Vec<RawRowLevelSecurityDefV9>,
 }
 
 /// The definition of a database table.
@@ -124,9 +132,6 @@ pub struct RawTableDefV9 {
 
     /// The sequences for the table.
     pub sequences: Vec<RawSequenceDefV9>,
-
-    /// The row-level security policies for the table.
-    pub row_level_security: Vec<RawRowLevelSecurityDefV9>,
 
     /// The schedule for the table.
     pub schedule: Option<RawScheduleDefV9>,
@@ -338,10 +343,8 @@ pub struct RawUniqueConstraintDataV9 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawRowLevelSecurityDefV9 {
-    /// The name of the policy. Must be unique within the containing `ModuleDef`.
-    pub name: RawIdentifier,
     /// The `sql` expression to use for row-level security.
-    pub sql: Box<str>,
+    pub sql: RawSql,
 }
 
 /// A miscellaneous module export.
@@ -466,7 +469,6 @@ impl RawModuleDefV9Builder {
                 product_type_ref,
                 indexes: vec![],
                 constraints: vec![],
-                row_level_security: vec![],
                 sequences: vec![],
                 schedule: None,
                 primary_key: None,
@@ -544,6 +546,17 @@ impl RawModuleDefV9Builder {
             params,
             lifecycle,
         });
+    }
+
+    /// Add a row-level security policy to the module.
+    ///
+    /// The `sql` expression should be a valid SQL expression that will be used to filter rows.
+    ///
+    /// **NOTE**: The `sql` expression must be unique within the module.
+    pub fn add_row_level_security(&mut self, sql: &str) {
+        self.module
+            .row_level_security
+            .push(RawRowLevelSecurityDefV9 { sql: sql.into() });
     }
 
     /// Get the typespace of the module.
@@ -703,17 +716,6 @@ impl<'a> RawTableDefBuilder<'a> {
         let reducer_name = reducer_name.into();
         let name = name.unwrap_or_else(|| self.generate_schedule_name());
         self.table.schedule = Some(RawScheduleDefV9 { name, reducer_name });
-        self
-    }
-
-    /// Adds a row-level security policy to the table.
-    ///
-    /// The `sql` expression should be a valid SQL expression.
-    pub fn with_row_level_security(mut self, name: impl Into<RawIdentifier>, sql: impl Into<Box<str>>) -> Self {
-        self.table.row_level_security.push(RawRowLevelSecurityDefV9 {
-            name: name.into(),
-            sql: sql.into(),
-        });
         self
     }
 

@@ -4707,6 +4707,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
+ "spacetimedb-sql-parser",
  "spacetimedb-testing",
  "thiserror",
  "unicode-ident",

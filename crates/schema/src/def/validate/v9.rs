@@ -6,6 +6,7 @@ use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors}
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering};
 use spacetimedb_lib::ProductType;
+use spacetimedb_sql_parser::parser::sub;
 
 /// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
@@ -16,6 +17,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         reducers,
         types,
         misc_exports,
+        row_level_security,
     } = def;
 
     let known_type_definitions = types.iter().map(|def| def.ty);
@@ -56,6 +58,11 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         })
         .collect_all_errors();
 
+    let row_level_security_raw = row_level_security
+        .into_iter()
+        .map(|rls| ModuleValidator::validate_row_level_security_def(rls).map(|rls| (rls.sql.clone(), rls)))
+        .collect_all_errors();
+
     let mut refmap = HashMap::default();
     let types = types
         .into_iter()
@@ -74,11 +81,11 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         "Misc module exports are not yet supported in ABI v9."
     );
 
-    let tables_types_reducers = (tables, types, reducers)
+    let tables_types_reducers = (tables, types, reducers, row_level_security_raw)
         .combine_errors()
-        .and_then(|(tables, types, reducers)| {
+        .and_then(|(tables, types, reducers, row_level_security_raw)| {
             check_scheduled_reducers_exist(&tables, &reducers)?;
-            Ok((tables, types, reducers))
+            Ok((tables, types, reducers, row_level_security_raw))
         });
 
     let ModuleValidator {
@@ -87,7 +94,8 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         ..
     } = validator;
 
-    let (tables, types, reducers) = (tables_types_reducers).map_err(|errors| errors.sort_deduplicate())?;
+    let (tables, types, reducers, row_level_security_raw) =
+        (tables_types_reducers).map_err(|errors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
 
@@ -99,6 +107,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         typespace_for_generate,
         stored_in_table_def,
         refmap,
+        row_level_security_raw,
     };
 
     result.generate_indexes();
@@ -139,7 +148,6 @@ impl ModuleValidator<'_> {
             indexes,
             constraints,
             sequences,
-            row_level_security,
             schedule,
             table_type,
             table_access,
@@ -201,15 +209,6 @@ impl ModuleValidator<'_> {
             })
             .collect_all_errors();
 
-        let row_level_security = row_level_security
-            .into_iter()
-            .map(|policy| {
-                table_in_progress
-                    .validate_row_level_security_def(policy)
-                    .map(|policy| (policy.name.clone(), policy))
-            })
-            .collect_all_errors();
-
         let schedule = schedule
             .map(|schedule| table_in_progress.validate_schedule_def(schedule))
             .transpose();
@@ -224,16 +223,8 @@ impl ModuleValidator<'_> {
                 }
             });
 
-        let (name, columns, indexes, (constraints, primary_key), sequences, row_level_security, schedule) = (
-            name,
-            columns,
-            indexes,
-            constraints_primary_key,
-            sequences,
-            row_level_security,
-            schedule,
-        )
-            .combine_errors()?;
+        let (name, columns, indexes, (constraints, primary_key), sequences, schedule) =
+            (name, columns, indexes, constraints_primary_key, sequences, schedule).combine_errors()?;
 
         Ok(TableDef {
             name,
@@ -243,7 +234,6 @@ impl ModuleValidator<'_> {
             indexes,
             constraints,
             sequences,
-            row_level_security,
             schedule,
             table_type,
             table_access,
@@ -404,6 +394,16 @@ impl ModuleValidator<'_> {
                 error,
             }))
         })
+    }
+
+    /// Checks the query is syntactically valid according to the [sub::parse_subscription] function.
+    fn validate_row_level_security_def(rls: RawRowLevelSecurityDefV9) -> Result<RawRowLevelSecurityDefV9> {
+        sub::parse_subscription(&rls.sql).map_err(|e| ValidationError::InvalidRowLevelQuery {
+            sql: rls.sql.clone().into(),
+            error: e.to_string(),
+        })?;
+
+        Ok(rls)
     }
 }
 
@@ -599,12 +599,6 @@ impl TableValidator<'_, '_> {
         } else {
             unimplemented!("Unknown constraint type")
         }
-    }
-
-    fn validate_row_level_security_def(&mut self, policy: RawRowLevelSecurityDefV9) -> Result<RowLevelSecurityDef> {
-        let RawRowLevelSecurityDefV9 { name, sql } = policy;
-        let name = self.add_to_global_namespace(name)?;
-        Ok(RowLevelSecurityDef { name, sql })
     }
 
     /// Validate a schedule definition.

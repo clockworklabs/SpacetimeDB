@@ -16,6 +16,7 @@ use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use derive_more::From;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
+use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawSql};
 use spacetimedb_lib::db::raw_def::*;
 use spacetimedb_lib::de::{Deserialize, DeserializeOwned, Error};
 use spacetimedb_lib::ser::Serialize;
@@ -238,9 +239,8 @@ st_fields_enum!(enum StConstraintFields {
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StRowLevelSecurityFields {
     "row_level_security_id", SecurityId = 0,
-    "row_level_security_name", SecurityName = 1,
-    "table_id", TableId = 2,
-    "sql", Sql = 3,
+    "table_id", TableId = 1,
+    "sql", Sql = 2,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StModuleFields {
@@ -334,7 +334,14 @@ fn system_module_def() -> ModuleDef {
         )
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StRowLevelSecurityFields::SecurityId)
-        .with_unique_constraint(StRowLevelSecurityFields::SecurityName, None);
+        .with_unique_constraint(StRowLevelSecurityFields::Sql, None)
+        .with_index(
+            RawIndexAlgorithm::BTree {
+                columns: StRowLevelSecurityFields::TableId.into(),
+            },
+            "accessor_name_doesnt_matter",
+            None,
+        );
 
     let st_module_type = builder.add_type::<StModuleRow>();
     builder
@@ -748,16 +755,15 @@ impl From<StConstraintRow> for ConstraintSchema {
 
 /// System Table [ST_ROW_LEVEL_SECURITY_NAME]
 ///
-/// | row_level_security_id | row_level_security_name | table_id | sql          |
-/// |-----------------------|-------------------------|----------|--------------|
-/// | 1                     | "rls_test"              | 1        | "SELECT ..." |
+/// | row_level_security_id | table_id | sql          |
+/// |-----------------------|----------|--------------|
+/// | 1                     | 1        | "SELECT ..." |
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StRowLevelSecurityRow {
     pub(crate) row_level_security_id: RowLevelSecurityId,
-    pub(crate) row_level_security_name: Box<str>,
     pub(crate) table_id: TableId,
-    pub(crate) sql: Box<str>,
+    pub(crate) sql: RawSql,
 }
 
 impl TryFrom<RowRef<'_>> for StRowLevelSecurityRow {
@@ -777,7 +783,6 @@ impl From<StRowLevelSecurityRow> for RowLevelSecuritySchema {
     fn from(x: StRowLevelSecurityRow) -> Self {
         Self {
             row_level_security_id: x.row_level_security_id,
-            row_level_security_name: x.row_level_security_name,
             table_id: x.table_id,
             sql: x.sql,
         }

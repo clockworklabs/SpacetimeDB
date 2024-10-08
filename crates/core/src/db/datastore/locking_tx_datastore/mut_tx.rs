@@ -954,7 +954,7 @@ impl MutTxId {
     /// Requires:
     /// - `row_level_security_schema.row_level_security_id == RowLevelSecurityId::SENTINEL`
     /// - `row_level_security_schema.table_id != TableId::SENTINEL`
-    /// - `row_level_security_schema.row_level_security_name` must not be used for any other database entity.
+    /// - `row_level_security_schema.sql` must be unique.
     ///
     /// Ensures:
     ///
@@ -982,11 +982,7 @@ impl MutTxId {
             .into());
         }
 
-        log::trace!(
-            "ROW LEVEL SECURITY CREATING: {} for table: {}",
-            row_level_security_schema.row_level_security_name,
-            table_id
-        );
+        log::trace!("ROW LEVEL SECURITY CREATING for table: {}", table_id);
 
         // Insert the row into st_row_level_security
         // NOTE: Because st_row_level_security has a unique index on security_name, this will
@@ -994,7 +990,6 @@ impl MutTxId {
         let row = StRowLevelSecurityRow {
             table_id,
             row_level_security_id: RowLevelSecurityId::SENTINEL,
-            row_level_security_name: row_level_security_schema.row_level_security_name.clone(),
             sql: row_level_security_schema.sql.clone(),
         };
 
@@ -1003,11 +998,8 @@ impl MutTxId {
         let existed = matches!(row.1, RowRefInsertion::Existed(_));
 
         // Add the row level security to the transaction's insert table.
-        let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
+        self.get_or_create_insert_table_mut(table_id)?;
         row_level_security_schema.row_level_security_id = row_level_security_id;
-
-        // This won't clone-write when creating a table but likely to otherwise.
-        table.with_mut_schema(|s| s.update_row_level_security(row_level_security_schema));
 
         if existed {
             log::trace!("ROW LEVEL SECURITY ALREADY EXISTS: {row_level_security_id}");
@@ -1016,6 +1008,25 @@ impl MutTxId {
         }
 
         Ok(row_level_security_id)
+    }
+
+    pub fn row_level_security_for_table_id(
+        &self,
+        ctx: &ExecutionContext,
+        table_id: TableId,
+    ) -> Result<Vec<RowLevelSecuritySchema>> {
+        Ok(self
+            .iter_by_col_eq(
+                ctx,
+                ST_ROW_LEVEL_SECURITY_ID,
+                StRowLevelSecurityFields::TableId,
+                &table_id.into(),
+            )?
+            .map(|row| {
+                let row = StRowLevelSecurityRow::try_from(row).unwrap();
+                row.into()
+            })
+            .collect())
     }
 
     pub fn drop_row_level_security(
@@ -1035,33 +1046,9 @@ impl MutTxId {
             .ok_or_else(|| {
                 TableError::IdNotFound(SystemTable::st_row_level_security, row_level_security_policy_id.into())
             })?;
-        let table_id = st_rls_ref.read_col(StRowLevelSecurityFields::TableId)?;
         self.delete(ST_ROW_LEVEL_SECURITY_ID, st_rls_ref.pointer())?;
 
-        // Remove rls in transaction's insert table.
-        let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
-        // This likely will do a clone-write as over time?
-        // The schema might have found other referents.
-        table.with_mut_schema(|s| s.remove_row_level_security(row_level_security_policy_id));
-
         Ok(())
-    }
-
-    pub fn row_level_security_id_from_name(
-        &self,
-        ctx: &ExecutionContext,
-        row_level_security_name: &str,
-    ) -> Result<Option<RowLevelSecurityId>> {
-        self.iter_by_col_eq(
-            ctx,
-            ST_ROW_LEVEL_SECURITY_ID,
-            StRowLevelSecurityFields::SecurityName,
-            &<Box<str>>::from(row_level_security_name).into(),
-        )
-        .map(|mut iter| {
-            iter.next()
-                .map(|row| row.read_col(StRowLevelSecurityFields::SecurityId).unwrap())
-        })
     }
 
     // TODO(perf, deep-integration):

@@ -450,11 +450,11 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         tx: &mut Self::MutTx,
         row_level_security_policy_id: RowLevelSecurityId,
     ) -> super::Result<()>;
-    fn row_level_security_id_from_name(
+    fn row_level_security_for_table_id(
         &self,
         tx: &Self::MutTx,
-        row_level_security_name: &str,
-    ) -> super::Result<Option<RowLevelSecurityId>>;
+        table_id: TableId,
+    ) -> super::Result<Vec<RowLevelSecuritySchema>>;
 
     // Data
     fn iter_mut_tx<'a>(
