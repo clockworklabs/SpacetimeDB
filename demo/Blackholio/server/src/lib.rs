@@ -10,12 +10,6 @@ pub struct Entity {
     pub position: Vector2,
 }
 
-#[spacetimedb::table(name = food, public)]
-pub struct Food {
-    #[primary_key]
-    pub entity_id: u32,
-}
-
 #[derive(SpacetimeType, Debug, Clone, Copy)]
 pub struct Vector2 {
     pub x: f32,
