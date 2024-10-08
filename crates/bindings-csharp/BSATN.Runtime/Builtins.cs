@@ -1,19 +1,11 @@
 namespace SpacetimeDB;
 
 using System.Diagnostics;
-<<<<<<< HEAD
 using System.Runtime.CompilerServices;
-=======
->>>>>>> 7e97857d (define Address as u128, Identity as u256)
 using System.Runtime.InteropServices;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 
-<<<<<<< HEAD
-namespace SpacetimeDB;
-
-=======
->>>>>>> 70e8539e (Fix C#?)
 internal static class Util
 {
     // Same as `Convert.ToHexString`, but that method is not available in .NET Standard
