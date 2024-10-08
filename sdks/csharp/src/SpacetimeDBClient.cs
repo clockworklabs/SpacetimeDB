@@ -830,7 +830,7 @@ namespace SpacetimeDB
             ));
         }
 
-        /// Usage: SpacetimeDBClientBase.instance.OneOffQuery<Message>("WHERE sender = \"bob\"");
+        /// Usage: SpacetimeDBClientBase.instance.OneOffQuery<Message>("SELECT * FROM table WHERE sender = \"bob\"");
         [Obsolete("This is replaced by ctx.Db.TableName.OneOffQuery(\"WHERE ...\")", false)]
         public Task<T[]> OneOffQuery<T>(string query) where T : IDatabaseRow, new() =>
             RemoteQuery<T>(query);
