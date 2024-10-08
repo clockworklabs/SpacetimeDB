@@ -440,19 +440,97 @@ impl AlgebraicTypeLayout {
     pub fn algebraic_type(&self) -> AlgebraicType {
         match self {
             AlgebraicTypeLayout::Primitive(prim) => prim.algebraic_type(),
-            AlgebraicTypeLayout::VarLen(var_len) => var_len.algebraic_type(),
+            AlgebraicTypeLayout::VarLen(var_len) => var_len.algebraic_type().clone(),
             AlgebraicTypeLayout::Product(prod) => AlgebraicType::Product(prod.product_type()),
             AlgebraicTypeLayout::Sum(sum) => AlgebraicType::Sum(sum.sum_type()),
+        }
+    }
+
+    /// Check that this `AlgebraicTypeLayout` is a sub-layout of `other`.
+    ///
+    /// A layout L is a sub-layout of L' if any value deserialized to `AlgebraicValue` via L
+    /// can also be deserialized to an identical `AlgebraicValue` via L'. We additionally require
+    /// that the names in `L` and `L'` match.
+    ///
+    /// This means that:
+    ///
+    /// - `self.size() == other.size()`
+    ///
+    /// - `self.align() >= other.align()` (in other words, `other.align()` divides `self.align()`)
+    ///
+    /// - If `self` is a product type, then:
+    ///     - `other` must also be a product type.
+    ///     - `other` must have fields of the same names in the same positions,
+    ///       with each field's layout being a sub-layout of the corresponding field in `other`.
+    ///
+    /// - If `self` is a sum type, then:
+    ///     - `other` must also be a sum type,
+    ///     - `self`'s variant names must be a *prefix* of `other`'s variant names.
+    ///     - `self`'s variant layouts in the prefix must be sub-layouts of the corresponding variant layouts in `other`.
+    ///     - The additional layouts in `other` must not have alignment requirements larger than the alignment of `self`.
+    ///       (This is actually implied by the above requirement `self.align() >= other.align()`).
+    ///
+    /// - If `self` is a primitive type, then `other` must be the same primitive type in the same position.
+    ///
+    /// - If `self` is a var-len type, then `other` must be a BSATN-compatible var-len type, as determined by
+    ///     `AlgebraicType::is_bsatn_subtype`.
+    pub fn is_sub_layout(&self, other: &AlgebraicTypeLayout) -> bool {
+        use AlgebraicTypeLayout::*;
+        let self_layout = self.layout();
+        let other_layout = other.layout();
+        if self_layout.size != other_layout.size || self_layout.align < other_layout.align {
+            return false;
+        }
+
+        match (self, other) {
+            (Primitive(self_prim), Primitive(other_prim)) => self_prim == other_prim,
+            (VarLen(self_var_len), VarLen(other_var_len)) => self_var_len
+                .algebraic_type()
+                .is_bsatn_subtype(other_var_len.algebraic_type()),
+            (Product(self_prod), Product(other_prod)) => {
+                if self_prod.elements.len() != other_prod.elements.len() {
+                    return false;
+                }
+                self_prod
+                    .elements
+                    .iter()
+                    .zip(other_prod.elements.iter())
+                    .all(|(self_elt, other_elt)| {
+                        self_elt.name == other_elt.name
+                            && self_elt.ty.is_sub_layout(&other_elt.ty)
+                            && self_elt.offset == other_elt.offset
+                    })
+            }
+            (Sum(self_sum), Sum(other_sum)) => {
+                if self_sum.variants.len() > other_sum.variants.len() {
+                    return false;
+                }
+                self_sum
+                    .variants
+                    .iter()
+                    .zip(other_sum.variants.iter())
+                    .all(|(self_var, other_var)| {
+                        self_var.name == other_var.name && self_var.ty.is_sub_layout(&other_var.ty)
+                    })
+
+                // We don't need to check variants that are not in `self`.
+                // Their alignment requirements were already implicitly checked by the size and alignment checks at the entry
+                // of this function.
+            }
+            _ => false,
         }
     }
 }
 
 impl VarLenType {
-    fn algebraic_type(&self) -> AlgebraicType {
+    /// For `VarLenType` it makes sense to return a reference here, since this function is
+    /// used in the hot path of `is_sub_layout`.
+    fn algebraic_type(&self) -> &AlgebraicType {
+        static STRING: AlgebraicType = AlgebraicType::String;
         match self {
-            VarLenType::String => AlgebraicType::String,
-            VarLenType::Array(ty) => ty.as_ref().clone(),
-            VarLenType::Map(ty) => ty.as_ref().clone(),
+            VarLenType::String => &STRING,
+            VarLenType::Array(ty) => ty.as_ref(),
+            VarLenType::Map(ty) => ty.as_ref(),
         }
     }
 }
@@ -583,6 +661,7 @@ mod test {
     use itertools::Itertools as _;
     use proptest::collection::vec;
     use proptest::prelude::*;
+    use spacetimedb_sats::algebraic_type::make_bsatn_supertype;
     use spacetimedb_sats::proptest::generate_algebraic_type;
 
     #[test]
@@ -766,6 +845,118 @@ mod test {
             } else {
                 assert_eq!(layout.size() % layout.align(), 0);
             }
+        }
+    }
+
+    #[test]
+    fn is_not_sub_layout() {
+        use AlgebraicType as AT;
+        use AlgebraicTypeLayout as ATL;
+
+        fn check_not_sub_layout(ty1: AlgebraicType, ty2: AlgebraicType) {
+            let l1 = ATL::from(ty1);
+            let l2 = ATL::from(ty2);
+            assert!(
+                !l1.is_sub_layout(&l2),
+                "{:#?} should not be a sub-layout of {:#?}",
+                l1,
+                l2
+            );
+        }
+
+        check_not_sub_layout(AT::U8, AT::U16);
+        check_not_sub_layout(AT::U8, AT::product([AT::U8]));
+        check_not_sub_layout(AT::U8, AT::product([AT::U16]));
+        check_not_sub_layout(AT::sum([("a", AT::U8)]), AT::sum([("b", AT::U8)]));
+        check_not_sub_layout(
+            AT::sum([("a", AT::U8), ("b", AT::U16)]),
+            AT::sum([("b", AT::U16), ("a", AT::U8)]),
+        );
+        check_not_sub_layout(
+            AT::product([("a", AT::U8), ("b", AT::U16)]),
+            AT::product([("b", AT::U16), ("a", AT::U8)]),
+        );
+    }
+
+    /// Given `layout`, returns a type that has a super-layout of `layout`.
+    fn make_type_with_super_layout(layout: &AlgebraicTypeLayout) -> AlgebraicType {
+        use AlgebraicType as AT;
+        use AlgebraicTypeLayout as ATL;
+
+        match layout {
+            ATL::Sum(sum_type_layout) => {
+                let space = sum_type_layout.size() - sum_type_layout.payload_offset as usize;
+                // Unlike in `make_bsatn_supertype`, we can't add an arbitrary variant;
+                // it has to fit into our size, and be less than or equal to our alignment.
+                let added_variant_type = if space == 0 {
+                    // Only one choice.
+                    AT::unit()
+                } else {
+                    // Just use a sequence of U8s.
+                    // We could use fancier packing logic here but I don't think it's necessary.
+                    AT::Product(
+                        std::iter::repeat(ProductTypeElement {
+                            name: None,
+                            algebraic_type: AT::U8,
+                        })
+                        .take(space)
+                        .collect(),
+                    )
+                };
+
+                AT::Sum(
+                    sum_type_layout
+                        .variants
+                        .iter()
+                        .map(|variant_layout| SumTypeVariant {
+                            algebraic_type: make_type_with_super_layout(&variant_layout.ty),
+                            name: variant_layout.name.clone(),
+                        })
+                        .chain(std::iter::once(SumTypeVariant {
+                            algebraic_type: added_variant_type,
+                            name: None,
+                        }))
+                        .collect(),
+                )
+            }
+            ATL::Product(product_type_layout) => AT::Product(
+                product_type_layout
+                    .elements
+                    .iter()
+                    .map(|elt| ProductTypeElement {
+                        name: elt.name.clone(),
+                        algebraic_type: make_type_with_super_layout(&elt.ty),
+                    })
+                    .collect(),
+            ),
+            ATL::Primitive(primitive_type) => primitive_type.algebraic_type(),
+            ATL::VarLen(var_len_type) => match var_len_type {
+                VarLenType::String => AT::String,
+                // Now we switch to `make_bsatn_supertype`, since the var-len data will just be bsatn
+                // encoded.
+                VarLenType::Array(ty) => {
+                    let array_ty = ty.as_array().expect("VarLenType::Array should be array");
+                    AT::array(make_bsatn_supertype(&array_ty.elem_ty))
+                }
+                VarLenType::Map(ty) => {
+                    let map_ty = ty.as_map().expect("VarLenType::Map should be map");
+                    AT::map(make_bsatn_supertype(&map_ty.key_ty), make_bsatn_supertype(&map_ty.ty))
+                }
+            },
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_is_sub_layout(ty in generate_algebraic_type()) {
+            let layout = AlgebraicTypeLayout::from(ty);
+            let super_type = make_type_with_super_layout(&layout);
+            let super_layout = AlgebraicTypeLayout::from(super_type);
+            prop_assert!(layout.is_sub_layout(&super_layout), "{:#?} should be a sub-layout of {:#?}", layout, super_layout);
+
+            // TODO(this PR): I would like to also use generate_typed_value,
+            // write the value to a page, write it in with layout, and read it out
+            // with both layout and super_layout. But I'm not totally sure how to set that up.
         }
     }
 }

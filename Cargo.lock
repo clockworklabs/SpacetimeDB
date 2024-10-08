@@ -4685,6 +4685,7 @@ dependencies = [
  "spacetimedb-bindings-macro",
  "spacetimedb-metrics",
  "spacetimedb-primitives",
+ "spacetimedb-sats",
  "thiserror",
 ]
 

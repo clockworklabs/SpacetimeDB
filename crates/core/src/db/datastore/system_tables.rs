@@ -1256,7 +1256,14 @@ fn to_product_value<T: Serialize>(value: &T) -> ProductValue {
 }
 
 #[cfg(test)]
+mod test_one_point_oh_layouts;
+
+#[cfg(test)]
 mod tests {
+    use spacetimedb_lib::resolved_type_via_v9;
+    use spacetimedb_table::layout::AlgebraicTypeLayout;
+    use test_one_point_oh_layouts::HasOnePointOhLayout;
+
     use crate::db::relational_db::tests_utils::TestDB;
 
     use super::*;
@@ -1306,5 +1313,33 @@ mod tests {
             num_sequences <= ST_RESERVED_SEQUENCE_RANGE as usize,
             "number of system sequences exceeds reserved sequence range"
         );
+    }
+
+    /// Check that the layout of a type is binary-compatible with the layout of a type that was
+    /// used at 1.0.
+    fn check_layout_compatible<T: HasOnePointOhLayout>() {
+        let ty = resolved_type_via_v9::<T>();
+        let cur_layout = AlgebraicTypeLayout::from(ty);
+        let one_point_oh_layout = T::get_original_layout();
+
+        assert!(
+            one_point_oh_layout.is_sub_layout(&cur_layout),
+            "1.0 layout of {} is not a sublayout of current layout:\n{}",
+            std::any::type_name::<T>(),
+            pretty_assertions::Comparison::new(&one_point_oh_layout, &cur_layout)
+        );
+    }
+
+    #[test]
+    fn test_layouts_binary_compatible() {
+        check_layout_compatible::<StTableRow>();
+        check_layout_compatible::<StColumnRow>();
+        check_layout_compatible::<StIndexRow>();
+        check_layout_compatible::<StSequenceRow>();
+        check_layout_compatible::<StConstraintRow>();
+        check_layout_compatible::<StModuleRow>();
+        check_layout_compatible::<StClientRow>();
+        check_layout_compatible::<StVarRow>();
+        check_layout_compatible::<StScheduledRow>();
     }
 }

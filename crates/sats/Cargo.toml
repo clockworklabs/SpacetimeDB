@@ -60,3 +60,5 @@ rand.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true
 proptest-derive.workspace = true
+# And enable the "test" and "proptest" features for this crate's tests.
+spacetimedb-sats = { workspace = true, features = ["test"] }
