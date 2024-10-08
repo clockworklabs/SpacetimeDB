@@ -2,14 +2,6 @@ use rand::Rng;
 use spacetimedb::{spacetimedb_lib::ScheduleAt, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 use std::time::Duration;
 
-// TODO:
-// - [x] Remove players when they are eaten on the client + death + respawn screen
-// - [ ] Player splitting + increased area of view
-// - [x] Overlap amount should be more significant in order to eat
-// - [ ] Viruses
-// - [ ] Ejecting mass
-// - [ ] Leaderboard
-
 const TARGET_FOOD_COUNT: usize = 600;
 
 #[spacetimedb::table(name = config, public)]
