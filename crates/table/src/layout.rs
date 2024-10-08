@@ -294,11 +294,6 @@ pub enum VarLenType {
     /// Storing the whole `AlgebraicType` here allows us to directly call BSATN ser/de,
     /// and to report type errors.
     Array(Box<AlgebraicType>),
-    /// A map type.  The whole outer `AlgebraicType` is stored here.
-    ///
-    /// Storing the whole `AlgebraicType` here allows us to directly call BSATN ser/de,
-    /// and to report type errors.
-    Map(Box<AlgebraicType>),
 }
 
 /// The layout of var-len objects. Aligned at a `u16` which it has 2 of.
@@ -322,7 +317,7 @@ impl From<AlgebraicType> for AlgebraicTypeLayout {
 
             AlgebraicType::String => AlgebraicTypeLayout::VarLen(VarLenType::String),
             AlgebraicType::Array(_) => AlgebraicTypeLayout::VarLen(VarLenType::Array(Box::new(ty))),
-            AlgebraicType::Map(_) => AlgebraicTypeLayout::VarLen(VarLenType::Map(Box::new(ty))),
+
             AlgebraicType::Bool => AlgebraicTypeLayout::Bool,
             AlgebraicType::I8 => AlgebraicTypeLayout::I8,
             AlgebraicType::U8 => AlgebraicTypeLayout::U8,
@@ -452,7 +447,6 @@ impl VarLenType {
         match self {
             VarLenType::String => AlgebraicType::String,
             VarLenType::Array(ty) => ty.as_ref().clone(),
-            VarLenType::Map(ty) => ty.as_ref().clone(),
         }
     }
 }
@@ -547,7 +541,7 @@ pub fn required_var_len_granules_for_row(val: &ProductValue) -> usize {
         match val {
             AlgebraicValue::Product(val) => traverse_product(val, count),
             AlgebraicValue::Sum(val) => traverse_av(&val.value, count),
-            AlgebraicValue::Array(_) | AlgebraicValue::Map(_) => add_for_bytestring(bsatn_len(val), count),
+            AlgebraicValue::Array(_) => add_for_bytestring(bsatn_len(val), count),
             AlgebraicValue::String(val) => add_for_bytestring(val.len(), count),
             _ => (),
         }

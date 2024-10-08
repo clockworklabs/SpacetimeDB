@@ -438,38 +438,3 @@ public readonly struct List<Element, ElementRW> : IReadWrite<List<Element>>
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
         enumerable.GetAlgebraicType(registrar);
 }
-
-public readonly struct Dictionary<Key, Value, KeyRW, ValueRW> : IReadWrite<Dictionary<Key, Value>>
-    where Key : notnull
-    where KeyRW : IReadWrite<Key>, new()
-    where ValueRW : IReadWrite<Value>, new()
-{
-    private static readonly KeyRW keyRW = new();
-    private static readonly ValueRW valueRW = new();
-
-    public Dictionary<Key, Value> Read(BinaryReader reader)
-    {
-        var count = reader.ReadInt32();
-        var result = new Dictionary<Key, Value>(count);
-        for (var i = 0; i < count; i++)
-        {
-            result.Add(keyRW.Read(reader), valueRW.Read(reader));
-        }
-        return result;
-    }
-
-    public void Write(BinaryWriter writer, Dictionary<Key, Value> value)
-    {
-        writer.Write(value.Count);
-        foreach (var (key, val) in value)
-        {
-            keyRW.Write(writer, key);
-            valueRW.Write(writer, val);
-        }
-    }
-
-    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-        new AlgebraicType.Map(
-            new(keyRW.GetAlgebraicType(registrar), valueRW.GetAlgebraicType(registrar))
-        );
-}

@@ -129,10 +129,6 @@ impl Typespace {
             AlgebraicType::Array(array_ty) => {
                 self.inline_typerefs_in_type(&mut array_ty.elem_ty)?;
             }
-            AlgebraicType::Map(map_type) => {
-                self.inline_typerefs_in_type(&mut map_type.key_ty)?;
-                self.inline_typerefs_in_type(&mut map_type.ty)?;
-            }
             AlgebraicType::Ref(r) => {
                 // Lazily resolve any nested references first.
                 let resolved_ty = self.inline_typerefs_in_ref(*r)?;
@@ -384,12 +380,6 @@ mod tests {
 
         assert_not_valid(AlgebraicType::option(bad_inner_1.clone()));
         assert_not_valid(AlgebraicType::option(bad_inner_2.clone()));
-
-        assert_not_valid(AlgebraicType::map(AlgebraicType::U8, bad_inner_1.clone()));
-        assert_not_valid(AlgebraicType::map(AlgebraicType::U8, bad_inner_2.clone()));
-
-        assert_not_valid(AlgebraicType::map(bad_inner_1.clone(), AlgebraicType::U8));
-        assert_not_valid(AlgebraicType::map(bad_inner_2.clone(), AlgebraicType::U8));
 
         assert_not_valid(AlgebraicType::option(AlgebraicType::array(AlgebraicType::option(
             bad_inner_1.clone(),

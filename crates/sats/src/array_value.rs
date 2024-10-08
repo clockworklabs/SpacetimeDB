@@ -1,5 +1,5 @@
 use crate::{i256, u256};
-use crate::{AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SumValue, F32, F64};
+use crate::{AlgebraicType, AlgebraicValue, ArrayType, ProductValue, SumValue, F32, F64};
 use core::fmt;
 
 /// An array value in "monomorphized form".
@@ -48,8 +48,6 @@ pub enum ArrayValue {
     String(Box<[Box<str>]>),
     /// An array of arrays.
     Array(Box<[ArrayValue]>),
-    /// An array of maps.
-    Map(Box<[MapValue]>),
 }
 
 impl crate::Value for ArrayValue {
@@ -79,7 +77,6 @@ impl ArrayValue {
             Self::F64(_) => Some(AlgebraicType::F64),
             Self::String(_) => Some(AlgebraicType::String),
             Self::Array(v) => Some(v.first()?.type_of()?.into()),
-            Self::Map(v) => AlgebraicValue::type_of_map(v.first()?),
         }?);
         Some(ArrayType { elem_ty })
     }
@@ -106,7 +103,6 @@ impl ArrayValue {
             Self::F64(v) => v.len(),
             Self::String(v) => v.len(),
             Self::Array(v) => v.len(),
-            Self::Map(v) => v.len(),
         }
     }
 
@@ -138,7 +134,6 @@ impl ArrayValue {
             ArrayValue::F64(v) => ArrayValueIterCloned::F64(v.iter()),
             ArrayValue::String(v) => ArrayValueIterCloned::String(v.iter()),
             ArrayValue::Array(v) => ArrayValueIterCloned::Array(v.iter()),
-            ArrayValue::Map(v) => ArrayValueIterCloned::Map(v.iter()),
         }
     }
 }
@@ -187,7 +182,6 @@ impl_from_array!(F32, F32);
 impl_from_array!(F64, F64);
 impl_from_array!(Box<str>, String);
 impl_from_array!(ArrayValue, Array);
-impl_from_array!(MapValue, Map);
 
 impl ArrayValue {
     /// Returns `self` as `&dyn Debug`.
@@ -212,7 +206,6 @@ impl ArrayValue {
             Self::F64(v) => v,
             Self::String(v) => v,
             Self::Array(v) => v,
-            Self::Map(v) => v,
         }
     }
 }
@@ -248,7 +241,6 @@ impl IntoIterator for ArrayValue {
             ArrayValue::F64(v) => ArrayValueIntoIter::F64(Vec::from(v).into_iter()),
             ArrayValue::String(v) => ArrayValueIntoIter::String(Vec::from(v).into_iter()),
             ArrayValue::Array(v) => ArrayValueIntoIter::Array(Vec::from(v).into_iter()),
-            ArrayValue::Map(v) => ArrayValueIntoIter::Map(Vec::from(v).into_iter()),
         }
     }
 }
@@ -293,8 +285,6 @@ pub enum ArrayValueIntoIter {
     String(std::vec::IntoIter<Box<str>>),
     /// An iterator on an array of arrays.
     Array(std::vec::IntoIter<ArrayValue>),
-    /// An iterator on an array of maps.
-    Map(std::vec::IntoIter<MapValue>),
 }
 
 impl Iterator for ArrayValueIntoIter {
@@ -321,7 +311,6 @@ impl Iterator for ArrayValueIntoIter {
             ArrayValueIntoIter::F64(it) => it.next().map(Into::into),
             ArrayValueIntoIter::String(it) => it.next().map(Into::into),
             ArrayValueIntoIter::Array(it) => it.next().map(Into::into),
-            ArrayValueIntoIter::Map(it) => it.next().map(Into::into),
         }
     }
 }
@@ -346,7 +335,6 @@ pub enum ArrayValueIterCloned<'a> {
     F64(std::slice::Iter<'a, F64>),
     String(std::slice::Iter<'a, Box<str>>),
     Array(std::slice::Iter<'a, ArrayValue>),
-    Map(std::slice::Iter<'a, MapValue>),
 }
 
 impl Iterator for ArrayValueIterCloned<'_> {
@@ -373,7 +361,6 @@ impl Iterator for ArrayValueIterCloned<'_> {
             ArrayValueIterCloned::F64(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::String(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::Array(it) => it.next().cloned().map(Into::into),
-            ArrayValueIterCloned::Map(it) => it.next().cloned().map(Into::into),
         }
     }
 }

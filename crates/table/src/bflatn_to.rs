@@ -223,8 +223,7 @@ impl BflatnSerializedRowBuffer<'_> {
 
             // For array and maps, we reserve space for a `VarLenRef`
             // and push the bytes, after BSATN encoding, as a var-len object.
-            (AlgebraicTypeLayout::VarLen(VarLenType::Array(_)), val @ AlgebraicValue::Array(_))
-            | (AlgebraicTypeLayout::VarLen(VarLenType::Map(_)), val @ AlgebraicValue::Map(_)) => {
+            (AlgebraicTypeLayout::VarLen(VarLenType::Array(_)), val @ AlgebraicValue::Array(_)) => {
                 self.write_av_bsatn(val)?
             }
 

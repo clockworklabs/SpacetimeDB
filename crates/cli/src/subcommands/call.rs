@@ -379,13 +379,6 @@ mod write_type {
                 write_type(ctx, out, elem_ty)?;
                 write!(out, ">")?;
             }
-            AlgebraicType::Map(ty) => {
-                write!(out, "Map<")?;
-                write_type(ctx, out, &ty.key_ty)?;
-                write!(out, ", ")?;
-                write_type(ctx, out, &ty.ty)?;
-                write!(out, ">")?;
-            }
             AlgebraicType::Ref(r) => {
                 write!(out, "{}", ctx(*r))?;
             }

@@ -30,7 +30,6 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + fmt::Display {
             write!(f, " }}")
         }
         AlgebraicType::Array(ty) => write!(f, "{{ ty_: Array, 0: {} }}", fmt(&ty.elem_ty)),
-        AlgebraicType::Map(map) => write!(f, "{{ ty_: Map, 0: {}, 1: {} }}", fmt(&map.key_ty), fmt(&map.ty)),
         AlgebraicType::Bool => write!(f, "{{ ty_: Bool }}"),
         AlgebraicType::I8 => write!(f, "{{ ty_: I8 }}"),
         AlgebraicType::U8 => write!(f, "{{ ty_: U8 }}"),

@@ -34,7 +34,7 @@ impl ColumnType for Kind {
 
     fn to_char(&self) -> char {
         match &self.0 {
-            AlgebraicType::Map(_) | AlgebraicType::Array(_) => '?',
+            AlgebraicType::Array(_) => '?',
             ty if ty.is_integer() => 'I',
             ty if ty.is_float() => 'R',
             AlgebraicType::String => 'T',

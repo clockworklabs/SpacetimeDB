@@ -1,6 +1,6 @@
 use crate::ser::{self, ForwardNamedToSeqProduct, Serialize};
 use crate::{i256, u256};
-use crate::{AlgebraicType, AlgebraicValue, ArrayValue, MapValue, F32, F64};
+use crate::{AlgebraicType, AlgebraicValue, ArrayValue, F32, F64};
 use core::convert::Infallible;
 use core::mem::MaybeUninit;
 use core::ptr;
@@ -29,7 +29,6 @@ impl ser::Serializer for ValueSerializer {
     type Error = Infallible;
 
     type SerializeArray = SerializeArrayValue;
-    type SerializeMap = SerializeMapValue;
     type SerializeSeqProduct = SerializeProductValue;
     type SerializeNamedProduct = ForwardNamedToSeqProduct<SerializeProductValue>;
 
@@ -60,12 +59,6 @@ impl ser::Serializer for ValueSerializer {
         Ok(SerializeArrayValue {
             len: Some(len),
             array: Default::default(),
-        })
-    }
-
-    fn serialize_map(self, len: usize) -> Result<Self::SerializeMap, Self::Error> {
-        Ok(SerializeMapValue {
-            entries: Vec::with_capacity(len),
         })
     }
 
@@ -293,8 +286,6 @@ enum ArrayValueBuilder {
     String(Vec<Box<str>>),
     /// An array of arrays.
     Array(Vec<ArrayValue>),
-    /// An array of maps.
-    Map(Vec<MapValue>),
 }
 
 impl ArrayValueBuilder {
@@ -320,7 +311,6 @@ impl ArrayValueBuilder {
             Self::F64(v) => v.len(),
             Self::String(v) => v.len(),
             Self::Array(v) => v.len(),
-            Self::Map(v) => v.len(),
         }
     }
 
@@ -343,7 +333,6 @@ impl ArrayValueBuilder {
         match val {
             AlgebraicValue::Sum(x) => vec(x, capacity).into(),
             AlgebraicValue::Product(x) => vec(x, capacity).into(),
-            AlgebraicValue::Map(x) => vec(*x, capacity).into(),
             AlgebraicValue::Bool(x) => vec(x, capacity).into(),
             AlgebraicValue::I8(x) => vec(x, capacity).into(),
             AlgebraicValue::U8(x) => vec(x, capacity).into(),
@@ -374,7 +363,6 @@ impl ArrayValueBuilder {
         match (self, val) {
             (Self::Sum(v), AlgebraicValue::Sum(val)) => v.push(val),
             (Self::Product(v), AlgebraicValue::Product(val)) => v.push(val),
-            (Self::Map(v), AlgebraicValue::Map(val)) => v.push(*val),
             (Self::Bool(v), AlgebraicValue::Bool(val)) => v.push(val),
             (Self::I8(v), AlgebraicValue::I8(val)) => v.push(val),
             (Self::U8(v), AlgebraicValue::U8(val)) => v.push(val),
@@ -422,7 +410,6 @@ impl From<ArrayValueBuilder> for ArrayValue {
             F64(v) => Self::F64(v.into()),
             String(v) => Self::String(v.into()),
             Array(v) => Self::Array(v.into()),
-            Map(v) => Self::Map(v.into()),
         }
     }
 }
@@ -463,31 +450,6 @@ impl_from_array!(F32, F32);
 impl_from_array!(F64, F64);
 impl_from_array!(Box<str>, String);
 impl_from_array!(ArrayValue, Array);
-impl_from_array!(MapValue, Map);
-
-/// Continuation for serializing a map value.
-pub struct SerializeMapValue {
-    /// The entry pairs to collect and convert into a map.
-    entries: Vec<(AlgebraicValue, AlgebraicValue)>,
-}
-
-impl ser::SerializeMap for SerializeMapValue {
-    type Ok = AlgebraicValue;
-    type Error = <ValueSerializer as ser::Serializer>::Error;
-
-    fn serialize_entry<K: ser::Serialize + ?Sized, V: ser::Serialize + ?Sized>(
-        &mut self,
-        key: &K,
-        value: &V,
-    ) -> Result<(), Self::Error> {
-        self.entries.push((value_serialize(key), value_serialize(value)));
-        Ok(())
-    }
-
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::map(self.entries.into_iter().collect()))
-    }
-}
 
 /// Continuation for serializing a map value.
 pub struct SerializeProductValue {
