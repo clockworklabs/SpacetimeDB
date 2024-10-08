@@ -82,6 +82,8 @@ namespace SpacetimeDB
         internal void Subscribe(ISubscriptionHandle handle, string[] querySqls);
         void FrameTick();
         void Disconnect();
+
+        internal Task<T[]> RemoteQuery<T>(string query) where T : IDatabaseRow, new();
     }
 
     public abstract class DbConnectionBase<DbConnection, Reducer> : IDbConnection
@@ -129,7 +131,7 @@ namespace SpacetimeDB
 
         internal WebSocket webSocket;
         private bool connectionClosed;
-        protected readonly ClientCache clientDB = new();
+        protected readonly ClientCache clientDB;
 
         protected abstract Reducer ToReducer(TransactionUpdate update);
         protected abstract IEventContext ToEventContext(Event<Reducer> reducerEvent);
@@ -142,6 +144,8 @@ namespace SpacetimeDB
 
         protected DbConnectionBase()
         {
+            clientDB = new(this);
+
             var options = new WebSocket.ConnectOptions
             {
                 //v1.bin.spacetimedb
@@ -833,10 +837,9 @@ namespace SpacetimeDB
         /// Usage: SpacetimeDBClientBase.instance.OneOffQuery<Message>("SELECT * FROM table WHERE sender = \"bob\"");
         [Obsolete("This is replaced by ctx.Db.TableName.OneOffQuery(\"WHERE ...\")", false)]
         public Task<T[]> OneOffQuery<T>(string query) where T : IDatabaseRow, new() =>
-            RemoteQuery<T>(query);
+            ((IDbConnection)this).RemoteQuery<T>(query);
 
-        public async Task<T[]> RemoteQuery<T>(string query)
-            where T : IDatabaseRow, new()
+        async Task<T[]> IDbConnection.RemoteQuery<T>(string query)
         {
             var messageId = Guid.NewGuid();
             var resultSource = new TaskCompletionSource<OneOffQueryResponse>();
