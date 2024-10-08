@@ -144,26 +144,6 @@ pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
     Ok(())
 }
 
-#[spacetimedb::reducer]
-pub fn create_player(ctx: &ReducerContext, name: String) -> Result<(), String> {
-    log::info!("Creating player with name {}", name);
-    let player = ctx.db.player().try_insert(Player {
-        identity: ctx.sender,
-        player_id: 0,
-        name,
-    })?;
-    spawn_circle(ctx, player.player_id, ctx.timestamp)?;
-
-    Ok(())
-}
-
-#[spacetimedb::reducer]
-pub fn respawn(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("No such player found")?;
-    spawn_circle(ctx, player.player_id, ctx.timestamp)?;
-    Ok(())
-}
-
 fn spawn_circle(ctx: &ReducerContext, player_id: u32, current_time: Timestamp) -> Result<Entity, String> {
     let mut rng = ctx.rng();
     let world_size = ctx.db.config().id().find(&0).ok_or("Config not found")?.world_size;
@@ -188,18 +168,6 @@ fn spawn_circle_at(ctx: &ReducerContext, player_id: u32, mass: u32, x: f32, y: f
         last_split_time: current_time
     })?;
     Ok(entity)
-}
-
-#[spacetimedb::reducer]
-pub fn update_player_input(ctx: &ReducerContext,
-                           direction: Vector2, magnitude: f32) -> Result<(), String> {
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("Player not found")?;
-    for mut circle in ctx.db.circle().player_id().filter(&player.player_id) {
-        circle.direction = direction.normalize();
-        circle.magnitude = magnitude.clamp(0.0, 1.0);
-        ctx.db.circle().entity_id().update(circle);
-    }
-    Ok(())
 }
 
 fn mass_to_radius(mass: u32) -> f32 {
