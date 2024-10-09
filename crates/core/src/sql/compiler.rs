@@ -409,10 +409,7 @@ mod tests {
             .map(|value| satn::PsqlWrapper { ty: &kind, value }.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        assert_eq!(
-            out,
-            "0x0000000000000000000000000000000000000000000000000000000000000000"
-        );
+        assert_eq!(out, "0");
 
         // Check tuples
         let kind = [
@@ -432,7 +429,7 @@ mod tests {
 
         assert_eq!(
             satn::PsqlWrapper { ty: &kind, value }.to_string().as_str(),
-            "(0 = \"a\", 1 = 0x0000000000000000000000000000000000000000000000000000000000000000, 2 = 0x0000000000000000000000000000000000000000000000000000000000000000, 3 = 0x00000000000000000000000000000000)"
+            "(0 = \"a\", 1 = 0, 2 = 0, 3 = 0)"
         );
 
         let ty = Typespace::EMPTY.with_type(&kind);
@@ -448,7 +445,7 @@ mod tests {
         let value = ValueWithType::new(ty, &value);
         assert_eq!(
             satn::PsqlWrapper { ty: ty.ty(), value }.to_string().as_str(),
-            "(a = \"a\", b = 0x0000000000000000000000000000000000000000000000000000000000000000, o = 0x0000000000000000000000000000000000000000000000000000000000000000, p = 0x00000000000000000000000000000000)"
+            "(a = \"a\", b = 0, o = 0, p = 0)"
         );
 
         Ok(())
