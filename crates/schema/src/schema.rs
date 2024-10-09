@@ -46,7 +46,7 @@ pub trait Schema: Sized {
     fn from_module_def(module_def: &ModuleDef, def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self;
 
     /// Check that a schema entity is compatible with a definition.
-    fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error>;
+    fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error>;
 }
 
 /// A data structure representing the schema of a database table.
@@ -602,7 +602,7 @@ impl Schema for TableSchema {
         )
     }
 
-    fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error> {
+    fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.table_name[..], &def.name[..], "Table name mismatch");
         ensure_eq!(self.primary_key, def.primary_key, "Primary key mismatch");
         let def_table_access: StAccess = (def.table_access).into();
@@ -615,7 +615,7 @@ impl Schema for TableSchema {
                 .columns
                 .get(col.col_pos.0 as usize)
                 .ok_or_else(|| anyhow::anyhow!("Column {} not found in definition", col.col_pos.0))?;
-            col.check_compatible(col_def)?;
+            col.check_compatible(module_def, col_def)?;
         }
         ensure_eq!(self.columns.len(), def.columns.len(), "Column count mismatch");
 
@@ -624,7 +624,7 @@ impl Schema for TableSchema {
                 .indexes
                 .get(&index.index_name[..])
                 .ok_or_else(|| anyhow::anyhow!("Index {} not found in definition", index.index_id.0))?;
-            index.check_compatible(index_def)?;
+            index.check_compatible(module_def, index_def)?;
         }
         ensure_eq!(self.indexes.len(), def.indexes.len(), "Index count mismatch");
 
@@ -633,7 +633,7 @@ impl Schema for TableSchema {
                 .constraints
                 .get(&constraint.constraint_name[..])
                 .ok_or_else(|| anyhow::anyhow!("Constraint {} not found in definition", constraint.constraint_id.0))?;
-            constraint.check_compatible(constraint_def)?;
+            constraint.check_compatible(module_def, constraint_def)?;
         }
         ensure_eq!(
             self.constraints.len(),
@@ -646,7 +646,7 @@ impl Schema for TableSchema {
                 .sequences
                 .get(&sequence.sequence_name[..])
                 .ok_or_else(|| anyhow::anyhow!("Sequence {} not found in definition", sequence.sequence_id.0))?;
-            sequence.check_compatible(sequence_def)?;
+            sequence.check_compatible(module_def, sequence_def)?;
         }
         ensure_eq!(self.sequences.len(), def.sequences.len(), "Sequence count mismatch");
 
@@ -655,7 +655,7 @@ impl Schema for TableSchema {
                 .schedule
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("Schedule not found in definition"))?;
-            schedule.check_compatible(schedule_def)?;
+            schedule.check_compatible(module_def, schedule_def)?;
         }
         ensure_eq!(
             self.schedule.is_some(),
@@ -754,9 +754,10 @@ impl Schema for ColumnSchema {
         }
     }
 
-    fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error> {
+    fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.col_name[..], &def.name[..], "Column name mismatch");
-        ensure_eq!(self.col_type, def.ty, "Column type mismatch");
+        let resolved_def_ty = WithTypespace::new(module_def.typespace(), &def.ty).resolve_refs()?;
+        ensure_eq!(self.col_type, resolved_def_ty, "Column type mismatch");
         ensure_eq!(self.col_pos, def.col_id, "Columnh ID mismatch");
         Ok(())
     }
@@ -843,7 +844,7 @@ impl Schema for SequenceSchema {
         }
     }
 
-    fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error> {
+    fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.sequence_name[..], &def.name[..], "Sequence name mismatch");
         ensure_eq!(self.col_pos, def.column, "Sequence column mismatch");
         ensure_eq!(self.increment, def.increment, "Sequence increment mismatch");
@@ -895,7 +896,7 @@ impl Schema for ScheduleSchema {
         }
     }
 
-    fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error> {
+    fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.schedule_name[..], &def.name[..], "Schedule name mismatch");
         ensure_eq!(
             &self.reducer_name[..],
@@ -939,7 +940,7 @@ impl Schema for IndexSchema {
         }
     }
 
-    fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error> {
+    fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.index_name[..], &def.name[..], "Index name mismatch");
         ensure_eq!(&self.index_algorithm, &def.algorithm, "Index algorithm mismatch");
         Ok(())
@@ -1002,7 +1003,7 @@ impl Schema for ConstraintSchema {
         }
     }
 
-    fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error> {
+    fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.constraint_name[..], &def.name[..], "Constraint name mismatch");
         ensure_eq!(&self.data, &def.data, "Constraint data mismatch");
         Ok(())
