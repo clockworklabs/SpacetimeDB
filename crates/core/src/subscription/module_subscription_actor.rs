@@ -120,12 +120,20 @@ impl ModuleSubscriptions {
 
         let slow_query_threshold = StVarTable::sub_limit(&ctx, &self.relational_db, &tx)?.map(Duration::from_millis);
         let database_update = match sender.protocol {
-            Protocol::Text => {
-                FormatSwitch::Json(execution_set.eval(&ctx, &self.relational_db, &tx, slow_query_threshold))
-            }
-            Protocol::Binary => {
-                FormatSwitch::Bsatn(execution_set.eval(&ctx, &self.relational_db, &tx, slow_query_threshold))
-            }
+            Protocol::Text => FormatSwitch::Json(execution_set.eval(
+                &ctx,
+                &self.relational_db,
+                &tx,
+                slow_query_threshold,
+                sender.compression,
+            )),
+            Protocol::Binary => FormatSwitch::Bsatn(execution_set.eval(
+                &ctx,
+                &self.relational_db,
+                &tx,
+                slow_query_threshold,
+                sender.compression,
+            )),
         };
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.

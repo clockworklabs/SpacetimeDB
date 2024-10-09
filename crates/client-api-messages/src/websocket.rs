@@ -33,7 +33,7 @@ use spacetimedb_sats::{
     SpacetimeType,
 };
 use std::{
-    io::{self, Read as _},
+    io::{self, Read as _, Write as _},
     sync::Arc,
 };
 
@@ -74,7 +74,7 @@ pub trait WebsocketFormat: Sized {
 
     /// Convert a `QueryUpdate` into `Self::QueryUpdate`.
     /// This allows some formats to e.g., compress the update.
-    fn into_query_update(qu: QueryUpdate<Self>) -> Self::QueryUpdate;
+    fn into_query_update(qu: QueryUpdate<Self>, compression: Compression) -> Self::QueryUpdate;
 }
 
 /// Messages sent from the client to the server.
@@ -165,11 +165,14 @@ pub struct OneOffQuery {
     pub query_string: Box<str>,
 }
 
-/// The tag recognized by ghe host and SDKs to mean no compression of a [`ServerMessage`].
+/// The tag recognized by the host and SDKs to mean no compression of a [`ServerMessage`].
 pub const SERVER_MSG_COMPRESSION_TAG_NONE: u8 = 0;
 
 /// The tag recognized by the host and SDKs to mean brotli compression  of a [`ServerMessage`].
 pub const SERVER_MSG_COMPRESSION_TAG_BROTLI: u8 = 1;
+
+/// The tag recognized by the host and SDKs to mean brotli compression  of a [`ServerMessage`].
+pub const SERVER_MSG_COMPRESSION_TAG_GZIP: u8 = 2;
 
 /// Messages sent from the server to the client.
 #[derive(SpacetimeType, derive_more::From)]
@@ -357,13 +360,21 @@ impl<F: WebsocketFormat> TableUpdate<F> {
 pub enum CompressableQueryUpdate<F: WebsocketFormat> {
     Uncompressed(QueryUpdate<F>),
     Brotli(Bytes),
+    Gzip(Bytes),
 }
 
 impl CompressableQueryUpdate<BsatnFormat> {
     pub fn maybe_decompress(self) -> QueryUpdate<BsatnFormat> {
         match self {
             Self::Uncompressed(qu) => qu,
-            Self::Brotli(bytes) => brotli_decompress_qu(&bytes),
+            Self::Brotli(bytes) => {
+                let bytes = brotli_decompress(&bytes).unwrap();
+                bsatn::from_slice(&bytes).unwrap()
+            }
+            Self::Gzip(bytes) => {
+                let bytes = gzip_decompress(&bytes).unwrap();
+                bsatn::from_slice(&bytes).unwrap()
+            }
         }
     }
 }
@@ -456,7 +467,7 @@ impl WebsocketFormat for JsonFormat {
 
     type QueryUpdate = QueryUpdate<Self>;
 
-    fn into_query_update(qu: QueryUpdate<Self>) -> Self::QueryUpdate {
+    fn into_query_update(qu: QueryUpdate<Self>, _: Compression) -> Self::QueryUpdate {
         qu
     }
 }
@@ -499,27 +510,50 @@ impl WebsocketFormat for BsatnFormat {
 
     type QueryUpdate = CompressableQueryUpdate<Self>;
 
-    fn into_query_update(qu: QueryUpdate<Self>) -> Self::QueryUpdate {
+    fn into_query_update(qu: QueryUpdate<Self>, compression: Compression) -> Self::QueryUpdate {
         let qu_len_would_have_been = bsatn::to_len(&qu).unwrap();
 
-        if should_compress(qu_len_would_have_been) {
-            let bytes = bsatn::to_vec(&qu).unwrap();
-            let mut out = Vec::new();
-            brotli_compress(&bytes, &mut out);
-            CompressableQueryUpdate::Brotli(out.into())
-        } else {
-            CompressableQueryUpdate::Uncompressed(qu)
+        match decide_compression(qu_len_would_have_been, compression) {
+            Compression::None => CompressableQueryUpdate::Uncompressed(qu),
+            Compression::Brotli => {
+                let bytes = bsatn::to_vec(&qu).unwrap();
+                let mut out = Vec::new();
+                brotli_compress(&bytes, &mut out);
+                CompressableQueryUpdate::Brotli(out.into())
+            }
+            Compression::Gzip => {
+                let bytes = bsatn::to_vec(&qu).unwrap();
+                let mut out = Vec::new();
+                gzip_compress(&bytes, &mut out);
+                CompressableQueryUpdate::Gzip(out.into())
+            }
         }
     }
 }
 
-pub fn should_compress(len: usize) -> bool {
-    /// The threshold at which we start to compress messages.
+/// A specification of either a desired or decided compression algorithm.
+#[derive(serde::Deserialize, Default, PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub enum Compression {
+    /// No compression ever.
+    None,
+    /// Compress using brotli if a certain size threshold was met.
+    #[default]
+    Brotli,
+    /// Compress using gzip if a certain size threshold was met.
+    Gzip,
+}
+
+pub fn decide_compression(len: usize, compression: Compression) -> Compression {
+    /// The threshold beyond which we start to compress messages.
     /// 1KiB was chosen without measurement.
     /// TODO(perf): measure!
     const COMPRESS_THRESHOLD: usize = 1024;
 
-    len <= COMPRESS_THRESHOLD
+    if len > COMPRESS_THRESHOLD {
+        compression
+    } else {
+        Compression::None
+    }
 }
 
 pub fn brotli_compress(bytes: &[u8], out: &mut Vec<u8>) {
@@ -560,9 +594,16 @@ pub fn brotli_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
     Ok(decompressed)
 }
 
-pub fn brotli_decompress_qu(bytes: &[u8]) -> QueryUpdate<BsatnFormat> {
-    let bytes = brotli_decompress(bytes).unwrap();
-    bsatn::from_slice(&bytes).unwrap()
+pub fn gzip_compress(bytes: &[u8], out: &mut Vec<u8>) {
+    let mut encoder = flate2::write::GzEncoder::new(out, flate2::Compression::fast());
+    encoder.write_all(bytes).unwrap();
+    encoder.finish().expect("Failed to gzip compress `bytes`");
+}
+
+pub fn gzip_decompress(bytes: &[u8]) -> Result<Vec<u8>, io::Error> {
+    let mut decompressed = Vec::new();
+    let _ = flate2::read::GzDecoder::new(bytes).read(&mut decompressed)?;
+    Ok(decompressed)
 }
 
 type RowSize = u16;

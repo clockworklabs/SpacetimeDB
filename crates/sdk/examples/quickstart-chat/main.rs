@@ -2,6 +2,7 @@
 mod module_bindings;
 use module_bindings::*;
 
+use spacetimedb_client_api_messages::websocket::Compression;
 use spacetimedb_sdk::{credentials, DbContext, Event, Identity, ReducerEvent, Status, Table, TableWithPrimaryKey};
 
 // # Our main function
@@ -171,6 +172,7 @@ fn connect_to_db() -> DbConnection {
         .with_credentials(creds_store().load().expect("Error loading credentials"))
         .with_module_name(DB_NAME)
         .with_uri(HOST)
+        .with_compression(Compression::Gzip)
         .build()
         .expect("Failed to connect")
 }
