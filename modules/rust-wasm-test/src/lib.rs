@@ -273,8 +273,8 @@ fn test_btree_index_args(ctx: &ReducerContext) {
     // Single-column string index on `test_e.name`:
     // Tests that we can pass `&String` or `&str`, but not `str`.
     let string = "String".to_string();
-    let _filter_by_ref_string = ctx.db.test_e().name().filter(&string);
-    let _filter_by_ref_str = ctx.db.test_e().name().filter("str");
+    let _ = ctx.db.test_e().name().filter(&string);
+    let _ = ctx.db.test_e().name().filter("str");
 
     // let _filter_by_owned_string = ctx.db.test_e().name().filter(string); // SHOULD FAIL
 
@@ -289,53 +289,53 @@ fn test_btree_index_args(ctx: &ReducerContext) {
     // TODO: Why is the `i64` suffix required here?
 
     // A single non-range value, owned or by reference.
-    ctx.db.points().multi_column_index().filter(0i64);
-    ctx.db.points().multi_column_index().filter(&0i64);
+    let _ = ctx.db.points().multi_column_index().filter(0i64);
+    let _ = ctx.db.points().multi_column_index().filter(&0i64);
 
     // A single tuple of a non-range value, owned or by reference..
-    ctx.db.points().multi_column_index().filter((0i64,));
-    ctx.db.points().multi_column_index().filter((&0i64,));
+    let _ = ctx.db.points().multi_column_index().filter((0i64,));
+    let _ = ctx.db.points().multi_column_index().filter((&0i64,));
 
     // Ranges of owned values.
-    ctx.db.points().multi_column_index().filter(0i64..3i64);
-    ctx.db.points().multi_column_index().filter(0i64..=3i64);
-    ctx.db.points().multi_column_index().filter(0i64..);
-    ctx.db.points().multi_column_index().filter(..3i64);
-    ctx.db.points().multi_column_index().filter(..=3i64);
+    let _ = ctx.db.points().multi_column_index().filter(0i64..3i64);
+    let _ = ctx.db.points().multi_column_index().filter(0i64..=3i64);
+    let _ = ctx.db.points().multi_column_index().filter(0i64..);
+    let _ = ctx.db.points().multi_column_index().filter(..3i64);
+    let _ = ctx.db.points().multi_column_index().filter(..=3i64);
 
     // Ranges of references.
-    ctx.db.points().multi_column_index().filter(&0i64..&3i64);
-    ctx.db.points().multi_column_index().filter(&0i64..=&3i64);
-    ctx.db.points().multi_column_index().filter(&0i64..);
-    ctx.db.points().multi_column_index().filter(..&3i64);
-    ctx.db.points().multi_column_index().filter(..=&3i64);
+    let _ = ctx.db.points().multi_column_index().filter(&0i64..&3i64);
+    let _ = ctx.db.points().multi_column_index().filter(&0i64..=&3i64);
+    let _ = ctx.db.points().multi_column_index().filter(&0i64..);
+    let _ = ctx.db.points().multi_column_index().filter(..&3i64);
+    let _ = ctx.db.points().multi_column_index().filter(..=&3i64);
 
     // A single tuple of a range of owned values.
-    ctx.db.points().multi_column_index().filter((0i64..3i64,));
-    ctx.db.points().multi_column_index().filter((0i64..=3i64,));
-    ctx.db.points().multi_column_index().filter((0i64..,));
-    ctx.db.points().multi_column_index().filter((..3i64,));
-    ctx.db.points().multi_column_index().filter((..=3i64,));
+    let _ = ctx.db.points().multi_column_index().filter((0i64..3i64,));
+    let _ = ctx.db.points().multi_column_index().filter((0i64..=3i64,));
+    let _ = ctx.db.points().multi_column_index().filter((0i64..,));
+    let _ = ctx.db.points().multi_column_index().filter((..3i64,));
+    let _ = ctx.db.points().multi_column_index().filter((..=3i64,));
 
     // A single tuple of a range of references.
-    ctx.db.points().multi_column_index().filter((&0i64..&3i64,));
-    ctx.db.points().multi_column_index().filter((&0i64..=&3i64,));
-    ctx.db.points().multi_column_index().filter((&0i64..,));
-    ctx.db.points().multi_column_index().filter((..&3i64,));
-    ctx.db.points().multi_column_index().filter((..=&3i64,));
+    let _ = ctx.db.points().multi_column_index().filter((&0i64..&3i64,));
+    let _ = ctx.db.points().multi_column_index().filter((&0i64..=&3i64,));
+    let _ = ctx.db.points().multi_column_index().filter((&0i64..,));
+    let _ = ctx.db.points().multi_column_index().filter((..&3i64,));
+    let _ = ctx.db.points().multi_column_index().filter((..=&3i64,));
 
     // Non-range values for both columns.
-    ctx.db.points().multi_column_index().filter((0i64, 1i64));
-    ctx.db.points().multi_column_index().filter((&0i64, 1i64));
-    ctx.db.points().multi_column_index().filter((0i64, &1i64));
-    ctx.db.points().multi_column_index().filter((&0i64, &1i64));
+    let _ = ctx.db.points().multi_column_index().filter((0i64, 1i64));
+    let _ = ctx.db.points().multi_column_index().filter((&0i64, 1i64));
+    let _ = ctx.db.points().multi_column_index().filter((0i64, &1i64));
+    let _ = ctx.db.points().multi_column_index().filter((&0i64, &1i64));
 
     // A non-range value in the first column and a range in the second.
     // We're trusting that all of the different range types listed above still work here.
-    ctx.db.points().multi_column_index().filter((0i64, 1i64..3i64));
-    ctx.db.points().multi_column_index().filter((&0i64, 1i64..3i64));
-    ctx.db.points().multi_column_index().filter((0i64, &1i64..&3i64));
-    ctx.db.points().multi_column_index().filter((&0i64, &1i64..&3i64));
+    let _ = ctx.db.points().multi_column_index().filter((0i64, 1i64..3i64));
+    let _ = ctx.db.points().multi_column_index().filter((&0i64, 1i64..3i64));
+    let _ = ctx.db.points().multi_column_index().filter((0i64, &1i64..&3i64));
+    let _ = ctx.db.points().multi_column_index().filter((&0i64, &1i64..&3i64));
 
     // ctx.db.points().multi_column_index().filter((0i64..3i64, 1i64)); // SHOULD FAIL
 }
