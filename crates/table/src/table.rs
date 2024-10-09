@@ -16,13 +16,13 @@ use super::{
     read_column::{ReadColumn, TypeError},
     row_hash::hash_row_in_page,
     row_type_visitor::{row_type_visitor, VarLenVisitorProgram},
-    static_assert_size,
+    static_assert_size, MemoryUsage,
 };
 use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
 use core::{fmt, ptr};
 use derive_more::{Add, AddAssign, From, Sub};
-use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId};
 use spacetimedb_sats::{
@@ -40,6 +40,8 @@ use thiserror::Error;
 /// The number of bytes used by, added to, or removed from a [`Table`]'s share of a [`BlobStore`].
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default, From, Add, Sub, AddAssign)]
 pub struct BlobNumBytes(usize);
+
+impl MemoryUsage for BlobNumBytes {}
 
 /// A database table containing the row schema, the rows, and indices.
 ///
@@ -124,6 +126,42 @@ impl TableInner {
 }
 
 static_assert_size!(Table, 256);
+
+impl MemoryUsage for Table {
+    fn memory_usage(&self) -> usize {
+        let Self {
+            inner,
+            pointer_map,
+            indexes,
+            // MEMUSE: intentionally ignoring schema
+            schema: _,
+            squashed_offset,
+            row_count,
+            blob_store_bytes,
+        } = self;
+        inner.memory_usage()
+            + pointer_map.memory_usage()
+            + indexes.memory_usage()
+            + squashed_offset.memory_usage()
+            + row_count.memory_usage()
+            + blob_store_bytes.memory_usage()
+    }
+}
+
+impl MemoryUsage for TableInner {
+    fn memory_usage(&self) -> usize {
+        let Self {
+            row_layout,
+            static_bsatn_layout,
+            visitor_prog,
+            pages,
+        } = self;
+        row_layout.memory_usage()
+            + static_bsatn_layout.memory_usage()
+            + visitor_prog.memory_usage()
+            + pages.memory_usage()
+    }
+}
 
 /// Various error that can happen on table insertion.
 #[derive(Error, Debug)]

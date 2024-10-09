@@ -37,6 +37,7 @@ use spacetimedb_snapshot::ReconstructedSnapshot;
 use spacetimedb_table::{
     indexes::RowPointer,
     table::{RowRef, Table},
+    MemoryUsage,
 };
 use std::time::{Duration, Instant};
 use std::{borrow::Cow, sync::Arc};
@@ -62,6 +63,21 @@ pub struct Locking {
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The address of this database.
     database_address: Address,
+}
+
+impl MemoryUsage for Locking {
+    fn memory_usage(&self) -> usize {
+        let Self {
+            committed_state,
+            sequence_state,
+            database_address,
+        } = self;
+        std::mem::size_of_val(&**committed_state)
+            + committed_state.read().memory_usage()
+            + std::mem::size_of_val(&**sequence_state)
+            + sequence_state.lock().memory_usage()
+            + database_address.memory_usage()
+    }
 }
 
 impl Locking {

@@ -36,6 +36,13 @@ impl EnergyQuanta {
         let energy = bytes_stored * sec + (bytes_stored * nsec) / 1_000_000_000;
         Self::new(energy)
     }
+
+    const ENERGY_PER_MEM_BYTE_SEC: u128 = 100;
+
+    pub fn from_memory_usage(bytes_stored: u64, storage_period: Duration) -> Self {
+        let byte_seconds = Self::from_disk_usage(bytes_stored, storage_period).get();
+        Self::new(byte_seconds * Self::ENERGY_PER_MEM_BYTE_SEC)
+    }
 }
 
 impl fmt::Display for EnergyQuanta {

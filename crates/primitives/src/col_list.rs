@@ -276,6 +276,14 @@ impl ColList {
         let addr = unsafe { self.check };
         addr & 1 != 0
     }
+
+    #[doc(hidden)]
+    pub fn heap_size(&self) -> usize {
+        match self.as_inline() {
+            Ok(_) => 0,
+            Err(heap) => heap.capacity() as usize,
+        }
+    }
 }
 
 impl Drop for ColList {
