@@ -157,7 +157,7 @@ pub fn test(ctx: &ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4
     log::info!("Row count before delete: {:?}", row_count_before_delete);
 
     let mut num_deleted = 0;
-    for row in 5..10 {
+    for row in 5..10u32 {
         num_deleted += ctx.db.test_a().foo().delete(row);
     }
 
@@ -261,4 +261,81 @@ pub fn query_private(ctx: &ReducerContext) {
         log::info!("Private, {}!", person.name);
     }
     log::info!("Private, World!");
+}
+
+#[spacetimedb::reducer]
+/// This reducer tests many of the different ways we want to provide arguments to btree index accessors.
+///
+/// The runtime behavior is not tested, but we have a CI job which asserts that this module compiles,
+/// and therefore that all of the different accesses listed here are well-typed.
+// TODO(testing): Add tests (in smoketests?) for index arg combos which are expected not to compile.
+fn test_btree_index_args(ctx: &ReducerContext) {
+    // Single-column string index on `test_e.name`:
+    // Tests that we can pass `&String` or `&str`, but not `str`.
+    let string = "String".to_string();
+    let _filter_by_ref_string = ctx.db.test_e().name().filter(&string);
+    let _filter_by_ref_str = ctx.db.test_e().name().filter("str");
+
+    // let _filter_by_owned_string = ctx.db.test_e().name().filter(string); // SHOULD FAIL
+
+    ctx.db.test_e().name().delete(&string);
+    ctx.db.test_e().name().delete("str");
+
+    // ctx.db.test_e().name().delete(string); // SHOULD FAIL
+
+    // Multi-column i64 index on `points.x, points.y`:
+    // Tests that we can pass various ranges
+    // and various combinations of borrowed/owned `Copy` values.
+    // TODO: Why is the `i64` suffix required here?
+
+    // A single non-range value, owned or by reference.
+    ctx.db.points().multi_column_index().filter(0i64);
+    ctx.db.points().multi_column_index().filter(&0i64);
+
+    // A single tuple of a non-range value, owned or by reference..
+    ctx.db.points().multi_column_index().filter((0i64,));
+    ctx.db.points().multi_column_index().filter((&0i64,));
+
+    // Ranges of owned values.
+    ctx.db.points().multi_column_index().filter(0i64..3i64);
+    ctx.db.points().multi_column_index().filter(0i64..=3i64);
+    ctx.db.points().multi_column_index().filter(0i64..);
+    ctx.db.points().multi_column_index().filter(..3i64);
+    ctx.db.points().multi_column_index().filter(..=3i64);
+
+    // Ranges of references.
+    ctx.db.points().multi_column_index().filter(&0i64..&3i64);
+    ctx.db.points().multi_column_index().filter(&0i64..=&3i64);
+    ctx.db.points().multi_column_index().filter(&0i64..);
+    ctx.db.points().multi_column_index().filter(..&3i64);
+    ctx.db.points().multi_column_index().filter(..=&3i64);
+
+    // A single tuple of a range of owned values.
+    ctx.db.points().multi_column_index().filter((0i64..3i64,));
+    ctx.db.points().multi_column_index().filter((0i64..=3i64,));
+    ctx.db.points().multi_column_index().filter((0i64..,));
+    ctx.db.points().multi_column_index().filter((..3i64,));
+    ctx.db.points().multi_column_index().filter((..=3i64,));
+
+    // A single tuple of a range of references.
+    ctx.db.points().multi_column_index().filter((&0i64..&3i64,));
+    ctx.db.points().multi_column_index().filter((&0i64..=&3i64,));
+    ctx.db.points().multi_column_index().filter((&0i64..,));
+    ctx.db.points().multi_column_index().filter((..&3i64,));
+    ctx.db.points().multi_column_index().filter((..=&3i64,));
+
+    // Non-range values for both columns.
+    ctx.db.points().multi_column_index().filter((0i64, 1i64));
+    ctx.db.points().multi_column_index().filter((&0i64, 1i64));
+    ctx.db.points().multi_column_index().filter((0i64, &1i64));
+    ctx.db.points().multi_column_index().filter((&0i64, &1i64));
+
+    // A non-range value in the first column and a range in the second.
+    // We're trusting that all of the different range types listed above still work here.
+    ctx.db.points().multi_column_index().filter((0i64, 1i64..3i64));
+    ctx.db.points().multi_column_index().filter((&0i64, 1i64..3i64));
+    ctx.db.points().multi_column_index().filter((0i64, &1i64..&3i64));
+    ctx.db.points().multi_column_index().filter((&0i64, &1i64..&3i64));
+
+    // ctx.db.points().multi_column_index().filter((0i64..3i64, 1i64)); // SHOULD FAIL
 }
