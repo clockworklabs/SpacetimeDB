@@ -687,7 +687,6 @@ impl_deserialize!([] spacetimedb_primitives::IndexId, de => u32::deserialize(de)
 impl_deserialize!([] spacetimedb_primitives::ConstraintId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::ColId, de => u16::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::ScheduleId, de => u32::deserialize(de).map(Self));
-impl_deserialize!([] spacetimedb_primitives::RowLevelSecurityId, de => u32::deserialize(de).map(Self));
 
 impl GrowingVec<ColId> for ColList {
     fn with_capacity(cap: usize) -> Self {

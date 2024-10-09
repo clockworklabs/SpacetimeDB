@@ -23,15 +23,14 @@ use crate::{
 use core::ops::RangeBounds;
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
+use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::{
     address::Address,
     bsatn::Deserializer,
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
     de::DeserializeSeed,
 };
-use spacetimedb_primitives::{
-    ColId, ColList, ColSet, ConstraintId, IndexId, RowLevelSecurityId, ScheduleId, SequenceId, TableId,
-};
+use spacetimedb_primitives::{ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, DecodeError},
     de::WithBound,
@@ -952,28 +951,19 @@ impl MutTxId {
     /// Create a row level security policy.
     ///
     /// Requires:
-    /// - `row_level_security_schema.row_level_security_id == RowLevelSecurityId::SENTINEL`
     /// - `row_level_security_schema.table_id != TableId::SENTINEL`
     /// - `row_level_security_schema.sql` must be unique.
     ///
     /// Ensures:
     ///
     /// - The row level security policy metadata is inserted into the system tables (and other data structures reflecting them).
-    /// - The returned ID is unique and is not `RowLevelSecurityId::SENTINEL`.
+    /// - The returned `sql` is unique.
     pub fn create_row_level_security(
         &mut self,
         ctx: &ExecutionContext,
         table_id: TableId,
-        mut row_level_security_schema: RowLevelSecuritySchema,
-    ) -> Result<RowLevelSecurityId> {
-        if row_level_security_schema.row_level_security_id != RowLevelSecurityId::SENTINEL {
-            return Err(anyhow::anyhow!(
-                "`row_level_security_id` must be `RowLevelSecurityId::SENTINEL` in `{:#?}`",
-                row_level_security_schema
-            )
-            .into());
-        }
-
+        row_level_security_schema: RowLevelSecuritySchema,
+    ) -> Result<RawSql> {
         if row_level_security_schema.table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!(
                 "`table_id` must not be `TableId::SENTINEL` in `{:#?}`",
@@ -985,29 +975,27 @@ impl MutTxId {
         log::trace!("ROW LEVEL SECURITY CREATING for table: {}", table_id);
 
         // Insert the row into st_row_level_security
-        // NOTE: Because st_row_level_security has a unique index on security_name, this will
+        // NOTE: Because st_row_level_security has a unique index on sql, this will
         // fail if already exists.
         let row = StRowLevelSecurityRow {
             table_id,
-            row_level_security_id: RowLevelSecurityId::SENTINEL,
             sql: row_level_security_schema.sql.clone(),
         };
 
         let row = self.insert(ST_ROW_LEVEL_SECURITY_ID, &mut ProductValue::from(row), ctx.database())?;
-        let row_level_security_id = row.1.collapse().read_col(StRowLevelSecurityFields::SecurityId)?;
+        let row_level_security_sql = row.1.collapse().read_col(StRowLevelSecurityFields::Sql)?;
         let existed = matches!(row.1, RowRefInsertion::Existed(_));
 
         // Add the row level security to the transaction's insert table.
         self.get_or_create_insert_table_mut(table_id)?;
-        row_level_security_schema.row_level_security_id = row_level_security_id;
 
         if existed {
-            log::trace!("ROW LEVEL SECURITY ALREADY EXISTS: {row_level_security_id}");
+            log::trace!("ROW LEVEL SECURITY ALREADY EXISTS: {row_level_security_sql}");
         } else {
-            log::trace!("ROW LEVEL SECURITY CREATED: {row_level_security_id}");
+            log::trace!("ROW LEVEL SECURITY CREATED: {row_level_security_sql}");
         }
 
-        Ok(row_level_security_id)
+        Ok(row_level_security_sql)
     }
 
     pub fn row_level_security_for_table_id(
@@ -1029,24 +1017,16 @@ impl MutTxId {
             .collect())
     }
 
-    pub fn drop_row_level_security(
-        &mut self,
-        ctx: &ExecutionContext,
-        row_level_security_policy_id: RowLevelSecurityId,
-    ) -> Result<()> {
-        // Delete row in `st_row_level_security`.
-        let st_rls_ref = self
-            .iter_by_col_eq(
-                ctx,
-                ST_ROW_LEVEL_SECURITY_ID,
-                StRowLevelSecurityFields::SecurityId,
-                &row_level_security_policy_id.into(),
-            )?
-            .next()
-            .ok_or_else(|| {
-                TableError::IdNotFound(SystemTable::st_row_level_security, row_level_security_policy_id.into())
-            })?;
-        self.delete(ST_ROW_LEVEL_SECURITY_ID, st_rls_ref.pointer())?;
+    // For now, we always drop all.
+    /// Delete all rows in `st_row_level_security`.
+    pub fn drop_all_row_level_security(&mut self, ctx: &ExecutionContext) -> Result<()> {
+        let rows = self
+            .iter(ctx, ST_ROW_LEVEL_SECURITY_ID)?
+            .map(|r| r.pointer())
+            .collect::<Vec<_>>();
+        for row in rows {
+            self.delete(ST_ROW_LEVEL_SECURITY_ID, row)?;
+        }
 
         Ok(())
     }

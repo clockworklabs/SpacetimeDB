@@ -238,9 +238,8 @@ st_fields_enum!(enum StConstraintFields {
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StRowLevelSecurityFields {
-    "row_level_security_id", SecurityId = 0,
-    "table_id", TableId = 1,
-    "sql", Sql = 2,
+    "table_id", TableId = 0,
+    "sql", Sql = 1,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StModuleFields {
@@ -333,7 +332,7 @@ fn system_module_def() -> ModuleDef {
             *st_row_level_security_type.as_ref().expect("should be ref"),
         )
         .with_type(TableType::System)
-        .with_auto_inc_primary_key(StRowLevelSecurityFields::SecurityId)
+        .with_primary_key(StRowLevelSecurityFields::Sql)
         .with_unique_constraint(StRowLevelSecurityFields::Sql, None)
         .with_index(
             RawIndexAlgorithm::BTree {
@@ -755,13 +754,12 @@ impl From<StConstraintRow> for ConstraintSchema {
 
 /// System Table [ST_ROW_LEVEL_SECURITY_NAME]
 ///
-/// | row_level_security_id | table_id | sql          |
-/// |-----------------------|----------|--------------|
-/// | 1                     | 1        | "SELECT ..." |
+/// | table_id | sql          |
+/// |----------|--------------|
+/// | 1        | "SELECT ..." |
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StRowLevelSecurityRow {
-    pub(crate) row_level_security_id: RowLevelSecurityId,
     pub(crate) table_id: TableId,
     pub(crate) sql: RawSql,
 }
@@ -782,7 +780,6 @@ impl From<StRowLevelSecurityRow> for ProductValue {
 impl From<StRowLevelSecurityRow> for RowLevelSecuritySchema {
     fn from(x: StRowLevelSecurityRow) -> Self {
         Self {
-            row_level_security_id: x.row_level_security_id,
             table_id: x.table_id,
             sql: x.sql,
         }

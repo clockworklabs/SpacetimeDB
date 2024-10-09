@@ -1891,12 +1891,11 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         let rls = RowLevelSecuritySchema {
-            row_level_security_id: RowLevelSecurityId::SENTINEL,
             sql: "SELECT * FROM bar".into(),
             table_id,
         };
 
-        let rls_id = tx.create_row_level_security(&ctx, table_id, rls)?;
+        tx.create_row_level_security(&ctx, table_id, rls)?;
         stdb.commit_tx(&ctx, tx)?;
 
         let stdb = stdb.reopen()?;
@@ -1905,7 +1904,6 @@ mod tests {
         assert_eq!(
             tx.row_level_security_for_table_id(&ctx, table_id)?,
             vec![RowLevelSecuritySchema {
-                row_level_security_id: rls_id,
                 sql: "SELECT * FROM bar".into(),
                 table_id,
             }]

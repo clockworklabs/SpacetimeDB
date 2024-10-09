@@ -828,7 +828,7 @@ pub(crate) mod tests {
             )
             .unwrap();
         let st_sequence_row = StSequenceRow {
-            sequence_id: 6.into(),
+            sequence_id: 5.into(),
             sequence_name: "seq_st_sequence_sequence_id".into(),
             table_id: ST_SEQUENCE_ID,
             col_pos: 0.into(),

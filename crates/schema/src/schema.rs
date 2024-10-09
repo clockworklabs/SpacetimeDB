@@ -6,11 +6,10 @@
 // TODO(1.0): change all the `Box<str>`s in this file to `Identifier`.
 // This doesn't affect the ABI so can wait until 1.0.
 
-use anyhow::Error;
 use itertools::Itertools;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::error::{DefType, SchemaError};
-use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, RawSql};
+use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::raw_def::{generate_cols_name, RawConstraintDefV8};
 use spacetimedb_lib::relation::{combine_constraints, Column, DbTable, FieldName, Header};
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductTypeElement};
@@ -1014,33 +1013,6 @@ impl Schema for ConstraintSchema {
 /// A struct representing the schema of a row-level security policy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RowLevelSecuritySchema {
-    pub row_level_security_id: RowLevelSecurityId,
     pub table_id: TableId,
     pub sql: RawSql,
-}
-
-impl Schema for RowLevelSecuritySchema {
-    type Def = RawRowLevelSecurityDefV9;
-    type Id = RowLevelSecurityId;
-    type ParentId = TableId;
-
-    fn from_module_def(
-        module_def: &ModuleDef,
-        def: &Self::Def,
-        parent_id: Self::ParentId,
-        row_level_security_id: Self::Id,
-    ) -> Self {
-        module_def.expect_contains(def);
-
-        RowLevelSecuritySchema {
-            row_level_security_id,
-            table_id: parent_id,
-            sql: (*def.sql).into(),
-        }
-    }
-
-    fn check_compatible(&self, def: &Self::Def) -> Result<(), Error> {
-        ensure_eq!(&self.sql[..], &def.sql[..], "Row-level security SQL mismatch");
-        Ok(())
-    }
 }

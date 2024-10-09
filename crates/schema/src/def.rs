@@ -359,7 +359,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             types: to_raw(types, |type_: &RawTypeDefV9| &type_.name),
             misc_exports: vec![],
             typespace,
-            row_level_security: row_level_security_raw.values().cloned().collect(),
+            row_level_security: row_level_security_raw.into_iter().map(|(_, def)| def).collect(),
         }
     }
 }
