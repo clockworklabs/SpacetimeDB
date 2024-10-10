@@ -264,7 +264,7 @@ impl ClientConnection {
         flags: CallReducerFlags,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let caller = match flags {
-            CallReducerFlags::None => Some(self.sender()),
+            CallReducerFlags::FullUpdate => Some(self.sender()),
             // Setting `sender = None` causes `eval_updates` to skip sending to the caller
             // as it has no access to the caller other than by id/addr.
             CallReducerFlags::NoSuccessNotify => None,

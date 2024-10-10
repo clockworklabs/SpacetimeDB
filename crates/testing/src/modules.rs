@@ -55,7 +55,7 @@ impl ModuleHandle {
             reducer: reducer.into(),
             args,
             request_id: 0,
-            flags: ws::CallReducerFlags::None,
+            flags: ws::CallReducerFlags::FullUpdate,
         })
     }
 
