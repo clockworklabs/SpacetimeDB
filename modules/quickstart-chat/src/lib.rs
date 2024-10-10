@@ -1,4 +1,5 @@
-use spacetimedb::{Identity, ReducerContext, Table, Timestamp};
+use spacetimedb::{Identity, ReducerContext, Table};
+use std::time::SystemTime;
 
 #[spacetimedb::table(name = user, public)]
 pub struct User {
@@ -11,7 +12,7 @@ pub struct User {
 #[spacetimedb::table(name = message, public)]
 pub struct Message {
     sender: Identity,
-    sent: Timestamp,
+    sent: SystemTime,
     text: String,
 }
 

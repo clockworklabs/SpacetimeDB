@@ -210,7 +210,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                 sender_3,
                 address_0,
                 address_1,
-                op.timestamp.microseconds,
+                spacetimedb_lib::Timestamp::from(op.timestamp).to_micros_since_unix_epoch(),
                 args_source,
                 errors_sink,
             ),

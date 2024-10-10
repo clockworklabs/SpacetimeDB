@@ -36,7 +36,13 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
         let out = cargo_cmd(
             "clippy",
             build_debug,
-            &["--", "--no-deps", "-Aclippy::all", "-Dclippy::disallowed-macros"],
+            &[
+                "--",
+                "--no-deps",
+                "-Aclippy::all",
+                "-Dclippy::disallowed-macros",
+                "-Dclippy::disallowed-methods",
+            ],
         )
         .dir(project_path)
         .env("CLIPPY_DISABLE_DOCS_LINKS", "1")
@@ -73,6 +79,10 @@ disallowed-macros = [
     { path = "std::eprint",     reason = "eprint!() has no effect inside a spacetimedb module; use log::warn!() instead" },
     { path = "std::eprintln", reason = "eprintln!() has no effect inside a spacetimedb module; use log::warn!() instead" },
     { path = "std::dbg",      reason = "std::dbg!() has no effect inside a spacetimedb module; import spacetime's dbg!() macro instead" },
+]
+disallowed-methods = [
+  { path = "std::time::SystemTime::now", reason = "The wasm32-unknown-unknown implementation of many syscalls, including reading the current time, is stubbed and will panic. Use the timestamp field of ReducerContext instead." },
+  { path = "std::time::Instant::now", reason = "The wasm32-unknown-unknown implementation of many syscalls, including reading the current time, is stubbed and will panic. Use the timestamp field of ReducerContext instead." },
 ]
 "#;
 

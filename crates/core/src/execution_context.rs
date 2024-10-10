@@ -1,10 +1,9 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::SystemTime};
 
 use crate::db::db_metrics::DB_METRICS;
 use bytes::Bytes;
 use derive_more::Display;
 use parking_lot::RwLock;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_commitlog::{payload::txdata, Varchar};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
@@ -123,7 +122,7 @@ pub struct ReducerContext {
     /// The [`Address`] of the caller.
     pub caller_address: Address,
     /// The timestamp of the reducer invocation.
-    pub timestamp: Timestamp,
+    pub timestamp: SystemTime,
     /// The BSATN-encoded arguments given to the reducer.
     ///
     /// Note that [`Bytes`] is a refcounted value, but the memory it points to

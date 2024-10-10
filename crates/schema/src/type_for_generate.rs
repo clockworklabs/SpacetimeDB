@@ -328,6 +328,9 @@ pub enum AlgebraicTypeUse {
     /// The special `Address` type.
     Address,
 
+    /// The special `Timestamp` type.
+    Timestamp,
+
     /// The unit type (empty product).
     /// This is *distinct* from a use of a definition of a product type with no elements.
     Unit,
@@ -422,6 +425,8 @@ impl TypespaceForGenerateBuilder<'_> {
             Ok(AlgebraicTypeUse::Address)
         } else if ty.is_identity() {
             Ok(AlgebraicTypeUse::Identity)
+        } else if ty.is_timestamp() {
+            Ok(AlgebraicTypeUse::Timestamp)
         } else if ty.is_unit() {
             Ok(AlgebraicTypeUse::Unit)
         } else if ty.is_never() {

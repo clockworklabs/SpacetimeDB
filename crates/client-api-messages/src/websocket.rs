@@ -15,7 +15,6 @@
 //! rather than using an external mirror of this schema.
 
 use crate::energy::EnergyQuanta;
-use crate::timestamp::Timestamp;
 use bytes::Bytes;
 use bytestring::ByteString;
 use core::{
@@ -35,6 +34,7 @@ use spacetimedb_sats::{
 use std::{
     io::{self, Read as _, Write as _},
     sync::Arc,
+    time::SystemTime,
 };
 
 pub trait RowListLen {
@@ -230,8 +230,11 @@ pub struct IdentityToken {
 pub struct TransactionUpdate<F: WebsocketFormat> {
     /// The status of the transaction. Contains the updated rows, if successful.
     pub status: UpdateStatus<F>,
-    /// The time when the reducer started, as microseconds since the Unix epoch.
-    pub timestamp: Timestamp,
+    /// The time when the reducer started.
+    ///
+    /// Note that [`SystemTime`] serializes as microseconds since the Unix epoch
+    /// in the SATS serialization formats.
+    pub timestamp: SystemTime,
     /// The identity of the user who requested the reducer run. For event-driven and
     /// scheduled reducers, it is the identity of the database owner.
     pub caller_identity: Identity,

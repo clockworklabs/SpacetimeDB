@@ -33,10 +33,7 @@ use futures_channel::mpsc;
 use http::Uri;
 use spacetimedb_client_api_messages::websocket::{BsatnFormat, Compression};
 use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address, Identity};
-use std::{
-    sync::{Arc, Mutex as StdMutex, OnceLock},
-    time::{Duration, SystemTime},
-};
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use tokio::{
     runtime::{self, Runtime},
     sync::Mutex as TokioMutex,
@@ -1016,9 +1013,7 @@ async fn parse_loop<M: SpacetimeModule>(
                                 caller_address: caller_address.none_if_zero(),
                                 caller_identity,
                                 energy_consumed: Some(energy_quanta_used.quanta),
-                                timestamp: SystemTime::UNIX_EPOCH
-                                    .checked_add(Duration::from_micros(timestamp.microseconds))
-                                    .unwrap(),
+                                timestamp,
                                 reducer,
                                 status,
                             })
