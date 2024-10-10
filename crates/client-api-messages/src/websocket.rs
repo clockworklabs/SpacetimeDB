@@ -139,8 +139,16 @@ pub struct CallReducer<Args> {
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum CallReducerFlags {
+    /// The reducer's caller does want to be notified about the reducer completing successfully
+    /// regardless of whether the caller had subscribed to a relevant query.
+    ///
+    /// Note that updates to a reducer's caller are always sent as full updates
+    /// whether subscribed to a relevant query or not.
+    /// That is, the light tx mode setting does not apply to the reducer's caller.
+    ///
+    /// This is the default flag.
     #[default]
-    None,
+    FullUpdate,
     /// The reducer's caller does not want to be notified about the reducer completing successfully
     /// without having subscribed to any of the relevant queries.
     NoSuccessNotify,
@@ -149,7 +157,7 @@ pub enum CallReducerFlags {
 impl_st!([] CallReducerFlags, AlgebraicType::U8);
 impl_serialize!([] CallReducerFlags, (self, ser) => ser.serialize_u8(*self as u8));
 impl_deserialize!([] CallReducerFlags, de => match de.deserialize_u8()? {
-    0 => Ok(Self::None),
+    0 => Ok(Self::FullUpdate),
     1 => Ok(Self::NoSuccessNotify),
     x => Err(D::Error::custom(format_args!("invalid call reducer flag {x}"))),
 });
