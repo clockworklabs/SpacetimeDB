@@ -3,3 +3,4 @@
 /.github/CODEOWNERS @cloutiertyler
 LICENSE.txt @cloutiertyler
 /crates/client-api-messages/src/websocket.rs @centril @gefjon
+/crates/cli/src/ @bfops @jdetter @cloutiertyler
