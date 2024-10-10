@@ -30,16 +30,16 @@ pub fn update_database(
     let existing_tables = stdb.get_all_tables_mut(tx)?;
 
     // TODO: consider using `ErrorStream` here.
-    let old_def = plan.old_def();
+    let old_module_def = plan.old_def();
     for table in existing_tables
         .iter()
         .filter(|table| table.table_type != StTableType::System)
     {
-        let old_def = old_def
+        let old_def = old_module_def
             .table(&table.table_name[..])
-            .ok_or_else(|| anyhow::anyhow!("table {} not found in old_def", table.table_name))?;
+            .ok_or_else(|| anyhow::anyhow!("table {} not found in old_module_def", table.table_name))?;
 
-        table.check_compatible(old_def)?;
+        table.check_compatible(old_module_def, old_def)?;
     }
 
     match plan {

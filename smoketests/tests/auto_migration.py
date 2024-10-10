@@ -3,9 +3,9 @@ import sys
 import logging
 
 
-class AddTablePseudomigration(Smoketest):
+class AddTableAutoMigration(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{println, ReducerContext, Table, SpacetimeType};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -22,6 +22,19 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     for person in ctx.db.person().iter() {
         println!("{}: {}", prefix, person.name);
     }
+}
+
+#[spacetimedb::table(name = point_mass)]
+pub struct PointMass {
+    mass: f64,
+    /// This used to cause an error when check_compatible did not resolve types in a `ModuleDef`.
+    position: Vector2,
+}
+
+#[derive(SpacetimeType, Clone, Copy)]
+pub struct Vector2 {
+    x: f64,
+    y: f64,
 }
 """
 
@@ -47,7 +60,7 @@ pub fn print_books(ctx: &ReducerContext, prefix: String) {
 """
     )
 
-    def test_add_table_pseudomigration(self):
+    def test_add_table_auto_migration(self):
         """This tests uploading a module with a schema change that should not require clearing the database."""
 
         logging.info("Initial publish complete")
