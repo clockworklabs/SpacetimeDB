@@ -6,7 +6,6 @@ use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors}
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering};
 use spacetimedb_lib::ProductType;
-use spacetimedb_sql_parser::parser::sub;
 
 /// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
@@ -60,8 +59,8 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
 
     let row_level_security_raw = row_level_security
         .into_iter()
-        .map(|rls| ModuleValidator::validate_row_level_security_def(rls).map(|rls| (rls.sql.clone(), rls)))
-        .collect_all_errors();
+        .map(|rls| (rls.sql.clone(), rls))
+        .collect();
 
     let mut refmap = HashMap::default();
     let types = types
@@ -81,11 +80,11 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         "Misc module exports are not yet supported in ABI v9."
     );
 
-    let tables_types_reducers = (tables, types, reducers, row_level_security_raw)
+    let tables_types_reducers = (tables, types, reducers)
         .combine_errors()
-        .and_then(|(tables, types, reducers, row_level_security_raw)| {
+        .and_then(|(tables, types, reducers)| {
             check_scheduled_reducers_exist(&tables, &reducers)?;
-            Ok((tables, types, reducers, row_level_security_raw))
+            Ok((tables, types, reducers))
         });
 
     let ModuleValidator {
@@ -94,8 +93,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         ..
     } = validator;
 
-    let (tables, types, reducers, row_level_security_raw) =
-        (tables_types_reducers).map_err(|errors| errors.sort_deduplicate())?;
+    let (tables, types, reducers) = (tables_types_reducers).map_err(|errors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
 
@@ -394,16 +392,6 @@ impl ModuleValidator<'_> {
                 error,
             }))
         })
-    }
-
-    /// Checks the query is syntactically valid according to the [sub::parse_subscription] function.
-    fn validate_row_level_security_def(rls: RawRowLevelSecurityDefV9) -> Result<RawRowLevelSecurityDefV9> {
-        sub::parse_subscription(&rls.sql).map_err(|e| ValidationError::InvalidRowLevelQuery {
-            sql: rls.sql.clone().into(),
-            error: e.to_string(),
-        })?;
-
-        Ok(rls)
     }
 }
 

@@ -981,7 +981,7 @@ impl MutTxId {
         // fail if already exists.
         let row = StRowLevelSecurityRow {
             table_id: row_level_security_schema.table_id,
-            sql: row_level_security_schema.sql.clone(),
+            sql: row_level_security_schema.sql,
         };
 
         let row = self.insert(ST_ROW_LEVEL_SECURITY_ID, &mut ProductValue::from(row), ctx.database())?;
@@ -1028,7 +1028,7 @@ impl MutTxId {
                 &sql.clone().into(),
             )?
             .next()
-            .ok_or_else(|| TableError::RawSqlNotFound(SystemTable::st_row_level_security, sql.into()))?;
+            .ok_or_else(|| TableError::RawSqlNotFound(SystemTable::st_row_level_security, sql))?;
         self.delete(ST_ROW_LEVEL_SECURITY_ID, st_rls_ref.pointer())?;
 
         Ok(())
