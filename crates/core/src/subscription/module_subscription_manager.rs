@@ -21,6 +21,7 @@ use std::time::Duration;
 type Id = (Identity, Address);
 type Query = Arc<ExecutionUnit>;
 type Client = Arc<ClientConnectionSender>;
+type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
 
 /// Responsible for the efficient evaluation of subscriptions.
 /// It performs basic multi-query optimization,
@@ -144,7 +145,7 @@ impl SubscriptionManager {
 
             let span = tracing::info_span!("eval_incr").entered();
             let tx = &tx.into();
-            let eval = units
+            let mut eval = units
                 .par_iter()
                 .filter_map(|(&hash, tables)| {
                     let unit = self.queries.get(hash)?;
@@ -213,7 +214,7 @@ impl SubscriptionManager {
                 // So before sending the updates to each client,
                 // we must stitch together the `TableUpdate*`s into an aggregated list.
                 .fold(
-                    HashMap::<&Id, FormatSwitch<ws::DatabaseUpdate<_>, ws::DatabaseUpdate<_>>>::new(),
+                    HashMap::<&Id, SwitchedDbUpdate>::new(),
                     |mut updates, ((id, _), update)| {
                         let entry = updates.entry(id);
                         let entry = entry.or_insert_with(|| match &update {
@@ -231,34 +232,39 @@ impl SubscriptionManager {
 
             let _span = tracing::info_span!("eval_send").entered();
 
-            if let Some((client, _)) = caller
-                .zip(event.caller_address)
-                .filter(|(_, addr)| !eval.contains_key(&(event.caller_identity, *addr)))
-            {
-                // Caller is not subscribed to any queries,
-                // but send a transaction update with an empty subscription update.
-                let update = SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, event.request_id);
-                send_to_client(client, &event, update);
+            // We might have a known caller that hasn't been hidden from here..
+            // This caller may have subscribed to some query.
+            // If they haven't, we'll send them an empty update.
+            // Regardless, the update that we send to the caller, if we send any,
+            // is a full tx update, rather than a light one.
+            // That is, in the case of the caller, we don't respect the light setting.
+            if let Some((caller, addr)) = caller.zip(event.caller_address) {
+                let update = eval
+                    .remove(&(event.caller_identity, addr))
+                    .map(|update| SubscriptionUpdateMessage::from_event_and_update(&event, update))
+                    .unwrap_or_else(|| {
+                        SubscriptionUpdateMessage::default_for_protocol(caller.config.protocol, event.request_id)
+                    });
+                send_to_client(caller, Some(event.clone()), update);
             }
 
-            eval.into_iter().for_each(|(id, tables)| {
-                let database_update = SubscriptionUpdateMessage {
-                    database_update: tables,
-                    request_id: event.request_id,
-                    timer: event.timer,
-                };
-                send_to_client(self.client(id).as_ref(), &event, database_update);
-            });
+            // Send all the other updates.
+            for (id, update) in eval {
+                let message = SubscriptionUpdateMessage::from_event_and_update(&event, update);
+                let client = self.client(id);
+                // Conditionally send out a full update or a light one otherwise.
+                let event = client.config.tx_update_full.then(|| event.clone());
+                send_to_client(&client, event, message);
+            }
         })
     }
 }
 
 fn send_to_client(
     client: &ClientConnectionSender,
-    event: &Arc<ModuleEvent>,
+    event: Option<Arc<ModuleEvent>>,
     database_update: SubscriptionUpdateMessage,
 ) {
-    let event = client.config.tx_update_full.then(|| event.clone());
     if let Err(e) = client.send_message(TransactionUpdateMessage { event, database_update }) {
         tracing::warn!(%client.id, "failed to send update message to client: {e}")
     }

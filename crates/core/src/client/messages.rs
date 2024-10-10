@@ -25,6 +25,7 @@ pub trait ToProtocol {
 }
 
 pub(super) type SwitchedServerMessage = FormatSwitch<ws::ServerMessage<BsatnFormat>, ws::ServerMessage<JsonFormat>>;
+pub(super) type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
 
 /// Serialize `msg` into a [`DataMessage`] containing a [`ws::ServerMessage`].
 ///
@@ -182,7 +183,7 @@ impl ToProtocol for TransactionUpdateMessage {
 
 #[derive(Debug, Clone)]
 pub struct SubscriptionUpdateMessage {
-    pub database_update: FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>,
+    pub database_update: SwitchedDbUpdate,
     pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,
 }
@@ -196,6 +197,14 @@ impl SubscriptionUpdateMessage {
             },
             request_id,
             timer: None,
+        }
+    }
+
+    pub(crate) fn from_event_and_update(event: &ModuleEvent, update: SwitchedDbUpdate) -> Self {
+        Self {
+            database_update: update,
+            request_id: event.request_id,
+            timer: event.timer,
         }
     }
 
