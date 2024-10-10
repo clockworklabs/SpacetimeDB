@@ -1,8 +1,10 @@
 [package]
-name = "spacetimedb-query-planner"
+name = "spacetimedb-expr"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license-file = "LICENSE"
+description = "The logical expression representation for the SpacetimeDB query engine"
 
 [dependencies]
 derive_more.workspace = true
