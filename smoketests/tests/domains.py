@@ -8,7 +8,7 @@ class Domains(Smoketest):
 
         rand_domain = random_string()
 
-        identity = self.new_identity(email=None)
+        identity = self.new_identity()
         self.spacetime("dns", "register-tld", rand_domain)
 
         self.publish_module(rand_domain)

@@ -1,16 +1,13 @@
 use std::time::Duration;
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use axum::response::IntoResponse;
-use axum::Extension;
-use chrono::Utc;
 use http::header::CONTENT_TYPE;
 use http::StatusCode;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-use spacetimedb::auth::identity::{encode_token, encode_token_with_expiry};
-use spacetimedb::messages::control_db::IdentityEmail;
+use spacetimedb::auth::identity::encode_token_with_expiry;
 use spacetimedb_client_api_messages::recovery::{RecoveryCode, RecoveryCodeResponse};
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{Address, Identity};
@@ -36,7 +33,6 @@ pub async fn create_identity<S: ControlStateDelegate + NodeDelegate>(
     Ok(axum::Json(identity_response))
 }
 
-
 /// A version of `Identity` appropriate for URL de/encoding.
 ///
 /// Because `Identity` is represented in SATS as a `ProductValue`,
@@ -56,8 +52,6 @@ impl<'de> serde::Deserialize<'de> for IdentityForUrl {
         <_>::deserialize(de).map(|DeserializeWrapper(b)| IdentityForUrl(Identity::from_byte_array(b)))
     }
 }
-
-
 
 #[derive(Deserialize)]
 pub struct GetDatabasesParams {
@@ -125,7 +119,6 @@ pub async fn get_public_key<S: NodeDelegate>(State(ctx): State<S>) -> axum::resp
         ctx.public_key_bytes().to_owned(),
     ))
 }
-
 
 pub fn router<S>(_: S) -> axum::Router<S>
 where
