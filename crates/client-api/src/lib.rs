@@ -97,11 +97,6 @@ pub trait ControlStateReadAccess {
     fn get_replicas(&self) -> anyhow::Result<Vec<Replica>>;
     fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica>;
 
-    // Identities
-    fn get_identities_for_email(&self, email: &str) -> anyhow::Result<Vec<IdentityEmail>>;
-    fn get_emails_for_identity(&self, identity: &Identity) -> anyhow::Result<Vec<IdentityEmail>>;
-    fn get_recovery_codes(&self, email: &str) -> anyhow::Result<Vec<RecoveryCode>>;
-
     // Energy
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
 
@@ -131,11 +126,6 @@ pub trait ControlStateWriteAccess: Send + Sync {
     ) -> anyhow::Result<Option<UpdateDatabaseResult>>;
 
     async fn delete_database(&self, identity: &Identity, address: &Address) -> anyhow::Result<()>;
-
-    // Identities
-    async fn create_identity(&self) -> anyhow::Result<Identity>;
-    async fn add_email(&self, identity: &Identity, email: &str) -> anyhow::Result<()>;
-    async fn insert_recovery_code(&self, identity: &Identity, email: &str, code: RecoveryCode) -> anyhow::Result<()>;
 
     // Energy
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()>;
@@ -185,17 +175,6 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
         (**self).get_leader_replica_by_database(database_id)
     }
 
-    // Identities
-    fn get_identities_for_email(&self, email: &str) -> anyhow::Result<Vec<IdentityEmail>> {
-        (**self).get_identities_for_email(email)
-    }
-    fn get_emails_for_identity(&self, identity: &Identity) -> anyhow::Result<Vec<IdentityEmail>> {
-        (**self).get_emails_for_identity(identity)
-    }
-    fn get_recovery_codes(&self, email: &str) -> anyhow::Result<Vec<RecoveryCode>> {
-        (**self).get_recovery_codes(email)
-    }
-
     // Energy
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
         (**self).get_energy_balance(identity)
@@ -227,18 +206,6 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
 
     async fn delete_database(&self, identity: &Identity, address: &Address) -> anyhow::Result<()> {
         (**self).delete_database(identity, address).await
-    }
-
-    async fn create_identity(&self) -> anyhow::Result<Identity> {
-        (**self).create_identity().await
-    }
-
-    async fn add_email(&self, identity: &Identity, email: &str) -> anyhow::Result<()> {
-        (**self).add_email(identity, email).await
-    }
-
-    async fn insert_recovery_code(&self, identity: &Identity, email: &str, code: RecoveryCode) -> anyhow::Result<()> {
-        (**self).insert_recovery_code(identity, email, code).await
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
