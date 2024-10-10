@@ -1,13 +1,12 @@
 use spacetimedb::address::Address;
 use spacetimedb::hash::hash_bytes;
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, EnergyBalance, IdentityEmail, Node, Replica};
+use spacetimedb::messages::control_db::{Database, EnergyBalance, Node, Replica};
 use spacetimedb::{energy, stdb_path};
 
 use spacetimedb_client_api_messages::name::{
     DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef,
 };
-use spacetimedb_client_api_messages::recovery::RecoveryCode;
 use spacetimedb_lib::bsatn;
 
 #[cfg(test)]
@@ -184,48 +183,6 @@ impl ControlDb {
         }
     }
 
-    /// Starts a recovery code request
-    ///
-    ///  * `email` - The email to send the recovery code to
-    pub fn spacetime_insert_recovery_code(&self, email: &str, new_code: RecoveryCode) -> Result<()> {
-        // TODO(jdetter): This function should take an identity instead of an email
-        let tree = self.db.open_tree("recovery_codes")?;
-        let current_requests = tree.get(email.as_bytes())?;
-        match current_requests {
-            None => {
-                tree.insert(email.as_bytes(), serde_json::to_string(&vec![new_code])?.as_bytes())?;
-            }
-            Some(codes_bytes) => {
-                let mut codes: Vec<RecoveryCode> = serde_json::from_slice(&codes_bytes[..])?;
-                codes.push(new_code);
-                tree.insert(email.as_bytes(), serde_json::to_string(&codes)?.as_bytes())?;
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn spacetime_get_recovery_codes(&self, email: &str) -> Result<Vec<RecoveryCode>> {
-        let tree = self.db.open_tree("recovery_codes")?;
-        let current_requests = tree.get(email.as_bytes())?;
-        current_requests
-            .map(|bytes| {
-                let codes: Vec<RecoveryCode> = serde_json::from_slice(&bytes[..])?;
-                Ok(codes)
-            })
-            .unwrap_or(Ok(vec![]))
-    }
-
-    pub fn _spacetime_get_recovery_code(&self, email: &str, code: &str) -> Result<Option<RecoveryCode>> {
-        for recovery_code in self.spacetime_get_recovery_codes(email)? {
-            if recovery_code.code == code {
-                return Ok(Some(recovery_code));
-            }
-        }
-
-        Ok(None)
-    }
-
     /// Returns the owner (or `None` if there is no owner) of the domain.
     ///
     /// # Arguments
@@ -236,16 +193,6 @@ impl ControlDb {
             Some(owner) => Ok(Some(Identity::from_slice(&owner[..]))),
             None => Ok(None),
         }
-    }
-
-    pub fn alloc_spacetime_identity(&self) -> Result<Identity> {
-        // TODO: this really doesn't need to be a single global count
-        let id = self.db.generate_id()?;
-        let bytes: &[u8] = &id.to_le_bytes();
-        let name = b"clockworklabs:";
-        let bytes = [name, bytes].concat();
-        let hash = Identity::from_hashing_bytes(bytes);
-        Ok(hash)
     }
 
     pub fn alloc_spacetime_address(&self) -> Result<Address> {
@@ -260,43 +207,6 @@ impl ControlDb {
         let hash = hash_bytes(bytes);
         let address = Address::from_slice(&hash.as_slice()[..16]);
         Ok(address)
-    }
-
-    pub async fn associate_email_spacetime_identity(&self, identity: Identity, email: &str) -> Result<()> {
-        // Lowercase the email before storing
-        let email = email.to_lowercase();
-
-        let tree = self.db.open_tree("email")?;
-        let identity_email = IdentityEmail { identity, email };
-        let buf = bsatn::to_vec(&identity_email).unwrap();
-        tree.insert(identity.as_bytes(), buf)?;
-        Ok(())
-    }
-
-    pub fn get_identities_for_email(&self, email: &str) -> Result<Vec<IdentityEmail>> {
-        let mut result = Vec::<IdentityEmail>::new();
-        let tree = self.db.open_tree("email")?;
-        for i in tree.iter() {
-            let (_, value) = i?;
-            let iemail: IdentityEmail = bsatn::from_slice(&value)?;
-            if iemail.email.eq_ignore_ascii_case(email) {
-                result.push(iemail);
-            }
-        }
-        Ok(result)
-    }
-
-    pub fn get_emails_for_identity(&self, identity: &Identity) -> Result<Vec<IdentityEmail>> {
-        let mut result = Vec::<IdentityEmail>::new();
-        let tree = self.db.open_tree("email")?;
-        for i in tree.iter() {
-            let (_, value) = i?;
-            let iemail: IdentityEmail = bsatn::from_slice(&value)?;
-            if &iemail.identity == identity {
-                result.push(iemail);
-            }
-        }
-        Ok(result)
     }
 
     pub fn get_databases(&self) -> Result<Vec<Database>> {

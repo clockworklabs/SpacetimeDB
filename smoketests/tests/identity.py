@@ -1,7 +1,4 @@
-from .. import Smoketest, random_string, extract_field
-
-def random_email():
-    return random_string() + "@clockworklabs.io"
+from .. import Smoketest, extract_field
 
 class IdentityImports(Smoketest):
     AUTOPUBLISH = False
@@ -16,7 +13,7 @@ class IdentityImports(Smoketest):
         This test does not require a remote spacetimedb instance.
         """
 
-        identity = self.new_identity(email=None)
+        identity = self.new_identity()
         token = self.token(identity)
 
         self.reset_config()
@@ -26,40 +23,13 @@ class IdentityImports(Smoketest):
         self.import_identity(identity, token, default=True)
         # [ "$(grep "$IDENT" "$TEST_OUT" | awk '{print $1}')" == '***' ]
 
-    def test_new_email(self):
-        """This test is designed to make sure an email can be set while creating a new identity"""
-
-        # Create a new identity
-        email = random_email()
-        identity = self.new_identity(email=email)
-        token = self.token(identity)
-
-        # Reset our config so we lose this identity
-        self.reset_config()
-
-        # Import this identity, and set it as the default identity
-        self.import_identity(identity, token, default=True)
-
-        # Configure our email
-        output = self.spacetime("identity", "set-email", "--identity", identity, email)
-        self.assertEqual(extract_field(output, "IDENTITY"), identity)
-        self.assertEqual(extract_field(output, "EMAIL"), email)
-
-        # Reset config again
-        self.reset_config()
-
-        # Find our identity by its email
-        output = self.spacetime("identity", "find", email)
-        self.assertEqual(extract_field(output, "IDENTITY"), identity)
-        self.assertEqual(extract_field(output, "EMAIL").lower(), email.lower())
-    
     def test_remove(self):
         """Test deleting an identity from your local ~/.spacetime/config.toml file."""
     
         self.fingerprint()
 
-        self.new_identity(email=None)
-        identity = self.new_identity(email=None)
+        self.new_identity()
+        identity = self.new_identity()
         identities = self.spacetime("identity", "list")
         self.assertIn(identity, identities)
 
@@ -75,8 +45,8 @@ class IdentityImports(Smoketest):
 
         self.fingerprint()
 
-        identity1 = self.new_identity(email=None)
-        identity2 = self.new_identity(email=None)
+        identity1 = self.new_identity()
+        identity2 = self.new_identity()
         identities = self.spacetime("identity", "list")
         self.assertIn(identity2, identities)
 
@@ -93,8 +63,8 @@ class IdentityImports(Smoketest):
 
         self.fingerprint()
 
-        self.new_identity(email=None)
-        identity = self.new_identity(email=None)
+        self.new_identity()
+        identity = self.new_identity()
 
         identities = self.spacetime("identity", "list").splitlines()
         default_identity = next(filter(lambda s: "***" in s, identities), "")
@@ -105,33 +75,4 @@ class IdentityImports(Smoketest):
         identities = self.spacetime("identity", "list").splitlines()
         default_identity = next(filter(lambda s: "***" in s, identities), "")
         self.assertIn(identity, default_identity)
-
-    def test_set_email(self):
-        """Ensure that we are able to associate an email with an identity"""
-
-        self.fingerprint()
-
-        # Create a new identity
-        identity = self.new_identity(email=None)
-        email = random_email()
-        token = self.token(identity)
-
-        # Reset our config so we lose this identity
-        self.reset_config()
-
-        # Import this identity, and set it as the default identity
-        self.import_identity(identity, token, default=True)
-
-        # Configure our email
-        output = self.spacetime("identity", "set-email", "--identity", identity, email)
-        self.assertEqual(extract_field(output, "IDENTITY"), identity)
-        self.assertEqual(extract_field(output, "EMAIL").lower(), email.lower())
-
-        # Reset config again
-        self.reset_config()
-
-        # Find our identity by its email
-        output = self.spacetime("identity", "find", email)
-        self.assertEqual(extract_field(output, "IDENTITY"), identity)
-        self.assertEqual(extract_field(output, "EMAIL").lower(), email.lower())
 

@@ -9,14 +9,14 @@ class Permissions(Smoketest):
     def test_call(self):
         """Ensure that anyone has the permission to call any standard reducer"""
 
-        identity = self.new_identity(email=None)
+        identity = self.new_identity()
         token = self.token(identity)
 
         self.publish_module()
 
         # TODO: can a lot of the usage of reset_config be replaced with just passing -i ? or -a ?
         self.reset_config()
-        self.new_identity(email=None)
+        self.new_identity()
         self.call("say_hello")
 
         self.reset_config()
@@ -26,7 +26,7 @@ class Permissions(Smoketest):
     def test_delete(self):
         """Ensure that you cannot delete a database that you do not own"""
 
-        identity = self.new_identity(email=None, default=True)
+        identity = self.new_identity(default=True)
 
         self.publish_module()
 
@@ -37,32 +37,32 @@ class Permissions(Smoketest):
     def test_describe(self):
         """Ensure that anyone can describe any database"""
 
-        self.new_identity(email=None)
+        self.new_identity()
         self.publish_module()
 
         self.reset_config()
-        self.new_identity(email=None)
+        self.new_identity()
         self.spacetime("describe", self.address)
 
     def test_logs(self):
         """Ensure that we are not able to view the logs of a module that we don't have permission to view"""
 
-        self.new_identity(email=None)
+        self.new_identity()
         self.publish_module()
 
         self.reset_config()
-        self.new_identity(email=None)
+        self.new_identity()
         self.call("say_hello")
 
         self.reset_config()
-        identity = self.new_identity(email=None, default=True)
+        identity = self.new_identity(default=True)
         with self.assertRaises(Exception):
             self.spacetime("logs", self.address, "-n", "10000")
 
     def test_publish(self):
         """This test checks to make sure that you cannot publish to an address that you do not own."""
 
-        self.new_identity(email=None, default=True)
+        self.new_identity(default=True)
         self.publish_module()
 
         self.reset_config()
@@ -112,7 +112,7 @@ pub fn do_thing(ctx: &ReducerContext) {
 """)
 
         self.reset_config()
-        self.new_identity(email=None)
+        self.new_identity()
 
         with self.assertRaises(Exception):
             self.spacetime("sql", self.address, "select * from secret")

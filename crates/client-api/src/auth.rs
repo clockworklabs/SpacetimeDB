@@ -6,6 +6,7 @@ use axum::response::IntoResponse;
 use axum_extra::typed_header::TypedHeader;
 use headers::{authorization, HeaderMapExt};
 use http::{request, HeaderValue, StatusCode};
+use rand::Rng;
 use serde::Deserialize;
 use spacetimedb::auth::identity::{
     decode_token, encode_token, DecodingKey, EncodingKey, JwtError, JwtErrorKind, SpacetimeIdentityClaims,
@@ -96,7 +97,15 @@ pub struct SpacetimeAuth {
 impl SpacetimeAuth {
     /// Allocate a new identity, and mint a new token for it.
     pub async fn alloc(ctx: &(impl NodeDelegate + ControlStateDelegate + ?Sized)) -> axum::response::Result<Self> {
-        let identity = ctx.create_identity().await.map_err(log_and_500)?;
+        // TODO: I'm just sticking in a random string until we change how identities are generated.
+        let identity = {
+            let mut rng = rand::thread_rng();
+            let mut random_bytes = [0u8; 16]; // Example: 16 random bytes
+            rng.fill(&mut random_bytes);
+
+            let preimg = [b"clockworklabs:", &random_bytes[..]].concat();
+            Identity::from_hashing_bytes(preimg)
+        };
         let creds = SpacetimeCreds::encode_token(ctx.private_key(), identity).map_err(log_and_500)?;
         Ok(Self { creds, identity })
     }
