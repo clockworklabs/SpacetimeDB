@@ -194,8 +194,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         set_store_fuel(store, budget.into());
 
         // Prepare sender identity and address.
-        let [sender_0, sender_1, sender_2, sender_3] = bytemuck::must_cast(*op.caller_identity.as_bytes());
-        let [address_0, address_1] = bytemuck::must_cast(*op.caller_address.as_slice());
+        let [sender_0, sender_1, sender_2, sender_3] = bytemuck::must_cast(op.caller_identity.to_byte_array());
+        let [address_0, address_1] = bytemuck::must_cast(op.caller_address.as_byte_array());
 
         // Prepare arguments to the reducer + the error sink & start timings.
         let (args_source, errors_sink) = store.data_mut().start_reducer(op.name, op.arg_bytes);

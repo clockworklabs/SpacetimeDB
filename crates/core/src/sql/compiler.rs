@@ -237,7 +237,7 @@ mod tests {
     use spacetimedb_lib::{Address, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
     use spacetimedb_sats::{
-        product, satn, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, Typespace, ValueWithType,
+        product, satn, AlgebraicType, AlgebraicValue, GroundSpacetimeType as _, ProductType, Typespace, ValueWithType,
     };
     use spacetimedb_vm::expr::{ColumnOp, IndexJoin, IndexScan, JoinExpr, Query};
     use std::convert::From;
@@ -402,25 +402,19 @@ mod tests {
     #[test]
     fn output_identity_address() -> ResultTest<()> {
         let row = product![AlgebraicValue::from(Identity::__dummy())];
-        let kind = ProductType::new(Box::new([ProductTypeElement::new(
-            Identity::get_type(),
-            Some("i".into()),
-        )]));
+        let kind: ProductType = [("i", Identity::get_type())].into();
         let ty = Typespace::EMPTY.with_type(&kind);
         let out = ty
             .with_values(&row)
             .map(|value| satn::PsqlWrapper { ty: &kind, value }.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        assert_eq!(
-            out,
-            "0x0000000000000000000000000000000000000000000000000000000000000000"
-        );
+        assert_eq!(out, "0");
 
         // Check tuples
         let kind = [
             ("a", AlgebraicType::String),
-            ("b", AlgebraicType::bytes()),
+            ("b", AlgebraicType::U256),
             ("o", Identity::get_type()),
             ("p", Address::get_type()),
         ]
@@ -428,30 +422,30 @@ mod tests {
 
         let value = AlgebraicValue::product([
             AlgebraicValue::String("a".into()),
-            AlgebraicValue::Bytes((*Identity::ZERO.as_bytes()).into()),
-            AlgebraicValue::Bytes((*Identity::ZERO.as_bytes()).into()),
-            AlgebraicValue::Bytes((*Address::__DUMMY.as_slice()).into()),
+            Identity::ZERO.to_u256().into(),
+            Identity::ZERO.to_u256().into(),
+            Address::__DUMMY.to_u128().into(),
         ]);
 
         assert_eq!(
             satn::PsqlWrapper { ty: &kind, value }.to_string().as_str(),
-            "(0 = \"a\", 1 = 0x0000000000000000000000000000000000000000000000000000000000000000, 2 = 0x0000000000000000000000000000000000000000000000000000000000000000, 3 = 0x00000000000000000000000000000000)"
+            "(0 = \"a\", 1 = 0, 2 = 0, 3 = 0)"
         );
 
         let ty = Typespace::EMPTY.with_type(&kind);
 
         // Check struct
         let value = product![
-            AlgebraicValue::String("a".into()),
-            AlgebraicValue::Bytes((*Identity::ZERO.as_bytes()).into()),
-            AlgebraicValue::product([AlgebraicValue::Bytes((*Identity::ZERO.as_bytes()).into())]),
-            AlgebraicValue::product([AlgebraicValue::Bytes((*Address::__DUMMY.as_slice()).into())]),
+            "a",
+            Identity::ZERO.to_u256(),
+            AlgebraicValue::product([Identity::ZERO.to_u256().into()]),
+            AlgebraicValue::product([Address::__DUMMY.to_u128().into()]),
         ];
 
         let value = ValueWithType::new(ty, &value);
         assert_eq!(
             satn::PsqlWrapper { ty: ty.ty(), value }.to_string().as_str(),
-            "(a = \"a\", b = 0x0000000000000000000000000000000000000000000000000000000000000000, o = 0x0000000000000000000000000000000000000000000000000000000000000000, p = 0x00000000000000000000000000000000)"
+            "(a = \"a\", b = 0, o = 0, p = 0)"
         );
 
         Ok(())

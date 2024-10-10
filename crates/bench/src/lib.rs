@@ -16,7 +16,7 @@ mod tests {
         sqlite::SQLite,
         ResultBench,
     };
-    use std::{io, sync::Once};
+    use std::{io, path::Path, sync::Once};
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
     static INIT: Once = Once::new();
@@ -39,6 +39,15 @@ mod tests {
                 .with(fmt_layer)
                 .with(env_filter_layer)
                 .init();
+
+            // Remove cached data from previous runs.
+            // This directory is only reused to speed up runs with Callgrind. In tests, it's fine to wipe it.
+            let mut bench_dot_spacetime = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
+            bench_dot_spacetime.push(".spacetime");
+            if std::fs::metadata(&bench_dot_spacetime).is_ok() {
+                std::fs::remove_dir_all(bench_dot_spacetime)
+                    .expect("failed to wipe Spacetimedb/crates/bench/.spacetime");
+            }
         });
     }
 
