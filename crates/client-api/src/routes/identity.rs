@@ -4,16 +4,14 @@ use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use http::header::CONTENT_TYPE;
 use http::StatusCode;
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use spacetimedb::auth::identity::encode_token_with_expiry;
-use spacetimedb_client_api_messages::recovery::{RecoveryCode, RecoveryCodeResponse};
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{Address, Identity};
 
-use crate::auth::{anon_auth_middleware, SpacetimeAuth, SpacetimeAuthRequired};
-use crate::{log_and_500, ControlStateDelegate, ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
+use crate::auth::{SpacetimeAuth, SpacetimeAuthRequired};
+use crate::{log_and_500, ControlStateDelegate, ControlStateReadAccess, NodeDelegate};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateIdentityResponse {
