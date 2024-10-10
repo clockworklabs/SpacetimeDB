@@ -11,7 +11,7 @@ use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{Address, Identity};
 
 use crate::auth::{SpacetimeAuth, SpacetimeAuthRequired};
-use crate::{log_and_500, ControlStateDelegate, ControlStateReadAccess, NodeDelegate};
+use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateIdentityResponse {

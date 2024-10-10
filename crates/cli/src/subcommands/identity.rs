@@ -3,15 +3,12 @@ use crate::{
     config::{Config, IdentityConfig},
     util::{init_default, y_or_n, IdentityTokenJson, InitDefaultResultType},
 };
-use std::io::Write;
 
 use crate::util::print_identity_config;
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use reqwest::{StatusCode, Url};
-use serde::Deserialize;
+use reqwest::Url;
 use spacetimedb::auth::identity::decode_token;
-use spacetimedb_client_api_messages::recovery::RecoveryCodeResponse;
 use spacetimedb_lib::Identity;
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
@@ -303,7 +300,7 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         config.can_set_name(x)?;
     }
 
-    let mut query_params = Vec::<(&str, &str)>::new();
+    let query_params = Vec::<(&str, &str)>::new();
 
     let mut builder = reqwest::Client::new().post(Url::parse_with_params(
         format!("{}/identity", config.get_host_url(server)?).as_str(),
