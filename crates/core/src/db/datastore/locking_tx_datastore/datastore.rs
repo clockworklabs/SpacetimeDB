@@ -61,7 +61,7 @@ pub struct Locking {
     /// The state of sequence generation in this database.
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The address of this database.
-    database_address: Address,
+    pub(crate) database_address: Address,
 }
 
 impl Locking {
@@ -2044,7 +2044,7 @@ mod tests {
             table_id,
         };
         let ctx = ExecutionContext::default();
-        tx.create_row_level_security(&ctx, table_id, rls.clone())?;
+        tx.create_row_level_security(&ctx, rls.clone())?;
 
         let result = tx.row_level_security_for_table_id(&ctx, table_id)?;
         assert_eq!(
@@ -2055,7 +2055,7 @@ mod tests {
             }]
         );
 
-        tx.drop_all_row_level_security(&ctx)?;
+        tx.drop_row_level_security(&ctx, rls.sql)?;
         assert_eq!(tx.row_level_security_for_table_id(&ctx, table_id)?, []);
 
         Ok(())

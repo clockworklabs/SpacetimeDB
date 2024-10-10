@@ -961,7 +961,6 @@ impl MutTxId {
     pub fn create_row_level_security(
         &mut self,
         ctx: &ExecutionContext,
-        table_id: TableId,
         row_level_security_schema: RowLevelSecuritySchema,
     ) -> Result<RawSql> {
         if row_level_security_schema.table_id == TableId::SENTINEL {
@@ -972,13 +971,16 @@ impl MutTxId {
             .into());
         }
 
-        log::trace!("ROW LEVEL SECURITY CREATING for table: {}", table_id);
+        log::trace!(
+            "ROW LEVEL SECURITY CREATING for table: {}",
+            row_level_security_schema.table_id
+        );
 
         // Insert the row into st_row_level_security
         // NOTE: Because st_row_level_security has a unique index on sql, this will
         // fail if already exists.
         let row = StRowLevelSecurityRow {
-            table_id,
+            table_id: row_level_security_schema.table_id,
             sql: row_level_security_schema.sql.clone(),
         };
 
@@ -987,7 +989,7 @@ impl MutTxId {
         let existed = matches!(row.1, RowRefInsertion::Existed(_));
 
         // Add the row level security to the transaction's insert table.
-        self.get_or_create_insert_table_mut(table_id)?;
+        self.get_or_create_insert_table_mut(row_level_security_schema.table_id)?;
 
         if existed {
             log::trace!("ROW LEVEL SECURITY ALREADY EXISTS: {row_level_security_sql}");
@@ -1017,16 +1019,17 @@ impl MutTxId {
             .collect())
     }
 
-    // For now, we always drop all.
-    /// Delete all rows in `st_row_level_security`.
-    pub fn drop_all_row_level_security(&mut self, ctx: &ExecutionContext) -> Result<()> {
-        let rows = self
-            .iter(ctx, ST_ROW_LEVEL_SECURITY_ID)?
-            .map(|r| r.pointer())
-            .collect::<Vec<_>>();
-        for row in rows {
-            self.delete(ST_ROW_LEVEL_SECURITY_ID, row)?;
-        }
+    pub fn drop_row_level_security(&mut self, ctx: &ExecutionContext, sql: RawSql) -> Result<()> {
+        let st_rls_ref = self
+            .iter_by_col_eq(
+                ctx,
+                ST_ROW_LEVEL_SECURITY_ID,
+                StRowLevelSecurityFields::Sql,
+                &sql.clone().into(),
+            )?
+            .next()
+            .ok_or_else(|| TableError::RawSqlNotFound(SystemTable::st_row_level_security, sql.into()))?;
+        self.delete(ST_ROW_LEVEL_SECURITY_ID, st_rls_ref.pointer())?;
 
         Ok(())
     }

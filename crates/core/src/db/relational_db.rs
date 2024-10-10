@@ -27,12 +27,12 @@ use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, Durability, TxOffset};
 use spacetimedb_lib::address::Address;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
+use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef};
-use spacetimedb_schema::schema::{IndexSchema, Schema, SequenceSchema, TableSchema};
+use spacetimedb_schema::schema::{IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
@@ -1008,6 +1008,29 @@ impl RelationalDB {
         self.inner.drop_index_mut_tx(tx, index_id)
     }
 
+    pub fn create_row_level_security(
+        &self,
+        tx: &mut MutTx,
+        row_level_security_schema: RowLevelSecuritySchema,
+    ) -> Result<RawSql, DBError> {
+        let ctx = &ExecutionContext::internal(self.inner.database_address);
+        tx.create_row_level_security(ctx, row_level_security_schema)
+    }
+
+    pub fn drop_row_level_security(&self, tx: &mut MutTx, sql: RawSql) -> Result<(), DBError> {
+        let ctx = &ExecutionContext::internal(self.inner.database_address);
+        tx.drop_row_level_security(ctx, sql)
+    }
+
+    pub fn row_level_security_for_table_id_mut_tx(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+    ) -> Result<Vec<RowLevelSecuritySchema>, DBError> {
+        let ctx = &ExecutionContext::internal(self.inner.database_address);
+        tx.row_level_security_for_table_id(ctx, table_id)
+    }
+
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`.
     pub fn iter_mut<'a>(
@@ -1895,7 +1918,7 @@ mod tests {
             table_id,
         };
 
-        tx.create_row_level_security(&ctx, table_id, rls)?;
+        tx.create_row_level_security(&ctx, rls)?;
         stdb.commit_tx(&ctx, tx)?;
 
         let stdb = stdb.reopen()?;
