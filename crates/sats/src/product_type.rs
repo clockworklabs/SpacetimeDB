@@ -11,6 +11,8 @@ use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SpacetimeType, Va
 pub const IDENTITY_TAG: &str = "__identity_bytes";
 /// The tag used inside the special `Address` product type.
 pub const ADDRESS_TAG: &str = "__address_bytes";
+/// The tag used inside the special `Timestamp` product type.
+pub const TIMESTAMP_TAG: &str = "__timestamp_micros_since_unix_epoch";
 
 /// A structural product type  of the factors given by `elements`.
 ///
@@ -80,15 +82,27 @@ impl ProductType {
         self.is_bytes_newtype(ADDRESS_TAG)
     }
 
+    /// Returns whether this is the special case of `spacetimedb_lib::Timestamp`.
+    /// Does not follow `Ref`s.
+    pub fn is_timestamp(&self) -> bool {
+        match &*self.elements {
+            [ProductTypeElement {
+                name: Some(name),
+                algebraic_type: AlgebraicType::U64,
+            }] => &**name == TIMESTAMP_TAG,
+            _ => false,
+        }
+    }
+
     /// Returns whether this is a special known `tag`, currently `Address` or `Identity`.
     pub fn is_special_tag(tag_name: &str) -> bool {
-        tag_name == IDENTITY_TAG || tag_name == ADDRESS_TAG
+        tag_name == IDENTITY_TAG || tag_name == ADDRESS_TAG || tag_name == TIMESTAMP_TAG
     }
 
     /// Returns whether this is a special known type, currently `Address` or `Identity`.
     /// Does not follow `Ref`s.
     pub fn is_special(&self) -> bool {
-        self.is_identity() || self.is_address()
+        self.is_identity() || self.is_address() || self.is_timestamp()
     }
 
     /// Returns whether this is a unit type, that is, has no elements.

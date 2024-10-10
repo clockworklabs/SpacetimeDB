@@ -5,7 +5,7 @@ use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::product_type::{ADDRESS_TAG, IDENTITY_TAG};
+use crate::product_type::{ADDRESS_TAG, IDENTITY_TAG, TIMESTAMP_TAG};
 use crate::sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG};
 use crate::{i256, u256};
 use crate::{
@@ -177,6 +177,11 @@ impl AlgebraicType {
         matches!(self, Self::Product(p) if p.is_identity())
     }
 
+    /// Returns whether this type is the conventional point-in-time timestamp type.
+    pub fn is_timestamp(&self) -> bool {
+        matches!(self, Self::Product(p) if p.is_timestamp())
+    }
+
     /// Returns whether this type is the conventional `ScheduleAt` type.
     pub fn is_schedule_at(&self) -> bool {
         matches!(self, Self::Sum(p) if p.is_schedule_at())
@@ -310,6 +315,11 @@ impl AlgebraicType {
     /// Construct a copy of the `Address` type.
     pub fn address() -> Self {
         AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::bytes())])
+    }
+
+    /// Construct a copy of the point-in-time `Timestamp` type.
+    pub fn timestamp() -> Self {
+        AlgebraicType::product([(TIMESTAMP_TAG, AlgebraicType::U64)])
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.
@@ -688,5 +698,15 @@ mod tests {
     fn algebraic_type_from_value() {
         let algebraic_type = AlgebraicType::meta_type();
         AlgebraicType::from_value(&algebraic_type.as_value()).expect("No errors.");
+    }
+
+    #[test]
+    fn special_types_are_special() {
+        assert!(AlgebraicType::identity().is_identity());
+        assert!(AlgebraicType::identity().is_special());
+        assert!(AlgebraicType::address().is_address());
+        assert!(AlgebraicType::address().is_special());
+        assert!(AlgebraicType::timestamp().is_timestamp());
+        assert!(AlgebraicType::timestamp().is_special());
     }
 }

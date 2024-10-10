@@ -1,4 +1,7 @@
-use std::{fmt::Debug, time::Duration};
+use std::{
+    fmt::Debug,
+    time::{Duration, SystemTime},
+};
 
 use spacetimedb_sats::{
     algebraic_value::de::{ValueDeserializeError, ValueDeserializer},
@@ -21,8 +24,7 @@ pub enum ScheduleAt {
     /// Value is a duration in microseconds.
     Interval(u64),
     /// A specific time to which the reducer is scheduled.
-    /// Value is a UNIX timestamp in microseconds.
-    Time(u64),
+    Time(SystemTime),
 }
 impl_st!([] ScheduleAt, ScheduleAt::get_type());
 
@@ -32,10 +34,7 @@ impl ScheduleAt {
         match self {
             ScheduleAt::Time(time) => {
                 let now = std::time::SystemTime::now();
-                // Safety: Now is always after UNIX_EPOCH.
-                let now = now.duration_since(std::time::UNIX_EPOCH).unwrap();
-                let time = std::time::Duration::from_micros(*time);
-                time.checked_sub(now).unwrap_or(Duration::from_micros(0))
+                time.duration_since(now).unwrap_or(Duration::from_micros(0))
             }
             ScheduleAt::Interval(dur) => Duration::from_micros(*dur),
         }
@@ -43,13 +42,25 @@ impl ScheduleAt {
 
     /// Get the special `AlgebraicType` for `ScheduleAt`.
     pub fn get_type() -> AlgebraicType {
-        AlgebraicType::sum([("Interval", AlgebraicType::U64), ("Time", AlgebraicType::U64)])
+        AlgebraicType::sum([("Interval", AlgebraicType::U64), ("Time", AlgebraicType::timestamp())])
     }
 }
 
 impl From<std::time::Duration> for ScheduleAt {
     fn from(value: std::time::Duration) -> Self {
         ScheduleAt::Interval(value.as_micros() as u64)
+    }
+}
+
+impl From<std::time::SystemTime> for ScheduleAt {
+    fn from(value: std::time::SystemTime) -> Self {
+        ScheduleAt::Time(value)
+    }
+}
+
+impl From<crate::Timestamp> for ScheduleAt {
+    fn from(value: crate::Timestamp) -> Self {
+        value.to_system_time().into()
     }
 }
 

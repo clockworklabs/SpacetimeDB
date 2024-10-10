@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use super::compiler::compile_sql;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
@@ -14,7 +14,6 @@ use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteC
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{DbProgram, TxMode};
 use itertools::Either;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::{ProductType, ProductValue};
@@ -127,7 +126,7 @@ pub fn execute_sql(
         );
         if res.is_ok() && !updates.is_empty() {
             let event = ModuleEvent {
-                timestamp: Timestamp::now(),
+                timestamp: SystemTime::now(),
                 caller_identity: auth.caller,
                 caller_address: None,
                 function_call: ModuleFunctionCall {

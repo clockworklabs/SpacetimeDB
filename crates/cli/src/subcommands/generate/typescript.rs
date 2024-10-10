@@ -906,6 +906,7 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::Never => write!(out, "never")?,
         AlgebraicTypeUse::Identity => write!(out, "Identity")?,
         AlgebraicTypeUse::Address => write!(out, "Address")?,
+        AlgebraicTypeUse::Timestamp => todo!("Emit Date"),
         AlgebraicTypeUse::ScheduleAt => write!(
             out,
             "{{ tag: \"Interval\", value: bigint }} | {{ tag: \"Time\", value: bigint }}"
@@ -960,6 +961,7 @@ fn convert_algebraic_type<'a>(
         AlgebraicTypeUse::ScheduleAt => write!(out, "AlgebraicType.createScheduleAtType()"),
         AlgebraicTypeUse::Identity => write!(out, "AlgebraicType.createIdentityType()"),
         AlgebraicTypeUse::Address => write!(out, "AlgebraicType.createAddressType()"),
+        AlgebraicTypeUse::Timestamp => todo!("Emit Date"),
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "AlgebraicType.createOptionType(");
             convert_algebraic_type(module, out, inner_ty, ref_prefix);

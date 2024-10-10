@@ -23,7 +23,6 @@ use futures::{Future, FutureExt};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use smallvec::SmallVec;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
@@ -37,7 +36,7 @@ use spacetimedb_schema::def::{ModuleDef, ReducerDef};
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::fmt;
 use std::sync::{Arc, Weak};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -159,7 +158,7 @@ pub struct ModuleFunctionCall {
 
 #[derive(Debug, Clone)]
 pub struct ModuleEvent {
-    pub timestamp: Timestamp,
+    pub timestamp: SystemTime,
     pub caller_identity: Identity,
     pub caller_address: Option<Address>,
     pub function_call: ModuleFunctionCall,
@@ -299,7 +298,7 @@ pub trait ModuleInstance: Send + 'static {
 }
 
 pub struct CallReducerParams {
-    pub timestamp: Timestamp,
+    pub timestamp: SystemTime,
     pub caller_identity: Identity,
     pub caller_address: Address,
     pub client: Option<Arc<ClientConnectionSender>>,
@@ -574,7 +573,7 @@ impl ModuleHost {
                     name: reducer_name.to_owned(),
                     caller_identity,
                     caller_address,
-                    timestamp: Timestamp::now(),
+                    timestamp: SystemTime::now(),
                     arg_bsatn: Bytes::new(),
                 },
             )
@@ -691,7 +690,7 @@ impl ModuleHost {
             inst.call_reducer(
                 None,
                 CallReducerParams {
-                    timestamp: Timestamp::now(),
+                    timestamp: SystemTime::now(),
                     caller_identity,
                     caller_address,
                     client,

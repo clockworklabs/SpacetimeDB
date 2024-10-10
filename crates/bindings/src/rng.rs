@@ -44,7 +44,8 @@ impl ReducerContext {
     /// For more information, see [`StdbRng`] and [`rand::Rng`].
     pub fn rng(&self) -> &StdbRng {
         self.rng.get_or_init(|| StdbRng {
-            rng: StdRng::seed_from_u64(self.timestamp.micros_since_epoch).into(),
+            rng: StdRng::seed_from_u64(spacetimedb_lib::Timestamp::from(self.timestamp).to_micros_since_unix_epoch())
+                .into(),
             _marker: PhantomData,
         })
     }

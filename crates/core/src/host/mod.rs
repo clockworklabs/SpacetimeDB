@@ -26,7 +26,6 @@ pub use host_controller::{
 };
 pub use module_host::{ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult};
 pub use scheduler::Scheduler;
-pub use spacetimedb_client_api_messages::timestamp::Timestamp;
 
 #[derive(Debug)]
 pub enum ReducerArgs {

@@ -10,12 +10,10 @@ use spacetimedb_sdk::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct Message {
-    pub sender: __sdk::Identity,
-    pub sent: std::time::SystemTime,
-    pub text: String,
+pub struct OneTimestamp {
+    pub t: std::time::SystemTime,
 }
 
-impl __sdk::spacetime_module::InModule for Message {
+impl __sdk::spacetime_module::InModule for OneTimestamp {
     type Module = super::RemoteModule;
 }

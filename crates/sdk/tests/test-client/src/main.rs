@@ -2,6 +2,8 @@
 #[allow(clippy::large_enum_variant)]
 mod module_bindings;
 
+use std::time::SystemTime;
+
 use module_bindings::*;
 
 use spacetimedb_sdk::{
@@ -42,6 +44,22 @@ fn exit_on_panic() {
     }));
 }
 
+macro_rules! assert_eq_or_bail {
+    ($expected:expr, $found:expr) => {{
+        let expected = &$expected;
+        let found = &$found;
+        if expected != found {
+            anyhow::bail!(
+                "Expected {} => {:?} but found {} => {:?}",
+                stringify!($expected),
+                expected,
+                stringify!($found),
+                found
+            );
+        }
+    }};
+}
+
 fn main() {
     env_logger::init();
     exit_on_panic();
@@ -64,6 +82,9 @@ fn main() {
         "insert_caller_address" => exec_insert_caller_address(),
         "delete_address" => exec_delete_address(),
         "update_address" => exec_update_address(),
+
+        "insert_timestamp" => exec_insert_timestamp(),
+        "insert_call_timestamp" => exec_insert_call_timestamp(),
 
         "on_reducer" => exec_on_reducer(),
         "fail_reducer" => exec_fail_reducer(),
@@ -133,6 +154,8 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
     assert_table_empty(ctx.db().one_identity())?;
     assert_table_empty(ctx.db().one_address())?;
 
+    assert_table_empty(ctx.db().one_timestamp())?;
+
     assert_table_empty(ctx.db().one_simple_enum())?;
     assert_table_empty(ctx.db().one_enum_with_payload())?;
 
@@ -163,6 +186,8 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
     assert_table_empty(ctx.db().vec_string())?;
     assert_table_empty(ctx.db().vec_identity())?;
     assert_table_empty(ctx.db().vec_address())?;
+
+    assert_table_empty(ctx.db().vec_timestamp())?;
 
     assert_table_empty(ctx.db().vec_simple_enum())?;
     assert_table_empty(ctx.db().vec_enum_with_payload())?;
@@ -246,6 +271,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM one_string;",
     "SELECT * FROM one_identity;",
     "SELECT * FROM one_address;",
+    "SELECT * FROM one_timestamp;",
     "SELECT * FROM one_simple_enum;",
     "SELECT * FROM one_enum_with_payload;",
     "SELECT * FROM one_unit_struct;",
@@ -270,6 +296,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM vec_string;",
     "SELECT * FROM vec_identity;",
     "SELECT * FROM vec_address;",
+    "SELECT * FROM vec_timestamp;",
     "SELECT * FROM vec_simple_enum;",
     "SELECT * FROM vec_enum_with_payload;",
     "SELECT * FROM vec_unit_struct;",
@@ -644,6 +671,79 @@ fn exec_update_address() {
     assert_all_tables_empty(&connection).unwrap();
 }
 
+fn exec_insert_timestamp() {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    connect_then(&test_counter, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                insert_one::<OneTimestamp>(ctx, &test_counter, SystemTime::now());
+
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            })
+        }
+    });
+
+    test_counter.wait_for_all();
+}
+
+fn exec_insert_call_timestamp() {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    connect_then(&test_counter, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                let mut on_insert_result = Some(test_counter.add_test("on_insert"));
+                ctx.db.one_timestamp().on_insert(move |ctx, row| {
+                    let run_checks = || {
+                        let Event::Reducer(reducer_event) = &ctx.event else {
+                            anyhow::bail!("Expected Reducer event but found {:?}", ctx.event);
+                        };
+                        if reducer_event.caller_identity != ctx.identity() {
+                            anyhow::bail!(
+                                "Expected caller_identity to be my own identity {:?}, but found {:?}",
+                                ctx.identity(),
+                                reducer_event.caller_identity,
+                            );
+                        }
+                        if reducer_event.caller_address != Some(ctx.address()) {
+                            anyhow::bail!(
+                                "Expected caller_address to be my own address {:?}, but found {:?}",
+                                ctx.address(),
+                                reducer_event.caller_address,
+                            )
+                        }
+                        if !matches!(reducer_event.status, Status::Committed) {
+                            anyhow::bail!(
+                                "Unexpected status. Expected Committed but found {:?}",
+                                reducer_event.status
+                            );
+                        }
+                        let expected_reducer = Reducer::InsertCallTimestamp(InsertCallTimestamp {});
+                        if reducer_event.reducer != expected_reducer {
+                            anyhow::bail!(
+                                "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
+                                reducer_event.reducer,
+                            );
+                        };
+
+                        assert_eq_or_bail!(reducer_event.timestamp, row.t);
+                        Ok(())
+                    };
+                    (on_insert_result.take().unwrap())(run_checks());
+                });
+                ctx.reducers.insert_call_timestamp().unwrap();
+            });
+            sub_applied_nothing_result(assert_all_tables_empty(ctx));
+        }
+    });
+    test_counter.wait_for_all();
+}
+
 /// This tests that we can observe reducer callbacks for successful reducer runs.
 fn exec_on_reducer() {
     let test_counter = TestCounter::new();
@@ -905,6 +1005,8 @@ fn exec_insert_vec() {
             insert_one::<VecIdentity>(ctx, &test_counter, vec![ctx.identity()]);
             insert_one::<VecAddress>(ctx, &test_counter, vec![ctx.address()]);
 
+            insert_one::<VecTimestamp>(ctx, &test_counter, vec![SystemTime::now()]);
+
             sub_applied_nothing_result(assert_all_tables_empty(ctx));
         }
     });
@@ -941,6 +1043,7 @@ fn every_primitive_struct() -> EveryPrimitiveStruct {
         p: "string".to_string(),
         q: Identity::__dummy(),
         r: Address::default(),
+        s: SystemTime::now(),
     }
 }
 
@@ -964,6 +1067,7 @@ fn every_vec_struct() -> EveryVecStruct {
         p: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
         q: vec![Identity::__dummy()],
         r: vec![Address::default()],
+        s: vec![SystemTime::now()],
     }
 }
 
@@ -1155,22 +1259,6 @@ fn exec_should_fail() {
     let fail = test_counter.add_test("should-fail");
     fail(Err(anyhow::anyhow!("This is an intentional failure")));
     test_counter.wait_for_all();
-}
-
-macro_rules! assert_eq_or_bail {
-    ($expected:expr, $found:expr) => {{
-        let expected = &$expected;
-        let found = &$found;
-        if expected != found {
-            anyhow::bail!(
-                "Expected {} => {:?} but found {} => {:?}",
-                stringify!($expected),
-                expected,
-                stringify!($found),
-                found
-            );
-        }
-    }};
 }
 
 /// This test invokes a reducer with many arguments of many types,

@@ -1,7 +1,7 @@
 //! STDB module used for benchmarks based on "realistic" workloads we are focusing in improving.
 use crate::Load;
-use spacetimedb::{log, ReducerContext, SpacetimeType, Table, Timestamp};
-use std::hint::black_box;
+use spacetimedb::{log, ReducerContext, SpacetimeType, Table};
+use std::{hint::black_box, time::SystemTime};
 
 #[derive(SpacetimeType, Debug, Clone, Copy)]
 pub struct Vector2 {
@@ -38,7 +38,7 @@ pub struct Circle {
     pub player_id: u32,
     pub direction: Vector2,
     pub magnitude: f32,
-    pub last_split_time: Timestamp,
+    pub last_split_time: SystemTime,
 }
 
 impl Circle {
@@ -48,7 +48,7 @@ impl Circle {
             player_id,
             direction: Vector2 { x, y },
             magnitude,
-            last_split_time: Timestamp::now(),
+            last_split_time: SystemTime::now(),
         }
     }
 }

@@ -1,4 +1,5 @@
-use spacetimedb_client_api_messages::timestamp::Timestamp;
+use std::time::SystemTime;
+
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::de::Deserialize;
 use spacetimedb_sats::ser::Serialize;
@@ -64,7 +65,7 @@ pub struct CreateIndex {
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct InstanceEvent {
-    pub event_start_epoch_micros: Timestamp,
+    pub event_start_epoch_micros: SystemTime,
     pub duration_micros: u64,
     pub r#type: InstanceEventType,
 }

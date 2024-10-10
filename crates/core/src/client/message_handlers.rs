@@ -3,7 +3,7 @@ use super::{ClientConnection, DataMessage};
 use crate::energy::EnergyQuanta;
 use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::{ReducerArgs, ReducerId, Timestamp};
+use crate::host::{ReducerArgs, ReducerId};
 use crate::identity::Identity;
 use crate::messages::websocket::{CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
@@ -13,7 +13,7 @@ use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{bsatn, Address};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 #[derive(thiserror::Error, Debug)]
 pub enum MessageHandleError {
@@ -123,7 +123,7 @@ pub struct MessageExecutionError {
 impl MessageExecutionError {
     fn into_event(self) -> ModuleEvent {
         ModuleEvent {
-            timestamp: Timestamp::now(),
+            timestamp: SystemTime::now(),
             caller_identity: self.caller_identity,
             caller_address: self.caller_address,
             function_call: ModuleFunctionCall {
