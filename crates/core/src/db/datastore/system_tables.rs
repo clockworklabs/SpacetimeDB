@@ -16,6 +16,7 @@ use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use derive_more::From;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
+use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawSql};
 use spacetimedb_lib::db::raw_def::*;
 use spacetimedb_lib::de::{Deserialize, DeserializeOwned, Error};
 use spacetimedb_lib::ser::Serialize;
@@ -30,7 +31,8 @@ use spacetimedb_sats::{
 };
 use spacetimedb_schema::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, ModuleDef, UniqueConstraintData};
 use spacetimedb_schema::schema::{
-    ColumnSchema, ConstraintSchema, IndexSchema, ScheduleSchema, Schema, SequenceSchema, TableSchema,
+    ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, Schema, SequenceSchema,
+    TableSchema,
 };
 use spacetimedb_table::table::RowRef;
 use spacetimedb_vm::errors::{ErrorType, ErrorVm};
@@ -63,6 +65,8 @@ pub(crate) const ST_VAR_ID: TableId = TableId(8);
 /// The static ID of the table that defines scheduled tables
 pub(crate) const ST_SCHEDULED_ID: TableId = TableId(9);
 
+/// The static ID of the table that defines the row level security (RLS) policies
+pub(crate) const ST_ROW_LEVEL_SECURITY_ID: TableId = TableId(10);
 pub(crate) const ST_TABLE_NAME: &str = "st_table";
 pub(crate) const ST_COLUMN_NAME: &str = "st_column";
 pub(crate) const ST_SEQUENCE_NAME: &str = "st_sequence";
@@ -72,7 +76,7 @@ pub(crate) const ST_MODULE_NAME: &str = "st_module";
 pub(crate) const ST_CLIENT_NAME: &str = "st_client";
 pub(crate) const ST_SCHEDULED_NAME: &str = "st_scheduled";
 pub(crate) const ST_VAR_NAME: &str = "st_var";
-
+pub(crate) const ST_ROW_LEVEL_SECURITY_NAME: &str = "st_row_level_security";
 /// Reserved range of sequence values used for system tables.
 ///
 /// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE + 1`.
@@ -97,10 +101,12 @@ pub enum SystemTable {
     st_sequence,
     st_index,
     st_constraint,
+    st_row_level_security,
 }
 
-pub(crate) fn system_tables() -> [TableSchema; 9] {
+pub(crate) fn system_tables() -> [TableSchema; 10] {
     [
+        // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
         st_column_schema(),
         st_index_schema(),
@@ -109,6 +115,7 @@ pub(crate) fn system_tables() -> [TableSchema; 9] {
         st_client_schema(),
         st_var_schema(),
         st_scheduled_schema(),
+        st_row_level_security_schema(),
         // Is important this is always last, so the starting sequence for each
         // system table is correct.
         st_sequence_schema(),
@@ -148,7 +155,9 @@ pub(crate) const ST_MODULE_IDX: usize = 4;
 pub(crate) const ST_CLIENT_IDX: usize = 5;
 pub(crate) const ST_VAR_IDX: usize = 6;
 pub(crate) const ST_SCHEDULED_IDX: usize = 7;
-pub(crate) const ST_SEQUENCE_IDX: usize = 8;
+pub(crate) const ST_ROW_LEVEL_SECURITY_IDX: usize = 8;
+// Must be the last index in the array.
+pub(crate) const ST_SEQUENCE_IDX: usize = 9;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -226,6 +235,11 @@ st_fields_enum!(enum StConstraintFields {
     "constraint_name", ConstraintName = 1,
     "table_id", TableId = 2,
     "constraint_data", ConstraintData = 3,
+});
+// WARNING: For a stable schema, don't change the field names and discriminants.
+st_fields_enum!(enum StRowLevelSecurityFields {
+    "table_id", TableId = 0,
+    "sql", Sql = 1,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StModuleFields {
@@ -311,6 +325,23 @@ fn system_module_def() -> ModuleDef {
         .with_auto_inc_primary_key(StConstraintFields::ConstraintId);
     // TODO(1.0): unique constraint on name?
 
+    let st_row_level_security_type = builder.add_type::<StRowLevelSecurityRow>();
+    builder
+        .build_table(
+            ST_ROW_LEVEL_SECURITY_NAME,
+            *st_row_level_security_type.as_ref().expect("should be ref"),
+        )
+        .with_type(TableType::System)
+        .with_primary_key(StRowLevelSecurityFields::Sql)
+        .with_unique_constraint(StRowLevelSecurityFields::Sql, None)
+        .with_index(
+            RawIndexAlgorithm::BTree {
+                columns: StRowLevelSecurityFields::TableId.into(),
+            },
+            "accessor_name_doesnt_matter",
+            None,
+        );
+
     let st_module_type = builder.add_type::<StModuleRow>();
     builder
         .build_table(ST_MODULE_NAME, *st_module_type.as_ref().expect("should be ref"))
@@ -348,6 +379,7 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StIndexFields>(&result, ST_INDEX_NAME);
     validate_system_table::<StSequenceFields>(&result, ST_SEQUENCE_NAME);
     validate_system_table::<StConstraintFields>(&result, ST_CONSTRAINT_NAME);
+    validate_system_table::<StRowLevelSecurityFields>(&result, ST_ROW_LEVEL_SECURITY_NAME);
     validate_system_table::<StModuleFields>(&result, ST_MODULE_NAME);
     validate_system_table::<StClientFields>(&result, ST_CLIENT_NAME);
     validate_system_table::<StVarFields>(&result, ST_VAR_NAME);
@@ -400,6 +432,10 @@ fn st_constraint_schema() -> TableSchema {
     st_schema(ST_CONSTRAINT_NAME, ST_CONSTRAINT_ID)
 }
 
+fn st_row_level_security_schema() -> TableSchema {
+    st_schema(ST_ROW_LEVEL_SECURITY_NAME, ST_ROW_LEVEL_SECURITY_ID)
+}
+
 pub(crate) fn st_module_schema() -> TableSchema {
     st_schema(ST_MODULE_NAME, ST_MODULE_ID)
 }
@@ -429,6 +465,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_SEQUENCE_ID => Some(st_sequence_schema()),
         ST_INDEX_ID => Some(st_index_schema()),
         ST_CONSTRAINT_ID => Some(st_constraint_schema()),
+        ST_ROW_LEVEL_SECURITY_ID => Some(st_row_level_security_schema()),
         ST_MODULE_ID => Some(st_module_schema()),
         ST_CLIENT_ID => Some(st_client_schema()),
         ST_VAR_ID => Some(st_var_schema()),
@@ -715,6 +752,39 @@ impl From<StConstraintRow> for ConstraintSchema {
     }
 }
 
+/// System Table [ST_ROW_LEVEL_SECURITY_NAME]
+///
+/// | table_id | sql          |
+/// |----------|--------------|
+/// | 1        | "SELECT ..." |
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StRowLevelSecurityRow {
+    pub(crate) table_id: TableId,
+    pub(crate) sql: RawSql,
+}
+
+impl TryFrom<RowRef<'_>> for StRowLevelSecurityRow {
+    type Error = DBError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+        read_via_bsatn(row)
+    }
+}
+
+impl From<StRowLevelSecurityRow> for ProductValue {
+    fn from(x: StRowLevelSecurityRow) -> Self {
+        to_product_value(&x)
+    }
+}
+
+impl From<StRowLevelSecurityRow> for RowLevelSecuritySchema {
+    fn from(x: StRowLevelSecurityRow) -> Self {
+        Self {
+            table_id: x.table_id,
+            sql: x.sql,
+        }
+    }
+}
 /// Indicates the kind of module the `program_bytes` of a [`StModuleRow`]
 /// describes.
 ///

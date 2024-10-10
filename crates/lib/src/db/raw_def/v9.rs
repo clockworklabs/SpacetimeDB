@@ -25,6 +25,9 @@ use crate::db::auth::StTableType;
 /// A not-yet-validated identifier.
 pub type RawIdentifier = Box<str>;
 
+/// A not-yet-validated `sql`.
+pub type RawSql = Box<str>;
+
 /// A possibly-invalid raw module definition.
 ///
 /// ABI Version 9.
@@ -79,6 +82,11 @@ pub struct RawModuleDefV9 {
 
     /// Miscellaneous additional module exports.
     pub misc_exports: Vec<RawMiscModuleExportV9>,
+
+    /// Low level security definitions.
+    ///
+    /// Each definition must have a unique name.
+    pub row_level_security: Vec<RawRowLevelSecurityDefV9>,
 }
 
 /// The definition of a database table.
@@ -330,6 +338,15 @@ pub struct RawUniqueConstraintDataV9 {
     pub columns: ColList,
 }
 
+/// Data for the `RLS` policy on a table.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawRowLevelSecurityDefV9 {
+    /// The `sql` expression to use for row-level security.
+    pub sql: RawSql,
+}
+
 /// A miscellaneous module export.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
@@ -529,6 +546,17 @@ impl RawModuleDefV9Builder {
             params,
             lifecycle,
         });
+    }
+
+    /// Add a row-level security policy to the module.
+    ///
+    /// The `sql` expression should be a valid SQL expression that will be used to filter rows.
+    ///
+    /// **NOTE**: The `sql` expression must be unique within the module.
+    pub fn add_row_level_security(&mut self, sql: &str) {
+        self.module
+            .row_level_security
+            .push(RawRowLevelSecurityDefV9 { sql: sql.into() });
     }
 
     /// Get the typespace of the module.

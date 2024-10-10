@@ -16,6 +16,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         reducers,
         types,
         misc_exports,
+        row_level_security,
     } = def;
 
     let known_type_definitions = types.iter().map(|def| def.ty);
@@ -55,6 +56,11 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
                 .map(|table_def| (table_def.name.clone(), table_def))
         })
         .collect_all_errors();
+
+    let row_level_security_raw = row_level_security
+        .into_iter()
+        .map(|rls| (rls.sql.clone(), rls))
+        .collect();
 
     let mut refmap = HashMap::default();
     let types = types
@@ -99,6 +105,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         typespace_for_generate,
         stored_in_table_def,
         refmap,
+        row_level_security_raw,
     };
 
     result.generate_indexes();

@@ -58,6 +58,7 @@ fn upgrade_module(def: RawModuleDefV8, extra_errors: &mut Vec<ValidationError>) 
         reducers,
         types,
         misc_exports: Default::default(),
+        row_level_security: vec![], // v8 doesn't have row-level security
     }
 }
 

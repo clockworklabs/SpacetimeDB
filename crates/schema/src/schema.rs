@@ -9,6 +9,7 @@
 use itertools::Itertools;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::error::{DefType, SchemaError};
+use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::raw_def::{generate_cols_name, RawConstraintDefV8};
 use spacetimedb_lib::relation::{combine_constraints, Column, DbTable, FieldName, Header};
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductTypeElement};
@@ -1008,4 +1009,11 @@ impl Schema for ConstraintSchema {
         ensure_eq!(&self.data, &def.data, "Constraint data mismatch");
         Ok(())
     }
+}
+
+/// A struct representing the schema of a row-level security policy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowLevelSecuritySchema {
+    pub table_id: TableId,
+    pub sql: RawSql,
 }

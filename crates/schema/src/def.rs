@@ -30,8 +30,8 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm, RawIndexDefV9,
-    RawModuleDefV9, RawReducerDefV9, RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9, RawTableDefV9,
-    RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess, TableType,
+    RawModuleDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9, RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9,
+    RawSql, RawTableDefV9, RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
@@ -103,6 +103,11 @@ pub struct ModuleDef {
 
     /// A map from type defs to their names.
     refmap: HashMap<AlgebraicTypeRef, ScopedTypeName>,
+
+    /// The row-level security policies.
+    ///
+    /// **Note**: Are only validated syntax-wise.
+    row_level_security_raw: HashMap<RawSql, RawRowLevelSecurityDefV9>,
 }
 
 impl ModuleDef {
@@ -139,6 +144,11 @@ impl ModuleDef {
     /// The type definitions of the module definition.
     pub fn types(&self) -> impl Iterator<Item = &TypeDef> {
         self.types.values()
+    }
+
+    /// The row-level security policies of the module definition.
+    pub fn row_level_security(&self) -> impl Iterator<Item = &RawRowLevelSecurityDefV9> {
+        self.row_level_security_raw.values()
     }
 
     /// The `Typespace` used by the module.
@@ -340,6 +350,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             stored_in_table_def: _,
             typespace_for_generate: _,
             refmap: _,
+            row_level_security_raw,
         } = val;
 
         RawModuleDefV9 {
@@ -348,6 +359,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             types: to_raw(types, |type_: &RawTypeDefV9| &type_.name),
             misc_exports: vec![],
             typespace,
+            row_level_security: row_level_security_raw.into_iter().map(|(_, def)| def).collect(),
         }
     }
 }
@@ -688,6 +700,19 @@ impl From<UniqueConstraintData> for ConstraintData {
     }
 }
 
+/// Data for the `RLS` policy on a table.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RowLevelSecurityDef {
+    /// The `sql` expression to use for row-level security.
+    pub sql: RawSql,
+}
+
+impl From<RowLevelSecurityDef> for RawRowLevelSecurityDefV9 {
+    fn from(val: RowLevelSecurityDef) -> Self {
+        RawRowLevelSecurityDefV9 { sql: val.sql }
+    }
+}
+
 /// Marks a table as a timer table for a scheduled reducer.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
@@ -934,6 +959,18 @@ impl ModuleDefLookup for ConstraintDef {
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
         module_def.stored_in_table_def(key)?.constraints.get(key)
+    }
+}
+
+impl ModuleDefLookup for RawRowLevelSecurityDefV9 {
+    type Key<'a> = &'a RawSql;
+
+    fn key(&self) -> Self::Key<'_> {
+        &self.sql
+    }
+
+    fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
+        module_def.row_level_security_raw.get(key)
     }
 }
 
