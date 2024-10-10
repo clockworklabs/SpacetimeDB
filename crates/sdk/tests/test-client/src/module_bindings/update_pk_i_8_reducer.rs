@@ -68,3 +68,25 @@ impl update_pk_i_8 for super::RemoteReducers {
         self.imp.remove_on_reducer::<UpdatePkI8>("update_pk_i8", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `update_pk_i8`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+/// The ability to send over call-reducer flags in the protocol will however remain.
+pub trait set_flags_for_update_pk_i_8 {
+    /// Set the call-reducer flags for the reducer `update_pk_i8` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    /// The ability to send over call-reducer flags in the protocol will however remain.
+    fn update_pk_i_8(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_update_pk_i_8 for super::SetReducerFlags {
+    fn update_pk_i_8(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("update_pk_i8", flags);
+    }
+}

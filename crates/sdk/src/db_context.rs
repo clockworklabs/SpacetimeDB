@@ -27,6 +27,15 @@ pub trait DbContext {
     /// so accesses to concrete-typed contexts don't need to use this method.
     fn reducers(&self) -> &Self::Reducers;
 
+    type SetReducerFlags;
+
+    /// Access to setters for per-reducer flags.
+    ///
+    /// The returned `SetReducerFlags` will have a method to invoke,
+    /// for each reducer defined by the module,
+    /// which call-flags for the reducer can be set.
+    fn set_reducer_flags(&self) -> &Self::SetReducerFlags;
+
     /// Returns `true` if the connection is active, i.e. has not yet disconnected.
     fn is_active(&self) -> bool;
 
