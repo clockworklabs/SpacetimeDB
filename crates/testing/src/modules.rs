@@ -1,18 +1,20 @@
+use std::env;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use spacetimedb::config::CertificateAuthority;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
 use spacetimedb_client_api::routes::subscribe::generate_random_address;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
+use spacetimedb_paths::{RootDir, SpacetimePaths};
 use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
-use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::messages::websocket as ws;
@@ -76,7 +78,8 @@ impl ModuleHandle {
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
-        let filepath = DatabaseLogger::filepath(&self.db_identity, self.client.replica_id);
+        let replica_dir = self._env.data_dir().replica(self.client.replica_id);
+        let filepath = DatabaseLogger::filepath(replica_dir);
         DatabaseLogger::read_latest(&filepath, size).await
     }
 }
@@ -136,21 +139,24 @@ impl CompiledModule {
     /// If "reuse_db_path" is set, the module will be loaded in the given path,
     /// without resetting the database.
     /// This is used to speed up benchmarks running under callgrind (it allows them to reuse native-compiled wasm modules).
-    pub async fn load_module(&self, config: Config, reuse_db_path: Option<&Path>) -> ModuleHandle {
+    pub async fn load_module(&self, config: Config, reuse_db_path: Option<&RootDir>) -> ModuleHandle {
         let paths = match reuse_db_path {
-            Some(path) => FilesLocal::hidden(path),
+            Some(path) => SpacetimePaths::from_root_dir(path),
             None => {
-                let paths = FilesLocal::temp(&self.name);
+                let root_dir = RootDir(env::temp_dir().join("stdb").join(&self.name));
 
                 // The database created in the `temp` folder can't be randomized,
                 // so it persists after running the test.
-                std::fs::remove_dir(paths.db_path()).ok();
-                paths
+                std::fs::remove_dir(&root_dir).ok();
+
+                SpacetimePaths::from_root_dir(&root_dir)
             }
         };
 
-        crate::set_key_env_vars(&paths);
-        let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
+        let certs = CertificateAuthority::in_cli_config_dir(&paths.cli_config_dir);
+        let env = spacetimedb_standalone::StandaloneEnv::init(config, &certs, paths.data_dir.into())
+            .await
+            .unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
         let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().identity;

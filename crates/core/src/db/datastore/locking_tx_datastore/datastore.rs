@@ -32,6 +32,7 @@ use spacetimedb_commitlog::payload::{txdata, Txdata};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::{Address, Identity};
+use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
@@ -41,11 +42,9 @@ use spacetimedb_table::{
     table::{RowRef, Table},
     MemoryUsage,
 };
-use std::{borrow::Cow, sync::Arc};
-use std::{
-    path::PathBuf,
-    time::{Duration, Instant},
-};
+use std::borrow::Cow;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, DBError>;
@@ -238,7 +237,7 @@ impl Locking {
     ///
     /// Returns an error if [`SnapshotRepository::create_snapshot`] returns an
     /// error.
-    pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<PathBuf>> {
+    pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<SnapshotDirPath>> {
         let maybe_offset_and_path = Self::take_snapshot_internal(&self.committed_state, repo)?;
         Ok(maybe_offset_and_path.map(|(_, path)| path))
     }
@@ -246,7 +245,7 @@ impl Locking {
     pub(crate) fn take_snapshot_internal(
         committed_state: &RwLock<CommittedState>,
         repo: &SnapshotRepository,
-    ) -> Result<Option<(TxOffset, PathBuf)>> {
+    ) -> Result<Option<(TxOffset, SnapshotDirPath)>> {
         let mut committed_state = committed_state.write();
         let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {
             return Ok(None);

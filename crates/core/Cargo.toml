@@ -22,6 +22,7 @@ spacetimedb-commitlog.workspace = true
 spacetimedb-durability.workspace = true
 spacetimedb-metrics.workspace = true
 spacetimedb-primitives.workspace = true
+spacetimedb-paths.workspace = true
 spacetimedb-sats = { workspace = true, features = ["serde"] }
 spacetimedb-schema.workspace = true
 spacetimedb-table.workspace = true
@@ -72,6 +73,7 @@ regex.workspace = true
 rustc-demangle.workspace = true
 rustc-hash.workspace = true
 scopeguard.workspace = true
+semver = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
 serde_path_to_error.workspace = true

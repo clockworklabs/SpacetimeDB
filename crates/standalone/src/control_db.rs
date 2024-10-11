@@ -1,11 +1,12 @@
+use spacetimedb::energy;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, EnergyBalance, Node, Replica};
-use spacetimedb::{energy, stdb_path};
 
 use spacetimedb_client_api_messages::name::{
     DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef,
 };
 use spacetimedb_lib::bsatn;
+use spacetimedb_paths::standalone::ControlDbDir;
 
 #[cfg(test)]
 mod tests;
@@ -51,9 +52,9 @@ impl From<sled::Error> for Error {
 }
 
 impl ControlDb {
-    pub fn new() -> Result<Self> {
+    pub fn new(path: &ControlDbDir) -> Result<Self> {
         let config = sled::Config::default()
-            .path(stdb_path("control_node/control_db"))
+            .path(path)
             .flush_every_ms(Some(50))
             .mode(sled::Mode::HighThroughput);
         let db = config.open()?;
