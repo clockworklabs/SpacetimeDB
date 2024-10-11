@@ -4832,6 +4832,7 @@ dependencies = [
  "spacetimedb-core",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
+ "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-schema",
@@ -4902,6 +4903,7 @@ dependencies = [
  "spacetimedb-fs-utils",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-lib",
+ "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-schema",
  "spacetimedb-standalone",
@@ -5003,6 +5005,7 @@ dependencies = [
  "proptest-derive",
  "rand 0.8.5",
  "serde",
+ "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "tempfile",
@@ -5066,6 +5069,7 @@ dependencies = [
  "rustc-demangle",
  "rustc-hash",
  "scopeguard",
+ "semver",
  "serde",
  "serde_json",
  "serde_path_to_error",
@@ -5084,6 +5088,7 @@ dependencies = [
  "spacetimedb-jwks",
  "spacetimedb-lib",
  "spacetimedb-metrics",
+ "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-schema",
@@ -5132,6 +5137,7 @@ dependencies = [
  "itertools 0.12.1",
  "log",
  "spacetimedb-commitlog",
+ "spacetimedb-paths",
  "spacetimedb-sats",
  "tokio",
  "tracing",
@@ -5236,6 +5242,20 @@ dependencies = [
  "itertools 0.12.1",
  "paste",
  "prometheus",
+]
+
+[[package]]
+name = "spacetimedb-paths"
+version = "1.0.0-rc1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs",
+ "fs2",
+ "itoa",
+ "serde",
+ "thiserror",
+ "xdg",
 ]
 
 [[package]]
@@ -5360,6 +5380,7 @@ dependencies = [
  "spacetimedb-durability",
  "spacetimedb-fs-utils",
  "spacetimedb-lib",
+ "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-table",
@@ -5399,9 +5420,11 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-lib",
+ "spacetimedb-paths",
  "tempfile",
  "thiserror",
  "tokio",
+ "toml 0.8.19",
  "tower-http",
 ]
 
@@ -5448,6 +5471,7 @@ dependencies = [
  "spacetimedb-core",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
+ "spacetimedb-paths",
  "spacetimedb-standalone",
  "tempfile",
  "tokio",
@@ -7376,6 +7400,12 @@ dependencies = [
  "linux-raw-sys",
  "rustix",
 ]
+
+[[package]]
+name = "xdg"
+version = "2.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "213b7324336b53d2414b2db8537e56544d981803139155afa84f76eeebb7a546"
 
 [[package]]
 name = "xi-unicode"

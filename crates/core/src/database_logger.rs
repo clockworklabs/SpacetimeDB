@@ -1,10 +1,8 @@
-use core::str::FromStr;
-use spacetimedb_lib::Identity;
-use std::fs::OpenOptions;
-use std::fs::{self, File};
-use std::io::{self, prelude::*, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::fs::File;
+use std::io::{self, Seek, SeekFrom, Write};
 use tokio::sync::broadcast;
+
+use spacetimedb_paths::server::{ModuleLogPath, ReplicaDir};
 
 pub struct DatabaseLogger {
     file: File,
@@ -126,21 +124,16 @@ impl DatabaseLogger {
     //     PathBuf::from(path)
     // }
 
-    pub fn filepath(identity: &Identity, replica_id: u64) -> PathBuf {
-        let root = crate::stdb_path("worker_node/replicas");
-        root.join(&*identity.to_hex())
-            .join(replica_id.to_string())
-            .join("module_logs")
+    pub fn filepath(replica_dir: ReplicaDir) -> ModuleLogPath {
+        replica_dir.module_log(chrono::Utc::now().date_naive())
     }
 
-    pub fn open(root: impl AsRef<Path>) -> Self {
-        let root = root.as_ref();
-        fs::create_dir_all(root).unwrap();
+    pub fn open(replica_dir: ReplicaDir) -> Self {
+        Self::open_from_path(&Self::filepath(replica_dir))
+    }
 
-        let mut filepath = PathBuf::from(root);
-        filepath.push(&PathBuf::from_str("0.log").unwrap());
-
-        let file = OpenOptions::new().create(true).append(true).open(&filepath).unwrap();
+    pub fn open_from_path(path: &ModuleLogPath) -> Self {
+        let file = path.open_file(File::options().create(true).append(true)).unwrap();
         let (tx, _) = broadcast::channel(64);
         Self { file, tx }
     }
@@ -175,17 +168,13 @@ impl DatabaseLogger {
         let _ = self.tx.send(buf.into());
     }
 
-    pub async fn _read_all(root: &Path) -> String {
-        let filepath = root.join("0.log");
-
-        tokio::fs::read_to_string(&filepath).await.unwrap()
+    pub async fn _read_all(filepath: &ModuleLogPath) -> String {
+        tokio::fs::read_to_string(filepath).await.unwrap()
     }
 
-    pub async fn read_latest(root: &Path, num_lines: Option<u32>) -> String {
-        let filepath = root.join("0.log");
-
+    pub async fn read_latest(filepath: &ModuleLogPath, num_lines: Option<u32>) -> String {
         // TODO: Read backwards from the end of the file to only read in the latest lines
-        let text = tokio::fs::read_to_string(&filepath).await.expect("reading log file");
+        let text = tokio::fs::read_to_string(filepath).await.expect("reading log file");
 
         let Some(num_lines) = num_lines else { return text };
 

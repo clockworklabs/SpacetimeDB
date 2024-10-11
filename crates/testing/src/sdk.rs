@@ -1,30 +1,37 @@
 use duct::cmd;
-use lazy_static::lazy_static;
 use rand::distributions::{Alphanumeric, DistString};
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_paths::{RootDir, SpacetimePaths};
 use std::fs::create_dir_all;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::thread::JoinHandle;
 
 use crate::invoke_cli;
 use crate::modules::{CompilationMode, CompiledModule};
 use tempfile::TempDir;
 
-pub fn ensure_standalone_process() {
-    lazy_static! {
-        static ref JOIN_HANDLE: Mutex<Option<JoinHandle<()>>> = {
-            let stdb_path = TempDir::with_prefix("stdb-sdk-test")
-                .expect("Failed to create tempdir")
-                // TODO: This leaks the tempdir.
-                //       We need the tempdir to live for the duration of the process,
-                //       and all the options for post-`main` cleanup seem sketchy.
-                .into_path();
-            std::env::set_var("STDB_PATH", stdb_path);
-            Mutex::new(Some(std::thread::spawn(|| invoke_cli(&["start"]))))
-        };
-    }
+pub fn ensure_standalone_process() -> &'static SpacetimePaths {
+    static PATHS: OnceLock<SpacetimePaths> = OnceLock::new();
+    static JOIN_HANDLE: OnceLock<Mutex<Option<JoinHandle<()>>>> = OnceLock::new();
 
-    let mut join_handle = JOIN_HANDLE.lock().unwrap();
+    let paths = PATHS.get_or_init(|| {
+        let dir = TempDir::with_prefix("stdb-sdk-test")
+            .expect("Failed to create tempdir")
+            // TODO: This leaks the tempdir.
+            //       We need the tempdir to live for the duration of the process,
+            //       and all the options for post-`main` cleanup seem sketchy.
+            .into_path();
+        SpacetimePaths::from_root_dir(&RootDir(dir))
+    });
+
+    let data_dir = paths.data_dir.0.to_str().unwrap();
+    let join_handle = JOIN_HANDLE.get_or_init(|| {
+        Mutex::new(Some(std::thread::spawn(move || {
+            invoke_cli(paths, &["start", "--data-dir", data_dir])
+        })))
+    });
+
+    let mut join_handle = join_handle.lock().unwrap();
 
     if join_handle
         .as_ref()
@@ -33,6 +40,8 @@ pub fn ensure_standalone_process() {
     {
         join_handle.take().unwrap().join().expect("Standalone process failed");
     }
+
+    paths
 }
 
 pub struct Test {
@@ -77,11 +86,12 @@ impl Test {
         TestBuilder::default()
     }
     pub fn run(self) {
-        ensure_standalone_process();
+        let paths = ensure_standalone_process();
 
         let wasm_file = compile_module(&self.module_name);
 
         generate_bindings(
+            paths,
             &self.generate_language,
             &wasm_file,
             &self.client_project,
@@ -90,7 +100,7 @@ impl Test {
 
         compile_client(&self.compile_command, &self.client_project);
 
-        let db_name = publish_module(&wasm_file);
+        let db_name = publish_module(paths, &wasm_file);
 
         run_client(&self.run_command, &self.client_project, &db_name);
     }
@@ -143,17 +153,20 @@ fn compile_module(module: &str) -> String {
 
 // Note: this function does not memoize because we want each test to publish the same
 // module as a separate clean database instance for isolation purposes.
-fn publish_module(wasm_file: &str) -> String {
+fn publish_module(paths: &SpacetimePaths, wasm_file: &str) -> String {
     let name = random_module_name();
-    invoke_cli(&[
-        "publish",
-        "--anonymous",
-        "--server",
-        "local",
-        "--bin-path",
-        wasm_file,
-        &name,
-    ]);
+    invoke_cli(
+        paths,
+        &[
+            "publish",
+            "--anonymous",
+            "--server",
+            "local",
+            "--bin-path",
+            wasm_file,
+            &name,
+        ],
+    );
     name
 }
 
@@ -186,20 +199,29 @@ fn publish_module(wasm_file: &str) -> String {
 // That would be more complicated, as we'd need to re-write dependencies
 // on the client language's SpacetimeDB SDK to use a local absolute path.
 // Doing so portably across all our SDK languages seemed infeasible.
-fn generate_bindings(language: &str, wasm_file: &str, client_project: &str, generate_subdir: &str) {
+fn generate_bindings(
+    paths: &SpacetimePaths,
+    language: &str,
+    wasm_file: &str,
+    client_project: &str,
+    generate_subdir: &str,
+) {
     let generate_dir = format!("{client_project}/{generate_subdir}");
 
     memoized!(|generate_dir: String| -> () {
         create_dir_all(generate_dir).expect("Error creating generate subdir");
-        invoke_cli(&[
-            "generate",
-            "--lang",
-            language,
-            "--bin-path",
-            wasm_file,
-            "--out-dir",
-            generate_dir,
-        ]);
+        invoke_cli(
+            paths,
+            &[
+                "generate",
+                "--lang",
+                language,
+                "--bin-path",
+                wasm_file,
+                "--out-dir",
+                generate_dir,
+            ],
+        );
     })
 }
 
