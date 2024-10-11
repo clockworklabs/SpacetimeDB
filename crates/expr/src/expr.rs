@@ -112,9 +112,8 @@ impl Expr {
     }
 
     /// Returns a string literal
-    pub fn str(v: String) -> Self {
-        let s = v.into_boxed_str();
-        Self::Lit(AlgebraicValue::String(s), TyId::STR)
+    pub fn str(v: Box<str>) -> Self {
+        Self::Lit(AlgebraicValue::String(v), TyId::STR)
     }
 
     /// The type id of this expression
