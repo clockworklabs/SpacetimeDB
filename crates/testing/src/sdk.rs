@@ -19,8 +19,9 @@ pub fn ensure_standalone_process() {
                 //       We need the tempdir to live for the duration of the process,
                 //       and all the options for post-`main` cleanup seem sketchy.
                 .into_path();
-            std::env::set_var("STDB_PATH", stdb_path);
-            Mutex::new(Some(std::thread::spawn(|| invoke_cli(&["start"]))))
+            std::env::set_var("STDB_PATH", &stdb_path);
+            let data_dir = stdb_path.join("data").into_os_string().into_string().unwrap();
+            Mutex::new(Some(std::thread::spawn(move || invoke_cli(&["start", "--data-dir", &data_dir]))))
         };
     }
 
