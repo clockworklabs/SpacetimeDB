@@ -27,12 +27,12 @@ use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, Durability, TxOffset};
 use spacetimedb_lib::address::Address;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
+use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef};
-use spacetimedb_schema::schema::{IndexSchema, Schema, SequenceSchema, TableSchema};
+use spacetimedb_schema::schema::{IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
@@ -1008,6 +1008,29 @@ impl RelationalDB {
         self.inner.drop_index_mut_tx(tx, index_id)
     }
 
+    pub fn create_row_level_security(
+        &self,
+        tx: &mut MutTx,
+        row_level_security_schema: RowLevelSecuritySchema,
+    ) -> Result<RawSql, DBError> {
+        let ctx = &ExecutionContext::internal(self.inner.database_address);
+        tx.create_row_level_security(ctx, row_level_security_schema)
+    }
+
+    pub fn drop_row_level_security(&self, tx: &mut MutTx, sql: RawSql) -> Result<(), DBError> {
+        let ctx = &ExecutionContext::internal(self.inner.database_address);
+        tx.drop_row_level_security(ctx, sql)
+    }
+
+    pub fn row_level_security_for_table_id_mut_tx(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+    ) -> Result<Vec<RowLevelSecuritySchema>, DBError> {
+        let ctx = &ExecutionContext::internal(self.inner.database_address);
+        tx.row_level_security_for_table_id(ctx, table_id)
+    }
+
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`.
     pub fn iter_mut<'a>(
@@ -1506,6 +1529,7 @@ mod tests {
     use spacetimedb_sats::bsatn;
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
+    use spacetimedb_schema::schema::RowLevelSecuritySchema;
     use spacetimedb_table::read_column::ReadColumn;
     use spacetimedb_table::table::RowRef;
 
@@ -1876,6 +1900,38 @@ mod tests {
         let stdb = stdb.reopen()?;
         let tx = stdb.begin_tx();
         assert_eq!(tx.table_row_count(table_id).unwrap(), 2);
+        Ok(())
+    }
+
+    // Because we don't create `rls` when first creating the database, check we pass the bootstrap
+    #[test]
+    fn test_row_level_reopen() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let ctx = ExecutionContext::default();
+
+        let schema = my_table(AlgebraicType::I64);
+        let table_id = stdb.create_table(&mut tx, schema)?;
+
+        let rls = RowLevelSecuritySchema {
+            sql: "SELECT * FROM bar".into(),
+            table_id,
+        };
+
+        tx.create_row_level_security(&ctx, rls)?;
+        stdb.commit_tx(&ctx, tx)?;
+
+        let stdb = stdb.reopen()?;
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+
+        assert_eq!(
+            tx.row_level_security_for_table_id(&ctx, table_id)?,
+            vec![RowLevelSecuritySchema {
+                sql: "SELECT * FROM bar".into(),
+                table_id,
+            }]
+        );
+
         Ok(())
     }
 
