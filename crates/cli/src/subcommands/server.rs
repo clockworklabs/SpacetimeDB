@@ -5,7 +5,7 @@ use crate::{
 };
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use spacetimedb::stdb_path;
+use spacetimedb_standalone::subcommands::start::default_data_dir;
 use std::path::PathBuf;
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
@@ -122,6 +122,13 @@ fn get_subcommands() -> Vec<Command> {
             .arg(common_args::yes()),
         Command::new("clear")
             .about("Deletes all data from all local databases")
+            .arg(
+                Arg::new("data_dir")
+                    .long("data-dir")
+                    .help("The path to the data directory for the database")
+                    .default_value(default_data_dir().into_os_string())
+                    .value_parser(clap::value_parser!(PathBuf)),
+            )
             .arg(common_args::yes()),
         // TODO: set-name, set-protocol, set-host, set-url
     ]
@@ -425,26 +432,10 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
 
 async fn exec_clear(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let force = args.get_flag("force");
-    if std::env::var_os("STDB_PATH").map(PathBuf::from).is_none() {
-        let mut path = dirs::home_dir().unwrap_or_default();
-        path.push(".spacetime");
-        std::env::set_var("STDB_PATH", path.to_str().unwrap());
-    }
+    let data_dir = args.get_one::<PathBuf>("data_dir").unwrap();
 
-    let control_node_dir = stdb_path("control_node");
-    let worker_node_dir = stdb_path("worker_node");
-    if control_node_dir.exists() || worker_node_dir.exists() {
-        if control_node_dir.exists() {
-            println!("Control node database path: {}", control_node_dir.to_str().unwrap());
-        } else {
-            println!("Control node database path: <not found>");
-        }
-
-        if worker_node_dir.exists() {
-            println!("Worker node database path: {}", worker_node_dir.to_str().unwrap());
-        } else {
-            println!("Worker node database path: <not found>");
-        }
+    if data_dir.exists() {
+        println!("Database path: {}", data_dir.display());
 
         if !y_or_n(
             force,
@@ -454,14 +445,8 @@ async fn exec_clear(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
             return Ok(());
         }
 
-        if control_node_dir.exists() {
-            std::fs::remove_dir_all(&control_node_dir)?;
-            println!("Deleted control node database: {}", control_node_dir.to_str().unwrap());
-        }
-        if worker_node_dir.exists() {
-            std::fs::remove_dir_all(&worker_node_dir)?;
-            println!("Deleted worker node database: {}", worker_node_dir.to_str().unwrap());
-        }
+        std::fs::remove_dir_all(data_dir)?;
+        println!("Deleted database: {}", data_dir.display());
     } else {
         println!("Local database not found. Nothing has been deleted.");
     }

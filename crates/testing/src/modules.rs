@@ -7,6 +7,7 @@ use std::time::Instant;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb::Identity;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
+use spacetimedb_paths::server::ServerDataPath;
 use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::address::Address;
@@ -76,7 +77,8 @@ impl ModuleHandle {
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
-        let filepath = DatabaseLogger::filepath(&self.db_address, self.client.replica_id);
+        let replica_path = self._env.data_dir().replica(self.client.replica_id);
+        let filepath = DatabaseLogger::filepath(replica_path);
         DatabaseLogger::read_latest(&filepath, size).await
     }
 }
@@ -148,9 +150,12 @@ impl CompiledModule {
                 paths
             }
         };
+        let data_dir = ServerDataPath(paths.db_path().join("data"));
 
         crate::set_key_env_vars(&paths);
-        let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
+        let env = spacetimedb_standalone::StandaloneEnv::init(config, data_dir.into())
+            .await
+            .unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
         let db_address = env.create_address().await.unwrap();
