@@ -5,6 +5,7 @@ use spacetimedb_lib::{
     sats::{product, ArrayValue},
     AlgebraicValue,
 };
+use spacetimedb_paths::RootDir;
 use spacetimedb_primitives::ColId;
 use spacetimedb_testing::modules::{start_runtime, CompilationMode, CompiledModule, LoggerRecord, ModuleHandle};
 use tokio::runtime::Runtime;
@@ -77,9 +78,8 @@ impl BenchDatabase for SpacetimeModule {
         let module = runtime.block_on(async {
             // We keep a saved database at "crates/bench/.spacetime".
             // This is mainly used for caching wasmtime native artifacts.
-            BENCHMARKS_MODULE
-                .load_module(config, Some(Path::new(env!("CARGO_MANIFEST_DIR"))))
-                .await
+            let path = RootDir(Path::new(env!("CARGO_MANIFEST_DIR")).join(".spacetime"));
+            BENCHMARKS_MODULE.load_module(config, Some(&path)).await
         });
 
         for table in module.client.module.info.module_def.tables() {

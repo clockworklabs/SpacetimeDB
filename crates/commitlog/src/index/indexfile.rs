@@ -3,21 +3,15 @@ use std::{
     io,
     marker::PhantomData,
     mem,
-    path::{Path, PathBuf},
 };
 
 use log::debug;
 use memmap2::MmapMut;
+use spacetimedb_paths::server::OffsetIndexFile;
 
 use super::IndexError;
-const OFFSET_INDEX_FILE_EXT: &str = ".stdb.ofs";
 const KEY_SIZE: usize = mem::size_of::<u64>();
 const ENTRY_SIZE: usize = KEY_SIZE + mem::size_of::<u64>();
-
-/// Returns the offset index file path based on the root path and offset
-pub fn offset_index_file_path(root: &Path, offset: u64) -> PathBuf {
-    root.join(format!("{offset:0>20}{OFFSET_INDEX_FILE_EXT}"))
-}
 
 /// A mutable representation of an index file using memory-mapped I/O.
 ///
@@ -35,12 +29,8 @@ pub struct IndexFileMut<Key: Into<u64> + From<u64>> {
 }
 
 impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
-    pub fn create_index_file(path: &Path, offset: u64, cap: u64) -> io::Result<Self> {
-        File::options()
-            .write(true)
-            .read(true)
-            .create_new(true)
-            .open(offset_index_file_path(path, offset))
+    pub fn create_index_file(path: &OffsetIndexFile, cap: u64) -> io::Result<Self> {
+        path.open_file(File::options().write(true).read(true).create_new(true))
             .and_then(|file| {
                 file.set_len(cap * ENTRY_SIZE as u64)?;
                 let mmap = unsafe { MmapMut::map_mut(&file) }?;
@@ -54,18 +44,15 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
             .or_else(|e| {
                 if e.kind() == io::ErrorKind::AlreadyExists {
                     debug!("Index file {} already exists", path.display());
-                    Self::open_index_file(path, offset, cap)
+                    Self::open_index_file(path, cap)
                 } else {
                     Err(e)
                 }
             })
     }
 
-    pub fn open_index_file(path: &Path, offset: u64, cap: u64) -> io::Result<Self> {
-        let file = File::options()
-            .read(true)
-            .write(true)
-            .open(offset_index_file_path(path, offset))?;
+    pub fn open_index_file(path: &OffsetIndexFile, cap: u64) -> io::Result<Self> {
+        let file = path.open_file(File::options().read(true).write(true))?;
         file.set_len(cap * ENTRY_SIZE as u64)?;
         let mmap = unsafe { MmapMut::map_mut(&file)? };
 
@@ -79,8 +66,8 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
         Ok(me)
     }
 
-    pub fn delete_index_file(path: &Path, offset: u64) -> io::Result<()> {
-        fs::remove_file(offset_index_file_path(path, offset)).map_err(Into::into)
+    pub fn delete_index_file(path: &OffsetIndexFile) -> io::Result<()> {
+        fs::remove_file(path).map_err(Into::into)
     }
 
     // Searches for first 0-key, to count number of entries
@@ -244,11 +231,8 @@ pub struct IndexFile<Key: Into<u64> + From<u64>> {
 }
 
 impl<Key: Into<u64> + From<u64>> IndexFile<Key> {
-    pub fn open_index_file(path: &Path, offset: u64) -> io::Result<Self> {
-        let file = File::options()
-            .read(true)
-            .append(true)
-            .open(offset_index_file_path(path, offset))?;
+    pub fn open_index_file(path: &OffsetIndexFile) -> io::Result<Self> {
+        let file = path.open_file(File::options().read(true).append(true))?;
         let mmap = unsafe { MmapMut::map_mut(&file)? };
 
         let mut inner = IndexFileMut {
@@ -274,16 +258,18 @@ impl<Key: Into<u64> + From<u64>> IndexFile<Key> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spacetimedb_paths::server::CommitLogDir;
     use tempfile::TempDir;
 
     /// Create and fill index file with key as first `fill_till - 1` even numbers
     fn create_and_fill_index(cap: u64, fill_till: u64) -> Result<IndexFileMut<u64>, IndexError> {
         // Create a temporary directory for testing
         let temp_dir = TempDir::new()?;
-        let path = temp_dir.path().to_path_buf();
+        let path = CommitLogDir(temp_dir.path().to_path_buf());
+        let index_path = path.index(0);
 
         // Create an index file
-        let mut index_file: IndexFileMut<u64> = IndexFileMut::create_index_file(&path, 0, cap)?;
+        let mut index_file: IndexFileMut<u64> = IndexFileMut::create_index_file(&index_path, cap)?;
 
         // Enter even number keys from 2
         for i in 1..fill_till {
@@ -364,10 +350,11 @@ mod tests {
     fn test_close_open_index() -> Result<(), IndexError> {
         // Create a temporary directory for testing
         let temp_dir = TempDir::new()?;
-        let path = temp_dir.path().to_path_buf();
+        let path = CommitLogDir(temp_dir.path().to_path_buf());
+        let index_path = path.index(0);
 
         // Create an index file
-        let mut index_file: IndexFileMut<u64> = IndexFileMut::create_index_file(&path, 0, 100)?;
+        let mut index_file: IndexFileMut<u64> = IndexFileMut::create_index_file(&index_path, 100)?;
 
         for i in 1..10 {
             index_file.append(i * 2, i * 2 * 100)?;
@@ -376,7 +363,7 @@ mod tests {
         assert_eq!(index_file.num_entries, 9);
         drop(index_file);
 
-        let open_index_file: IndexFileMut<u64> = IndexFileMut::open_index_file(&path, 0, 100)?;
+        let open_index_file: IndexFileMut<u64> = IndexFileMut::open_index_file(&index_path, 100)?;
         assert_eq!(open_index_file.num_entries, 9);
         assert_eq!(open_index_file.key_lookup(6)?, (6, 600));
 

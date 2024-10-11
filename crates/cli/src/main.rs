@@ -1,6 +1,8 @@
-use clap::Command;
+use clap::{Arg, Command};
 use mimalloc::MiMalloc;
 use spacetimedb_cli::*;
+use spacetimedb_paths::cli::CliTomlPath;
+use spacetimedb_paths::{RootDir, SpacetimePaths};
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -13,18 +15,37 @@ async fn main() -> Result<(), anyhow::Error> {
     let matches = get_command().get_matches();
     let (cmd, subcommand_args) = matches.subcommand().unwrap();
 
-    let config = Config::load()?;
+    let paths = match matches.get_one::<RootDir>("root_dir") {
+        Some(dir) => SpacetimePaths::from_root_dir(dir),
+        None => SpacetimePaths::platform_defaults()?,
+    };
+    let cli_toml = matches
+        .get_one::<CliTomlPath>("config_path")
+        .cloned()
+        .unwrap_or_else(|| paths.cli_config_dir.cli_toml());
+    let config = Config::load(cli_toml)?;
 
-    exec_subcommand(config, cmd, subcommand_args).await?;
+    exec_subcommand(config, &paths, cmd, subcommand_args).await?;
 
     Ok(())
 }
 
 fn get_command() -> Command {
     Command::new("spacetime")
-        .args_conflicts_with_subcommands(true)
         .arg_required_else_help(true)
         .subcommand_required(true)
+        .arg(
+            Arg::new("root_dir")
+                .long("root-dir")
+                .help("The root directory to store all spacetime files in.")
+                .value_parser(clap::value_parser!(RootDir)),
+        )
+        .arg(
+            Arg::new("config_path")
+                .long("config-path")
+                .help("The path to the cli.toml config file")
+                .value_parser(clap::value_parser!(CliTomlPath)),
+        )
         .subcommands(get_subcommands())
         .help_expected(true)
         .help_template(
