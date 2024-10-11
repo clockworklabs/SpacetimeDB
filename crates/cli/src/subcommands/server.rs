@@ -69,7 +69,7 @@ fn get_subcommands() -> Vec<Command> {
             .arg(common_args::yes()),
         Command::new("fingerprint")
             .about("Show or update a saved server's fingerprint")
-            .arg(common_args::server().help("The nickname, host name or URL of the server"))
+            .arg(Arg::new("server").help("The nickname, host name or URL of the server"))
             .arg(common_args::yes())
             .arg(
                 Arg::new("delete-obsolete-identities")
