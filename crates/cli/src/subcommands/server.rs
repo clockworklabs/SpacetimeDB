@@ -32,7 +32,12 @@ fn get_subcommands() -> Vec<Command> {
             ),
         Command::new("add")
             .about("Add a new server configuration")
-            .arg(Arg::new("url").help("The URL of the server to add").required(true))
+            .arg(
+                Arg::new("url")
+                    .long("url")
+                    .help("The URL of the server to add")
+                    .required(true),
+            )
             .arg(Arg::new("name").help("Nickname for this server").required(true))
             .arg(
                 Arg::new("default")
@@ -75,7 +80,7 @@ fn get_subcommands() -> Vec<Command> {
             ),
         Command::new("ping")
             .about("Checks to see if a SpacetimeDB host is online")
-            .arg(common_args::server().help("The nickname, host name or URL of the server to ping")),
+            .arg(Arg::new("server").help("The nickname, host name or URL of the server to ping")),
         Command::new("edit")
             .about("Update a saved server's nickname, host name or protocol")
             .arg(Arg::new("server").help("The nickname, host name or URL of the server"))
