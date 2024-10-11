@@ -155,8 +155,7 @@ class Smoketest(unittest.TestCase):
 
     @classmethod
     def spacetime(cls, *args, **kwargs):
-        kwargs.setdefault("env", os.environ.copy())["SPACETIME_CONFIG_FILE"] = str(cls.config_path)
-        return spacetime(*args, **kwargs)
+        return spacetime("--config-path", str(cls.config_path), *args, **kwargs)
 
     def _check_published(self):
         if not hasattr(self, "database_identity"):
@@ -213,13 +212,11 @@ class Smoketest(unittest.TestCase):
         self._check_published()
         assert isinstance(n, int)
 
-        env = os.environ.copy()
-        env["SPACETIME_CONFIG_FILE"] = str(self.config_path)
-        args = [SPACETIME_BIN, "subscribe", self.database_identity, "-t", "60", "-n", str(n), "--print-initial-update", "--", *queries]
+        args = [SPACETIME_BIN, "--config-path", str(self.config_path),"subscribe", self.database_identity, "-t", "60", "-n", str(n), "--print-initial-update", "--", *queries]
         fake_args = ["spacetime", *args[1:]]
         log_cmd(fake_args)
 
-        proc = subprocess.Popen(args, encoding="utf8", stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        proc = subprocess.Popen(args, encoding="utf8", stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         def stderr_task():
             sys.stderr.writelines(proc.stderr)
