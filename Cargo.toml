@@ -15,6 +15,7 @@ members = [
   "crates/fs-utils",
   "crates/lib",
   "crates/metrics",
+  "crates/paths",
   "crates/primitives",
   "crates/sats",
   "crates/schema",
@@ -100,6 +101,7 @@ spacetimedb-expr = { path = "crates/expr", version = "1.0.0-rc1" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "1.0.0-rc1" }
 spacetimedb-metrics = { path = "crates/metrics", version = "1.0.0-rc1" }
 spacetimedb-primitives = { path = "crates/primitives", version = "1.0.0-rc1" }
+spacetimedb-paths = { path = "crates/paths", version = "1.0.0-rc1" }
 spacetimedb-sats = { path = "crates/sats", version = "1.0.0-rc1" }
 spacetimedb-schema = { path = "crates/schema", version = "1.0.0-rc1" }
 spacetimedb-standalone = { path = "crates/standalone", version = "1.0.0-rc1" }
@@ -169,6 +171,7 @@ indicatif = "0.16"
 insta = { version = "1.21.0", features = ["toml"] }
 is-terminal = "0.4"
 itertools = "0.12"
+itoa = "1"
 jsonwebtoken = { version = "8.1.0" }
 lazy_static = "1.4.0"
 log = "0.4.17"

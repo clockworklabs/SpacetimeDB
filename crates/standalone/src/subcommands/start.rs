@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::routes::router;
 use crate::util::{create_dir_or_err, create_file_with_contents};
 use crate::StandaloneEnv;
@@ -6,6 +8,7 @@ use clap::{Arg, ArgMatches};
 use spacetimedb::config::{FilesGlobal, FilesLocal, SpacetimeDbFiles};
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::startup;
+use spacetimedb_paths::server::ServerDataPath;
 use tokio::net::TcpListener;
 
 #[cfg(feature = "string")]
@@ -213,7 +216,11 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
 
     startup::StartupOptions::default().configure();
 
-    let ctx = StandaloneEnv::init(config).await?;
+    // TODO:
+    let stdb_path = Arc::new(ServerDataPath(
+        std::env::var_os("STDB_PATH").expect("STDB_PATH must be set").into(),
+    ));
+    let ctx = StandaloneEnv::init(config, stdb_path).await?;
 
     let service = router(ctx);
 

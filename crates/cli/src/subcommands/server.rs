@@ -5,7 +5,6 @@ use crate::{
 };
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use spacetimedb::stdb_path;
 use std::path::PathBuf;
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},

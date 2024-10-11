@@ -22,6 +22,7 @@ spacetimedb-commitlog.workspace = true
 spacetimedb-durability.workspace = true
 spacetimedb-metrics.workspace = true
 spacetimedb-primitives.workspace = true
+spacetimedb-paths.workspace = true
 spacetimedb-sats = { workspace = true, features = ["serde"] }
 spacetimedb-schema.workspace = true
 spacetimedb-table.workspace = true

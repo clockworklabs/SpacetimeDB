@@ -23,9 +23,10 @@ use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::sendgrid_controller::SendGridController;
-use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
+use spacetimedb_paths::server::ServerDataPath;
+use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -45,17 +46,12 @@ pub struct StandaloneEnv {
 }
 
 impl StandaloneEnv {
-    pub async fn init(config: Config) -> anyhow::Result<Arc<Self>> {
-        let control_db = ControlDb::new().context("failed to initialize control db")?;
+    pub async fn init(config: Config, data_dir: Arc<ServerDataPath>) -> anyhow::Result<Arc<Self>> {
+        let control_db = ControlDb::new(&data_dir.control_db()).context("failed to initialize control db")?;
         let energy_monitor = Arc::new(StandaloneEnergyMonitor::new(control_db.clone()));
-        let program_store = Arc::new(DiskStorage::new(stdb_path("control_node/program_bytes")).await?);
+        let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
-        let host_controller = HostController::new(
-            stdb_path("worker_node/replicas").into(),
-            config,
-            program_store.clone(),
-            energy_monitor,
-        );
+        let host_controller = HostController::new(data_dir, config, program_store.clone(), energy_monitor);
         let client_actor_index = ClientActorIndex::new();
         let (public_key, private_key, public_key_bytes) = get_or_create_keys()?;
 

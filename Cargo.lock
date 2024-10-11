@@ -4451,6 +4451,7 @@ dependencies = [
  "proptest-derive",
  "rand 0.8.5",
  "serde",
+ "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "tempfile",
@@ -4527,6 +4528,7 @@ dependencies = [
  "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-metrics",
+ "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-schema",
@@ -4574,6 +4576,7 @@ dependencies = [
  "itertools 0.12.1",
  "log",
  "spacetimedb-commitlog",
+ "spacetimedb-paths",
  "spacetimedb-sats",
  "tokio",
  "tracing",
@@ -4638,6 +4641,14 @@ dependencies = [
  "itertools 0.12.1",
  "paste",
  "prometheus",
+]
+
+[[package]]
+name = "spacetimedb-paths"
+version = "1.0.0-rc1"
+dependencies = [
+ "chrono",
+ "itoa",
 ]
 
 [[package]]
@@ -4751,6 +4762,7 @@ dependencies = [
  "spacetimedb-durability",
  "spacetimedb-fs-utils",
  "spacetimedb-lib",
+ "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-table",
@@ -4790,6 +4802,7 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-lib",
+ "spacetimedb-paths",
  "tempfile",
  "thiserror",
  "tokio",
