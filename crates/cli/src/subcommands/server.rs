@@ -26,7 +26,7 @@ fn get_subcommands() -> Vec<Command> {
         Command::new("set-default")
             .about("Set the default server for future operations")
             .arg(
-                common_args::server()
+                Arg::new("server")
                     .help("The nickname, host name or URL of the new default server")
                     .required(true),
             ),
@@ -50,7 +50,7 @@ fn get_subcommands() -> Vec<Command> {
         Command::new("remove")
             .about("Remove a saved server configuration")
             .arg(
-                common_args::server()
+                Arg::new("server")
                     .help("The nickname, host name or URL of the server to remove")
                     .required(true),
             )
@@ -78,12 +78,11 @@ fn get_subcommands() -> Vec<Command> {
             .arg(common_args::server().help("The nickname, host name or URL of the server to ping")),
         Command::new("edit")
             .about("Update a saved server's nickname, host name or protocol")
-            .arg(common_args::server().help("The nickname, host name or URL of the server"))
+            .arg(Arg::new("server").help("The nickname, host name or URL of the server"))
             .arg(
                 Arg::new("nickname")
                     .help("A new nickname to assign the server configuration")
-                    .short('n')
-                    .long("nickname"),
+                    .long("new-name"),
             )
             .arg(
                 Arg::new("host")
@@ -367,8 +366,15 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
     let old_url = config.get_host_url(Some(server))?;
 
     let new_nick = args.get_one::<String>("nickname").map(|s| s.as_str());
-    let new_host = args.get_one::<String>("host").map(|s| s.as_str());
-    let new_proto = args.get_one::<String>("protocol").map(|s| s.as_str());
+    let new_url = args.get_one::<String>("url").map(|s| s.as_str());
+    let (new_host, new_proto) = match new_url {
+        None => (None, None),
+        Some(new_url) => {
+            let (new_host, new_proto) = host_or_url_to_host_and_protocol(new_url);
+            let new_proto = new_proto.ok_or_else(|| anyhow::anyhow!("Invalid url: {}", new_url))?;
+            (Some(new_host), Some(new_proto))
+        }
+    };
 
     let no_fingerprint = args.get_flag("no-fingerprint");
     let delete_identities = args.get_flag("delete-obsolete-identities");
