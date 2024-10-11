@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
+use crate::errors::{NoTableId, TypingError};
+use crate::static_assert_size;
 use spacetimedb_lib::AlgebraicValue;
+use spacetimedb_primitives::TableId;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_sql_parser::ast::BinOp;
 
-use crate::static_assert_size;
-
-use super::ty::{InvalidTypeId, Symbol, TyCtx, TyId, TypeWithCtx};
+use super::ty::{InvalidTypeId, Symbol, TyCtx, TyId, Type, TypeWithCtx};
 
 /// A logical relational expression
 #[derive(Debug)]
@@ -53,6 +54,13 @@ impl RelExpr {
     /// The type of this relation expression
     pub fn ty<'a>(&self, ctx: &'a TyCtx) -> Result<TypeWithCtx<'a>, InvalidTypeId> {
         ctx.try_resolve(self.ty_id())
+    }
+
+    pub fn table_id(&self, ctx: &mut TyCtx) -> Result<TableId, TypingError> {
+        match &*self.ty(ctx)? {
+            Type::Var(id, _) => Ok(*id),
+            _ => Err(NoTableId.into()),
+        }
     }
 }
 

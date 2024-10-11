@@ -3,7 +3,7 @@ use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
     map::HashSet,
 };
-use spacetimedb_lib::db::raw_def::v9::TableType;
+use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableType};
 use spacetimedb_sats::WithTypespace;
 
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
@@ -87,6 +87,10 @@ pub enum AutoMigrateStep<'def> {
     AddSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
     /// Remove a schedule annotation from a table.
     RemoveSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
+    /// Add a row-level security query.
+    AddRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
+    /// Remove a row-level security query.
+    RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
 }
 
 /// Something that might prevent an automatic migration.
@@ -170,8 +174,10 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
     let indexes_ok = auto_migrate_indexes(&mut plan, &new_tables);
     let sequences_ok = auto_migrate_sequences(&mut plan, &new_tables);
     let constraints_ok = auto_migrate_constraints(&mut plan, &new_tables);
+    // Is important that this is the last step, because it needs the list of tables
+    let rls_ok = auto_migrate_row_level_security(&mut plan);
 
-    let ((), (), (), ()) = (tables_ok, indexes_ok, sequences_ok, constraints_ok).combine_errors()?;
+    let ((), (), (), (), ()) = (tables_ok, indexes_ok, sequences_ok, constraints_ok, rls_ok).combine_errors()?;
 
     Ok(plan)
 }
@@ -218,6 +224,7 @@ fn auto_migrate_tables(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
                     plan.steps.push(AutoMigrateStep::AddTable(new.key()));
                     Ok(())
                 }
+                // TODO: When we remove tables, we should also remove their dependencies, including row-level security.
                 Diff::Remove { old } => Err(AutoMigrateError::RemoveTable {
                     table: old.name.clone(),
                 }
@@ -408,6 +415,19 @@ fn auto_migrate_constraints(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Id
         .collect_all_errors()
 }
 
+// Because we can refer to many tables and fields on the row level-security query, we need to remove all of them,
+// then add the new ones, instead of trying to track the graph of dependencies.
+fn auto_migrate_row_level_security(plan: &mut AutoMigratePlan) -> Result<()> {
+    for rls in plan.old.row_level_security() {
+        plan.steps.push(AutoMigrateStep::RemoveRowLevelSecurity(rls.key()));
+    }
+    for rls in plan.new.row_level_security() {
+        plan.steps.push(AutoMigrateStep::AddRowLevelSecurity(rls.key()));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -489,6 +509,8 @@ mod tests {
                 true,
             )
             .finish();
+
+        old_builder.add_row_level_security("SELECT * FROM Apples");
 
         let old_def: ModuleDef = old_builder
             .finish()
@@ -597,6 +619,8 @@ mod tests {
             .with_primary_key(0)
             .finish();
 
+        new_builder.add_row_level_security("SELECT * FROM Bananas");
+
         let new_def: ModuleDef = new_builder
             .finish()
             .try_into()
@@ -620,6 +644,13 @@ mod tests {
             plan.prechecks[0],
             AutoMigratePrecheck::CheckAddSequenceRangeValid(&bananas_sequence)
         );
+        let sql_old = RawRowLevelSecurityDefV9 {
+            sql: "SELECT * FROM Apples".into(),
+        };
+
+        let sql_new = RawRowLevelSecurityDefV9 {
+            sql: "SELECT * FROM Bananas".into(),
+        };
 
         assert!(plan.steps.contains(&AutoMigrateStep::RemoveSequence(&apples_sequence)));
         assert!(plan
@@ -641,6 +672,11 @@ mod tests {
         assert!(plan
             .steps
             .contains(&AutoMigrateStep::AddSchedule(&inspections_schedule)));
+
+        assert!(plan
+            .steps
+            .contains(&AutoMigrateStep::RemoveRowLevelSecurity(&sql_old.sql)));
+        assert!(plan.steps.contains(&AutoMigrateStep::AddRowLevelSecurity(&sql_new.sql)));
     }
 
     #[test]
@@ -709,6 +745,10 @@ mod tests {
             .with_unique_constraint(ColId(0), Some("Apples_name_unique_constraint".into())) // add unique constraint
             .with_type(TableType::System) // change type
             .finish();
+
+        // Invalid row-level security queries can't be detected in the ponder_auto_migrate function, they
+        // are detected when executing the plan because they depend on the database state.
+        // new_builder.add_row_level_security("SELECT wrong");
 
         // remove Bananas
         let new_def: ModuleDef = new_builder

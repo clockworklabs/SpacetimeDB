@@ -339,9 +339,9 @@ pub struct RawUniqueConstraintDataV9 {
 }
 
 /// Data for the `RLS` policy on a table.
-#[derive(Debug, Clone, SpacetimeType)]
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = crate)]
-#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+#[cfg_attr(feature = "test", derive(PartialOrd, Ord))]
 pub struct RawRowLevelSecurityDefV9 {
     /// The `sql` expression to use for row-level security.
     pub sql: RawSql,

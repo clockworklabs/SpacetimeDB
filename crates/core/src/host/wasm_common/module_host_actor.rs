@@ -28,6 +28,7 @@ use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
+use crate::sql::parser::RowLevelExpr;
 use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
@@ -268,13 +269,30 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             .with_auto_rollback(&ctx, tx, |tx| {
                 let mut table_defs: Vec<_> = self.info.module_def.tables().collect();
                 table_defs.sort_by(|a, b| a.name.cmp(&b.name));
+                let mut table_schemas = Vec::with_capacity(table_defs.len());
 
                 for def in table_defs {
                     let table_name = &def.name;
                     self.system_logger().info(&format!("Creating table `{table_name}`"));
-                    let schema = TableSchema::from_module_def(&self.info.module_def, def, (), TableId::SENTINEL);
-                    stdb.create_table(tx, schema)
+                    let mut schema = TableSchema::from_module_def(&self.info.module_def, def, (), TableId::SENTINEL);
+                    let table_id = stdb
+                        .create_table(tx, schema.clone())
                         .with_context(|| format!("failed to create table {table_name}"))?;
+                    schema.table_id = table_id;
+                    table_schemas.push(schema.into());
+                }
+                // Insert the late-bound row-level security expressions.
+                for rls in self.info.module_def.row_level_security() {
+                    self.system_logger()
+                        .info(&format!("Creating row level security `{}`", rls.sql));
+
+                    let rls = RowLevelExpr::try_from((rls, table_schemas.as_slice()))
+                        .with_context(|| format!("failed to create row-level security: `{}`", rls.sql))?;
+                    let table_id = rls.def.table_id;
+                    let sql = rls.def.sql.clone();
+                    stdb.create_row_level_security(tx, rls.def).with_context(|| {
+                        format!("failed to create row-level security for table `{table_id}`: `{sql}`",)
+                    })?;
                 }
 
                 stdb.set_initialized(tx, HostType::Wasm, program)?;

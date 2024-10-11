@@ -2,12 +2,14 @@ use super::datastore::locking_tx_datastore::MutTxId;
 use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::execution_context::ExecutionContext;
+use crate::sql::parser::RowLevelExpr;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::auth::StTableType;
+use spacetimedb_lib::db::raw_def::v9::RawRowLevelSecurityDefV9;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::ColSet;
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
-use spacetimedb_schema::def::TableDef;
+use spacetimedb_schema::def::{ModuleDefLookup, TableDef};
 use spacetimedb_schema::schema::{IndexSchema, Schema, SequenceSchema, TableSchema};
 use std::sync::Arc;
 
@@ -105,6 +107,9 @@ fn auto_migrate_database(
             }
         }
     }
+    // Is necessary to collect the full list of old and new tables to pass to the `RowLevelExpr::try_from` method,
+    // because we removed all the old row-level security definitions, then added the new ones.
+    let mut all_tables = table_schemas_by_name.clone();
 
     log::info!("Running database update steps: {}", stdb.address());
 
@@ -115,11 +120,14 @@ fn auto_migrate_database(
 
                 // Recursively sets IDs to 0.
                 // They will be initialized by the database when the table is created.
-                let table_schema = TableSchema::from_module_def(plan.new, table_def, (), 0.into());
+                let mut table_schema = TableSchema::from_module_def(plan.new, table_def, (), 0.into());
 
                 system_logger.info(&format!("Creating table `{}`", table_name));
                 log::info!("Creating table `{}`", table_name);
-                stdb.create_table(tx, table_schema)?;
+
+                let table_id = stdb.create_table(tx, table_schema.clone())?;
+                table_schema.table_id = table_id;
+                all_tables.insert(table_schema.table_name.clone(), Arc::new(table_schema));
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddIndex(index_name) => {
                 let table_def = plan.new.stored_in_table_def(index_name).unwrap();
@@ -220,6 +228,20 @@ fn auto_migrate_database(
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveSchedule(_) => {
                 anyhow::bail!("Removing schedules is not yet implemented");
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddRowLevelSecurity(sql_rls) => {
+                system_logger.info(&format!("Adding row-level security `{sql_rls}`"));
+                log::info!("Adding row-level security `{sql_rls}`");
+                let tables = all_tables.values().cloned().collect::<Vec<_>>();
+                let rls = RawRowLevelSecurityDefV9::lookup(plan.new, sql_rls).unwrap();
+                let rls = RowLevelExpr::try_from((rls, tables.as_slice()))?;
+
+                stdb.create_row_level_security(tx, rls.def)?;
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveRowLevelSecurity(sql_rls) => {
+                system_logger.info(&format!("Removing-row level security `{sql_rls}`"));
+                log::info!("Removing row-level security `{sql_rls}`");
+                stdb.drop_row_level_security(tx, sql_rls.clone())?;
             }
         }
     }

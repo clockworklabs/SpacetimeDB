@@ -27,6 +27,11 @@ pub trait SchemaView {
     fn schema(&self, name: &str) -> Option<Arc<TableSchema>>;
 }
 
+impl SchemaView for &[Arc<TableSchema>] {
+    fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
+        self.iter().find(|schema| schema.table_name == Box::from(name)).cloned()
+    }
+}
 pub trait TypeChecker {
     type Ast;
     type Set;
