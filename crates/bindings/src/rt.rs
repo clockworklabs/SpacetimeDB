@@ -7,12 +7,11 @@ use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, Address, Identity, ProductType, RawModuleDef};
+use spacetimedb_lib::{bsatn, Address, Identity, ProductType, RawModuleDef, Timestamp};
 use spacetimedb_primitives::*;
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, SystemTime};
 use sys::raw::{BytesSink, BytesSource};
 
 /// The `sender` invokes `reducer` at `timestamp` and provides it with the given `args`.
@@ -371,9 +370,7 @@ extern "C" fn __call_reducer__(
     let address = (address != Address::__DUMMY).then_some(address);
 
     // Assemble the `ReducerContext`.
-    let timestamp = SystemTime::UNIX_EPOCH
-        .checked_add(Duration::from_micros(timestamp))
-        .expect("Duration since Unix epoch overflows SystemTime");
+    let timestamp = Timestamp::from_nanos_since_unix_epoch(timestamp as i64);
     let ctx = ReducerContext {
         db: crate::Local {},
         sender,

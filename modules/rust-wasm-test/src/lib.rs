@@ -1,8 +1,7 @@
 #![allow(clippy::disallowed_names)]
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
-use spacetimedb::{duration, table, Address, Deserialize, Identity, ReducerContext, SpacetimeType, Table};
-use std::time::SystemTime;
+use spacetimedb::{duration, table, Address, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 
 #[spacetimedb::table(name = test_a, index(name = foo, btree(columns = [x])))]
 pub struct TestA {
@@ -105,7 +104,7 @@ pub type TestAlias = TestA;
 
 #[spacetimedb::table(name = repeating_test_arg, scheduled(repeating_test))]
 pub struct RepeatingTestArg {
-    prev_time: SystemTime,
+    prev_time: Timestamp,
 }
 
 #[spacetimedb::table(name = has_special_stuff)]
@@ -125,7 +124,10 @@ pub fn init(ctx: &ReducerContext) {
 
 #[spacetimedb::reducer]
 pub fn repeating_test(ctx: &ReducerContext, arg: RepeatingTestArg) {
-    let delta_time = arg.prev_time.elapsed();
+    let delta_time = ctx
+        .timestamp
+        .duration_since(arg.prev_time)
+        .expect("arg.prev_time is later than ctx.timestamp... huh?");
     log::trace!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
 }
 

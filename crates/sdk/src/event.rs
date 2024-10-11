@@ -13,8 +13,7 @@
 use crate::spacetime_module::SpacetimeModule;
 use anyhow::Context as _;
 use spacetimedb_client_api_messages::websocket::BsatnFormat;
-use spacetimedb_lib::{Address, Identity};
-use std::time::SystemTime;
+use spacetimedb_lib::{Address, Identity, Timestamp};
 
 #[non_exhaustive]
 #[derive(Debug)]
@@ -60,7 +59,7 @@ pub enum Event<R> {
 /// A state change due to a reducer, which may or may not have committed successfully.
 pub struct ReducerEvent<R> {
     /// The time at which the reducer was invoked.
-    pub timestamp: SystemTime,
+    pub timestamp: Timestamp,
 
     /// Whether the reducer committed, was aborted due to insufficient energy, or failed with an error message.
     pub status: Status,

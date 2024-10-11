@@ -12,7 +12,7 @@ pub const IDENTITY_TAG: &str = "__identity_bytes";
 /// The tag used inside the special `Address` product type.
 pub const ADDRESS_TAG: &str = "__address_bytes";
 /// The tag used inside the special `Timestamp` product type.
-pub const TIMESTAMP_TAG: &str = "__timestamp_micros_since_unix_epoch";
+pub const TIMESTAMP_TAG: &str = "__timestamp_nanos_since_unix_epoch";
 
 /// A structural product type  of the factors given by `elements`.
 ///
@@ -88,7 +88,7 @@ impl ProductType {
         match &*self.elements {
             [ProductTypeElement {
                 name: Some(name),
-                algebraic_type: AlgebraicType::U64,
+                algebraic_type: AlgebraicType::I64,
             }] => &**name == TIMESTAMP_TAG,
             _ => false,
         }

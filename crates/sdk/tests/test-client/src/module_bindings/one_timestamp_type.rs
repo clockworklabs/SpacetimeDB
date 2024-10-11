@@ -11,7 +11,7 @@ use spacetimedb_sdk::{
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct OneTimestamp {
-    pub t: std::time::SystemTime,
+    pub t: __sdk::Timestamp,
 }
 
 impl __sdk::spacetime_module::InModule for OneTimestamp {

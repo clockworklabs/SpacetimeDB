@@ -29,7 +29,7 @@ pub struct EveryVecStruct {
     pub p: Vec<String>,
     pub q: Vec<__sdk::Identity>,
     pub r: Vec<__sdk::Address>,
-    pub s: Vec<std::time::SystemTime>,
+    pub s: Vec<__sdk::Timestamp>,
 }
 
 impl __sdk::spacetime_module::InModule for EveryVecStruct {

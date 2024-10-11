@@ -11,7 +11,7 @@ use spacetimedb_sdk::{
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct VecTimestamp {
-    pub t: Vec<std::time::SystemTime>,
+    pub t: Vec<__sdk::Timestamp>,
 }
 
 impl __sdk::spacetime_module::InModule for VecTimestamp {

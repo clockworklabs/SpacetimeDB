@@ -23,7 +23,7 @@ use core::{
 };
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::{Address, Identity, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -34,7 +34,6 @@ use spacetimedb_sats::{
 use std::{
     io::{self, Read as _, Write as _},
     sync::Arc,
-    time::SystemTime,
 };
 
 pub trait RowListLen {
@@ -232,9 +231,8 @@ pub struct TransactionUpdate<F: WebsocketFormat> {
     pub status: UpdateStatus<F>,
     /// The time when the reducer started.
     ///
-    /// Note that [`SystemTime`] serializes as microseconds since the Unix epoch
-    /// in the SATS serialization formats.
-    pub timestamp: SystemTime,
+    /// Note that [`Timestamp`] serializes as `i64` nanoseconds since the Unix epoch.
+    pub timestamp: Timestamp,
     /// The identity of the user who requested the reducer run. For event-driven and
     /// scheduled reducers, it is the identity of the database owner.
     pub caller_identity: Identity,

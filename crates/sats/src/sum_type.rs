@@ -103,7 +103,7 @@ impl SumType {
                 first.has_name(SCHEDULE_AT_INTERVAL_TAG)
                     && first.algebraic_type.is_u64()
                     && second.has_name(SCHEDULE_AT_TIME_TAG)
-                    && second.algebraic_type.is_u64()
+                    && second.algebraic_type.is_timestamp()
             }
             _ => false,
         }

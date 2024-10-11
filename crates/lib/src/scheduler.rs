@@ -1,8 +1,6 @@
-use std::{
-    fmt::Debug,
-    time::{Duration, SystemTime},
-};
+use std::fmt::Debug;
 
+use spacetimedb_lib::Timestamp;
 use spacetimedb_sats::{
     algebraic_value::de::{ValueDeserializeError, ValueDeserializer},
     de::Deserialize,
@@ -24,16 +22,19 @@ pub enum ScheduleAt {
     /// Value is a duration in microseconds.
     Interval(u64),
     /// A specific time to which the reducer is scheduled.
-    Time(SystemTime),
+    Time(Timestamp),
 }
 impl_st!([] ScheduleAt, ScheduleAt::get_type());
 
 impl ScheduleAt {
     /// Converts the `ScheduleAt` to a `std::time::Duration` from now.
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub fn to_duration_from_now(&self) -> std::time::Duration {
+        use std::time::{Duration, SystemTime};
         match self {
             ScheduleAt::Time(time) => {
-                let now = std::time::SystemTime::now();
+                let now = SystemTime::now();
+                let time = SystemTime::from(*time);
                 time.duration_since(now).unwrap_or(Duration::from_micros(0))
             }
             ScheduleAt::Interval(dur) => Duration::from_micros(*dur),
@@ -54,13 +55,13 @@ impl From<std::time::Duration> for ScheduleAt {
 
 impl From<std::time::SystemTime> for ScheduleAt {
     fn from(value: std::time::SystemTime) -> Self {
-        ScheduleAt::Time(value)
+        Timestamp::from(value).into()
     }
 }
 
 impl From<crate::Timestamp> for ScheduleAt {
     fn from(value: crate::Timestamp) -> Self {
-        value.to_system_time().into()
+        ScheduleAt::Time(value)
     }
 }
 

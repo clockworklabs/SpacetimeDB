@@ -11,7 +11,7 @@ use spacetimedb_sdk::{
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct InsertVecTimestamp {
-    pub t: Vec<std::time::SystemTime>,
+    pub t: Vec<__sdk::Timestamp>,
 }
 
 impl __sdk::spacetime_module::InModule for InsertVecTimestamp {
@@ -30,7 +30,7 @@ pub trait insert_vec_timestamp {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_vec_timestamp`] callbacks.
-    fn insert_vec_timestamp(&self, t: Vec<std::time::SystemTime>) -> __anyhow::Result<()>;
+    fn insert_vec_timestamp(&self, t: Vec<__sdk::Timestamp>) -> __anyhow::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_vec_timestamp`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -43,7 +43,7 @@ pub trait insert_vec_timestamp {
     /// to cancel the callback.
     fn on_insert_vec_timestamp(
         &self,
-        callback: impl FnMut(&super::EventContext, &Vec<std::time::SystemTime>) + Send + 'static,
+        callback: impl FnMut(&super::EventContext, &Vec<__sdk::Timestamp>) + Send + 'static,
     ) -> InsertVecTimestampCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_vec_timestamp`],
     /// causing it not to run in the future.
@@ -51,12 +51,12 @@ pub trait insert_vec_timestamp {
 }
 
 impl insert_vec_timestamp for super::RemoteReducers {
-    fn insert_vec_timestamp(&self, t: Vec<std::time::SystemTime>) -> __anyhow::Result<()> {
+    fn insert_vec_timestamp(&self, t: Vec<__sdk::Timestamp>) -> __anyhow::Result<()> {
         self.imp.call_reducer("insert_vec_timestamp", InsertVecTimestamp { t })
     }
     fn on_insert_vec_timestamp(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &Vec<std::time::SystemTime>) + Send + 'static,
+        mut callback: impl FnMut(&super::EventContext, &Vec<__sdk::Timestamp>) + Send + 'static,
     ) -> InsertVecTimestampCallbackId {
         InsertVecTimestampCallbackId(self.imp.on_reducer::<InsertVecTimestamp>(
             "insert_vec_timestamp",

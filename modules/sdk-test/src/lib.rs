@@ -6,12 +6,10 @@
 // and clippy misunderstands `#[allow]` attributes in macro-expansions.
 #![allow(clippy::too_many_arguments)]
 
-use std::time::SystemTime;
-
 use anyhow::{Context, Result};
 use spacetimedb::{
     sats::{i256, u256},
-    Address, Identity, ReducerContext, SpacetimeType, Table,
+    Address, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
 };
 
 #[derive(SpacetimeType)]
@@ -41,7 +39,7 @@ pub enum EnumWithPayload {
     Str(String),
     Identity(Identity),
     Address(Address),
-    Timestamp(SystemTime),
+    Timestamp(Timestamp),
     Bytes(Vec<u8>),
     Ints(Vec<i32>),
     Strings(Vec<String>),
@@ -78,7 +76,7 @@ pub struct EveryPrimitiveStruct {
     p: String,
     q: Identity,
     r: Address,
-    s: SystemTime,
+    s: Timestamp,
 }
 
 #[derive(SpacetimeType)]
@@ -101,7 +99,7 @@ pub struct EveryVecStruct {
     p: Vec<String>,
     q: Vec<Identity>,
     r: Vec<Address>,
-    s: Vec<SystemTime>,
+    s: Vec<Timestamp>,
 }
 
 /// Defines one or more tables, and optionally reducers alongside them.
@@ -261,7 +259,7 @@ define_tables! {
     OneIdentity { insert insert_one_identity } i Identity;
     OneAddress { insert insert_one_address } a Address;
 
-    OneTimestamp { insert insert_one_timestamp } t SystemTime;
+    OneTimestamp { insert insert_one_timestamp } t Timestamp;
 
     OneSimpleEnum { insert insert_one_simple_enum } e SimpleEnum;
     OneEnumWithPayload { insert insert_one_enum_with_payload } e EnumWithPayload;
@@ -298,7 +296,7 @@ define_tables! {
     VecIdentity { insert insert_vec_identity } i Vec<Identity>;
     VecAddress { insert insert_vec_address } a Vec<Address>;
 
-    VecTimestamp { insert insert_vec_timestamp } t Vec<SystemTime>;
+    VecTimestamp { insert insert_vec_timestamp } t Vec<Timestamp>;
 
     VecSimpleEnum { insert insert_vec_simple_enum } e Vec<SimpleEnum>;
     VecEnumWithPayload { insert insert_vec_enum_with_payload } e Vec<EnumWithPayload>;

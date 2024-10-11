@@ -1,7 +1,7 @@
 //! STDB module used for benchmarks based on "realistic" workloads we are focusing in improving.
 use crate::Load;
-use spacetimedb::{log, ReducerContext, SpacetimeType, Table};
-use std::{hint::black_box, time::SystemTime};
+use spacetimedb::{log, ReducerContext, SpacetimeType, Table, Timestamp};
+use std::hint::black_box;
 
 #[derive(SpacetimeType, Debug, Clone, Copy)]
 pub struct Vector2 {
@@ -38,17 +38,17 @@ pub struct Circle {
     pub player_id: u32,
     pub direction: Vector2,
     pub magnitude: f32,
-    pub last_split_time: SystemTime,
+    pub last_split_time: Timestamp,
 }
 
 impl Circle {
-    pub fn new(entity_id: u32, player_id: u32, x: f32, y: f32, magnitude: f32) -> Self {
+    pub fn new(entity_id: u32, player_id: u32, x: f32, y: f32, magnitude: f32, last_split_time: Timestamp) -> Self {
         Self {
             entity_id,
             player_id,
             direction: Vector2 { x, y },
             magnitude,
-            last_split_time: SystemTime::now(),
+            last_split_time,
         }
     }
 }
@@ -91,9 +91,14 @@ pub fn insert_bulk_entity(ctx: &ReducerContext, count: u32) {
 #[spacetimedb::reducer]
 pub fn insert_bulk_circle(ctx: &ReducerContext, count: u32) {
     for id in 0..count {
-        ctx.db
-            .circle()
-            .insert(Circle::new(id, id, id as f32, (id + 5) as f32, (id * 5) as f32));
+        ctx.db.circle().insert(Circle::new(
+            id,
+            id,
+            id as f32,
+            (id + 5) as f32,
+            (id * 5) as f32,
+            ctx.timestamp,
+        ));
     }
     log::info!("INSERT CIRCLE: {count}");
 }

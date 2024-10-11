@@ -15,7 +15,6 @@ pub mod table;
 use spacetimedb_lib::bsatn;
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::time::SystemTime;
 
 pub use log;
 #[cfg(feature = "rand")]
@@ -35,6 +34,7 @@ pub use spacetimedb_lib::ser::Serialize;
 pub use spacetimedb_lib::Address;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::Identity;
+pub use spacetimedb_lib::Timestamp;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{AutoIncOverflow, BTreeIndex, Table, TryInsertError, UniqueColumn, UniqueConstraintViolation};
@@ -47,7 +47,7 @@ pub struct ReducerContext {
     /// The `Identity` of the client that invoked the reducer.
     pub sender: Identity,
     /// The time at which the reducer was started.
-    pub timestamp: SystemTime,
+    pub timestamp: Timestamp,
     /// The `Address` of the client that invoked the reducer.
     ///
     /// `None` if no `Address` was supplied to the `/database/call` HTTP endpoint,
@@ -68,7 +68,7 @@ impl ReducerContext {
         Self {
             db: Local {},
             sender: Identity::__dummy(),
-            timestamp: SystemTime::UNIX_EPOCH,
+            timestamp: Timestamp::UNIX_EPOCH,
             address: None,
             rng: std::cell::OnceCell::new(),
         }

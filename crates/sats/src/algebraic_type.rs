@@ -319,7 +319,7 @@ impl AlgebraicType {
 
     /// Construct a copy of the point-in-time `Timestamp` type.
     pub fn timestamp() -> Self {
-        AlgebraicType::product([(TIMESTAMP_TAG, AlgebraicType::U64)])
+        AlgebraicType::product([(TIMESTAMP_TAG, AlgebraicType::I64)])
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.

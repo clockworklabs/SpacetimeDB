@@ -28,6 +28,7 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::Address;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_sats::{algebraic_value, ProductValue};
 use spacetimedb_schema::auto_migrate::AutoMigrateError;
@@ -36,7 +37,7 @@ use spacetimedb_schema::def::{ModuleDef, ReducerDef};
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::fmt;
 use std::sync::{Arc, Weak};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -158,7 +159,7 @@ pub struct ModuleFunctionCall {
 
 #[derive(Debug, Clone)]
 pub struct ModuleEvent {
-    pub timestamp: SystemTime,
+    pub timestamp: Timestamp,
     pub caller_identity: Identity,
     pub caller_address: Option<Address>,
     pub function_call: ModuleFunctionCall,
@@ -298,7 +299,7 @@ pub trait ModuleInstance: Send + 'static {
 }
 
 pub struct CallReducerParams {
-    pub timestamp: SystemTime,
+    pub timestamp: Timestamp,
     pub caller_identity: Identity,
     pub caller_address: Address,
     pub client: Option<Arc<ClientConnectionSender>>,
@@ -573,7 +574,7 @@ impl ModuleHost {
                     name: reducer_name.to_owned(),
                     caller_identity,
                     caller_address,
-                    timestamp: SystemTime::now(),
+                    timestamp: Timestamp::now(),
                     arg_bsatn: Bytes::new(),
                 },
             )
@@ -690,7 +691,7 @@ impl ModuleHost {
             inst.call_reducer(
                 None,
                 CallReducerParams {
-                    timestamp: SystemTime::now(),
+                    timestamp: Timestamp::now(),
                     caller_identity,
                     caller_address,
                     client,

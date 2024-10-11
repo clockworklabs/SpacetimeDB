@@ -2,14 +2,12 @@
 #[allow(clippy::large_enum_variant)]
 mod module_bindings;
 
-use std::time::SystemTime;
-
 use module_bindings::*;
 
 use spacetimedb_sdk::{
     credentials,
     sats::{i256, u256},
-    Address, DbContext, Event, Identity, ReducerEvent, Status, Table,
+    Address, DbContext, Event, Identity, ReducerEvent, Status, Table, Timestamp,
 };
 use test_counter::TestCounter;
 
@@ -679,7 +677,7 @@ fn exec_insert_timestamp() {
         let test_counter = test_counter.clone();
         move |ctx| {
             subscribe_all_then(ctx, move |ctx| {
-                insert_one::<OneTimestamp>(ctx, &test_counter, SystemTime::now());
+                insert_one::<OneTimestamp>(ctx, &test_counter, Timestamp::now());
 
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             })
@@ -1005,7 +1003,7 @@ fn exec_insert_vec() {
             insert_one::<VecIdentity>(ctx, &test_counter, vec![ctx.identity()]);
             insert_one::<VecAddress>(ctx, &test_counter, vec![ctx.address()]);
 
-            insert_one::<VecTimestamp>(ctx, &test_counter, vec![SystemTime::now()]);
+            insert_one::<VecTimestamp>(ctx, &test_counter, vec![Timestamp::now()]);
 
             sub_applied_nothing_result(assert_all_tables_empty(ctx));
         }
@@ -1043,7 +1041,7 @@ fn every_primitive_struct() -> EveryPrimitiveStruct {
         p: "string".to_string(),
         q: Identity::__dummy(),
         r: Address::default(),
-        s: SystemTime::now(),
+        s: Timestamp::now(),
     }
 }
 
@@ -1067,7 +1065,7 @@ fn every_vec_struct() -> EveryVecStruct {
         p: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
         q: vec![Identity::__dummy()],
         r: vec![Address::default()],
-        s: vec![SystemTime::now()],
+        s: vec![Timestamp::now()],
     }
 }
 
@@ -1273,25 +1271,28 @@ fn exec_insert_long_table() {
         let test_counter = test_counter.clone();
         let mut large_table_result = Some(test_counter.add_test("insert-large-table"));
         move |ctx| {
-            ctx.db.large_table().on_insert(move |ctx, row| {
-                if large_table_result.is_some() {
-                    let run_tests = || {
-                        assert_eq_or_bail!(large_table(), *row);
-                        if !matches!(
-                            ctx.event,
-                            Event::Reducer(ReducerEvent {
-                                reducer: Reducer::InsertLargeTable(_),
-                                ..
-                            })
-                        ) {
-                            anyhow::bail!("Unexpected event: expeced InsertLargeTable but found {:?}", ctx.event,);
-                        }
-                        Ok(())
-                    };
-                    (large_table_result.take().unwrap())(run_tests());
+            let large_table = large_table();
+            ctx.db.large_table().on_insert({
+                let large_table = large_table.clone();
+                move |ctx, row| {
+                    if large_table_result.is_some() {
+                        let run_tests = || {
+                            assert_eq_or_bail!(large_table, *row);
+                            if !matches!(
+                                ctx.event,
+                                Event::Reducer(ReducerEvent {
+                                    reducer: Reducer::InsertLargeTable(_),
+                                    ..
+                                })
+                            ) {
+                                anyhow::bail!("Unexpected event: expeced InsertLargeTable but found {:?}", ctx.event,);
+                            }
+                            Ok(())
+                        };
+                        (large_table_result.take().unwrap())(run_tests());
+                    }
                 }
             });
-            let large_table = large_table();
             ctx.reducers
                 .insert_large_table(
                     large_table.a,

@@ -11,9 +11,10 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{bsatn, Address};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 #[derive(thiserror::Error, Debug)]
 pub enum MessageHandleError {
@@ -123,7 +124,7 @@ pub struct MessageExecutionError {
 impl MessageExecutionError {
     fn into_event(self) -> ModuleEvent {
         ModuleEvent {
-            timestamp: SystemTime::now(),
+            timestamp: Timestamp::now(),
             caller_identity: self.caller_identity,
             caller_address: self.caller_address,
             function_call: ModuleFunctionCall {

@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use anyhow::anyhow;
 use futures::StreamExt;
@@ -7,6 +7,7 @@ use rustc_hash::FxHashMap;
 use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_lib::scheduler::ScheduleAt;
 use spacetimedb_lib::Address;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{bsatn::ToBsatn as _, AlgebraicValue};
 use spacetimedb_schema::schema::TableSchema;
@@ -172,7 +173,8 @@ impl Scheduler {
         // Assuming a monotonic clock,
         // this means we may reject some otherwise acceptable schedule calls.
         //
-        // If `std::time::SystemTime` is not monotonic,
+        // If `Timestamp::now()`, i.e. `std::time::SystemTime::now()`,
+        // is not monotonic,
         // `DelayQueue::insert` may panic.
         // This will happen if a module attempts to schedule a reducer
         // with a delay just before the two-year limit,
@@ -287,7 +289,7 @@ impl SchedulerActor {
                     let reducer_args = args.into_tuple(reducer_seed)?;
 
                     return Ok(Some(CallReducerParams {
-                        timestamp: SystemTime::now(),
+                        timestamp: Timestamp::now(),
                         caller_identity,
                         caller_address: Address::default(),
                         client: None,
@@ -319,7 +321,7 @@ impl SchedulerActor {
             let reducer_args = ReducerArgs::Bsatn(bsatn_args.into()).into_tuple(reducer_seed)?;
 
             Ok(Some(CallReducerParams {
-                timestamp: SystemTime::now(),
+                timestamp: Timestamp::now(),
                 caller_identity,
                 caller_address: Address::default(),
                 client: None,
@@ -412,7 +414,7 @@ fn commit_and_broadcast_deletion_event(ctx: &ExecutionContext, tx: MutTxId, modu
     let caller_identity = module_host.info().identity;
 
     let event = ModuleEvent {
-        timestamp: SystemTime::now(),
+        timestamp: Timestamp::now(),
         caller_identity,
         caller_address: None,
         function_call: ModuleFunctionCall::default(),

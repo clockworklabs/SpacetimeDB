@@ -49,7 +49,7 @@ pub enum EnumWithPayload {
 
     Address(__sdk::Address),
 
-    Timestamp(std::time::SystemTime),
+    Timestamp(__sdk::Timestamp),
 
     Bytes(Vec<u8>),
 

@@ -29,7 +29,7 @@ pub struct EveryPrimitiveStruct {
     pub p: String,
     pub q: __sdk::Identity,
     pub r: __sdk::Address,
-    pub s: std::time::SystemTime,
+    pub s: __sdk::Timestamp,
 }
 
 impl __sdk::spacetime_module::InModule for EveryPrimitiveStruct {

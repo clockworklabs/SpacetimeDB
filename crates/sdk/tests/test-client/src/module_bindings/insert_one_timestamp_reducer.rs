@@ -11,7 +11,7 @@ use spacetimedb_sdk::{
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct InsertOneTimestamp {
-    pub t: std::time::SystemTime,
+    pub t: __sdk::Timestamp,
 }
 
 impl __sdk::spacetime_module::InModule for InsertOneTimestamp {
@@ -30,7 +30,7 @@ pub trait insert_one_timestamp {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_one_timestamp`] callbacks.
-    fn insert_one_timestamp(&self, t: std::time::SystemTime) -> __anyhow::Result<()>;
+    fn insert_one_timestamp(&self, t: __sdk::Timestamp) -> __anyhow::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_one_timestamp`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -43,7 +43,7 @@ pub trait insert_one_timestamp {
     /// to cancel the callback.
     fn on_insert_one_timestamp(
         &self,
-        callback: impl FnMut(&super::EventContext, &std::time::SystemTime) + Send + 'static,
+        callback: impl FnMut(&super::EventContext, &__sdk::Timestamp) + Send + 'static,
     ) -> InsertOneTimestampCallbackId;
     /// Cancel a callback previously registered by [`Self::on_insert_one_timestamp`],
     /// causing it not to run in the future.
@@ -51,12 +51,12 @@ pub trait insert_one_timestamp {
 }
 
 impl insert_one_timestamp for super::RemoteReducers {
-    fn insert_one_timestamp(&self, t: std::time::SystemTime) -> __anyhow::Result<()> {
+    fn insert_one_timestamp(&self, t: __sdk::Timestamp) -> __anyhow::Result<()> {
         self.imp.call_reducer("insert_one_timestamp", InsertOneTimestamp { t })
     }
     fn on_insert_one_timestamp(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &std::time::SystemTime) + Send + 'static,
+        mut callback: impl FnMut(&super::EventContext, &__sdk::Timestamp) + Send + 'static,
     ) -> InsertOneTimestampCallbackId {
         InsertOneTimestampCallbackId(self.imp.on_reducer::<InsertOneTimestamp>(
             "insert_one_timestamp",

@@ -1,52 +1,105 @@
-use crate::{de::Deserialize, impl_deserialize, impl_serialize, impl_st, ser::Serialize, AlgebraicType};
+use crate::{de::Deserialize, impl_st, ser::Serialize, AlgebraicType};
 use std::time::{Duration, SystemTime};
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize, Debug)]
 #[sats(crate = crate)]
-/// A point in time, measured in microseconds since the Unix epoch.
-///
-/// This type is intended for internal use. It can be converted to and from [`SystemTime`],
-/// which is how SpacetimeDB users are intended to interact with points in time.
+/// A point in time, measured in nanoseconds since the Unix epoch.
 pub struct Timestamp {
-    __timestamp_micros_since_unix_epoch: u64,
+    __timestamp_nanos_since_unix_epoch: i64,
 }
 
 impl_st!([] Timestamp, AlgebraicType::timestamp());
 
 impl Timestamp {
-    pub const UNIX_EPOCH: Self = Self {
-        __timestamp_micros_since_unix_epoch: 0,
-    };
-    pub fn to_micros_since_unix_epoch(self) -> u64 {
-        self.__timestamp_micros_since_unix_epoch
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    pub fn now() -> Self {
+        Self::from_system_time(SystemTime::now())
     }
-    pub fn from_micros_since_unix_epoch(micros: u64) -> Self {
+
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    #[deprecated = "Timestamp::now() is stubbed and will panic. Read the `.timestamp` field of a `ReducerContext` instead."]
+    pub fn now() -> Self {
+        unimplemented!()
+    }
+
+    pub const UNIX_EPOCH: Self = Self {
+        __timestamp_nanos_since_unix_epoch: 0,
+    };
+
+    pub fn to_nanos_since_unix_epoch(self) -> i64 {
+        self.__timestamp_nanos_since_unix_epoch
+    }
+    pub fn from_nanos_since_unix_epoch(nanos: i64) -> Self {
         Self {
-            __timestamp_micros_since_unix_epoch: micros,
+            __timestamp_nanos_since_unix_epoch: nanos,
         }
     }
-    pub fn to_duration_since_unix_epoch(self) -> Duration {
-        Duration::from_micros(self.to_micros_since_unix_epoch())
+
+    /// Returns `Err(duration_before_unix_epoch)` if `self` is before `Self::UNIX_EPOCH`.
+    pub fn to_duration_since_unix_epoch(self) -> Result<Duration, Duration> {
+        let nanos = self.to_nanos_since_unix_epoch();
+        if nanos >= 0 {
+            Ok(Duration::from_nanos(nanos as u64))
+        } else {
+            Err(Duration::from_nanos((-nanos) as u64))
+        }
     }
+
+    /// Return a [`Timestamp`] which is [`Timestamp::UNIX_EPOCH`] plus `duration`.
+    ///
+    /// Panics if `duration.as_nanos` overflows an `i64`
     pub fn from_duration_since_unix_epoch(duration: Duration) -> Self {
-        Self::from_micros_since_unix_epoch(
+        Self::from_nanos_since_unix_epoch(
             duration
-                .as_micros()
+                .as_nanos()
                 .try_into()
-                .expect("Duration since Unix epoch overflows u64 microseconds"),
+                .expect("Duration since Unix epoch overflows i64 nanoseconds"),
         )
     }
+
+    /// Convert `self` into a [`SystemTime`] which refers to approximately the same point in time.
+    ///
+    /// This conversion may lose precision, as [`SystemTime`]'s prevision varies depending on platform.
+    /// E.g. Unix targets have nanosecond precision, but Windows only 100-nanosecond precision.
+    ///
+    /// This conversion may panic if `self` is out of bounds for [`SystemTime`].
+    /// We are not aware of any platforms for which [`SystemTime`] offers a smaller range than [`Timestamp`],
+    /// but such a platform may exist.
     pub fn to_system_time(self) -> SystemTime {
-        let duration = self.to_duration_since_unix_epoch();
-        SystemTime::UNIX_EPOCH
-            .checked_add(duration)
-            .expect("Timestamp with u64 milliseconds since Unix epoch overflows SystemTime")
+        match self.to_duration_since_unix_epoch() {
+            Ok(positive) => SystemTime::UNIX_EPOCH
+                .checked_add(positive)
+                .expect("Timestamp with i64 nanoseconds since Unix epoch overflows SystemTime"),
+            Err(negative) => SystemTime::UNIX_EPOCH
+                .checked_sub(negative)
+                .expect("Timestamp with i64 nanoseconds before Unix epoch overflows SystemTime"),
+        }
     }
+
+    /// Convert a [`SystemTime`] into a [`Timestamp`] which refers to approximately the same point in time.
+    ///
+    /// This conversion may panic if `system_time` is out of bounds for [`Duration`].
+    /// [`SystemTime`]'s range is larger than [`Timestamp`] on both Unix and Windows targets,
+    /// so times in the far past or far future may panic.
+    /// [`Timestamp`]'s range is approximately 292 years before and after the Unix epoch.
     pub fn from_system_time(system_time: SystemTime) -> Self {
         let duration = system_time
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("SystemTime predates the Unix epoch");
         Self::from_duration_since_unix_epoch(duration)
+    }
+
+    /// Returns the [`Duration`] delta between `self` and `earlier`, if `earlier` predates `self`.
+    ///
+    /// Returns `None` if `earlier` is strictly greater than `self`,
+    /// or if the difference between `earlier` and `self` overflows an `i64`.
+    pub fn duration_since(self, earlier: Timestamp) -> Option<Duration> {
+        let delta = self
+            .to_nanos_since_unix_epoch()
+            .checked_sub(earlier.to_nanos_since_unix_epoch())?;
+        Self::from_nanos_since_unix_epoch(delta)
+            .to_duration_since_unix_epoch()
+            .ok()
     }
 }
 
@@ -61,10 +114,6 @@ impl From<Timestamp> for SystemTime {
         timestamp.to_system_time()
     }
 }
-
-impl_st!([] SystemTime, AlgebraicType::timestamp());
-impl_serialize!([] SystemTime, (self, ser) => Timestamp::from_system_time(*self).serialize(ser));
-impl_deserialize!([] SystemTime, de => Timestamp::deserialize(de).map(Timestamp::to_system_time));
 
 #[cfg(test)]
 mod test {
@@ -89,12 +138,12 @@ mod test {
 
     proptest! {
         #[test]
-        fn round_trip_timestamp_through_systemtime(micros in any::<u64>()) {
-            let timestamp = Timestamp::from_micros_since_unix_epoch(micros);
+        fn round_trip_timestamp_through_systemtime(nanos in any::<i64>().prop_map(|n| n.abs())) {
+            let timestamp = Timestamp::from_nanos_since_unix_epoch(nanos);
             let system_time = SystemTime::from(timestamp);
             let timestamp_prime = Timestamp::from(system_time);
             prop_assert_eq!(timestamp_prime, timestamp);
-            prop_assert_eq!(timestamp_prime.to_micros_since_unix_epoch(), micros);
+            prop_assert_eq!(timestamp_prime.to_nanos_since_unix_epoch(), nanos);
         }
     }
 }

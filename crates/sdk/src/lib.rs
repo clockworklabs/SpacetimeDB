@@ -46,4 +46,4 @@ pub use db_context::DbContext;
 pub use event::{Event, ReducerEvent, Status};
 pub use table::{Table, TableWithPrimaryKey};
 
-pub use spacetimedb_lib::{Address, Identity, ScheduleAt};
+pub use spacetimedb_lib::{Address, Identity, ScheduleAt, Timestamp};

@@ -1,14 +1,11 @@
 use crate::module_bindings::*;
 use spacetimedb_sdk::{
     sats::{i256, u256},
-    Address, Event, Identity, Table,
+    Address, Event, Identity, Table, Timestamp,
 };
-use std::{
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-    time::SystemTime,
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 use test_counter::TestCounter;
 
@@ -192,7 +189,7 @@ impl_simple_test_table! {
     }
 
     OneTimestamp {
-        Contents = SystemTime;
+        Contents = Timestamp;
         field_name = t;
         insert_reducer = insert_one_timestamp;
         insert_reducer_event = InsertOneTimestamp;
@@ -377,7 +374,7 @@ impl_simple_test_table! {
     }
 
     VecTimestamp {
-        Contents = Vec<SystemTime>;
+        Contents = Vec<Timestamp>;
         field_name = t;
         insert_reducer = insert_vec_timestamp;
         insert_reducer_event = InsertVecTimestamp;

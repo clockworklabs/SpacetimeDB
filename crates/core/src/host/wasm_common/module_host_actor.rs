@@ -6,9 +6,10 @@ use spacetimedb_schema::auto_migrate::ponder_migrate;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use spacetimedb_lib::buffer::DecodeError;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{bsatn, Address, RawModuleDef};
 
 use super::instrumentation::CallTimes;
@@ -259,7 +260,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     #[tracing::instrument(skip_all, fields(db_id = self.instance.instance_env().replica_ctx.id))]
     fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
         log::debug!("init database");
-        let timestamp = SystemTime::now();
+        let timestamp = Timestamp::now();
         let stdb = &*self.replica_context().relational_db;
         let ctx = ExecutionContext::internal(stdb.address());
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -558,7 +559,7 @@ pub struct ReducerOp<'a> {
     pub name: &'a str,
     pub caller_identity: &'a Identity,
     pub caller_address: &'a Address,
-    pub timestamp: SystemTime,
+    pub timestamp: Timestamp,
     /// The BSATN-serialized arguments passed to the reducer.
     pub arg_bytes: Bytes,
 }
