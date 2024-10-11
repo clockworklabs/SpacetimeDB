@@ -1498,11 +1498,11 @@ mod tests {
     use commitlog::Commitlog;
     use durability::EmptyHistory;
     use pretty_assertions::assert_eq;
-    use spacetimedb_client_api_messages::timestamp::Timestamp;
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_lib::db::raw_def::v9::RawTableDefBuilder;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
+    use spacetimedb_lib::Timestamp;
     use spacetimedb_sats::bsatn;
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
