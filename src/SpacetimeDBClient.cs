@@ -82,6 +82,8 @@ namespace SpacetimeDB
         internal void Subscribe(ISubscriptionHandle handle, string[] querySqls);
         void FrameTick();
         void Disconnect();
+
+        internal Task<T[]> RemoteQuery<T>(string query) where T : IDatabaseRow, new();
     }
 
     public abstract class DbConnectionBase<DbConnection, Reducer> : IDbConnection
@@ -129,7 +131,7 @@ namespace SpacetimeDB
 
         internal WebSocket webSocket;
         private bool connectionClosed;
-        protected readonly ClientCache clientDB = new();
+        protected readonly ClientCache clientDB;
 
         protected abstract Reducer ToReducer(TransactionUpdate update);
         protected abstract IEventContext ToEventContext(Event<Reducer> reducerEvent);
@@ -142,6 +144,8 @@ namespace SpacetimeDB
 
         protected DbConnectionBase()
         {
+            clientDB = new(this);
+
             var options = new WebSocket.ConnectOptions
             {
                 //v1.bin.spacetimedb
@@ -830,24 +834,25 @@ namespace SpacetimeDB
             ));
         }
 
-        /// Usage: SpacetimeDBClientBase.instance.OneOffQuery<Message>("WHERE sender = \"bob\"");
-        public async Task<T[]> OneOffQuery<T>(string query)
-            where T : IDatabaseRow, new()
+        /// Usage: SpacetimeDBClientBase.instance.OneOffQuery<Message>("SELECT * FROM table WHERE sender = \"bob\"");
+        [Obsolete("This is replaced by ctx.Db.TableName.OneOffQuery(\"WHERE ...\")", false)]
+        public Task<T[]> OneOffQuery<T>(string query) where T : IDatabaseRow, new() =>
+            ((IDbConnection)this).RemoteQuery<T>(query);
+
+        async Task<T[]> IDbConnection.RemoteQuery<T>(string query)
         {
             var messageId = Guid.NewGuid();
-            var type = typeof(T);
             var resultSource = new TaskCompletionSource<OneOffQueryResponse>();
             waitingOneOffQueries[messageId] = resultSource;
 
             // unsanitized here, but writes will be prevented serverside.
             // the best they can do is send multiple selects, which will just result in them getting no data back.
-            string queryString = $"SELECT * FROM {type.Name} {query}";
 
             var requestId = stats.OneOffRequestTracker.StartTrackingRequest();
             webSocket.Send(new ClientMessage.OneOffQuery(new OneOffQuery
             {
                 MessageId = messageId.ToByteArray(),
-                QueryString = queryString,
+                QueryString = query,
             }));
 
             // Suspend for an arbitrary amount of time
@@ -860,7 +865,7 @@ namespace SpacetimeDB
 
             T[] LogAndThrow(string error)
             {
-                error = $"While processing one-off-query `{queryString}`, ID {messageId}: {error}";
+                error = $"While processing one-off-query `{query}`, ID {messageId}: {error}";
                 Log.Error(error);
                 throw new Exception(error);
             }
@@ -879,9 +884,9 @@ namespace SpacetimeDB
             var resultTable = result.Tables[0];
             var cacheTable = clientDB.GetTable(resultTable.TableName);
 
-            if (cacheTable?.ClientTableType != type)
+            if (cacheTable?.ClientTableType != typeof(T))
             {
-                return LogAndThrow($"Mismatched result type, expected {type} but got {resultTable.TableName}");
+                return LogAndThrow($"Mismatched result type, expected {typeof(T)} but got {resultTable.TableName}");
             }
 
             return BsatnRowListIter(resultTable.Rows)
