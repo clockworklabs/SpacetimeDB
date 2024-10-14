@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use axum::extract::{Query, Request, State};
 use axum::middleware::Next;
@@ -6,13 +6,14 @@ use axum::response::IntoResponse;
 use axum_extra::typed_header::TypedHeader;
 use headers::{authorization, HeaderMapExt};
 use http::{request, HeaderValue, StatusCode};
-use rand::Rng;
 use serde::Deserialize;
+use spacetimedb::auth::identity::SpacetimeIdentityClaims2;
 use spacetimedb::auth::identity::{
     decode_token, encode_token, DecodingKey, EncodingKey, JwtError, JwtErrorKind, SpacetimeIdentityClaims,
 };
 use spacetimedb::energy::EnergyQuanta;
 use spacetimedb::identity::Identity;
+use uuid::Uuid;
 
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
@@ -58,6 +59,9 @@ impl SpacetimeCreds {
     pub fn decode_token(&self, public_key: &DecodingKey) -> Result<SpacetimeIdentityClaims, JwtError> {
         decode_token(public_key, self.token()).map(|x| x.claims)
     }
+    fn from_signed_token(token: String) -> Self {
+        Self { token }
+    }
     /// Mint a new credentials JWT for an identity.
     pub fn encode_token(private_key: &EncodingKey, identity: Identity) -> Result<Self, JwtError> {
         let token = encode_token(private_key, identity)?;
@@ -94,19 +98,67 @@ pub struct SpacetimeAuth {
     pub identity: Identity,
 }
 
+use jsonwebtoken;
+
+struct TokenClaims {
+    pub issuer: String,
+    pub subject: String,
+    pub audience: Vec<String>,
+}
+use blake3;
+
+impl TokenClaims {
+    // Compute the id from the issuer and subject.
+    fn id(&self) -> Identity {
+        let input = format!("{}|{}", self.issuer, self.subject);
+        let first_hash = blake3::hash(input.as_bytes());
+        let id_hash = &first_hash.as_bytes()[..26];
+        let mut checksum_input = [0u8; 28];
+        // TODO: double check this gets the right number...
+        checksum_input[2..].copy_from_slice(id_hash);
+        checksum_input[0] = 0xc2;
+        checksum_input[1] = 0x00;
+        let checksum_hash = &blake3::hash(&checksum_input);
+
+        let mut final_bytes = [0u8; 32];
+        final_bytes[0] = 0xc2;
+        final_bytes[1] = 0x00;
+        final_bytes[2..6].copy_from_slice(&checksum_hash.as_bytes()[..4]);
+        final_bytes[6..].copy_from_slice(id_hash);
+        Identity::from_byte_array(final_bytes)
+    }
+
+    fn encode_and_sign(&self, private_key: &EncodingKey) -> Result<String, JwtError> {
+        let claims = SpacetimeIdentityClaims2 {
+            identity: self.id(),
+            subject: self.subject.clone(),
+            issuer: self.issuer.clone(),
+            audience: self.audience.clone(),
+            iat: SystemTime::now(),
+            exp: None,
+        };
+        let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
+        jsonwebtoken::encode(&header, &claims, private_key)
+    }
+}
+
 impl SpacetimeAuth {
     /// Allocate a new identity, and mint a new token for it.
     pub async fn alloc(ctx: &(impl NodeDelegate + ControlStateDelegate + ?Sized)) -> axum::response::Result<Self> {
-        // TODO: I'm just sticking in a random string until we change how identities are generated.
-        let identity = {
-            let mut rng = rand::thread_rng();
-            let mut random_bytes = [0u8; 16]; // Example: 16 random bytes
-            rng.fill(&mut random_bytes);
-
-            let preimg = [b"clockworklabs:", &random_bytes[..]].concat();
-            Identity::from_hashing_bytes(preimg)
+        // Generate claims with a random subject.
+        let claims = TokenClaims {
+            issuer: ctx.local_issuer(),
+            subject: Uuid::new_v4().to_string(),
+            // Placeholder audience.
+            audience: vec!["spacetimedb".to_string()],
         };
-        let creds = SpacetimeCreds::encode_token(ctx.private_key(), identity).map_err(log_and_500)?;
+
+        let identity = claims.id();
+        let creds = {
+            let token = claims.encode_and_sign(ctx.private_key()).map_err(log_and_500)?;
+            SpacetimeCreds::from_signed_token(token)
+        };
+
         Ok(Self { creds, identity })
     }
 
@@ -117,6 +169,35 @@ impl SpacetimeAuth {
             TypedHeader(SpacetimeIdentity(identity)),
             TypedHeader(SpacetimeIdentityToken(creds)),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::auth::TokenClaims;
+    use anyhow::Ok;
+    // use jsonwebkey as jwk;
+    use jsonwebkey as jwk;
+    use spacetimedb::auth::identity;
+
+    // Make sure that when we encode TokenClaims, we can decode to get the expected identity.
+    #[test]
+    fn decode_encoded_token() -> Result<(), anyhow::Error> {
+        let mut my_jwk = jwk::JsonWebKey::new(jwk::Key::generate_p256());
+        my_jwk.set_algorithm(jwk::Algorithm::ES256)?;
+        let encoding_key = my_jwk.key.to_encoding_key();
+
+        let claims = TokenClaims {
+            issuer: "localhost".to_string(),
+            subject: "test-subject".to_string(),
+            audience: vec!["spacetimedb".to_string()],
+        };
+        let id = claims.id();
+        let token = claims.encode_and_sign(&encoding_key)?;
+
+        let decoded = identity::decode_token(&my_jwk.key.to_decoding_key(), &token)?;
+        assert_eq!(decoded.claims.identity, id);
+        Ok(())
     }
 }
 

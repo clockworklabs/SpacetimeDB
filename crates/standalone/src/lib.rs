@@ -165,6 +165,10 @@ impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
         &self.public_key
     }
 
+    fn local_issuer(&self) -> String {
+        "localhost".to_owned()
+    }
+
     fn public_key_bytes(&self) -> &[u8] {
         &self.public_key_bytes
     }

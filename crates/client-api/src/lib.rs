@@ -32,6 +32,9 @@ pub trait NodeDelegate: Send + Sync {
     /// Return a JWT decoding key for verifying credentials.
     fn public_key(&self) -> &DecodingKey;
 
+    // The issuer to use when signing JWTs.
+    fn local_issuer(&self) -> String;
+
     /// Return the public key used to verify JWTs, as the bytes of a PEM public key file.
     ///
     /// The `/identity/public-key` route calls this method to return the public key to callers.
@@ -231,6 +234,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
 impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         (**self).gather_metrics()
+    }
+
+    fn local_issuer(&self) -> String {
+        (**self).local_issuer()
     }
 
     fn host_controller(&self) -> &HostController {
