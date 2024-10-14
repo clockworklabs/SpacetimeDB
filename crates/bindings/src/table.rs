@@ -436,7 +436,7 @@ impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
 }
 
 /// Types which can appear as an argument to an index filtering operation
-/// for a column of type `Col`.
+/// for a column of type `Column`.
 ///
 /// Types which can appear specifically as a terminating bound in a BTree index,
 /// which may be a range, instead use [`BTreeIndexBoundsTerminator`].
@@ -451,9 +451,10 @@ impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
 /// - It should only be implemented for owned values if those values are `Copy`.
 ///   Otherwise it should only be implemented for references.
 ///   This is so that rustc and IDEs will recommend rewriting `x` to `&x` rather than `x.clone()`.
-/// - `Arg: FilterableValue<Col>` for any pair of types `(Arg, Col)` which meet the above criteria
+/// - `Arg: FilterableValue<Column = Col>`
+///   for any pair of types `(Arg, Col)` which meet the above criteria
 ///   is desirable if `Arg` and `Col` have the same BSATN layout.
-///   E.g. `&str: FilterableValue<String>` is desirable.
+///   E.g. `&str: FilterableValue<Column = String>` is desirable.
 pub trait FilterableValue: Serialize {
     type Column;
 }
@@ -492,10 +493,14 @@ impl_filterable_value! {
     bool: Copy,
     String,
     &str => String,
-    // Vec<u8>,
-    // &[u8] => Vec<u8>,
     Identity: Copy,
     Address: Copy,
+
+    // Some day we will likely also want to support `Vec<u8>` and `[u8]`,
+    // as they have trivial portable equality and ordering,
+    // but @RReverser's proposed filtering rules do not include them.
+    // Vec<u8>,
+    // &[u8] => Vec<u8>,
 }
 
 pub trait BTreeIndexBounds<T, K = ()> {
