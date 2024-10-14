@@ -22,7 +22,7 @@ public readonly partial struct Unit
 
 // A helper for special wrappers around byte arrays like Identity and Address.
 // Makes them equatable, stringifiable, checks length, etc.
-public abstract record BytesWrapper
+public abstract record BytesWrapper : IComparable
 {
     protected abstract int SIZE { get; }
 
@@ -61,11 +61,31 @@ public abstract record BytesWrapper
         new AlgebraicType.Product(
             [new(wrapperPropertyName, ByteArray.Instance.GetAlgebraicType(registrar))]
         );
+
+    public int CompareTo(object? obj) {
+        if (obj == null) return 1;
+        if (obj is not BytesWrapper b) return 1;
+        if (bytes.Length != b.bytes.Length) return 1;
+        for (var i = 0; i < bytes.Length; i++) {
+            if (bytes[i] < b.bytes[i]) return -1;
+            if (bytes[i] > b.bytes[i]) return 1;
+        }
+        return 0;
+    }
+
+    protected static byte[] Fill(byte value, int size) {
+        var bytes = new byte[size];
+        Array.Fill(bytes, value);
+        return bytes;
+    }
 }
 
 public record Address : BytesWrapper
 {
     protected override int SIZE => 16;
+
+    public static readonly Address MinValue = new(Fill(0x00, 16));
+    public static readonly Address MaxValue = new(Fill(0xff, 16));
 
     public Address() { }
 
@@ -106,6 +126,9 @@ public record Address : BytesWrapper
 public record Identity : BytesWrapper
 {
     protected override int SIZE => 32;
+
+    public static readonly Identity MinValue = new(Fill(0x00, 32));
+    public static readonly Identity MaxValue = new(Fill(0xff, 32));
 
     public Identity() { }
 
