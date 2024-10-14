@@ -1,5 +1,6 @@
-use std::{fmt::Debug, time::Duration};
+use std::fmt::Debug;
 
+use spacetimedb_lib::Timestamp;
 use spacetimedb_sats::{
     algebraic_value::de::{ValueDeserializeError, ValueDeserializer},
     de::Deserialize,
@@ -21,21 +22,20 @@ pub enum ScheduleAt {
     /// Value is a duration in microseconds.
     Interval(u64),
     /// A specific time to which the reducer is scheduled.
-    /// Value is a UNIX timestamp in microseconds.
-    Time(u64),
+    Time(Timestamp),
 }
 impl_st!([] ScheduleAt, ScheduleAt::get_type());
 
 impl ScheduleAt {
     /// Converts the `ScheduleAt` to a `std::time::Duration` from now.
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub fn to_duration_from_now(&self) -> std::time::Duration {
+        use std::time::{Duration, SystemTime};
         match self {
             ScheduleAt::Time(time) => {
-                let now = std::time::SystemTime::now();
-                // Safety: Now is always after UNIX_EPOCH.
-                let now = now.duration_since(std::time::UNIX_EPOCH).unwrap();
-                let time = std::time::Duration::from_micros(*time);
-                time.checked_sub(now).unwrap_or(Duration::from_micros(0))
+                let now = SystemTime::now();
+                let time = SystemTime::from(*time);
+                time.duration_since(now).unwrap_or(Duration::from_micros(0))
             }
             ScheduleAt::Interval(dur) => Duration::from_micros(*dur),
         }
@@ -43,13 +43,25 @@ impl ScheduleAt {
 
     /// Get the special `AlgebraicType` for `ScheduleAt`.
     pub fn get_type() -> AlgebraicType {
-        AlgebraicType::sum([("Interval", AlgebraicType::U64), ("Time", AlgebraicType::U64)])
+        AlgebraicType::sum([("Interval", AlgebraicType::U64), ("Time", AlgebraicType::timestamp())])
     }
 }
 
 impl From<std::time::Duration> for ScheduleAt {
     fn from(value: std::time::Duration) -> Self {
         ScheduleAt::Interval(value.as_micros() as u64)
+    }
+}
+
+impl From<std::time::SystemTime> for ScheduleAt {
+    fn from(value: std::time::SystemTime) -> Self {
+        Timestamp::from(value).into()
+    }
+}
+
+impl From<crate::Timestamp> for ScheduleAt {
+    fn from(value: crate::Timestamp) -> Self {
+        ScheduleAt::Time(value)
     }
 }
 

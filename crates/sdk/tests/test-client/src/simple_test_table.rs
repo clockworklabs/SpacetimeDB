@@ -1,7 +1,7 @@
 use crate::module_bindings::*;
 use spacetimedb_sdk::{
     sats::{i256, u256},
-    Address, Event, Identity, Table,
+    Address, Event, Identity, Table, Timestamp,
 };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -188,6 +188,14 @@ impl_simple_test_table! {
         accessor_method = one_address;
     }
 
+    OneTimestamp {
+        Contents = Timestamp;
+        field_name = t;
+        insert_reducer = insert_one_timestamp;
+        insert_reducer_event = InsertOneTimestamp;
+        accessor_method = one_timestamp;
+    }
+
     OneSimpleEnum {
         Contents = SimpleEnum;
         field_name = e;
@@ -363,6 +371,14 @@ impl_simple_test_table! {
         insert_reducer = insert_vec_address;
         insert_reducer_event = InsertVecAddress;
         accessor_method = vec_address;
+    }
+
+    VecTimestamp {
+        Contents = Vec<Timestamp>;
+        field_name = t;
+        insert_reducer = insert_vec_timestamp;
+        insert_reducer_event = InsertVecTimestamp;
+        accessor_method = vec_timestamp;
     }
 
     VecSimpleEnum {

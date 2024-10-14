@@ -42,13 +42,13 @@ pub struct Circle {
 }
 
 impl Circle {
-    pub fn new(entity_id: u32, player_id: u32, x: f32, y: f32, magnitude: f32) -> Self {
+    pub fn new(entity_id: u32, player_id: u32, x: f32, y: f32, magnitude: f32, last_split_time: Timestamp) -> Self {
         Self {
             entity_id,
             player_id,
             direction: Vector2 { x, y },
             magnitude,
-            last_split_time: Timestamp::now(),
+            last_split_time,
         }
     }
 }
@@ -91,9 +91,14 @@ pub fn insert_bulk_entity(ctx: &ReducerContext, count: u32) {
 #[spacetimedb::reducer]
 pub fn insert_bulk_circle(ctx: &ReducerContext, count: u32) {
     for id in 0..count {
-        ctx.db
-            .circle()
-            .insert(Circle::new(id, id, id as f32, (id + 5) as f32, (id * 5) as f32));
+        ctx.db.circle().insert(Circle::new(
+            id,
+            id,
+            id as f32,
+            (id + 5) as f32,
+            (id * 5) as f32,
+            ctx.timestamp,
+        ));
     }
     log::info!("INSERT CIRCLE: {count}");
 }

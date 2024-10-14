@@ -15,7 +15,6 @@
 //! rather than using an external mirror of this schema.
 
 use crate::energy::EnergyQuanta;
-use crate::timestamp::Timestamp;
 use bytes::Bytes;
 use bytestring::ByteString;
 use core::{
@@ -24,7 +23,7 @@ use core::{
 };
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::{Address, Identity, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -230,7 +229,9 @@ pub struct IdentityToken {
 pub struct TransactionUpdate<F: WebsocketFormat> {
     /// The status of the transaction. Contains the updated rows, if successful.
     pub status: UpdateStatus<F>,
-    /// The time when the reducer started, as microseconds since the Unix epoch.
+    /// The time when the reducer started.
+    ///
+    /// Note that [`Timestamp`] serializes as `i64` nanoseconds since the Unix epoch.
     pub timestamp: Timestamp,
     /// The identity of the user who requested the reducer run. For event-driven and
     /// scheduled reducers, it is the identity of the database owner.

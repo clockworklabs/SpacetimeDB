@@ -5,9 +5,9 @@ use anyhow::anyhow;
 use futures::StreamExt;
 use rustc_hash::FxHashMap;
 use spacetimedb_client_api_messages::energy::EnergyQuanta;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_lib::scheduler::ScheduleAt;
 use spacetimedb_lib::Address;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{bsatn::ToBsatn as _, AlgebraicValue};
 use spacetimedb_schema::schema::TableSchema;
@@ -173,8 +173,8 @@ impl Scheduler {
         // Assuming a monotonic clock,
         // this means we may reject some otherwise acceptable schedule calls.
         //
-        // If `Timestamp::to_duration_from_now` is not monotonic,
-        // i.e. `std::time::SystemTime` is not monotonic,
+        // If `Timestamp::now()`, i.e. `std::time::SystemTime::now()`,
+        // is not monotonic,
         // `DelayQueue::insert` may panic.
         // This will happen if a module attempts to schedule a reducer
         // with a delay just before the two-year limit,
