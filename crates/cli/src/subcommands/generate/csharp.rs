@@ -391,6 +391,7 @@ fn autogen_csharp_access_funcs_for_struct(
     product_type: &ProductType,
     table_name: &str,
     schema: &TableSchema,
+    btrees: &Vec<BTreeIndex>
 ) {
     let csharp_table_name = table_name.to_case(Case::Pascal);
     let constraints = schema.backcompat_column_constraints();
@@ -430,69 +431,152 @@ fn autogen_csharp_access_funcs_for_struct(
             output,
             "public {csharp_field_name_pascal}UniqueIndex {csharp_field_name_pascal} = new();"
         );
-        writeln!(output);
     }
 
-    for idx in &schema.indexes {
-        match &idx.index_algorithm {
-            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => {
-                let col_pos = columns.head().unwrap().idx();
-                if constraints[&ColList::new(col_pos.into())].has_unique() {
-                    continue;
-                }
-
-                let field = &product_type.elements[col_pos];
-                let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
+    for index in btrees {
+        let fields: Vec<BTreeColumn<'_>> = index.columns
+            .iter()
+            .map(|col| {
+                let field = &product_type.elements[col.idx()];
                 let field_type = &field.algebraic_type;
-                let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
-                // NOTE skipping the btree prefix and the table name from the index name
-                let csharp_index_name = (&idx.index_name[table_name.len() + 7..]).to_case(Case::Pascal);
-                let csharp_field_type = match csharp_field_type(field_type) {
-                    None => continue,
-                    Some(x) => x,
-                };
-                writeln!(output, "public class {csharp_index_name}Index");
-                indented_block(output, |output| {
-                    writeln!(output, "{csharp_table_name}Handle Handle;");
-                    writeln!(
-                        output,
-                        "internal {csharp_index_name}Index({csharp_table_name}Handle handle) => Handle = handle;"
-                    );
-                    writeln!(
-                        output,
-                        "public IEnumerable<{struct_name_pascal_case}> Filter({csharp_field_type} value) =>"
-                    );
-                    {
-                        indent_scope!(output);
-                        writeln!(output, "Handle.Query(x => x.{csharp_field_name_pascal} == value);");
+                match csharp_field_type(field_type) {
+                    None => todo!(),
+                    Some(x) => {
+                        let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
+                        let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
+                        let range = match field_type {
+                            AlgebraicType::Product(pt) =>
+                                if pt.elements[0].name == Some("__address_bytes".into()) { ("Address.MinValue", "Address.MaxValue") }
+                                else if pt.elements[0].name == Some("__identity_bytes".into()) { ("Identity.MinValue", "Identity.MaxValue") }
+                                else { todo!() },
+                            AlgebraicType::String => ("\"\"", "\"\\uFFFF\\uFFFF\""),
+                            AlgebraicType::Bool => ("false", "true"),
+                            AlgebraicType::I8 => ("sbyte.MinValue", "sbyte.MaxValue"),
+                            AlgebraicType::U8 => ("byte.MinValue", "byte.MaxValue"),
+                            AlgebraicType::I16 => ("short.MinValue", "short.MaxValue"),
+                            AlgebraicType::U16 => ("ushort.MinValue", "ushort.MaxValue"),
+                            AlgebraicType::I32 => ("int.MinValue", "int.MaxValue"),
+                            AlgebraicType::U32 => ("uint.MinValue", "uint.MaxValue"),
+                            AlgebraicType::I64 => ("long.MinValue", "long.MaxValue"),
+                            AlgebraicType::U64 => ("ulong.MinValue", "ulong.MaxValue"),
+                            AlgebraicType::I128 => ("I128.MinValue", "I128.MaxValue"),
+                            AlgebraicType::U128 => ("U128.MinValue", "U128.MaxValue"),
+                            AlgebraicType::I256 => ("I256.MinValue", "I256.MaxValue"),
+                            AlgebraicType::U256 => ("U256.MinValue", "U256.MaxValue"),
+                            AlgebraicType::F32 => ("float.MinValue", "float.MaxValue"),
+                            AlgebraicType::F64 => ("double.MinValue", "double.MaxValue"),
+                            _ => todo!(),
+                        };
+                        BTreeColumn { field_type, csharp_field_name_pascal, csharp_field_type: x, range }
+                    },
+                }
+            })
+            .collect();
+
+        writeln!(output);
+        writeln!(output, "sealed class {0}Comparer : IComparer<{struct_name_pascal_case}>", index.csharp_index_name);
+        indented_block(output, |output| {
+            writeln!(output, "public int Compare({struct_name_pascal_case}? a, {struct_name_pascal_case}? b)");
+            indented_block(output, |output| {
+                writeln!(output, "if (a == null || b == null) return -1;");
+                for field in &fields {
+                    match field.field_type {
+                        AlgebraicType::Product(_) => {
+                            writeln!(output, "var {0} = a.{0}.CompareTo(b.{0});", field.csharp_field_name_pascal);
+                            writeln!(output, "if ({0} != 0) return {0};", field.csharp_field_name_pascal);
+                        },
+                        AlgebraicType::String => {
+                            writeln!(output, "var {0} = String.Compare(a.{0}, b.{0}, StringComparison.InvariantCulture);", field.csharp_field_name_pascal);
+                            writeln!(output, "if ({0} != 0) return {0};", field.csharp_field_name_pascal);
+                        },
+                        _ => {
+                            writeln!(output, "if (a.{0} < b.{0}) return -1;", field.csharp_field_name_pascal);
+                            writeln!(output, "if (a.{0} > b.{0}) return 1;", field.csharp_field_name_pascal);
+                        },
                     }
-                });
-                writeln!(output);
-                writeln!(
-                    output,
-                    "public {csharp_index_name}Index {csharp_index_name} {{ get; init; }}"
-                );
-                writeln!(output);
+                }
+                writeln!(output, "return 0;")
+            });
+        });
+        writeln!(output, "SortedSet<{struct_name_pascal_case}> {0}_BTree = new(new {0}Comparer());", index.csharp_index_name);
+        writeln!(output);
+        
+        writeln!(output, "public sealed class {0}Index", index.csharp_index_name);
+        indented_block(output, |output| {
+            writeln!(output, "{csharp_table_name}Handle Handle;");
+            writeln!(
+                output,
+                "internal {0}Index({csharp_table_name}Handle handle) => Handle = handle;", index.csharp_index_name
+            );
+            writeln!(output);
+
+            writeln!(output, "IEnumerable<{struct_name_pascal_case}> DoFilter() =>");
+            {
+                indent_scope!(output);
+                writeln!(output, "Handle.{0}_BTree.GetViewBetween(Handle.__Min, Handle.__Max);", index.csharp_index_name);
             }
-            _ => todo!(),
-        }
+
+            for i in 0..fields.len() {
+                writeln!(output);
+                write!(output, "public IEnumerable<{struct_name_pascal_case}> Filter(");
+                for j in 0..i + 1 {
+                    if j != 0 {
+                        write!(output, ", ");
+                    }
+                    write!(output, "{} {}", fields[j].csharp_field_type, fields[j].csharp_field_name_pascal);
+                }
+                writeln!(output, ")");
+                indented_block(output, |output| {
+                    for j in 0..i + 1 {
+                        writeln!(output, "Handle.__Min.{0} = {0};", fields[j].csharp_field_name_pascal);
+                        writeln!(output, "Handle.__Max.{0} = {0};", fields[j].csharp_field_name_pascal);
+                    }
+                    for j in i + 1..fields.len() {
+                        writeln!(output, "Handle.__Min.{0} = {1};", fields[j].csharp_field_name_pascal, fields[j].range.0);
+                        writeln!(output, "Handle.__Max.{0} = {1};", fields[j].csharp_field_name_pascal, fields[j].range.1);
+                    }
+                    writeln!(output, "return DoFilter();");
+                });
+
+                writeln!(output);
+                write!(output, "public IEnumerable<{struct_name_pascal_case}> Filter(");
+                for j in 0..i {
+                    if j != 0 {
+                        write!(output, ", ");
+                    }
+                    write!(output, "{} {}", fields[j].csharp_field_type, fields[j].csharp_field_name_pascal);
+                }
+                if i != 0 {
+                    write!(output, ", ");
+                }
+                write!(output, "({0} min, {0} max) {1}", fields[i].csharp_field_type, fields[i].csharp_field_name_pascal);
+                writeln!(output, ")");
+                indented_block(output, |output| {
+                    for j in 0..i {
+                        writeln!(output, "Handle.__Min.{0} = {0};", fields[j].csharp_field_name_pascal);
+                        writeln!(output, "Handle.__Max.{0} = {0};", fields[j].csharp_field_name_pascal);
+                    }
+                    writeln!(output, "Handle.__Min.{0} = {0}.min;",  fields[i].csharp_field_name_pascal);
+                    writeln!(output, "Handle.__Max.{0} = {0}.max;",  fields[i].csharp_field_name_pascal);
+                    for j in i + 1..fields.len() {
+                        writeln!(output, "Handle.__Min.{0} = {1};", fields[j].csharp_field_name_pascal, fields[j].range.0);
+                        writeln!(output, "Handle.__Max.{0} = {1};", fields[j].csharp_field_name_pascal, fields[j].range.1);
+                    }
+                    writeln!(output, "return DoFilter();");
+                });
+            }
+        });
+        writeln!(output);
+        writeln!(
+            output,
+            "public {0}Index {0} {{ get; init; }}", index.csharp_index_name
+        );
     }
 
     writeln!(output, "internal {csharp_table_name}Handle()");
     indented_block(output, |output| {
-        for idx in &schema.indexes {
-            match &idx.index_algorithm {
-                IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => {
-                    let col_pos = columns.head().unwrap().idx();
-                    if constraints[&ColList::new(col_pos.into())].has_unique() {
-                        continue;
-                    }
-                }
-                _ => continue,
-            }
-
-            let csharp_index_name = (&idx.index_name[table_name.len() + 7..]).to_case(Case::Pascal);
-            writeln!(output, "{csharp_index_name} = new(this);");
+        for index in btrees {
+            writeln!(output, "{0} = new(this);", index.csharp_index_name);
         }
     });
 
@@ -539,6 +623,18 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     output.into_inner()
 }
 
+struct BTreeIndex {
+    csharp_index_name: String,
+    columns: ColList,
+}
+
+struct BTreeColumn<'a> {
+    field_type: &'a AlgebraicType,
+    csharp_field_name_pascal: String,
+    csharp_field_type: &'a str,
+    range: (&'static str, &'static str),
+}
+
 pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) -> Vec<(String, String)> {
     let mut results = Vec::new();
 
@@ -571,9 +667,30 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
     indented_block(&mut output, |output| {
         for table in tables {
             let schema = &table.schema;
-            let name = &schema.table_name;
-            let csharp_name = name.as_ref().to_case(Case::Pascal);
+            let constraints = schema.backcompat_column_constraints();
+            let table_name = &schema.table_name;
+            let csharp_name = table_name.as_ref().to_case(Case::Pascal);
             let table_type = csharp_typename(ctx, table.data);
+
+            let btrees: Vec<_> = schema.indexes
+                .clone()
+                .into_iter()
+                .map(|i| match i.index_algorithm {
+                    IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => {
+                        let col_pos = columns.head().unwrap().idx();
+                        if constraints[&ColList::new(col_pos.into())].has_unique() {
+                            None
+                        }
+                        else {
+                            let csharp_index_name = (&i.index_name[table_name.len() + 7..]).to_case(Case::Pascal);
+                            Some(BTreeIndex { csharp_index_name, columns: columns.clone() })
+                       }
+                    },
+                    _ => None,
+                })
+                .filter(Option::is_some)
+                .map(|x| x.unwrap())
+                .collect();
 
             writeln!(
                 output,
@@ -581,8 +698,8 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
             );
             indented_block(output, |output| {
                 // If this is a table, we want to generate event accessor and indexes
-                let constraints = schema.backcompat_column_constraints();
                 let mut unique_indexes = Vec::new();
+
                 // Declare custom index dictionaries
                 for col in schema.columns() {
                     let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
@@ -591,9 +708,15 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                     }
                     unique_indexes.push(field_name);
                 }
-                if !unique_indexes.is_empty() {
-                    writeln!(output);
+
+                if !btrees.is_empty() {
+                    writeln!(output, "{csharp_name} __Min = new();");
+                    writeln!(output, "{csharp_name} __Max = new();");
+                }
+
+                if !unique_indexes.is_empty() || !btrees.is_empty() {
                     // OnInsert method for updating indexes
+                    writeln!(output);
                     writeln!(
                         output,
                         "public override void InternalInvokeValueInserted(IDatabaseRow row)"
@@ -607,14 +730,19 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                             }
                             writeln!(output, "{field_name}.Cache[value.{field_name}] = value;");
                         }
+                        for btree in &btrees {
+                            writeln!(output, "{0}_BTree.Add(value);", btree.csharp_index_name);
+                        }
                     });
-                    writeln!(output);
+
                     // OnDelete method for updating indexes
+                    writeln!(output);
                     writeln!(
                         output,
                         "public override void InternalInvokeValueDeleted(IDatabaseRow row)"
                     );
                     indented_block(output, |output| {
+                        writeln!(output, "var value = ({table_type})row;");
                         for col in schema.columns() {
                             let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
                             if !constraints[&ColList::new(col.col_pos)].has_unique() {
@@ -623,14 +751,12 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                             writeln!(output, "{field_name}.Cache.Remove((({table_type})row).{field_name});");
                         }
                     });
-                    writeln!(output);
                 }
 
                 // If this is a table, we want to include functions for accessing the table data
                 // Insert the funcs for accessing this struct
                 let product_type = ctx.typespace[table.data].as_product().unwrap();
-                autogen_csharp_access_funcs_for_struct(output, table_type, product_type, name, schema);
-                writeln!(output);
+                autogen_csharp_access_funcs_for_struct(output, table_type, product_type, table_name, schema, &btrees);
             });
             writeln!(output);
             writeln!(output, "public readonly {csharp_name}Handle {csharp_name} = new();");
@@ -765,6 +891,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
         writeln!(output, "Unit StdbIdentityDisconnected");
     }
     writeln!(output, ")>;");
+    writeln!(output);
 
     writeln!(
         output,
