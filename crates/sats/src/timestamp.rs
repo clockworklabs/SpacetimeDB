@@ -26,13 +26,40 @@ impl Timestamp {
         __timestamp_nanos_since_unix_epoch: 0,
     };
 
+    /// Get the number of nanoseconds `self` is offset from [`Self::UNIX_EPOCH`].
+    ///
+    /// A positive value means a time after the Unix epoch,
+    /// and a negative value means a time before.
     pub fn to_nanos_since_unix_epoch(self) -> i64 {
         self.__timestamp_nanos_since_unix_epoch
     }
+
+    /// Construct a [`Timestamp`] which is `nanos` nanoseconds offset from [`Self::UNIX_EPOCH`].
+    ///
+    /// A positive value means a time after the Unix epoch,
+    /// and a negative value means a time before.
     pub fn from_nanos_since_unix_epoch(nanos: i64) -> Self {
         Self {
             __timestamp_nanos_since_unix_epoch: nanos,
         }
+    }
+
+    /// Provided for backwards-compatibility, as earlier version of SpacetimeDB used timestamps
+    /// with microsecond precision and `u64` range starting from the Unix epoch.
+    ///
+    /// This method may truncate or underflow
+    /// if `micros` cannot be converted to an `i64` number of nanoseconds.
+    pub fn from_micros_since_epoch(micros: u64) -> Self {
+        Self::from_nanos_since_unix_epoch(micros as i64 * 1000)
+    }
+
+    /// Provided for backwards-compatibility, as earlier version of SpacetimeDB used timestamps
+    /// with microsecond precision and `u64` range starting from the Unix epoch.
+    ///
+    /// This method truncates values from nanosecond to microsecond precision,
+    /// and wraps values which predate the Unix epoch to values in the far future.
+    pub fn to_micros_since_epoch(self) -> u64 {
+        self.to_nanos_since_unix_epoch() as u64 / 1000
     }
 
     /// Returns `Err(duration_before_unix_epoch)` if `self` is before `Self::UNIX_EPOCH`.

@@ -149,12 +149,12 @@ pub struct ScheduledMessage {
 
 #[spacetimedb::reducer(init)]
 fn init(ctx: &ReducerContext) {
-    ctx.db.scheduled_message().insert(ScheduledMessage { prev: Timestamp::now(), scheduled_id: 0, scheduled_at: duration!(100ms).into(), });
+    ctx.db.scheduled_message().insert(ScheduledMessage { prev: ctx.timestamp, scheduled_id: 0, scheduled_at: duration!(100ms).into(), });
 }
 
 #[spacetimedb::reducer]
-pub fn my_repeating_reducer(_ctx: &ReducerContext, arg: ScheduledMessage) {
-    println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), arg.prev.elapsed());
+pub fn my_repeating_reducer(ctx: &ReducerContext, arg: ScheduledMessage) {
+    println!("Invoked: ts={:?}, delta={:?}", ctx.timestamp, ctx.timestamp.duration_since(arg.prev));
 }
 """
     def test_upload_module_2(self):
