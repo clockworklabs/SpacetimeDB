@@ -10,7 +10,11 @@ namespace SpacetimeDB
     // It should just provide auto-generated `GetTable` and `GetTables` methods.
     public class ClientCache
     {
+        private readonly IDbConnection conn;
+
         private readonly Dictionary<string, IRemoteTableHandle> tables = new();
+
+        public ClientCache(IDbConnection conn) => this.conn = conn;
 
         public void AddTable<Row>(string name, IRemoteTableHandle table)
             where Row : IDatabaseRow, new()
@@ -19,6 +23,8 @@ namespace SpacetimeDB
             {
                 Log.Error($"Table with name already exists: {name}");
             }
+
+            table.Initialize(name, conn);
         }
 
         internal IRemoteTableHandle? GetTable(string name)

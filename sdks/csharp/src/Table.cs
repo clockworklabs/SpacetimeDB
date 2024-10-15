@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 using SpacetimeDB.BSATN;
 
@@ -36,12 +37,23 @@ namespace SpacetimeDB
         internal void InvokeDelete(IEventContext context, IDatabaseRow row);
         internal void InvokeBeforeDelete(IEventContext context, IDatabaseRow row);
         internal void InvokeUpdate(IEventContext context, IDatabaseRow oldRow, IDatabaseRow newRow);
+
+        internal void Initialize(string name, IDbConnection conn);
     }
 
     public abstract class RemoteTableHandle<EventContext, Row> : IRemoteTableHandle
         where EventContext : class, IEventContext
         where Row : IDatabaseRow, new()
     {
+        string? name;
+        IDbConnection? conn;
+
+        void IRemoteTableHandle.Initialize(string name, IDbConnection conn)
+        {
+            this.name = name;
+            this.conn = conn;
+        }
+
         // These methods need to be overridden by autogen.
         public virtual object? GetPrimaryKey(IDatabaseRow row) => null;
         public virtual void InternalInvokeValueInserted(IDatabaseRow row) { }
@@ -92,6 +104,9 @@ namespace SpacetimeDB
         public IEnumerable<Row> Iter() => Entries.Values;
 
         protected IEnumerable<Row> Query(Func<Row, bool> filter) => Iter().Where(filter);
+
+        public Task<Row[]> RemoteQuery(string query) =>
+            conn!.RemoteQuery<Row>($"SELECT * FROM {name!} {query}");
 
         void IRemoteTableHandle.InvokeInsert(IEventContext context, IDatabaseRow row) =>
             OnInsert?.Invoke((EventContext)context, (Row)row);
