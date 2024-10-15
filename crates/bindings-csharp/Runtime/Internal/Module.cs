@@ -177,7 +177,7 @@ public static class Module
         ulong sender_3,
         ulong address_0,
         ulong address_1,
-        DateTimeOffsetRepr timestamp,
+        Timestamp timestamp,
         BytesSource args,
         BytesSink error
     )
@@ -190,7 +190,8 @@ public static class Module
             var senderAddress = Address.From(
                 MemoryMarshal.AsBytes([address_0, address_1]).ToArray()
             );
-            var random = new Random((int)timestamp.MicrosecondsSinceEpoch);
+            var microsecondsSinceUnixEpoch = (int)timestamp.NanosecondsSinceUnixEpoch / 1000;
+            var random = new Random(microsecondsSinceUnixEpoch);
             var time = timestamp.ToStd();
 
             var ctx = newContext!(senderIdentity, senderAddress, random, time);
