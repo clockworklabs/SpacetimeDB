@@ -533,7 +533,6 @@ mod test {
             AlgebraicType::bytes(),
             AlgebraicType::never(),
             AlgebraicType::array(AlgebraicType::U16),
-            AlgebraicType::map(AlgebraicType::U8, AlgebraicType::I8),
             AlgebraicType::sum([AlgebraicType::U8, AlgebraicType::U16]),
         ] {
             let layout = RowTypeLayout::from(ProductType::from([ty]));
