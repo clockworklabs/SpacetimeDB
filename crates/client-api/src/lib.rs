@@ -11,7 +11,6 @@ use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
-use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 
 pub mod auth;
@@ -27,7 +26,6 @@ pub trait NodeDelegate: Send + Sync {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily>;
     fn host_controller(&self) -> &HostController;
     fn client_actor_index(&self) -> &ClientActorIndex;
-    fn sendgrid_controller(&self) -> Option<&SendGridController>;
 
     /// Return a JWT decoding key for verifying credentials.
     fn public_key(&self) -> &DecodingKey;
@@ -251,10 +249,6 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 
     fn private_key(&self) -> &EncodingKey {
         (**self).private_key()
-    }
-
-    fn sendgrid_controller(&self) -> Option<&SendGridController> {
-        (**self).sendgrid_controller()
     }
 }
 

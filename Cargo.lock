@@ -3938,20 +3938,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sendgrid"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38b3e6f961e931130444f970c2af8cb203deea0ffd09bb6d2e79c05a36bc6ef9"
-dependencies = [
- "data-encoding",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror",
- "url",
-]
-
-[[package]]
 name = "serde"
 version = "1.0.210"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4519,7 +4505,6 @@ dependencies = [
  "rustc-demangle",
  "rustc-hash",
  "scopeguard",
- "sendgrid",
  "serde",
  "serde_json",
  "serde_path_to_error",
