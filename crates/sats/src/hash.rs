@@ -44,6 +44,10 @@ impl Hash {
     pub fn abbreviate(&self) -> &[u8; 16] {
         self.data[..16].try_into().unwrap()
     }
+
+    pub fn from_hex(hex: impl AsRef<[u8]>) -> Result<Self, hex::FromHexError> {
+        hex::FromHex::from_hex(hex)
+    }
 }
 
 pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> Hash {
