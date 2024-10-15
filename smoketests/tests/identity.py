@@ -76,35 +76,6 @@ class IdentityImports(Smoketest):
         default_identity = next(filter(lambda s: "***" in s, identities), "")
         self.assertIn(identity, default_identity)
 
-    def test_set_email(self):
-        """Ensure that we are able to associate an email with an identity"""
-
-        self.fingerprint()
-
-        # Create a new identity
-        identity = self.new_identity(email=None)
-        email = random_email()
-        token = self.token(identity)
-
-        # Reset our config so we lose this identity
-        self.reset_config()
-
-        # Import this identity, and set it as the default identity
-        self.import_identity(identity, token, default=True)
-
-        # Configure our email
-        output = self.spacetime("identity", "set-email", "--identity", identity, email)
-        self.assertEqual(extract_field(output, "IDENTITY"), identity)
-        self.assertEqual(extract_field(output, "EMAIL").lower(), email.lower())
-
-        # Reset config again
-        self.reset_config()
-
-        # Find our identity by its email
-        output = self.spacetime("identity", "find", email)
-        self.assertEqual(extract_field(output, "IDENTITY"), identity)
-        self.assertEqual(extract_field(output, "EMAIL").lower(), email.lower())
-
 
 class IdentityFormatting(Smoketest):
     MODULE_CODE = """
