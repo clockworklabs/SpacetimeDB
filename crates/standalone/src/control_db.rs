@@ -210,43 +210,6 @@ impl ControlDb {
         Ok(address)
     }
 
-    pub async fn associate_email_spacetime_identity(&self, identity: Identity, email: &str) -> Result<()> {
-        // Lowercase the email before storing
-        let email = email.to_lowercase();
-
-        let tree = self.db.open_tree("email")?;
-        let identity_email = IdentityEmail { identity, email };
-        let buf = bsatn::to_vec(&identity_email).unwrap();
-        tree.insert(identity.to_byte_array(), buf)?;
-        Ok(())
-    }
-
-    pub fn get_identities_for_email(&self, email: &str) -> Result<Vec<IdentityEmail>> {
-        let mut result = Vec::<IdentityEmail>::new();
-        let tree = self.db.open_tree("email")?;
-        for i in tree.iter() {
-            let (_, value) = i?;
-            let iemail: IdentityEmail = bsatn::from_slice(&value)?;
-            if iemail.email.eq_ignore_ascii_case(email) {
-                result.push(iemail);
-            }
-        }
-        Ok(result)
-    }
-
-    pub fn get_emails_for_identity(&self, identity: &Identity) -> Result<Vec<IdentityEmail>> {
-        let mut result = Vec::<IdentityEmail>::new();
-        let tree = self.db.open_tree("email")?;
-        for i in tree.iter() {
-            let (_, value) = i?;
-            let iemail: IdentityEmail = bsatn::from_slice(&value)?;
-            if &iemail.identity == identity {
-                result.push(iemail);
-            }
-        }
-        Ok(result)
-    }
-
     pub fn get_databases(&self) -> Result<Vec<Database>> {
         let tree = self.db.open_tree("database")?;
         let mut databases = Vec::new();
