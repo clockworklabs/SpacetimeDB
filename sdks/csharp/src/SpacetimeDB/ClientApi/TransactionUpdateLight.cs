@@ -13,34 +13,25 @@ namespace SpacetimeDB.ClientApi
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class CallReducer
+	public partial class TransactionUpdateLight
 	{
-		[DataMember(Name = "reducer")]
-		public string Reducer;
-		[DataMember(Name = "args")]
-		public byte[] Args;
 		[DataMember(Name = "request_id")]
 		public uint RequestId;
-		[DataMember(Name = "flags")]
-		public byte Flags;
+		[DataMember(Name = "update")]
+		public SpacetimeDB.ClientApi.DatabaseUpdate Update;
 
-		public CallReducer(
-			string Reducer,
-			byte[] Args,
+		public TransactionUpdateLight(
 			uint RequestId,
-			byte Flags
+			SpacetimeDB.ClientApi.DatabaseUpdate Update
 		)
 		{
-			this.Reducer = Reducer;
-			this.Args = Args;
 			this.RequestId = RequestId;
-			this.Flags = Flags;
+			this.Update = Update;
 		}
 
-		public CallReducer()
+		public TransactionUpdateLight()
 		{
-			this.Reducer = "";
-			this.Args = Array.Empty<byte>();
+			this.Update = new();
 		}
 
 	}
