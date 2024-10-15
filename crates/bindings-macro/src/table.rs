@@ -46,16 +46,23 @@ struct ScheduledArg {
 
 struct IndexArg {
     name: Ident,
-    is_unique: bool,
+    unique: Uniqueness,
     kind: IndexType,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Uniqueness {
+    No,
+    Unique,
+    PrimaryKey,
 }
 
 impl IndexArg {
     fn new(name: Ident, kind: IndexType) -> Self {
         // We don't know if its unique yet.
         // We'll discover this once we have collected constraints.
-        let is_unique = false;
-        Self { name, is_unique, kind }
+        let unique = Uniqueness::No;
+        Self { name, unique, kind }
     }
 }
 
@@ -285,7 +292,7 @@ impl IndexArg {
             IndexType::Direct { column } => {
                 let col = find_column(column)?;
 
-                if !self.is_unique {
+                if let Uniqueness::No = self.unique {
                     return Err(syn::Error::new(
                         column.span(),
                         "a direct index must be paired with a `#[unique] constraint",
@@ -304,7 +311,7 @@ impl IndexArg {
         let index_name = format!("{table_name}_{cols}_idx_{kind_str}");
 
         Ok(ValidatedIndex {
-            is_unique: self.is_unique,
+            unique: self.unique,
             index_name,
             accessor_name: &self.name,
             kind,
@@ -364,7 +371,7 @@ impl AccessorType {
 struct ValidatedIndex<'a> {
     index_name: String,
     accessor_name: &'a Ident,
-    is_unique: bool,
+    unique: Uniqueness,
     kind: ValidatedIndexType<'a>,
 }
 
@@ -391,6 +398,10 @@ impl ValidatedIndexType<'_> {
 }
 
 impl ValidatedIndex<'_> {
+    fn is_unique(&self) -> bool {
+        self.unique != Uniqueness::No
+    }
+
     fn desc(&self) -> TokenStream {
         let algo = match &self.kind {
             ValidatedIndexType::BTree { cols } => {
@@ -405,7 +416,7 @@ impl ValidatedIndex<'_> {
                     columns: &[#(#col_ids),*]
                 })
             }
-            ValidatedIndexType::Direct { col } => {
+            ValidatedIndexType::Direct { col, .. } => {
                 let col_id = col.index;
                 quote!(spacetimedb::table::IndexAlgo::Direct {
                     column: #col_id
@@ -428,7 +439,7 @@ impl ValidatedIndex<'_> {
         tbl_type_ident: &Ident,
         flavor: AccessorType,
     ) -> TokenStream {
-        if self.is_unique {
+        if self.is_unique() {
             self.unique_accessor(row_type_ident, tbl_type_ident, flavor)
         } else {
             self.non_unique_accessor(vis, row_type_ident, tbl_type_ident, flavor)
@@ -516,7 +527,7 @@ impl ValidatedIndex<'_> {
             }
             ValidatedIndexType::Hash { .. } => (None, false),
         };
-        let vis = if self.is_unique {
+        let vis = if self.is_unique() {
             self.kind.one_col().unwrap().vis
         } else {
             vis
@@ -545,7 +556,7 @@ impl ValidatedIndex<'_> {
                 }
             }
         };
-        if self.is_unique {
+        if self.is_unique() {
             let col = self.kind.one_col().unwrap();
             let col_ty = col.ty;
             let col_name = col.ident.to_string();
@@ -560,6 +571,9 @@ impl ValidatedIndex<'_> {
                     }
                 }
             });
+            if let Uniqueness::PrimaryKey = self.unique {
+                decl.extend(quote!(impl spacetimedb::table::PrimaryKey for #index_ident {}));
+            }
         }
         decl
     }
@@ -781,6 +795,14 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     // Mark all indices with a single column matching a unique constraint as unique.
     // For all the unpaired unique columns, create a unique index.
     for unique_col in &unique_columns {
+        let is_pk = primary_key_column
+            .as_ref()
+            .is_some_and(|pk| unique_col.index == pk.index);
+        let unique = if is_pk {
+            Uniqueness::PrimaryKey
+        } else {
+            Uniqueness::Unique
+        };
         if args.indices.iter_mut().any(|index| {
             let covered_by_index = match &index.kind {
                 IndexType::BTree { columns } | IndexType::Hash { columns } => {
@@ -788,7 +810,9 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 }
                 IndexType::Direct { column } => column == unique_col.ident,
             };
-            index.is_unique |= covered_by_index;
+            if covered_by_index {
+                index.unique = index.unique.max(unique);
+            }
             covered_by_index
         }) {
             continue;
@@ -800,7 +824,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         let columns = vec![name.clone()];
         args.indices.push(IndexArg {
             name,
-            is_unique: true,
+            unique,
             kind: IndexType::BTree { columns },
         })
     }
@@ -811,8 +835,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         .map(|index| index.validate(&table_name, &columns))
         .collect::<syn::Result<Vec<_>>>()?;
 
-    // Order unique accessors before index accessors.
-    indices.sort_by_key(|index| !index.is_unique);
+    // Order pk accessors before unique accessors before index accessors.
+    indices.sort_by_key(|index| std::cmp::Reverse(index.unique));
 
     let tablehandle_ident = format_ident!("{}__TableHandle", table_ident);
     let viewhandle_ident = format_ident!("{}__ViewHandle", table_ident);

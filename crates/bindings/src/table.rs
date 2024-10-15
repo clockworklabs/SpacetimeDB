@@ -274,6 +274,8 @@ pub trait Column {
     fn get_field(row: &<Self::Table as Table>::Row) -> &Self::ColType;
 }
 
+pub trait PrimaryKey {}
+
 /// A handle to a unique index on a column.
 /// Available for `#[unique]` and `#[primary_key]` columns.
 ///
@@ -360,11 +362,20 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     ///
     /// Returns the new row as actually inserted, with  computed values substituted for any auto-inc placeholders.
     ///
+    /// This method can only be called on primary keys, not any unique column. This is to reduce
+    /// confusion regarding what constitutes a row update vs just deleting one row and adding
+    /// another. To perform this same operation for a non-primary unique column `foo`, simply call
+    /// `.foo().delete(&row.foo)` followed by `.insert(row)`, but note that clients will not
+    /// consider that as an update unless the primary key of that row stays the same.
+    ///
     /// # Panics
     /// Panics if no row was previously present with the matching value in the unique column,
     /// or if either the delete or the insertion would violate a constraint.
     #[track_caller]
-    pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row {
+    pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row
+    where
+        Col: PrimaryKey,
+    {
         let buf = IterBuf::take();
         update::<Tbl>(Col::index_id(), new_row, buf)
     }
@@ -379,7 +390,10 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     #[track_caller]
     #[doc(alias = "try_upsert")]
     #[cfg(feature = "unstable")]
-    pub fn try_insert_or_update(&self, new_row: Tbl::Row) -> Result<Tbl::Row, TryInsertError<Tbl>> {
+    pub fn try_insert_or_update(&self, new_row: Tbl::Row) -> Result<Tbl::Row, TryInsertError<Tbl>>
+    where
+        Col: PrimaryKey,
+    {
         let col_val = Col::get_field(&new_row);
         // If the row doesn't exist, delete will return false, which we ignore.
         let _ = self.delete(col_val);
@@ -397,7 +411,10 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     #[track_caller]
     #[doc(alias = "upsert")]
     #[cfg(feature = "unstable")]
-    pub fn insert_or_update(&self, new_row: Tbl::Row) -> Tbl::Row {
+    pub fn insert_or_update(&self, new_row: Tbl::Row) -> Tbl::Row
+    where
+        Col: PrimaryKey,
+    {
         self.try_insert_or_update(new_row).unwrap_or_else(|e| panic!("{e}"))
     }
 }
