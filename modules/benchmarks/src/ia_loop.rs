@@ -322,20 +322,11 @@ fn move_agent(
 
     // If the entity is alive (which it should be),
     // also update the `LiveTargetableState` used by `enemy_ai_agent_loop`.
-    if ctx
-        .db
-        .game_live_targetable_state()
-        .entity_id()
-        .find(entity_id)
-        .is_some()
-    {
-        ctx.db
-            .game_live_targetable_state()
-            .entity_id()
-            .update(GameLiveTargetableState {
-                entity_id,
-                quad: new_hash,
-            });
+    if ctx.db.game_live_targetable_state().entity_id().delete(entity_id) {
+        ctx.db.game_live_targetable_state().insert(GameLiveTargetableState {
+            entity_id,
+            quad: new_hash,
+        });
     }
     let mobile_entity = ctx
         .db

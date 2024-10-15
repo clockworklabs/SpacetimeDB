@@ -178,16 +178,33 @@ macro_rules! define_tables {
         define_tables!(@impl_ops $name { $($($ops)*)? } $($field_name $ty,)*);
     };
 
-    // Define a reducer for tables with a unique field,
-    // which uses `$update_method` to update by that unique field.
+    // Define a reducer for tables with a primary_key field,
+    // which uses `$update_method` to update by that primary_key field.
     (@impl_ops $name:ident
-     { update_by $update:ident = $update_method:ident($unique_field:ident)
+     { update_by $update:ident = $update_method:ident($pk_field:ident)
        $(, $($ops:tt)* )? }
      $($field_name:ident $ty:ty),* $(,)*) => {
         paste::paste! {
             #[spacetimedb::reducer]
             pub fn $update (ctx: &ReducerContext, $($field_name : $ty,)*) {
-                ctx.db.[<$name:snake>]().$unique_field().update($name { $($field_name,)* });
+                ctx.db.[<$name:snake>]().$pk_field().update($name { $($field_name,)* });
+            }
+        }
+
+        define_tables!(@impl_ops $name { $($($ops)*)? } $($field_name $ty,)*);
+    };
+
+    // Define a reducer for tables with a unique field,
+    // which uses `$update_method` to update by that unique field.
+    (@impl_ops $name:ident
+     { update_non_pk_by $update:ident = $update_method:ident($unique_field:ident)
+       $(, $($ops:tt)* )? }
+     $($field_name:ident $ty:ty),* $(,)*) => {
+        paste::paste! {
+            #[spacetimedb::reducer]
+            pub fn $update (ctx: &ReducerContext, $($field_name : $ty,)*) {
+                assert!(ctx.db.[<$name:snake>]().$unique_field().delete(&$unique_field));
+                ctx.db.[<$name:snake>]().insert($name { $($field_name,)* });
             }
         }
 
@@ -315,100 +332,100 @@ define_tables! {
 define_tables! {
     UniqueU8 {
         insert_or_panic insert_unique_u8,
-        update_by update_unique_u8 = update_by_n(n),
+        update_non_pk_by update_unique_u8 = update_by_n(n),
         delete_by delete_unique_u8 = delete_by_n(n: u8),
     } #[unique] n u8, data i32;
 
     UniqueU16 {
         insert_or_panic insert_unique_u16,
-        update_by update_unique_u16 = update_by_n(n),
+        update_non_pk_by update_unique_u16 = update_by_n(n),
         delete_by delete_unique_u16 = delete_by_n(n: u16),
     } #[unique] n u16, data i32;
 
     UniqueU32 {
         insert_or_panic insert_unique_u32,
-        update_by update_unique_u32 = update_by_n(n),
+        update_non_pk_by update_unique_u32 = update_by_n(n),
         delete_by delete_unique_u32 = delete_by_n(n: u32),
     } #[unique] n u32, data i32;
 
     UniqueU64 {
         insert_or_panic insert_unique_u64,
-        update_by update_unique_u64 = update_by_n(n),
+        update_non_pk_by update_unique_u64 = update_by_n(n),
         delete_by delete_unique_u64 = delete_by_n(n: u64),
     } #[unique] n u64, data i32;
 
     UniqueU128 {
         insert_or_panic insert_unique_u128,
-        update_by update_unique_u128 = update_by_n(n),
+        update_non_pk_by update_unique_u128 = update_by_n(n),
         delete_by delete_unique_u128 = delete_by_n(n: u128),
     } #[unique] n u128, data i32;
 
     UniqueU256 {
         insert_or_panic insert_unique_u256,
-        update_by update_unique_u256 = update_by_n(n),
+        update_non_pk_by update_unique_u256 = update_by_n(n),
         delete_by delete_unique_u256 = delete_by_n(n: u256),
     } #[unique] n u256, data i32;
 
 
     UniqueI8 {
         insert_or_panic insert_unique_i8,
-        update_by update_unique_i8 = update_by_n(n),
+        update_non_pk_by update_unique_i8 = update_by_n(n),
         delete_by delete_unique_i8 = delete_by_n(n: i8),
     } #[unique] n i8, data i32;
 
 
     UniqueI16 {
         insert_or_panic insert_unique_i16,
-        update_by update_unique_i16 = update_by_n(n),
+        update_non_pk_by update_unique_i16 = update_by_n(n),
         delete_by delete_unique_i16 = delete_by_n(n: i16),
     } #[unique] n i16, data i32;
 
     UniqueI32 {
         insert_or_panic insert_unique_i32,
-        update_by update_unique_i32 = update_by_n(n),
+        update_non_pk_by update_unique_i32 = update_by_n(n),
         delete_by delete_unique_i32 = delete_by_n(n: i32),
     } #[unique] n i32, data i32;
 
     UniqueI64 {
         insert_or_panic insert_unique_i64,
-        update_by update_unique_i64 = update_by_n(n),
+        update_non_pk_by update_unique_i64 = update_by_n(n),
         delete_by delete_unique_i64 = delete_by_n(n: i64),
     } #[unique] n i64, data i32;
 
     UniqueI128 {
         insert_or_panic insert_unique_i128,
-        update_by update_unique_i128 = update_by_n(n),
+        update_non_pk_by update_unique_i128 = update_by_n(n),
         delete_by delete_unique_i128 = delete_by_n(n: i128),
     } #[unique] n i128, data i32;
 
     UniqueI256 {
         insert_or_panic insert_unique_i256,
-        update_by update_unique_i256 = update_by_n(n),
+        update_non_pk_by update_unique_i256 = update_by_n(n),
         delete_by delete_unique_i256 = delete_by_n(n: i256),
     } #[unique] n i256, data i32;
 
 
     UniqueBool {
         insert_or_panic insert_unique_bool,
-        update_by update_unique_bool = update_by_b(b),
+        update_non_pk_by update_unique_bool = update_by_b(b),
         delete_by delete_unique_bool = delete_by_b(b: bool),
     } #[unique] b bool, data i32;
 
     UniqueString {
         insert_or_panic insert_unique_string,
-        update_by update_unique_string = update_by_s(s),
+        update_non_pk_by update_unique_string = update_by_s(s),
         delete_by delete_unique_string = delete_by_s(s: String),
     } #[unique] s String, data i32;
 
     UniqueIdentity {
         insert_or_panic insert_unique_identity,
-        update_by update_unique_identity = update_by_i(i),
+        update_non_pk_by update_unique_identity = update_by_i(i),
         delete_by delete_unique_identity = delete_by_i(i: Identity),
     } #[unique] i Identity, data i32;
 
     UniqueAddress {
         insert_or_panic insert_unique_address,
-        update_by update_unique_address = update_by_a(a),
+        update_non_pk_by update_unique_address = update_by_a(a),
         delete_by delete_unique_address = delete_by_a(a: Address),
     } #[unique] a Address, data i32;
 }
