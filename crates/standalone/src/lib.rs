@@ -21,12 +21,11 @@ use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, IdentityEmail, Node, Replica};
+use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
-use spacetimedb_client_api_messages::recovery::RecoveryCode;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -228,19 +227,6 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
         self.control_db.get_leader_replica_by_database(database_id)
     }
 
-    // Identities
-    fn get_identities_for_email(&self, email: &str) -> anyhow::Result<Vec<IdentityEmail>> {
-        Ok(self.control_db.get_identities_for_email(email)?)
-    }
-
-    fn get_emails_for_identity(&self, identity: &Identity) -> anyhow::Result<Vec<IdentityEmail>> {
-        Ok(self.control_db.get_emails_for_identity(identity)?)
-    }
-
-    fn get_recovery_codes(&self, email: &str) -> anyhow::Result<Vec<RecoveryCode>> {
-        Ok(self.control_db.spacetime_get_recovery_codes(email)?)
-    }
-
     // Energy
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
         Ok(self.control_db.get_energy_balance(identity)?)
@@ -378,21 +364,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         }
 
         Ok(())
-    }
-
-    async fn create_identity(&self) -> anyhow::Result<Identity> {
-        Ok(self.control_db.alloc_spacetime_identity()?)
-    }
-
-    async fn add_email(&self, identity: &Identity, email: &str) -> anyhow::Result<()> {
-        self.control_db
-            .associate_email_spacetime_identity(*identity, email)
-            .await?;
-        Ok(())
-    }
-
-    async fn insert_recovery_code(&self, _identity: &Identity, email: &str, code: RecoveryCode) -> anyhow::Result<()> {
-        Ok(self.control_db.spacetime_insert_recovery_code(email, code)?)
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
