@@ -6,7 +6,7 @@ use core::slice::from_ref;
 use derive_more::From;
 use itertools::Itertools;
 use smallvec::SmallVec;
-use spacetimedb_data_structures::map::{HashSet, IntMap};
+use spacetimedb_data_structures::map::{HashCollectionExt, HashSet, IntMap};
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::error::{AuthError, RelationError};
 use spacetimedb_lib::relation::{ColExpr, DbTable, FieldName, Header};

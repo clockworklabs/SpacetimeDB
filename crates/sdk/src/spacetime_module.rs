@@ -10,7 +10,7 @@ use crate::{
 };
 use anyhow::Context;
 use bytes::Bytes;
-use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use spacetimedb_lib::{bsatn, de::DeserializeOwned};
 use std::{any::Any, fmt::Debug, hash::Hash};
 

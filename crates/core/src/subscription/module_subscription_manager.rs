@@ -10,7 +10,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryUpdate,
 };
-use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
+use spacetimedb_data_structures::map::{Entry, HashCollectionExt, HashMap, HashSet, IntMap};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
 use std::sync::Arc;

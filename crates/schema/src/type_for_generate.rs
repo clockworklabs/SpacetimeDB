@@ -8,7 +8,7 @@ use petgraph::{
 use smallvec::SmallVec;
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
-    map::{HashMap, HashSet},
+    map::{HashCollectionExt, HashMap, HashSet},
 };
 use spacetimedb_lib::{AlgebraicType, ProductTypeElement};
 use spacetimedb_sats::{typespace::TypeRefError, AlgebraicTypeRef, ArrayType, SumTypeVariant, Typespace};

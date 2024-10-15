@@ -3,7 +3,7 @@ use crate::db::error::{RelationError, TypeError};
 use core::fmt;
 use core::hash::Hash;
 use derive_more::From;
-use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_data_structures::map::{HashCollectionExt, HashSet};
 use spacetimedb_primitives::{ColId, ColList, ColSet, Constraints, TableId};
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
