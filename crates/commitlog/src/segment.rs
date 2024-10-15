@@ -18,7 +18,7 @@ use crate::{
 
 pub const MAGIC: [u8; 6] = [b'(', b'd', b's', b')', b'^', b'2'];
 
-pub const DEFAULT_LOG_FORMAT_VERSION: u8 = 0;
+pub const DEFAULT_LOG_FORMAT_VERSION: u8 = 1;
 pub const DEFAULT_CHECKSUM_ALGORITHM: u8 = CHECKSUM_ALGORITHM_CRC32C;
 
 pub const CHECKSUM_ALGORITHM_CRC32C: u8 = 0;
@@ -154,6 +154,22 @@ impl<W: io::Write> Writer<W> {
             tx_range: tx_range_start..self.commit.min_tx_offset,
             checksum,
         }))
+    }
+
+    /// Get the current epoch.
+    pub fn epoch(&self) -> u64 {
+        self.commit.epoch
+    }
+
+    /// Update the epoch.
+    ///
+    /// The caller must ensure that:
+    ///
+    /// - The new epoch is greater than the current epoch.
+    /// - [`Self::commit`] has been called as appropriate.
+    ///
+    pub fn set_epoch(&mut self, epoch: u64) {
+        self.commit.epoch = epoch;
     }
 
     /// The smallest transaction offset in this segment.
@@ -437,7 +453,7 @@ impl<R: io::Read> Iterator for Commits<R> {
     type Item = io::Result<StoredCommit>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        StoredCommit::decode(&mut self.reader).transpose()
+        StoredCommit::decode_internal(&mut self.reader, self.header.log_format_version).transpose()
     }
 }
 
@@ -474,13 +490,15 @@ pub struct Metadata {
     pub header: Header,
     pub tx_range: Range<u64>,
     pub size_in_bytes: u64,
+    pub max_epoch: u64,
 }
 
 impl Metadata {
     /// Read and validate metadata from a segment.
     ///
     /// This traverses the entire segment, consuming thre `reader.
-    /// Doing so is necessary to determine the `max_tx_offset` and `size_in_bytes`.
+    /// Doing so is necessary to determine `max_tx_offset`, `size_in_bytes` and
+    /// `max_epoch`.
     pub(crate) fn extract<R: io::Read>(min_tx_offset: u64, mut reader: R) -> Result<Self, error::SegmentMetadata> {
         let header = Header::decode(&mut reader)?;
         Self::with_header(min_tx_offset, header, reader)
@@ -498,6 +516,7 @@ impl Metadata {
                 end: min_tx_offset,
             },
             size_in_bytes: Header::LEN as u64,
+            max_epoch: Commit::DEFAULT_EPOCH,
         };
 
         fn commit_meta<R: io::Read>(
@@ -529,6 +548,8 @@ impl Metadata {
             }
             sofar.tx_range.end = commit.tx_range.end;
             sofar.size_in_bytes += commit.size_in_bytes;
+            // TODO: Should it be an error to encounter an epoch going backwards?
+            sofar.max_epoch = commit.epoch.max(sofar.max_epoch);
         }
 
         Ok(sofar)
@@ -562,7 +583,7 @@ mod tests {
     fn write_read_roundtrip() {
         let repo = repo::Memory::default();
 
-        let mut writer = repo::create_segment_writer(&repo, Options::default(), 0).unwrap();
+        let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
         writer.append([0; 32]).unwrap();
         writer.append([1; 32]).unwrap();
         writer.append([2; 32]).unwrap();
@@ -591,7 +612,7 @@ mod tests {
     fn metadata() {
         let repo = repo::Memory::default();
 
-        let mut writer = repo::create_segment_writer(&repo, Options::default(), 0).unwrap();
+        let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
         writer.append([0; 32]).unwrap();
         writer.append([0; 32]).unwrap();
         writer.commit().unwrap();
@@ -606,6 +627,7 @@ mod tests {
             header: _,
             tx_range,
             size_in_bytes,
+            max_epoch: _,
         } = reader.metadata().unwrap();
 
         assert_eq!(tx_range.start, 0);
@@ -621,7 +643,7 @@ mod tests {
         let repo = repo::Memory::default();
         let commits = vec![vec![[1; 32], [2; 32]], vec![[3; 32]], vec![[4; 32], [5; 32]]];
 
-        let mut writer = repo::create_segment_writer(&repo, Options::default(), 0).unwrap();
+        let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
         for commit in &commits {
             for tx in commit {
                 writer.append(*tx).unwrap();
@@ -637,6 +659,7 @@ mod tests {
                 min_tx_offset,
                 n: txs.len() as u16,
                 records: txs.concat(),
+                epoch: 0,
             });
             min_tx_offset += txs.len() as u64;
         }
@@ -653,7 +676,7 @@ mod tests {
         let repo = repo::Memory::default();
         let commits = vec![vec![[1; 32], [2; 32]], vec![[3; 32]], vec![[4; 32], [5; 32]]];
 
-        let mut writer = repo::create_segment_writer(&repo, Options::default(), 0).unwrap();
+        let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
         for commit in &commits {
             for tx in commit {
                 writer.append(*tx).unwrap();
