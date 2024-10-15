@@ -95,7 +95,12 @@ fn create_offset_index_writer<R: Repo>(repo: &R, offset: u64, opts: Options) -> 
 /// `log_format_version`.
 ///
 /// If the segment already exists, [`io::ErrorKind::AlreadyExists`] is returned.
-pub fn create_segment_writer<R: Repo>(repo: &R, opts: Options, offset: u64) -> io::Result<Writer<R::Segment>> {
+pub fn create_segment_writer<R: Repo>(
+    repo: &R,
+    opts: Options,
+    epoch: u64,
+    offset: u64,
+) -> io::Result<Writer<R::Segment>> {
     let mut storage = repo.create_segment(offset)?;
     Header {
         log_format_version: opts.log_format_version,
@@ -109,6 +114,7 @@ pub fn create_segment_writer<R: Repo>(repo: &R, opts: Options, offset: u64) -> i
             min_tx_offset: offset,
             n: 0,
             records: Vec::new(),
+            epoch,
         },
         inner: io::BufWriter::new(storage),
 
@@ -146,6 +152,7 @@ pub fn resume_segment_writer<R: Repo>(
         header,
         tx_range,
         size_in_bytes,
+        max_epoch,
     } = match Metadata::extract(offset, &mut storage) {
         Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => {
             warn!("invalid commit in segment {offset}: {source}");
@@ -164,6 +171,7 @@ pub fn resume_segment_writer<R: Repo>(
             min_tx_offset: tx_range.end,
             n: 0,
             records: Vec::new(),
+            epoch: max_epoch,
         },
         inner: io::BufWriter::new(storage),
 
