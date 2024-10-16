@@ -7,56 +7,41 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class LoggedOutCircle : SpacetimeDB.DatabaseTableWithPrimaryKey<LoggedOutCircle, SpacetimeDB.Types.ReducerEvent>
+	public partial class LoggedOutCircle : IDatabaseRow
 	{
 		[DataMember(Name = "logged_out_id")]
 		public uint LoggedOutId;
 		[DataMember(Name = "player_id")]
 		public uint PlayerId;
 		[DataMember(Name = "circle")]
-		public SpacetimeDB.Types.Circle Circle = new();
+		public SpacetimeDB.Types.Circle Circle;
 		[DataMember(Name = "entity")]
-		public SpacetimeDB.Types.Entity Entity = new();
+		public SpacetimeDB.Types.Entity Entity;
 
-		private static Dictionary<uint, LoggedOutCircle> LoggedOutId_Index = new(16);
-
-		public override void InternalOnValueInserted()
+		public LoggedOutCircle(
+			uint LoggedOutId,
+			uint PlayerId,
+			SpacetimeDB.Types.Circle Circle,
+			SpacetimeDB.Types.Entity Entity
+		)
 		{
-			LoggedOutId_Index[LoggedOutId] = this;
+			this.LoggedOutId = LoggedOutId;
+			this.PlayerId = PlayerId;
+			this.Circle = Circle;
+			this.Entity = Entity;
 		}
 
-		public override void InternalOnValueDeleted()
+		public LoggedOutCircle()
 		{
-			LoggedOutId_Index.Remove(LoggedOutId);
+			this.Circle = new();
+			this.Entity = new();
 		}
-
-		public static LoggedOutCircle? FindByLoggedOutId(uint value)
-		{
-			LoggedOutId_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static IEnumerable<LoggedOutCircle> FilterByLoggedOutId(uint value)
-		{
-			if (FindByLoggedOutId(value) is {} found)
-			{
-				yield return found;
-			}
-		}
-
-		public static IEnumerable<LoggedOutCircle> FilterByPlayerId(uint value)
-		{
-			return Query(x => x.PlayerId == value);
-		}
-
-		public override object GetPrimaryKeyValue() => LoggedOutId;
 
 	}
 }

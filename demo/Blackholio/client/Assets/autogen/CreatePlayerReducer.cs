@@ -10,34 +10,10 @@ using SpacetimeDB;
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
-	public partial class CreatePlayerArgsStruct : IReducerArgs
+	public partial class CreatePlayer : IReducerArgs
 	{
-		ReducerType IReducerArgs.ReducerType => ReducerType.CreatePlayer;
-		string IReducerArgsBase.ReducerName => "create_player";
-		bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.OnCreatePlayer(reducerEvent, this);
+		string IReducerArgs.ReducerName => "create_player";
 
 		public string Name = "";
 	}
-
-	public static partial class Reducer
-	{
-		public delegate void CreatePlayerHandler(ReducerEvent reducerEvent, string name);
-		public static event CreatePlayerHandler? OnCreatePlayerEvent;
-
-		public static void CreatePlayer(string name)
-		{
-			SpacetimeDBClient.instance.InternalCallReducer(new CreatePlayerArgsStruct { Name = name });
-		}
-
-		public static bool OnCreatePlayer(ReducerEvent reducerEvent, CreatePlayerArgsStruct args)
-		{
-			if (OnCreatePlayerEvent == null) return false;
-			OnCreatePlayerEvent(
-				reducerEvent,
-				args.Name
-			);
-			return true;
-		}
-	}
-
 }

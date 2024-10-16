@@ -10,31 +10,8 @@ using SpacetimeDB;
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
-	public partial class RespawnArgsStruct : IReducerArgs
+	public partial class Respawn : IReducerArgs
 	{
-		ReducerType IReducerArgs.ReducerType => ReducerType.Respawn;
-		string IReducerArgsBase.ReducerName => "respawn";
-		bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.OnRespawn(reducerEvent, this);
+		string IReducerArgs.ReducerName => "respawn";
 	}
-
-	public static partial class Reducer
-	{
-		public delegate void RespawnHandler(ReducerEvent reducerEvent);
-		public static event RespawnHandler? OnRespawnEvent;
-
-		public static void Respawn()
-		{
-			SpacetimeDBClient.instance.InternalCallReducer(new RespawnArgsStruct {  });
-		}
-
-		public static bool OnRespawn(ReducerEvent reducerEvent, RespawnArgsStruct args)
-		{
-			if (OnRespawnEvent == null) return false;
-			OnRespawnEvent(
-				reducerEvent
-			);
-			return true;
-		}
-	}
-
 }

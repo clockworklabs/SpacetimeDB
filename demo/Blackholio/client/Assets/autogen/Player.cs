@@ -7,71 +7,37 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class Player : SpacetimeDB.DatabaseTableWithPrimaryKey<Player, SpacetimeDB.Types.ReducerEvent>
+	public partial class Player : IDatabaseRow
 	{
 		[DataMember(Name = "identity")]
-		public SpacetimeDB.Identity Identity = new();
+		public SpacetimeDB.Identity Identity;
 		[DataMember(Name = "player_id")]
 		public uint PlayerId;
 		[DataMember(Name = "name")]
-		public string Name = "";
+		public string Name;
 
-		private static Dictionary<SpacetimeDB.Identity, Player> Identity_Index = new(16);
-		private static Dictionary<uint, Player> PlayerId_Index = new(16);
-
-		public override void InternalOnValueInserted()
+		public Player(
+			SpacetimeDB.Identity Identity,
+			uint PlayerId,
+			string Name
+		)
 		{
-			Identity_Index[Identity] = this;
-			PlayerId_Index[PlayerId] = this;
+			this.Identity = Identity;
+			this.PlayerId = PlayerId;
+			this.Name = Name;
 		}
 
-		public override void InternalOnValueDeleted()
+		public Player()
 		{
-			Identity_Index.Remove(Identity);
-			PlayerId_Index.Remove(PlayerId);
+			this.Identity = new();
+			this.Name = "";
 		}
-
-		public static Player? FindByIdentity(SpacetimeDB.Identity value)
-		{
-			Identity_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static IEnumerable<Player> FilterByIdentity(SpacetimeDB.Identity value)
-		{
-			if (FindByIdentity(value) is {} found)
-			{
-				yield return found;
-			}
-		}
-
-		public static Player? FindByPlayerId(uint value)
-		{
-			PlayerId_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static IEnumerable<Player> FilterByPlayerId(uint value)
-		{
-			if (FindByPlayerId(value) is {} found)
-			{
-				yield return found;
-			}
-		}
-
-		public static IEnumerable<Player> FilterByName(string value)
-		{
-			return Query(x => x.Name == value);
-		}
-
-		public override object GetPrimaryKeyValue() => Identity;
 
 	}
 }

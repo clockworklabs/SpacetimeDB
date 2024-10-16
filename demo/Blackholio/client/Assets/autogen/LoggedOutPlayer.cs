@@ -7,47 +7,33 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class LoggedOutPlayer : SpacetimeDB.DatabaseTableWithPrimaryKey<LoggedOutPlayer, SpacetimeDB.Types.ReducerEvent>
+	public partial class LoggedOutPlayer : IDatabaseRow
 	{
 		[DataMember(Name = "identity")]
-		public SpacetimeDB.Identity Identity = new();
+		public SpacetimeDB.Identity Identity;
 		[DataMember(Name = "player")]
-		public SpacetimeDB.Types.Player Player = new();
+		public SpacetimeDB.Types.Player Player;
 
-		private static Dictionary<SpacetimeDB.Identity, LoggedOutPlayer> Identity_Index = new(16);
-
-		public override void InternalOnValueInserted()
+		public LoggedOutPlayer(
+			SpacetimeDB.Identity Identity,
+			SpacetimeDB.Types.Player Player
+		)
 		{
-			Identity_Index[Identity] = this;
+			this.Identity = Identity;
+			this.Player = Player;
 		}
 
-		public override void InternalOnValueDeleted()
+		public LoggedOutPlayer()
 		{
-			Identity_Index.Remove(Identity);
+			this.Identity = new();
+			this.Player = new();
 		}
-
-		public static LoggedOutPlayer? FindByIdentity(SpacetimeDB.Identity value)
-		{
-			Identity_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static IEnumerable<LoggedOutPlayer> FilterByIdentity(SpacetimeDB.Identity value)
-		{
-			if (FindByIdentity(value) is {} found)
-			{
-				yield return found;
-			}
-		}
-
-		public override object GetPrimaryKeyValue() => Identity;
 
 	}
 }

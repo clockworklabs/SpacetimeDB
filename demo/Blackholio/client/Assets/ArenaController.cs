@@ -15,7 +15,7 @@ public class ArenaController : MonoBehaviour
 
     private void Start()
     {
-        Config.OnInsert += (value, @event) =>
+        GameManager.conn.Db.Config.OnInsert += (ctx, value) =>
         {
             var worldSize = value.WorldSize;
             var north = GameObject.CreatePrimitive(PrimitiveType.Cube);

@@ -15,9 +15,8 @@ public class UIUsernameChooser : MonoBehaviour
 
     private void Start()
     {
-        Player.OnInsert += (newPlayer, _) =>
+        GameManager.conn.Db.Player.OnInsert += (ctx, newPlayer) =>
         {
-            Debug.Log("Start - Checking identity");
             if (newPlayer.Identity == GameManager.localIdentity)
             {
                 // We have a player
@@ -36,7 +35,7 @@ public class UIUsernameChooser : MonoBehaviour
         Debug.Log("Creating player");
 
         sentCreatePlayer = true;
-        Reducer.CreatePlayer(usernameInputField.text);
+        GameManager.conn.Reducers.CreatePlayer(usernameInputField.text);
         playButton.interactable = false;
     }
 }

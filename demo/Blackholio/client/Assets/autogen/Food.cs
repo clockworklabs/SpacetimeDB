@@ -7,45 +7,27 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class Food : SpacetimeDB.DatabaseTableWithPrimaryKey<Food, SpacetimeDB.Types.ReducerEvent>
+	public partial class Food : IDatabaseRow
 	{
 		[DataMember(Name = "entity_id")]
 		public uint EntityId;
 
-		private static Dictionary<uint, Food> EntityId_Index = new(16);
-
-		public override void InternalOnValueInserted()
+		public Food(
+			uint EntityId
+		)
 		{
-			EntityId_Index[EntityId] = this;
+			this.EntityId = EntityId;
 		}
 
-		public override void InternalOnValueDeleted()
+		public Food()
 		{
-			EntityId_Index.Remove(EntityId);
 		}
-
-		public static Food? FindByEntityId(uint value)
-		{
-			EntityId_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static IEnumerable<Food> FilterByEntityId(uint value)
-		{
-			if (FindByEntityId(value) is {} found)
-			{
-				yield return found;
-			}
-		}
-
-		public override object GetPrimaryKeyValue() => EntityId;
 
 	}
 }

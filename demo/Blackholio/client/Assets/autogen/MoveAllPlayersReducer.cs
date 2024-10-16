@@ -10,34 +10,10 @@ using SpacetimeDB;
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
-	public partial class MoveAllPlayersArgsStruct : IReducerArgs
+	public partial class MoveAllPlayers : IReducerArgs
 	{
-		ReducerType IReducerArgs.ReducerType => ReducerType.MoveAllPlayers;
-		string IReducerArgsBase.ReducerName => "move_all_players";
-		bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.OnMoveAllPlayers(reducerEvent, this);
+		string IReducerArgs.ReducerName => "move_all_players";
 
 		public SpacetimeDB.Types.MoveAllPlayersTimer Timer = new();
 	}
-
-	public static partial class Reducer
-	{
-		public delegate void MoveAllPlayersHandler(ReducerEvent reducerEvent, SpacetimeDB.Types.MoveAllPlayersTimer timer);
-		public static event MoveAllPlayersHandler? OnMoveAllPlayersEvent;
-
-		public static void MoveAllPlayers(SpacetimeDB.Types.MoveAllPlayersTimer timer)
-		{
-			SpacetimeDBClient.instance.InternalCallReducer(new MoveAllPlayersArgsStruct { Timer = timer });
-		}
-
-		public static bool OnMoveAllPlayers(ReducerEvent reducerEvent, MoveAllPlayersArgsStruct args)
-		{
-			if (OnMoveAllPlayersEvent == null) return false;
-			OnMoveAllPlayersEvent(
-				reducerEvent,
-				args.Timer
-			);
-			return true;
-		}
-	}
-
 }

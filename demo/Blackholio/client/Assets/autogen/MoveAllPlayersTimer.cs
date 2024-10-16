@@ -7,47 +7,32 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class MoveAllPlayersTimer : SpacetimeDB.DatabaseTableWithPrimaryKey<MoveAllPlayersTimer, SpacetimeDB.Types.ReducerEvent>
+	public partial class MoveAllPlayersTimer : IDatabaseRow
 	{
 		[DataMember(Name = "scheduled_id")]
 		public ulong ScheduledId;
 		[DataMember(Name = "scheduled_at")]
-		public SpacetimeDB.Types.ScheduleAt ScheduledAt = null!;
+		public SpacetimeDB.ScheduleAt ScheduledAt;
 
-		private static Dictionary<ulong, MoveAllPlayersTimer> ScheduledId_Index = new(16);
-
-		public override void InternalOnValueInserted()
+		public MoveAllPlayersTimer(
+			ulong ScheduledId,
+			SpacetimeDB.ScheduleAt ScheduledAt
+		)
 		{
-			ScheduledId_Index[ScheduledId] = this;
+			this.ScheduledId = ScheduledId;
+			this.ScheduledAt = ScheduledAt;
 		}
 
-		public override void InternalOnValueDeleted()
+		public MoveAllPlayersTimer()
 		{
-			ScheduledId_Index.Remove(ScheduledId);
+			this.ScheduledAt = null!;
 		}
-
-		public static MoveAllPlayersTimer? FindByScheduledId(ulong value)
-		{
-			ScheduledId_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static IEnumerable<MoveAllPlayersTimer> FilterByScheduledId(ulong value)
-		{
-			if (FindByScheduledId(value) is {} found)
-			{
-				yield return found;
-			}
-		}
-
-		public override object GetPrimaryKeyValue() => ScheduledId;
 
 	}
 }

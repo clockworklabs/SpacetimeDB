@@ -17,9 +17,9 @@ public class FoodController : MonoBehaviour
     public void Spawn(uint entityId)
     {
         this.entityId = entityId;
-        Food.OnDelete += OnDelete;
-
-        var entity = Entity.FindById(entityId);
+        GameManager.conn.Db.Food.OnDelete += OnDelete;
+        
+        var entity = GameManager.conn.Db.Entity.Id.Find(entityId);
         var position = new UnityEngine.Vector2
         {
             x = entity.Position.X,
@@ -38,10 +38,10 @@ public class FoodController : MonoBehaviour
 
     private void OnDestroy()
     {
-        Food.OnDelete -= OnDelete;
+        GameManager.conn.Db.Food.OnDelete -= OnDelete;
     }
 
-    private void OnDelete(Food food, ReducerEvent e)
+    private void OnDelete(EventContext context, Food food)
     {
         if (food.EntityId == entityId)
         {

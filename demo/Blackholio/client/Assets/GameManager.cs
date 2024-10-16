@@ -10,7 +10,7 @@ using Random = UnityEngine.Random;
 
 public class GameManager : MonoBehaviour
 {
-    [FormerlySerializedAs("playerPrefab")] public CircleController circlePrefab;
+    public CircleController circlePrefab;
     public FoodController foodPrefab;
     public GameObject deathScreen;
     public PlayerController playerPrefab;
@@ -37,62 +37,57 @@ public class GameManager : MonoBehaviour
         new Dictionary<uint, PlayerController>();
 
     public static Identity? localIdentity;
+    public static DbConnection conn;
     
     private void Start()
     {
         instance = this;
         Application.targetFrameRate = 60;
-
-        SpacetimeDBClient.instance.onConnect += () =>
-        {
+        
+        // Now that we’ve registered all our callbacks, lets connect to spacetimedb
+        conn = DbConnection.Builder().OnConnect((_conn, identity, token) => {
+            // Called when we connect to SpacetimeDB and receive our client identity
             Debug.Log("Connected.");
-
-            // Request all tables
-            SpacetimeDBClient.instance.Subscribe(new List<string>()
-            {
-                "SELECT * FROM *",
-            });
-        };
-
-        // Called when we have an error connecting to SpacetimeDB
-        SpacetimeDBClient.instance.onConnectError += (error, message) =>
-        {
-            Debug.LogError($"Connection error: " + message);
-        };
-
-        // Called when we are disconnected from SpacetimeDB
-        SpacetimeDBClient.instance.onDisconnect += (closeStatus, error) =>
-        {
-            Debug.Log("Disconnected.");
-        };
-
-        // Called when we receive the client identity from SpacetimeDB
-        SpacetimeDBClient.instance.onIdentityReceived += (token, identity, address) => {
             AuthToken.SaveToken(token);
             localIdentity = identity;
-            Debug.Log("Got identity.");
-        };
 
-        Circle.OnInsert += CircleOnInsert;
-        Circle.OnDelete += CircleOnDelete;
-        Entity.OnUpdate += EntityOnUpdate;
-        Food.OnInsert += FoodOnOnInsert;
-        Player.OnInsert += PlayerOnInsert;
-        Player.OnDelete += PlayerOnDelete;
+            conn.Db.Circle.OnInsert += CircleOnInsert;
+            conn.Db.Circle.OnDelete += CircleOnDelete;
+            conn.Db.Entity.OnUpdate += EntityOnUpdate;
+            conn.Db.Food.OnInsert += FoodOnInsert;
+            conn.Db.Player.OnInsert += PlayerOnInsert;
+            conn.Db.Player.OnDelete += PlayerOnDelete;
+            
+            // Request all tables
+            conn.SubscriptionBuilder().OnApplied(ctx =>
+            {
+                Debug.Log("Subscription applied!");
+            }).Subscribe("SELECT * FROM *");
+        }).OnConnectError((status, message) =>
+        {
+            // Called when we have an error connecting to SpacetimeDB
+            Debug.LogError($"Connection error: {status} {message}");
+        }).OnDisconnect((_conn, closeStatus, error) =>
+        {
+            // Called when we are disconnected from SpacetimeDB
+            Debug.Log("Disconnected.");
+        }).WithUri("http://localhost:3000")
+            .WithModuleName("untitled-circle-game")
+            .Build();
         
-        SpacetimeDBClient.instance.onUnhandledReducerError += InstanceOnUnhandledReducerError;
-
-        // Now that we’ve registered all our callbacks, lets connect to spacetimedb
-        SpacetimeDBClient.instance.Connect(AuthToken.Token, "http://localhost:3000", "untitled-circle-game");
+#pragma warning disable CS0612 // Type or member is obsolete
+        conn.onUnhandledReducerError += InstanceOnUnhandledReducerError;
+#pragma warning restore CS0612 // Type or member is obsolete
+        
         localCamera = Camera.main;
     }
 
-    private void InstanceOnUnhandledReducerError(ReducerEventBase obj)
+    private void InstanceOnUnhandledReducerError(ReducerEvent<Reducer> reducerEvent)
     {
-        Debug.LogError(obj.ErrMessage);
+        Debug.LogError("There was an error!");
     }
     
-    private void PlayerOnDelete(Player deletedvalue, ReducerEvent dbevent)
+    private void PlayerOnDelete(EventContext context, Player deletedvalue)
     {
         if (playerIdToPlayerController.TryGetValue(deletedvalue.PlayerId, out var playerController))
         {
@@ -100,18 +95,18 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    private void PlayerOnInsert(Player insertedPlayer, ReducerEvent dbEvent)
+    private void PlayerOnInsert(EventContext context, Player insertedPlayer)
     {
-        if (insertedPlayer.Identity == localIdentity && !Circle.FilterByPlayerId(insertedPlayer.PlayerId).Any())
+        if (insertedPlayer.Identity == localIdentity && !conn.Db.Circle.PlayerId.Filter(insertedPlayer.PlayerId).Any())
         {
             // We have a player, but no circle, let's respawn
             Respawn();
         }    
     }
 
-    private void EntityOnUpdate(Entity oldEntity, Entity newEntity, ReducerEvent dbEvent)
+    private void EntityOnUpdate(EventContext context, Entity oldEntity, Entity newEntity)
     {
-        var circle = Circle.FindByEntityId(newEntity.Id);
+        var circle = conn.Db.Circle.EntityId.Find(newEntity.Id);
         if (circle == null)
         {
             return;
@@ -121,13 +116,13 @@ public class GameManager : MonoBehaviour
         player.CircleUpdate(oldEntity, newEntity);
     }
 
-    private void CircleOnDelete(Circle deletedCircle, ReducerEvent dbEvent)
+    private void CircleOnDelete(EventContext context, Circle deletedCircle)
     {
         var player = GetOrCreatePlayer(deletedCircle.PlayerId);
         player.DespawnCircle(deletedCircle);
     }
     
-    private void CircleOnInsert(Circle insertedValue, ReducerEvent dbEvent)
+    private void CircleOnInsert(EventContext context, Circle insertedValue)
     {
         var player = GetOrCreatePlayer(insertedValue.PlayerId);
         // Spawn the new circle 
@@ -136,7 +131,7 @@ public class GameManager : MonoBehaviour
 
     PlayerController GetOrCreatePlayer(uint playerId)
     {
-        var player = Player.FindByPlayerId(playerId);
+        var player = conn.Db.Player.PlayerId.Find(playerId);
         // Get the PlayerController for this circle
         if (!playerIdToPlayerController.TryGetValue(playerId, out var playerController))
         {
@@ -149,7 +144,7 @@ public class GameManager : MonoBehaviour
         return playerController;
     }
     
-    private void FoodOnOnInsert(Food insertedValue, ReducerEvent dbEvent)
+    private void FoodOnInsert(EventContext context, Food insertedValue)
     {
         // Spawn the new food
         var food = Instantiate(foodPrefab);
@@ -169,6 +164,6 @@ public class GameManager : MonoBehaviour
     public void Respawn()
     {
         deathScreen.SetActive(false);
-        Reducer.Respawn();
+        conn.Reducers.Respawn();
     }
 }

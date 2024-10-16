@@ -7,47 +7,32 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class SpawnFoodTimer : SpacetimeDB.DatabaseTableWithPrimaryKey<SpawnFoodTimer, SpacetimeDB.Types.ReducerEvent>
+	public partial class SpawnFoodTimer : IDatabaseRow
 	{
 		[DataMember(Name = "scheduled_id")]
 		public ulong ScheduledId;
 		[DataMember(Name = "scheduled_at")]
-		public SpacetimeDB.Types.ScheduleAt ScheduledAt = null!;
+		public SpacetimeDB.ScheduleAt ScheduledAt;
 
-		private static Dictionary<ulong, SpawnFoodTimer> ScheduledId_Index = new(16);
-
-		public override void InternalOnValueInserted()
+		public SpawnFoodTimer(
+			ulong ScheduledId,
+			SpacetimeDB.ScheduleAt ScheduledAt
+		)
 		{
-			ScheduledId_Index[ScheduledId] = this;
+			this.ScheduledId = ScheduledId;
+			this.ScheduledAt = ScheduledAt;
 		}
 
-		public override void InternalOnValueDeleted()
+		public SpawnFoodTimer()
 		{
-			ScheduledId_Index.Remove(ScheduledId);
+			this.ScheduledAt = null!;
 		}
-
-		public static SpawnFoodTimer? FindByScheduledId(ulong value)
-		{
-			ScheduledId_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static IEnumerable<SpawnFoodTimer> FilterByScheduledId(ulong value)
-		{
-			if (FindByScheduledId(value) is {} found)
-			{
-				yield return found;
-			}
-		}
-
-		public override object GetPrimaryKeyValue() => ScheduledId;
 
 	}
 }
