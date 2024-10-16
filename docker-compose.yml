@@ -36,8 +36,6 @@ services:
       SPACETIMEDB_TRACY: 1
       RUST_BACKTRACE: 1
       ENV: dev
-      SENDGRID_API_KEY:
-      SENDGRID_SENDER:
     networks:
       - spacetimedb_default
 
