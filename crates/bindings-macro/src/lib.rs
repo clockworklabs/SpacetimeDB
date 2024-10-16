@@ -458,7 +458,7 @@ struct IndexArg {
 
 enum IndexType {
     BTree { columns: Vec<Ident> },
-    UniqueBTree { column: Ident },
+    UniqueBTree { column: Ident, pk: bool },
 }
 
 impl TableArgs {
@@ -586,9 +586,9 @@ impl IndexArg {
                 let cols = columns.iter().map(find_column).collect::<syn::Result<Vec<_>>>()?;
                 ValidatedIndexType::BTree { cols }
             }
-            IndexType::UniqueBTree { column } => {
+            IndexType::UniqueBTree { column, pk } => {
                 let col = find_column(column)?;
-                ValidatedIndexType::UniqueBTree { col }
+                ValidatedIndexType::UniqueBTree { col, pk: *pk }
             }
         };
         let index_name = match &kind {
@@ -596,7 +596,7 @@ impl IndexArg {
                 .chain(cols.iter().map(|col| col.field.name.as_deref().unwrap()))
                 .collect::<Vec<_>>()
                 .join("_"),
-            ValidatedIndexType::UniqueBTree { col } => {
+            ValidatedIndexType::UniqueBTree { col, .. } => {
                 [table_name, "btree", col.field.name.as_deref().unwrap()].join("_")
             }
         };
@@ -616,7 +616,7 @@ struct ValidatedIndex<'a> {
 
 enum ValidatedIndexType<'a> {
     BTree { cols: Vec<&'a Column<'a>> },
-    UniqueBTree { col: &'a Column<'a> },
+    UniqueBTree { col: &'a Column<'a>, pk: bool },
 }
 
 impl ValidatedIndex<'_> {
@@ -628,7 +628,7 @@ impl ValidatedIndex<'_> {
                     columns: &[#(#col_ids),*]
                 })
             }
-            ValidatedIndexType::UniqueBTree { col } => {
+            ValidatedIndexType::UniqueBTree { col, .. } => {
                 let col_id = col.index;
                 quote!(spacetimedb::table::IndexAlgo::BTree {
                     columns: &[#col_id]
@@ -672,15 +672,18 @@ impl ValidatedIndex<'_> {
                     }
                 }
             }
-            ValidatedIndexType::UniqueBTree { col } => {
+            &ValidatedIndexType::UniqueBTree { col, pk } => {
                 let vis = col.field.vis;
                 let col_ty = col.field.ty;
                 let column_ident = col.field.ident.unwrap();
 
-                let doc = format!(
+                let mut doc = format!(
                     "Gets the [`UniqueColumn`][spacetimedb::UniqueColumn] for the \
                      [`{column_ident}`][{row_type_ident}::{column_ident}] column."
                 );
+                if pk {
+                    doc.push_str("\n\nThis column is the *primary key* for this table.")
+                }
                 quote! {
                     #[doc = #doc]
                     #vis fn #column_ident(&self) -> spacetimedb::UniqueColumn<Self, #col_ty, __indices::#index_ident> {
@@ -694,7 +697,7 @@ impl ValidatedIndex<'_> {
     fn marker_type(&self, vis: &syn::Visibility, row_type_ident: &Ident) -> TokenStream {
         let index_ident = self.accessor_name;
         let index_name = &self.index_name;
-        let vis = if let ValidatedIndexType::UniqueBTree { col } = self.kind {
+        let vis = if let ValidatedIndexType::UniqueBTree { col, .. } = self.kind {
             col.field.vis
         } else {
             vis
@@ -711,7 +714,7 @@ impl ValidatedIndex<'_> {
                 }
             }
         };
-        if let ValidatedIndexType::UniqueBTree { col } = self.kind {
+        if let ValidatedIndexType::UniqueBTree { col, pk } = self.kind {
             let col_ty = col.ty;
             let col_name = col.field.name.as_deref().unwrap();
             let field_ident = col.field.ident.unwrap();
@@ -725,6 +728,9 @@ impl ValidatedIndex<'_> {
                     }
                 }
             });
+            if pk {
+                decl.extend(quote!(impl spacetimedb::table::PrimaryKey for #index_ident {}));
+            }
         }
         decl
     }
@@ -966,6 +972,7 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
                 name: field_ident.clone(),
                 kind: IndexType::UniqueBTree {
                     column: field_ident.clone(),
+                    pk: primary_key.is_some(),
                 },
             });
         }
@@ -988,12 +995,11 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
         .map(|index| index.validate(&table_name, &columns))
         .collect::<syn::Result<Vec<_>>>()?;
 
-    // order unique accessors before index accessors
-    indices.sort_by(|a, b| match (&a.kind, &b.kind) {
-        (ValidatedIndexType::UniqueBTree { .. }, ValidatedIndexType::UniqueBTree { .. }) => std::cmp::Ordering::Equal,
-        (_, ValidatedIndexType::UniqueBTree { .. }) => std::cmp::Ordering::Greater,
-        (ValidatedIndexType::UniqueBTree { .. }, _) => std::cmp::Ordering::Less,
-        _ => std::cmp::Ordering::Equal,
+    // put the primary key first in the docs, then unique columns, then other indices.
+    indices.sort_by_key(|x| match &x.kind {
+        ValidatedIndexType::UniqueBTree { pk: true, .. } => 0u8,
+        ValidatedIndexType::UniqueBTree { .. } => 1,
+        _ => 2,
     });
 
     let index_descs = indices.iter().map(|index| index.desc());
@@ -1042,7 +1048,6 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
         quote!(::core::convert::Infallible)
     };
 
-    let field_names = fields.iter().map(|f| f.ident.unwrap()).collect::<Vec<_>>();
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
 
     let tabletype_impl = quote! {
@@ -1075,16 +1080,6 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
         extern "C" fn __register_describer() {
             spacetimedb::rt::register_table::<#tablehandle_ident>()
         }
-    };
-
-    let col_num = 0u16..;
-    let field_access_impls = quote! {
-        #(impl spacetimedb::table::FieldAccess<#col_num> for #original_struct_ident {
-            type Field = #field_types;
-            fn get_field(&self) -> &Self::Field {
-                &self.#field_names
-            }
-        })*
     };
 
     let row_type_to_table = quote!(<#row_type as spacetimedb::table::__MapRowTypeToTable>::Table);
@@ -1147,8 +1142,6 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
         #schema_impl
         #deserialize_impl
         #serialize_impl
-
-        #field_access_impls
 
         #scheduled_reducer_type_check
     };
