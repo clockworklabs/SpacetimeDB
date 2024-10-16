@@ -107,9 +107,6 @@ fn auto_migrate_database(
             }
         }
     }
-    // Is necessary to collect the full list of old and new tables to pass to the `RowLevelExpr::try_from` method,
-    // because we removed all the old row-level security definitions, then added the new ones.
-    let mut all_tables = table_schemas_by_name.clone();
 
     log::info!("Running database update steps: {}", stdb.address());
 
@@ -120,14 +117,12 @@ fn auto_migrate_database(
 
                 // Recursively sets IDs to 0.
                 // They will be initialized by the database when the table is created.
-                let mut table_schema = TableSchema::from_module_def(plan.new, table_def, (), 0.into());
+                let table_schema = TableSchema::from_module_def(plan.new, table_def, (), 0.into());
 
                 system_logger.info(&format!("Creating table `{}`", table_name));
                 log::info!("Creating table `{}`", table_name);
 
-                let table_id = stdb.create_table(tx, table_schema.clone())?;
-                table_schema.table_id = table_id;
-                all_tables.insert(table_schema.table_name.clone(), Arc::new(table_schema));
+                stdb.create_table(tx, table_schema)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddIndex(index_name) => {
                 let table_def = plan.new.stored_in_table_def(index_name).unwrap();
@@ -232,9 +227,8 @@ fn auto_migrate_database(
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddRowLevelSecurity(sql_rls) => {
                 system_logger.info(&format!("Adding row-level security `{sql_rls}`"));
                 log::info!("Adding row-level security `{sql_rls}`");
-                let tables = all_tables.values().cloned().collect::<Vec<_>>();
                 let rls = RawRowLevelSecurityDefV9::lookup(plan.new, sql_rls).unwrap();
-                let rls = RowLevelExpr::try_from((rls, tables.as_slice()))?;
+                let rls = RowLevelExpr::build_row_level_expr(stdb, tx, rls)?;
 
                 stdb.create_row_level_security(tx, rls.def)?;
             }
