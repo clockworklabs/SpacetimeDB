@@ -18,14 +18,11 @@ impl RowLevelExpr {
     pub fn build_row_level_expr(
         stdb: &RelationalDB,
         tx: &mut MutTxId,
+        auth_ctx: &AuthCtx,
         rls: &RawRowLevelSecurityDefV9,
     ) -> Result<Self, TypingError> {
         let mut ctx = TyCtx::default();
-        let sql = parse_and_type_sub(
-            &mut ctx,
-            &rls.sql,
-            &SchemaViewer::new(stdb, tx, &AuthCtx::for_testing()),
-        )?;
+        let sql = parse_and_type_sub(&mut ctx, &rls.sql, &SchemaViewer::new(stdb, tx, auth_ctx))?;
 
         Ok(Self {
             def: RowLevelSecuritySchema {

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::errors::{NoTableId, TypingError};
+use crate::errors::{FilterReturnType, TypingError};
 use crate::static_assert_size;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::TableId;
@@ -59,7 +59,7 @@ impl RelExpr {
     pub fn table_id(&self, ctx: &mut TyCtx) -> Result<TableId, TypingError> {
         match &*self.ty(ctx)? {
             Type::Var(id, _) => Ok(*id),
-            _ => Err(NoTableId.into()),
+            _ => Err(FilterReturnType.into()),
         }
     }
 }

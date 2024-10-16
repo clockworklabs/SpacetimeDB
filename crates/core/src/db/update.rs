@@ -5,11 +5,11 @@ use crate::execution_context::ExecutionContext;
 use crate::sql::parser::RowLevelExpr;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::auth::StTableType;
-use spacetimedb_lib::db::raw_def::v9::RawRowLevelSecurityDefV9;
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::ColSet;
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
-use spacetimedb_schema::def::{ModuleDefLookup, TableDef};
+use spacetimedb_schema::def::TableDef;
 use spacetimedb_schema::schema::{IndexSchema, Schema, SequenceSchema, TableSchema};
 use std::sync::Arc;
 
@@ -26,6 +26,7 @@ use std::sync::Arc;
 pub fn update_database(
     stdb: &RelationalDB,
     tx: &mut MutTxId,
+    auth_ctx: AuthCtx,
     plan: MigratePlan,
     system_logger: &SystemLogger,
 ) -> anyhow::Result<()> {
@@ -46,7 +47,7 @@ pub fn update_database(
 
     match plan {
         MigratePlan::Manual(plan) => manual_migrate_database(stdb, tx, plan, system_logger, existing_tables),
-        MigratePlan::Auto(plan) => auto_migrate_database(stdb, tx, plan, system_logger, existing_tables),
+        MigratePlan::Auto(plan) => auto_migrate_database(stdb, tx, auth_ctx, plan, system_logger, existing_tables),
     }
 }
 
@@ -65,6 +66,7 @@ fn manual_migrate_database(
 fn auto_migrate_database(
     stdb: &RelationalDB,
     tx: &mut MutTxId,
+    auth_ctx: AuthCtx,
     plan: AutoMigratePlan,
     system_logger: &SystemLogger,
     existing_tables: Vec<Arc<TableSchema>>,
@@ -228,7 +230,7 @@ fn auto_migrate_database(
                 system_logger.info(&format!("Adding row-level security `{sql_rls}`"));
                 log::info!("Adding row-level security `{sql_rls}`");
                 let rls = plan.new.lookup_expect(sql_rls);
-                let rls = RowLevelExpr::build_row_level_expr(stdb, tx, rls)?;
+                let rls = RowLevelExpr::build_row_level_expr(stdb, tx, &auth_ctx, rls)?;
 
                 stdb.create_row_level_security(tx, rls.def)?;
             }

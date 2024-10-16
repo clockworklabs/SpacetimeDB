@@ -9,9 +9,6 @@ use spacetimedb_schema::schema::{Schema, TableSchema};
 use std::sync::Arc;
 use std::time::Duration;
 
-use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::{bsatn, Address, RawModuleDef};
-
 use super::instrumentation::CallTimes;
 use crate::database_logger::SystemLogger;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -33,6 +30,9 @@ use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
+use spacetimedb_lib::buffer::DecodeError;
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::{bsatn, Address, RawModuleDef};
 
 use super::*;
 
@@ -264,6 +264,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let timestamp = Timestamp::now();
         let stdb = &*self.replica_context().relational_db;
         let ctx = ExecutionContext::internal(stdb.address());
+        let auth_ctx = AuthCtx::for_current(self.replica_context().database.owner_identity);
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let (tx, ()) = stdb
             .with_auto_rollback(&ctx, tx, |tx| {
@@ -282,7 +283,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     self.system_logger()
                         .info(&format!("Creating row level security `{}`", rls.sql));
 
-                    let rls = RowLevelExpr::build_row_level_expr(stdb, tx, rls)
+                    let rls = RowLevelExpr::build_row_level_expr(stdb, tx, &auth_ctx, rls)
                         .with_context(|| format!("failed to create row-level security: `{}`", rls.sql))?;
                     let table_id = rls.def.table_id;
                     let sql = rls.def.sql.clone();
@@ -349,7 +350,8 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let (mut tx, _) = stdb.with_auto_rollback(&ctx, tx, |tx| stdb.update_program(tx, HostType::Wasm, program))?;
         self.system_logger().info(&format!("Updated program to {program_hash}"));
 
-        let res = crate::db::update::update_database(stdb, &mut tx, plan, self.system_logger());
+        let auth_ctx = AuthCtx::for_current(self.replica_context().database.owner_identity);
+        let res = crate::db::update::update_database(stdb, &mut tx, auth_ctx, plan, self.system_logger());
 
         match res {
             Err(e) => {

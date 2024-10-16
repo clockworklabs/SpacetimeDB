@@ -168,5 +168,5 @@ pub enum TypingError {
     #[error(transparent)]
     DuplicateName(#[from] DuplicateName),
     #[error(transparent)]
-    NoTableId(#[from] NoTableId),
+    FilterReturnType(#[from] FilterReturnType),
 }
