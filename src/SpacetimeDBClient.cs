@@ -22,7 +22,6 @@ namespace SpacetimeDB
         string? uri;
         string? nameOrAddress;
         string? token;
-        Compression? compression;
 
         public DbConnection Build()
         {
@@ -34,7 +33,7 @@ namespace SpacetimeDB
             {
                 throw new InvalidOperationException("Building DbConnection with a null nameOrAddress. Call WithModuleName() first.");
             }
-            conn.Connect(token, uri, nameOrAddress, compression ?? Compression.Brotli);
+            conn.Connect(token, uri, nameOrAddress);
 #if UNITY_5_3_OR_NEWER
             SpacetimeDBNetworkManager.ActiveConnections.Add(conn);
 #endif
@@ -56,12 +55,6 @@ namespace SpacetimeDB
         public DbConnectionBuilder<DbConnection, Reducer> WithCredentials(in (Identity identity, string token)? creds)
         {
             token = creds?.token;
-            return this;
-        }
-
-        public DbConnectionBuilder<DbConnection, Reducer> WithCompression(Compression compression)
-        {
-            this.compression = compression;
             return this;
         }
 
@@ -216,17 +209,6 @@ namespace SpacetimeDB
         {
             None = 0,
             Brotli = 1,
-            Gzip = 2,
-        }
-
-        private static BinaryReader BrotliReader(Stream stream)
-        {
-            return new BinaryReader(new BrotliStream(stream, CompressionMode.Decompress));
-        }
-
-        private static BinaryReader GzipReader(Stream stream)
-        {
-            return new BinaryReader(new GZipStream(stream, CompressionMode.Decompress));
         }
 
         private static ServerMessage DecompressDecodeMessage(byte[] bytes)
@@ -239,11 +221,16 @@ namespace SpacetimeDB
             switch (compression)
             {
                 case CompressionAlgos.None:
-                    return new ServerMessage.BSATN().Read(new BinaryReader(stream));
+                    {
+                        using var binaryReader = new BinaryReader(stream);
+                        return new ServerMessage.BSATN().Read(binaryReader);
+                    }
                 case CompressionAlgos.Brotli:
-                    return new ServerMessage.BSATN().Read(BrotliReader(stream));
-                case CompressionAlgos.Gzip:
-                    return new ServerMessage.BSATN().Read(GzipReader(stream));
+                    {
+                        using var decompressedStream = new BrotliStream(stream, CompressionMode.Decompress);
+                        using var binaryReader = new BinaryReader(decompressedStream);
+                        return new ServerMessage.BSATN().Read(binaryReader);
+                    }
                 default:
                     throw new InvalidOperationException("Unknown compression type");
             }
@@ -257,11 +244,12 @@ namespace SpacetimeDB
                     return qu;
 
                 case CompressableQueryUpdate.Brotli(var bytes):
-                    return new QueryUpdate.BSATN().Read(BrotliReader(new MemoryStream(bytes)));
-
-                case CompressableQueryUpdate.Gzip(var bytes):
-                    return new QueryUpdate.BSATN().Read(GzipReader(new MemoryStream(bytes)));
-
+                    {
+                        using var stream = new MemoryStream(bytes);
+                        using var decompressedStream = new BrotliStream(stream, CompressionMode.Decompress);
+                        using var binaryReader = new BinaryReader(decompressedStream);
+                        return new QueryUpdate.BSATN().Read(binaryReader);
+                    }
                 default:
                     throw new InvalidOperationException();
             }
@@ -591,7 +579,7 @@ namespace SpacetimeDB
         /// </summary>
         /// <param name="uri"> URI of the SpacetimeDB server (ex: https://testnet.spacetimedb.com)
         /// <param name="addressOrName">The name or address of the database to connect to</param>
-        internal void Connect(string? token, string uri, string addressOrName, Compression compression)
+        internal void Connect(string? token, string uri, string addressOrName)
         {
             isClosing = false;
 
@@ -609,7 +597,7 @@ namespace SpacetimeDB
                 {
                     try
                     {
-                        await webSocket.Connect(token, uri, addressOrName, Address, compression);
+                        await webSocket.Connect(token, uri, addressOrName, Address);
                     }
                     catch (Exception e)
                     {

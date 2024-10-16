@@ -12,7 +12,6 @@ namespace SpacetimeDB.ClientApi
 	[SpacetimeDB.Type]
 	public partial record CompressableQueryUpdate : SpacetimeDB.TaggedEnum<(
 		SpacetimeDB.ClientApi.QueryUpdate Uncompressed,
-		byte[] Brotli,
-		byte[] Gzip
+		byte[] Brotli
 	)>;
 }
