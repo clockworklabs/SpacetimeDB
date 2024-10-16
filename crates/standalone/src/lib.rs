@@ -22,7 +22,6 @@ use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
-use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
@@ -171,12 +170,6 @@ impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
 
     fn private_key(&self) -> &EncodingKey {
         &self.private_key
-    }
-
-    /// Standalone SpacetimeDB does not support SendGrid as a means to
-    /// reissue authentication tokens.
-    fn sendgrid_controller(&self) -> Option<&SendGridController> {
-        None
     }
 }
 

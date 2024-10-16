@@ -1,7 +1,7 @@
 use core::iter;
 
 use crate::relation::RelValue;
-use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use spacetimedb_lib::relation::ColExpr;
 use spacetimedb_sats::AlgebraicValue;
 

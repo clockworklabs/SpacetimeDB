@@ -71,8 +71,6 @@ public partial struct PublicTable
     public CustomEnum CustomEnumField;
     public CustomTaggedEnum CustomTaggedEnumField;
     public List<int> ListField;
-    public Dictionary<string, int> DictionaryField;
     public int? NullableValueField;
     public string? NullableReferenceField;
-    public Dictionary<CustomEnum, List<int?>?>? ComplexNestedField;
 }

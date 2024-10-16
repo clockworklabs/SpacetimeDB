@@ -23,7 +23,7 @@
 
 use super::indexes::RowPointer;
 use super::table::RowRef;
-use crate::{read_column::ReadColumn, static_assert_size};
+use crate::{read_column::ReadColumn, static_assert_size, MemoryUsage};
 use core::ops::RangeBounds;
 use spacetimedb_primitives::{ColList, IndexId};
 use spacetimedb_sats::{
@@ -125,6 +125,28 @@ enum TypedIndex {
     I256(Index<i256>),
     String(Index<Box<str>>),
     AlgebraicValue(Index<AlgebraicValue>),
+}
+
+impl MemoryUsage for TypedIndex {
+    fn heap_usage(&self) -> usize {
+        match self {
+            TypedIndex::Bool(this) => this.heap_usage(),
+            TypedIndex::U8(this) => this.heap_usage(),
+            TypedIndex::I8(this) => this.heap_usage(),
+            TypedIndex::U16(this) => this.heap_usage(),
+            TypedIndex::I16(this) => this.heap_usage(),
+            TypedIndex::U32(this) => this.heap_usage(),
+            TypedIndex::I32(this) => this.heap_usage(),
+            TypedIndex::U64(this) => this.heap_usage(),
+            TypedIndex::I64(this) => this.heap_usage(),
+            TypedIndex::U128(this) => this.heap_usage(),
+            TypedIndex::I128(this) => this.heap_usage(),
+            TypedIndex::U256(this) => this.heap_usage(),
+            TypedIndex::I256(this) => this.heap_usage(),
+            TypedIndex::String(this) => this.heap_usage(),
+            TypedIndex::AlgebraicValue(this) => this.heap_usage(),
+        }
+    }
 }
 
 impl TypedIndex {
@@ -329,6 +351,18 @@ pub struct BTreeIndex {
     pub key_type: AlgebraicType,
 }
 
+impl MemoryUsage for BTreeIndex {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            index_id,
+            is_unique,
+            idx,
+            key_type,
+        } = self;
+        index_id.heap_usage() + is_unique.heap_usage() + idx.heap_usage() + key_type.heap_usage()
+    }
+}
+
 static_assert_size!(BTreeIndex, 64);
 
 impl BTreeIndex {
@@ -445,7 +479,7 @@ mod test {
     use core::ops::Bound::*;
     use proptest::prelude::*;
     use proptest::{collection::vec, test_runner::TestCaseResult};
-    use spacetimedb_data_structures::map::HashMap;
+    use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
     use spacetimedb_primitives::ColId;
     use spacetimedb_sats::{
         product,
