@@ -519,7 +519,7 @@ pub fn should_compress(len: usize) -> bool {
     /// TODO(perf): measure!
     const COMPRESS_THRESHOLD: usize = 1024;
 
-    len <= COMPRESS_THRESHOLD
+    len >= COMPRESS_THRESHOLD
 }
 
 pub fn brotli_compress(bytes: &[u8], out: &mut Vec<u8>) {
