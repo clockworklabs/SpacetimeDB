@@ -248,7 +248,7 @@ urlencoding = "2.1.2"
 uuid = { version = "1.2.1", features = ["v4"] }
 walkdir = "2.2.5"
 wasmbin = "0.6"
-
+webbrowser = "1.0.2"
 
 wasmtime = { version = "15", default-features = false, features = ["cranelift", "demangle", "addr2line", "cache"] }
 
