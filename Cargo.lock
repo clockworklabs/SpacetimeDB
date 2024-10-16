@@ -4672,6 +4672,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-physical-plan"
+version = "1.0.0-rc1"
+dependencies = [
+ "spacetimedb-expr",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-schema",
+ "spacetimedb-sql-parser",
+]
+
+[[package]]
 name = "spacetimedb-primitives"
 version = "1.0.0-rc1"
 dependencies = [

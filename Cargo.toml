@@ -15,6 +15,7 @@ members = [
   "crates/fs-utils",
   "crates/lib",
   "crates/metrics",
+  "crates/physical-plan",
   "crates/primitives",
   "crates/sats",
   "crates/schema",
@@ -99,6 +100,7 @@ spacetimedb-durability = { path = "crates/durability", version = "1.0.0-rc1" }
 spacetimedb-expr = { path = "crates/expr", version = "1.0.0-rc1" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "1.0.0-rc1" }
 spacetimedb-metrics = { path = "crates/metrics", version = "1.0.0-rc1" }
+spacetimedb-physical-plan = { path = "crates/physical-plan", version = "1.0.0-rc1" }
 spacetimedb-primitives = { path = "crates/primitives", version = "1.0.0-rc1" }
 spacetimedb-sats = { path = "crates/sats", version = "1.0.0-rc1" }
 spacetimedb-schema = { path = "crates/schema", version = "1.0.0-rc1" }
