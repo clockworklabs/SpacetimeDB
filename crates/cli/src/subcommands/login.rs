@@ -24,7 +24,7 @@ struct TokenResponse {
 #[derive(Deserialize)]
 struct LoginTokenResponse {
     approved: bool,
-    session: LoginTokenResponseSession,
+    session: Option<LoginTokenResponseSession>,
 }
 
 #[derive(Deserialize)]
@@ -66,10 +66,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             .json()
             .await?;
         if response.approved {
-            config.set_login_token(response.session.token);
+            config.set_login_token(response.session.unwrap().token);
             println!("Login successful!");
             break;
         }
+
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
     // TODO: test that Ctrl-C returns non-zero, rather than falling through to the Ok(()) here
 
