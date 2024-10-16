@@ -1,7 +1,7 @@
 use spacetimedb::address::Address;
 use spacetimedb::hash::hash_bytes;
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, EnergyBalance, IdentityEmail, Node, Replica};
+use spacetimedb::messages::control_db::{Database, EnergyBalance, Node, Replica};
 use spacetimedb::{energy, stdb_path};
 
 use spacetimedb_client_api_messages::name::{
