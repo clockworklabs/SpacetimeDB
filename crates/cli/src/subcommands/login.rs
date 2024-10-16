@@ -32,7 +32,7 @@ struct LoginTokenResponseSession {
     token: String,
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let remote: &String = args.get_one("host").unwrap();
     // Users like to provide URLs with trailing slashes, which can cause issues due to double-slashes in the routes below.
     let remote = remote.trim_end_matches('/');
@@ -47,7 +47,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         .await?
         .json()
         .await?;
-    let temp_token = response.token;
+    let temp_token = response.token.as_str();
 
     let browser_url = Url::parse_with_params(route("/login/cli").as_str(), vec![("token", temp_token)])?;
     if webbrowser::open(browser_url.as_str()).is_err() {
@@ -66,7 +66,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             .json()
             .await?;
         if response.approved {
-            config.set("token", response.session.token)?;
+            config.set_login_token(response.session.token);
             println!("Login successful!");
             break;
         }
