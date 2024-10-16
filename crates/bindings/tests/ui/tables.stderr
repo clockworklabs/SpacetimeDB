@@ -1,0 +1,108 @@
+error: type parameters are not allowed on tables
+ --> tests/ui/tables.rs:9:18
+  |
+9 | struct TypeParam<T> {
+  |                  ^
+
+error: const parameters are not allowed on tables
+  --> tests/ui/tables.rs:14:19
+   |
+14 | struct ConstParam<const X: u8> {}
+   |                   ^^^^^^^^^^^
+
+error[E0277]: the column type `Test` does not implement `SpacetimeType`
+ --> tests/ui/tables.rs:5:8
+  |
+5 |     x: Test,
+  |        ^^^^ the trait `SpacetimeType` is not implemented for `Test`, which is required by `Test: TableColumn`
+  |
+  = note: table column types all must implement `SpacetimeType`
+  = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
+  = note: required for `Test` to implement `TableColumn`
+
+error[E0277]: the trait bound `Test: SpacetimeType` is not satisfied
+ --> tests/ui/tables.rs:5:8
+  |
+5 |     x: Test,
+  |        ^^^^ the trait `SpacetimeType` is not implemented for `Test`
+  |
+  = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
+  = help: the following other types implement trait `SpacetimeType`:
+            bool
+            i8
+            i16
+            i32
+            i64
+            i128
+            u8
+            u16
+          and $N others
+
+error[E0277]: the trait bound `Test: Deserialize<'de>` is not satisfied
+ --> tests/ui/tables.rs:5:8
+  |
+3 | #[spacetimedb::table(name = table)]
+  | ----------------------------------- required by a bound introduced by this call
+4 | struct Table {
+5 |     x: Test,
+  |        ^^^^ the trait `Deserialize<'de>` is not implemented for `Test`
+  |
+  = help: the following other types implement trait `Deserialize<'de>`:
+            bool
+            i8
+            i16
+            i32
+            i64
+            i128
+            u8
+            u16
+          and $N others
+note: required by a bound in `spacetimedb::spacetimedb_lib::de::SeqProductAccess::next_element`
+ --> $WORKSPACE/crates/sats/src/de.rs
+  |
+  |     fn next_element<T: Deserialize<'de>>(&mut self) -> Result<Option<T>, Self::Error> {
+  |                        ^^^^^^^^^^^^^^^^ required by this bound in `SeqProductAccess::next_element`
+
+error[E0277]: the trait bound `Test: Deserialize<'_>` is not satisfied
+ --> tests/ui/tables.rs:5:8
+  |
+5 |     x: Test,
+  |        ^^^^ the trait `Deserialize<'_>` is not implemented for `Test`
+  |
+  = help: the following other types implement trait `Deserialize<'de>`:
+            bool
+            i8
+            i16
+            i32
+            i64
+            i128
+            u8
+            u16
+          and $N others
+note: required by a bound in `get_field_value`
+ --> $WORKSPACE/crates/sats/src/de.rs
+  |
+  |     fn get_field_value<T: Deserialize<'de>>(&mut self) -> Result<T, Self::Error> {
+  |                           ^^^^^^^^^^^^^^^^ required by this bound in `NamedProductAccess::get_field_value`
+
+error[E0277]: the trait bound `Test: Serialize` is not satisfied
+ --> tests/ui/tables.rs:5:8
+  |
+5 |     x: Test,
+  |        ^^^^ the trait `Serialize` is not implemented for `Test`
+  |
+  = help: the following other types implement trait `Serialize`:
+            bool
+            i8
+            i16
+            i32
+            i64
+            i128
+            u8
+            u16
+          and $N others
+note: required by a bound in `spacetimedb::spacetimedb_lib::ser::SerializeNamedProduct::serialize_element`
+ --> $WORKSPACE/crates/sats/src/ser.rs
+  |
+  |     fn serialize_element<T: Serialize + ?Sized>(&mut self, name: Option<&str>, elem: &T) -> Result<(), Self::Error>;
+  |                             ^^^^^^^^^ required by this bound in `SerializeNamedProduct::serialize_element`
