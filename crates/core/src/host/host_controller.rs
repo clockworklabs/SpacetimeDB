@@ -4,7 +4,7 @@ use super::{Scheduler, UpdateDatabaseResult};
 use crate::database_logger::DatabaseLogger;
 use crate::db::datastore::traits::Program;
 use crate::db::db_metrics::DB_METRICS;
-use crate::db::relational_db::{self, RelationalDB};
+use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
 use crate::energy::{EnergyMonitor, EnergyQuanta};
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -14,17 +14,18 @@ use crate::util::spawn_rayon;
 use crate::{db, host};
 use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
-use durability::EmptyHistory;
+use durability::{Durability, EmptyHistory};
+use futures::future::BoxFuture;
 use log::{info, trace, warn};
 use parking_lot::Mutex;
 use serde::Serialize;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability as durability;
-use spacetimedb_lib::hash_bytes;
+use spacetimedb_lib::{hash_bytes, Address};
 use spacetimedb_sats::hash::Hash;
 use std::fmt;
 use std::future::Future;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
@@ -39,6 +40,9 @@ type HostCell = Arc<AsyncRwLock<Option<Host>>>;
 
 /// The registry of all running hosts.
 type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
+
+/// A future that resolves to a [`Durability`] instance.
+pub type DynDurabilityFut = BoxFuture<'static, anyhow::Result<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>>;
 
 #[async_trait]
 pub trait ExternalStorage: Send + Sync + 'static {
@@ -205,8 +209,15 @@ impl HostController {
     ///
     /// See also: [`Self::get_module_host`]
     #[tracing::instrument(skip_all)]
-    pub async fn get_or_launch_module_host(&self, database: Database, replica_id: u64) -> anyhow::Result<ModuleHost> {
-        let mut rx = self.watch_maybe_launch_module_host(database, replica_id).await?;
+    pub async fn get_or_launch_module_host(
+        &self,
+        database: Database,
+        replica_id: u64,
+        durability: DynDurabilityFut,
+    ) -> anyhow::Result<ModuleHost> {
+        let mut rx = self
+            .watch_maybe_launch_module_host(database, replica_id, durability)
+            .await?;
         let module = rx.borrow_and_update();
         Ok(module.clone())
     }
@@ -223,6 +234,7 @@ impl HostController {
         &self,
         database: Database,
         replica_id: u64,
+        durability: DynDurabilityFut,
     ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
         // Try a read lock first.
         {
@@ -243,7 +255,7 @@ impl HostController {
         }
 
         trace!("launch host {}/{}", database.address, replica_id);
-        let host = self.try_init_host(database, replica_id).await?;
+        let host = self.try_init_host(database, replica_id, durability).await?;
 
         let rx = host.module.subscribe();
         *guard = Some(host);
@@ -263,7 +275,7 @@ impl HostController {
         T: Send + 'static,
     {
         trace!("using database {}/{}", database.address, replica_id);
-        let module = self.get_or_launch_module_host(database, replica_id).await?;
+        let module = self.get_module_host(replica_id).await?;
         let on_panic = self.unregister_fn(replica_id);
         let result = tokio::task::spawn_blocking(move || f(&module.replica_ctx().relational_db))
             .await
@@ -289,6 +301,7 @@ impl HostController {
         database: Database,
         host_type: HostType,
         replica_id: u64,
+        durability: DynDurabilityFut,
         program_bytes: Box<[u8]>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let program = Program {
@@ -307,7 +320,7 @@ impl HostController {
         let mut host = match guard.take() {
             None => {
                 trace!("host not running, try_init");
-                self.try_init_host(database, replica_id).await?
+                self.try_init_host(database, replica_id, durability).await?
             }
             Some(host) => {
                 trace!("host found, updating");
@@ -345,6 +358,7 @@ impl HostController {
         &self,
         database: Database,
         replica_id: u64,
+        durability: DynDurabilityFut,
         expected_hash: Option<Hash>,
     ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
         trace!("custom bootstrap {}/{}", database.address, replica_id);
@@ -356,7 +370,7 @@ impl HostController {
         let mut guard = self.acquire_write_lock(replica_id).await;
         let mut host = match guard.take() {
             Some(host) => host,
-            None => self.try_init_host(database, replica_id).await?,
+            None => self.try_init_host(database, replica_id, durability).await?,
         };
         let module = host.module.subscribe();
 
@@ -478,17 +492,34 @@ impl HostController {
         lock.read_owned().await
     }
 
-    async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
+    async fn try_init_host(
+        &self,
+        database: Database,
+        replica_id: u64,
+        durability: DynDurabilityFut,
+    ) -> anyhow::Result<Host> {
         Host::try_init(
-            &self.root_dir,
+            &self.get_replica_path(&database.address, replica_id),
             self.default_config,
             database,
             replica_id,
             self.program_storage.clone(),
+            durability,
             self.energy_monitor.clone(),
             self.unregister_fn(replica_id),
         )
         .await
+    }
+
+    pub fn get_replica_path(&self, database_address: &Address, replica_id: u64) -> PathBuf {
+        let mut db_path = self.root_dir.to_path_buf();
+        db_path.extend([&*database_address.to_hex(), &replica_id.to_string()]);
+        db_path.push("database");
+        db_path
+    }
+
+    pub fn get_config(&self) -> &db::Config {
+        &self.default_config
     }
 }
 
@@ -661,19 +692,20 @@ impl Host {
     ///
     /// Note that this does **not** run module initialization routines, but may
     /// create on-disk artifacts if the host / database did not exist.
+
     #[tracing::instrument(skip_all)]
+    #[allow(clippy::too_many_arguments)]
     async fn try_init(
-        root_dir: &Path,
+        replica_dir: &Path,
         config: db::Config,
         database: Database,
         replica_id: u64,
         program_storage: ProgramStorage,
+        durability: DynDurabilityFut,
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
     ) -> anyhow::Result<Self> {
-        let mut db_path = root_dir.to_path_buf();
-        db_path.extend([&*database.address.to_hex(), &*replica_id.to_string()]);
-        db_path.push("database");
+        let db_path = replica_dir.to_path_buf();
 
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
@@ -685,15 +717,17 @@ impl Host {
                 None,
             )?,
             db::Storage::Disk => {
-                let (durability, disk_size_fn) = relational_db::local_durability(&db_path).await?;
+                let durability = durability.await?;
+                // History trait does not let use `DynDurabilityFut` directly
+                let (local_durability, _) = relational_db::local_durability(&db_path).await?;
                 let snapshot_repo = relational_db::open_snapshot_repo(&db_path, database.address, replica_id)?;
-                let history = durability.clone();
+                let history = local_durability.clone();
                 RelationalDB::open(
                     &db_path,
                     database.address,
                     database.owner_identity,
                     history,
-                    Some((durability, disk_size_fn)),
+                    Some(durability),
                     Some(snapshot_repo),
                 )?
             }

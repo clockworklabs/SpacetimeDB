@@ -17,13 +17,15 @@ use openssl::pkey::PKey;
 use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
+use spacetimedb::db::relational_db;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
+use spacetimedb::host::{DiskStorage, DynDurabilityFut, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
-use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
+use spacetimedb::{db, stdb_path};
+use spacetimedb_client_api::{ControlStateReadAccess, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use std::fs::File;
 use std::io::Write;
@@ -147,7 +149,7 @@ fn get_key_path(env: &str) -> Option<PathBuf> {
     std::env::var_os(env).map(std::path::PathBuf::from)
 }
 
-impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
+impl NodeDelegate for StandaloneEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         self.metrics_registry.gather()
     }
@@ -170,6 +172,25 @@ impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
 
     fn private_key(&self) -> &EncodingKey {
         &self.private_key
+    }
+
+    fn durability(&self, replica_id: u64) -> anyhow::Result<DynDurabilityFut> {
+        let replica = self
+            .get_replica_by_id(replica_id)?
+            .ok_or_else(|| anyhow::anyhow!("Not found: replica with id {}", replica_id))?;
+
+        let database = self
+            .get_database_by_id(replica.database_id)?
+            .ok_or_else(|| anyhow::anyhow!("Not found: database with id {}", replica.database_id))?;
+
+        let db_path = self.host_controller().get_replica_path(&database.address, replica_id);
+
+        match self.host_controller().get_config().storage {
+            db::Storage::Disk => Ok(Box::pin(relational_db::local_durability_dyn(db_path))),
+            db::Storage::Memory => Ok(Box::pin(async {
+                Err(anyhow::anyhow!("Memory storage not supported for durability"))
+            })),
+        }
     }
 }
 
@@ -283,9 +304,16 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .control_db
                     .get_leader_replica_by_database(database_id)
                     .with_context(|| format!("Not found: leader instance for database `{}`", database_addr))?;
+                let durability = self.durability(leader.id)?;
                 let update_result = self
                     .host_controller
-                    .update_module_host(database, spec.host_type, leader.id, spec.program_bytes.into())
+                    .update_module_host(
+                        database,
+                        spec.host_type,
+                        leader.id,
+                        durability,
+                        spec.program_bytes.into(),
+                    )
                     .await?;
 
                 if update_result.was_successful() {
@@ -434,8 +462,9 @@ impl StandaloneEnv {
                         instance.database_id, instance.id
                     )
                 })?;
+            let durability = self.durability(instance.id)?;
             self.host_controller
-                .get_or_launch_module_host(database, instance.id)
+                .get_or_launch_module_host(database, instance.id, durability)
                 .await
                 .map(drop)?
         }

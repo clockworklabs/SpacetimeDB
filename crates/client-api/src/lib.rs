@@ -8,7 +8,7 @@ use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{HostController, UpdateDatabaseResult};
+use spacetimedb::host::{DynDurabilityFut, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
@@ -37,6 +37,9 @@ pub trait NodeDelegate: Send + Sync {
 
     /// Return a JWT encoding key for signing credentials.
     fn private_key(&self) -> &EncodingKey;
+
+    /// Return `DynDurabilityFut`, a future to open `impl Durabulity` of a replica.
+    fn durability(&self, replica_id: u64) -> anyhow::Result<DynDurabilityFut>;
 }
 
 /// Parameters for publishing a database.
@@ -249,6 +252,10 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 
     fn private_key(&self) -> &EncodingKey {
         (**self).private_key()
+    }
+
+    fn durability(&self, replica_id: u64) -> anyhow::Result<DynDurabilityFut> {
+        (**self).durability(replica_id)
     }
 }
 
