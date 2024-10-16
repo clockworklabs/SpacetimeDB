@@ -274,7 +274,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     let table_name = &def.name;
                     self.system_logger().info(&format!("Creating table `{table_name}`"));
                     let schema = TableSchema::from_module_def(&self.info.module_def, def, (), TableId::SENTINEL);
-                    stdb.create_table(tx, schema.clone())
+                    stdb.create_table(tx, schema)
                         .with_context(|| format!("failed to create table {table_name}"))?;
                 }
                 // Insert the late-bound row-level security expressions.

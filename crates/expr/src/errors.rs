@@ -135,8 +135,8 @@ impl UnexpectedType {
 pub struct DuplicateName(pub String);
 
 #[derive(Debug, Error)]
-#[error("No `TableId` found in `sql` expression")]
-pub struct NoTableId;
+#[error("`filter!` does not support column projections; Must return table rows")]
+pub struct FilterReturnType;
 
 #[derive(Error, Debug)]
 pub enum TypingError {

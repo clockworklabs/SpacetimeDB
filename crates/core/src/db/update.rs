@@ -227,7 +227,7 @@ fn auto_migrate_database(
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddRowLevelSecurity(sql_rls) => {
                 system_logger.info(&format!("Adding row-level security `{sql_rls}`"));
                 log::info!("Adding row-level security `{sql_rls}`");
-                let rls = RawRowLevelSecurityDefV9::lookup(plan.new, sql_rls).unwrap();
+                let rls = plan.new.lookup_expect(sql_rls);
                 let rls = RowLevelExpr::build_row_level_expr(stdb, tx, rls)?;
 
                 stdb.create_row_level_security(tx, rls.def)?;

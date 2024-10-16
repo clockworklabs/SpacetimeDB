@@ -174,7 +174,9 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
     let indexes_ok = auto_migrate_indexes(&mut plan, &new_tables);
     let sequences_ok = auto_migrate_sequences(&mut plan, &new_tables);
     let constraints_ok = auto_migrate_constraints(&mut plan, &new_tables);
-    // Is important that this is the last step, because it needs the list of tables
+    // IMPORTANT: RLS auto-migrate steps must come last,
+    // since they assume that any schema changes, like adding or dropping tables,
+    // have already been reflected in the database state.
     let rls_ok = auto_migrate_row_level_security(&mut plan);
 
     let ((), (), (), (), ()) = (tables_ok, indexes_ok, sequences_ok, constraints_ok, rls_ok).combine_errors()?;
