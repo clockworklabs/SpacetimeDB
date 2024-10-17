@@ -4,6 +4,7 @@ use super::{
     state_view::{Iter, IterByColRange, ScanIterByColRange, StateView},
     tx_state::{DeleteTable, IndexIdMap, RemovedIndexIdSet, TxState},
 };
+use crate::execution_context::Workload;
 use crate::{
     db::{
         datastore::{
@@ -47,13 +48,13 @@ use std::sync::Arc;
 /// logs directly. For normal usage, see the RelationalDB struct instead.
 ///
 /// NOTE: unstable API, this may change at any point in the future.
-#[derive(Default)]
 pub struct CommittedState {
     pub(crate) next_tx_offset: u64,
     pub(crate) tables: IntMap<TableId, Table>,
     pub(crate) blob_store: HashMapBlobStore,
     /// Provides fast lookup for index id -> an index.
     pub(super) index_id_map: IndexIdMap,
+    pub(super) ctx: ExecutionContext,
 }
 
 impl MemoryUsage for CommittedState {
@@ -63,6 +64,7 @@ impl MemoryUsage for CommittedState {
             tables,
             blob_store,
             index_id_map,
+            ctx: _,
         } = self;
         next_tx_offset.heap_usage() + tables.heap_usage() + blob_store.heap_usage() + index_id_map.heap_usage()
     }
@@ -77,26 +79,25 @@ impl StateView for CommittedState {
         self.get_table(table_id).map(|table| table.row_count)
     }
 
-    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Iter<'a>> {
+    fn iter(&self, table_id: TableId) -> Result<Iter<'_>> {
         if let Some(table_name) = self.table_name(table_id) {
-            return Ok(Iter::new(ctx, table_id, table_name, None, self));
+            return Ok(Iter::new(&self.ctx, table_id, table_name, None, self));
         }
         Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
     /// where the values of `cols` are contained in `range`.
-    fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
-        &'a self,
-        ctx: &'a ExecutionContext,
+    fn iter_by_col_range<R: RangeBounds<AlgebraicValue>>(
+        &self,
         table_id: TableId,
         cols: ColList,
         range: R,
-    ) -> Result<IterByColRange<'a, R>> {
+    ) -> Result<IterByColRange<'_, R>> {
         // TODO: Why does this unconditionally return a `Scan` iter,
         // instead of trying to return a `CommittedIndex` iter?
         Ok(IterByColRange::Scan(ScanIterByColRange::new(
-            self.iter(ctx, table_id)?,
+            self.iter(table_id)?,
             cols,
             range,
         )))
@@ -121,9 +122,20 @@ fn ignore_duplicate_insert_error<T>(res: std::result::Result<T, InsertError>) ->
 }
 
 impl CommittedState {
+    pub(super) fn new(address: Address) -> Self {
+        Self {
+            next_tx_offset: 0,
+            tables: IntMap::default(),
+            blob_store: HashMapBlobStore::default(),
+            index_id_map: IndexIdMap::default(),
+            ctx: ExecutionContext::with_workload(address, Workload::Internal),
+        }
+    }
+
     /// Extremely delicate function to bootstrap the system tables.
     /// Don't update this unless you know what you're doing.
-    pub(super) fn bootstrap_system_tables(&mut self, database_address: Address) -> Result<()> {
+    pub(super) fn bootstrap_system_tables(&mut self) -> Result<()> {
+        let database_address = self.ctx.database();
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
         let with_label_values = |table_id: TableId, table_name: &str| {
@@ -274,7 +286,7 @@ impl CommittedState {
             with_label_values(ST_SEQUENCE_ID, ST_SEQUENCE_NAME).inc();
         }
 
-        self.reset_system_table_schemas(database_address)?;
+        self.reset_system_table_schemas()?;
 
         Ok(())
     }
@@ -286,12 +298,11 @@ impl CommittedState {
     /// for objects like indexes and constraints
     /// which are computed at insert-time,
     /// and therefore not included in the hardcoded schemas.
-    pub(super) fn reset_system_table_schemas(&mut self, database_address: Address) -> Result<()> {
+    pub(super) fn reset_system_table_schemas(&mut self) -> Result<()> {
         // Re-read the schema with the correct ids...
-        let ctx = ExecutionContext::internal(database_address);
         for schema in system_tables() {
             self.tables.get_mut(&schema.table_id).unwrap().schema =
-                Arc::new(self.schema_for_table_raw(&ctx, schema.table_id)?);
+                Arc::new(self.schema_for_table_raw(schema.table_id)?);
         }
 
         Ok(())
@@ -384,7 +395,7 @@ impl CommittedState {
         // For already built tables, we need to reschema them to account for constraints et al.
         let mut schemas = Vec::with_capacity(self.tables.len());
         for table_id in self.tables.keys().copied() {
-            schemas.push(self.schema_for_table_raw(&ExecutionContext::default(), table_id)?);
+            schemas.push(self.schema_for_table_raw(table_id)?);
         }
         for (table, schema) in self.tables.values_mut().zip(schemas) {
             table.with_mut_schema(|s| *s = schema);
@@ -407,7 +418,7 @@ impl CommittedState {
 
         // Construct their schemas and insert tables for them.
         for table_id in table_ids {
-            let schema = self.schema_for_table(&ExecutionContext::default(), table_id)?;
+            let schema = self.schema_for_table(table_id)?;
             self.tables.insert(table_id, Self::make_table(schema));
         }
         Ok(())
@@ -475,7 +486,7 @@ impl CommittedState {
             )
     }
 
-    pub(super) fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
+    pub(super) fn merge(&mut self, tx_state: TxState) -> TxData {
         let mut tx_data = TxData::default();
 
         // First, apply deletes. This will free up space in the committed tables.
@@ -490,7 +501,7 @@ impl CommittedState {
 
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
-        if self.tx_consumes_offset(&tx_data, ctx) {
+        if self.tx_consumes_offset(&tx_data, &self.ctx) {
             tx_data.set_tx_offset(self.next_tx_offset);
             self.next_tx_offset += 1;
         }
