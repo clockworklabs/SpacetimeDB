@@ -165,6 +165,16 @@ pub fn resume_segment_writer<R: Repo>(
     header
         .ensure_compatible(opts.log_format_version, Commit::CHECKSUM_ALGORITHM)
         .map_err(|msg| io::Error::new(io::ErrorKind::InvalidData, msg))?;
+    // When resuming, the log format version must be equal.
+    if header.log_format_version != opts.log_format_version {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "log format version mismatch: current={} segment={}",
+                opts.log_format_version, header.log_format_version
+            ),
+        ));
+    }
 
     Ok(Ok(Writer {
         commit: Commit {
