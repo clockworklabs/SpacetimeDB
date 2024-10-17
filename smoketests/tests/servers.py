@@ -28,7 +28,7 @@ class Servers(Smoketest):
         """Verify that we can edit server configurations"""
 
         out = self.spacetime("server", "add", "--url", "https://foo.com", "foo", "--no-fingerprint")
-        out = self.spacetime("server", "edit", "--url", "https://testnet.spacetimedb.com", "--new-name", "testnet", "--no-fingerprint")
+        out = self.spacetime("server", "edit", "foo", "--url", "https://testnet.spacetimedb.com", "--new-name", "testnet", "--no-fingerprint")
         self.assertEqual(extract_field(out, "Host:"), "testnet.spacetimedb.com")
         self.assertEqual(extract_field(out, "Protocol:"), "https")
 
