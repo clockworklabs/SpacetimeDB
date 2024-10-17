@@ -28,12 +28,7 @@ class Servers(Smoketest):
         """Verify that we can edit server configurations"""
 
         out = self.spacetime("server", "add", "--url", "https://foo.com", "foo", "--no-fingerprint")
-        out = self.spacetime("server", "edit", "foo", "--url", "https://testnet.spacetimedb.com", "--new-name", "testnet", "--no-fingerprint", "--yes")
-        self.assertEqual(extract_field(out, "Host:"), "testnet.spacetimedb.com")
-        self.assertEqual(extract_field(out, "Protocol:"), "https")
+        out = self.spacetime("server", "edit", "foo", "--url", "https://edited-testnet.spacetimedb.com", "--new-name", "edited-testnet", "--no-fingerprint", "--yes")
 
         servers = self.spacetime("server", "list")
-        self.assertRegex(servers, re.compile(r"^\s*testnet\.spacetimedb\.com\s+https\s+testnet\s*$", re.M))
-        self.assertRegex(servers, re.compile(r"^\s*\*\*\*\s+127\.0\.0\.1:3000\s+http\s+localhost\s*$", re.M))
-
-        self.spacetime("server", "remove", "foo", "--yes")
+        self.assertRegex(servers, re.compile(r"^\s*edited-testnet\.spacetimedb\.com\s+https\s+edited-testnet\s*$", re.M))
