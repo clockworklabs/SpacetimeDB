@@ -379,6 +379,7 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
     }
 
     let (old_nick, old_host, old_proto) = config.edit_server(server, new_nick, new_host, new_proto)?;
+    let server = new_nick.unwrap_or(server);
 
     if let (Some(new_nick), Some(old_nick)) = (new_nick, old_nick) {
         println!("Changing nickname from {} to {}", old_nick, new_nick);
