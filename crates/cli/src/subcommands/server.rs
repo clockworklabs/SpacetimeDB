@@ -26,13 +26,18 @@ fn get_subcommands() -> Vec<Command> {
         Command::new("set-default")
             .about("Set the default server for future operations")
             .arg(
-                common_args::server()
+                Arg::new("server")
                     .help("The nickname, host name or URL of the new default server")
                     .required(true),
             ),
         Command::new("add")
             .about("Add a new server configuration")
-            .arg(Arg::new("url").help("The URL of the server to add").required(true))
+            .arg(
+                Arg::new("url")
+                    .long("url")
+                    .help("The URL of the server to add")
+                    .required(true),
+            )
             .arg(Arg::new("name").help("Nickname for this server").required(true))
             .arg(
                 Arg::new("default")
@@ -50,7 +55,7 @@ fn get_subcommands() -> Vec<Command> {
         Command::new("remove")
             .about("Remove a saved server configuration")
             .arg(
-                common_args::server()
+                Arg::new("server")
                     .help("The nickname, host name or URL of the server to remove")
                     .required(true),
             )
@@ -64,7 +69,11 @@ fn get_subcommands() -> Vec<Command> {
             .arg(common_args::yes()),
         Command::new("fingerprint")
             .about("Show or update a saved server's fingerprint")
-            .arg(common_args::server().help("The nickname, host name or URL of the server"))
+            .arg(
+                Arg::new("server")
+                    .required(true)
+                    .help("The nickname, host name or URL of the server"),
+            )
             .arg(common_args::yes())
             .arg(
                 Arg::new("delete-obsolete-identities")
@@ -75,27 +84,27 @@ fn get_subcommands() -> Vec<Command> {
             ),
         Command::new("ping")
             .about("Checks to see if a SpacetimeDB host is online")
-            .arg(common_args::server().help("The nickname, host name or URL of the server to ping")),
+            .arg(
+                Arg::new("server")
+                    .required(true)
+                    .help("The nickname, host name or URL of the server to ping"),
+            ),
         Command::new("edit")
             .about("Update a saved server's nickname, host name or protocol")
-            .arg(common_args::server().help("The nickname, host name or URL of the server"))
+            .arg(
+                Arg::new("server")
+                    .required(true)
+                    .help("The nickname, host name or URL of the server"),
+            )
             .arg(
                 Arg::new("nickname")
                     .help("A new nickname to assign the server configuration")
-                    .short('n')
-                    .long("nickname"),
+                    .long("new-name"),
             )
             .arg(
-                Arg::new("host")
-                    .help("A new hostname to assign the server configuration")
-                    .short('H')
-                    .long("host"),
-            )
-            .arg(
-                Arg::new("protocol")
-                    .help("A new protocol to assign the server configuration; http or https")
-                    .short('p')
-                    .long("protocol"),
+                Arg::new("url")
+                    .long("url")
+                    .help("A new URL to assign the server configuration"),
             )
             .arg(
                 Arg::new("no-fingerprint")
@@ -322,11 +331,11 @@ async fn update_server_fingerprint(
 }
 
 pub async fn exec_fingerprint(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let server = args.get_one::<String>("server").map(|s| s.as_str());
+    let server = args.get_one::<String>("server").unwrap().as_str();
     let delete_identities = args.get_flag("delete-obsolete-identities");
     let force = args.get_flag("force");
 
-    if update_server_fingerprint(&mut config, server, delete_identities).await? {
+    if update_server_fingerprint(&mut config, Some(server), delete_identities).await? {
         if !y_or_n(force, "Continue?")? {
             anyhow::bail!("Aborted");
         }
@@ -338,8 +347,8 @@ pub async fn exec_fingerprint(mut config: Config, args: &ArgMatches) -> Result<(
 }
 
 pub async fn exec_ping(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let url = config.get_host_url(server)?;
+    let server = args.get_one::<String>("server").unwrap().as_str();
+    let url = config.get_host_url(Some(server))?;
 
     let builder = reqwest::Client::new().get(format!("{}/database/ping", url).as_str());
     let response = builder.send().await?;
@@ -359,16 +368,20 @@ pub async fn exec_ping(config: Config, args: &ArgMatches) -> Result<(), anyhow::
 }
 
 pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let server = args
-        .get_one::<String>("server")
-        .map(|s| s.as_str())
-        .expect("Supply a server to spacetime server edit");
+    let server = args.get_one::<String>("server").unwrap().as_str();
 
     let old_url = config.get_host_url(Some(server))?;
 
     let new_nick = args.get_one::<String>("nickname").map(|s| s.as_str());
-    let new_host = args.get_one::<String>("host").map(|s| s.as_str());
-    let new_proto = args.get_one::<String>("protocol").map(|s| s.as_str());
+    let new_url = args.get_one::<String>("url").map(|s| s.as_str());
+    let (new_host, new_proto) = match new_url {
+        None => (None, None),
+        Some(new_url) => {
+            let (new_host, new_proto) = host_or_url_to_host_and_protocol(new_url);
+            let new_proto = new_proto.ok_or_else(|| anyhow::anyhow!("Invalid url: {}", new_url))?;
+            (Some(new_host), Some(new_proto))
+        }
+    };
 
     let no_fingerprint = args.get_flag("no-fingerprint");
     let delete_identities = args.get_flag("delete-obsolete-identities");
