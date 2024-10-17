@@ -36,4 +36,4 @@ class Servers(Smoketest):
         self.assertRegex(servers, re.compile(r"^\s*testnet\.spacetimedb\.com\s+https\s+testnet\s*$", re.M))
         self.assertRegex(servers, re.compile(r"^\s*\*\*\*\s+127\.0\.0\.1:3000\s+http\s+localhost\s*$", re.M))
 
-        self.spacetime("server", "remove", "-s", "testnet")
+        self.spacetime("server", "remove", "foo", "--yes")
