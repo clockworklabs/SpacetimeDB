@@ -120,6 +120,35 @@ impl<T> Commitlog<T> {
         self.inner.read().unwrap().max_committed_offset()
     }
 
+    /// Get the current epoch.
+    ///
+    /// See also: [`Commit::epoch`].
+    pub fn epoch(&self) -> u64 {
+        self.inner.read().unwrap().epoch()
+    }
+
+    /// Update the current epoch.
+    ///
+    /// Does nothing if the given `epoch` is equal to the current epoch.
+    /// Otherwise flushes outstanding transactions to disk (equivalent to
+    /// [`Self::flush`]) before updating the epoch.
+    ///
+    /// Returns the maximum transaction offset written to disk. The offset is
+    /// `None` if the log is empty and no data was pending to be flushed.
+    ///
+    /// # Errors
+    ///
+    /// If `epoch` is smaller than the current epoch, an error of kind
+    /// [`io::ErrorKind::InvalidInput`] is returned.
+    ///
+    /// Errors from the implicit flush are propagated.
+    pub fn set_epoch(&self, epoch: u64) -> io::Result<Option<u64>> {
+        let mut inner = self.inner.write().unwrap();
+        inner.set_epoch(epoch)?;
+
+        Ok(inner.max_committed_offset())
+    }
+
     /// Sync all OS-buffered writes to disk.
     ///
     /// Note that this does **not** write outstanding records to disk.
