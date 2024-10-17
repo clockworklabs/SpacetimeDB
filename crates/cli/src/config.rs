@@ -104,6 +104,7 @@ pub struct RawConfig {
     identity_configs: Vec<IdentityConfig>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     server_configs: Vec<ServerConfig>,
+    login_token: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -154,6 +155,7 @@ impl RawConfig {
             default_server: local.nickname.clone(),
             identity_configs: Vec::new(),
             server_configs: vec![local, testnet],
+            login_token: None,
         }
     }
 
@@ -577,6 +579,10 @@ Fetch the server's fingerprint with:
         let cfg = self.default_server_mut()?;
         cfg.ecdsa_public_key = None;
         Ok(())
+    }
+
+    pub fn set_login_token(&mut self, token: String) {
+        self.login_token = Some(token);
     }
 }
 
@@ -1044,5 +1050,9 @@ Update the server's fingerprint with:
         } else {
             self.home.delete_default_server_fingerprint()
         }
+    }
+
+    pub fn set_login_token(&mut self, token: String) {
+        self.home.set_login_token(token);
     }
 }
