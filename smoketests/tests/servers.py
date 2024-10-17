@@ -24,6 +24,8 @@ class Servers(Smoketest):
         out = self.spacetime("server", "fingerprint", "-s", "localhost")
         self.assertIn("Fingerprint is unchanged for server localhost", out)
 
+        self.spacetime("server", "remove", "-s", "testnet", "--yes")
+
     def test_edit_server(self):
         """Verify that we can edit server configurations"""
 
@@ -36,4 +38,4 @@ class Servers(Smoketest):
         self.assertRegex(servers, re.compile(r"^\s*testnet\.spacetimedb\.com\s+https\s+testnet\s*$", re.M))
         self.assertRegex(servers, re.compile(r"^\s*\*\*\*\s+127\.0\.0\.1:3000\s+http\s+localhost\s*$", re.M))
 
-        self.spacetime("server", "remove", "-s", "foo", "--yes")
+        self.spacetime("server", "remove", "-s", "testnet", "--yes")
