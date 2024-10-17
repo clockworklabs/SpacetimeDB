@@ -102,8 +102,11 @@ where
     let identity_token = auth.creds.token().into();
 
     let host = ctx.host_controller();
+    let durability = ctx
+        .durability(replica_id)
+        .map_err(|_| (StatusCode::NOT_FOUND, "No replica found for the database."))?;
     let module_rx = host
-        .watch_maybe_launch_module_host(database, replica_id)
+        .watch_maybe_launch_module_host(database, replica_id, durability)
         .await
         .map_err(log_and_500)?;
 

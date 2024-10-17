@@ -24,7 +24,8 @@ use futures::channel::mpsc;
 use futures::StreamExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
-use spacetimedb_durability::{self as durability, Durability, TxOffset};
+pub use spacetimedb_durability::Durability;
+use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::address::Address;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, RawSql};
@@ -43,7 +44,7 @@ use std::fmt;
 use std::fs::{self, File};
 use std::io;
 use std::ops::RangeBounds;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub type MutTx = <Locking as super::datastore::traits::MutTx>::MutTx;
@@ -1284,6 +1285,14 @@ pub async fn local_durability(db_path: &Path) -> io::Result<(Arc<durability::Loc
     });
 
     Ok((local, disk_size_fn))
+}
+
+/// Returns dyn [`Durability`] and [`DiskSizeFn`] for local durability.
+pub async fn local_durability_dyn(
+    db_path: PathBuf,
+) -> anyhow::Result<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)> {
+    let (local, disk_size_fn) = local_durability(&db_path).await?;
+    Ok((local as Arc<dyn Durability<TxData = Txdata>>, disk_size_fn))
 }
 
 /// Open a [`SnapshotRepository`] at `db_path/snapshots`,

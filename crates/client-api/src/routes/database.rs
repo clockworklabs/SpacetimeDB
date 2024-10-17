@@ -79,8 +79,11 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
     let replica_id = replica.id;
     let host = worker_ctx.host_controller();
+    let durability = worker_ctx
+        .durability(replica_id)
+        .map_err(|_| (StatusCode::NOT_FOUND, "No replica found for the database."))?;
     let module = host
-        .get_or_launch_module_host(database, replica_id)
+        .get_or_launch_module_host(database, replica_id, durability)
         .await
         .map_err(log_and_500)?;
 
@@ -274,9 +277,12 @@ where
     let call_info = extract_db_call_info(&worker_ctx, auth, &address).await?;
 
     let replica_id = call_info.replica.id;
+    let durability = worker_ctx
+        .durability(replica_id)
+        .map_err(|_| (StatusCode::NOT_FOUND, "No replica found for database."))?;
     let module = worker_ctx
         .host_controller()
-        .get_or_launch_module_host(database, replica_id)
+        .get_or_launch_module_host(database, replica_id, durability)
         .await
         .map_err(log_and_500)?;
 
@@ -343,8 +349,11 @@ where
 
     let replica_id = call_info.replica.id;
     let host = worker_ctx.host_controller();
+    let durability = worker_ctx
+        .durability(replica_id)
+        .map_err(|_| (StatusCode::NOT_FOUND, "No replica found for database."))?;
     let module = host
-        .get_or_launch_module_host(database, replica_id)
+        .get_or_launch_module_host(database, replica_id, durability)
         .await
         .map_err(log_and_500)?;
 
@@ -451,8 +460,11 @@ where
 
     let body = if follow {
         let host = worker_ctx.host_controller();
+        let durability = worker_ctx
+            .durability(replica_id)
+            .map_err(|_| (StatusCode::NOT_FOUND, "No replica found for database."))?;
         let module = host
-            .get_or_launch_module_host(database, replica_id)
+            .get_or_launch_module_host(database, replica_id, durability)
             .await
             .map_err(log_and_500)?;
         let log_rx = module.subscribe_to_logs().map_err(log_and_500)?;
@@ -529,8 +541,12 @@ where
     let replica_id = replica.id;
 
     let host = worker_ctx.host_controller();
+    let durability = worker_ctx
+        .durability(replica_id)
+        .map_err(|_| (StatusCode::NOT_FOUND, "No replica found for database."))?;
+
     let module_host = host
-        .get_or_launch_module_host(database.clone(), replica_id)
+        .get_or_launch_module_host(database.clone(), replica_id, durability)
         .await
         .map_err(log_and_500)?;
     let json = host
