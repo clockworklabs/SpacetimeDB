@@ -654,8 +654,8 @@ namespace SpacetimeDB
 
 		public class PkMultiIdentityHandle : RemoteTableHandle<EventContext, PkMultiIdentity>
 		{
-			private static Dictionary<uint, PkMultiIdentity> Id_Index = new(16);
-			private static Dictionary<uint, PkMultiIdentity> Other_Index = new(16);
+			private Dictionary<uint, PkMultiIdentity> Id_Index = new(16);
+			private Dictionary<uint, PkMultiIdentity> Other_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -672,27 +672,33 @@ namespace SpacetimeDB
 
 			public readonly ref struct IdUniqueIndex
 			{
+				readonly PkMultiIdentityHandle Handle;
+				internal IdUniqueIndex(PkMultiIdentityHandle handle) => Handle = handle;
+
 				public PkMultiIdentity? Find(uint value)
 				{
-					Id_Index.TryGetValue(value, out var r);
+					Handle.Id_Index.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public IdUniqueIndex Id => new();
+			public IdUniqueIndex Id => new(this);
 
 			public readonly ref struct OtherUniqueIndex
 			{
+				readonly PkMultiIdentityHandle Handle;
+				internal OtherUniqueIndex(PkMultiIdentityHandle handle) => Handle = handle;
+
 				public PkMultiIdentity? Find(uint value)
 				{
-					Other_Index.TryGetValue(value, out var r);
+					Handle.Other_Index.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public OtherUniqueIndex Other => new();
+			public OtherUniqueIndex Other => new(this);
 
 			internal PkMultiIdentityHandle()
 			{
@@ -736,7 +742,7 @@ namespace SpacetimeDB
 
 		public class RepeatingTestArgHandle : RemoteTableHandle<EventContext, RepeatingTestArg>
 		{
-			private static Dictionary<ulong, RepeatingTestArg> ScheduledId_Index = new(16);
+			private Dictionary<ulong, RepeatingTestArg> ScheduledId_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -751,15 +757,18 @@ namespace SpacetimeDB
 
 			public readonly ref struct ScheduledIdUniqueIndex
 			{
+				readonly RepeatingTestArgHandle Handle;
+				internal ScheduledIdUniqueIndex(RepeatingTestArgHandle handle) => Handle = handle;
+
 				public RepeatingTestArg? Find(ulong value)
 				{
-					ScheduledId_Index.TryGetValue(value, out var r);
+					Handle.ScheduledId_Index.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public ScheduledIdUniqueIndex ScheduledId => new();
+			public ScheduledIdUniqueIndex ScheduledId => new(this);
 
 			internal RepeatingTestArgHandle()
 			{
@@ -803,7 +812,7 @@ namespace SpacetimeDB
 
 		public class TestEHandle : RemoteTableHandle<EventContext, TestE>
 		{
-			private static Dictionary<ulong, TestE> Id_Index = new(16);
+			private Dictionary<ulong, TestE> Id_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
@@ -818,15 +827,18 @@ namespace SpacetimeDB
 
 			public readonly ref struct IdUniqueIndex
 			{
+				readonly TestEHandle Handle;
+				internal IdUniqueIndex(TestEHandle handle) => Handle = handle;
+
 				public TestE? Find(ulong value)
 				{
-					Id_Index.TryGetValue(value, out var r);
+					Handle.Id_Index.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public IdUniqueIndex Id => new();
+			public IdUniqueIndex Id => new(this);
 
 			public class NameIndex
 			{
