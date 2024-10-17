@@ -422,6 +422,14 @@ fn autogen_csharp_access_funcs_for_struct(
             "public readonly ref struct {csharp_field_name_pascal}UniqueIndex"
         );
         indented_block(output, |output| {
+            writeln!(output, "readonly {csharp_table_name}Handle Handle;");
+            write!(
+                output,
+                "internal {csharp_field_name_pascal}UniqueIndex({csharp_table_name}Handle handle) => "
+            );
+            writeln!(output, "Handle = handle;");
+            writeln!(output);
+
             writeln!(
                 output,
                 "public {struct_name_pascal_case}? Find({csharp_field_type} value)"
@@ -429,7 +437,7 @@ fn autogen_csharp_access_funcs_for_struct(
             indented_block(output, |output| {
                 writeln!(
                     output,
-                    "{csharp_field_name_pascal}_Index.TryGetValue(value, out var r);"
+                    "Handle.{csharp_field_name_pascal}_Index.TryGetValue(value, out var r);"
                 );
                 writeln!(output, "return r;");
             });
@@ -438,7 +446,7 @@ fn autogen_csharp_access_funcs_for_struct(
         writeln!(output);
         writeln!(
             output,
-            "public {csharp_field_name_pascal}UniqueIndex {csharp_field_name_pascal} => new();"
+            "public {csharp_field_name_pascal}UniqueIndex {csharp_field_name_pascal} => new(this);"
         );
         writeln!(output);
     }
@@ -602,7 +610,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                     let type_name = ty_fmt(ctx, &col.col_type, namespace);
                     writeln!(
                         output,
-                        "private static Dictionary<{type_name}, {table_type}> {field_name}_Index = new(16);"
+                        "private Dictionary<{type_name}, {table_type}> {field_name}_Index = new(16);"
                     );
                     unique_indexes.push(field_name);
                 }
