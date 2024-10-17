@@ -639,3 +639,5 @@ define_tables! {
 
 #[spacetimedb::reducer]
 fn no_op_succeeds(_ctx: &ReducerContext) {}
+
+spacetimedb::filter!("SELECT * FROM one_u8");
