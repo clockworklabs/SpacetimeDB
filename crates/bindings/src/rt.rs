@@ -290,6 +290,12 @@ impl RepeaterArgs for (Timestamp,) {
     }
 }
 
+/// A trait for types that can *describe* a row-level security policy.
+pub trait RowLevelSecurityInfo {
+    /// The SQL expression for the row-level security policy.
+    const SQL: &'static str;
+}
+
 /// Registers into `DESCRIBERS` a function `f` to modify the module builder.
 fn register_describer(f: fn(&mut ModuleBuilder)) {
     DESCRIBERS.lock().unwrap().push(f)
@@ -349,6 +355,13 @@ pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>)
         let params = A::schema::<I>(&mut module.inner);
         module.inner.add_reducer(I::NAME, params, I::LIFECYCLE);
         module.reducers.push(I::INVOKE);
+    })
+}
+
+/// Registers a row-level security policy.
+pub fn register_row_level_security<R: RowLevelSecurityInfo>() {
+    register_describer(|module| {
+        module.inner.add_row_level_security(R::SQL);
     })
 }
 

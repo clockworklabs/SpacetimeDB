@@ -17,6 +17,7 @@ use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 use std::borrow::Cow;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::time::Duration;
 use syn::ext::IdentExt;
 use syn::meta::ParseNestedMeta;
@@ -1236,4 +1237,75 @@ pub fn schema_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     })()
     .unwrap_or_else(syn::Error::into_compile_error)
     .into()
+}
+
+fn parse_sql(input: ParseStream) -> syn::Result<String> {
+    use spacetimedb_sql_parser::parser::sub;
+
+    let lookahead = input.lookahead1();
+    let sql = if lookahead.peek(syn::LitStr) {
+        let s = input.parse::<syn::LitStr>()?;
+        // Checks the query is syntactically valid
+        let _ = sub::parse_subscription(&s.value()).map_err(|e| syn::Error::new(s.span(), format_args!("{e}")))?;
+
+        s.value()
+    } else {
+        return Err(lookahead.error());
+    };
+
+    Ok(sql)
+}
+
+/// Generates code for registering a row-level security `SQL` function.
+///
+/// A row-level security function takes a `SQL` query expression that is used to filter rows.
+///
+/// The query follows the same syntax as a subscription query.
+///
+/// **Example:**
+///
+/// ```rust,ignore
+/// /// Players can only see what's in their chunk
+/// spacetimedb::filter!("
+///     SELECT * FROM LocationState WHERE chunk_index IN (
+///         SELECT chunk_index FROM LocationState WHERE entity_id IN (
+///             SELECT entity_id FROM UserState WHERE identity = @sender
+///         )
+///     )
+/// ");
+/// ```
+///
+/// **NOTE:** The `SQL` query expression is pre-parsed at compile time, but only check is a valid
+/// subscription query *syntactically*, not that the query is valid when executed.
+///
+/// For example, it could refer to a non-existent table.
+#[proc_macro]
+pub fn filter(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let rls_sql = syn::parse_macro_input!(input with parse_sql);
+
+    let mut hasher = DefaultHasher::new();
+    rls_sql.hash(&mut hasher);
+    let rls_name = format_ident!("rls_{}", hasher.finish());
+
+    let register_rls_symbol = format!("__preinit__20_register_{rls_name}");
+
+    let generated_describe_function = quote! {
+        #[export_name = #register_rls_symbol]
+        extern "C" fn __register_rls() {
+            spacetimedb::rt::register_row_level_security::<#rls_name>()
+        }
+    };
+
+    let emission = quote! {
+        const _: () = {
+            #generated_describe_function
+        };
+        #[allow(non_camel_case_types)]
+        struct #rls_name { _never: ::core::convert::Infallible }
+        impl spacetimedb::rt::RowLevelSecurityInfo for #rls_name {
+            const SQL: &'static str = #rls_sql;
+        }
+    };
+
+    emission.into()
 }
