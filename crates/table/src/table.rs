@@ -22,7 +22,7 @@ use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
 use core::{fmt, ptr};
 use derive_more::{Add, AddAssign, From, Sub};
-use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
+use spacetimedb_data_structures::map::{DefaultHashBuilder, HashCollectionExt, HashMap};
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId};
 use spacetimedb_sats::{
@@ -1102,7 +1102,7 @@ impl Table {
                 pages: Pages::default(),
             },
             schema,
-            indexes: HashMap::with_capacity(indexes_capacity),
+            indexes: HashMap::<_, _, DefaultHashBuilder>::with_capacity(indexes_capacity),
             pointer_map: PointerMap::default(),
             squashed_offset,
             row_count: 0,

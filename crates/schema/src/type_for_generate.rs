@@ -8,7 +8,7 @@ use petgraph::{
 use smallvec::SmallVec;
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
-    map::{HashCollectionExt, HashMap, HashSet},
+    map::{HashMap, HashSet},
 };
 use spacetimedb_lib::{AlgebraicType, ProductTypeElement};
 use spacetimedb_sats::{typespace::TypeRefError, AlgebraicTypeRef, ArrayType, SumTypeVariant, Typespace};
@@ -110,11 +110,13 @@ impl TypespaceForGenerate {
     ) -> TypespaceForGenerateBuilder<'_> {
         TypespaceForGenerateBuilder {
             typespace,
-            result: TypespaceForGenerate { defs: HashMap::new() },
+            result: TypespaceForGenerate {
+                defs: HashMap::default(),
+            },
             is_def: is_def.into_iter().collect(),
-            uses: HashSet::new(),
-            known_uses: HashMap::new(),
-            currently_touching: HashSet::new(),
+            uses: HashSet::default(),
+            known_uses: HashMap::default(),
+            currently_touching: HashSet::default(),
         }
     }
 
@@ -157,7 +159,7 @@ pub enum AlgebraicTypeDef {
 
 thread_local! {
     /// Used to efficiently extract refs from a def.
-    static EXTRACT_REFS_BUF: RefCell<HashSet<AlgebraicTypeRef>> = RefCell::new(HashSet::new());
+    static EXTRACT_REFS_BUF: RefCell<HashSet<AlgebraicTypeRef>> = RefCell::new(HashSet::default());
 }
 
 impl AlgebraicTypeDef {
