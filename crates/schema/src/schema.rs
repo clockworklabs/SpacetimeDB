@@ -874,8 +874,11 @@ pub struct ScheduleSchema {
     /// The name of the schedule.
     pub schedule_name: Box<str>,
 
-    // The name of the reducer to call.
+    /// The name of the reducer to call.
     pub reducer_name: Box<str>,
+
+    /// The column containing the `ScheduleAt` enum.
+    pub at_column: ColId,
 }
 
 impl Schema for ScheduleSchema {
@@ -893,6 +896,7 @@ impl Schema for ScheduleSchema {
             schedule_id: id,
             schedule_name: (*def.name).into(),
             reducer_name: (*def.reducer_name).into(),
+            at_column: def.at_column,
             // Ignore def.at_column and id_column. Those are recovered at runtime.
         }
     }

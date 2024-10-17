@@ -156,6 +156,7 @@ impl MutTxId {
                 schedule_id: ScheduleId::SENTINEL,
                 schedule_name: schedule.schedule_name,
                 reducer_name: schedule.reducer_name,
+                at_column: schedule.at_column,
             };
             let (generated, ..) = self.insert(ST_SCHEDULED_ID, &mut row.into(), database_address)?;
             let id = generated.as_u32();

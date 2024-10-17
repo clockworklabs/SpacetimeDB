@@ -20,7 +20,7 @@ namespace SpacetimeDB.Internal
 		[DataMember(Name = "product_type_ref")]
 		public uint ProductTypeRef;
 		[DataMember(Name = "primary_key")]
-		public ushort? PrimaryKey;
+		public System.Collections.Generic.List<ushort> PrimaryKey;
 		[DataMember(Name = "indexes")]
 		public System.Collections.Generic.List<SpacetimeDB.Internal.RawIndexDefV9> Indexes;
 		[DataMember(Name = "constraints")]
@@ -37,7 +37,7 @@ namespace SpacetimeDB.Internal
 		public RawTableDefV9(
 			string Name,
 			uint ProductTypeRef,
-			ushort? PrimaryKey,
+			System.Collections.Generic.List<ushort> PrimaryKey,
 			System.Collections.Generic.List<SpacetimeDB.Internal.RawIndexDefV9> Indexes,
 			System.Collections.Generic.List<SpacetimeDB.Internal.RawConstraintDefV9> Constraints,
 			System.Collections.Generic.List<SpacetimeDB.Internal.RawSequenceDefV9> Sequences,
@@ -60,6 +60,7 @@ namespace SpacetimeDB.Internal
 		public RawTableDefV9()
 		{
 			this.Name = "";
+			this.PrimaryKey = new();
 			this.Indexes = new();
 			this.Constraints = new();
 			this.Sequences = new();

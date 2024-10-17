@@ -19,14 +19,18 @@ namespace SpacetimeDB.Internal
 		public string Name;
 		[DataMember(Name = "reducer_name")]
 		public string ReducerName;
+		[DataMember(Name = "scheduled_at_column")]
+		public ushort ScheduledAtColumn;
 
 		public RawScheduleDefV9(
 			string Name,
-			string ReducerName
+			string ReducerName,
+			ushort ScheduledAtColumn
 		)
 		{
 			this.Name = Name;
 			this.ReducerName = ReducerName;
+			this.ScheduledAtColumn = ScheduledAtColumn;
 		}
 
 		public RawScheduleDefV9()

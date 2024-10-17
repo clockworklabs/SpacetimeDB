@@ -35,6 +35,7 @@ pub use spacetimedb_lib::ser::Serialize;
 pub use spacetimedb_lib::Address;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::Identity;
+pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{AutoIncOverflow, BTreeIndex, Table, TryInsertError, UniqueColumn, UniqueConstraintViolation};

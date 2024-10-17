@@ -493,7 +493,8 @@ mod tests {
                 ]),
                 true,
             )
-            .with_schedule("check_deliveries", None)
+            .with_auto_inc_primary_key(0)
+            .with_schedule("check_deliveries", 1, None)
             .finish();
         old_builder.add_reducer(
             "check_deliveries",
@@ -510,6 +511,7 @@ mod tests {
                 ]),
                 true,
             )
+            .with_auto_inc_primary_key(0)
             .finish();
 
         old_builder.add_row_level_security("SELECT * FROM Apples");
@@ -577,6 +579,7 @@ mod tests {
                 ]),
                 true,
             )
+            .with_auto_inc_primary_key(0)
             // remove schedule def
             .finish();
 
@@ -595,8 +598,9 @@ mod tests {
                 ]),
                 true,
             )
+            .with_auto_inc_primary_key(0)
             // add schedule def
-            .with_schedule("perform_inspection", None)
+            .with_schedule("perform_inspection", 1, None)
             .finish();
 
         // add reducer.
