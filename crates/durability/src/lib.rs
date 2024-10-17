@@ -28,7 +28,7 @@ pub trait Durability: Send + Sync {
     /// The payload representing a single transaction.
     type TxData;
 
-    /// Submit the transaction payload t be made durable.
+    /// Submit the transaction payload to be made durable.
     ///
     /// This method must never block, and accept new transactions even if they
     /// cannot be made durable immediately.
