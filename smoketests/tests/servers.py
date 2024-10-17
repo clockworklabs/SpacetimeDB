@@ -24,8 +24,6 @@ class Servers(Smoketest):
         out = self.spacetime("server", "fingerprint", "-s", "localhost")
         self.assertIn("Fingerprint is unchanged for server localhost", out)
 
-        self.spacetime("server", "remove", "-s", "testnet", "--yes")
-
     def test_edit_server(self):
         """Verify that we can edit server configurations"""
 
