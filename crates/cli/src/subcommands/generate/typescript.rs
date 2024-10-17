@@ -388,8 +388,11 @@ eventContextConstructor: (imp: DBConnectionImpl, event: Event<Reducer>) => {{
 dbViewConstructor: (imp: DBConnectionImpl) => {{
   return new RemoteTables(imp);
 }},
-reducersConstructor: (imp: DBConnectionImpl) => {{
-  return new RemoteReducers(imp);
+reducersConstructor: (imp: DBConnectionImpl, setReducerFlags: SetReducerFlags) => {{
+  return new RemoteReducers(imp, setReducerFlags);
+}}
+setReducerFlagsConstructor: () => {{
+  return new SetReducerFlags();
 }}"
         );
         out.dedent(1);
@@ -405,6 +408,10 @@ reducersConstructor: (imp: DBConnectionImpl) => {{
 
         out.newline();
 
+        print_set_reducer_flags(module, out);
+
+        out.newline();
+
         print_remote_tables(module, out);
 
         out.newline();
@@ -415,7 +422,7 @@ reducersConstructor: (imp: DBConnectionImpl) => {{
 
         writeln!(
             out,
-            "export type EventContext = EventContextInterface<RemoteTables, RemoteReducers, Reducer>;"
+            "export type EventContext = EventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags, Reducer>;"
         );
 
         vec![("index.ts".to_string(), (output.into_inner()))]
@@ -425,7 +432,10 @@ reducersConstructor: (imp: DBConnectionImpl) => {{
 fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
     writeln!(out, "export class RemoteReducers {{");
     out.indent(1);
-    writeln!(out, "constructor(private connection: DBConnectionImpl) {{}}");
+    writeln!(
+        out,
+        "constructor(private connection: DBConnectionImpl, private setCallReducerFlags: SetReducerFlags) {{}}"
+    );
     out.newline();
 
     for reducer in iter_reducers(module) {
@@ -455,7 +465,7 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
             out.with_indent(|out| {
                 writeln!(
                     out,
-                    "this.connection.callReducer(\"{reducer_name}\", new Uint8Array(0));"
+                    "this.connection.callReducer(\"{reducer_name}\", new Uint8Array(0), this.setCallReducerFlags.{reducer_function_name}Flags);"
                 );
             });
         } else {
@@ -468,7 +478,7 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
                     "{reducer_variant}.getTypeScriptAlgebraicType().serialize(__writer, __args);"
                 );
                 writeln!(out, "let __argsBuffer = __writer.getBuffer();");
-                writeln!(out, "this.connection.callReducer(\"{reducer_name}\", __argsBuffer);");
+                writeln!(out, "this.connection.callReducer(\"{reducer_name}\", __argsBuffer, this.setCallReducerFlags.{reducer_function_name}Flags);");
             });
         }
         writeln!(out, "}}");
@@ -495,6 +505,25 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
         out.indent(1);
         writeln!(out, "this.connection.offReducer(\"{reducer_name}\", callback);");
         out.dedent(1);
+        writeln!(out, "}}");
+        out.newline();
+    }
+
+    out.dedent(1);
+    writeln!(out, "}}");
+}
+
+fn print_set_reducer_flags(module: &ModuleDef, out: &mut Indenter) {
+    writeln!(out, "export class SetReducerFlags {{");
+    out.indent(1);
+
+    for reducer in iter_reducers(module) {
+        let reducer_function_name = reducer_function_name(reducer);
+        writeln!(out, "{reducer_function_name}Flags: CallReducerFlags;");
+        writeln!(out, "{reducer_function_name}(flags: CallReducerFlags) {{");
+        out.with_indent(|out| {
+            writeln!(out, "this.{reducer_function_name}Flags = flags;");
+        });
         writeln!(out, "}}");
         out.newline();
     }
@@ -533,7 +562,7 @@ fn print_remote_tables(module: &ModuleDef, out: &mut Indenter) {
 fn print_db_connection(_module: &ModuleDef, out: &mut Indenter) {
     writeln!(
         out,
-        "export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers>  {{"
+        "export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags>  {{"
     );
     out.indent(1);
     writeln!(out, "static builder = (): DBConnectionBuilder<DBConnection>  => {{");
@@ -575,6 +604,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "DBConnectionBuilder",
         "TableCache",
         "BinaryWriter",
+        "CallReducerFlags",
         "EventContextInterface",
         "BinaryReader",
         "DBConnectionImpl",
