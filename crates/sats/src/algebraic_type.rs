@@ -291,12 +291,12 @@ impl AlgebraicType {
 
     /// Construct a copy of the `Identity` type.
     pub fn identity() -> Self {
-        AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::bytes())])
+        AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::U256)])
     }
 
     /// Construct a copy of the `Address` type.
     pub fn address() -> Self {
-        AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::bytes())])
+        AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::U128)])
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.

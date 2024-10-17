@@ -1058,7 +1058,7 @@ mod tests {
     }
 
     fn get_datastore() -> Result<Locking> {
-        Locking::bootstrap(Address::zero())
+        Locking::bootstrap(Address::ZERO)
     }
 
     fn col(col: u16) -> ColList {
@@ -1374,15 +1374,15 @@ mod tests {
             ColRow { table: ST_CONSTRAINT_ID.into(), pos: 2, name: "table_id", ty: TableId::get_type() },
             ColRow { table: ST_CONSTRAINT_ID.into(), pos: 3, name: "constraint_data", ty: resolved_type_via_v9::<StConstraintData>() },
 
-            ColRow { table: ST_MODULE_ID.into(), pos: 0, name: "database_address", ty: AlgebraicType::bytes() },
-            ColRow { table: ST_MODULE_ID.into(), pos: 1, name: "owner_identity", ty: AlgebraicType::bytes() },
+            ColRow { table: ST_MODULE_ID.into(), pos: 0, name: "database_address", ty: AlgebraicType::U128 },
+            ColRow { table: ST_MODULE_ID.into(), pos: 1, name: "owner_identity", ty: AlgebraicType::U256 },
             ColRow { table: ST_MODULE_ID.into(), pos: 2, name: "program_kind", ty: AlgebraicType::U8 },
-            ColRow { table: ST_MODULE_ID.into(), pos: 3, name: "program_hash", ty: AlgebraicType::bytes() },
+            ColRow { table: ST_MODULE_ID.into(), pos: 3, name: "program_hash", ty: AlgebraicType::U256 },
             ColRow { table: ST_MODULE_ID.into(), pos: 4, name: "program_bytes", ty: AlgebraicType::bytes() },
             ColRow { table: ST_MODULE_ID.into(), pos: 5, name: "module_version", ty: AlgebraicType::String },
 
-            ColRow { table: ST_CLIENT_ID.into(), pos: 0, name: "identity", ty: AlgebraicType::bytes()},
-            ColRow { table: ST_CLIENT_ID.into(), pos: 1, name: "address", ty: AlgebraicType::bytes()},
+            ColRow { table: ST_CLIENT_ID.into(), pos: 0, name: "identity", ty: AlgebraicType::U256},
+            ColRow { table: ST_CLIENT_ID.into(), pos: 1, name: "address", ty: AlgebraicType::U128},
 
             ColRow { table: ST_VAR_ID.into(), pos: 0, name: "name", ty: AlgebraicType::String },
             ColRow { table: ST_VAR_ID.into(), pos: 1, name: "value", ty: resolved_type_via_v9::<StVarValue>() },

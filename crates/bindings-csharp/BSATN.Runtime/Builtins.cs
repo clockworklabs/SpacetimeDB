@@ -6,6 +6,15 @@ using System.Runtime.InteropServices;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 
+internal static class Util
+{
+    // Same as `Convert.ToHexString`, but that method is not available in .NET Standard
+    // which we need to target for Unity support.
+    public static string ToHex<T>(T val)
+        where T : struct =>
+        BitConverter.ToString(MemoryMarshal.AsBytes([val]).ToArray()).Replace("-", "");
+}
+
 public readonly partial struct Unit
 {
     // Custom BSATN that returns an inline empty product type that can be recognised by SpacetimeDB.
@@ -63,69 +72,69 @@ public abstract record BytesWrapper
         );
 }
 
-public record Address : BytesWrapper
+public readonly record struct Address
 {
-    protected override int SIZE => 16;
+    private readonly U128 value;
 
-    public Address() { }
-
-    private Address(byte[] bytes)
-        : base(bytes) { }
+    internal Address(U128 v) => value = v;
 
     public static Address? From(byte[] bytes)
     {
-        if (bytes.All(b => b == 0))
-        {
-            return null;
-        }
-        return new(bytes);
+        Debug.Assert(bytes.Length == 16);
+        var addr = new Address(MemoryMarshal.Read<U128>(bytes));
+        return addr == default ? null : addr;
     }
 
     public static Address Random()
     {
         var random = new Random();
-        var addr = new Address();
-        random.NextBytes(addr.bytes);
-        return addr;
+        var bytes = new byte[16];
+        random.NextBytes(bytes);
+        return Address.From(bytes) ?? default;
     }
 
     public readonly struct BSATN : IReadWrite<Address>
     {
-        public Address Read(BinaryReader reader) => new(ReadRaw(reader));
+        public Address Read(BinaryReader reader) =>
+            new(new SpacetimeDB.BSATN.U128Stdb().Read(reader));
 
-        public void Write(BinaryWriter writer, Address value) => value.Write(writer);
+        public void Write(BinaryWriter writer, Address value) =>
+            new SpacetimeDB.BSATN.U128Stdb().Write(writer, value.value);
 
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-            BytesWrapper.GetAlgebraicType(registrar, "__address_bytes");
+            new AlgebraicType.Product([new("__address__", new AlgebraicType.U128(default))]);
     }
 
-    // This must be explicitly forwarded to base, otherwise record will generate a new implementation.
-    public override string ToString() => base.ToString();
+    public override string ToString() => Util.ToHex(value);
 }
 
-public record Identity : BytesWrapper
+public readonly record struct Identity
 {
-    protected override int SIZE => 32;
+    private readonly U256 value;
 
-    public Identity() { }
+    internal Identity(U256 val) => value = val;
 
     public Identity(byte[] bytes)
-        : base(bytes) { }
+    {
+        Debug.Assert(bytes.Length == 32);
+        value = MemoryMarshal.Read<U256>(bytes);
+    }
 
     public static Identity From(byte[] bytes) => new(bytes);
 
     public readonly struct BSATN : IReadWrite<Identity>
     {
-        public Identity Read(BinaryReader reader) => new(ReadRaw(reader));
+        public Identity Read(BinaryReader reader) => new(new SpacetimeDB.BSATN.U256().Read(reader));
 
-        public void Write(BinaryWriter writer, Identity value) => value.Write(writer);
+        public void Write(BinaryWriter writer, Identity value) =>
+            new SpacetimeDB.BSATN.U256().Write(writer, value.value);
 
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-            BytesWrapper.GetAlgebraicType(registrar, "__identity_bytes");
+            new AlgebraicType.Product([new("__identity__", new AlgebraicType.U256(default))]);
     }
 
     // This must be explicitly forwarded to base, otherwise record will generate a new implementation.
-    public override string ToString() => base.ToString();
+    public override string ToString() => Util.ToHex(value);
 }
 
 // We store time information in microseconds in internal usages.
