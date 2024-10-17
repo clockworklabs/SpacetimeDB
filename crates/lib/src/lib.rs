@@ -26,6 +26,7 @@ pub use address::Address;
 pub use identity::Identity;
 pub use scheduler::ScheduleAt;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
+pub use spacetimedb_sats::time_duration::TimeDuration;
 pub use spacetimedb_sats::timestamp::Timestamp;
 pub use spacetimedb_sats::SpacetimeType;
 pub use spacetimedb_sats::__make_register_reftype;

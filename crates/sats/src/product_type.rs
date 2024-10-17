@@ -13,6 +13,8 @@ pub const IDENTITY_TAG: &str = "__identity_bytes";
 pub const ADDRESS_TAG: &str = "__address_bytes";
 /// The tag used inside the special `Timestamp` product type.
 pub const TIMESTAMP_TAG: &str = "__timestamp_nanos_since_unix_epoch";
+/// The tag used inside the special `TimeDuration` product type.
+pub const TIME_DURATION_TAG: &str = "__time_duration_nanos";
 
 /// A structural product type  of the factors given by `elements`.
 ///
@@ -82,27 +84,38 @@ impl ProductType {
         self.is_bytes_newtype(ADDRESS_TAG)
     }
 
-    /// Returns whether this is the special case of `spacetimedb_lib::Timestamp`.
-    /// Does not follow `Ref`s.
-    pub fn is_timestamp(&self) -> bool {
+    fn is_i64_newtype(&self, expected_tag: &str) -> bool {
         match &*self.elements {
             [ProductTypeElement {
                 name: Some(name),
                 algebraic_type: AlgebraicType::I64,
-            }] => &**name == TIMESTAMP_TAG,
+            }] => &**name == expected_tag,
             _ => false,
         }
     }
 
-    /// Returns whether this is a special known `tag`, currently `Address` or `Identity`.
+    /// Returns whether this is the special case of `spacetimedb_lib::Timestamp`.
+    /// Does not follow `Ref`s.
+    pub fn is_timestamp(&self) -> bool {
+        self.is_i64_newtype(TIMESTAMP_TAG)
+    }
+
+    /// Returns whether this is the special case of `spacetimedb_lib::TimeDuration`.
+    /// Does not follow `Ref`s.
+    pub fn is_time_duration(&self) -> bool {
+        self.is_i64_newtype(TIME_DURATION_TAG)
+    }
+
+    /// Returns whether this is a special known `tag`,
+    /// currently `Address`, `Identity`, `Timestamp` or `TimeDuration`.
     pub fn is_special_tag(tag_name: &str) -> bool {
-        tag_name == IDENTITY_TAG || tag_name == ADDRESS_TAG || tag_name == TIMESTAMP_TAG
+        [IDENTITY_TAG, ADDRESS_TAG, TIMESTAMP_TAG, TIME_DURATION_TAG].contains(&tag_name)
     }
 
     /// Returns whether this is a special known type, currently `Address` or `Identity`.
     /// Does not follow `Ref`s.
     pub fn is_special(&self) -> bool {
-        self.is_identity() || self.is_address() || self.is_timestamp()
+        self.is_identity() || self.is_address() || self.is_timestamp() || self.is_time_duration()
     }
 
     /// Returns whether this is a unit type, that is, has no elements.

@@ -23,6 +23,7 @@ pub mod ser;
 pub mod sum_type;
 pub mod sum_type_variant;
 pub mod sum_value;
+pub mod time_duration;
 pub mod timestamp;
 pub mod typespace;
 

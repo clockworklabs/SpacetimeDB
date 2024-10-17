@@ -369,7 +369,9 @@ impl SchedulerActor {
         let schedule_at = get_schedule_at_mut(tx, db, id.table_id, schedule_row)?;
 
         if let ScheduleAt::Interval(dur) = schedule_at {
-            let key = self.queue.insert(QueueItem::Id(id), Duration::from_micros(dur));
+            let key = self
+                .queue
+                .insert(QueueItem::Id(id), dur.to_duration().unwrap_or(Duration::ZERO));
             self.key_map.insert(id, key);
             Ok(true)
         } else {

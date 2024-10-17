@@ -1,4 +1,4 @@
-use crate::{de::Deserialize, impl_st, ser::Serialize, AlgebraicType};
+use crate::{de::Deserialize, impl_st, ser::Serialize, time_duration::TimeDuration, AlgebraicType};
 use std::time::{Duration, SystemTime};
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize, Debug)]
@@ -62,6 +62,14 @@ impl Timestamp {
         self.to_nanos_since_unix_epoch() as u64 / 1000
     }
 
+    pub fn from_time_duration_since_unix_epoch(time_duration: TimeDuration) -> Self {
+        Self::from_nanos_since_unix_epoch(time_duration.to_nanos())
+    }
+
+    pub fn to_time_duration_since_unix_epoch(self) -> TimeDuration {
+        TimeDuration::from_nanos(self.to_nanos_since_unix_epoch())
+    }
+
     /// Returns `Err(duration_before_unix_epoch)` if `self` is before `Self::UNIX_EPOCH`.
     pub fn to_duration_since_unix_epoch(self) -> Result<Duration, Duration> {
         let nanos = self.to_nanos_since_unix_epoch();
@@ -121,12 +129,19 @@ impl Timestamp {
     /// Returns `None` if `earlier` is strictly greater than `self`,
     /// or if the difference between `earlier` and `self` overflows an `i64`.
     pub fn duration_since(self, earlier: Timestamp) -> Option<Duration> {
+        self.time_duration_since(earlier)?.to_duration().ok()
+    }
+
+    /// Returns the [`TimeDuration`] delta between `self` and `earlier`.
+    ///
+    /// The result may be negative if `earlier` is actually later than `self`.
+    ///
+    /// Returns `None` if the subtraction overflows or underflows `i64` nanoseconds.
+    pub fn time_duration_since(self, earlier: Timestamp) -> Option<TimeDuration> {
         let delta = self
             .to_nanos_since_unix_epoch()
             .checked_sub(earlier.to_nanos_since_unix_epoch())?;
-        Self::from_nanos_since_unix_epoch(delta)
-            .to_duration_since_unix_epoch()
-            .ok()
+        Some(TimeDuration::from_nanos(delta))
     }
 }
 

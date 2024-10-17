@@ -101,7 +101,7 @@ impl SumType {
         match &*self.variants {
             [first, second] => {
                 first.has_name(SCHEDULE_AT_INTERVAL_TAG)
-                    && first.algebraic_type.is_u64()
+                    && first.algebraic_type.is_time_duration()
                     && second.has_name(SCHEDULE_AT_TIME_TAG)
                     && second.algebraic_type.is_timestamp()
             }

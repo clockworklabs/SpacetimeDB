@@ -105,7 +105,7 @@ pub fn my_reducer(ctx: &ReducerContext, arg: ScheduledTable) {
         # scheduling repeated reducer again just to get 2nd subscription update.
         self.call("schedule_reducer")
 
-        repeated_row_entry = {'prev': TIMESTAMP_ZERO, 'scheduled_id': 1, 'scheduled_at': {'Interval': 100000}}
+        repeated_row_entry = {'prev': TIMESTAMP_ZERO, 'scheduled_id': 1, 'scheduled_at': {'Interval': {'__time_duration_nanos': 100000000 }}}
         row_entry = {'prev': TIMESTAMP_ZERO, 'scheduled_id': 2, 'scheduled_at': {'Time': TIMESTAMP_ZERO}}
 
         # subscription should have 2 updates and should not have any deletes

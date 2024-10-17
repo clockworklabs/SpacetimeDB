@@ -46,7 +46,8 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
     fmt_fn(move |f| match ty {
         ty if ty.is_identity() => f.write_str("SpacetimeDB.Identity"),
         ty if ty.is_address() => f.write_str("SpacetimeDB.Address"),
-        ty if ty.is_timestamp() => todo!("Emit DateTimeOffset"),
+        ty if ty.is_timestamp() => todo!("Emit Timestamp"),
+        ty if ty.is_time_duration() => todo!("Emit TimeDuration"),
         ty if ty.is_schedule_at() => f.write_str("SpacetimeDB.ScheduleAt"),
         AlgebraicType::Sum(sum_type) => {
             // This better be an option type
@@ -385,7 +386,9 @@ fn csharp_field_type(field_type: &AlgebraicType) -> Option<&str> {
             } else if product.is_address() {
                 Some("SpacetimeDB.Address")
             } else if product.is_timestamp() {
-                todo!("Emit DateTimeOffset")
+                todo!("Emit Timestamp")
+            } else if product.is_time_duration() {
+                todo!("Emit TimeDuration")
             } else {
                 None
             }
