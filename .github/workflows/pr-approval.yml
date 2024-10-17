@@ -1,0 +1,32 @@
+name: PR Approval Workflow
+
+on:
+  pull_request:
+    branches:
+      - master
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  check-approvals:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check for required approvals
+        id: check-approvals
+        uses: skymoore/required-approvals@v4.2.5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          read_org_scoped_token: ${{ secrets.ORG_READ_TOKEN }}
+          org_name: clockworklabs
+          min_approvals: 1
+          require_all_approvals_latest_commit: false
+          approval_mode: ANY
+
+      - name: Run action if all required approvals are met
+        if: ${{ steps.check-approvals.outputs.approved == 'true' }}
+        run: |
+          echo "All required approvals are met. Running the action."
