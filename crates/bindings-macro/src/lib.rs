@@ -17,7 +17,6 @@ use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::time::Duration;
 use syn::ext::IdentExt;
 use syn::meta::ParseNestedMeta;
@@ -330,6 +329,15 @@ fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn::Result<To
         }
     };
 
+    for param in &original_function.sig.generics.params {
+        let err = |msg| syn::Error::new_spanned(param, msg);
+        match param {
+            syn::GenericParam::Lifetime(_) => {}
+            syn::GenericParam::Type(_) => return Err(err("type parameters are not allowed on reducers")),
+            syn::GenericParam::Const(_) => return Err(err("const parameters are not allowed on reducers")),
+        }
+    }
+
     let lifecycle = args.lifecycle.iter().filter_map(|lc| lc.to_lifecycle_value());
 
     // Extract all function parameters, except for `self` ones that aren't allowed.
@@ -354,6 +362,8 @@ fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn::Result<To
     });
 
     let arg_tys = typed_args.iter().map(|arg| arg.ty.as_ref()).collect::<Vec<_>>();
+    let first_arg_ty = arg_tys.first().into_iter();
+    let rest_arg_tys = arg_tys.iter().skip(1);
 
     // Extract the return type.
     let ret_ty = match &original_function.sig.output {
@@ -364,13 +374,8 @@ fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn::Result<To
 
     let register_describer_symbol = format!("__preinit__20_register_describer_{reducer_name}");
 
-    let generated_function = quote! {
-        fn __reducer(__ctx: spacetimedb::ReducerContext, __args: &[u8]) -> spacetimedb::ReducerResult {
-            #(spacetimedb::rt::assert_reducer_arg::<#arg_tys>();)*
-            #(spacetimedb::rt::assert_reducer_ret::<#ret_ty>();)*
-            spacetimedb::rt::invoke_reducer(#func_name, __ctx, __args)
-        }
-    };
+    let lt_params = &original_function.sig.generics;
+    let lt_where_clause = &lt_params.where_clause;
 
     let generated_describe_function = quote! {
         #[export_name = #register_describer_symbol]
@@ -385,14 +390,24 @@ fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn::Result<To
         };
         #[allow(non_camel_case_types)]
         #vis struct #func_name { _never: ::core::convert::Infallible }
+        const _: () = {
+            fn _assert_args #lt_params () #lt_where_clause {
+                #(let _ = <#first_arg_ty as spacetimedb::rt::ReducerContextArg>::_ITEM;)*
+                #(let _ = <#rest_arg_tys as spacetimedb::rt::ReducerArg>::_ITEM;)*
+                #(let _ = <#ret_ty as spacetimedb::rt::IntoReducerResult>::into_result;)*
+            }
+        };
+        impl #func_name {
+            fn invoke(__ctx: spacetimedb::ReducerContext, __args: &[u8]) -> spacetimedb::ReducerResult {
+                spacetimedb::rt::invoke_reducer(#func_name, __ctx, __args)
+            }
+        }
+        #[automatically_derived]
         impl spacetimedb::rt::ReducerInfo for #func_name {
             const NAME: &'static str = #reducer_name;
             #(const LIFECYCLE: Option<spacetimedb::rt::LifecycleReducer> = Some(#lifecycle);)*
             const ARG_NAMES: &'static [Option<&'static str>] = &[#(#opt_arg_names),*];
-            const INVOKE: spacetimedb::rt::ReducerFn = {
-                #generated_function
-                __reducer
-            };
+            const INVOKE: spacetimedb::rt::ReducerFn = #func_name::invoke;
         }
     })
 }
@@ -433,15 +448,6 @@ fn add_scheduled_fields(item: &mut syn::DeriveInput) {
             });
             fields.named.extend(extra_fields.named);
         }
-    }
-}
-
-/// Check if the Identifier provided in `scheduled()` is a valid reducer
-/// generate a function that tried to call reducer passing `ReducerContext`
-fn reducer_type_check(item: &syn::DeriveInput, reducer_name: &Path) -> TokenStream {
-    let struct_name = &item.ident;
-    quote! {
-        const _: () = spacetimedb::rt::assert_reducer_typecheck::<(#struct_name,)>(#reducer_name);
     }
 }
 
@@ -874,7 +880,10 @@ impl ColumnAttr {
 fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::Result<TokenStream> {
     let scheduled_reducer_type_check = args.scheduled.as_ref().map(|reducer| {
         add_scheduled_fields(&mut item);
-        reducer_type_check(&item, reducer)
+        let struct_name = &item.ident;
+        quote! {
+            const _: () = spacetimedb::rt::scheduled_reducer_typecheck::<#struct_name>(#reducer);
+        }
     });
 
     let vis = &item.vis;
@@ -886,6 +895,15 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
     let module::SatsTypeData::Product(fields) = &sats_ty.data else {
         return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
     };
+
+    for param in &item.generics.params {
+        let err = |msg| syn::Error::new_spanned(param, msg);
+        match param {
+            syn::GenericParam::Lifetime(_) => {}
+            syn::GenericParam::Type(_) => return Err(err("type parameters are not allowed on tables")),
+            syn::GenericParam::Const(_) => return Err(err("const parameters are not allowed on tables")),
+        }
+    }
 
     let table_id_from_name_func = quote! {
         fn table_id() -> spacetimedb::TableId {
@@ -1069,28 +1087,6 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
         })*
     };
 
-    // Attempt to improve the compile error when a table field doesn't satisfy
-    // the supertraits of `TableType`. We make it so the field span indicates
-    // which fields are offenders, and error reporting stops if the field doesn't
-    // implement `SpacetimeType` (which happens to be the derive macro one is
-    // supposed to use). That is, the user doesn't see errors about `Serialize`,
-    // `Deserialize` not being satisfied, which they wouldn't know what to do
-    // about.
-    let assert_fields_are_spacetimetypes = {
-        let trait_ident = Ident::new("AssertSpacetimeFields", Span::call_site());
-        let field_impls = fields
-            .iter()
-            .map(|field| (field.ty, field.span))
-            .collect::<HashMap<_, _>>()
-            .into_iter()
-            .map(|(ty, span)| quote_spanned!(span=> impl #trait_ident for #ty {}));
-
-        quote_spanned! {item.span()=>
-            trait #trait_ident: spacetimedb::SpacetimeType {}
-            #(#field_impls)*
-        }
-    };
-
     let row_type_to_table = quote!(<#row_type as spacetimedb::table::__MapRowTypeToTable>::Table);
 
     // Output all macro data
@@ -1116,7 +1112,7 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
 
     let emission = quote! {
         const _: () = {
-            #assert_fields_are_spacetimetypes
+            #(let _ = <#field_types as spacetimedb::rt::TableColumn>::_ITEM;)*
         };
 
         #trait_def

@@ -64,14 +64,15 @@ spacetimedb
 │   ├── itertools (*)
 │   ├── spacetimedb_bindings_macro (*)
 │   ├── spacetimedb_data_structures
+│   │   ├── ahash
+│   │   │   ├── cfg_if
+│   │   │   ├── getrandom (*)
+│   │   │   ├── once_cell
+│   │   │   └── zerocopy (*)
+│   │   │   [build-dependencies]
+│   │   │   └── version_check
 │   │   ├── hashbrown
-│   │   │   ├── ahash
-│   │   │   │   ├── cfg_if
-│   │   │   │   ├── once_cell
-│   │   │   │   └── zerocopy (*)
-│   │   │   │   [build-dependencies]
-│   │   │   │   └── version_check
-│   │   │   └── allocator_api2
+│   │   │   └── equivalent
 │   │   ├── nohash_hasher
 │   │   ├── smallvec
 │   │   └── thiserror

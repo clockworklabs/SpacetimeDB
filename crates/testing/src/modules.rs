@@ -5,6 +5,7 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use spacetimedb::messages::control_db::HostType;
+use spacetimedb::Identity;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use tokio::runtime::{Builder, Runtime};
 
@@ -150,7 +151,8 @@ impl CompiledModule {
 
         crate::set_key_env_vars(&paths);
         let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
-        let identity = env.create_identity().await.unwrap();
+        // TODO: Fix this when we update identity generation.
+        let identity = Identity::ZERO;
         let db_address = env.create_address().await.unwrap();
         let client_address = env.create_address().await.unwrap();
 

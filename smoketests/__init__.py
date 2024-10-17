@@ -194,8 +194,8 @@ class Smoketest(unittest.TestCase):
         # Fetch the server's fingerprint; required for `identity list`.
         self.spacetime("server", "fingerprint", "localhost", "-y")
 
-    def new_identity(self, *, email, default=False):
-        output = self.spacetime("identity", "new", "--no-email" if email is None else f"--email={email}")
+    def new_identity(self, *, default=False):
+        output = self.spacetime("identity", "new")
         identity = extract_field(output, "IDENTITY")
         if default:
             self.spacetime("identity", "set-default", "--identity", identity)

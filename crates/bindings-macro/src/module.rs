@@ -32,7 +32,6 @@ pub(crate) struct SatsField<'a> {
     pub name: Option<String>,
     pub ty: &'a syn::Type,
     pub original_attrs: &'a [syn::Attribute],
-    pub span: Span,
 }
 
 pub(crate) struct SatsVariant<'a> {
@@ -57,7 +56,6 @@ pub(crate) fn sats_type_from_derive(
                 name: field.ident.as_ref().map(syn::Ident::to_string),
                 ty: &field.ty,
                 original_attrs: &field.attrs,
-                span: field.span(),
             });
             SatsTypeData::Product(fields.collect())
         }

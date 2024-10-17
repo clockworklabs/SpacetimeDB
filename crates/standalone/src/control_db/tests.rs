@@ -92,7 +92,8 @@ fn test_decode() -> ResultTest<()> {
 
     let cdb = ControlDb::at(path)?;
 
-    let id = cdb.alloc_spacetime_identity()?;
+    // TODO: Use a random identity.
+    let id = Identity::ZERO;
 
     let db = Database {
         id: 0,

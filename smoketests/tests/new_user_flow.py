@@ -29,7 +29,7 @@ pub fn say_hello(ctx: &ReducerContext) {
         """Test the entirety of the new user flow."""
 
         ## Publish your module
-        self.new_identity(email=None)
+        self.new_identity()
 
         self.publish_module()
 
