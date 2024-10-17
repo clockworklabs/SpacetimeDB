@@ -7,7 +7,7 @@ use crate::db::datastore::system_tables::{StClientFields, StClientRow, ST_CLIENT
 use crate::db::datastore::traits::{IsolationLevel, Program, TxData};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
-use crate::execution_context::{ExecutionContext, ReducerContext};
+use crate::execution_context::{ReducerContext, Workload};
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
@@ -567,17 +567,14 @@ impl ModuleHost {
         };
 
         let db = &self.inner.replica_ctx().relational_db;
-        let ctx = || {
-            ExecutionContext::reducer(
-                db.address(),
-                ReducerContext {
-                    name: reducer_name.to_owned(),
-                    caller_identity,
-                    caller_address,
-                    timestamp: Timestamp::now(),
-                    arg_bsatn: Bytes::new(),
-                },
-            )
+        let workload = || {
+            Workload::Reducer(ReducerContext {
+                name: reducer_name.to_owned(),
+                caller_identity,
+                caller_address,
+                timestamp: Timestamp::now(),
+                arg_bsatn: Bytes::new(),
+            })
         };
 
         let result = self
@@ -600,7 +597,7 @@ impl ModuleHost {
                 // This is necessary to be able to disconnect clients after a server
                 // crash.
                 ReducerCallError::NoSuchReducer => db
-                    .with_auto_commit(&ctx(), |mut_tx| {
+                    .with_auto_commit(workload(), |mut_tx| {
                         if connected {
                             self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
                         } else {
@@ -620,7 +617,7 @@ impl ModuleHost {
         // Deleting client from `st_clients`does not depend upon result of disconnect reducer hence done in a separate tx.
         if !connected {
             let _ = db
-                .with_auto_commit(&ctx(), |mut_tx| {
+                .with_auto_commit(workload(), |mut_tx| {
                     self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
                 })
                 .map_err(|e| {
@@ -638,7 +635,6 @@ impl ModuleHost {
         connected: bool,
     ) -> Result<(), DBError> {
         let db = &*self.inner.replica_ctx().relational_db;
-        let ctx = &ExecutionContext::internal(db.address());
         let row = &StClientRow {
             identity: caller_identity.into(),
             address: caller_address.into(),
@@ -649,7 +645,6 @@ impl ModuleHost {
         } else {
             let row = db
                 .iter_by_col_eq_mut(
-                    ctx,
                     mut_tx,
                     ST_CLIENT_ID,
                     col_list![StClientFields::Identity, StClientFields::Address],
@@ -760,8 +755,19 @@ impl ModuleHost {
         let db = self.inner.replica_ctx().relational_db.clone();
         // scheduled reducer name not fetched yet, anyway this is only for logging purpose
         const REDUCER: &str = "scheduled_reducer";
+        let caller_identity = self.info.identity;
+        let caller_address = self.info.address;
         self.call(REDUCER, move |inst: &mut dyn ModuleInstance| {
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+            let mut tx = db.begin_mut_tx(
+                IsolationLevel::Serializable,
+                Workload::Reducer(ReducerContext {
+                    name: REDUCER.into(),
+                    caller_identity,
+                    caller_address,
+                    timestamp: Timestamp::now(),
+                    arg_bsatn: Bytes::new(),
+                }),
+            );
 
             match call_reducer_params(&mut tx) {
                 Ok(Some(params)) => Ok(inst.call_reducer(Some(tx), params)),
@@ -827,8 +833,7 @@ impl ModuleHost {
         let db = &replica_ctx.relational_db;
         let auth = AuthCtx::new(replica_ctx.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
-        let ctx = &ExecutionContext::sql(db.address());
-        db.with_read_only(ctx, |tx| {
+        db.with_read_only(Workload::Sql, |tx| {
             let ast = sql::compiler::compile_sql(db, &auth, tx, &query)?;
             sql::execute::execute_sql_tx(db, tx, &query, ast, auth)?
                 .context("One-off queries are not allowed to modify the database")
@@ -840,7 +845,7 @@ impl ModuleHost {
     /// Note: this doesn't drop the table, it just clears it!
     pub fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
         let db = &*self.replica_ctx().relational_db;
-        db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
+        db.with_auto_commit(Workload::Internal, |tx| {
             let tables = db.get_all_tables_mut(tx)?;
             // We currently have unique table names,
             // so we can assume there's only one table to clear.
