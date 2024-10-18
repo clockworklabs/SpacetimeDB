@@ -18,7 +18,7 @@ use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::messages::control_db::HostType;
 use crate::util::spawn_rayon;
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use fs2::FileExt;
 use futures::channel::mpsc;
 use futures::StreamExt;
@@ -527,14 +527,18 @@ impl RelationalDB {
             .get_all_tables_tx(&ExecutionContext::internal(self.address), tx)
     }
 
-    pub fn is_scheduled_table(
+    pub fn table_scheduled_id_and_at(
         &self,
         ctx: &ExecutionContext,
-        tx: &mut MutTx,
+        tx: &impl StateView,
         table_id: TableId,
-    ) -> Result<bool, DBError> {
-        tx.schema_for_table(ctx, table_id)
-            .map(|schema| schema.schedule.is_some())
+    ) -> Result<Option<(ColId, ColId)>, DBError> {
+        let schema = tx.schema_for_table(ctx, table_id)?;
+        let Some(sched) = &schema.schedule else { return Ok(None) };
+        let primary_key = schema
+            .primary_key
+            .context("scheduled table doesn't have a primary key?")?;
+        Ok(Some((primary_key, sched.at_column)))
     }
 
     pub fn decode_column(
