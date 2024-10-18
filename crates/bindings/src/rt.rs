@@ -430,7 +430,7 @@ extern "C" fn __describe_module__(description: BytesSink) {
 /// - `sender_3` contains bytes `[24..32]`.
 ///
 /// The `address_{0-1}` are the pieces of a `[u8; 16]` (`u128`) representing the callers's `Address`.
-/// They are encoded as follows (assuming `identity.__address_bytes: [u8; 16]`):
+/// They are encoded as follows (assuming `address.__address__: u128`):
 /// - `address_0` contains bytes `[0 ..8 ]`.
 /// - `address_1` contains bytes `[8 ..16]`.
 ///

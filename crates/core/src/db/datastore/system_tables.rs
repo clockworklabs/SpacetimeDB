@@ -27,7 +27,7 @@ use spacetimedb_sats::algebraic_value::ser::value_serialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{
-    impl_deserialize, impl_serialize, impl_st, AlgebraicType, AlgebraicValue, ArrayValue, SumValue,
+    impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, AlgebraicValue, ArrayValue, SumValue,
 };
 use spacetimedb_schema::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, ModuleDef, UniqueConstraintData};
 use spacetimedb_schema::schema::{
@@ -804,11 +804,11 @@ impl_st!([] ModuleKind, AlgebraicType::U8);
 
 /// A wrapper for `Address` that acts like `AlgebraicType::bytes()` for serialization purposes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct AddressViaBytes(pub Address);
-impl_serialize!([] AddressViaBytes, (self, ser) => self.0.as_slice().serialize(ser));
-impl_deserialize!([] AddressViaBytes, de => <[u8; 16]>::deserialize(de).map(Address::from_slice).map(AddressViaBytes));
-impl_st!([] AddressViaBytes, AlgebraicType::bytes());
-impl From<Address> for AddressViaBytes {
+pub struct AddressViaU128(pub Address);
+impl_serialize!([] AddressViaU128, (self, ser) => self.0.to_u128().serialize(ser));
+impl_deserialize!([] AddressViaU128, de => <u128>::deserialize(de).map(Address::from_u128).map(AddressViaU128));
+impl_st!([] AddressViaU128, AlgebraicType::U128);
+impl From<Address> for AddressViaU128 {
     fn from(addr: Address) -> Self {
         Self(addr)
     }
@@ -816,11 +816,11 @@ impl From<Address> for AddressViaBytes {
 
 /// A wrapper for `Identity` that acts like `AlgebraicType::bytes()` for serialization purposes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct IdentityViaBytes(pub Identity);
-impl_serialize!([] IdentityViaBytes, (self, ser) => self.0.as_bytes().serialize(ser));
-impl_deserialize!([] IdentityViaBytes, de => <[u8; 32]>::deserialize(de).map(|arr| Identity::from_slice(&arr[..])).map(IdentityViaBytes));
-impl_st!([] IdentityViaBytes, AlgebraicType::bytes());
-impl From<Identity> for IdentityViaBytes {
+pub struct IdentityViaU256(pub Identity);
+impl_serialize!([] IdentityViaU256, (self, ser) => self.0.to_u256().serialize(ser));
+impl_deserialize!([] IdentityViaU256, de => <u256>::deserialize(de).map(Identity::from_u256).map(IdentityViaU256));
+impl_st!([] IdentityViaU256, AlgebraicType::U256);
+impl From<Identity> for IdentityViaU256 {
     fn from(id: Identity) -> Self {
         Self(id)
     }
@@ -843,8 +843,8 @@ impl From<Identity> for IdentityViaBytes {
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StModuleRow {
-    pub(crate) database_address: AddressViaBytes,
-    pub(crate) owner_identity: IdentityViaBytes,
+    pub(crate) database_address: AddressViaU128,
+    pub(crate) owner_identity: IdentityViaU256,
     pub(crate) program_kind: ModuleKind,
     pub(crate) program_hash: Hash,
     pub(crate) program_bytes: Box<[u8]>,
@@ -867,23 +867,24 @@ pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u
 
 /// Read an [`Address`] directly from the column `col` in `row`.
 ///
-/// The [`Address`] is assumed to be stored as a flat byte array.
+/// The [`Address`] is assumed to be stored as an u128.
 pub fn read_addr_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Address, DBError> {
-    read_bytes_from_col(row, col).map(Address::from_slice)
+    let val: u128 = row.read_col(col.col_id())?;
+    Ok(val.into())
 }
 
 /// Read an [`Identity`] directly from the column `col` in `row`.
 ///
 /// The [`Identity`] is assumed to be stored as a flat byte array.
 pub fn read_identity_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Identity, DBError> {
-    read_bytes_from_col(row, col).map(|bytes| Identity::from_slice(&bytes))
+    Ok(Identity::from_u256(row.read_col(col.col_id())?))
 }
 
 /// Read a [`Hash`] directly from the column `col` in `row`.
 ///
 /// The [`Hash`] is assumed to be stored as a flat byte array.
 pub fn read_hash_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Hash, DBError> {
-    read_bytes_from_col(row, col).map(|bytes| Hash::from_slice(&bytes))
+    Ok(Hash::from_u256(row.read_col(col.col_id())?))
 }
 
 impl TryFrom<RowRef<'_>> for StModuleRow {
@@ -908,13 +909,18 @@ impl From<StModuleRow> for ProductValue {
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StClientRow {
-    pub(crate) identity: IdentityViaBytes,
-    pub(crate) address: AddressViaBytes,
+    pub(crate) identity: IdentityViaU256,
+    pub(crate) address: AddressViaU128,
 }
 
+impl From<StClientRow> for ProductValue {
+    fn from(var: StClientRow) -> Self {
+        to_product_value(&var)
+    }
+}
 impl From<&StClientRow> for ProductValue {
-    fn from(x: &StClientRow) -> Self {
-        to_product_value(x)
+    fn from(var: &StClientRow) -> Self {
+        to_product_value(var)
     }
 }
 
