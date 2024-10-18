@@ -34,7 +34,7 @@ struct AddressRow {
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = util::get_identity(&config)?;
+    let identity = util::get_identity(&config, server)?;
 
     let client = reqwest::Client::new();
     let res = client
@@ -56,7 +56,6 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let result: DatabasesResult = res.json().await?;
 
-    let identity = util::get_identity(&config)?;
     if !result.addresses.is_empty() {
         let mut table = Table::new(result.addresses);
         table

@@ -134,7 +134,7 @@ pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), 
     let domain = args.get_one::<String>("domain").unwrap();
     let address = args.get_one::<String>("address").unwrap();
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = get_identity(&config)?;
+    let identity = get_identity(&config, server)?;
     let auth_header = get_auth_header(&mut config, false)?;
 
     let builder = reqwest::Client::new().get(Url::parse_with_params(

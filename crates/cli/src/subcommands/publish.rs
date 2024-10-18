@@ -147,7 +147,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     )?);
 
     builder = add_auth_header_opt(builder, &auth_header);
-    let identity = get_identity(&config)?;
+    let identity = get_identity(&config, server)?;
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {

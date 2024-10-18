@@ -49,7 +49,7 @@ async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
     let identity = if let Some(identity) = identity {
         identity.clone()
     } else {
-        util::get_identity(&config)?
+        util::get_identity(&config, server)?
     };
 
     let status = reqwest::Client::new()

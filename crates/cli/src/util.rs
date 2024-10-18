@@ -1,7 +1,9 @@
 use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use reqwest::RequestBuilder;
 use serde::Deserialize;
+use spacetimedb::auth::identity::SpacetimeIdentityClaims2;
 use spacetimedb_client_api_messages::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::{Address, AlgebraicType, Identity};
@@ -260,7 +262,22 @@ Generate a new identity with:
     })
 }
 
-pub fn get_identity(config: &Config) -> anyhow::Result<String> {
-    let _token = config.login_token();
-    unimplemented!();
+pub fn get_identity(config: &Config, server: Option<&str>) -> anyhow::Result<String> {
+    let token = config.login_token()?;
+
+    match config.server_fingerprint(server)? {
+        None => Err(anyhow::anyhow!("No fingerprint found for server")),
+        Some(public_key) => {
+            let public_key = public_key;
+            let decoding_key = DecodingKey::from_ec_pem(public_key.as_bytes())?;
+            println!("bar");
+            let mut validation = Validation::new(Algorithm::ES256);
+            validation.validate_exp = false;
+            validation.set_required_spec_claims(&["set", "iss", "aud"]);
+            let token_data = decode::<SpacetimeIdentityClaims2>(token, &decoding_key, &validation)?;
+            println!("foo");
+
+            Ok(token_data.claims.identity.to_string())
+        }
+    }
 }
