@@ -55,6 +55,7 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
         }
         // Arbitrary product types should fail.
         AlgebraicType::Product(_) => unimplemented!(),
+        ty if ty.is_bytes() => f.write_str("byte[]"),
         AlgebraicType::Array(ArrayType { elem_ty }) => {
             write!(
                 f,
@@ -94,6 +95,7 @@ fn default_init(ctx: &GenCtx, ty: &AlgebraicType) -> Option<&'static str> {
         AlgebraicType::Sum(sum_type) if sum_type.is_option() || sum_type.is_simple_enum() => None,
         // TODO: generate some proper default here (what would it be for tagged enums?).
         AlgebraicType::Sum(_) => Some("null!"),
+        ty if ty.is_bytes() => Some("Array.Empty<byte>()"),
         // For product types, arrays, and maps, we can use the default constructor.
         AlgebraicType::Product(_) | AlgebraicType::Array(_) => Some("new()"),
         // Strings must have explicit default value of "".
@@ -646,7 +648,11 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
 
     writeln!(output, "public sealed class RemoteReducers : RemoteBase<DbConnection>");
     indented_block(&mut output, |output| {
-        writeln!(output, "internal RemoteReducers(DbConnection conn) : base(conn) {{}}");
+        writeln!(
+            output,
+            "internal RemoteReducers(DbConnection conn) : base(conn) {{ this.SetCallReducerFlags = SetReducerFlags; }}"
+        );
+        writeln!(output, "internal readonly SetReducerFlags SetCallReducerFlags;");
 
         for reducer in &reducers {
             let func_name = &*reducer.name;
@@ -688,7 +694,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
             indented_block(output, |output| {
                 writeln!(
                     output,
-                    "conn.InternalCallReducer(new {func_name_pascal_case} {{ {field_inits} }});"
+                    "conn.InternalCallReducer(new {func_name_pascal_case} {{ {field_inits} }}, this.SetCallReducerFlags.{func_name_pascal_case}Flags);"
                 );
             });
             writeln!(output);
@@ -721,12 +727,25 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
     });
     writeln!(output);
 
+    writeln!(output, "public sealed class SetReducerFlags");
+    indented_block(&mut output, |output| {
+        writeln!(output, "internal SetReducerFlags() {{ }}");
+        for reducer in &reducers {
+            let func_name = &*reducer.name;
+            let func_name_pascal_case = func_name.to_case(Case::Pascal);
+            writeln!(output, "internal CallReducerFlags {func_name_pascal_case}Flags;");
+            writeln!(output, "public void {func_name_pascal_case}(CallReducerFlags flags) {{ this.{func_name_pascal_case}Flags = flags; }}");
+        }
+    });
+    writeln!(output);
+
     writeln!(
         output,
         "public partial record EventContext : DbContext<RemoteTables>, IEventContext"
     );
     indented_block(&mut output, |output| {
         writeln!(output, "public readonly RemoteReducers Reducers;");
+        writeln!(output, "public readonly SetReducerFlags SetReducerFlags;");
         writeln!(output, "public readonly Event<Reducer> Event;");
         writeln!(output);
         writeln!(
@@ -735,6 +754,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
         );
         indented_block(output, |output| {
             writeln!(output, "Reducers = conn.Reducers;");
+            writeln!(output, "SetReducerFlags = conn.SetReducerFlags;");
             writeln!(output, "Event = reducerEvent;");
         });
     });
@@ -760,11 +780,13 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
     indented_block(&mut output, |output| {
         writeln!(output, "public readonly RemoteTables Db = new();");
         writeln!(output, "public readonly RemoteReducers Reducers;");
+        writeln!(output, "public readonly SetReducerFlags SetReducerFlags;");
         writeln!(output);
 
         writeln!(output, "public DbConnection()");
         indented_block(output, |output| {
-            writeln!(output, "Reducers = new(this);");
+            writeln!(output, "SetReducerFlags = new();");
+            writeln!(output, "Reducers = new(this, this.SetReducerFlags);");
             writeln!(output);
 
             for item in items {
