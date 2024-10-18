@@ -20,6 +20,26 @@ pub struct SpacetimeIdentityClaims {
     pub exp: Option<SystemTime>,
 }
 
+// The new token format that we are sending out.
+#[serde_with::serde_as]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SpacetimeIdentityClaims2 {
+    #[serde(rename = "hex_identity")]
+    pub identity: Identity,
+    #[serde(rename = "sub")]
+    pub subject: String,
+    #[serde(rename = "iss")]
+    pub issuer: String,
+    #[serde(rename = "aud")]
+    pub audience: Vec<String>,
+
+    /// The unix timestamp the token was issued at
+    #[serde_as(as = "serde_with::TimestampSeconds")]
+    pub iat: SystemTime,
+    #[serde_as(as = "Option<serde_with::TimestampSeconds>")]
+    pub exp: Option<SystemTime>,
+}
+
 /// Encode a JWT token using a private_key and an identity. Expiry is set in absolute seconds,
 /// the function will calculate a proper duration since unix epoch
 pub fn encode_token(private_key: &EncodingKey, identity: Identity) -> Result<String, JwtError> {
