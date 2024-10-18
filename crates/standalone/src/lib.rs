@@ -25,6 +25,7 @@ use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
+use spacetimedb_client_api::auth::LOCALHOST;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use std::fs::File;
 use std::io::Write;
@@ -166,7 +167,7 @@ impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
     }
 
     fn local_issuer(&self) -> String {
-        "localhost".to_owned()
+        LOCALHOST.to_owned()
     }
 
     fn public_key_bytes(&self) -> &[u8] {
