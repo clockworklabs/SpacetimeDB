@@ -1,8 +1,6 @@
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{
-    add_auth_header_opt, get_auth_header_only, spacetime_dns, spacetime_register_tld, spacetime_reverse_dns,
-};
+use crate::util::{add_auth_header_opt, get_auth_header, spacetime_dns, spacetime_register_tld, spacetime_reverse_dns};
 use clap::ArgMatches;
 use clap::{Arg, Command};
 use reqwest::Url;
@@ -136,7 +134,7 @@ pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), 
     let address = args.get_one::<String>("address").unwrap();
     let identity = args.get_one::<String>("identity");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let auth_header = get_auth_header_only(&mut config, false, identity, server).await?;
+    let auth_header = get_auth_header(&mut config, false)?;
 
     let builder = reqwest::Client::new().get(Url::parse_with_params(
         format!("{}/database/set_name", config.get_host_url(server)?).as_str(),

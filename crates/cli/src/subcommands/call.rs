@@ -2,7 +2,7 @@ use crate::common_args;
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
 use crate::util;
-use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
+use crate::util::{add_auth_header_opt, database_address, get_auth_header};
 use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgMatches};
 use itertools::Either;
@@ -54,7 +54,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         address.clone(),
         reducer_name
     ));
-    let auth_header = get_auth_header_only(&mut config, anon_identity, identity, server).await?;
+    let auth_header = get_auth_header(&mut config, anon_identity)?;
     let builder = add_auth_header_opt(builder, &auth_header);
     let describe_reducer = util::describe_reducer(
         &mut config,

@@ -4,6 +4,7 @@ use clap::ArgMatches;
 use spacetimedb_lib::Identity;
 
 use crate::config::Config;
+use crate::util;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("energy")
@@ -45,10 +46,15 @@ async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
     // let project_name = args.value_of("project name").unwrap();
     let identity = args.get_one::<String>("identity");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let hex_id = resolve_id_or_default(identity, &config, server)?;
+    // TODO: should this be allowed for arbitrary users? Shouldn't we be authing?
+    let identity = if let Some(identity) = identity {
+        identity.clone()
+    } else {
+        util::get_identity(&config)?
+    };
 
     let status = reqwest::Client::new()
-        .get(format!("{}/energy/{}", config.get_host_url(server)?, hex_id,))
+        .get(format!("{}/energy/{}", config.get_host_url(server)?, identity))
         .send()
         .await?
         .error_for_status()?
@@ -58,11 +64,4 @@ async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
     println!("{}", status);
 
     Ok(())
-}
-
-fn resolve_id_or_default(identity: Option<&String>, config: &Config, server: Option<&str>) -> anyhow::Result<Identity> {
-    match identity {
-        Some(identity) => config.resolve_name_to_identity(identity),
-        None => Ok(config.get_default_identity_config(server)?.identity),
-    }
 }

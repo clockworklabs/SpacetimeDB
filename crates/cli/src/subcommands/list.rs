@@ -1,4 +1,5 @@
 use crate::common_args;
+use crate::util;
 use crate::Config;
 use anyhow::Context;
 use clap::{ArgMatches, Command};
@@ -34,23 +35,16 @@ struct AddressRow {
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity_config = match args.get_one::<String>("identity") {
-        Some(identity_or_name) => config
-            .get_identity_config(identity_or_name)
-            .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity_or_name}"))?,
-        None => config
-            .get_default_identity_config(server)
-            .context("No default identity, and no identity provided!")?,
-    };
+    let identity = util::get_identity(&config)?;
 
     let client = reqwest::Client::new();
     let res = client
         .get(format!(
             "{}/identity/{}/databases",
             config.get_host_url(server)?,
-            identity_config.identity
+            identity
         ))
-        .basic_auth("token", config.login_token())
+        .basic_auth("token", Some(config.login_token()?))
         .send()
         .await?;
 
@@ -63,7 +57,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let result: DatabasesResult = res.json().await?;
 
-    let identity = identity_config.nick_or_identity();
+    let identity = util::get_identity(&config)?;
     if !result.addresses.is_empty() {
         let mut table = Table::new(result.addresses);
         table

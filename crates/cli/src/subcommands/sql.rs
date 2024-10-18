@@ -11,7 +11,7 @@ use tabled::settings::Style;
 
 use crate::config::Config;
 use crate::errors::error_for_status;
-use crate::util::{database_address, get_auth_header_only};
+use crate::util::{database_address, get_auth_header};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
@@ -55,7 +55,7 @@ pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<C
 
     Ok(Connection {
         host: config.get_host_url(server)?,
-        auth_header: get_auth_header_only(&mut config, anon_identity, identity, server).await?,
+        auth_header: get_auth_header(&mut config, anon_identity)?,
         address: database_address(&config, database, server).await?,
         database: database.to_string(),
     })

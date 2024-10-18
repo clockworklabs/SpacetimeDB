@@ -1,6 +1,6 @@
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
+use crate::util::{add_auth_header_opt, database_address, get_auth_header};
 use clap::{Arg, ArgMatches};
 
 pub fn cli() -> clap::Command {
@@ -31,7 +31,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let address = database_address(&config, database, server).await?;
 
     let builder = reqwest::Client::new().post(format!("{}/database/delete/{}", config.get_host_url(server)?, address));
-    let auth_header = get_auth_header_only(&mut config, false, identity_or_name, server).await?;
+    let auth_header = get_auth_header(&mut config, false)?;
     let builder = add_auth_header_opt(builder, &auth_header);
     builder.send().await?.error_for_status()?;
 

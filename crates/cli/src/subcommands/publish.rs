@@ -88,9 +88,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // we want to use the default identity
     // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
     //  easily create a new identity with an email
-    let (auth_header, identity) = get_auth_header(&mut config, anon_identity, identity, server)
-        .await?
-        .unzip();
+    let auth_header = get_auth_header(&config, anon_identity)?;
 
     let mut query_params = Vec::<(&str, &str)>::new();
     query_params.push(("host_type", "wasm"));
@@ -164,7 +162,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             let err = res.text().await?;
             return unauth_error_context(
                 Err(anyhow::anyhow!(err)),
-                &identity.to_hex(),
+                &identity,
                 config.server_nick_or_host(server)?,
             );
         }
@@ -202,7 +200,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 Some(identity) => {
                     //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
                     // we should perhaps generate fun names like 'green-fire-dragon' instead
-                    let suggested_tld: String = identity.to_hex().chars().take(12).collect();
+                    let suggested_tld: String = identity.chars().take(12).collect();
                     if let Some(sub_domain) = domain.sub_domain() {
                         Err(anyhow::anyhow!(
                             "The top level domain {} is not registered to the identity you provided.\n\

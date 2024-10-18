@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
+use crate::util::{add_auth_header_opt, database_address, get_auth_header};
 use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use is_terminal::IsTerminal;
@@ -121,7 +121,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let follow = args.get_flag("follow");
     let format = *args.get_one::<Format>("format").unwrap();
 
-    let auth_header = get_auth_header_only(&mut config, false, identity, server).await?;
+    let auth_header = get_auth_header(&mut config, false)?;
 
     let address = database_address(&config, database, server).await?;
 
