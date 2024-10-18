@@ -270,12 +270,10 @@ pub fn get_identity(config: &Config, server: Option<&str>) -> anyhow::Result<Str
         Some(public_key) => {
             let public_key = public_key;
             let decoding_key = DecodingKey::from_ec_pem(public_key.as_bytes())?;
-            println!("bar");
             let mut validation = Validation::new(Algorithm::ES256);
             validation.validate_exp = false;
             validation.set_required_spec_claims(&["set", "iss", "aud"]);
             let token_data = decode::<SpacetimeIdentityClaims2>(token, &decoding_key, &validation)?;
-            println!("foo");
 
             Ok(token_data.claims.identity.to_string())
         }
