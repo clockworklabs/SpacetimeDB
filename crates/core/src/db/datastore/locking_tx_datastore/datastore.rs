@@ -932,7 +932,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
 /// reading only the columns necessary to construct the value.
 fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
     Ok(Metadata {
-        database_address: read_addr_from_col(row, StModuleFields::DatabaseAddress)?,
+        database_identity: read_addr_from_col(row, StModuleFields::DatabaseIdentity)?,
         owner_identity: read_identity_from_col(row, StModuleFields::OwnerIdentity)?,
         program_hash: read_hash_from_col(row, StModuleFields::ProgramHash)?,
     })

@@ -49,6 +49,7 @@ impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
 
 impl Identity {
     pub const ZERO: Self = Self::from_u256(u256::ZERO);
+    pub const PLACEHOLDER: Self = Self::from_u256(u256::ZERO);
 
     /// Returns an `Identity` defined as the given `bytes` byte array.
     pub const fn from_byte_array(bytes: [u8; 32]) -> Self {

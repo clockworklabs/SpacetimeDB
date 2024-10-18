@@ -307,7 +307,7 @@ pub trait MutTx {
 #[derive(Debug)]
 pub struct Metadata {
     /// The stable address of the database.
-    pub database_address: Address,
+    pub database_identity: Address,
     /// The identity of the database's owner .
     pub owner_identity: Identity,
     /// The hash of the binary module set for the database.

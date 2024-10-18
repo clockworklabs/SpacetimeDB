@@ -10,7 +10,7 @@ mod tests;
 pub enum InsertDomainResult {
     Success {
         domain: DomainName,
-        address: Address,
+        database_identity: Address,
     },
 
     /// The top level domain for the database name is not registered. For example:

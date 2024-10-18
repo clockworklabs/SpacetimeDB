@@ -46,10 +46,10 @@ pub trait NodeDelegate: Send + Sync {
 ///
 /// See [`ControlStateDelegate::publish_database`].
 pub struct DatabaseDef {
-    /// The [`Address`] the database shall have.
+    /// The [`Identity`] the database shall have.
     ///
     /// Addresses are allocated via [`ControlStateDelegate::create_address`].
-    pub address: Address,
+    pub database_identity: Identity,
     /// The compiled program of the database module.
     pub program_bytes: Vec<u8>,
     /// The desired number of replicas the database shall have.
@@ -89,7 +89,7 @@ pub trait ControlStateReadAccess {
 
     // Databases
     fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>>;
-    fn get_database_by_address(&self, address: &Address) -> anyhow::Result<Option<Database>>;
+    fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>>;
     fn get_databases(&self) -> anyhow::Result<Vec<Database>>;
 
     // Replicas
@@ -101,8 +101,8 @@ pub trait ControlStateReadAccess {
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
 
     // DNS
-    fn lookup_address(&self, domain: &DomainName) -> anyhow::Result<Option<Address>>;
-    fn reverse_lookup(&self, address: &Address) -> anyhow::Result<Vec<DomainName>>;
+    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Address>>;
+    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
 }
 
 /// Write operations on the SpacetimeDB control plane.
@@ -121,7 +121,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
     /// initialized.
     async fn publish_database(
         &self,
-        identity: &Identity,
+        publisher: &Identity,
         spec: DatabaseDef,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>>;
 
@@ -137,7 +137,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
         &self,
         identity: &Identity,
         domain: &DomainName,
-        address: &Address,
+        database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult>;
 }
 
@@ -157,8 +157,8 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
         (**self).get_database_by_id(id)
     }
-    fn get_database_by_address(&self, address: &Address) -> anyhow::Result<Option<Database>> {
-        (**self).get_database_by_address(address)
+    fn get_database_by_identity(&self, address: &Address) -> anyhow::Result<Option<Database>> {
+        (**self).get_database_by_identity(address)
     }
     fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
         (**self).get_databases()
@@ -181,8 +181,8 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     }
 
     // DNS
-    fn lookup_address(&self, domain: &DomainName) -> anyhow::Result<Option<Address>> {
-        (**self).lookup_address(domain)
+    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Address>> {
+        (**self).lookup_identity(domain)
     }
 
     fn reverse_lookup(&self, address: &Address) -> anyhow::Result<Vec<DomainName>> {
@@ -195,7 +195,7 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
     async fn create_address(&self) -> anyhow::Result<Address> {
         (**self).create_address().await
     }
-
+    
     async fn publish_database(
         &self,
         identity: &Identity,

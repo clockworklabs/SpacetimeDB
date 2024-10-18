@@ -23,7 +23,7 @@ pub struct ReplicaContext {
 impl ReplicaContext {
     pub fn scheduler_db_path(&self, root_db_path: PathBuf) -> PathBuf {
         let mut scheduler_db_path = root_db_path;
-        scheduler_db_path.extend([&*self.address.to_hex(), &*self.replica_id.to_string()]);
+        scheduler_db_path.extend([&*self.database_identity.to_hex(), &*self.replica_id.to_string()]);
         scheduler_db_path.push("scheduler");
         scheduler_db_path
     }

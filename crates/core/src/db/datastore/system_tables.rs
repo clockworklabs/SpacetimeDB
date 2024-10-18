@@ -243,7 +243,7 @@ st_fields_enum!(enum StRowLevelSecurityFields {
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StModuleFields {
-    "database_address", DatabaseAddress = 0,
+    "database_identity", DatabaseIdentity = 0,
     "owner_identity", OwnerIdentity = 1,
     "program_kind", ProgramKind = 2,
     "program_hash", ProgramHash = 3,
@@ -830,20 +830,20 @@ impl From<Identity> for IdentityViaU256 {
 /// This table holds exactly one row, describing the latest version of the
 /// SpacetimeDB module associated with the database:
 ///
-/// * `database_address` is the [`Address`] of the database.
+/// * `database_identity` is the [`Identity`] of the database.
 /// * `owner_identity` is the [`Identity`] of the owner of the database.
 /// * `program_kind` is the [`ModuleKind`] (currently always [`WASM_MODULE`]).
 /// * `program_hash` is the [`Hash`] of the raw bytes of the (compiled) module.
 /// * `program_bytes` are the raw bytes of the (compiled) module.
 /// * `module_version` is the version of the module.
 ///
-/// | database_address | owner_identity |  program_kind | program_bytes | program_hash        | module_version |
+/// | identity | owner_identity |  program_kind | program_bytes | program_hash        | module_version |
 /// |------------------|----------------|---------------|---------------|---------------------|----------------|
 /// | <bytes>          | <bytes>        |  0            | <bytes>       | <bytes>             | <string>       |
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StModuleRow {
-    pub(crate) database_address: AddressViaU128,
+    pub(crate) database_identity: AddressViaU128,
     pub(crate) owner_identity: IdentityViaU256,
     pub(crate) program_kind: ModuleKind,
     pub(crate) program_hash: Hash,

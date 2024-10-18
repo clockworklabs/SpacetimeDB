@@ -81,7 +81,7 @@ pub type ConnectedClients = HashSet<(Identity, Address)>;
 
 #[derive(Clone)]
 pub struct RelationalDB {
-    address: Address,
+    database_identity: Address,
     owner_identity: Identity,
 
     inner: Locking,
@@ -175,7 +175,7 @@ const SNAPSHOT_FREQUENCY: u64 = 1_000_000;
 
 impl std::fmt::Debug for RelationalDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RelationalDB").field("address", &self.address).finish()
+        f.debug_struct("RelationalDB").field("address", &self.database_identity).finish()
     }
 }
 
@@ -196,7 +196,7 @@ impl RelationalDB {
             durability,
             snapshot_worker,
 
-            address,
+            database_identity: address,
             owner_identity,
 
             row_count_fn: default_row_count_fn(address),
@@ -313,8 +313,8 @@ impl RelationalDB {
         let db = Self::new(lock, address, owner_identity, inner, durability, snapshot_repo);
 
         if let Some(meta) = db.metadata()? {
-            if meta.database_address != address {
-                return Err(anyhow!("mismatched database address: {} != {}", meta.database_address, address).into());
+            if meta.database_identity != address {
+                return Err(anyhow!("mismatched database address: {} != {}", meta.database_identity, address).into());
             }
             if meta.owner_identity != owner_identity {
                 return Err(anyhow!(
@@ -341,7 +341,7 @@ impl RelationalDB {
     pub fn set_initialized(&self, tx: &mut MutTx, host_type: HostType, program: Program) -> Result<(), DBError> {
         log::trace!(
             "[{}] DATABASE: set initialized owner={} program_hash={}",
-            self.address,
+            self.database_identity,
             self.owner_identity,
             program.hash
         );
@@ -350,15 +350,15 @@ impl RelationalDB {
         // Ignore if it would be a no-op.
         if let Some(meta) = self.inner.metadata_mut_tx(tx)? {
             if program.hash == meta.program_hash
-                && self.address == meta.database_address
+                && self.database_identity == meta.database_identity
                 && self.owner_identity == meta.owner_identity
             {
                 return Ok(());
             }
-            return Err(anyhow!("database {} already initialized", self.address).into());
+            return Err(anyhow!("database {} already initialized", self.database_identity).into());
         }
         let row = StModuleRow {
-            database_address: self.address.into(),
+            database_identity: self.database_identity.into(),
             owner_identity: self.owner_identity.into(),
 
             program_kind: match host_type {
@@ -375,7 +375,7 @@ impl RelationalDB {
     ///
     /// `None` if the database is not yet fully initialized.
     pub fn metadata(&self) -> Result<Option<Metadata>, DBError> {
-        let ctx = ExecutionContext::internal(self.address);
+        let ctx = ExecutionContext::internal(self.database_identity);
         self.with_read_only(&ctx, |tx| self.inner.metadata(&ctx, tx))
     }
 
@@ -384,13 +384,13 @@ impl RelationalDB {
     /// `None` if the database is not yet fully initialized.
     /// Note that a `Some` result may yield an empty slice.
     pub fn program(&self) -> Result<Option<Program>, DBError> {
-        let ctx = ExecutionContext::internal(self.address);
+        let ctx = ExecutionContext::internal(self.database_identity);
         self.with_read_only(&ctx, |tx| self.inner.program(&ctx, tx))
     }
 
     /// Read the set of clients currently connected to the database.
     pub fn connected_clients(&self) -> Result<ConnectedClients, DBError> {
-        let ctx = ExecutionContext::internal(self.address);
+        let ctx = ExecutionContext::internal(self.database_identity);
         self.with_read_only(&ctx, |tx| self.inner.connected_clients(&ctx, tx)?.collect())
     }
 
@@ -463,7 +463,7 @@ impl RelationalDB {
     where
         T: durability::History<TxData = Txdata>,
     {
-        apply_history(&self.inner, self.address, history)?;
+        apply_history(&self.inner, self.database_identity, history)?;
         Ok(self)
     }
 
@@ -481,7 +481,7 @@ impl RelationalDB {
 
     /// Returns the address for this database
     pub fn address(&self) -> Address {
-        self.address
+        self.database_identity
     }
 
     /// The number of bytes on disk occupied by the durability layer.
@@ -519,12 +519,12 @@ impl RelationalDB {
 
     pub fn get_all_tables_mut(&self, tx: &MutTx) -> Result<Vec<Arc<TableSchema>>, DBError> {
         self.inner
-            .get_all_tables_mut_tx(&ExecutionContext::internal(self.address), tx)
+            .get_all_tables_mut_tx(&ExecutionContext::internal(self.database_identity), tx)
     }
 
     pub fn get_all_tables(&self, tx: &Tx) -> Result<Vec<Arc<TableSchema>>, DBError> {
         self.inner
-            .get_all_tables_tx(&ExecutionContext::internal(self.address), tx)
+            .get_all_tables_tx(&ExecutionContext::internal(self.database_identity), tx)
     }
 
     pub fn is_scheduled_table(
@@ -910,7 +910,7 @@ impl RelationalDB {
         self.inner.drop_table_mut_tx(tx, table_id).map(|_| {
             DB_METRICS
                 .rdb_num_table_rows
-                .with_label_values(&self.address, &table_id.into(), &table_name)
+                .with_label_values(&self.database_identity, &table_id.into(), &table_name)
                 .set(0)
         })
     }
@@ -1158,7 +1158,7 @@ impl RelationalDB {
     /// Clear all rows from a table without dropping it.
     pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
         let relation = self
-            .iter_mut(&ExecutionContext::internal(self.address), tx, table_id)?
+            .iter_mut(&ExecutionContext::internal(self.database_identity), tx, table_id)?
             .map(|row_ref| row_ref.pointer())
             .collect::<Vec<_>>();
         self.delete(tx, table_id, relation);

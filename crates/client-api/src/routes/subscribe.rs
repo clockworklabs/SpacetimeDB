@@ -91,7 +91,7 @@ where
     // to connect to multiple modules
 
     let database = ctx
-        .get_database_by_address(&db_address)
+        .get_database_by_identity(&db_address)
         .unwrap()
         .ok_or(StatusCode::NOT_FOUND)?;
     let replica = ctx

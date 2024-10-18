@@ -26,8 +26,8 @@ pub struct EnergyBalance {
 pub struct Database {
     /// Internal id of the database, assigned by the control database.
     pub id: u64,
-    /// Public identity (i.e. [`Address`]) of the database.
-    pub address: Address,
+    /// Public identity (i.e. [`Identity`]) of the database.
+    pub database_identity: Identity,
     /// [`Identity`] of the database's owner.
     pub owner_identity: Identity,
     /// [`HostType`] of the module associated with the database.

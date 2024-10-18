@@ -74,7 +74,7 @@ pub async fn get_databases<S: ControlStateDelegate>(
     let addresses = all_dbs
         .iter()
         .filter(|db| db.owner_identity == identity)
-        .map(|db| db.address)
+        .map(|db| db.database_identity)
         .collect();
     Ok(axum::Json(GetDatabasesResponse { addresses }))
 }

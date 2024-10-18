@@ -392,7 +392,7 @@ pub async fn info<S: ControlStateDelegate>(
 
     let host_type: &str = database.host_type.as_ref();
     let response_json = json!({
-        "address": database.address,
+        "address": database.database_identity,
         "owner_identity": database.owner_identity,
         "host_type": host_type,
         "initial_program": database.initial_program,
@@ -492,7 +492,7 @@ async fn worker_ctx_find_database(
     worker_ctx: &(impl ControlStateDelegate + ?Sized),
     address: &Address,
 ) -> axum::response::Result<Option<Database>> {
-    worker_ctx.get_database_by_address(address).map_err(log_and_500)
+    worker_ctx.get_database_by_identity(address).map_err(log_and_500)
 }
 
 #[derive(Deserialize)]
@@ -597,7 +597,7 @@ pub async fn dns<S: ControlStateDelegate>(
     Query(DNSQueryParams {}): Query<DNSQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let domain = database_name.parse().map_err(|_| DomainParsingRejection)?;
-    let address = ctx.lookup_address(&domain).map_err(log_and_500)?;
+    let address = ctx.lookup_identity(&domain).map_err(log_and_500)?;
     let response = if let Some(address) = address {
         DnsLookupResponse::Success { domain, address }
     } else {
@@ -671,23 +671,23 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
             Err(domain) => {
                 // `name_or_address` was a `NameOrAddress::Name`, but no record
                 // exists yet. Create it now with a fresh address.
-                let addr = ctx.create_address().await.map_err(log_and_500)?;
-                ctx.create_dns_record(&auth.identity, &domain, &addr)
+                let database_identity = Identity::PLACEHOLDER;
+                ctx.create_dns_record(&auth.identity, &domain, &database_identity)
                     .await
                     .map_err(log_and_500)?;
-                (addr, Some(domain))
+                (database_identity, Some(domain))
             }
         },
         None => {
-            let addr = ctx.create_address().await.map_err(log_and_500)?;
-            (addr, None)
+            let database_identity = Identity::PLACEHOLDER;
+            (database_identity, None)
         }
     };
 
     log::trace!("Publishing to the address: {}", db_addr.to_hex());
 
     let op = {
-        let exists = ctx.get_database_by_address(&db_addr).map_err(log_and_500)?.is_some();
+        let exists = ctx.get_database_by_identity(&db_addr).map_err(log_and_500)?.is_some();
 
         if clear && exists {
             ctx.delete_database(&auth.identity, &db_addr)
@@ -706,7 +706,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         .publish_database(
             &auth.identity,
             DatabaseDef {
-                address: db_addr,
+                database_identity: db_addr,
                 program_bytes: body.into(),
                 num_replicas: 1,
                 host_type: HostType::Wasm,
@@ -771,7 +771,7 @@ pub async fn set_name<S: ControlStateDelegate>(
     let address = Address::from(address);
 
     let database = ctx
-        .get_database_by_address(&address)
+        .get_database_by_identity(&address)
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 

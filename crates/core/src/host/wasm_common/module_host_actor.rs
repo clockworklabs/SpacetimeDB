@@ -139,7 +139,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let module_hash = program.hash;
         log::trace!(
             "Making new module host actor for database {} with module {}",
-            replica_context.address,
+            replica_context.database_identity,
             module_hash,
         );
         let log_tx = replica_context.logger.tx.clone();
@@ -165,7 +165,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let info = ModuleInfo::new(
             def,
             replica_context.owner_identity,
-            replica_context.address,
+            replica_context.database_identity,
             module_hash,
             log_tx,
             replica_context.subscriptions.clone(),
@@ -407,7 +407,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let replica_ctx = self.replica_context();
         let stdb = &*replica_ctx.relational_db.clone();
-        let address = replica_ctx.address;
+        let address = replica_ctx.database_identity;
         let reducer_name = self
             .info
             .reducers_map
