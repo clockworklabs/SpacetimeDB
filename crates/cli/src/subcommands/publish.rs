@@ -147,10 +147,10 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     )?);
 
     builder = add_auth_header_opt(builder, &auth_header);
-    let identity = get_identity(&config, server)?;
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
+        let identity = get_identity(&config, server)?;
         let err = res.text().await?;
         return unauth_error_context(
             Err(anyhow::anyhow!(err)),
@@ -187,6 +187,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             ));
         }
         PublishResult::PermissionDenied { domain } => {
+            let identity = get_identity(&config, server)?;
             //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
             // we should perhaps generate fun names like 'green-fire-dragon' instead
             let suggested_tld: String = identity.chars().take(12).collect();
