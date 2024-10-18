@@ -2,8 +2,10 @@ use super::datastore::locking_tx_datastore::MutTxId;
 use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::execution_context::ExecutionContext;
+use crate::sql::parser::RowLevelExpr;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::auth::StTableType;
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::ColSet;
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
@@ -24,6 +26,7 @@ use std::sync::Arc;
 pub fn update_database(
     stdb: &RelationalDB,
     tx: &mut MutTxId,
+    auth_ctx: AuthCtx,
     plan: MigratePlan,
     system_logger: &SystemLogger,
 ) -> anyhow::Result<()> {
@@ -44,7 +47,7 @@ pub fn update_database(
 
     match plan {
         MigratePlan::Manual(plan) => manual_migrate_database(stdb, tx, plan, system_logger, existing_tables),
-        MigratePlan::Auto(plan) => auto_migrate_database(stdb, tx, plan, system_logger, existing_tables),
+        MigratePlan::Auto(plan) => auto_migrate_database(stdb, tx, auth_ctx, plan, system_logger, existing_tables),
     }
 }
 
@@ -63,6 +66,7 @@ fn manual_migrate_database(
 fn auto_migrate_database(
     stdb: &RelationalDB,
     tx: &mut MutTxId,
+    auth_ctx: AuthCtx,
     plan: AutoMigratePlan,
     system_logger: &SystemLogger,
     existing_tables: Vec<Arc<TableSchema>>,
@@ -119,6 +123,7 @@ fn auto_migrate_database(
 
                 system_logger.info(&format!("Creating table `{}`", table_name));
                 log::info!("Creating table `{}`", table_name);
+
                 stdb.create_table(tx, table_schema)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddIndex(index_name) => {
@@ -220,6 +225,19 @@ fn auto_migrate_database(
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveSchedule(_) => {
                 anyhow::bail!("Removing schedules is not yet implemented");
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddRowLevelSecurity(sql_rls) => {
+                system_logger.info(&format!("Adding row-level security `{sql_rls}`"));
+                log::info!("Adding row-level security `{sql_rls}`");
+                let rls = plan.new.lookup_expect(sql_rls);
+                let rls = RowLevelExpr::build_row_level_expr(stdb, tx, &auth_ctx, rls)?;
+
+                stdb.create_row_level_security(tx, rls.def)?;
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveRowLevelSecurity(sql_rls) => {
+                system_logger.info(&format!("Removing-row level security `{sql_rls}`"));
+                log::info!("Removing row-level security `{sql_rls}`");
+                stdb.drop_row_level_security(tx, sql_rls.clone())?;
             }
         }
     }

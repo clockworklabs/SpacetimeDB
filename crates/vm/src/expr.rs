@@ -6,7 +6,7 @@ use core::slice::from_ref;
 use derive_more::From;
 use itertools::Itertools;
 use smallvec::SmallVec;
-use spacetimedb_data_structures::map::{HashCollectionExt, HashSet, IntMap};
+use spacetimedb_data_structures::map::{HashSet, IntMap};
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::error::{AuthError, RelationError};
 use spacetimedb_lib::relation::{ColExpr, DbTable, FieldName, Header};
@@ -1058,7 +1058,7 @@ fn select_best_index<'a>(
         .collect::<SmallVec<[_; 1]>>();
     indices.sort_unstable_by_key(|cl| Reverse(cl.len()));
 
-    let mut found: IndexColumnOpSink = IndexColumnOpSink::new();
+    let mut found: IndexColumnOpSink = IndexColumnOpSink::default();
 
     // Collect fields into a multi-map `(col_id, cmp) -> [col value]`.
     // This gives us `log(N)` seek + deletion.
@@ -1868,7 +1868,7 @@ impl QueryExpr {
     fn optimize_select(mut q: QueryExpr, op: ColumnOp, tables: &[SourceExpr]) -> QueryExpr {
         // Go through each table schema referenced in the query.
         // Find the first sargable condition and short-circuit.
-        let mut fields_found = HashSet::new();
+        let mut fields_found = HashSet::default();
         for schema in tables {
             for op in select_best_index(&mut fields_found, schema.head(), &op) {
                 if let IndexColumnOp::Scan(op) = &op {

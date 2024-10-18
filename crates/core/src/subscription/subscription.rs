@@ -33,7 +33,7 @@ use anyhow::Context;
 use itertools::Either;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{Compression, WebsocketFormat};
-use spacetimedb_data_structures::map::{HashCollectionExt, HashSet};
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::error::AuthError;
 use spacetimedb_lib::identity::AuthCtx;
@@ -403,7 +403,7 @@ impl IncrementalJoin {
             if produce_if {
                 producer().collect()
             } else {
-                HashSet::new()
+                HashSet::default()
             }
         }
 
