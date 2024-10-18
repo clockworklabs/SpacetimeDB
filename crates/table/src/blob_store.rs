@@ -15,6 +15,8 @@ use blake3::hash;
 use spacetimedb_data_structures::map::{Entry, HashMap};
 use spacetimedb_lib::{de::Deserialize, ser::Serialize};
 
+use crate::MemoryUsage;
+
 /// The content address of a blob-stored object.
 #[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Debug, Serialize, Deserialize)]
 pub struct BlobHash {
@@ -23,6 +25,8 @@ pub struct BlobHash {
     /// Uses BLAKE3 which fits in 32 bytes.
     pub data: [u8; BlobHash::SIZE],
 }
+
+impl MemoryUsage for BlobHash {}
 
 impl BlobHash {
     /// The size of the hash function's output in bytes.
@@ -142,12 +146,26 @@ pub struct HashMapBlobStore {
     map: HashMap<BlobHash, BlobObject>,
 }
 
+impl MemoryUsage for HashMapBlobStore {
+    fn heap_usage(&self) -> usize {
+        let Self { map } = self;
+        map.heap_usage()
+    }
+}
+
 /// A blob object including a reference count and the data.
 struct BlobObject {
     /// Reference count of the blob.
     uses: usize,
     /// The blob data.
     blob: Box<[u8]>,
+}
+
+impl MemoryUsage for BlobObject {
+    fn heap_usage(&self) -> usize {
+        let Self { uses, blob } = self;
+        uses.heap_usage() + blob.heap_usage()
+    }
 }
 
 impl BlobStore for HashMapBlobStore {

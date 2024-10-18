@@ -3,7 +3,7 @@ use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{AlgebraicType, Identity, ProductType, ProductTypeElement, ProductValue, SumType};
 use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
 use spacetimedb_sats::algebraic_value::ser::value_serialize;
-use spacetimedb_sats::{satn::Satn, SumTypeVariant, Typespace, WithTypespace};
+use spacetimedb_sats::{satn::Satn, GroundSpacetimeType as _, SumTypeVariant, Typespace, WithTypespace};
 
 macro_rules! de_json_snapshot {
     ($schema:expr, $json:expr) => {
@@ -72,6 +72,7 @@ fn test_json_mappings() {
         ("and_peggy", AlgebraicType::option(AlgebraicType::F64)),
         ("identity", Identity::get_type()),
     ]);
+
     let data = r#"
 {
     "foo": 42,
@@ -79,10 +80,11 @@ fn test_json_mappings() {
     "baz": ["heyyyyyy", "hooo"],
     "quux": { "Hash": "54a3e6d2b0959deaacf102292b1cbd6fcbb8cf237f73306e27ed82c3153878aa" },
     "and_peggy": { "some": 3.141592653589793238426 },
-    "identity": ["0000000000000000000000000000000000000000000000000000000000000000"]
+    "identity": ["0x0"]
 }
 "#; // all of those ^^^^^^ digits are from memory
     de_json_snapshot!(schema, data);
+
     let data = r#"
 {
     "foo": 5654,
@@ -90,7 +92,7 @@ fn test_json_mappings() {
     "baz": ["it's 🥶°C"],
     "quux": { "Unit": [] },
     "and_peggy": null,
-    "identity": ["0000000000000000000000000000000000000000000000000000000000000000"]
+    "identity": ["0x0"]
 }
 "#;
     de_json_snapshot!(schema, data);

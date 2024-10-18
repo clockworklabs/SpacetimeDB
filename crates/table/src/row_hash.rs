@@ -157,7 +157,7 @@ unsafe fn hash_value(
                 });
             }
         }
-        AlgebraicTypeLayout::VarLen(VarLenType::Array(ty) | VarLenType::Map(ty)) => {
+        AlgebraicTypeLayout::VarLen(VarLenType::Array(ty)) => {
             // SAFETY: `value` was valid at and aligned for `ty`.
             // These `ty` store a `vlr: VarLenRef` as their value,
             // so the range is valid and properly aligned for `VarLenRef`.

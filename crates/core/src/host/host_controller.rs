@@ -755,7 +755,7 @@ impl Host {
         }
 
         scheduler_starter.start(&module_host)?;
-        let metrics_task = tokio::spawn(disk_monitor(replica_ctx.clone(), energy_monitor.clone())).abort_handle();
+        let metrics_task = tokio::spawn(storage_monitor(replica_ctx.clone(), energy_monitor.clone())).abort_handle();
 
         Ok(Host {
             module: watch::Sender::new(module_host),
@@ -826,22 +826,23 @@ impl Drop for Host {
     }
 }
 
-const DISK_METERING_INTERVAL: Duration = Duration::from_secs(5);
+const STORAGE_METERING_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Periodically collect the disk usage of `replica_ctx` and update metrics as well as
 /// the `energy_monitor` accordingly.
-async fn disk_monitor(replica_ctx: Arc<ReplicaContext>, energy_monitor: Arc<dyn EnergyMonitor>) {
-    let mut interval = tokio::time::interval(DISK_METERING_INTERVAL);
+async fn storage_monitor(replica_ctx: Arc<ReplicaContext>, energy_monitor: Arc<dyn EnergyMonitor>) {
+    let mut interval = tokio::time::interval(STORAGE_METERING_INTERVAL);
     // We don't care about happening precisely every 5 seconds - it just matters
     // that the time between ticks is accurate.
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-    let mut prev_disk_usage = replica_ctx.total_disk_usage();
+    let mut prev_disk_usage = tokio::task::block_in_place(|| replica_ctx.total_disk_usage());
     let mut prev_tick = interval.tick().await;
     loop {
         let tick = interval.tick().await;
         let dt = tick - prev_tick;
-        let disk_usage = tokio::task::block_in_place(|| replica_ctx.total_disk_usage());
+        let (disk_usage, mem_usage) =
+            tokio::task::block_in_place(|| (replica_ctx.total_disk_usage(), replica_ctx.mem_usage()));
         if let Some(num_bytes) = disk_usage.durability {
             DB_METRICS
                 .message_log_size
@@ -856,6 +857,7 @@ async fn disk_monitor(replica_ctx: Arc<ReplicaContext>, energy_monitor: Arc<dyn 
         }
         let disk_usage = disk_usage.or(prev_disk_usage);
         energy_monitor.record_disk_usage(&replica_ctx.database, replica_ctx.replica_id, disk_usage.sum(), dt);
+        energy_monitor.record_memory_usage(&replica_ctx.database, replica_ctx.replica_id, mem_usage as u64, dt);
         prev_disk_usage = disk_usage;
         prev_tick = tick;
     }

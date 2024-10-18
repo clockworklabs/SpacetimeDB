@@ -36,6 +36,7 @@ use spacetimedb_schema::schema::{IndexSchema, RowLevelSecuritySchema, Schema, Se
 use spacetimedb_snapshot::{SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
+use spacetimedb_table::MemoryUsage;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
@@ -488,6 +489,11 @@ impl RelationalDB {
     /// If this is an in-memory instance, `Ok(0)` is returned.
     pub fn size_on_disk(&self) -> io::Result<u64> {
         self.disk_size_fn.as_ref().map_or(Ok(0), |f| f())
+    }
+
+    /// The size in bytes of all of the in-memory data in this database.
+    pub fn size_in_memory(&self) -> usize {
+        self.inner.heap_usage()
     }
 
     pub fn encode_row(row: &ProductValue, bytes: &mut Vec<u8>) {

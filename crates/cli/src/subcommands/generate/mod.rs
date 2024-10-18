@@ -93,7 +93,7 @@ pub fn cli() -> clap::Command {
                 .alias("build-opts")
                 .action(Set)
                 .default_value("")
-                .help("Options to pass to the build command"),
+                .help("Options to pass to the build command, for example --build-options='--skip-println-checks'"),
         )
         .arg(common_args::yes())
         .after_help("Run `spacetime help publish` for more detailed information.")

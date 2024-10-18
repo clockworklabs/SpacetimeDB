@@ -403,7 +403,7 @@ impl IncrementalJoin {
             if produce_if {
                 producer().collect()
             } else {
-                HashSet::new()
+                HashSet::default()
             }
         }
 
