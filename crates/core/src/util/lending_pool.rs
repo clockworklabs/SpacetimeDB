@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use parking_lot::Mutex;
-use spacetimedb_lib::Address;
+use spacetimedb_lib::{Identity};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::worker_metrics::WORKER_METRICS;
@@ -52,7 +52,7 @@ pub struct PoolClosed;
 /// A scope guard for the reducer queue length metric,
 /// ensuring an increment is always be paired with one and only one decrement.
 struct QueueMetric {
-    db: Address,
+    db: Identity,
 }
 
 impl Drop for QueueMetric {
@@ -67,7 +67,7 @@ impl Drop for QueueMetric {
 }
 
 impl QueueMetric {
-    fn inc(db: Address) -> Self {
+    fn inc(db: Identity) -> Self {
         WORKER_METRICS.instance_queue_length.with_label_values(&db).inc();
         let queue_length = WORKER_METRICS.instance_queue_length.with_label_values(&db).get();
         WORKER_METRICS
@@ -83,7 +83,7 @@ impl<T> LendingPool<T> {
         Self::from_iter(std::iter::empty())
     }
 
-    pub fn request_with_context(&self, db: Address) -> impl Future<Output = Result<LentResource<T>, PoolClosed>> {
+    pub fn request_with_context(&self, db: Identity) -> impl Future<Output = Result<LentResource<T>, PoolClosed>> {
         let acq = self.sem.clone().acquire_owned();
         let pool_inner = self.inner.clone();
 

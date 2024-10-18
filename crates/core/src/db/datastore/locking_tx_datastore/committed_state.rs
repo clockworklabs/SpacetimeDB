@@ -28,7 +28,7 @@ use itertools::Itertools;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
 use spacetimedb_lib::{
     address::Address,
-    db::auth::{StAccess, StTableType},
+    db::auth::{StAccess, StTableType}, Identity,
 };
 use spacetimedb_primitives::{ColList, ColSet, TableId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
@@ -123,13 +123,13 @@ fn ignore_duplicate_insert_error<T>(res: std::result::Result<T, InsertError>) ->
 impl CommittedState {
     /// Extremely delicate function to bootstrap the system tables.
     /// Don't update this unless you know what you're doing.
-    pub(super) fn bootstrap_system_tables(&mut self, database_address: Address) -> Result<()> {
+    pub(super) fn bootstrap_system_tables(&mut self, database_identity: Identity) -> Result<()> {
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
         let with_label_values = |table_id: TableId, table_name: &str| {
             DB_METRICS
                 .rdb_num_table_rows
-                .with_label_values(&database_address, &table_id.0, table_name)
+                .with_label_values(&database_identity, &table_id.0, table_name)
         };
 
         let schemas = system_tables().map(Arc::new);
@@ -274,7 +274,7 @@ impl CommittedState {
             with_label_values(ST_SEQUENCE_ID, ST_SEQUENCE_NAME).inc();
         }
 
-        self.reset_system_table_schemas(database_address)?;
+        self.reset_system_table_schemas(database_identity)?;
 
         Ok(())
     }
@@ -286,9 +286,9 @@ impl CommittedState {
     /// for objects like indexes and constraints
     /// which are computed at insert-time,
     /// and therefore not included in the hardcoded schemas.
-    pub(super) fn reset_system_table_schemas(&mut self, database_address: Address) -> Result<()> {
+    pub(super) fn reset_system_table_schemas(&mut self, database_identity: Identity) -> Result<()> {
         // Re-read the schema with the correct ids...
-        let ctx = ExecutionContext::internal(database_address);
+        let ctx = ExecutionContext::internal(database_identity);
         for schema in system_tables() {
             self.tables.get_mut(&schema.table_id).unwrap().schema =
                 Arc::new(self.schema_for_table_raw(&ctx, schema.table_id)?);

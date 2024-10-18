@@ -843,7 +843,7 @@ impl From<Identity> for IdentityViaU256 {
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StModuleRow {
-    pub(crate) database_identity: AddressViaU128,
+    pub(crate) database_identity: IdentityViaU256,
     pub(crate) owner_identity: IdentityViaU256,
     pub(crate) program_kind: ModuleKind,
     pub(crate) program_hash: Hash,
@@ -868,9 +868,9 @@ pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u
 /// Read an [`Address`] directly from the column `col` in `row`.
 ///
 /// The [`Address`] is assumed to be stored as an u128.
-pub fn read_addr_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Address, DBError> {
-    let val: u128 = row.read_col(col.col_id())?;
-    Ok(val.into())
+pub fn read_addr_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Identity, DBError> {
+    let val: u256 = row.read_col(col.col_id())?;
+    Ok(Identity::from_u256(val))
 }
 
 /// Read an [`Identity`] directly from the column `col` in `row`.

@@ -613,7 +613,7 @@ async fn update_module(
     program: Program,
     old_module_info: Arc<ModuleInfo>,
 ) -> anyhow::Result<UpdateDatabaseResult> {
-    let addr = db.address();
+    let addr = db.database_identity();
     match stored_program_hash(db)? {
         None => Err(anyhow!("database `{}` not yet initialized", addr)),
         Some(stored) => {

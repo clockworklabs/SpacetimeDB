@@ -81,7 +81,7 @@ pub type ConnectedClients = HashSet<(Identity, Address)>;
 
 #[derive(Clone)]
 pub struct RelationalDB {
-    database_identity: Address,
+    database_identity: Identity,
     owner_identity: Identity,
 
     inner: Locking,
@@ -140,7 +140,7 @@ impl SnapshotWorker {
         };
         log::info!(
             "Capturing snapshot of database {:?} at TX offset {}",
-            snapshot_repo.database_address(),
+            snapshot_repo.database_identity(),
             tx_offset,
         );
 
@@ -155,12 +155,12 @@ impl SnapshotWorker {
         if let Err(e) = snapshot_repo.create_snapshot(tables.values_mut(), blob_store, tx_offset) {
             log::error!(
                 "Error capturing snapshot of database {:?}: {e:?}",
-                snapshot_repo.database_address()
+                snapshot_repo.database_identity()
             );
         } else {
             log::info!(
                 "Captured snapshot of database {:?} at TX offset {} in {:?}",
-                snapshot_repo.database_address(),
+                snapshot_repo.database_identity(),
                 tx_offset,
                 start_time.elapsed()
             );
@@ -182,7 +182,7 @@ impl std::fmt::Debug for RelationalDB {
 impl RelationalDB {
     fn new(
         lock: LockFile,
-        address: Address,
+        database_identity: Identity,
         owner_identity: Identity,
         inner: Locking,
         durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
@@ -196,10 +196,10 @@ impl RelationalDB {
             durability,
             snapshot_worker,
 
-            database_identity: address,
+            database_identity,
             owner_identity,
 
-            row_count_fn: default_row_count_fn(address),
+            row_count_fn: default_row_count_fn(database_identity),
             disk_size_fn,
 
             _lock: lock,
@@ -287,13 +287,13 @@ impl RelationalDB {
     /// [ModuleHost]: crate::host::module_host::ModuleHost
     pub fn open(
         root: &Path,
-        address: Address,
+        database_identity: Identity,
         owner_identity: Identity,
         history: impl durability::History<TxData = Txdata>,
         durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
         snapshot_repo: Option<Arc<SnapshotRepository>>,
     ) -> Result<(Self, ConnectedClients), DBError> {
-        log::trace!("[{}] DATABASE: OPEN", address);
+        log::trace!("[{}] DATABASE: OPEN", database_identity);
 
         let lock = LockFile::lock(root)?;
 
@@ -306,15 +306,15 @@ impl RelationalDB {
             .as_deref()
             .and_then(|durability| durability.durable_tx_offset());
 
-        log::info!("[{address}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");
-        let inner = Self::restore_from_snapshot_or_bootstrap(address, snapshot_repo.as_deref(), durable_tx_offset)?;
+        log::info!("[{database_identity}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");
+        let inner = Self::restore_from_snapshot_or_bootstrap(database_identity, snapshot_repo.as_deref(), durable_tx_offset)?;
 
-        apply_history(&inner, address, history)?;
-        let db = Self::new(lock, address, owner_identity, inner, durability, snapshot_repo);
+        apply_history(&inner, database_identity, history)?;
+        let db = Self::new(lock, database_identity, owner_identity, inner, durability, snapshot_repo);
 
         if let Some(meta) = db.metadata()? {
-            if meta.database_identity != address {
-                return Err(anyhow!("mismatched database address: {} != {}", meta.database_identity, address).into());
+            if meta.database_identity != database_identity {
+                return Err(anyhow!("mismatched database address: {} != {}", meta.database_identity, database_identity).into());
             }
             if meta.owner_identity != owner_identity {
                 return Err(anyhow!(
@@ -412,7 +412,7 @@ impl RelationalDB {
     }
 
     fn restore_from_snapshot_or_bootstrap(
-        address: Address,
+        database_identity: Identity,
         snapshot_repo: Option<&SnapshotRepository>,
         durable_tx_offset: Option<TxOffset>,
     ) -> Result<Locking, DBError> {
@@ -423,34 +423,34 @@ impl RelationalDB {
                 if let Some(tx_offset) = snapshot_repo.latest_snapshot_older_than(durable_tx_offset)? {
                     // Mark any newer snapshots as invalid, as the new history will diverge from their state.
                     snapshot_repo.invalidate_newer_snapshots(durable_tx_offset)?;
-                    log::info!("[{address}] DATABASE: restoring snapshot of tx_offset {tx_offset}");
+                    log::info!("[{database_identity}] DATABASE: restoring snapshot of tx_offset {tx_offset}");
                     let start = std::time::Instant::now();
                     let snapshot = snapshot_repo.read_snapshot(tx_offset)?;
                     log::info!(
-                        "[{address}] DATABASE: read snapshot of tx_offset {tx_offset} in {:?}",
+                        "[{database_identity}] DATABASE: read snapshot of tx_offset {tx_offset} in {:?}",
                         start.elapsed(),
                     );
-                    if snapshot.database_address != address {
+                    if snapshot.database_identity != database_identity {
                         // TODO: return a proper typed error
                         return Err(anyhow::anyhow!(
-                            "Snapshot has incorrect database_address: expected {address} but found {}",
-                            snapshot.database_address,
+                            "Snapshot has incorrect database_address: expected {database_identity} but found {}",
+                            snapshot.database_identity,
                         )
                         .into());
                     }
                     let start = std::time::Instant::now();
                     let res = Locking::restore_from_snapshot(snapshot);
                     log::info!(
-                        "[{address}] DATABASE: restored from snapshot of tx_offset {tx_offset} in {:?}",
+                        "[{database_identity}] DATABASE: restored from snapshot of tx_offset {tx_offset} in {:?}",
                         start.elapsed(),
                     );
                     return res;
                 }
             }
-            log::info!("[{address}] DATABASE: no snapshot on disk");
+            log::info!("[{database_identity}] DATABASE: no snapshot on disk");
         }
 
-        Locking::bootstrap(address)
+        Locking::bootstrap(database_identity)
     }
 
     /// Apply the provided [`spacetimedb_durability::History`] onto the database
@@ -480,7 +480,7 @@ impl RelationalDB {
     }
 
     /// Returns the address for this database
-    pub fn address(&self) -> Address {
+    pub fn database_identity(&self) -> Identity {
         self.database_identity
     }
 
@@ -1019,12 +1019,12 @@ impl RelationalDB {
         tx: &mut MutTx,
         row_level_security_schema: RowLevelSecuritySchema,
     ) -> Result<RawSql, DBError> {
-        let ctx = &ExecutionContext::internal(self.inner.database_address);
+        let ctx = &ExecutionContext::internal(self.inner.database_identity);
         tx.create_row_level_security(ctx, row_level_security_schema)
     }
 
     pub fn drop_row_level_security(&self, tx: &mut MutTx, sql: RawSql) -> Result<(), DBError> {
-        let ctx = &ExecutionContext::internal(self.inner.database_address);
+        let ctx = &ExecutionContext::internal(self.inner.database_identity);
         tx.drop_row_level_security(ctx, sql)
     }
 
@@ -1033,7 +1033,7 @@ impl RelationalDB {
         tx: &mut MutTx,
         table_id: TableId,
     ) -> Result<Vec<RowLevelSecuritySchema>, DBError> {
-        let ctx = &ExecutionContext::internal(self.inner.database_address);
+        let ctx = &ExecutionContext::internal(self.inner.database_identity);
         tx.row_level_security_for_table_id(ctx, table_id)
     }
 
@@ -1213,11 +1213,11 @@ impl fmt::Debug for LockFile {
     }
 }
 
-fn apply_history<H>(datastore: &Locking, address: Address, history: H) -> Result<(), DBError>
+fn apply_history<H>(datastore: &Locking, database_identity: Identity, history: H) -> Result<(), DBError>
 where
     H: durability::History<TxData = Txdata>,
 {
-    log::info!("[{}] DATABASE: applying transaction history...", address);
+    log::info!("[{}] DATABASE: applying transaction history...", database_identity);
 
     // TODO: Revisit once we actually replay history suffixes, ie. starting
     // from an offset larger than the history's min offset.
@@ -1231,12 +1231,12 @@ where
         if let Some(max_tx_offset) = max_tx_offset {
             let percentage = f64::floor((tx_offset as f64 / max_tx_offset as f64) * 100.0) as i32;
             if percentage > last_logged_percentage && percentage % 10 == 0 {
-                log::info!("[{}] Loaded {}% ({}/{})", address, percentage, tx_offset, max_tx_offset);
+                log::info!("[{}] Loaded {}% ({}/{})", database_identity, percentage, tx_offset, max_tx_offset);
                 last_logged_percentage = percentage;
             }
         // Print _something_ even if we don't know what's still ahead.
         } else if tx_offset % 10_000 == 0 {
-            log::info!("[{}] Loading transaction {}", address, tx_offset);
+            log::info!("[{}] Loading transaction {}", database_identity, tx_offset);
         }
     };
 
@@ -1245,9 +1245,9 @@ where
     history
         .fold_transactions_from(start, &mut replay)
         .map_err(anyhow::Error::from)?;
-    log::info!("[{}] DATABASE: applied transaction history", address);
+    log::info!("[{}] DATABASE: applied transaction history", database_identity);
     datastore.rebuild_state_after_replay()?;
-    log::info!("[{}] DATABASE: rebuilt state after replay", address);
+    log::info!("[{}] DATABASE: rebuilt state after replay", database_identity);
 
     Ok(())
 }
@@ -1290,21 +1290,21 @@ pub async fn local_durability(db_path: &Path) -> io::Result<(Arc<durability::Loc
 /// configured to store snapshots of the database `database_address`/`replica_id`.
 pub fn open_snapshot_repo(
     db_path: &Path,
-    database_address: Address,
+    database_identity: Identity,
     replica_id: u64,
 ) -> Result<Arc<SnapshotRepository>, Box<SnapshotError>> {
     let snapshot_dir = db_path.join("snapshots");
     std::fs::create_dir_all(&snapshot_dir).map_err(|e| Box::new(SnapshotError::from(e)))?;
-    SnapshotRepository::open(snapshot_dir, database_address, replica_id)
+    SnapshotRepository::open(snapshot_dir, database_identity, replica_id)
         .map(Arc::new)
         .map_err(Box::new)
 }
 
-fn default_row_count_fn(address: Address) -> RowCountFn {
+fn default_row_count_fn(db: Identity) -> RowCountFn {
     Arc::new(move |table_id, table_name| {
         DB_METRICS
             .rdb_num_table_rows
-            .with_label_values(&address, &table_id.into(), table_name)
+            .with_label_values(&db, &table_id.into(), table_name)
             .get()
     })
 }
@@ -1343,7 +1343,8 @@ pub mod tests_utils {
     }
 
     impl TestDB {
-        pub const ADDRESS: Address = Address::ZERO;
+        pub const DATABASE_IDENTITY: Identity = Identity::ZERO;
+        // pub const DATABASE_IDENTITY: Identity = Identity::ZERO;
         pub const OWNER: Identity = Identity::ZERO;
 
         /// Create a [`TestDB`] which does not store data on disk.
@@ -1469,7 +1470,7 @@ pub mod tests_utils {
             let (local, disk_size_fn) = rt.block_on(local_durability(root))?;
             let history = local.clone();
             let durability = local.clone() as Arc<dyn Durability<TxData = Txdata>>;
-            let snapshot_repo = open_snapshot_repo(root, Address::default(), 0)?;
+            let snapshot_repo = open_snapshot_repo(root, Identity::ZERO, 0)?;
             let db = Self::open_db(root, history, Some((durability, disk_size_fn)), Some(snapshot_repo))?;
 
             Ok((db, local))
@@ -1482,10 +1483,10 @@ pub mod tests_utils {
             snapshot_repo: Option<Arc<SnapshotRepository>>,
         ) -> Result<RelationalDB, DBError> {
             let (db, connected_clients) =
-                RelationalDB::open(root, Self::ADDRESS, Self::OWNER, history, durability, snapshot_repo)?;
+                RelationalDB::open(root, Self::DATABASE_IDENTITY, Self::OWNER, history, durability, snapshot_repo)?;
             debug_assert!(connected_clients.is_empty());
             let db = db.with_row_count(Self::row_count_fn());
-            db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
+            db.with_auto_commit(&ExecutionContext::internal(db.database_identity()), |tx| {
                 db.set_initialized(tx, HostType::Wasm, Program::empty())
             })?;
             Ok(db)
@@ -1610,7 +1611,7 @@ mod tests {
 
         match RelationalDB::open(
             stdb.path(),
-            Address::ZERO,
+            Identity::ZERO,
             Identity::ZERO,
             EmptyHistory::new(),
             None,
@@ -2223,7 +2224,7 @@ mod tests {
 
         let timestamp = Timestamp::now();
         let ctx = ExecutionContext::reducer(
-            stdb.address(),
+            stdb.database_identity(),
             ReducerContext {
                 name: "abstract_concrete_proxy_factory_impl".into(),
                 caller_identity: Identity::__dummy(),
@@ -2248,7 +2249,7 @@ mod tests {
             let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
             stdb.commit_tx(
                 &ExecutionContext::reducer(
-                    stdb.address(),
+                    stdb.database_identity(),
                     ReducerContext {
                         name: "__identity_connected__".into(),
                         caller_identity: Identity::__dummy(),
@@ -2279,7 +2280,7 @@ mod tests {
             let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
             stdb.insert(&mut tx, table_id, product!(AlgebraicValue::I32(-42)))
                 .expect("failed to insert row");
-            stdb.commit_tx(&ExecutionContext::sql(stdb.address()), tx)
+            stdb.commit_tx(&ExecutionContext::sql(stdb.database_identity()), tx)
                 .expect("failed to commit tx");
         }
 

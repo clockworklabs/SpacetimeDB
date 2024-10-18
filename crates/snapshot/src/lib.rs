@@ -32,7 +32,7 @@ use spacetimedb_lib::{
     bsatn::{self},
     de::Deserialize,
     ser::Serialize,
-    Address,
+    Address, Identity,
 };
 use spacetimedb_primitives::TableId;
 use spacetimedb_table::{
@@ -160,8 +160,8 @@ pub struct Snapshot {
     /// The snapshot version number. Must be equal to [`CURRENT_SNAPSHOT_VERSION`].
     version: u8,
 
-    /// The address of the snapshotted database.
-    pub database_address: Address,
+    /// The identity of the snapshotted database.
+    pub database_identity: Identity,
     /// The instance ID of the snapshotted database.
     pub replica_id: u64,
 
@@ -467,7 +467,7 @@ pub struct SnapshotRepository {
     root: PathBuf,
 
     /// The database address of the database instance for which this repository stores snapshots.
-    database_address: Address,
+    database_identity: Identity,
 
     /// The database instance ID of the database instance for which this repository stores snapshots.
     replica_id: u64,
@@ -478,8 +478,8 @@ pub struct SnapshotRepository {
 
 impl SnapshotRepository {
     /// Returns [`Address`] of the database this [`SnapshotRepository`] is configured to snapshot.
-    pub fn database_address(&self) -> Address {
-        self.database_address
+    pub fn database_identity(&self) -> Identity {
+        self.database_identity
     }
 
     /// Capture a snapshot of the state of the database at `tx_offset`,
@@ -547,7 +547,7 @@ impl SnapshotRepository {
 
         log::info!(
             "[{}] SNAPSHOT {:0>20}: Hardlinked {} objects and wrote {} objects",
-            self.database_address,
+            self.database_identity,
             tx_offset,
             counter.objects_hardlinked,
             counter.objects_written,
@@ -562,7 +562,7 @@ impl SnapshotRepository {
         Snapshot {
             magic: MAGIC,
             version: CURRENT_SNAPSHOT_VERSION,
-            database_address: self.database_address,
+            database_identity: self.database_identity,
             replica_id: self.replica_id,
             module_abi_version: CURRENT_MODULE_ABI_VERSION,
             tx_offset,
@@ -677,7 +677,7 @@ impl SnapshotRepository {
         let tables = snapshot.reconstruct_tables(&object_repo)?;
 
         Ok(ReconstructedSnapshot {
-            database_address: snapshot.database_address,
+            database_identity: snapshot.database_identity,
             replica_id: snapshot.replica_id,
             tx_offset: snapshot.tx_offset,
             module_abi_version: snapshot.module_abi_version,
@@ -690,13 +690,13 @@ impl SnapshotRepository {
     ///
     /// Calls [`Path::is_dir`] and requires that the result is `true`.
     /// See that method for more detailed preconditions on this function.
-    pub fn open(root: PathBuf, database_address: Address, replica_id: u64) -> Result<Self, SnapshotError> {
+    pub fn open(root: PathBuf, database_identity: Identity, replica_id: u64) -> Result<Self, SnapshotError> {
         if !root.is_dir() {
             return Err(SnapshotError::NotDirectory { root });
         }
         Ok(Self {
             root,
-            database_address,
+            database_identity,
             replica_id,
         })
     }
@@ -776,7 +776,7 @@ impl SnapshotRepository {
 
 pub struct ReconstructedSnapshot {
     /// The address of the snapshotted database.
-    pub database_address: Address,
+    pub database_identity: Identity,
     /// The instance ID of the snapshotted database.
     pub replica_id: u64,
     /// The transaction offset of the state this snapshot reflects.

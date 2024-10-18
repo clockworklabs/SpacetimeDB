@@ -212,7 +212,7 @@ async fn ws_client_actor_inner(
     let mut closed = false;
     let mut rx_buf = Vec::new();
 
-    let addr = client.module.info().address;
+    let addr = client.module.info().database_identity;
 
     loop {
         rx_buf.clear();
