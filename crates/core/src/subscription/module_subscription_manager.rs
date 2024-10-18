@@ -135,7 +135,7 @@ impl SubscriptionManager {
             // Collect the delta tables for each query.
             // For selects this is just a single table.
             // For joins it's two tables.
-            let mut units: HashMap<_, ArrayVec<_, 2>> = HashMap::new();
+            let mut units: HashMap<_, ArrayVec<_, 2>> = HashMap::default();
             for table @ DatabaseTableUpdate { table_id, .. } in tables {
                 if let Some(hashes) = self.tables.get(table_id) {
                     for hash in hashes {

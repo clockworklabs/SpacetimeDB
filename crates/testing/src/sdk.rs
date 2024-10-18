@@ -1,7 +1,7 @@
 use duct::cmd;
 use lazy_static::lazy_static;
 use rand::distributions::{Alphanumeric, DistString};
-use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
+use spacetimedb_data_structures::map::HashMap;
 use std::fs::create_dir_all;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
@@ -119,7 +119,7 @@ macro_rules! memoized {
         MEMOIZED
             .lock()
             .unwrap()
-            .get_or_insert_with(HashMap::new)
+            .get_or_insert_with(HashMap::default)
             .entry($key)
             .or_insert_with_key(|$key| -> $value_ty { $body })
             .clone()

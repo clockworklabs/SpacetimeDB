@@ -290,6 +290,12 @@ impl RepeaterArgs for (Timestamp,) {
     }
 }
 
+/// A trait for types that can *describe* a row-level security policy.
+pub trait RowLevelSecurityInfo {
+    /// The SQL expression for the row-level security policy.
+    const SQL: &'static str;
+}
+
 /// Registers into `DESCRIBERS` a function `f` to modify the module builder.
 fn register_describer(f: fn(&mut ModuleBuilder)) {
     DESCRIBERS.lock().unwrap().push(f)
@@ -349,6 +355,13 @@ pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>)
         let params = A::schema::<I>(&mut module.inner);
         module.inner.add_reducer(I::NAME, params, I::LIFECYCLE);
         module.reducers.push(I::INVOKE);
+    })
+}
+
+/// Registers a row-level security policy.
+pub fn register_row_level_security<R: RowLevelSecurityInfo>() {
+    register_describer(|module| {
+        module.inner.add_row_level_security(R::SQL);
     })
 }
 
@@ -417,7 +430,7 @@ extern "C" fn __describe_module__(description: BytesSink) {
 /// - `sender_3` contains bytes `[24..32]`.
 ///
 /// The `address_{0-1}` are the pieces of a `[u8; 16]` (`u128`) representing the callers's `Address`.
-/// They are encoded as follows (assuming `identity.__address_bytes: [u8; 16]`):
+/// They are encoded as follows (assuming `address.__address__: u128`):
 /// - `address_0` contains bytes `[0 ..8 ]`.
 /// - `address_1` contains bytes `[8 ..16]`.
 ///

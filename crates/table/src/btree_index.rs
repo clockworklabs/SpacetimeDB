@@ -479,7 +479,7 @@ mod test {
     use core::ops::Bound::*;
     use proptest::prelude::*;
     use proptest::{collection::vec, test_runner::TestCaseResult};
-    use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
+    use spacetimedb_data_structures::map::HashMap;
     use spacetimedb_primitives::ColId;
     use spacetimedb_sats::{
         product,
@@ -589,7 +589,7 @@ mod test {
             let next = needle + 1;
             let range = prev..=next;
 
-            let mut val_to_ptr = HashMap::new();
+            let mut val_to_ptr = HashMap::default();
 
             // Insert `prev`, `needle`, and `next`.
             for x in range.clone() {

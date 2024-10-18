@@ -2,7 +2,7 @@ use crate::{log_and_500, ControlStateReadAccess};
 use axum::extract::State;
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
-use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
+use spacetimedb_data_structures::map::HashMap;
 
 #[derive(Serialize, Deserialize)]
 struct SDConfig {
@@ -17,7 +17,7 @@ pub async fn get_sd_config<S: ControlStateReadAccess>(
     let nodes = ctx.get_nodes().map_err(log_and_500)?;
 
     let mut targets = Vec::new();
-    let labels = HashMap::new();
+    let labels = HashMap::default();
 
     for node in nodes {
         if let Some(addr) = node.advertise_addr {
