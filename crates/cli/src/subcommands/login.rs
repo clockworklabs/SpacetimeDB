@@ -9,7 +9,6 @@ pub fn cli() -> Command {
         .arg(
             Arg::new("host")
                 .long("host")
-                .required(true)
                 .default_value("https://spacetimedb.com")
                 .help("Fetch login token from a different host"),
         )
