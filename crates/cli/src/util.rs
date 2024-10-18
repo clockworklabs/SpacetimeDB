@@ -122,7 +122,6 @@ pub async fn init_default(
 
     let identity_config = IdentityConfig {
         identity: identity_token.identity,
-        token: identity_token.token,
         nickname: nickname.clone(),
     };
     config.identity_configs_mut().push(identity_config.clone());
@@ -251,17 +250,13 @@ pub async fn get_auth_header(
     identity_or_name: Option<&str>,
     server: Option<&str>,
 ) -> anyhow::Result<Option<(String, Identity)>> {
+    let token = config.login_token().unwrap().clone();
+
     Ok(if !anon_identity {
         let identity_config = select_identity_config(config, identity_or_name, server).await?;
         // The current form is: Authorization: Basic base64("token:<token>")
         let mut auth_header = String::new();
-        auth_header.push_str(
-            format!(
-                "Basic {}",
-                BASE_64_STD.encode(format!("token:{}", identity_config.token))
-            )
-            .as_str(),
-        );
+        auth_header.push_str(format!("Basic {}", BASE_64_STD.encode(format!("token:{}", token))).as_str());
         Some((auth_header, identity_config.identity))
     } else {
         None

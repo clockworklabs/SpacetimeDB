@@ -233,27 +233,7 @@ pub async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), an
     let delete_identities = args.get_flag("delete-identities");
     let force = args.get_flag("force");
 
-    let deleted_ids = config.remove_server(server, delete_identities)?;
-
-    if !deleted_ids.is_empty() {
-        println!(
-            "Deleting {} {}:",
-            deleted_ids.len(),
-            if deleted_ids.len() == 1 {
-                " identity"
-            } else {
-                "identities"
-            }
-        );
-        for id in deleted_ids {
-            println!("{}", id.identity);
-        }
-        if !y_or_n(force, "Continue?")? {
-            anyhow::bail!("Aborted");
-        }
-
-        config.update_all_default_identities();
-    }
+    config.remove_server(server, delete_identities)?;
 
     config.save();
 
@@ -280,30 +260,6 @@ async fn update_server_fingerprint(
                 "Fingerprint has changed for server {}.\nWas:\n{}\nNew:\n{}",
                 nick_or_host, saved_fing, new_fing
             );
-
-            if delete_identities {
-                // Unfortunate clone because we need to mutate `config`
-                // while holding `saved_fing`.
-                let saved_fing = saved_fing.to_string();
-
-                let deleted_ids = config.remove_identities_for_fingerprint(&saved_fing)?;
-                if !deleted_ids.is_empty() {
-                    println!(
-                        "Deleting {} obsolete {}:",
-                        deleted_ids.len(),
-                        if deleted_ids.len() == 1 {
-                            "identity"
-                        } else {
-                            "identities"
-                        }
-                    );
-                    for id in deleted_ids {
-                        println!("{}", id.identity);
-                    }
-                }
-
-                config.update_all_default_identities();
-            }
 
             config.set_server_fingerprint(server, new_fing)?;
 

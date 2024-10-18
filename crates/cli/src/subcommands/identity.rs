@@ -114,13 +114,6 @@ fn get_subcommands() -> Vec<Command> {
                 .help("The identity string or name to delete")
             )
             .arg(
-                Arg::new("all-server")
-                    .long("all-server")
-                    .short('s')
-                    .help("Remove all identities associated with a particular server")
-                    .conflicts_with_all(["identity", "all"])
-            )
-            .arg(
                 Arg::new("all")
                     .long("all")
                     .short('a')
@@ -132,11 +125,6 @@ fn get_subcommands() -> Vec<Command> {
             )
             // TODO: project flag?
             ,
-        Command::new("token").about("Print the token for an identity").arg(
-            common_args::identity()
-                .help("The identity string or name that we should print the token for")
-                .required(true),
-        ),
         Command::new("set-default").about("Set the default identity for a server")
             .arg(
                 common_args::identity()
@@ -174,7 +162,6 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
         "remove" => exec_remove(config, args).await,
         "set-name" => exec_set_name(config, args).await,
         "import" => exec_import(config, args).await,
-        "token" => exec_token(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
@@ -229,9 +216,8 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
     let identity_or_name = args.get_one::<String>("identity");
     let force = args.get_flag("force");
     let all = args.get_flag("all");
-    let all_server = args.get_one::<String>("all-server").map(|s| s.as_str());
 
-    if !all && identity_or_name.is_none() && all_server.is_none() {
+    if !all && identity_or_name.is_none() {
         return Err(anyhow::anyhow!("Must provide an identity or name to remove"));
     }
 
@@ -252,21 +238,6 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
         config.update_all_default_identities();
         println!(" Removed identity");
         print_identity_config(&ic);
-    } else if let Some(server) = all_server {
-        if !should_continue(force, &format!(" which apply to server {}", server))? {
-            println!(" Aborted");
-            return Ok(());
-        }
-        let removed = config.remove_identities_for_server(Some(server))?;
-        let count = removed.len();
-        println!(
-            " {} {} removed:",
-            count,
-            if count == 1 { "identity" } else { "identities" }
-        );
-        for identity_config in removed {
-            println!("{}", identity_config.identity);
-        }
     } else {
         if config.identity_configs().is_empty() {
             println!(" No identities to remove");
@@ -308,7 +279,7 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     )?);
 
     if let Ok(identity_token) = config.get_default_identity_config(server) {
-        builder = builder.basic_auth("token", Some(identity_token.token.clone()));
+        builder = builder.basic_auth("token", Some(config.login_token().unwrap().clone()));
     }
 
     let identity_token: IdentityTokenJson = builder.send().await?.error_for_status()?.json().await?;
@@ -317,7 +288,6 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     if save {
         config.identity_configs_mut().push(IdentityConfig {
             identity: identity_token.identity,
-            token: identity_token.token,
             nickname: alias.map(|s| s.to_string()),
         });
         if default || config.default_identity(server).is_err() {
@@ -350,7 +320,6 @@ async fn exec_import(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
 
     config.identity_configs_mut().push(IdentityConfig {
         identity,
-        token,
         nickname: nickname.clone(),
     });
 
@@ -399,20 +368,18 @@ Fetch the server's fingerprint with:
         let default_identity = config.get_default_identity_config(server).ok().map(|cfg| cfg.identity);
 
         for identity_token in config.identity_configs() {
-            if decode_token(&decoding_key, &identity_token.token).is_ok() {
-                rows.push(LsRow {
-                    default: if Some(identity_token.identity) == default_identity {
-                        "***"
-                    } else {
-                        ""
-                    }
-                    .to_string(),
-                    identity: identity_token.identity,
-                    name: identity_token.nickname.clone().unwrap_or_default(),
-                    // TODO(jdetter): We'll have to look this up via a query
-                    // email: identity_token.email.unwrap_or_default(),
-                });
-            }
+            rows.push(LsRow {
+                default: if Some(identity_token.identity) == default_identity {
+                    "***"
+                } else {
+                    ""
+                }
+                .to_string(),
+                identity: identity_token.identity,
+                name: identity_token.nickname.clone().unwrap_or_default(),
+                // TODO(jdetter): We'll have to look this up via a query
+                // email: identity_token.email.unwrap_or_default(),
+            });
         }
         println!("Identities for {}:", config.server_nick_or_host(server)?);
     }
@@ -422,16 +389,6 @@ Fetch the server's fingerprint with:
         .with(Style::empty())
         .with(Modify::new(Columns::first()).with(Alignment::right()));
     println!("{}", table);
-    Ok(())
-}
-
-/// Executes the `identity token` command which prints the token for an identity.
-async fn exec_token(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let identity = args.get_one::<String>("identity").unwrap();
-    let ic = config
-        .get_identity_config(identity)
-        .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity}"))?;
-    println!("{}", ic.token);
     Ok(())
 }
 

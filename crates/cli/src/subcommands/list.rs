@@ -50,7 +50,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             config.get_host_url(server)?,
             identity_config.identity
         ))
-        .basic_auth("token", Some(&identity_config.token))
+        .basic_auth("token", config.login_token())
         .send()
         .await?;
 

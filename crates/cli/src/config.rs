@@ -14,7 +14,6 @@ use std::{
 pub struct IdentityConfig {
     pub nickname: Option<String>,
     pub identity: Identity,
-    pub token: String,
 }
 
 impl IdentityConfig {
@@ -71,29 +70,6 @@ Or initialize a default identity with:
 \tspacetime identity init-default -s {server}"
             )
         })
-    }
-
-    fn assert_identity_applies(&self, id: &IdentityConfig) -> anyhow::Result<()> {
-        if let Some(fingerprint) = &self.ecdsa_public_key {
-            let decoder = DecodingKey::from_ec_pem(fingerprint.as_bytes()).with_context(|| {
-                let server = self.nick_or_host();
-                format!(
-                    "Cannot verify tokens using invalid saved fingerprint from server: {server}
-Update the fingerprint with:
-\tspacetime server fingerprint -s {server}",
-                )
-            })?;
-            decode_token(&decoder, &id.token).map_err(|_| {
-                let id_name = id.nick_or_identity();
-                let server_name = self.nick_or_host();
-                anyhow::anyhow!(
-                    "Identity {id_name} is not valid for server {server_name}
-List valid identities for server {server_name} with:
-\tspacetime identity list -s {server_name}",
-                )
-            })?;
-        }
-        Ok(())
     }
 }
 
@@ -276,18 +252,7 @@ Import an existing identity with:
         self.default_server().and_then(ServerConfig::default_identity)
     }
 
-    fn assert_identity_matches_server(&self, server: &str, identity: &str) -> anyhow::Result<()> {
-        let ident = self
-            .find_identity_config(identity)
-            .with_context(|| format!("Cannot verify that unknown identity {identity} applies to server {server}",))?;
-        let server_cfg = self
-            .find_server(server)
-            .with_context(|| format!("Cannot verify that identity {identity} applies to unknown server {server}",))?;
-        server_cfg.assert_identity_applies(ident)
-    }
-
     fn set_server_default_identity(&mut self, server: &str, default_identity: String) -> anyhow::Result<()> {
-        self.assert_identity_matches_server(server, &default_identity)?;
         let cfg = self.find_server_mut(server)?;
         // TODO: create the server config if it doesn't already exist
         // TODO: fetch the server's fingerprint to check if it has changed
@@ -297,11 +262,6 @@ Import an existing identity with:
 
     fn set_default_server_default_identity(&mut self, default_identity: String) -> anyhow::Result<()> {
         if let Some(default_server) = &self.default_server {
-            self.assert_identity_matches_server(default_server, &default_identity)
-                .with_context(|| {
-                    format!("Cannot set {default_identity} as default identity for server {default_server}")
-                })?;
-
             // Unfortunate clone,
             // because `set_server_default_identity` needs a unique ref to `self`.
             let def = default_server.to_string();
@@ -362,7 +322,7 @@ Import an existing identity with:
     }
 
     /// Implements `spacetime server remove`.
-    fn remove_server(&mut self, server: &str, delete_identities: bool) -> anyhow::Result<Vec<IdentityConfig>> {
+    fn remove_server(&mut self, server: &str, delete_identities: bool) -> anyhow::Result<()> {
         // Have to find the server config manually instead of doing `find_server_mut`
         // because we need to mutably borrow multiple components of `self`.
         if let Some(idx) = self
@@ -381,70 +341,9 @@ Import an existing identity with:
                 }
             }
 
-            // If requested, delete all identities which match the server.
-            // This requires a fingerprint.
-            let deleted_ids = if delete_identities {
-                let fingerprint = cfg.ecdsa_public_key.ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Cannot delete identities for server without saved identity: {server}
-Fetch the server's fingerprint with:
-\tspacetime server fingerprint -s {server}"
-                    )
-                })?;
-                self.remove_identities_for_fingerprint(&fingerprint)?
-            } else {
-                Vec::new()
-            };
-
-            return Ok(deleted_ids);
+            return Ok(());
         }
         Err(no_such_server_error(server))
-    }
-
-    fn remove_identities_for_fingerprint(&mut self, fingerprint: &str) -> anyhow::Result<Vec<IdentityConfig>> {
-        let decoder = DecodingKey::from_ec_pem(fingerprint.as_bytes()).with_context(|| {
-            "Cannot delete identities for server without saved identity: {server}
-Fetch the server's fingerprint with:
-\tspacetime server fingerprint -s {server}"
-        })?;
-
-        // TODO: use `Vec::extract_if` instead when it stabilizes.
-        let (to_keep, to_discard) = self
-            .identity_configs
-            .drain(..)
-            .partition(|cfg| decode_token(&decoder, &cfg.token).is_err());
-        self.identity_configs = to_keep;
-        Ok(to_discard)
-    }
-
-    /// Remove all stored `IdentityConfig`s which apply to the server named by `server`.
-    ///
-    /// Implements `spacetime identity remove --all-server`.
-    fn remove_identities_for_server(&mut self, server: &str) -> anyhow::Result<Vec<IdentityConfig>> {
-        // Have to find the server config manually instead of doing `find_server_mut`
-        // because we need to mutably borrow multiple components of `self`.
-        if let Some(cfg) = self
-            .server_configs
-            .iter_mut()
-            .find(|cfg| cfg.nick_or_host_or_url_is(server))
-        {
-            let fingerprint = cfg
-                .ecdsa_public_key
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("No fingerprint saved for server: {}", server))?;
-            return self.remove_identities_for_fingerprint(&fingerprint);
-        }
-        Err(no_such_server_error(server))
-    }
-
-    /// Remove all storied `IdentityConfig`s which apply to the default server.
-    fn remove_identities_for_default_server(&mut self) -> anyhow::Result<Vec<IdentityConfig>> {
-        if let Some(default_server) = &self.default_server {
-            let default_server = default_server.clone();
-            self.remove_identities_for_server(&default_server)
-        } else {
-            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
-        }
     }
 
     /// Return the ECDSA public key in PEM format for the server named by `server`.
@@ -634,11 +533,7 @@ impl Config {
     ///
     /// Callers should call `Config::save` afterwards
     /// to ensure modifications are persisted to disk.
-    pub fn remove_server(
-        &mut self,
-        nickname_or_host_or_url: &str,
-        delete_identities: bool,
-    ) -> anyhow::Result<Vec<IdentityConfig>> {
+    pub fn remove_server(&mut self, nickname_or_host_or_url: &str, delete_identities: bool) -> anyhow::Result<()> {
         let (host, _) = host_or_url_to_host_and_protocol(nickname_or_host_or_url);
         self.home.remove_server(host, delete_identities)
     }
@@ -1019,19 +914,6 @@ Update the server's fingerprint with:
         }
     }
 
-    pub fn remove_identities_for_server(&mut self, server: Option<&str>) -> anyhow::Result<Vec<IdentityConfig>> {
-        if let Some(server) = server {
-            let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.home.remove_identities_for_server(host)
-        } else {
-            self.home.remove_identities_for_default_server()
-        }
-    }
-
-    pub fn remove_identities_for_fingerprint(&mut self, fingerprint: &str) -> anyhow::Result<Vec<IdentityConfig>> {
-        self.home.remove_identities_for_fingerprint(fingerprint)
-    }
-
     pub fn edit_server(
         &mut self,
         server: &str,
@@ -1054,5 +936,10 @@ Update the server's fingerprint with:
 
     pub fn set_login_token(&mut self, token: String) {
         self.home.set_login_token(token);
+    }
+
+    pub fn login_token(&self) -> Option<&String> {
+        // TODO: if login_token is None, try to sign locally.
+        self.home.login_token.as_ref()
     }
 }
