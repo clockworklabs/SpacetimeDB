@@ -214,6 +214,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "async_cache"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b273cbc6887e59eda041e24bc08631c28fb22edf9fdb9c6ed48f77147654e297"
+dependencies = [
+ "ahash 0.8.11",
+ "anyhow",
+ "async_singleflight",
+ "dashmap 5.5.3",
+ "faststr",
+ "futures",
+ "hashbrown 0.14.5",
+ "parking_lot 0.12.3",
+ "tokio",
+]
+
+[[package]]
+name = "async_singleflight"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abb139b209b5443652e3d7c8cdf2c1cd02d12009f657c3670191d9fd527eaa6d"
+dependencies = [
+ "futures",
+ "hashbrown 0.13.2",
+ "parking_lot 0.12.3",
+ "pin-project",
+ "tokio",
+]
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1649,6 +1679,17 @@ name = "fastrand"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8c02a5121d4ea3eb16a80748c74f5549a5665e4c21333c6098f283870fbdea6"
+
+[[package]]
+name = "faststr"
+version = "0.2.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4dc21a7d5a45182c2bb5ae9471b93f10919c0744b54403e54a9e2329c26ed5a3"
+dependencies = [
+ "bytes",
+ "serde",
+ "simdutf8",
+]
 
 [[package]]
 name = "fd-lock"
@@ -3313,6 +3354,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "pin-project"
+version = "1.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baf123a161dde1e524adf36f90bc5d8d3462824a9c43553ad07a8183161189ec"
+dependencies = [
+ "pin-project-internal",
+]
+
+[[package]]
+name = "pin-project-internal"
+version = "1.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4502d8515ca9f32f1fb543d987f63d95a14934883db45bdb48060b6b69257f8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.79",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4853,6 +4914,7 @@ dependencies = [
  "anyhow",
  "arrayvec",
  "async-trait",
+ "async_cache",
  "axum",
  "axum-test",
  "backtrace",
@@ -4872,6 +4934,7 @@ dependencies = [
  "enum-as-inner",
  "enum-map",
  "env_logger",
+ "faststr",
  "flate2",
  "fs2",
  "futures",
