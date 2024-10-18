@@ -3,7 +3,6 @@ use std::io;
 use thiserror::Error;
 mod indexfile;
 
-pub use indexfile::offset_index_file_path;
 pub use indexfile::{IndexFile, IndexFileMut};
 
 #[derive(Error, Debug)]
