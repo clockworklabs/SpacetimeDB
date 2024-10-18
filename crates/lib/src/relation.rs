@@ -237,7 +237,7 @@ pub fn combine_constraints(
         *slot = slot.push(constraint);
     }
 
-    let mut uniques: HashSet<ColSet> = HashSet::new();
+    let mut uniques: HashSet<ColSet> = HashSet::default();
     for (col_list, constraint) in &constraints {
         if constraint.has_unique() {
             uniques.insert(col_list.into());

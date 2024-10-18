@@ -241,7 +241,7 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
             // SAFETY: `value` was valid at `::String` and `VarLenRef`s won't be dangling.
             unsafe { serialize_string(ser, bytes, page, blob_store, curr_offset) }
         }
-        AlgebraicTypeLayout::VarLen(VarLenType::Array(ty) | VarLenType::Map(ty)) => {
+        AlgebraicTypeLayout::VarLen(VarLenType::Array(ty)) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
             unsafe { serialize_bsatn(ser, bytes, page, blob_store, curr_offset, ty) }
         }

@@ -1,0 +1,241 @@
+error: type parameters are not allowed on reducers
+  --> tests/ui/reducers.rs:17:15
+   |
+17 | fn type_param<T>() {}
+   |               ^
+
+error: const parameters are not allowed on reducers
+  --> tests/ui/reducers.rs:20:16
+   |
+20 | fn const_param<const X: u8>() {}
+   |                ^^^^^^^^^^^
+
+error[E0593]: function is expected to take 2 arguments, but it takes 3 arguments
+  --> tests/ui/reducers.rs:28:56
+   |
+28 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_reducer))]
+   | -------------------------------------------------------^^^^^^^^^^^^^^^^^^^^^^^---
+   | |                                                      |
+   | |                                                      expected function that takes 2 arguments
+   | required by a bound introduced by this call
+...
+35 | fn scheduled_table_reducer(_ctx: &ReducerContext, _x: u8, _y: u8) {}
+   | ----------------------------------------------------------------- takes 3 arguments
+   |
+   = note: required for `for<'a> fn(&'a ReducerContext, u8, u8) {scheduled_table_reducer}` to implement `Reducer<'_, (ScheduledTable,)>`
+   = note: required for `for<'a> fn(&'a ReducerContext, u8, u8) {scheduled_table_reducer}` to implement `ReducerForScheduledTable<'_, ScheduledTable>`
+note: required by a bound in `scheduled_reducer_typecheck`
+  --> src/rt.rs
+   |
+   | pub const fn scheduled_reducer_typecheck<'de, Row>(_x: impl ReducerForScheduledTable<'de, Row>)
+   |                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_reducer_typecheck`
+
+error[E0277]: invalid reducer signature
+ --> tests/ui/reducers.rs:6:4
+  |
+5 | #[spacetimedb::reducer]
+  | ----------------------- required by a bound introduced by this call
+6 | fn bad_type(_ctx: &ReducerContext, _a: Test) {}
+  |    ^^^^^^^^ this reducer signature is not valid
+  |
+  = help: the trait `Reducer<'_, _>` is not implemented for fn item `for<'a> fn(&'a ReducerContext, Test) {bad_type}`
+  = note:
+  = note: reducer signatures must match the following pattern:
+  = note:     `Fn(&ReducerContext, [T1, ...]) [-> Result<(), impl Display>]`
+  = note: where each `Ti` type implements `SpacetimeType`.
+  = note:
+note: required by a bound in `register_reducer`
+ --> src/rt.rs
+  |
+  | pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
+  |                                                                  ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+
+error[E0277]: the reducer argument `Test` does not implement `SpacetimeType`
+ --> tests/ui/reducers.rs:6:40
+  |
+6 | fn bad_type(_ctx: &ReducerContext, _a: Test) {}
+  |                                        ^^^^ the trait `SpacetimeType` is not implemented for `Test`, which is required by `Test: ReducerArg`
+  |
+  = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
+  = note: required for `Test` to implement `ReducerArg`
+
+error[E0277]: invalid reducer signature
+ --> tests/ui/reducers.rs:6:4
+  |
+5 | #[spacetimedb::reducer]
+  | ----------------------- required by a bound introduced by this call
+6 | fn bad_type(_ctx: &ReducerContext, _a: Test) {}
+  |    ^^^^^^^^ this reducer signature is not valid
+  |
+  = help: the trait `Reducer<'_, _>` is not implemented for fn item `for<'a> fn(&'a ReducerContext, Test) {bad_type}`
+  = note:
+  = note: reducer signatures must match the following pattern:
+  = note:     `Fn(&ReducerContext, [T1, ...]) [-> Result<(), impl Display>]`
+  = note: where each `Ti` type implements `SpacetimeType`.
+  = note:
+note: required by a bound in `invoke_reducer`
+ --> src/rt.rs
+  |
+  | pub fn invoke_reducer<'a, A: Args<'a>>(
+  |        -------------- required by a bound in this function
+  |     reducer: impl Reducer<'a, A>,
+  |                   ^^^^^^^^^^^^^^ required by this bound in `invoke_reducer`
+
+error[E0277]: invalid reducer signature
+ --> tests/ui/reducers.rs:9:4
+  |
+8 | #[spacetimedb::reducer]
+  | ----------------------- required by a bound introduced by this call
+9 | fn bad_return_type(_ctx: &ReducerContext) -> Test {
+  |    ^^^^^^^^^^^^^^^ this reducer signature is not valid
+  |
+  = help: the trait `Reducer<'_, _>` is not implemented for fn item `for<'a> fn(&'a ReducerContext) -> Test {bad_return_type}`
+  = note:
+  = note: reducer signatures must match the following pattern:
+  = note:     `Fn(&ReducerContext, [T1, ...]) [-> Result<(), impl Display>]`
+  = note: where each `Ti` type implements `SpacetimeType`.
+  = note:
+note: required by a bound in `register_reducer`
+ --> src/rt.rs
+  |
+  | pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
+  |                                                                  ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+
+error[E0277]: `Test` is not a valid reducer return type
+ --> tests/ui/reducers.rs:9:46
+  |
+9 | fn bad_return_type(_ctx: &ReducerContext) -> Test {
+  |                                              ^^^^ the trait `IntoReducerResult` is not implemented for `Test`
+  |
+  = note: reducers cannot return values -- you can only return `()` or `Result<(), impl Display>`
+  = help: the following other types implement trait `IntoReducerResult`:
+            Result<(), E>
+            ()
+
+error[E0277]: invalid reducer signature
+ --> tests/ui/reducers.rs:9:4
+  |
+8 | #[spacetimedb::reducer]
+  | ----------------------- required by a bound introduced by this call
+9 | fn bad_return_type(_ctx: &ReducerContext) -> Test {
+  |    ^^^^^^^^^^^^^^^ this reducer signature is not valid
+  |
+  = help: the trait `Reducer<'_, _>` is not implemented for fn item `for<'a> fn(&'a ReducerContext) -> Test {bad_return_type}`
+  = note:
+  = note: reducer signatures must match the following pattern:
+  = note:     `Fn(&ReducerContext, [T1, ...]) [-> Result<(), impl Display>]`
+  = note: where each `Ti` type implements `SpacetimeType`.
+  = note:
+note: required by a bound in `invoke_reducer`
+ --> src/rt.rs
+  |
+  | pub fn invoke_reducer<'a, A: Args<'a>>(
+  |        -------------- required by a bound in this function
+  |     reducer: impl Reducer<'a, A>,
+  |                   ^^^^^^^^^^^^^^ required by this bound in `invoke_reducer`
+
+error[E0277]: invalid reducer signature
+  --> tests/ui/reducers.rs:23:4
+   |
+22 | #[spacetimedb::reducer]
+   | ----------------------- required by a bound introduced by this call
+23 | fn missing_ctx(_a: u8) {}
+   |    ^^^^^^^^^^^ this reducer signature is not valid
+   |
+   = help: the trait `Reducer<'_, _>` is not implemented for fn item `fn(u8) {missing_ctx}`
+   = note:
+   = note: reducer signatures must match the following pattern:
+   = note:     `Fn(&ReducerContext, [T1, ...]) [-> Result<(), impl Display>]`
+   = note: where each `Ti` type implements `SpacetimeType`.
+   = note:
+note: required by a bound in `register_reducer`
+  --> src/rt.rs
+   |
+   | pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
+   |                                                                  ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+
+error[E0277]: the first argument of a reducer must be `&ReducerContext`
+  --> tests/ui/reducers.rs:23:20
+   |
+23 | fn missing_ctx(_a: u8) {}
+   |                    ^^ the trait `ReducerContextArg` is not implemented for `u8`
+   |
+   = note: all reducers must take `&ReducerContext` as their first argument
+   = help: the trait `ReducerContextArg` is implemented for `&ReducerContext`
+
+error[E0277]: invalid reducer signature
+  --> tests/ui/reducers.rs:23:4
+   |
+22 | #[spacetimedb::reducer]
+   | ----------------------- required by a bound introduced by this call
+23 | fn missing_ctx(_a: u8) {}
+   |    ^^^^^^^^^^^ this reducer signature is not valid
+   |
+   = help: the trait `Reducer<'_, _>` is not implemented for fn item `fn(u8) {missing_ctx}`
+   = note:
+   = note: reducer signatures must match the following pattern:
+   = note:     `Fn(&ReducerContext, [T1, ...]) [-> Result<(), impl Display>]`
+   = note: where each `Ti` type implements `SpacetimeType`.
+   = note:
+note: required by a bound in `invoke_reducer`
+  --> src/rt.rs
+   |
+   | pub fn invoke_reducer<'a, A: Args<'a>>(
+   |        -------------- required by a bound in this function
+   |     reducer: impl Reducer<'a, A>,
+   |                   ^^^^^^^^^^^^^^ required by this bound in `invoke_reducer`
+
+error[E0277]: invalid reducer signature
+  --> tests/ui/reducers.rs:26:4
+   |
+25 | #[spacetimedb::reducer]
+   | ----------------------- required by a bound introduced by this call
+26 | fn ctx_by_val(_ctx: ReducerContext, _a: u8) {}
+   |    ^^^^^^^^^^ this reducer signature is not valid
+   |
+   = help: the trait `Reducer<'_, _>` is not implemented for fn item `fn(ReducerContext, u8) {ctx_by_val}`
+   = note:
+   = note: reducer signatures must match the following pattern:
+   = note:     `Fn(&ReducerContext, [T1, ...]) [-> Result<(), impl Display>]`
+   = note: where each `Ti` type implements `SpacetimeType`.
+   = note:
+note: required by a bound in `register_reducer`
+  --> src/rt.rs
+   |
+   | pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
+   |                                                                  ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+
+error[E0277]: the first argument of a reducer must be `&ReducerContext`
+  --> tests/ui/reducers.rs:26:21
+   |
+26 | fn ctx_by_val(_ctx: ReducerContext, _a: u8) {}
+   |                     ^^^^^^^^^^^^^^
+   |                     |
+   |                     the trait `ReducerContextArg` is not implemented for `ReducerContext`
+   |                     the trait `ReducerContextArg` is not implemented for `ReducerContext`
+   |
+   = note: the trait bound `ReducerContext: ReducerContextArg` is not satisfied
+   = note: all reducers must take `&ReducerContext` as their first argument
+   = help: the trait `ReducerContextArg` is implemented for `&ReducerContext`
+
+error[E0277]: invalid reducer signature
+  --> tests/ui/reducers.rs:26:4
+   |
+25 | #[spacetimedb::reducer]
+   | ----------------------- required by a bound introduced by this call
+26 | fn ctx_by_val(_ctx: ReducerContext, _a: u8) {}
+   |    ^^^^^^^^^^ this reducer signature is not valid
+   |
+   = help: the trait `Reducer<'_, _>` is not implemented for fn item `fn(ReducerContext, u8) {ctx_by_val}`
+   = note:
+   = note: reducer signatures must match the following pattern:
+   = note:     `Fn(&ReducerContext, [T1, ...]) [-> Result<(), impl Display>]`
+   = note: where each `Ti` type implements `SpacetimeType`.
+   = note:
+note: required by a bound in `invoke_reducer`
+  --> src/rt.rs
+   |
+   | pub fn invoke_reducer<'a, A: Args<'a>>(
+   |        -------------- required by a bound in this function
+   |     reducer: impl Reducer<'a, A>,
+   |                   ^^^^^^^^^^^^^^ required by this bound in `invoke_reducer`

@@ -37,3 +37,4 @@ getrandom = { workspace = true, optional = true, features = ["custom"] }
 
 [dev-dependencies]
 insta.workspace = true
+trybuild.workspace = true

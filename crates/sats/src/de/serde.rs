@@ -124,21 +124,6 @@ impl<'de, D: serde::Deserializer<'de>> Deserializer<'de> for SerdeDeserializer<D
             .deserialize_seq(ArrayVisitor { visitor, seed })
             .map_err(SerdeError)
     }
-
-    fn deserialize_map_seed<
-        Vi: super::MapVisitor<'de, K::Output, V::Output>,
-        K: super::DeserializeSeed<'de> + Clone,
-        V: super::DeserializeSeed<'de> + Clone,
-    >(
-        self,
-        visitor: Vi,
-        kseed: K,
-        vseed: V,
-    ) -> Result<Vi::Output, Self::Error> {
-        self.de
-            .deserialize_map(MapVisitor { visitor, kseed, vseed })
-            .map_err(SerdeError)
-    }
 }
 
 /// Converts `DeserializeSeed<'de>` in SATS to the one in Serde.
@@ -579,72 +564,6 @@ impl<'de, A: serde::SeqAccess<'de>, T: super::DeserializeSeed<'de> + Clone> supe
 
     fn size_hint(&self) -> Option<usize> {
         self.seq.size_hint()
-    }
-}
-
-/// Translates SATS's `MapVisior<'de>` (the trait) to `serde::Visitor<'de>`
-/// for implementing deserialization of maps.
-struct MapVisitor<Vi, K, V> {
-    /// The SATS visitor to translate to a Serde visitor.
-    visitor: Vi,
-    /// The seed value to provide to `DeserializeSeed` for deserializing keys.
-    /// As this is reused for every entry element, it will be `.cloned()`.
-    kseed: K,
-    /// The seed value to provide to `DeserializeSeed` for deserializing values.
-    /// As this is reused for every entry element, it will be `.cloned()`.
-    vseed: V,
-}
-
-impl<
-        'de,
-        K: super::DeserializeSeed<'de> + Clone,
-        V: super::DeserializeSeed<'de> + Clone,
-        Vi: super::MapVisitor<'de, K::Output, V::Output>,
-    > serde::Visitor<'de> for MapVisitor<Vi, K, V>
-{
-    type Value = Vi::Output;
-
-    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("a vec")
-    }
-
-    fn visit_map<A: serde::MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
-        self.visitor
-            .visit(MapAccess {
-                map,
-                kseed: self.kseed,
-                vseed: self.vseed,
-            })
-            .map_err(unwrap_error)
-    }
-}
-
-struct MapAccess<A, K, V> {
-    /// An implementation of `serde::MapAccess<'de>`.
-    map: A,
-    /// The seed value to provide to `DeserializeSeed` for deserializing keys.
-    /// As this is reused for every entry element, it will be `.cloned()`.
-    kseed: K,
-    /// The seed value to provide to `DeserializeSeed` for deserializing values.
-    /// As this is reused for every entry element, it will be `.cloned()`.
-    vseed: V,
-}
-
-impl<'de, A: serde::MapAccess<'de>, K: super::DeserializeSeed<'de> + Clone, V: super::DeserializeSeed<'de> + Clone>
-    super::MapAccess<'de> for MapAccess<A, K, V>
-{
-    type Key = K::Output;
-    type Value = V::Output;
-    type Error = SerdeError<A::Error>;
-
-    fn next_entry(&mut self) -> Result<Option<(Self::Key, Self::Value)>, Self::Error> {
-        self.map
-            .next_entry_seed(SeedWrapper(self.kseed.clone()), SeedWrapper(self.vseed.clone()))
-            .map_err(SerdeError)
-    }
-
-    fn size_hint(&self) -> Option<usize> {
-        self.map.size_hint()
     }
 }
 

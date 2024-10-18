@@ -3,6 +3,8 @@ use core::slice;
 use smallvec::SmallVec;
 use std::collections::btree_map::{BTreeMap, Range};
 
+use crate::MemoryUsage;
+
 /// A multi map that relates a `K` to a *set* of `V`s.
 #[derive(Default)]
 pub struct MultiMap<K, V> {
@@ -13,6 +15,13 @@ pub struct MultiMap<K, V> {
     /// as we allow a single element to be stored inline
     /// to improve performance for the common case of one element.
     map: BTreeMap<K, SmallVec<[V; 1]>>,
+}
+
+impl<K: MemoryUsage, V: MemoryUsage> MemoryUsage for MultiMap<K, V> {
+    fn heap_usage(&self) -> usize {
+        let Self { map } = self;
+        map.heap_usage()
+    }
 }
 
 impl<K: Ord, V: Ord> MultiMap<K, V> {

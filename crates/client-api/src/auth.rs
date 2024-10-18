@@ -36,6 +36,7 @@ pub struct SpacetimeCreds {
     token: String,
 }
 
+pub const LOCALHOST: &str = "localhost";
 const TOKEN_USERNAME: &str = "token";
 impl authorization::Credentials for SpacetimeCreds {
     const SCHEME: &'static str = authorization::Basic::SCHEME;

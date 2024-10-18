@@ -25,5 +25,8 @@ pub mod row_type_visitor;
 pub mod table;
 pub mod var_len;
 
+mod memory_usage;
+pub use memory_usage::MemoryUsage;
+
 #[doc(hidden)] // Used in tests and benchmarks.
 pub mod util;

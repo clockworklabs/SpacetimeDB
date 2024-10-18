@@ -119,7 +119,7 @@ macro_rules! memoized {
         MEMOIZED
             .lock()
             .unwrap()
-            .get_or_insert_with(HashMap::new)
+            .get_or_insert_with(HashMap::default)
             .entry($key)
             .or_insert_with_key(|$key| -> $value_ty { $body })
             .clone()
