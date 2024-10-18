@@ -11,22 +11,13 @@ pub fn cli() -> clap::Command {
                 .required(true)
                 .help("The domain or address of the database to delete"),
         )
-        .arg(
-            common_args::identity()
-                .help("The identity to use for deleting this database")
-                .long_help("The identity to use for deleting this database. If no identity is provided, the default one will be used."),
-        )
-        .arg(
-            common_args::server()
-                .help("The nickname, host name or URL of the server hosting the database")
-        )
+        .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .after_help("Run `spacetime help delete` for more detailed information.\n")
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let database = args.get_one::<String>("database").unwrap();
-    let identity_or_name = args.get_one::<String>("identity");
 
     let address = database_address(&config, database, server).await?;
 

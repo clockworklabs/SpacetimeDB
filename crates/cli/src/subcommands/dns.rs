@@ -1,6 +1,8 @@
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, get_auth_header, spacetime_dns, spacetime_register_tld, spacetime_reverse_dns};
+use crate::util::{
+    add_auth_header_opt, get_auth_header, get_identity, spacetime_dns, spacetime_register_tld, spacetime_reverse_dns,
+};
 use clap::ArgMatches;
 use clap::{Arg, Command};
 use reqwest::Url;
@@ -80,10 +82,9 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
 
 async fn exec_register_tld(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let tld = args.get_one::<String>("tld").unwrap().clone();
-    let identity = args.get_one::<String>("identity");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
-    match spacetime_register_tld(&mut config, &tld, identity, server).await? {
+    match spacetime_register_tld(&mut config, &tld, server).await? {
         RegisterTldResult::Success { domain } => {
             println!("Registered domain: {}", domain);
         }
@@ -132,8 +133,8 @@ pub async fn exec_reverse_dns(config: Config, args: &ArgMatches) -> Result<(), a
 pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let domain = args.get_one::<String>("domain").unwrap();
     let address = args.get_one::<String>("address").unwrap();
-    let identity = args.get_one::<String>("identity");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
+    let identity = get_identity(&config)?;
     let auth_header = get_auth_header(&mut config, false)?;
 
     let builder = reqwest::Client::new().get(Url::parse_with_params(
@@ -164,43 +165,35 @@ pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), 
             ));
         }
         InsertDomainResult::PermissionDenied { domain } => {
-            return match identity {
-                Some(identity) => {
-                    //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
-                    // we should perhaps generate fun names like 'green-fire-dragon' instead
-                    let suggested_tld: String = identity.chars().take(12).collect();
-                    if let Some(sub_domain) = domain.sub_domain() {
-                        Err(anyhow::anyhow!(
-                            "The top level domain {} is not registered to the identity you provided.\n\
-                        We suggest you register a new tld:\n\
-                        \tspacetime dns register-tld {}\n\
-                        \n\
-                        And then push to the domain that uses that tld:\n\
-                        \tspacetime publish {}/{}\n",
-                            domain.tld(),
-                            suggested_tld,
-                            suggested_tld,
-                            sub_domain
-                        ))
-                    } else {
-                        Err(anyhow::anyhow!(
-                            "The top level domain {} is not registered to the identity you provided.\n\
-                        We suggest you register a new tld:\n\
-                        \tspacetime dns register-tld {}\n\
-                        \n\
-                        And then push to the domain that uses that tld:\n\
-                        \tspacetime publish {}\n",
-                            domain.tld(),
-                            suggested_tld,
-                            suggested_tld
-                        ))
-                    }
-                }
-                None => Err(anyhow::anyhow!(
-                    "The domain {} is not registered to the identity you provided.",
-                    domain
-                )),
-            };
+            //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
+            // we should perhaps generate fun names like 'green-fire-dragon' instead
+            let suggested_tld: String = identity.chars().take(12).collect();
+            if let Some(sub_domain) = domain.sub_domain() {
+                return Err(anyhow::anyhow!(
+                    "The top level domain {} is not registered to the identity you provided.\n\
+                We suggest you register a new tld:\n\
+                \tspacetime dns register-tld {}\n\
+                \n\
+                And then push to the domain that uses that tld:\n\
+                \tspacetime publish {}/{}\n",
+                    domain.tld(),
+                    suggested_tld,
+                    suggested_tld,
+                    sub_domain
+                ));
+            } else {
+                return Err(anyhow::anyhow!(
+                    "The top level domain {} is not registered to the identity you provided.\n\
+                We suggest you register a new tld:\n\
+                \tspacetime dns register-tld {}\n\
+                \n\
+                And then push to the domain that uses that tld:\n\
+                \tspacetime publish {}\n",
+                    domain.tld(),
+                    suggested_tld,
+                    suggested_tld
+                ));
+            }
         }
         InsertDomainResult::OtherError(e) => return Err(anyhow::anyhow!(e)),
     }

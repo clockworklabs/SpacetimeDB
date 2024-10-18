@@ -43,7 +43,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     let arguments = args.get_many::<String>("arguments");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
-    let identity = args.get_one::<String>("identity");
     let anon_identity = args.get_flag("anon_identity");
 
     let address = database_address(&config, database, server).await?;
@@ -62,7 +61,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         server.map(|x| x.to_string()),
         reducer_name.clone(),
         anon_identity,
-        identity.cloned(),
     )
     .await?;
 

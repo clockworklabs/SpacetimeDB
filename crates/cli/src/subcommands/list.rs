@@ -1,7 +1,6 @@
 use crate::common_args;
 use crate::util;
 use crate::Config;
-use anyhow::Context;
 use clap::{ArgMatches, Command};
 use reqwest::StatusCode;
 use serde::Deserialize;

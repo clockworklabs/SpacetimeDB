@@ -1,7 +1,6 @@
 // use clap::Arg;
 use crate::common_args;
 use clap::ArgMatches;
-use spacetimedb_lib::Identity;
 
 use crate::config::Config;
 use crate::util;

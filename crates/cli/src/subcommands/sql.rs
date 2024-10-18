@@ -50,7 +50,6 @@ pub fn cli() -> clap::Command {
 pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let database = args.get_one::<String>("database").unwrap();
-    let identity = args.get_one::<String>("identity");
     let anon_identity = args.get_flag("anon_identity");
 
     Ok(Connection {

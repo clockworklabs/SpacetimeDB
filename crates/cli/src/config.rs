@@ -3,7 +3,6 @@ use anyhow::Context;
 use jsonwebtoken::DecodingKey;
 use serde::{Deserialize, Serialize};
 use spacetimedb_fs_utils::{atomic_write, create_parent_dir};
-use spacetimedb_lib::Identity;
 use std::{
     fs,
     path::{Path, PathBuf},

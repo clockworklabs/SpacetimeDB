@@ -23,10 +23,6 @@ pub fn cli() -> clap::Command {
                 .help("The nickname, host name or URL of the server hosting the database"),
         )
         .arg(
-            common_args::identity()
-                .help("The identity to use for printing logs from this database"),
-        )
-        .arg(
             Arg::new("num_lines")
                 .long("num-lines")
                 .short('n')
@@ -115,7 +111,6 @@ impl clap::ValueEnum for Format {
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = args.get_one::<String>("identity");
     let mut num_lines = args.get_one::<u32>("num_lines").copied();
     let database = args.get_one::<String>("database").unwrap();
     let follow = args.get_flag("follow");

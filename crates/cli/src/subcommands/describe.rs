@@ -43,7 +43,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let entity_type = args.get_one::<String>("entity_type");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
-    let identity = args.get_one::<String>("identity");
     let anon_identity = args.get_flag("anon_identity");
 
     let address = database_address(&config, database, server).await?;

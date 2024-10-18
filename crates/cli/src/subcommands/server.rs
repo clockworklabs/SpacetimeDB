@@ -209,7 +209,6 @@ Add a server without retrieving its fingerprint with:
 
 pub async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").unwrap();
-    let force = args.get_flag("force");
 
     config.remove_server(server)?;
 

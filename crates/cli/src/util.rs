@@ -40,7 +40,6 @@ pub async fn spacetime_dns(
 pub async fn spacetime_register_tld(
     config: &mut Config,
     tld: &str,
-    identity: Option<&String>,
     server: Option<&str>,
 ) -> Result<RegisterTldResult, anyhow::Error> {
     let auth_header = get_auth_header(config, false)?;
@@ -121,7 +120,6 @@ pub async fn describe_reducer(
     server: Option<String>,
     reducer_name: String,
     anon_identity: bool,
-    as_identity: Option<String>,
 ) -> anyhow::Result<DescribeReducer> {
     let builder = reqwest::Client::new().get(format!(
         "{}/database/schema/{}/{}/{}",
@@ -263,5 +261,6 @@ Generate a new identity with:
 }
 
 pub fn get_identity(config: &Config) -> anyhow::Result<String> {
+    let _token = config.login_token();
     unimplemented!();
 }
