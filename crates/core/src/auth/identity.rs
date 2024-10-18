@@ -329,6 +329,7 @@ impl TokenValidator for CachingOidcTokenValidator {
         let validator = self.cache.get(raw_issuer.clone().into()).await.ok_or_else(|| { anyhow::anyhow!("Error fetching public key for issuer {}", raw_issuer)})?;
         // Err(anyhow::anyhow!("Dummy error"))
         // validator.validate_token(token).await
+        Result::Err(TokenValidationError::Other(anyhow::anyhow!("Dummy error")))
     }
 }
 
