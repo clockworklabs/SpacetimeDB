@@ -31,6 +31,7 @@ pub fn get_subcommands() -> Vec<Command> {
         dns::cli(),
         generate::cli(),
         list::cli(),
+        login::cli(),
         init::cli(),
         build::cli(),
         server::cli(),
@@ -61,6 +62,7 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "subscribe" => subscribe::exec(config, args).await,
         #[cfg(feature = "standalone")]
         "start" => start::exec(args).await,
+        "login" => login::exec(config, args).await,
         "upgrade" => upgrade::exec(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
