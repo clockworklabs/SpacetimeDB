@@ -599,7 +599,7 @@ pub async fn dns<S: ControlStateDelegate>(
     let domain = database_name.parse().map_err(|_| DomainParsingRejection)?;
     let address = ctx.lookup_identity(&domain).map_err(log_and_500)?;
     let response = if let Some(address) = address {
-        DnsLookupResponse::Success { domain, address }
+        DnsLookupResponse::Success { domain, identity: address }
     } else {
         DnsLookupResponse::Failure { domain }
     };

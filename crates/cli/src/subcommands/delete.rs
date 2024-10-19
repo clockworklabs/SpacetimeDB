@@ -1,6 +1,6 @@
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header_only};
 use clap::{Arg, ArgMatches};
 
 pub fn cli() -> clap::Command {
@@ -9,7 +9,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("database")
                 .required(true)
-                .help("The domain or address of the database to delete"),
+                .help("The name or identity of the database to delete"),
         )
         .arg(
             common_args::identity()
@@ -28,9 +28,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let database = args.get_one::<String>("database").unwrap();
     let identity_or_name = args.get_one::<String>("identity");
 
-    let address = database_address(&config, database, server).await?;
+    let identity = database_identity(&config, database, server).await?;
 
-    let builder = reqwest::Client::new().post(format!("{}/database/delete/{}", config.get_host_url(server)?, address));
+    let builder = reqwest::Client::new().post(format!("{}/database/delete/{}", config.get_host_url(server)?, identity));
     let auth_header = get_auth_header_only(&mut config, false, identity_or_name, server).await?;
     let builder = add_auth_header_opt(builder, &auth_header);
     builder.send().await?.error_for_status()?;

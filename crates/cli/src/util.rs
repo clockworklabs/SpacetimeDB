@@ -10,18 +10,18 @@ use std::path::Path;
 
 use crate::config::{Config, IdentityConfig};
 
-/// Determine the address of the `database`.
-pub async fn database_address(config: &Config, database: &str, server: Option<&str>) -> Result<Address, anyhow::Error> {
-    if let Ok(address) = Address::from_hex(database) {
-        return Ok(address);
+/// Determine the identity of the `database`.
+pub async fn database_identity(config: &Config, name_or_identity: &str, server: Option<&str>) -> Result<Identity, anyhow::Error> {
+    if let Ok(identity) = Identity::from_hex(name_or_identity) {
+        return Ok(identity);
     }
-    match spacetime_dns(config, database, server).await? {
-        DnsLookupResponse::Success { domain: _, address } => Ok(address),
+    match spacetime_dns(config, name_or_identity, server).await? {
+        DnsLookupResponse::Success { domain: _, identity } => Ok(identity),
         DnsLookupResponse::Failure { domain } => Err(anyhow::anyhow!("The dns resolution of `{}` failed.", domain)),
     }
 }
 
-/// Converts a name to a database address.
+/// Converts a name to a database identity.
 pub async fn spacetime_dns(
     config: &Config,
     domain: &str,
@@ -62,14 +62,14 @@ pub async fn spacetime_server_fingerprint(url: &str) -> anyhow::Result<String> {
     Ok(fingerprint)
 }
 
-/// Returns all known names for the given address.
+/// Returns all known names for the given identity.
 pub async fn spacetime_reverse_dns(
     config: &Config,
-    address: &str,
+    identity: &str,
     server: Option<&str>,
 ) -> Result<ReverseDNSResponse, anyhow::Error> {
     let client = reqwest::Client::new();
-    let url = format!("{}/database/reverse_dns/{}", config.get_host_url(server)?, address);
+    let url = format!("{}/database/reverse_dns/{}", config.get_host_url(server)?, identity);
     let res = client.get(url).send().await?.error_for_status()?;
     let bytes = res.bytes().await.unwrap();
     Ok(serde_json::from_slice(&bytes[..]).unwrap())

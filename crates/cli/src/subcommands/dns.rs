@@ -40,7 +40,7 @@ fn get_subcommands() -> Vec<Command> {
             )
             .after_help("Run `spacetime dns register-tld --help` for more detailed information.\n"),
         Command::new("lookup")
-            .about("Resolves a domain to a database address")
+            .about("Resolves a domain to a database identity")
             .arg(Arg::new("domain").required(true).help("The name of the domain to lookup"))
             .arg(
                 common_args::server()
@@ -48,17 +48,17 @@ fn get_subcommands() -> Vec<Command> {
             )
             .after_help("Run `spacetime dns lookup --help` for more detailed information"),
         Command::new("reverse-lookup")
-            .about("Returns the domains for the provided database address")
-            .arg(Arg::new("address").required(true).help("The address you would like to find all of the known domains for"))
+            .about("Returns the domains for the provided database identity")
+            .arg(Arg::new("database-identity").required(true).help("The database identity you would like to find all of the known domains for"))
             .arg(
                 common_args::server()
-                    .help("The nickname, host name or URL of the server on which to look up the address"),
+                    .help("The nickname, host name or URL of the server on which to look up the database identity"),
             )
             .after_help("Run `spacetime dns reverse-lookup --help` for more detailed information.\n"),
         Command::new("set-name")
             .about("Sets the domain of the database")
             .arg(Arg::new("domain").required(true).help("The domain you would like to assign or create"))
-            .arg(Arg::new("address").required(true).help("The database address to assign to the domain"))
+            .arg(Arg::new("database-identity").required(true).help("The database identity to assign to the domain"))
             .arg(common_args::identity().long_help(
                 "The identity that owns the tld for this domain. If no identity is specified, the default identity is used.",
             ).help("The identity that owns the tld for this domain"))
@@ -107,8 +107,8 @@ pub async fn exec_dns_lookup(config: Config, args: &ArgMatches) -> Result<(), an
 
     let response = spacetime_dns(&config, domain, server).await?;
     match response {
-        DnsLookupResponse::Success { domain: _, address } => {
-            println!("{}", address);
+        DnsLookupResponse::Success { domain: _, identity } => {
+            println!("{}", identity);
         }
         DnsLookupResponse::Failure { domain } => {
             println!("No such database: {}", domain);
@@ -118,11 +118,11 @@ pub async fn exec_dns_lookup(config: Config, args: &ArgMatches) -> Result<(), an
 }
 
 pub async fn exec_reverse_dns(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let addr = args.get_one::<String>("address").unwrap();
+    let database_identity = args.get_one::<String>("database-identity").unwrap();
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let response = spacetime_reverse_dns(&config, addr, server).await?;
+    let response = spacetime_reverse_dns(&config, database_identity, server).await?;
     if response.names.is_empty() {
-        Err(anyhow::anyhow!("Could not find a name for the address: {}", addr))
+        Err(anyhow::anyhow!("Could not find a name for the identity: {}", database_identity))
     } else {
         for name in response.names {
             println!("{}", name);
@@ -133,7 +133,7 @@ pub async fn exec_reverse_dns(config: Config, args: &ArgMatches) -> Result<(), a
 
 pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let domain = args.get_one::<String>("domain").unwrap();
-    let address = args.get_one::<String>("address").unwrap();
+    let database_identity = args.get_one::<String>("database-identity").unwrap();
     let identity = args.get_one::<String>("identity");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let auth_header = get_auth_header_only(&mut config, false, identity, server).await?;
@@ -142,7 +142,7 @@ pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), 
         format!("{}/database/set_name", config.get_host_url(server)?).as_str(),
         [
             ("domain", domain.clone()),
-            ("address", address.clone()),
+            ("database_identity", database_identity.clone()),
             ("register_tld", "true".to_string()),
         ],
     )?);
@@ -153,8 +153,8 @@ pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), 
     println!("{}", String::from_utf8_lossy(&bytes[..]));
     let result: InsertDomainResult = serde_json::from_slice(&bytes[..]).unwrap();
     match result {
-        InsertDomainResult::Success { domain, address } => {
-            println!("Domain set to {} for address {}.", domain, address);
+        InsertDomainResult::Success { domain, database_identity } => {
+            println!("Domain set to {} for identity {}.", domain, database_identity);
         }
         InsertDomainResult::TldNotRegistered { domain } => {
             return Err(anyhow::anyhow!(
