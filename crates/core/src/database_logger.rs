@@ -1,5 +1,4 @@
 use core::str::FromStr;
-use spacetimedb_lib::address::Address;
 use spacetimedb_lib::Identity;
 use std::fs::OpenOptions;
 use std::fs::{self, File};

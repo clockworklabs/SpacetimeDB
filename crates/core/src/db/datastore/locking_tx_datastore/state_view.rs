@@ -11,7 +11,7 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use core::ops::RangeBounds;
-use spacetimedb_lib::{address::Address, Identity};
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};

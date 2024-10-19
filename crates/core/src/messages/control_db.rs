@@ -3,8 +3,6 @@ use spacetimedb_sats::de::Deserialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::ser::Serialize;
 
-use crate::address::Address;
-
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct IdentityEmail {
     pub identity: Identity,

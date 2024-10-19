@@ -8,7 +8,7 @@ use super::Result;
 use crate::db::datastore::system_tables::ST_TABLE_ID;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_lib::{hash_bytes, Address, Identity};
+use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};

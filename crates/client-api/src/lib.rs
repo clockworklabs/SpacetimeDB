@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use axum::response::ErrorResponse;
 use http::StatusCode;
 
-use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};

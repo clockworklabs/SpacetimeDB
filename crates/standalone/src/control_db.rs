@@ -1,4 +1,3 @@
-use spacetimedb::hash::hash_bytes;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, EnergyBalance, Node, Replica};
 use spacetimedb::{energy, stdb_path};
@@ -450,7 +449,7 @@ mod compat {
     use spacetimedb::Identity;
     use spacetimedb_lib::bsatn::ser::BsatnError;
     use spacetimedb_lib::bsatn::{self, DecodeError};
-    use spacetimedb_lib::{de::Deserialize, ser::Serialize, Address};
+    use spacetimedb_lib::{de::Deserialize, ser::Serialize};
 
     /// Serialized form of a [`spacetimedb::messages::control_db::Database`].
     ///

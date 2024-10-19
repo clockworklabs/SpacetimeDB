@@ -24,7 +24,6 @@ use core::ops::RangeBounds;
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
 use spacetimedb_lib::{
-    address::Address,
     bsatn::Deserializer,
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
     de::DeserializeSeed,

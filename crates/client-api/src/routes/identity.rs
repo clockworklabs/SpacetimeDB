@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use spacetimedb::auth::identity::encode_token_with_expiry;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::Identity;
 
 use crate::auth::{SpacetimeAuth, SpacetimeAuthRequired};
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};

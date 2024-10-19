@@ -10,10 +10,8 @@ use axum::response::IntoResponse;
 use bytestring::ByteString;
 use http::{HeaderName, HeaderValue, StatusCode};
 
-use spacetimedb::address::Address;
 use spacetimedb::Identity;
 use spacetimedb_client_api_messages::name::DomainName;
-use spacetimedb_lib::address::AddressForUrl;
 
 use crate::routes::database::DomainParsingRejection;
 use crate::routes::identity::IdentityForUrl;
