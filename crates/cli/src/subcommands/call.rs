@@ -46,19 +46,19 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     let identity = args.get_one::<String>("identity");
     let anon_identity = args.get_flag("anon_identity");
 
-    let identity = database_identity(&config, database, server).await?;
+    let database_identity = database_identity(&config, database, server).await?;
 
     let builder = reqwest::Client::new().post(format!(
         "{}/database/call/{}/{}",
         config.get_host_url(server)?,
-        identity.clone(),
+        database_identity.clone(),
         reducer_name
     ));
     let auth_header = get_auth_header_only(&mut config, anon_identity, identity, server).await?;
     let builder = add_auth_header_opt(builder, &auth_header);
     let describe_reducer = util::describe_reducer(
         &mut config,
-        identity,
+        database_identity,
         server.map(|x| x.to_string()),
         reducer_name.clone(),
         anon_identity,
@@ -90,11 +90,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         let error = Err(e).context(format!("Response text: {}", response_text));
 
         let error_msg = if response_text.starts_with("no such reducer") {
-            no_such_reducer(config, &identity, database, &auth_header, reducer_name, server).await
+            no_such_reducer(config, &database_identity, database, &auth_header, reducer_name, server).await
         } else if response_text.starts_with("invalid arguments") {
             invalid_arguments(
                 config,
-                &identity,
+                &database_identity,
                 database,
                 &auth_header,
                 reducer_name,
@@ -198,7 +198,7 @@ fn reducer_signature(schema_json: Value, reducer_name: &str) -> Option<String> {
 /// Returns an error message for when `reducer` does not exist in `db`.
 async fn no_such_reducer(
     config: Config,
-    identity: &Identity,
+    database_identity: &Identity,
     db: &str,
     auth_header: &Option<String>,
     reducer: &str,
@@ -206,10 +206,10 @@ async fn no_such_reducer(
 ) -> String {
     let mut error = format!(
         "No such reducer `{}` for database `{}` resolving to identity `{}`.",
-        reducer, db, identity
+        reducer, db, database_identity
     );
 
-    if let Some(schema) = schema_json(config, identity, auth_header, false, server).await {
+    if let Some(schema) = schema_json(config, database_identity, auth_header, false, server).await {
         add_reducer_ctx_to_err(&mut error, schema, reducer);
     }
 
