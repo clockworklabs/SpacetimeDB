@@ -13,11 +13,6 @@ use tabled::{
 pub fn cli() -> Command {
     Command::new("list")
         .about("Lists the databases attached to an identity")
-        .arg(
-            common_args::identity()
-                .required(true)
-                .help("The identity to list databases for"),
-        )
         .arg(common_args::server().help("The nickname, host name or URL of the server from which to list databases"))
 }
 

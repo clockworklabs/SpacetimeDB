@@ -28,11 +28,6 @@ pub fn cli() -> clap::Command {
         )
         .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
-        .arg(
-            common_args::identity()
-                .conflicts_with("anon_identity")
-                .help("The identity to use for the call"),
-        )
         .arg(common_args::anonymous())
         .after_help("Run `spacetime help call` for more detailed information.\n")
 }

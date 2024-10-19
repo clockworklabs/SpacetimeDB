@@ -21,19 +21,8 @@ pub fn cli() -> clap::Command {
                 .requires("entity_type")
                 .help("The name of the entity to describe"),
         )
-        .arg(
-            common_args::identity()
-                .conflicts_with("anon_identity")
-                .help("The identity to use to describe the entity")
-                .long_help("The identity to use to describe the entity. If no identity is provided, the default one will be used."),
-        )
-        .arg(
-            common_args::anonymous()
-        )
-        .arg(
-            common_args::server()
-                .help("The nickname, host name or URL of the server hosting the database"),
-        )
+        .arg(common_args::anonymous())
+        .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .after_help("Run `spacetime help describe` for more detailed information.\n")
 }
 

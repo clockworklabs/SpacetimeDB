@@ -28,23 +28,15 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("interactive")
                 .help("The SQL query to execute"),
         )
-        .arg(Arg::new("interactive")
-                 .long("interactive")
-                 .action(ArgAction::SetTrue)
-                 .conflicts_with("query")
-                 .help("Instead of using a query, run an interactive command prompt for `SQL` expressions"),)
         .arg(
-            common_args::identity()
-                .conflicts_with("anon_identity")
-                .help("The identity to use for querying the database")
-                .long_help("The identity to use for querying the database. If no identity is provided, the default one will be used."),
+            Arg::new("interactive")
+                .long("interactive")
+                .action(ArgAction::SetTrue)
+                .conflicts_with("query")
+                .help("Instead of using a query, run an interactive command prompt for `SQL` expressions"),
         )
-        .arg(
-            common_args::anonymous()
-        )
-        .arg(common_args::server()
-                .help("The nickname, host name or URL of the server hosting the database"),
-        )
+        .arg(common_args::anonymous())
+        .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
 }
 
 pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
