@@ -11,10 +11,12 @@ use bytestring::ByteString;
 use http::{HeaderName, HeaderValue, StatusCode};
 
 use spacetimedb::address::Address;
+use spacetimedb::Identity;
 use spacetimedb_client_api_messages::name::DomainName;
 use spacetimedb_lib::address::AddressForUrl;
 
 use crate::routes::database::DomainParsingRejection;
+use crate::routes::identity::IdentityForUrl;
 use crate::{log_and_500, ControlStateReadAccess};
 
 pub struct ByteStringBody(pub ByteString);
@@ -58,16 +60,16 @@ impl headers::Header for XForwardedFor {
 }
 
 #[derive(Clone, Debug)]
-pub enum NameOrAddress {
-    Address(AddressForUrl),
+pub enum NameOrIdentity {
+    Identity(IdentityForUrl),
     Name(String),
 }
 
-impl NameOrAddress {
+impl NameOrIdentity {
     pub fn into_string(self) -> String {
         match self {
-            NameOrAddress::Address(addr) => Address::from(addr).to_hex().to_string(),
-            NameOrAddress::Name(name) => name,
+            NameOrIdentity::Identity(addr) => Identity::from(addr).to_hex().to_string(),
+            NameOrIdentity::Name(name) => name,
         }
     }
 
@@ -89,18 +91,18 @@ impl NameOrAddress {
     pub async fn try_resolve(
         &self,
         ctx: &(impl ControlStateReadAccess + ?Sized),
-    ) -> axum::response::Result<Result<ResolvedAddress, DomainName>> {
+    ) -> axum::response::Result<Result<ResolvedIdentity, DomainName>> {
         Ok(match self {
-            Self::Address(addr) => Ok(ResolvedAddress {
-                address: Address::from(*addr),
+            Self::Identity(addr) => Ok(ResolvedIdentity {
+                identity: Identity::from(*addr),
                 domain: None,
             }),
             Self::Name(name) => {
                 let domain = name.parse().map_err(|_| DomainParsingRejection)?;
                 let address = ctx.lookup_identity(&domain).map_err(log_and_500)?;
                 match address {
-                    Some(address) => Ok(ResolvedAddress {
-                        address,
+                    Some(address) => Ok(ResolvedIdentity {
+                        identity: address,
                         domain: Some(domain),
                     }),
                     None => Err(domain),
@@ -115,30 +117,30 @@ impl NameOrAddress {
     pub async fn resolve(
         &self,
         ctx: &(impl ControlStateReadAccess + ?Sized),
-    ) -> axum::response::Result<ResolvedAddress> {
+    ) -> axum::response::Result<ResolvedIdentity> {
         self.try_resolve(ctx).await?.map_err(|_| StatusCode::NOT_FOUND.into())
     }
 }
 
-impl<'de> serde::Deserialize<'de> for NameOrAddress {
+impl<'de> serde::Deserialize<'de> for NameOrIdentity {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         String::deserialize(deserializer).map(|s| {
-            if let Ok(addr) = Address::from_hex(&s) {
-                NameOrAddress::Address(AddressForUrl::from(addr))
+            if let Ok(addr) = Identity::from_hex(&s) {
+                NameOrIdentity::Identity(IdentityForUrl::from(addr))
             } else {
-                NameOrAddress::Name(s)
+                NameOrIdentity::Name(s)
             }
         })
     }
 }
 
-impl fmt::Display for NameOrAddress {
+impl fmt::Display for NameOrIdentity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Address(addr) => f.write_str(&Address::from(*addr).to_hex()),
+            Self::Identity(addr) => f.write_str(addr.into_inner().to_hex().as_str()),
             Self::Name(name) => f.write_str(name),
         }
     }
@@ -147,14 +149,14 @@ impl fmt::Display for NameOrAddress {
 /// A resolved [`NameOrAddress`].
 ///
 /// Constructed by [`NameOrAddress::try_resolve()`].
-pub struct ResolvedAddress {
-    address: Address,
+pub struct ResolvedIdentity {
+    identity: Identity,
     domain: Option<DomainName>,
 }
 
-impl ResolvedAddress {
-    pub fn address(&self) -> &Address {
-        &self.address
+impl ResolvedIdentity {
+    pub fn identity(&self) -> &Identity {
+        &self.identity
     }
 
     pub fn domain(&self) -> Option<&DomainName> {
@@ -162,14 +164,14 @@ impl ResolvedAddress {
     }
 }
 
-impl From<ResolvedAddress> for Address {
-    fn from(value: ResolvedAddress) -> Self {
-        value.address
+impl From<ResolvedIdentity> for Identity {
+    fn from(value: ResolvedIdentity) -> Self {
+        value.identity
     }
 }
 
-impl From<ResolvedAddress> for (Address, Option<DomainName>) {
-    fn from(ResolvedAddress { address, domain }: ResolvedAddress) -> Self {
+impl From<ResolvedIdentity> for (Identity, Option<DomainName>) {
+    fn from(ResolvedIdentity { identity: address, domain }: ResolvedIdentity) -> Self {
         (address, domain)
     }
 }

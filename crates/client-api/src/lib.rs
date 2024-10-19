@@ -101,15 +101,13 @@ pub trait ControlStateReadAccess {
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
 
     // DNS
-    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Address>>;
+    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Identity>>;
     fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
 }
 
 /// Write operations on the SpacetimeDB control plane.
 #[async_trait]
 pub trait ControlStateWriteAccess: Send + Sync {
-    // Databases
-    async fn create_address(&self) -> anyhow::Result<Address>;
 
     /// Publish a database acc. to [`DatabaseDef`].
     ///
@@ -125,7 +123,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
         spec: DatabaseDef,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>>;
 
-    async fn delete_database(&self, identity: &Identity, address: &Address) -> anyhow::Result<()>;
+    async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
 
     // Energy
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()>;
@@ -157,8 +155,8 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
         (**self).get_database_by_id(id)
     }
-    fn get_database_by_identity(&self, address: &Address) -> anyhow::Result<Option<Database>> {
-        (**self).get_database_by_identity(address)
+    fn get_database_by_identity(&self, identity: &Identity) -> anyhow::Result<Option<Database>> {
+        (**self).get_database_by_identity(identity)
     }
     fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
         (**self).get_databases()
@@ -181,20 +179,17 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     }
 
     // DNS
-    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Address>> {
+    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Identity>> {
         (**self).lookup_identity(domain)
     }
 
-    fn reverse_lookup(&self, address: &Address) -> anyhow::Result<Vec<DomainName>> {
-        (**self).reverse_lookup(address)
+    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
+        (**self).reverse_lookup(database_identity)
     }
 }
 
 #[async_trait]
 impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
-    async fn create_address(&self) -> anyhow::Result<Address> {
-        (**self).create_address().await
-    }
     
     async fn publish_database(
         &self,
@@ -204,8 +199,8 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         (**self).publish_database(identity, spec).await
     }
 
-    async fn delete_database(&self, identity: &Identity, address: &Address) -> anyhow::Result<()> {
-        (**self).delete_database(identity, address).await
+    async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
+        (**self).delete_database(caller_identity, database_identity).await
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
@@ -223,9 +218,9 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         &self,
         identity: &Identity,
         domain: &DomainName,
-        address: &Address,
+        database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult> {
-        (**self).create_dns_record(identity, domain, address).await
+        (**self).create_dns_record(identity, domain, database_identity).await
     }
 }
 
