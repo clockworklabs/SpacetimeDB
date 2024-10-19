@@ -32,7 +32,7 @@ use spacetimedb_lib::{
     bsatn::{self},
     de::Deserialize,
     ser::Serialize,
-    Address, Identity,
+    Identity,
 };
 use spacetimedb_primitives::TableId;
 use spacetimedb_table::{
