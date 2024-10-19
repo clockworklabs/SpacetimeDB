@@ -61,7 +61,7 @@ pub(crate) fn collect_result(
 }
 
 pub fn ctx_sql(db: &RelationalDB) -> ExecutionContext {
-    ExecutionContext::sql(db.address())
+    ExecutionContext::sql(db.database_identity())
 }
 
 fn execute(
@@ -321,7 +321,7 @@ pub(crate) mod tests {
 
         let tx = db.begin_tx();
         let schema = db.schema_for_table(&tx, ST_TABLE_ID).unwrap();
-        db.release_tx(&ExecutionContext::internal(db.address()), tx);
+        db.release_tx(&ExecutionContext::internal(db.database_identity()), tx);
         let result = run_for_testing(
             &db,
             &format!("SELECT * FROM {} WHERE table_id = {}", ST_TABLE_NAME, ST_TABLE_ID),

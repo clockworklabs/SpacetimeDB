@@ -103,7 +103,7 @@ fn eval(c: &mut Criterion) {
             let tx = raw.db.begin_tx();
             let query = compile_read_only_query(&raw.db, &AuthCtx::for_testing(), &tx, sql).unwrap();
             let query: ExecutionSet = query.into();
-            let ctx = &ExecutionContext::subscribe(raw.db.address());
+            let ctx = &ExecutionContext::subscribe(raw.db.database_identity());
             b.iter(|| {
                 drop(black_box(query.eval::<BsatnFormat>(
                     ctx,
@@ -134,7 +134,7 @@ fn eval(c: &mut Criterion) {
     );
     bench_eval(c, "full-join", &name);
 
-    let ctx_incr = &ExecutionContext::incremental_update(raw.db.address());
+    let ctx_incr = &ExecutionContext::incremental_update(raw.db.database_identity());
 
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- incr-select --exact --profile-time=30

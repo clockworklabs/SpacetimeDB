@@ -42,6 +42,7 @@ thiserror.workspace = true
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
+rand.workspace = true
 
 [dev-dependencies]
 spacetimedb-sats = { workspace = true, features = ["test"] }

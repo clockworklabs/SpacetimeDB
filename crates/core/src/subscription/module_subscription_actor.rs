@@ -55,7 +55,7 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(), DBError> {
-        let ctx = ExecutionContext::subscribe(self.relational_db.address());
+        let ctx = ExecutionContext::subscribe(self.relational_db.database_identity());
         let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
             self.relational_db.release_tx(&ctx, tx);
         });
@@ -151,7 +151,7 @@ impl ModuleSubscriptions {
 
         WORKER_METRICS
             .subscription_queries
-            .with_label_values(&self.relational_db.address())
+            .with_label_values(&self.relational_db.database_identity())
             .set(num_queries as i64);
 
         #[cfg(test)]
@@ -176,7 +176,7 @@ impl ModuleSubscriptions {
         subscriptions.remove_subscription(&(client_id.identity, client_id.address));
         WORKER_METRICS
             .subscription_queries
-            .with_label_values(&self.relational_db.address())
+            .with_label_values(&self.relational_db.database_identity())
             .set(subscriptions.num_queries() as i64);
     }
 
@@ -215,9 +215,9 @@ impl ModuleSubscriptions {
         // New execution context for the incremental subscription update.
         // TODO: The tx and the ExecutionContext should be coupled together.
         let ctx = if let Some(reducer_ctx) = ctx.reducer_context() {
-            ExecutionContext::incremental_update_for_reducer(stdb.address(), reducer_ctx.clone())
+            ExecutionContext::incremental_update_for_reducer(stdb.database_identity(), reducer_ctx.clone())
         } else {
-            ExecutionContext::incremental_update(stdb.address())
+            ExecutionContext::incremental_update(stdb.database_identity())
         };
 
         match &event.status {

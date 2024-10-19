@@ -94,7 +94,7 @@ impl InstanceEnv {
         self.replica_ctx.logger.write(level, record, bt);
         log::trace!(
             "MOD({}): {}",
-            self.replica_ctx.address.to_abbreviated_hex(),
+            self.replica_ctx.database_identity.to_abbreviated_hex(),
             record.message
         );
     }

@@ -265,7 +265,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let ctx = &ExecutionContext::incremental_update(db.address());
+        let ctx = &ExecutionContext::incremental_update(db.database_identity());
         let tx = &tx.into();
         let update = update.tables.iter().collect::<Vec<_>>();
         let result = s.eval_incr_for_test(ctx, db, tx, &update, None);
@@ -371,7 +371,7 @@ mod tests {
 
         let query: ExecutionSet = singleton_execution_set(query, sql.into())?;
 
-        let ctx = &ExecutionContext::incremental_update(db.address());
+        let ctx = &ExecutionContext::incremental_update(db.database_identity());
         let tx = (&tx).into();
         let update = update.tables.iter().collect::<Vec<_>>();
         let result = query.eval_incr_for_test(ctx, &db, &tx, &update, None);
@@ -552,7 +552,7 @@ mod tests {
         let row_2 = product!(2u64, "jhon doe");
         let tx = db.begin_tx();
         let s = get_all(&db, &tx, &AuthCtx::for_testing())?.into();
-        let ctx = ExecutionContext::subscribe(db.address());
+        let ctx = ExecutionContext::subscribe(db.database_identity());
         check_query_eval(&ctx, &db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
         let data1 = DatabaseTableUpdate {

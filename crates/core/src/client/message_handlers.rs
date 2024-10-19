@@ -58,7 +58,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         }
     };
 
-    let address = client.module.info().address;
+    let address = client.module.info().database_identity;
     let res = match message {
         ClientMessage::CallReducer(CallReducer {
             ref reducer,

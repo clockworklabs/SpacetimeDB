@@ -23,13 +23,12 @@ use crate::{
 use core::ops::RangeBounds;
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
-use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::{
-    address::Address,
     bsatn::Deserializer,
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
     de::DeserializeSeed,
 };
+use spacetimedb_lib::{db::raw_def::v9::RawSql, Identity};
 use spacetimedb_primitives::{ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, DecodeError},
@@ -71,9 +70,9 @@ impl MutTxId {
         table_id: TableId,
         col_pos: ColId,
         value: &AlgebraicValue,
-        database_address: Address,
+        database_identity: Identity,
     ) -> Result<()> {
-        let ctx = ExecutionContext::internal(database_address);
+        let ctx = ExecutionContext::internal(database_identity);
         let rows = self.iter_by_col_eq(&ctx, table_id, col_pos, value)?;
         let ptrs_to_delete = rows.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>();
         if ptrs_to_delete.is_empty() {
@@ -100,7 +99,7 @@ impl MutTxId {
     /// - An in-memory insert table is created for the transaction, allowing the transaction to insert rows into the table.
     /// - The table metadata is inserted into the system tables.
     /// - The returned ID is unique and not `TableId::SENTINEL`.
-    pub fn create_table(&mut self, mut table_schema: TableSchema, database_address: Address) -> Result<TableId> {
+    pub fn create_table(&mut self, mut table_schema: TableSchema, database_identity: Identity) -> Result<TableId> {
         if table_schema.table_id != TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must be `TableId::SENTINEL` in `{:#?}`", table_schema).into());
             // checks for children are performed in the relevant `create_...` functions.
@@ -119,7 +118,7 @@ impl MutTxId {
             table_primary_key: table_schema.primary_key.map(Into::into),
         };
         let table_id = self
-            .insert(ST_TABLE_ID, &mut row.into(), database_address)?
+            .insert(ST_TABLE_ID, &mut row.into(), database_identity)?
             .1
             .collapse()
             .read_col(StTableFields::TableId)?;
@@ -136,7 +135,7 @@ impl MutTxId {
                 col_name: col.col_name.clone(),
                 col_type: col.col_type.clone().into(),
             };
-            self.insert(ST_COLUMN_ID, &mut row.into(), database_address)?;
+            self.insert(ST_COLUMN_ID, &mut row.into(), database_identity)?;
         }
 
         let mut schema_internal = table_schema.clone();
@@ -158,7 +157,7 @@ impl MutTxId {
                 reducer_name: schedule.reducer_name,
                 at_column: schedule.at_column,
             };
-            let (generated, ..) = self.insert(ST_SCHEDULED_ID, &mut row.into(), database_address)?;
+            let (generated, ..) = self.insert(ST_SCHEDULED_ID, &mut row.into(), database_identity)?;
             let id = generated.as_u32();
 
             if let Some(&id) = id {
@@ -175,14 +174,14 @@ impl MutTxId {
         }
 
         // Insert constraints into `st_constraints`
-        let ctx = ExecutionContext::internal(database_address);
+        let ctx = ExecutionContext::internal(database_identity);
         for constraint in table_schema.constraints.iter().cloned() {
             self.create_constraint(&ctx, constraint)?;
         }
 
         // Insert sequences into `st_sequences`
         for seq in table_schema.sequences {
-            self.create_sequence(seq, database_address)?;
+            self.create_sequence(seq, database_identity)?;
         }
 
         // Create the indexes for the table
@@ -221,14 +220,14 @@ impl MutTxId {
             .map(|table| table.get_row_type())
     }
 
-    pub fn row_type_for_table(&self, table_id: TableId, database_address: Address) -> Result<RowTypeForTable<'_>> {
+    pub fn row_type_for_table(&self, table_id: TableId, database_identity: Identity) -> Result<RowTypeForTable<'_>> {
         // Fetch the `ProductType` from the in memory table if it exists.
         // The `ProductType` is invalidated if the schema of the table changes.
         if let Some(row_type) = self.get_row_type(table_id) {
             return Ok(RowTypeForTable::Ref(row_type));
         }
 
-        let ctx = ExecutionContext::internal(database_address);
+        let ctx = ExecutionContext::internal(database_identity);
 
         // Look up the columns for the table in question.
         // NOTE: This is quite an expensive operation, although we only need
@@ -239,16 +238,16 @@ impl MutTxId {
         Ok(RowTypeForTable::Arc(self.schema_for_table(&ctx, table_id)?))
     }
 
-    pub fn drop_table(&mut self, table_id: TableId, database_address: Address) -> Result<()> {
-        let ctx = &ExecutionContext::internal(database_address);
+    pub fn drop_table(&mut self, table_id: TableId, database_identity: Identity) -> Result<()> {
+        let ctx = &ExecutionContext::internal(database_identity);
         let schema = &*self.schema_for_table(ctx, table_id)?;
 
         for row in &schema.indexes {
-            self.drop_index(row.index_id, database_address)?;
+            self.drop_index(row.index_id, database_identity)?;
         }
 
         for row in &schema.sequences {
-            self.drop_sequence(row.sequence_id, database_address)?;
+            self.drop_sequence(row.sequence_id, database_identity)?;
         }
 
         for row in &schema.constraints {
@@ -260,20 +259,20 @@ impl MutTxId {
             ST_TABLE_ID,
             StTableFields::TableId.col_id(),
             &table_id.into(),
-            database_address,
+            database_identity,
         )?;
         self.drop_col_eq(
             ST_COLUMN_ID,
             StColumnFields::TableId.col_id(),
             &table_id.into(),
-            database_address,
+            database_identity,
         )?;
         if let Some(schedule) = &schema.schedule {
             self.drop_col_eq(
                 ST_SCHEDULED_ID,
                 StScheduledFields::ScheduleId.col_id(),
                 &schedule.schedule_id.into(),
-                database_address,
+                database_identity,
             )?;
         }
 
@@ -286,16 +285,16 @@ impl MutTxId {
         Ok(())
     }
 
-    pub fn rename_table(&mut self, table_id: TableId, new_name: &str, database_address: Address) -> Result<()> {
-        let ctx = ExecutionContext::internal(database_address);
+    pub fn rename_table(&mut self, table_id: TableId, new_name: &str, database_identity: Identity) -> Result<()> {
+        let ctx = ExecutionContext::internal(database_identity);
         // Update the table's name in st_tables.
-        self.update_st_table_row(&ctx, database_address, table_id, |st| st.table_name = new_name.into())
+        self.update_st_table_row(&ctx, database_identity, table_id, |st| st.table_name = new_name.into())
     }
 
     fn update_st_table_row(
         &mut self,
         ctx: &ExecutionContext,
-        database_address: Address,
+        database_identity: Identity,
         table_id: TableId,
         updater: impl FnOnce(&mut StTableRow),
     ) -> Result<()> {
@@ -310,13 +309,13 @@ impl MutTxId {
         // Delete the row, run updates, and insert again.
         self.delete(ST_TABLE_ID, ptr)?;
         updater(&mut row);
-        self.insert(ST_TABLE_ID, &mut row.into(), database_address)?;
+        self.insert(ST_TABLE_ID, &mut row.into(), database_identity)?;
 
         Ok(())
     }
 
-    pub fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
-        let ctx = ExecutionContext::internal(database_address);
+    pub fn table_id_from_name(&self, table_name: &str, database_identity: Identity) -> Result<Option<TableId>> {
+        let ctx = ExecutionContext::internal(database_identity);
         let table_name = &table_name.into();
         let row = self
             .iter_by_col_eq(&ctx, ST_TABLE_ID, StTableFields::TableName, table_name)?
@@ -361,7 +360,7 @@ impl MutTxId {
     /// Set the table access of `table_id` to `access`.
     pub(crate) fn alter_table_access(
         &mut self,
-        database_address: Address,
+        database_identity: Identity,
         table_id: TableId,
         access: StAccess,
     ) -> Result<()> {
@@ -370,8 +369,8 @@ impl MutTxId {
         table.with_mut_schema(|s| s.table_access = access);
 
         // Update system tables.
-        let ctx = ExecutionContext::internal(database_address);
-        self.update_st_table_row(&ctx, database_address, table_id, |st| st.table_access = access)?;
+        let ctx = ExecutionContext::internal(database_identity);
+        self.update_st_table_row(&ctx, database_identity, table_id, |st| st.table_access = access)?;
         Ok(())
     }
 
@@ -416,7 +415,7 @@ impl MutTxId {
             index_algorithm: index.index_algorithm.clone().into(),
         };
         let index_id = self
-            .insert(ST_INDEX_ID, &mut row.into(), ctx.database())?
+            .insert(ST_INDEX_ID, &mut row.into(), ctx.database_identity())?
             .1
             .collapse()
             .read_col(StIndexFields::IndexId)?;
@@ -459,9 +458,9 @@ impl MutTxId {
         Ok(index_id)
     }
 
-    pub fn drop_index(&mut self, index_id: IndexId, database_address: Address) -> Result<()> {
+    pub fn drop_index(&mut self, index_id: IndexId, database_identity: Identity) -> Result<()> {
         log::trace!("INDEX DROPPING: {}", index_id);
-        let ctx = ExecutionContext::internal(database_address);
+        let ctx = ExecutionContext::internal(database_identity);
 
         // Find the index in `st_indexes`.
         let st_index_ref = self
@@ -500,8 +499,8 @@ impl MutTxId {
         Ok(())
     }
 
-    pub fn index_id_from_name(&self, index_name: &str, database_address: Address) -> Result<Option<IndexId>> {
-        let ctx = ExecutionContext::internal(database_address);
+    pub fn index_id_from_name(&self, index_name: &str, database_identity: Identity) -> Result<Option<IndexId>> {
+        let ctx = ExecutionContext::internal(database_identity);
         let name = &index_name.into();
         let row = self
             .iter_by_col_eq(&ctx, ST_INDEX_ID, StIndexFields::IndexName, name)?
@@ -695,7 +694,7 @@ impl MutTxId {
         (range_start, range_end)
     }
 
-    pub fn get_next_sequence_value(&mut self, seq_id: SequenceId, database_address: Address) -> Result<i128> {
+    pub fn get_next_sequence_value(&mut self, seq_id: SequenceId, database_identity: Identity) -> Result<i128> {
         {
             let Some(sequence) = self.sequence_state_lock.get_sequence_mut(seq_id) else {
                 return Err(SequenceError::NotFound(seq_id).into());
@@ -711,7 +710,7 @@ impl MutTxId {
         }
         // Allocate new sequence values
         // If we're out of allocations, then update the sequence row in st_sequences to allocate a fresh batch of sequences.
-        let ctx = ExecutionContext::internal(database_address);
+        let ctx = ExecutionContext::internal(database_identity);
         let old_seq_row_ref = self
             .iter_by_col_eq(&ctx, ST_SEQUENCE_ID, StSequenceFields::SequenceId, &seq_id.into())?
             .last()
@@ -755,7 +754,7 @@ impl MutTxId {
     /// Ensures:
     /// - The sequence metadata is inserted into the system tables (and other data structures reflecting them).
     /// - The returned ID is unique and not `SequenceId::SENTINEL`.
-    pub fn create_sequence(&mut self, seq: SequenceSchema, database_address: Address) -> Result<SequenceId> {
+    pub fn create_sequence(&mut self, seq: SequenceSchema, database_identity: Identity) -> Result<SequenceId> {
         if seq.sequence_id != SequenceId::SENTINEL {
             return Err(anyhow::anyhow!("`sequence_id` must be `SequenceId::SENTINEL` in `{:#?}`", seq).into());
         }
@@ -785,7 +784,7 @@ impl MutTxId {
             min_value: seq.min_value,
             max_value: seq.max_value,
         };
-        let row = self.insert(ST_SEQUENCE_ID, &mut sequence_row.clone().into(), database_address)?;
+        let row = self.insert(ST_SEQUENCE_ID, &mut sequence_row.clone().into(), database_identity)?;
         let seq_id = row.1.collapse().read_col(StSequenceFields::SequenceId)?;
         sequence_row.sequence_id = seq_id;
 
@@ -800,8 +799,8 @@ impl MutTxId {
         Ok(seq_id)
     }
 
-    pub fn drop_sequence(&mut self, sequence_id: SequenceId, database_address: Address) -> Result<()> {
-        let ctx = ExecutionContext::internal(database_address);
+    pub fn drop_sequence(&mut self, sequence_id: SequenceId, database_identity: Identity) -> Result<()> {
+        let ctx = ExecutionContext::internal(database_identity);
 
         let st_sequence_ref = self
             .iter_by_col_eq(&ctx, ST_SEQUENCE_ID, StSequenceFields::SequenceId, &sequence_id.into())?
@@ -824,8 +823,8 @@ impl MutTxId {
         Ok(())
     }
 
-    pub fn sequence_id_from_name(&self, seq_name: &str, database_address: Address) -> Result<Option<SequenceId>> {
-        let ctx = ExecutionContext::internal(database_address);
+    pub fn sequence_id_from_name(&self, seq_name: &str, database_identity: Identity) -> Result<Option<SequenceId>> {
+        let ctx = ExecutionContext::internal(database_identity);
         let name = &<Box<str>>::from(seq_name).into();
         self.iter_by_col_eq(&ctx, ST_SEQUENCE_ID, StSequenceFields::SequenceName, name)
             .map(|mut iter| {
@@ -880,7 +879,7 @@ impl MutTxId {
         let constraint_row = self.insert(
             ST_CONSTRAINT_ID,
             &mut ProductValue::from(constraint_row),
-            ctx.database(),
+            ctx.database_identity(),
         )?;
         let constraint_id = constraint_row.1.collapse().read_col(StConstraintFields::ConstraintId)?;
         let existed = matches!(constraint_row.1, RowRefInsertion::Existed(_));
@@ -985,7 +984,11 @@ impl MutTxId {
             sql: row_level_security_schema.sql,
         };
 
-        let row = self.insert(ST_ROW_LEVEL_SECURITY_ID, &mut ProductValue::from(row), ctx.database())?;
+        let row = self.insert(
+            ST_ROW_LEVEL_SECURITY_ID,
+            &mut ProductValue::from(row),
+            ctx.database_identity(),
+        )?;
         let row_level_security_sql = row.1.collapse().read_col(StRowLevelSecurityFields::Sql)?;
         let existed = matches!(row.1, RowRefInsertion::Existed(_));
 
@@ -1217,9 +1220,9 @@ impl MutTxId {
         &'a mut self,
         table_id: TableId,
         row: &mut ProductValue,
-        database_address: Address,
+        database_identity: Identity,
     ) -> Result<(AlgebraicValue, RowRefInsertion<'a>)> {
-        let generated = self.write_sequence_values(table_id, row, database_address)?;
+        let generated = self.write_sequence_values(table_id, row, database_identity)?;
         let row_ref = self.insert_row_internal(table_id, row)?;
         Ok((generated, row_ref))
     }
@@ -1230,9 +1233,9 @@ impl MutTxId {
         &mut self,
         table_id: TableId,
         row: &mut ProductValue,
-        database_address: Address,
+        database_identity: Identity,
     ) -> Result<AlgebraicValue> {
-        let ctx = ExecutionContext::internal(database_address);
+        let ctx = ExecutionContext::internal(database_identity);
 
         // TODO: Executing schema_for_table for every row insert is expensive.
         // However we ask for the schema in the [Table] struct instead.
@@ -1249,7 +1252,7 @@ impl MutTxId {
         // Update every column in the row that needs it.
         // We assume here that column with a sequence is of a sequence-compatible type.
         for (col_id, sequence_id) in cols_to_update.iter().zip(seqs_to_use) {
-            let seq_val = self.get_next_sequence_value(sequence_id, database_address)?;
+            let seq_val = self.get_next_sequence_value(sequence_id, database_identity)?;
             let col_typ = &schema.columns()[col_id.idx()].col_type;
             let gen_val = AlgebraicValue::from_sequence_value(col_typ, seq_val);
             row.elements[col_id.idx()] = gen_val;

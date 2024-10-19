@@ -531,7 +531,7 @@ mod tests {
             timer: None,
         });
 
-        let ctx = ExecutionContext::incremental_update(db.address());
+        let ctx = ExecutionContext::incremental_update(db.database_identity());
         db.with_read_only(&ctx, |tx| {
             subscriptions.eval_updates(&ctx, &db, tx, event, Some(&client0), None)
         });

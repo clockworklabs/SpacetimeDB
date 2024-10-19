@@ -165,7 +165,7 @@ impl ClientConnection {
 
         let (sendtx, sendrx) = mpsc::channel::<SerializableMessage>(CLIENT_CHANNEL_CAPACITY);
 
-        let db = module.info().address;
+        let db = module.info().database_identity;
 
         let (fut_tx, fut_rx) = oneshot::channel::<Fut>();
         // weird dance so that we can get an abort_handle into ClientConnection

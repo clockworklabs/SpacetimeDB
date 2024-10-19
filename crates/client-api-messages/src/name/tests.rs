@@ -111,16 +111,16 @@ proptest! {
     }
 
     #[test]
-    fn prop_tld_cannot_be_address(addr_bytes in any::<[u8; 16]>()) {
+    fn prop_tld_cannot_be_identity(addr_bytes in any::<[u8; 32]>()) {
         let addr = hex::encode(addr_bytes);
         assert!(matches!(
             parse_domain_name(addr),
-            Err(DomainParsingError(ParseError::Address { .. }))
+            Err(DomainParsingError(ParseError::Identity { .. }))
         ))
     }
 
     #[test]
-    fn prop_but_tld_can_be_some_other_hex_value(bytes in any::<[u8; 32]>()) {
+    fn prop_but_tld_can_be_some_other_hex_value(bytes in any::<[u8; 16]>()) {
         let addr = hex::encode(bytes);
         parse_domain_name(addr)?;
     }

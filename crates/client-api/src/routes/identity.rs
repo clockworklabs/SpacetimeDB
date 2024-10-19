@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use spacetimedb::auth::identity::encode_token_with_expiry;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::Identity;
 
 use crate::auth::{SpacetimeAuth, SpacetimeAuthRequired};
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
@@ -42,8 +42,20 @@ pub async fn create_identity<S: ControlStateDelegate + NodeDelegate>(
 /// This newtype around `Identity` implements `Deserialize`
 /// directly from the inner identity bytes,
 /// without the enclosing `ProductValue` wrapper.
-#[derive(derive_more::Into)]
+#[derive(derive_more::Into, Clone, Debug, Copy)]
 pub struct IdentityForUrl(Identity);
+
+impl From<Identity> for IdentityForUrl {
+    fn from(i: Identity) -> Self {
+        IdentityForUrl(i)
+    }
+}
+
+impl IdentityForUrl {
+    pub fn into_inner(&self) -> Identity {
+        self.0
+    }
+}
 
 impl<'de> serde::Deserialize<'de> for IdentityForUrl {
     fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
@@ -58,7 +70,7 @@ pub struct GetDatabasesParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetDatabasesResponse {
-    addresses: Vec<Address>,
+    identities: Vec<Identity>,
 }
 
 pub async fn get_databases<S: ControlStateDelegate>(
@@ -71,12 +83,12 @@ pub async fn get_databases<S: ControlStateDelegate>(
         log::error!("Failure when retrieving databases for search: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let addresses = all_dbs
+    let identities = all_dbs
         .iter()
         .filter(|db| db.owner_identity == identity)
-        .map(|db| db.address)
+        .map(|db| db.database_identity)
         .collect();
-    Ok(axum::Json(GetDatabasesResponse { addresses }))
+    Ok(axum::Json(GetDatabasesResponse { identities }))
 }
 
 #[derive(Debug, Serialize)]

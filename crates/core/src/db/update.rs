@@ -79,9 +79,9 @@ fn auto_migrate_database(
         .map(|table| (table.table_name.clone(), table))
         .collect::<HashMap<_, _>>();
 
-    let ctx = &ExecutionContext::internal(stdb.address());
+    let ctx = &ExecutionContext::internal(stdb.database_identity());
 
-    log::info!("Running database update prechecks: {}", stdb.address());
+    log::info!("Running database update prechecks: {}", stdb.database_identity());
 
     for precheck in plan.prechecks {
         match precheck {
@@ -110,7 +110,7 @@ fn auto_migrate_database(
         }
     }
 
-    log::info!("Running database update steps: {}", stdb.address());
+    log::info!("Running database update steps: {}", stdb.database_identity());
 
     for step in plan.steps {
         match step {

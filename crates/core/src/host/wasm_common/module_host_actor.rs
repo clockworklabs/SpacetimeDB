@@ -139,7 +139,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let module_hash = program.hash;
         log::trace!(
             "Making new module host actor for database {} with module {}",
-            replica_context.address,
+            replica_context.database_identity,
             module_hash,
         );
         let log_tx = replica_context.logger.tx.clone();
@@ -165,7 +165,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let info = ModuleInfo::new(
             def,
             replica_context.owner_identity,
-            replica_context.address,
+            replica_context.database_identity,
             module_hash,
             log_tx,
             replica_context.subscriptions.clone(),
@@ -263,7 +263,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         log::debug!("init database");
         let timestamp = Timestamp::now();
         let stdb = &*self.replica_context().relational_db;
-        let ctx = ExecutionContext::internal(stdb.address());
+        let ctx = ExecutionContext::internal(stdb.database_identity());
         let auth_ctx = AuthCtx::for_current(self.replica_context().database.owner_identity);
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let (tx, ()) = stdb
@@ -343,7 +343,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             }
         };
         let stdb = &*self.replica_context().relational_db;
-        let ctx = Lazy::new(|| ExecutionContext::internal(stdb.address()));
+        let ctx = Lazy::new(|| ExecutionContext::internal(stdb.database_identity()));
 
         let program_hash = program.hash;
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -355,7 +355,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
         match res {
             Err(e) => {
-                log::warn!("Database update failed: {} @ {}", e, stdb.address());
+                log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
                 self.system_logger().warn(&format!("Database update failed: {e}"));
                 stdb.rollback_mut_tx(&ctx, tx);
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
@@ -363,7 +363,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             Ok(()) => {
                 stdb.commit_tx(&ctx, tx)?;
                 self.system_logger().info("Database updated");
-                log::info!("Database updated, {}", stdb.address());
+                log::info!("Database updated, {}", stdb.database_identity());
                 Ok(UpdateDatabaseResult::UpdatePerformed)
             }
         }
@@ -407,7 +407,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let replica_ctx = self.replica_context();
         let stdb = &*replica_ctx.relational_db.clone();
-        let address = replica_ctx.address;
+        let address = replica_ctx.database_identity;
         let reducer_name = self
             .info
             .reducers_map
@@ -423,7 +423,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let energy_fingerprint = ReducerFingerprint {
             module_hash: self.info.module_hash,
-            module_identity: self.info.identity,
+            module_identity: self.info.owner_identity,
             caller_identity,
             reducer_name,
         };

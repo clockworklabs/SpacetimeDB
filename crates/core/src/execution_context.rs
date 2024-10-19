@@ -71,14 +71,14 @@ impl Metrics {
     }
 
     #[allow(dead_code)]
-    fn flush(&mut self, workload: &WorkloadType, database: &Address, reducer: &str) {
+    fn flush(&mut self, workload: &WorkloadType, database_identity: &Identity, reducer: &str) {
         macro_rules! flush_metric {
             ($db_metric:expr, $metric:expr, $metric_field:ident) => {
                 if $metric.$metric_field > 0 {
                     $db_metric
                         .with_label_values(
                             workload,
-                            database,
+                            database_identity,
                             reducer,
                             &$metric.table_id.0,
                             &$metric.cache_table_name,
@@ -101,8 +101,8 @@ impl Metrics {
 /// More generally it acts as a container for information that database operations may require to function correctly.
 #[derive(Default, Clone)]
 pub struct ExecutionContext {
-    /// The database on which a transaction is being executed.
-    database: Address,
+    /// The identity of the database on which a transaction is being executed.
+    database_identity: Identity,
     /// The reducer from which the current transaction originated.
     reducer: Option<ReducerContext>,
     /// The type of workload that is being executed.
@@ -183,9 +183,9 @@ impl Default for WorkloadType {
 
 impl ExecutionContext {
     /// Returns an [ExecutionContext] with the provided parameters and empty metrics.
-    fn new(database: Address, reducer: Option<ReducerContext>, workload: WorkloadType) -> Self {
+    fn new(database_identity: Identity, reducer: Option<ReducerContext>, workload: WorkloadType) -> Self {
         Self {
-            database,
+            database_identity,
             reducer,
             workload,
             metrics: <_>::default(),
@@ -193,40 +193,40 @@ impl ExecutionContext {
     }
 
     /// Returns an [ExecutionContext] for a reducer transaction.
-    pub fn reducer(database: Address, ctx: ReducerContext) -> Self {
-        Self::new(database, Some(ctx), WorkloadType::Reducer)
+    pub fn reducer(database_identity: Identity, ctx: ReducerContext) -> Self {
+        Self::new(database_identity, Some(ctx), WorkloadType::Reducer)
     }
 
     /// Returns an [ExecutionContext] for a one-off sql query.
-    pub fn sql(database: Address) -> Self {
-        Self::new(database, None, WorkloadType::Sql)
+    pub fn sql(database_identity: Identity) -> Self {
+        Self::new(database_identity, None, WorkloadType::Sql)
     }
 
     /// Returns an [ExecutionContext] for an initial subscribe call.
-    pub fn subscribe(database: Address) -> Self {
+    pub fn subscribe(database: Identity) -> Self {
         Self::new(database, None, WorkloadType::Subscribe)
     }
 
     /// Returns an [ExecutionContext] for a subscription update.
-    pub fn incremental_update(database: Address) -> Self {
+    pub fn incremental_update(database: Identity) -> Self {
         Self::new(database, None, WorkloadType::Update)
     }
 
     /// Returns an [ExecutionContext] for an incremental subscription update,
     /// where this update is the result of a reducer mutation.
-    pub fn incremental_update_for_reducer(database: Address, ctx: ReducerContext) -> Self {
+    pub fn incremental_update_for_reducer(database: Identity, ctx: ReducerContext) -> Self {
         Self::new(database, Some(ctx), WorkloadType::Update)
     }
 
     /// Returns an [ExecutionContext] for an internal database operation.
-    pub fn internal(database: Address) -> Self {
-        Self::new(database, None, WorkloadType::Internal)
+    pub fn internal(database_identity: Identity) -> Self {
+        Self::new(database_identity, None, WorkloadType::Internal)
     }
 
     /// Returns the address of the database on which we are operating.
     #[inline]
-    pub fn database(&self) -> Address {
-        self.database
+    pub fn database_identity(&self) -> Identity {
+        self.database_identity
     }
 
     /// If this is a reducer context, returns the name of the reducer.
@@ -251,7 +251,7 @@ impl ExecutionContext {
 impl Drop for ExecutionContext {
     fn drop(&mut self) {
         let workload = self.workload;
-        let database = self.database;
+        let database = self.database_identity;
         let reducer = self.reducer_name();
         self.metrics.write().flush(&workload, &database, reducer);
     }

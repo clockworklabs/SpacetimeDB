@@ -861,9 +861,9 @@ but you must call one of them, or else the connection will never progress.
         self
     }
 
-    /// Set the name or address of the remote module.
-    pub fn with_module_name(mut self, name_or_address: impl ToString) -> Self {
-        self.module_name = Some(name_or_address.to_string());
+    /// Set the name or identity of the remote module.
+    pub fn with_module_name(mut self, name_or_identity: impl ToString) -> Self {
+        self.module_name = Some(name_or_identity.to_string());
         self
     }
 
