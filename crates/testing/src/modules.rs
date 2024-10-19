@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb::Identity;
+use spacetimedb_client_api::routes::subscribe::generate_random_address;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use tokio::runtime::{Builder, Runtime};
 
@@ -151,8 +152,8 @@ impl CompiledModule {
         let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
-        let db_identity = Identity::PLACEHOLDER;
-        let client_address = env.create_address().await.unwrap();
+        let db_identity = Identity::placeholder();
+        let client_address = generate_random_address();
 
         let program_bytes = self
             .program_bytes
@@ -171,7 +172,7 @@ impl CompiledModule {
         .await
         .unwrap();
 
-        let database = env.get_database_by_address(&db_identity).unwrap().unwrap();
+        let database = env.get_database_by_identity(&db_identity).unwrap().unwrap();
         let instance = env.get_leader_replica_by_database(database.id).unwrap();
 
         let client_id = ClientActorId {

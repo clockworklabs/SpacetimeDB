@@ -1030,7 +1030,7 @@ async fn parse_loop<M: SpacetimeModule>(
             ws::ServerMessage::IdentityToken(ws::IdentityToken {
                 identity,
                 token,
-                database_identity: address,
+                address,
             }) => ParsedMessage::IdentityToken(identity, token, address),
             ws::ServerMessage::OneOffQueryResponse(_) => {
                 unreachable!("The Rust SDK does not implement one-off queries")

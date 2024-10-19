@@ -673,7 +673,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
             Err(domain) => {
                 // `name_or_address` was a `NameOrAddress::Name`, but no record
                 // exists yet. Create it now with a fresh address.
-                let database_identity = Identity::PLACEHOLDER;
+                let database_identity = Identity::placeholder();
                 ctx.create_dns_record(&auth.identity, &domain, &database_identity)
                     .await
                     .map_err(log_and_500)?;
@@ -681,7 +681,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
             }
         },
         None => {
-            let database_identity = Identity::PLACEHOLDER;
+            let database_identity = Identity::placeholder();
             (database_identity, None)
         }
     };

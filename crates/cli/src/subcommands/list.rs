@@ -4,6 +4,7 @@ use anyhow::Context;
 use clap::{ArgMatches, Command};
 use reqwest::StatusCode;
 use serde::Deserialize;
+use spacetimedb::Identity;
 use spacetimedb_lib::Address;
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},

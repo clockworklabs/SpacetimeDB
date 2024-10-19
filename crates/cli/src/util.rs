@@ -185,7 +185,7 @@ pub struct DescribeElementName {
 
 pub async fn describe_reducer(
     config: &mut Config,
-    database: Address,
+    database: Identity,
     server: Option<String>,
     reducer_name: String,
     anon_identity: bool,

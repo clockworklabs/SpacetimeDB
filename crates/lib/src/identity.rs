@@ -47,10 +47,20 @@ impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
     }
 }
 
+use rand::Rng;
+use rand;
+
 impl Identity {
     pub const ZERO: Self = Self::from_u256(u256::ZERO);
-    pub const PLACEHOLDER: Self = Self::from_u256(u256::ZERO);
 
+    pub fn placeholder() -> Self {
+        // Generate a random identity.
+        let mut rng = rand::thread_rng();
+        let mut random_bytes = [0u8; 32];
+        rng.fill(&mut random_bytes);
+        Identity::from_byte_array(random_bytes)
+
+    }
     /// Returns an `Identity` defined as the given `bytes` byte array.
     pub const fn from_byte_array(bytes: [u8; 32]) -> Self {
         // SAFETY: The transmute is an implementation of `u256::from_ne_bytes`,

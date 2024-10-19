@@ -7,6 +7,7 @@ use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgMatches};
 use itertools::Either;
 use serde_json::Value;
+use spacetimedb::Identity;
 use spacetimedb_lib::de::serde::deserialize_from;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, Typespace};
 use spacetimedb_lib::{Address, ProductTypeElement};

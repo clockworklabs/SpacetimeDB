@@ -445,8 +445,8 @@ pub struct DomainParsingError(#[from] ParseError);
 enum ParseError {
     #[error("Database names cannot be empty")]
     Empty,
-    #[error("Addresses cannot be database names: `{part}`")]
-    Address { part: String },
+    #[error("Identities cannot be database names: `{part}`")]
+    Identity { part: String },
     #[error("Database names must not start with a slash: `{input}`")]
     StartsSlash { input: String },
     #[error("Database names must not end with a slash: `{input}`")]
@@ -522,7 +522,7 @@ fn ensure_domain_tld(input: &str) -> Result<(), ParseError> {
     if input.contains('/') {
         Err(ParseError::ContainsSlash { part: input.to_owned() })
     } else if is_identity(input) {
-        Err(ParseError::Address { part: input.to_owned() })
+        Err(ParseError::Identity { part: input.to_owned() })
     } else {
         Ok(())
     }
