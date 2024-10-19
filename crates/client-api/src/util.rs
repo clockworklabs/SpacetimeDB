@@ -73,20 +73,20 @@ impl NameOrIdentity {
         }
     }
 
-    /// Resolve this [`NameOrAddress`].
+    /// Resolve this [`NameOrIdentity`].
     ///
-    /// If `self` is a [`NameOrAddress::Address`], the inner [`Address`] is
+    /// If `self` is a [`NameOrIdentity::Address`], the inner [`Address`] is
     /// returned in a [`ResolvedAddress`] without a [`DomainName`].
     ///
-    /// Otherwise, if `self` is a [`NameOrAddress::Name`], the [`Address`] is
+    /// Otherwise, if `self` is a [`NameOrIdentity::Name`], the [`Address`] is
     /// looked up by that name in the SpacetimeDB DNS and returned in a
     /// [`ResolvedAddress`] alongside `Some` [`DomainName`].
     ///
-    /// Errors are returned if [`NameOrAddress::Name`] cannot be parsed into a
+    /// Errors are returned if [`NameOrIdentity::Name`] cannot be parsed into a
     /// [`DomainName`], or the DNS lookup fails.
     ///
     /// An `Ok` result is itself a [`Result`], which is `Err(DomainName)` if the
-    /// given [`NameOrAddress::Name`] is not registered in the SpacetimeDB DNS,
+    /// given [`NameOrIdentity::Name`] is not registered in the SpacetimeDB DNS,
     /// i.e. no corresponding [`Address`] exists.
     pub async fn try_resolve(
         &self,
@@ -112,8 +112,8 @@ impl NameOrIdentity {
     }
 
     /// A variant of [`Self::try_resolve()`] which maps to a 404 (Not Found)
-    /// response if `self` is a [`NameOrAddress::Name`] for which no
-    /// corresponding [`Address`] is found in the SpacetimeDB DNS.
+    /// response if `self` is a [`NameOrIdentity::Name`] for which no
+    /// corresponding [`Identity`] is found in the SpacetimeDB DNS.
     pub async fn resolve(
         &self,
         ctx: &(impl ControlStateReadAccess + ?Sized),
@@ -146,9 +146,9 @@ impl fmt::Display for NameOrIdentity {
     }
 }
 
-/// A resolved [`NameOrAddress`].
+/// A resolved [`NameOrIdentity`].
 ///
-/// Constructed by [`NameOrAddress::try_resolve()`].
+/// Constructed by [`NameOrIdentity::try_resolve()`].
 pub struct ResolvedIdentity {
     identity: Identity,
     domain: Option<DomainName>,
