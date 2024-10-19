@@ -958,7 +958,6 @@ mod tests {
     use crate::error::{DBError, IndexError};
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
-    use spacetimedb_lib::address::Address;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::resolved_type_via_v9;
