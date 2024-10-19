@@ -15,7 +15,7 @@ use openssl::ec::{EcGroup, EcKey};
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
 use spacetimedb::address::Address;
-use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
+use spacetimedb::auth::identity::{self, DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
@@ -242,9 +242,6 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
 
 #[async_trait]
 impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
-    async fn create_address(&self) -> anyhow::Result<Address> {
-        Ok(self.control_db.alloc_spacetime_address()?)
-    }
 
     async fn publish_database(
         &self,
@@ -278,7 +275,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     &database.owner_identity == publisher,
                     "Permission denied: `{}` does not own database `{}`",
                     publisher,
-                    spec.address.to_abbreviated_hex()
+                    spec.database_identity.to_abbreviated_hex()
                 );
 
                 let database_id = database.id;
@@ -343,17 +340,17 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         }
     }
 
-    async fn delete_database(&self, identity: &Identity, address: &Address) -> anyhow::Result<()> {
-        let Some(database) = self.control_db.get_database_by_identity(address)? else {
+    async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
+        let Some(database) = self.control_db.get_database_by_identity(database_identity)? else {
             return Ok(());
         };
         anyhow::ensure!(
-            &database.owner_identity == identity,
+            &database.owner_identity == caller_identity,
             // TODO: `PermissionDenied` should be a variant of `Error`,
             //       so we can match on it and return better error responses
             //       from HTTP endpoints.
-            "Permission denied: `{identity}` does not own database `{}`",
-            address.to_abbreviated_hex()
+            "Permission denied: `{caller_identity}` does not own database `{}`",
+            database_identity.to_abbreviated_hex()
         );
 
         self.control_db.delete_database(database.id)?;
@@ -385,13 +382,13 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 
     async fn create_dns_record(
         &self,
-        identity: &Identity,
+        owner_identity: &Identity,
         domain: &DomainName,
-        address: &Address,
+        database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult> {
         Ok(self
             .control_db
-            .spacetime_insert_domain(address, domain.clone(), *identity, true)?)
+            .spacetime_insert_domain(database_identity, domain.clone(), *owner_identity, true)?)
     }
 }
 

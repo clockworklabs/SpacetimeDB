@@ -35,6 +35,8 @@ use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::ProductTypeElement;
 use spacetimedb_schema::def::{ReducerDef, TableDef};
 
+use super::identity::IdentityForUrl;
+
 pub(crate) struct DomainParsingRejection;
 
 impl IntoResponse for DomainParsingRejection {
@@ -181,10 +183,10 @@ pub struct DatabaseInformation {
 async fn extract_db_call_info(
     ctx: &(impl ControlStateDelegate + NodeDelegate + ?Sized),
     auth: SpacetimeAuth,
-    address: &Address,
+    database_identity: &Identity,
 ) -> Result<DatabaseInformation, ErrorResponse> {
-    let database = worker_ctx_find_database(ctx, address).await?.ok_or_else(|| {
-        log::error!("Could not find database: {}", address.to_hex());
+    let database = worker_ctx_find_database(ctx, database_identity).await?.ok_or_else(|| {
+        log::error!("Could not find database: {}", database_identity.to_hex());
         (StatusCode::NOT_FOUND, "No such database.")
     })?;
 
@@ -424,8 +426,8 @@ where
     // You should not be able to read the logs from a database that you do not own
     // so, unless you are the owner, this will fail.
 
-    let address = name_or_address.resolve(&worker_ctx).await?.into();
-    let database = worker_ctx_find_database(&worker_ctx, &address)
+    let database_identity: Identity = name_or_address.resolve(&worker_ctx).await?.into();
+    let database = worker_ctx_find_database(&worker_ctx, &database_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -446,7 +448,7 @@ where
         .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
     let replica_id = replica.id;
 
-    let filepath = DatabaseLogger::filepath(&address, replica_id);
+    let filepath = DatabaseLogger::filepath(&database_identity, replica_id);
     let lines = DatabaseLogger::read_latest(&filepath, num_lines).await;
 
     let body = if follow {
@@ -461,7 +463,7 @@ where
             std::future::ready(match x {
                 Ok(log) => Some(log),
                 Err(tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(skipped)) => {
-                    log::trace!("Skipped {} lines in log for module {}", skipped, address.to_hex());
+                    log::trace!("Skipped {} lines in log for module {}", skipped, database_identity.to_hex());
                     None
                 }
             })
@@ -490,9 +492,9 @@ fn mime_ndjson() -> mime::Mime {
 
 async fn worker_ctx_find_database(
     worker_ctx: &(impl ControlStateDelegate + ?Sized),
-    address: &Address,
+    database_identity: &Identity,
 ) -> axum::response::Result<Option<Database>> {
-    worker_ctx.get_database_by_identity(address).map_err(log_and_500)
+    worker_ctx.get_database_by_identity(database_identity).map_err(log_and_500)
 }
 
 #[derive(Deserialize)]
@@ -585,7 +587,7 @@ pub struct DNSParams {
 
 #[derive(Deserialize)]
 pub struct ReverseDNSParams {
-    database_address: AddressForUrl,
+    database_address: IdentityForUrl,
 }
 
 #[derive(Deserialize)]
@@ -611,7 +613,7 @@ pub async fn reverse_dns<S: ControlStateDelegate>(
     State(ctx): State<S>,
     Path(ReverseDNSParams { database_address }): Path<ReverseDNSParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let database_address = Address::from(database_address);
+    let database_address = Identity::from(database_address);
 
     let names = ctx.reverse_lookup(&database_address).map_err(log_and_500)?;
 
@@ -733,14 +735,14 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
 
     Ok(axum::Json(PublishResult::Success {
         domain: db_name.as_ref().map(ToString::to_string),
-        address: db_addr,
+        database_identity: db_addr,
         op,
     }))
 }
 
 #[derive(Deserialize)]
 pub struct DeleteDatabaseParams {
-    address: AddressForUrl,
+    address: IdentityForUrl,
 }
 
 pub async fn delete_database<S: ControlStateDelegate>(
@@ -748,7 +750,7 @@ pub async fn delete_database<S: ControlStateDelegate>(
     Path(DeleteDatabaseParams { address }): Path<DeleteDatabaseParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let address = Address::from(address);
+    let address = Identity::from(address);
 
     ctx.delete_database(&auth.identity, &address)
         .await
@@ -760,15 +762,15 @@ pub async fn delete_database<S: ControlStateDelegate>(
 #[derive(Deserialize)]
 pub struct SetNameQueryParams {
     domain: String,
-    address: AddressForUrl,
+    database_identity: IdentityForUrl,
 }
 
 pub async fn set_name<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Query(SetNameQueryParams { domain, address }): Query<SetNameQueryParams>,
+    Query(SetNameQueryParams { domain, database_identity: address }): Query<SetNameQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let address = Address::from(address);
+    let address = Identity::from(address);
 
     let database = ctx
         .get_database_by_identity(&address)

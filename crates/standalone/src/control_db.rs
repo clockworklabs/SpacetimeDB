@@ -77,14 +77,14 @@ impl ControlDb {
         let tree = self.db.open_tree("dns")?;
         let value = tree.get(domain.to_lowercase().as_bytes())?;
         if let Some(value) = value {
-            return Ok(Some(Address::from_slice(&value[..])));
+            return Ok(Some(Identity::from_slice(&value[..])));
         }
         Ok(None)
     }
 
     pub fn spacetime_reverse_dns(&self, database_identity: &Identity) -> Result<Vec<DomainName>> {
         let tree = self.db.open_tree("reverse_dns")?;
-        let value = tree.get(database_identity.as_byte_array())?;
+        let value = tree.get(database_identity.to_byte_array())?;
         if let Some(value) = value {
             let vec: Vec<DomainName> = serde_json::from_slice(&value[..])?;
             return Ok(vec);
@@ -139,7 +139,7 @@ impl ControlDb {
             }
         }
 
-        let identity_bytes = database_identity.as_byte_array();
+        let identity_bytes = database_identity.to_byte_array();
         let tree = self.db.open_tree("dns")?;
         tree.insert(domain.to_lowercase().as_bytes(), &identity_bytes)?;
 

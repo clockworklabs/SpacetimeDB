@@ -42,7 +42,7 @@ pub async fn create_identity<S: ControlStateDelegate + NodeDelegate>(
 /// This newtype around `Identity` implements `Deserialize`
 /// directly from the inner identity bytes,
 /// without the enclosing `ProductValue` wrapper.
-#[derive(derive_more::Into, Clone, Debug)]
+#[derive(derive_more::Into, Clone, Debug, Copy)]
 pub struct IdentityForUrl(Identity);
 
 impl From<Identity> for IdentityForUrl {
@@ -53,7 +53,7 @@ impl From<Identity> for IdentityForUrl {
 
 impl IdentityForUrl {
     pub fn into_inner(&self) -> Identity {
-        self.0.clone()
+        self.0
     }
 }
 
