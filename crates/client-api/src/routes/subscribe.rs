@@ -27,7 +27,7 @@ use crate::auth::SpacetimeAuth;
 use crate::util::websocket::{
     CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade,
 };
-use crate::util::{NameOrAddress, XForwardedFor};
+use crate::util::{NameOrIdentity, XForwardedFor};
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 #[allow(clippy::declare_interior_mutable_const)]
@@ -37,7 +37,7 @@ pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static("v1.bsatn.spaceti
 
 #[derive(Deserialize)]
 pub struct SubscribeParams {
-    pub name_or_address: NameOrAddress,
+    pub name_or_address: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
