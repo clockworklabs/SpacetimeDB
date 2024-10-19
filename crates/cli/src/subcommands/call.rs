@@ -20,7 +20,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("database")
                 .required(true)
-                .help("The database domain or identity to use to invoke the call"),
+                .help("The database name or identity to use to invoke the call"),
         )
         .arg(
             Arg::new("reducer_name")
