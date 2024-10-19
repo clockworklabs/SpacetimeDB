@@ -3,7 +3,7 @@ use crate::auth::{
     SpacetimeIdentity, SpacetimeIdentityToken,
 };
 use crate::routes::subscribe::generate_random_address;
-use crate::util::{ByteStringBody, NameOrAddress};
+use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{log_and_500, ControlStateDelegate, DatabaseDef, NodeDelegate};
 use axum::body::{Body, Bytes};
 use axum::extract::{DefaultBodyLimit, Path, Query, State};
@@ -45,7 +45,7 @@ impl IntoResponse for DomainParsingRejection {
 
 #[derive(Deserialize)]
 pub struct CallParams {
-    name_or_address: NameOrAddress,
+    name_or_address: NameOrIdentity,
     reducer: String,
 }
 
@@ -249,7 +249,7 @@ fn entity_description_json(description: WithTypespace<EntityDef>) -> Option<Valu
 
 #[derive(Deserialize)]
 pub struct DescribeParams {
-    name_or_address: NameOrAddress,
+    name_or_address: NameOrIdentity,
     entity_type: String,
     entity: String,
 }
@@ -318,7 +318,7 @@ fn get_entity<'a>(host: &'a ModuleHost, entity: &'_ str, entity_type: DescribedE
 
 #[derive(Deserialize)]
 pub struct CatalogParams {
-    name_or_address: NameOrAddress,
+    name_or_address: NameOrIdentity,
 }
 #[derive(Deserialize)]
 pub struct CatalogQueryParams {
@@ -376,7 +376,7 @@ where
 
 #[derive(Deserialize)]
 pub struct InfoParams {
-    name_or_address: NameOrAddress,
+    name_or_address: NameOrIdentity,
 }
 pub async fn info<S: ControlStateDelegate>(
     State(worker_ctx): State<S>,
@@ -402,7 +402,7 @@ pub async fn info<S: ControlStateDelegate>(
 
 #[derive(Deserialize)]
 pub struct LogsParams {
-    name_or_address: NameOrAddress,
+    name_or_address: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
@@ -497,7 +497,7 @@ async fn worker_ctx_find_database(
 
 #[derive(Deserialize)]
 pub struct SqlParams {
-    name_or_address: NameOrAddress,
+    name_or_address: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
@@ -644,11 +644,11 @@ pub struct PublishDatabaseParams {}
 pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     clear: bool,
-    name_or_address: Option<NameOrAddress>,
+    name_or_address: Option<NameOrIdentity>,
 }
 
 impl PublishDatabaseQueryParams {
-    pub fn name_or_address(&self) -> Option<&NameOrAddress> {
+    pub fn name_or_address(&self) -> Option<&NameOrIdentity> {
         self.name_or_address.as_ref()
     }
 }

@@ -101,7 +101,7 @@ pub trait ControlStateReadAccess {
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
 
     // DNS
-    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Address>>;
+    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Identity>>;
     fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
 }
 
@@ -157,8 +157,8 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
         (**self).get_database_by_id(id)
     }
-    fn get_database_by_identity(&self, address: &Address) -> anyhow::Result<Option<Database>> {
-        (**self).get_database_by_identity(address)
+    fn get_database_by_identity(&self, identity: &Identity) -> anyhow::Result<Option<Database>> {
+        (**self).get_database_by_identity(identity)
     }
     fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
         (**self).get_databases()
@@ -181,12 +181,12 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     }
 
     // DNS
-    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Address>> {
+    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Identity>> {
         (**self).lookup_identity(domain)
     }
 
-    fn reverse_lookup(&self, address: &Address) -> anyhow::Result<Vec<DomainName>> {
-        (**self).reverse_lookup(address)
+    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
+        (**self).reverse_lookup(database_identity)
     }
 }
 
@@ -223,9 +223,9 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         &self,
         identity: &Identity,
         domain: &DomainName,
-        address: &Address,
+        database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult> {
-        (**self).create_dns_record(identity, domain, address).await
+        (**self).create_dns_record(identity, domain, database_identity).await
     }
 }
 
