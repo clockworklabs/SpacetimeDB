@@ -57,8 +57,6 @@ impl IdentityForUrl {
     }
 }
 
-
-
 impl<'de> serde::Deserialize<'de> for IdentityForUrl {
     fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         <_>::deserialize(de).map(|DeserializeWrapper(b)| IdentityForUrl(Identity::from_byte_array(b)))

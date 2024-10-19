@@ -10,7 +10,7 @@ use serde_json::Value;
 use spacetimedb::Identity;
 use spacetimedb_lib::de::serde::deserialize_from;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, Typespace};
-use spacetimedb_lib::{Address, ProductTypeElement};
+use spacetimedb_lib::ProductTypeElement;
 use std::fmt::Write;
 use std::iter;
 

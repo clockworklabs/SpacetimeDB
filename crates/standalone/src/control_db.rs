@@ -155,7 +155,10 @@ impl ControlDb {
             }
         }
 
-        Ok(InsertDomainResult::Success { domain, database_identity })
+        Ok(InsertDomainResult::Success {
+            domain,
+            database_identity,
+        })
     }
 
     /// Inserts a top level domain that will be owned by `owner_identity`.

@@ -238,7 +238,11 @@ impl HostController {
         // we'll need to check again if a module was added meanwhile.
         let mut guard = self.acquire_write_lock(replica_id).await;
         if let Some(host) = &*guard {
-            trace!("cached host {}/{} (lock upgrade)", database.database_identity, replica_id);
+            trace!(
+                "cached host {}/{} (lock upgrade)",
+                database.database_identity,
+                replica_id
+            );
             return Ok(host.module.subscribe());
         }
 
@@ -686,7 +690,8 @@ impl Host {
             )?,
             db::Storage::Disk => {
                 let (durability, disk_size_fn) = relational_db::local_durability(&db_path).await?;
-                let snapshot_repo = relational_db::open_snapshot_repo(&db_path, database.database_identity, replica_id)?;
+                let snapshot_repo =
+                    relational_db::open_snapshot_repo(&db_path, database.database_identity, replica_id)?;
                 let history = durability.clone();
                 RelationalDB::open(
                     &db_path,

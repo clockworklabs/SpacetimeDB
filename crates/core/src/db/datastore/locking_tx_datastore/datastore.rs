@@ -558,7 +558,11 @@ impl MutTxDatastore for Locking {
                     .map(drop)
             }
 
-            None => Err(anyhow!("database {} improperly initialized: no metadata", self.database_identity).into()),
+            None => Err(anyhow!(
+                "database {} improperly initialized: no metadata",
+                self.database_identity
+            )
+            .into()),
         }
     }
 }

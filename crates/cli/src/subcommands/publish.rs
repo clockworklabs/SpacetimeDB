@@ -177,7 +177,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let response: PublishResult = serde_json::from_slice(&bytes[..]).unwrap();
     match response {
-        PublishResult::Success { domain, database_identity, op } => {
+        PublishResult::Success {
+            domain,
+            database_identity,
+            op,
+        } => {
             let op = match op {
                 PublishOp::Created => "Created new",
                 PublishOp::Updated => "Updated",

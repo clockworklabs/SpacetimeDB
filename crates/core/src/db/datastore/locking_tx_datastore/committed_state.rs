@@ -28,7 +28,8 @@ use itertools::Itertools;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
 use spacetimedb_lib::{
     address::Address,
-    db::auth::{StAccess, StTableType}, Identity,
+    db::auth::{StAccess, StTableType},
+    Identity,
 };
 use spacetimedb_primitives::{ColList, ColSet, TableId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};

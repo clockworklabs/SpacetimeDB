@@ -18,9 +18,7 @@ pub enum InsertDomainResult {
     ///  - `clockworklabs/bitcraft`
     ///
     /// if `clockworklabs` is not registered, this error is returned.
-    TldNotRegistered {
-        domain: DomainName,
-    },
+    TldNotRegistered { domain: DomainName },
 
     /// The top level domain for the database name is registered, but the identity that you provided does
     /// not have permission to insert the given database name. For example:
@@ -30,9 +28,7 @@ pub enum InsertDomainResult {
     /// If you were trying to insert this database name, but the tld `clockworklabs` is
     /// owned by an identity other than the identity that you provided, then you will receive
     /// this error.
-    PermissionDenied {
-        domain: DomainName,
-    },
+    PermissionDenied { domain: DomainName },
 
     /// Some unspecified error occurred.
     OtherError(String),

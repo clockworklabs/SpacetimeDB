@@ -4,14 +4,18 @@ use reqwest::RequestBuilder;
 use serde::Deserialize;
 use spacetimedb_client_api_messages::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_lib::{Address, AlgebraicType, Identity};
+use spacetimedb_lib::{AlgebraicType, Identity};
 use std::io::Write;
 use std::path::Path;
 
 use crate::config::{Config, IdentityConfig};
 
 /// Determine the identity of the `database`.
-pub async fn database_identity(config: &Config, name_or_identity: &str, server: Option<&str>) -> Result<Identity, anyhow::Error> {
+pub async fn database_identity(
+    config: &Config,
+    name_or_identity: &str,
+    server: Option<&str>,
+) -> Result<Identity, anyhow::Error> {
     if let Ok(identity) = Identity::from_hex(name_or_identity) {
         return Ok(identity);
     }

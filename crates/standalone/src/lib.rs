@@ -242,7 +242,6 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
 
 #[async_trait]
 impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
-
     async fn publish_database(
         &self,
         publisher: &Identity,

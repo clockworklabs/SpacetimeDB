@@ -171,7 +171,12 @@ impl From<ResolvedIdentity> for Identity {
 }
 
 impl From<ResolvedIdentity> for (Identity, Option<DomainName>) {
-    fn from(ResolvedIdentity { identity: address, domain }: ResolvedIdentity) -> Self {
+    fn from(
+        ResolvedIdentity {
+            identity: address,
+            domain,
+        }: ResolvedIdentity,
+    ) -> Self {
         (address, domain)
     }
 }

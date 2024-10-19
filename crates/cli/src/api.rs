@@ -19,7 +19,14 @@ pub struct Connection {
 
 impl Connection {
     pub fn db_uri(&self, endpoint: &str) -> String {
-        [&self.host, "/database/", endpoint, "/", &self.database_identity.to_hex()].concat()
+        [
+            &self.host,
+            "/database/",
+            endpoint,
+            "/",
+            &self.database_identity.to_hex(),
+        ]
+        .concat()
     }
 }
 

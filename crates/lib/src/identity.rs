@@ -47,8 +47,8 @@ impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
     }
 }
 
-use rand::Rng;
 use rand;
+use rand::Rng;
 
 impl Identity {
     pub const ZERO: Self = Self::from_u256(u256::ZERO);
@@ -59,7 +59,6 @@ impl Identity {
         let mut random_bytes = [0u8; 32];
         rng.fill(&mut random_bytes);
         Identity::from_byte_array(random_bytes)
-
     }
     /// Returns an `Identity` defined as the given `bytes` byte array.
     pub const fn from_byte_array(bytes: [u8; 32]) -> Self {

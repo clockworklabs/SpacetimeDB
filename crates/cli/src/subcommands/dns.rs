@@ -122,7 +122,10 @@ pub async fn exec_reverse_dns(config: Config, args: &ArgMatches) -> Result<(), a
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let response = spacetime_reverse_dns(&config, database_identity, server).await?;
     if response.names.is_empty() {
-        Err(anyhow::anyhow!("Could not find a name for the identity: {}", database_identity))
+        Err(anyhow::anyhow!(
+            "Could not find a name for the identity: {}",
+            database_identity
+        ))
     } else {
         for name in response.names {
             println!("{}", name);
@@ -153,7 +156,10 @@ pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), 
     println!("{}", String::from_utf8_lossy(&bytes[..]));
     let result: InsertDomainResult = serde_json::from_slice(&bytes[..]).unwrap();
     match result {
-        InsertDomainResult::Success { domain, database_identity } => {
+        InsertDomainResult::Success {
+            domain,
+            database_identity,
+        } => {
             println!("Domain set to {} for identity {}.", domain, database_identity);
         }
         InsertDomainResult::TldNotRegistered { domain } => {

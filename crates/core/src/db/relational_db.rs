@@ -175,7 +175,9 @@ const SNAPSHOT_FREQUENCY: u64 = 1_000_000;
 
 impl std::fmt::Debug for RelationalDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RelationalDB").field("address", &self.database_identity).finish()
+        f.debug_struct("RelationalDB")
+            .field("address", &self.database_identity)
+            .finish()
     }
 }
 
@@ -307,14 +309,27 @@ impl RelationalDB {
             .and_then(|durability| durability.durable_tx_offset());
 
         log::info!("[{database_identity}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");
-        let inner = Self::restore_from_snapshot_or_bootstrap(database_identity, snapshot_repo.as_deref(), durable_tx_offset)?;
+        let inner =
+            Self::restore_from_snapshot_or_bootstrap(database_identity, snapshot_repo.as_deref(), durable_tx_offset)?;
 
         apply_history(&inner, database_identity, history)?;
-        let db = Self::new(lock, database_identity, owner_identity, inner, durability, snapshot_repo);
+        let db = Self::new(
+            lock,
+            database_identity,
+            owner_identity,
+            inner,
+            durability,
+            snapshot_repo,
+        );
 
         if let Some(meta) = db.metadata()? {
             if meta.database_identity != database_identity {
-                return Err(anyhow!("mismatched database address: {} != {}", meta.database_identity, database_identity).into());
+                return Err(anyhow!(
+                    "mismatched database address: {} != {}",
+                    meta.database_identity,
+                    database_identity
+                )
+                .into());
             }
             if meta.owner_identity != owner_identity {
                 return Err(anyhow!(
@@ -1231,7 +1246,13 @@ where
         if let Some(max_tx_offset) = max_tx_offset {
             let percentage = f64::floor((tx_offset as f64 / max_tx_offset as f64) * 100.0) as i32;
             if percentage > last_logged_percentage && percentage % 10 == 0 {
-                log::info!("[{}] Loaded {}% ({}/{})", database_identity, percentage, tx_offset, max_tx_offset);
+                log::info!(
+                    "[{}] Loaded {}% ({}/{})",
+                    database_identity,
+                    percentage,
+                    tx_offset,
+                    max_tx_offset
+                );
                 last_logged_percentage = percentage;
             }
         // Print _something_ even if we don't know what's still ahead.
@@ -1482,8 +1503,14 @@ pub mod tests_utils {
             durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
             snapshot_repo: Option<Arc<SnapshotRepository>>,
         ) -> Result<RelationalDB, DBError> {
-            let (db, connected_clients) =
-                RelationalDB::open(root, Self::DATABASE_IDENTITY, Self::OWNER, history, durability, snapshot_repo)?;
+            let (db, connected_clients) = RelationalDB::open(
+                root,
+                Self::DATABASE_IDENTITY,
+                Self::OWNER,
+                history,
+                durability,
+                snapshot_repo,
+            )?;
             debug_assert!(connected_clients.is_empty());
             let db = db.with_row_count(Self::row_count_fn());
             db.with_auto_commit(&ExecutionContext::internal(db.database_identity()), |tx| {

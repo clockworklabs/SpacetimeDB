@@ -108,7 +108,6 @@ pub trait ControlStateReadAccess {
 /// Write operations on the SpacetimeDB control plane.
 #[async_trait]
 pub trait ControlStateWriteAccess: Send + Sync {
-
     /// Publish a database acc. to [`DatabaseDef`].
     ///
     /// If the database with the given address was successfully published before,
@@ -190,7 +189,6 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
 
 #[async_trait]
 impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
-    
     async fn publish_database(
         &self,
         identity: &Identity,

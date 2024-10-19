@@ -23,13 +23,13 @@ use crate::{
 use core::ops::RangeBounds;
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
-use spacetimedb_lib::{db::raw_def::v9::RawSql, Identity};
 use spacetimedb_lib::{
     address::Address,
     bsatn::Deserializer,
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
     de::DeserializeSeed,
 };
+use spacetimedb_lib::{db::raw_def::v9::RawSql, Identity};
 use spacetimedb_primitives::{ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, DecodeError},
@@ -984,7 +984,11 @@ impl MutTxId {
             sql: row_level_security_schema.sql,
         };
 
-        let row = self.insert(ST_ROW_LEVEL_SECURITY_ID, &mut ProductValue::from(row), ctx.database_identity())?;
+        let row = self.insert(
+            ST_ROW_LEVEL_SECURITY_ID,
+            &mut ProductValue::from(row),
+            ctx.database_identity(),
+        )?;
         let row_level_security_sql = row.1.collapse().read_col(StRowLevelSecurityFields::Sql)?;
         let existed = matches!(row.1, RowRefInsertion::Existed(_));
 

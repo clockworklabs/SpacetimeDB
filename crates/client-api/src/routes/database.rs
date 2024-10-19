@@ -463,7 +463,11 @@ where
             std::future::ready(match x {
                 Ok(log) => Some(log),
                 Err(tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(skipped)) => {
-                    log::trace!("Skipped {} lines in log for module {}", skipped, database_identity.to_hex());
+                    log::trace!(
+                        "Skipped {} lines in log for module {}",
+                        skipped,
+                        database_identity.to_hex()
+                    );
                     None
                 }
             })
@@ -494,7 +498,9 @@ async fn worker_ctx_find_database(
     worker_ctx: &(impl ControlStateDelegate + ?Sized),
     database_identity: &Identity,
 ) -> axum::response::Result<Option<Database>> {
-    worker_ctx.get_database_by_identity(database_identity).map_err(log_and_500)
+    worker_ctx
+        .get_database_by_identity(database_identity)
+        .map_err(log_and_500)
 }
 
 #[derive(Deserialize)]
@@ -601,7 +607,10 @@ pub async fn dns<S: ControlStateDelegate>(
     let domain = database_name.parse().map_err(|_| DomainParsingRejection)?;
     let address = ctx.lookup_identity(&domain).map_err(log_and_500)?;
     let response = if let Some(address) = address {
-        DnsLookupResponse::Success { domain, identity: address }
+        DnsLookupResponse::Success {
+            domain,
+            identity: address,
+        }
     } else {
         DnsLookupResponse::Failure { domain }
     };
@@ -767,7 +776,10 @@ pub struct SetNameQueryParams {
 
 pub async fn set_name<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Query(SetNameQueryParams { domain, database_identity: address }): Query<SetNameQueryParams>,
+    Query(SetNameQueryParams {
+        domain,
+        database_identity: address,
+    }): Query<SetNameQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
     let address = Identity::from(address);

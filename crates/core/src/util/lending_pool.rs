@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use parking_lot::Mutex;
-use spacetimedb_lib::{Identity};
+use spacetimedb_lib::Identity;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::worker_metrics::WORKER_METRICS;
