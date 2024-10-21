@@ -41,8 +41,9 @@ jobs:
         run: docker compose up -d
       - name: Set login token
         run: |
+          spacetime version
           TOKEN="$(curl -X POST http://localhost:3000/identity | jq -r '.token')"
-          echo 'login_token = "$TOKEN"' > ~/.spacetime/config.toml.new
+          echo 'login_token = "$TOKEN"' | tee ~/.spacetime/config.toml.new
           cat ~/.spacetime/config.toml >> ~/.spacetime/config.toml.new
           mv ~/.spacetime/config.toml.new ~/.spacetime/config.toml
       - name: Run smoketests
