@@ -68,3 +68,25 @@ impl insert_one_string for super::RemoteReducers {
             .remove_on_reducer::<InsertOneString>("insert_one_string", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_one_string`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+/// The ability to send over call-reducer flags in the protocol will however remain.
+pub trait set_flags_for_insert_one_string {
+    /// Set the call-reducer flags for the reducer `insert_one_string` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    /// The ability to send over call-reducer flags in the protocol will however remain.
+    fn insert_one_string(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_one_string for super::SetReducerFlags {
+    fn insert_one_string(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_one_string", flags);
+    }
+}

@@ -47,17 +47,21 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
         DEFAULT_CONFIG,
         |module| async move {
             let json =
-                r#"{"CallReducer": {"reducer": "add", "args": "[\"Tyrion\", 24]", "request_id": 0 }}"#.to_string();
+                r#"{"CallReducer": {"reducer": "add", "args": "[\"Tyrion\", 24]", "request_id": 0, "flags": 0 }}"#
+                    .to_string();
             module.send(json).await.unwrap();
 
             let json =
-                r#"{"CallReducer": {"reducer": "add", "args": "[\"Cersei\", 31]", "request_id": 1 }}"#.to_string();
+                r#"{"CallReducer": {"reducer": "add", "args": "[\"Cersei\", 31]", "request_id": 1, "flags": 0 }}"#
+                    .to_string();
             module.send(json).await.unwrap();
 
-            let json = r#"{"CallReducer": {"reducer": "say_hello", "args": "[]", "request_id": 2 }}"#.to_string();
+            let json =
+                r#"{"CallReducer": {"reducer": "say_hello", "args": "[]", "request_id": 2, "flags": 0 }}"#.to_string();
             module.send(json).await.unwrap();
 
-            let json = r#"{"CallReducer": {"reducer": "list_over_age", "args": "[30]", "request_id": 3 }}"#.to_string();
+            let json = r#"{"CallReducer": {"reducer": "list_over_age", "args": "[30]", "request_id": 3, "flags": 0 }}"#
+                .to_string();
             module.send(json).await.unwrap();
 
             assert_eq!(
@@ -175,7 +179,8 @@ fn test_call_query_macro() {
   "reducer": "test",
   "args":
     "[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"Foo\": {} }, { \"Baz\": \"buzz\" } ]",
-  "request_id": 0
+  "request_id": 0,
+  "flags": 0
 } }"#
             .to_string();
         module.send(json).await.unwrap();
@@ -251,7 +256,8 @@ fn test_index_scans() {
 }
 
 async fn bench_call<'a>(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
-    let json = format!(r#"{{"CallReducer": {{"reducer": "{call}", "args": "[{count}]", "request_id": 0 }}}}"#);
+    let json =
+        format!(r#"{{"CallReducer": {{"reducer": "{call}", "args": "[{count}]", "request_id": 0, "flags": 0 }}}}"#);
 
     let now = Instant::now();
 
