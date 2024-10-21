@@ -23,7 +23,7 @@ use core::{
 };
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
-use spacetimedb_lib::{Address, Identity, Timestamp};
+use spacetimedb_lib::{Address, Identity, TimeDuration, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -197,7 +197,7 @@ pub struct InitialSubscription<F: WebsocketFormat> {
     /// The server will include the same request_id in the response.
     pub request_id: u32,
     /// The overall time between the server receiving a request and sending the response.
-    pub total_host_execution_duration_micros: u64,
+    pub total_host_execution_duration: TimeDuration,
 }
 
 /// Received by database from client to inform of user's identity, token and client address.
@@ -250,7 +250,7 @@ pub struct TransactionUpdate<F: WebsocketFormat> {
     /// The amount of energy credits consumed by running the reducer.
     pub energy_quanta_used: EnergyQuanta,
     /// How long the reducer took to run.
-    pub host_execution_duration_micros: u64,
+    pub total_host_execution_duration: TimeDuration,
 }
 
 /// Contained in a [`TransactionUpdate`], metadata about a reducer invocation.
@@ -414,7 +414,7 @@ pub struct OneOffQueryResponse<F: WebsocketFormat> {
     pub tables: Box<[OneOffTable<F>]>,
 
     /// The total duration of query compilation and evaluation on the server, in microseconds.
-    pub total_host_execution_duration_micros: u64,
+    pub total_host_execution_duration: TimeDuration,
 }
 
 /// A table included as part of a [`OneOffQueryResponse`].

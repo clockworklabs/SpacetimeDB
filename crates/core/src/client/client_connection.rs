@@ -272,7 +272,7 @@ impl ClientConnection {
     pub fn one_off_query(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {
         let result = self.module.one_off_query(self.id.identity, query.to_owned());
         let message_id = message_id.to_owned();
-        let total_host_execution_duration = timer.elapsed().as_micros() as u64;
+        let total_host_execution_duration = timer.elapsed().into();
         let response = match result {
             Ok(results) => OneOffQueryResponseMessage {
                 message_id,

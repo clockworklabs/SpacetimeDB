@@ -18,6 +18,10 @@ pub struct TimeDuration {
 impl_st!([] TimeDuration, AlgebraicType::time_duration());
 
 impl TimeDuration {
+    pub const ZERO: TimeDuration = TimeDuration {
+        __time_duration_nanos: 0,
+    };
+
     /// Get the number of nanoseconds `self` represents.
     pub fn to_nanos(self) -> i64 {
         self.__time_duration_nanos
@@ -43,6 +47,15 @@ impl TimeDuration {
         }
     }
 
+    /// Returns a `Duration` representing the absolute magnitude of `self`.
+    ///
+    /// Regardless of whether `self` is positive or negative, the returned `Duration` is positive.
+    pub fn to_duration_abs(self) -> Duration {
+        match self.to_duration() {
+            Ok(dur) | Err(dur) => dur,
+        }
+    }
+
     /// Return a [`TimeDuration`] which represents the same span as `duration`.
     ///
     /// Panics if `duration.as_nanos` overflows an `i64`
@@ -53,6 +66,20 @@ impl TimeDuration {
                 .try_into()
                 .expect("Duration since Unix epoch overflows i64 nanoseconds"),
         )
+    }
+}
+
+impl From<Duration> for TimeDuration {
+    fn from(d: Duration) -> TimeDuration {
+        TimeDuration::from_duration(d)
+    }
+}
+
+impl TryFrom<TimeDuration> for Duration {
+    type Error = Duration;
+    /// If `d` is negative, returns its magnitude as the `Err` variant.
+    fn try_from(d: TimeDuration) -> Result<Duration, Duration> {
+        d.to_duration()
     }
 }
 

@@ -39,7 +39,11 @@ impl ScheduleAt {
                 let time = SystemTime::from(*time);
                 time.duration_since(now).unwrap_or(Duration::ZERO)
             }
-            ScheduleAt::Interval(dur) => dur.to_duration().unwrap_or(Duration::ZERO),
+            // TODO(correctness): Determine useful behavior on negative intervals,
+            // as that's the case where `to_duration` fails.
+            // Currently, we use the magnitude / absolute value,
+            // which seems at least less stupid than clamping to zero.
+            ScheduleAt::Interval(dur) => dur.to_duration_abs(),
         }
     }
 
