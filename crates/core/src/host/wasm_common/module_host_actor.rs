@@ -1,7 +1,6 @@
 use anyhow::Context;
 use bytes::Bytes;
 use once_cell::unsync::Lazy;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_primitives::TableId;
 use spacetimedb_schema::auto_migrate::ponder_migrate;
 use spacetimedb_schema::def::ModuleDef;
@@ -32,6 +31,7 @@ use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{bsatn, Address, RawModuleDef};
 
 use super::*;

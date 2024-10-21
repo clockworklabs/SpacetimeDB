@@ -4,9 +4,8 @@ use crate::db::db_metrics::DB_METRICS;
 use bytes::Bytes;
 use derive_more::Display;
 use parking_lot::RwLock;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_commitlog::{payload::txdata, Varchar};
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::{Address, Identity, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn;
 
