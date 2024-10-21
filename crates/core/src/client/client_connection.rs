@@ -12,7 +12,7 @@ use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
-use spacetimedb_client_api_messages::websocket::FormatSwitch;
+use spacetimedb_client_api_messages::websocket::{Compression, FormatSwitch};
 use spacetimedb_lib::identity::RequestId;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
@@ -36,6 +36,7 @@ impl Protocol {
 pub struct ClientConnectionSender {
     pub id: ClientActorId,
     pub protocol: Protocol,
+    pub compression: Compression,
     sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
@@ -61,6 +62,7 @@ impl ClientConnectionSender {
             Self {
                 id,
                 protocol,
+                compression: Compression::Brotli,
                 sendtx,
                 abort_handle,
                 cancelled: AtomicBool::new(false),
@@ -143,6 +145,7 @@ impl ClientConnection {
     pub async fn spawn<F, Fut>(
         id: ClientActorId,
         protocol: Protocol,
+        compression: Compression,
         replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
         actor: F,
@@ -178,6 +181,7 @@ impl ClientConnection {
         let sender = Arc::new(ClientConnectionSender {
             id,
             protocol,
+            compression,
             sendtx,
             abort_handle,
             cancelled: AtomicBool::new(false),

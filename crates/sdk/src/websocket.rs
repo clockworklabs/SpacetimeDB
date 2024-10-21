@@ -9,7 +9,8 @@ use futures::{SinkExt, StreamExt as _, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
 use spacetimedb_client_api_messages::websocket::{
-    brotli_decompress, BsatnFormat, SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_NONE,
+    brotli_decompress, gzip_decompress, BsatnFormat, Compression, SERVER_MSG_COMPRESSION_TAG_BROTLI,
+    SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
 };
 use spacetimedb_lib::{bsatn, Address, Identity};
 use tokio::task::JoinHandle;
@@ -37,7 +38,7 @@ fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme> {
     })
 }
 
-fn make_uri<Host>(host: Host, db_name: &str, client_address: Address) -> Result<Uri>
+fn make_uri<Host>(host: Host, db_name: &str, client_address: Address, compression: Compression) -> Result<Uri>
 where
     Host: TryInto<Uri>,
     <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
@@ -62,6 +63,11 @@ where
     path.push_str(db_name);
     path.push_str("?client_address=");
     path.push_str(&client_address.to_hex());
+    match compression {
+        Compression::None => path.push_str("&compression=None"),
+        Compression::Gzip => path.push_str("&compression=Gzip"),
+        Compression::Brotli => path.push_str("&compression=Brotli"),
+    };
     parts.path_and_query = Some(path.parse()?);
     Ok(Uri::from_parts(parts)?)
 }
@@ -80,12 +86,13 @@ fn make_request<Host>(
     db_name: &str,
     credentials: Option<&(Identity, String)>,
     client_address: Address,
+    compression: Compression,
 ) -> Result<http::Request<()>>
 where
     Host: TryInto<Uri>,
     <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
 {
-    let uri = make_uri(host, db_name, client_address)?;
+    let uri = make_uri(host, db_name, client_address, compression)?;
     let mut req = IntoClientRequest::into_client_request(uri)?;
     request_insert_protocol_header(&mut req);
     request_insert_auth_header(&mut req, credentials);
@@ -134,12 +141,13 @@ impl WsConnection {
         db_name: &str,
         credentials: Option<&(Identity, String)>,
         client_address: Address,
+        compression: Compression,
     ) -> Result<Self>
     where
         Host: TryInto<Uri>,
         <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
     {
-        let req = make_request(host, db_name, credentials, client_address)?;
+        let req = make_request(host, db_name, credentials, client_address, compression)?;
         let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = connect_async_with_config(
             req,
             // TODO(kim): In order to be able to replicate module WASM blobs,
@@ -165,6 +173,9 @@ impl WsConnection {
             SERVER_MSG_COMPRESSION_TAG_NONE => bsatn::from_slice(bytes)?,
             SERVER_MSG_COMPRESSION_TAG_BROTLI => {
                 bsatn::from_slice(&brotli_decompress(bytes).context("Failed to Brotli decompress message")?)?
+            }
+            SERVER_MSG_COMPRESSION_TAG_GZIP => {
+                bsatn::from_slice(&gzip_decompress(bytes).context("Failed to gzip decompress message")?)?
             }
             c => bail!("Unknown compression format `{c}`"),
         })

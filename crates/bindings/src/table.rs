@@ -126,7 +126,7 @@ pub trait TableInternal: Sized {
     const INDEXES: &'static [IndexDesc<'static>];
     const PRIMARY_KEY: Option<u16> = None;
     const SEQUENCES: &'static [u16];
-    const SCHEDULED_REDUCER_NAME: Option<&'static str> = None;
+    const SCHEDULE: Option<ScheduleDesc<'static>> = None;
 
     /// Returns the ID of this table.
     fn table_id() -> TableId;
@@ -143,6 +143,11 @@ pub struct IndexDesc<'a> {
 #[derive(Clone, Copy)]
 pub enum IndexAlgo<'a> {
     BTree { columns: &'a [u16] },
+}
+
+pub struct ScheduleDesc<'a> {
+    pub reducer_name: &'a str,
+    pub scheduled_at_column: u16,
 }
 
 #[doc(hidden)]

@@ -143,8 +143,8 @@ impl<'a, S: Relation, U: Relation> IntoIterator for Union<'a, S, U> {
     type IntoIter = std::vec::IntoIter<ProductValue>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let mut set_s: HashSet<ProductValue> = HashSet::new();
-        let mut set_u: HashSet<ProductValue> = HashSet::new();
+        let mut set_s: HashSet<ProductValue> = HashSet::default();
+        let mut set_u: HashSet<ProductValue> = HashSet::default();
         for next in self.s {
             set_s.insert(next);
         }
@@ -166,8 +166,8 @@ impl<'a, S: Relation, U: Relation> IntoIterator for Intersection<'a, S, U> {
     type IntoIter = std::vec::IntoIter<ProductValue>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let mut set_s: HashSet<ProductValue> = HashSet::new();
-        let mut set_u: HashSet<ProductValue> = HashSet::new();
+        let mut set_s: HashSet<ProductValue> = HashSet::default();
+        let mut set_u: HashSet<ProductValue> = HashSet::default();
         for next in self.s {
             set_s.insert(next);
         }
@@ -192,8 +192,8 @@ impl<'a, S: Relation, U: Relation> IntoIterator for Difference<'a, S, U> {
     type IntoIter = std::vec::IntoIter<ProductValue>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let mut set_s: HashSet<ProductValue> = HashSet::new();
-        let mut set_u: HashSet<ProductValue> = HashSet::new();
+        let mut set_s: HashSet<ProductValue> = HashSet::default();
+        let mut set_u: HashSet<ProductValue> = HashSet::default();
         for next in self.s {
             set_s.insert(next);
         }

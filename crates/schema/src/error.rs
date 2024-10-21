@@ -110,6 +110,8 @@ pub enum ValidationError {
     },
     #[error("Table name is reserved for system use: {table}")]
     TableNameReserved { table: Identifier },
+    #[error("Row-level security invalid: `{error}`, query: `{sql}")]
+    InvalidRowLevelQuery { sql: String, error: String },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

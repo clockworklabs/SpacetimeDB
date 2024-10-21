@@ -10,7 +10,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryUpdate,
 };
-use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
+use spacetimedb_data_structures::map::{Entry, HashCollectionExt, HashMap, HashSet, IntMap};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
 use std::sync::Arc;
@@ -135,7 +135,7 @@ impl SubscriptionManager {
             // Collect the delta tables for each query.
             // For selects this is just a single table.
             // For joins it's two tables.
-            let mut units: HashMap<_, ArrayVec<_, 2>> = HashMap::new();
+            let mut units: HashMap<_, ArrayVec<_, 2>> = HashMap::default();
             for table @ DatabaseTableUpdate { table_id, .. } in tables {
                 if let Some(hashes) = self.tables.get(table_id) {
                     for hash in hashes {
@@ -168,15 +168,16 @@ impl SubscriptionManager {
                     let mut ops_bin: Option<(CompressableQueryUpdate<BsatnFormat>, _)> = None;
                     let mut ops_json: Option<(QueryUpdate<JsonFormat>, _)> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
-                        let ops = match self.clients[id].protocol {
+                        let client = &*self.clients[id];
+                        let ops = match client.protocol {
                             Protocol::Binary => Bsatn(
                                 ops_bin
-                                    .get_or_insert_with(|| delta.updates.encode::<BsatnFormat>())
+                                    .get_or_insert_with(|| delta.updates.encode::<BsatnFormat>(client.compression))
                                     .clone(),
                             ),
                             Protocol::Text => Json(
                                 ops_json
-                                    .get_or_insert_with(|| delta.updates.encode::<JsonFormat>())
+                                    .get_or_insert_with(|| delta.updates.encode::<JsonFormat>(client.compression))
                                     .clone(),
                             ),
                         };

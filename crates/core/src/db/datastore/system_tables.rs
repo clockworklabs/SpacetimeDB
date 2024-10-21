@@ -16,6 +16,7 @@ use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use derive_more::From;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
+use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawSql};
 use spacetimedb_lib::db::raw_def::*;
 use spacetimedb_lib::de::{Deserialize, DeserializeOwned, Error};
 use spacetimedb_lib::ser::Serialize;
@@ -26,11 +27,12 @@ use spacetimedb_sats::algebraic_value::ser::value_serialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{
-    impl_deserialize, impl_serialize, impl_st, AlgebraicType, AlgebraicValue, ArrayValue, SumValue,
+    impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, AlgebraicValue, ArrayValue, SumValue,
 };
 use spacetimedb_schema::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, ModuleDef, UniqueConstraintData};
 use spacetimedb_schema::schema::{
-    ColumnSchema, ConstraintSchema, IndexSchema, ScheduleSchema, Schema, SequenceSchema, TableSchema,
+    ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, Schema, SequenceSchema,
+    TableSchema,
 };
 use spacetimedb_table::table::RowRef;
 use spacetimedb_vm::errors::{ErrorType, ErrorVm};
@@ -63,6 +65,8 @@ pub(crate) const ST_VAR_ID: TableId = TableId(8);
 /// The static ID of the table that defines scheduled tables
 pub(crate) const ST_SCHEDULED_ID: TableId = TableId(9);
 
+/// The static ID of the table that defines the row level security (RLS) policies
+pub(crate) const ST_ROW_LEVEL_SECURITY_ID: TableId = TableId(10);
 pub(crate) const ST_TABLE_NAME: &str = "st_table";
 pub(crate) const ST_COLUMN_NAME: &str = "st_column";
 pub(crate) const ST_SEQUENCE_NAME: &str = "st_sequence";
@@ -72,7 +76,7 @@ pub(crate) const ST_MODULE_NAME: &str = "st_module";
 pub(crate) const ST_CLIENT_NAME: &str = "st_client";
 pub(crate) const ST_SCHEDULED_NAME: &str = "st_scheduled";
 pub(crate) const ST_VAR_NAME: &str = "st_var";
-
+pub(crate) const ST_ROW_LEVEL_SECURITY_NAME: &str = "st_row_level_security";
 /// Reserved range of sequence values used for system tables.
 ///
 /// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE + 1`.
@@ -97,10 +101,12 @@ pub enum SystemTable {
     st_sequence,
     st_index,
     st_constraint,
+    st_row_level_security,
 }
 
-pub(crate) fn system_tables() -> [TableSchema; 9] {
+pub(crate) fn system_tables() -> [TableSchema; 10] {
     [
+        // The order should match the `id` of the system table, that start with [ST_TABLE_IDX].
         st_table_schema(),
         st_column_schema(),
         st_index_schema(),
@@ -109,6 +115,7 @@ pub(crate) fn system_tables() -> [TableSchema; 9] {
         st_client_schema(),
         st_var_schema(),
         st_scheduled_schema(),
+        st_row_level_security_schema(),
         // Is important this is always last, so the starting sequence for each
         // system table is correct.
         st_sequence_schema(),
@@ -148,7 +155,9 @@ pub(crate) const ST_MODULE_IDX: usize = 4;
 pub(crate) const ST_CLIENT_IDX: usize = 5;
 pub(crate) const ST_VAR_IDX: usize = 6;
 pub(crate) const ST_SCHEDULED_IDX: usize = 7;
-pub(crate) const ST_SEQUENCE_IDX: usize = 8;
+pub(crate) const ST_ROW_LEVEL_SECURITY_IDX: usize = 8;
+// Must be the last index in the array.
+pub(crate) const ST_SEQUENCE_IDX: usize = 9;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -228,6 +237,11 @@ st_fields_enum!(enum StConstraintFields {
     "constraint_data", ConstraintData = 3,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
+st_fields_enum!(enum StRowLevelSecurityFields {
+    "table_id", TableId = 0,
+    "sql", Sql = 1,
+});
+// WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StModuleFields {
     "database_address", DatabaseAddress = 0,
     "owner_identity", OwnerIdentity = 1,
@@ -252,6 +266,7 @@ st_fields_enum!(enum StScheduledFields {
     "table_id", TableId = 1,
     "reducer_name", ReducerName = 2,
     "schedule_name", ScheduleName = 3,
+    "at_column", AtColumn = 4,
 });
 
 /// Helper method to check that a system table has the correct fields.
@@ -311,6 +326,23 @@ fn system_module_def() -> ModuleDef {
         .with_auto_inc_primary_key(StConstraintFields::ConstraintId);
     // TODO(1.0): unique constraint on name?
 
+    let st_row_level_security_type = builder.add_type::<StRowLevelSecurityRow>();
+    builder
+        .build_table(
+            ST_ROW_LEVEL_SECURITY_NAME,
+            *st_row_level_security_type.as_ref().expect("should be ref"),
+        )
+        .with_type(TableType::System)
+        .with_primary_key(StRowLevelSecurityFields::Sql)
+        .with_unique_constraint(StRowLevelSecurityFields::Sql, None)
+        .with_index(
+            RawIndexAlgorithm::BTree {
+                columns: StRowLevelSecurityFields::TableId.into(),
+            },
+            "accessor_name_doesnt_matter",
+            None,
+        );
+
     let st_module_type = builder.add_type::<StModuleRow>();
     builder
         .build_table(ST_MODULE_NAME, *st_module_type.as_ref().expect("should be ref"))
@@ -348,6 +380,7 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StIndexFields>(&result, ST_INDEX_NAME);
     validate_system_table::<StSequenceFields>(&result, ST_SEQUENCE_NAME);
     validate_system_table::<StConstraintFields>(&result, ST_CONSTRAINT_NAME);
+    validate_system_table::<StRowLevelSecurityFields>(&result, ST_ROW_LEVEL_SECURITY_NAME);
     validate_system_table::<StModuleFields>(&result, ST_MODULE_NAME);
     validate_system_table::<StClientFields>(&result, ST_CLIENT_NAME);
     validate_system_table::<StVarFields>(&result, ST_VAR_NAME);
@@ -400,6 +433,10 @@ fn st_constraint_schema() -> TableSchema {
     st_schema(ST_CONSTRAINT_NAME, ST_CONSTRAINT_ID)
 }
 
+fn st_row_level_security_schema() -> TableSchema {
+    st_schema(ST_ROW_LEVEL_SECURITY_NAME, ST_ROW_LEVEL_SECURITY_ID)
+}
+
 pub(crate) fn st_module_schema() -> TableSchema {
     st_schema(ST_MODULE_NAME, ST_MODULE_ID)
 }
@@ -429,6 +466,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_SEQUENCE_ID => Some(st_sequence_schema()),
         ST_INDEX_ID => Some(st_index_schema()),
         ST_CONSTRAINT_ID => Some(st_constraint_schema()),
+        ST_ROW_LEVEL_SECURITY_ID => Some(st_row_level_security_schema()),
         ST_MODULE_ID => Some(st_module_schema()),
         ST_CLIENT_ID => Some(st_client_schema()),
         ST_VAR_ID => Some(st_var_schema()),
@@ -715,6 +753,39 @@ impl From<StConstraintRow> for ConstraintSchema {
     }
 }
 
+/// System Table [ST_ROW_LEVEL_SECURITY_NAME]
+///
+/// | table_id | sql          |
+/// |----------|--------------|
+/// | 1        | "SELECT ..." |
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct StRowLevelSecurityRow {
+    pub(crate) table_id: TableId,
+    pub(crate) sql: RawSql,
+}
+
+impl TryFrom<RowRef<'_>> for StRowLevelSecurityRow {
+    type Error = DBError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+        read_via_bsatn(row)
+    }
+}
+
+impl From<StRowLevelSecurityRow> for ProductValue {
+    fn from(x: StRowLevelSecurityRow) -> Self {
+        to_product_value(&x)
+    }
+}
+
+impl From<StRowLevelSecurityRow> for RowLevelSecuritySchema {
+    fn from(x: StRowLevelSecurityRow) -> Self {
+        Self {
+            table_id: x.table_id,
+            sql: x.sql,
+        }
+    }
+}
 /// Indicates the kind of module the `program_bytes` of a [`StModuleRow`]
 /// describes.
 ///
@@ -734,11 +805,11 @@ impl_st!([] ModuleKind, AlgebraicType::U8);
 
 /// A wrapper for `Address` that acts like `AlgebraicType::bytes()` for serialization purposes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct AddressViaBytes(pub Address);
-impl_serialize!([] AddressViaBytes, (self, ser) => self.0.as_slice().serialize(ser));
-impl_deserialize!([] AddressViaBytes, de => <[u8; 16]>::deserialize(de).map(Address::from_slice).map(AddressViaBytes));
-impl_st!([] AddressViaBytes, AlgebraicType::bytes());
-impl From<Address> for AddressViaBytes {
+pub struct AddressViaU128(pub Address);
+impl_serialize!([] AddressViaU128, (self, ser) => self.0.to_u128().serialize(ser));
+impl_deserialize!([] AddressViaU128, de => <u128>::deserialize(de).map(Address::from_u128).map(AddressViaU128));
+impl_st!([] AddressViaU128, AlgebraicType::U128);
+impl From<Address> for AddressViaU128 {
     fn from(addr: Address) -> Self {
         Self(addr)
     }
@@ -746,11 +817,11 @@ impl From<Address> for AddressViaBytes {
 
 /// A wrapper for `Identity` that acts like `AlgebraicType::bytes()` for serialization purposes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct IdentityViaBytes(pub Identity);
-impl_serialize!([] IdentityViaBytes, (self, ser) => self.0.as_bytes().serialize(ser));
-impl_deserialize!([] IdentityViaBytes, de => <[u8; 32]>::deserialize(de).map(|arr| Identity::from_slice(&arr[..])).map(IdentityViaBytes));
-impl_st!([] IdentityViaBytes, AlgebraicType::bytes());
-impl From<Identity> for IdentityViaBytes {
+pub struct IdentityViaU256(pub Identity);
+impl_serialize!([] IdentityViaU256, (self, ser) => self.0.to_u256().serialize(ser));
+impl_deserialize!([] IdentityViaU256, de => <u256>::deserialize(de).map(Identity::from_u256).map(IdentityViaU256));
+impl_st!([] IdentityViaU256, AlgebraicType::U256);
+impl From<Identity> for IdentityViaU256 {
     fn from(id: Identity) -> Self {
         Self(id)
     }
@@ -773,8 +844,8 @@ impl From<Identity> for IdentityViaBytes {
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StModuleRow {
-    pub(crate) database_address: AddressViaBytes,
-    pub(crate) owner_identity: IdentityViaBytes,
+    pub(crate) database_address: AddressViaU128,
+    pub(crate) owner_identity: IdentityViaU256,
     pub(crate) program_kind: ModuleKind,
     pub(crate) program_hash: Hash,
     pub(crate) program_bytes: Box<[u8]>,
@@ -797,23 +868,24 @@ pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u
 
 /// Read an [`Address`] directly from the column `col` in `row`.
 ///
-/// The [`Address`] is assumed to be stored as a flat byte array.
+/// The [`Address`] is assumed to be stored as an u128.
 pub fn read_addr_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Address, DBError> {
-    read_bytes_from_col(row, col).map(Address::from_slice)
+    let val: u128 = row.read_col(col.col_id())?;
+    Ok(val.into())
 }
 
 /// Read an [`Identity`] directly from the column `col` in `row`.
 ///
 /// The [`Identity`] is assumed to be stored as a flat byte array.
 pub fn read_identity_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Identity, DBError> {
-    read_bytes_from_col(row, col).map(|bytes| Identity::from_slice(&bytes))
+    Ok(Identity::from_u256(row.read_col(col.col_id())?))
 }
 
 /// Read a [`Hash`] directly from the column `col` in `row`.
 ///
 /// The [`Hash`] is assumed to be stored as a flat byte array.
 pub fn read_hash_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Hash, DBError> {
-    read_bytes_from_col(row, col).map(|bytes| Hash::from_slice(&bytes))
+    Ok(Hash::from_u256(row.read_col(col.col_id())?))
 }
 
 impl TryFrom<RowRef<'_>> for StModuleRow {
@@ -838,13 +910,18 @@ impl From<StModuleRow> for ProductValue {
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StClientRow {
-    pub(crate) identity: IdentityViaBytes,
-    pub(crate) address: AddressViaBytes,
+    pub(crate) identity: IdentityViaU256,
+    pub(crate) address: AddressViaU128,
 }
 
+impl From<StClientRow> for ProductValue {
+    fn from(var: StClientRow) -> Self {
+        to_product_value(&var)
+    }
+}
 impl From<&StClientRow> for ProductValue {
-    fn from(x: &StClientRow) -> Self {
-        to_product_value(x)
+    fn from(var: &StClientRow) -> Self {
+        to_product_value(var)
     }
 }
 
@@ -1209,6 +1286,7 @@ pub struct StScheduledRow {
     pub(crate) table_id: TableId,
     pub(crate) reducer_name: Box<str>,
     pub(crate) schedule_name: Box<str>,
+    pub(crate) at_column: ColId,
 }
 
 impl TryFrom<RowRef<'_>> for StScheduledRow {
@@ -1231,6 +1309,7 @@ impl From<StScheduledRow> for ScheduleSchema {
             reducer_name: row.reducer_name,
             schedule_id: row.schedule_id,
             schedule_name: row.schedule_name,
+            at_column: row.at_column,
         }
     }
 }

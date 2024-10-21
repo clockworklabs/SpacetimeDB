@@ -110,8 +110,10 @@ fn resolve_type(field: &FieldExpr, ty: AlgebraicType) -> Result<Option<Algebraic
     }
 
     if let (AlgebraicType::Product(_), FieldExpr::Value(val)) = (&ty, field) {
-        if val.as_bytes().is_some() {
-            return Ok(Some(AlgebraicType::bytes()));
+        match val {
+            AlgebraicValue::U128(_) => return Ok(Some(AlgebraicType::U128)),
+            AlgebraicValue::U256(_) => return Ok(Some(AlgebraicType::U256)),
+            _ => {}
         }
     }
     Ok(Some(ty))
@@ -147,7 +149,7 @@ fn check_both(op: OpQuery, lhs: &Typed, rhs: &Typed) -> Result<(), PlanError> {
 fn patch_type(lhs: &FieldOp, ty_lhs: &mut Typed, ty_rhs: &Typed) -> Result<(), PlanError> {
     if let FieldOp::Field(lhs_field) = lhs {
         if let Some(ty) = ty_rhs.ty() {
-            if ty.is_sum() || ty.as_product().map_or(false, |x| x.is_special()) {
+            if ty.is_sum() || ty.as_product().is_some_and(|x| x.is_special()) {
                 ty_lhs.set_ty(resolve_type(lhs_field, ty.clone())?);
             }
         }

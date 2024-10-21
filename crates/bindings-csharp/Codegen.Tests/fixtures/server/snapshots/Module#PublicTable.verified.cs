@@ -32,10 +32,8 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
         CustomEnumField = BSATN.CustomEnumField.Read(reader);
         CustomTaggedEnumField = BSATN.CustomTaggedEnumField.Read(reader);
         ListField = BSATN.ListField.Read(reader);
-        DictionaryField = BSATN.DictionaryField.Read(reader);
         NullableValueField = BSATN.NullableValueField.Read(reader);
         NullableReferenceField = BSATN.NullableReferenceField.Read(reader);
-        ComplexNestedField = BSATN.ComplexNestedField.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
@@ -66,10 +64,8 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
         BSATN.CustomEnumField.Write(writer, CustomEnumField);
         BSATN.CustomTaggedEnumField.Write(writer, CustomTaggedEnumField);
         BSATN.ListField.Write(writer, ListField);
-        BSATN.DictionaryField.Write(writer, DictionaryField);
         BSATN.NullableValueField.Write(writer, NullableValueField);
         BSATN.NullableReferenceField.Write(writer, NullableReferenceField);
-        BSATN.ComplexNestedField.Write(writer, ComplexNestedField);
     }
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<PublicTable>
@@ -101,12 +97,6 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
         internal static readonly CustomTaggedEnum.BSATN CustomTaggedEnumField = new();
         internal static readonly SpacetimeDB.BSATN.List<int, SpacetimeDB.BSATN.I32> ListField =
             new();
-        internal static readonly SpacetimeDB.BSATN.Dictionary<
-            string,
-            int,
-            SpacetimeDB.BSATN.String,
-            SpacetimeDB.BSATN.I32
-        > DictionaryField = new();
         internal static readonly SpacetimeDB.BSATN.ValueOption<
             int,
             SpacetimeDB.BSATN.I32
@@ -115,24 +105,6 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
             string,
             SpacetimeDB.BSATN.String
         > NullableReferenceField = new();
-        internal static readonly SpacetimeDB.BSATN.RefOption<
-            System.Collections.Generic.Dictionary<
-                CustomEnum,
-                System.Collections.Generic.List<int?>?
-            >,
-            SpacetimeDB.BSATN.Dictionary<
-                CustomEnum,
-                System.Collections.Generic.List<int?>?,
-                SpacetimeDB.BSATN.Enum<CustomEnum>,
-                SpacetimeDB.BSATN.RefOption<
-                    System.Collections.Generic.List<int?>,
-                    SpacetimeDB.BSATN.List<
-                        int?,
-                        SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>
-                    >
-                >
-            >
-        > ComplexNestedField = new();
 
         public PublicTable Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<PublicTable>(reader);
@@ -177,13 +149,11 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
                         CustomTaggedEnumField.GetAlgebraicType(registrar)
                     ),
                     new(nameof(ListField), ListField.GetAlgebraicType(registrar)),
-                    new(nameof(DictionaryField), DictionaryField.GetAlgebraicType(registrar)),
                     new(nameof(NullableValueField), NullableValueField.GetAlgebraicType(registrar)),
                     new(
                         nameof(NullableReferenceField),
                         NullableReferenceField.GetAlgebraicType(registrar)
-                    ),
-                    new(nameof(ComplexNestedField), ComplexNestedField.GetAlgebraicType(registrar))
+                    )
                 }
             ));
     }
@@ -236,20 +206,12 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
                         ),
                         new(nameof(ListField), BSATN.ListField.GetAlgebraicType(registrar)),
                         new(
-                            nameof(DictionaryField),
-                            BSATN.DictionaryField.GetAlgebraicType(registrar)
-                        ),
-                        new(
                             nameof(NullableValueField),
                             BSATN.NullableValueField.GetAlgebraicType(registrar)
                         ),
                         new(
                             nameof(NullableReferenceField),
                             BSATN.NullableReferenceField.GetAlgebraicType(registrar)
-                        ),
-                        new(
-                            nameof(ComplexNestedField),
-                            BSATN.ComplexNestedField.GetAlgebraicType(registrar)
                         )
                     ],
                     Indexes: [],

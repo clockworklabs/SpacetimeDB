@@ -125,21 +125,6 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
         let seeds = itertools::repeat_n(seed, len);
         visitor.visit(ArrayAccess { de: self, seeds })
     }
-
-    fn deserialize_map_seed<
-        Vi: de::MapVisitor<'de, K::Output, V::Output>,
-        K: de::DeserializeSeed<'de> + Clone,
-        V: de::DeserializeSeed<'de> + Clone,
-    >(
-        mut self,
-        visitor: Vi,
-        kseed: K,
-        vseed: V,
-    ) -> Result<Vi::Output, Self::Error> {
-        let len = self.reborrow().deserialize_len()?;
-        let seeds = itertools::repeat_n((kseed, vseed), len);
-        visitor.visit(MapAccess { de: self, seeds })
-    }
 }
 
 impl<'de, 'a, R: BufReader<'de>> SeqProductAccess<'de> for Deserializer<'a, R> {
@@ -181,36 +166,6 @@ impl<'de, 'a, R: BufReader<'de>, T: de::DeserializeSeed<'de> + Clone> de::ArrayA
         self.seeds
             .next()
             .map(|seed| seed.deserialize(self.de.reborrow()))
-            .transpose()
-    }
-
-    fn size_hint(&self) -> Option<usize> {
-        Some(self.seeds.len())
-    }
-}
-
-/// Deserializer for map elements.
-pub struct MapAccess<'a, R, K, V> {
-    de: Deserializer<'a, R>,
-    seeds: itertools::RepeatN<(K, V)>,
-}
-
-impl<'de, 'a, R: BufReader<'de>, K: de::DeserializeSeed<'de> + Clone, V: de::DeserializeSeed<'de> + Clone>
-    de::MapAccess<'de> for MapAccess<'a, R, K, V>
-{
-    type Key = K::Output;
-    type Value = V::Output;
-    type Error = DecodeError;
-
-    fn next_entry(&mut self) -> Result<Option<(Self::Key, Self::Value)>, Self::Error> {
-        self.seeds
-            .next()
-            .map(|(kseed, vseed)| {
-                Ok((
-                    kseed.deserialize(self.de.reborrow())?,
-                    vseed.deserialize(self.de.reborrow())?,
-                ))
-            })
             .transpose()
     }
 

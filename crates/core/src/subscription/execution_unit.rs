@@ -9,7 +9,7 @@ use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue,
 use crate::messages::websocket::TableUpdate;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_client_api_messages::websocket::{QueryUpdate, RowListLen as _, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, RowListLen as _, WebsocketFormat};
 use spacetimedb_lib::db::error::AuthError;
 use spacetimedb_lib::relation::DbTable;
 use spacetimedb_lib::{Identity, ProductValue};
@@ -209,6 +209,7 @@ impl ExecutionUnit {
         tx: &Tx,
         sql: &str,
         slow_query_threshold: Option<Duration>,
+        compression: Compression,
     ) -> Option<TableUpdate<F>> {
         let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, ctx.workload()).log_guard();
 
@@ -220,7 +221,8 @@ impl ExecutionUnit {
 
         (!inserts.is_empty()).then(|| {
             let deletes = F::List::default();
-            let update = F::into_query_update(QueryUpdate { deletes, inserts });
+            let qu = QueryUpdate { deletes, inserts };
+            let update = F::into_query_update(qu, compression);
             TableUpdate::new(self.return_table(), self.return_name(), (update, num_rows))
         })
     }

@@ -99,6 +99,7 @@ fn reformat_update<'a>(
             let table_ty = schema.typespace.resolve(table_schema.product_type_ref);
 
             let reformat_row = |row: &str| -> anyhow::Result<Value> {
+                // TODO: can the following two calls be merged into a single call to reduce allocations?
                 let row = serde_json::from_str::<Value>(row)?;
                 let row = serde::de::DeserializeSeed::deserialize(SeedWrapper(table_ty), row)?;
                 let row = table_ty.with_value(&row);

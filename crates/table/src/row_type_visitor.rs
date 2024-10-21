@@ -27,6 +27,8 @@
 //! The `VarLenMembers` impl for `VarLenVisitorProgram`
 //! implements a simple interpreter loop for the var-len visitor bytecode.
 
+use crate::MemoryUsage;
+
 use super::{
     indexes::{Byte, Bytes, PageOffset},
     layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout, SumTypeLayout},
@@ -315,6 +317,8 @@ impl Insn {
     const FIXUP: Self = Self::Goto(u16::MAX);
 }
 
+impl MemoryUsage for Insn {}
+
 #[allow(clippy::disallowed_macros)] // This is for test code.
 pub fn dump_visitor_program(program: &VarLenVisitorProgram) {
     for (idx, insn) in program.insns.iter().enumerate() {
@@ -352,6 +356,13 @@ impl fmt::Display for Insn {
 pub struct VarLenVisitorProgram {
     /// The list of instructions that make up this program.
     insns: Arc<[Insn]>,
+}
+
+impl MemoryUsage for VarLenVisitorProgram {
+    fn heap_usage(&self) -> usize {
+        let Self { insns } = self;
+        insns.heap_usage()
+    }
 }
 
 /// Evalutes the `program`,

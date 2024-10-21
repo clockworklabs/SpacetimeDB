@@ -3,9 +3,9 @@ import sys
 import logging
 
 
-class AddTablePseudomigration(Smoketest):
+class AddTableAutoMigration(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{println, ReducerContext, Table, SpacetimeType};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -23,6 +23,21 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
         println!("{}: {}", prefix, person.name);
     }
 }
+
+#[spacetimedb::table(name = point_mass)]
+pub struct PointMass {
+    mass: f64,
+    /// This used to cause an error when check_compatible did not resolve types in a `ModuleDef`.
+    position: Vector2,
+}
+
+#[derive(SpacetimeType, Clone, Copy)]
+pub struct Vector2 {
+    x: f64,
+    y: f64,
+}
+
+spacetimedb::filter!("SELECT * FROM person");
 """
 
     MODULE_CODE_UPDATED = (
@@ -44,11 +59,27 @@ pub fn print_books(ctx: &ReducerContext, prefix: String) {
         println!("{}: {}", prefix, book.isbn);
     }
 }
+
+spacetimedb::filter!("SELECT * FROM book");
 """
     )
 
-    def test_add_table_pseudomigration(self):
+    def assertSql(self, sql, expected):
+        self.maxDiff = None
+        sql_out = self.spacetime("sql", self.address, sql)
+        sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
+        expected = "\n".join([line.rstrip() for line in expected.splitlines()])
+        self.assertMultiLineEqual(sql_out, expected)
+
+    def test_add_table_auto_migration(self):
         """This tests uploading a module with a schema change that should not require clearing the database."""
+
+        # Check the row-level SQL filter is created correctly
+        self.assertSql("SELECT sql FROM st_row_level_security", """\
+ sql
+------------------------
+ "SELECT * FROM person"
+""")
 
         logging.info("Initial publish complete")
         # initial module code is already published by test framework
@@ -70,6 +101,15 @@ pub fn print_books(ctx: &ReducerContext, prefix: String) {
         self.publish_module(self.address, clear=False)
 
         logging.info("Updated")
+
+        # Check the row-level SQL filter is added correctly
+        self.assertSql("SELECT sql FROM st_row_level_security", """\
+ sql
+------------------------
+ "SELECT * FROM person"
+ "SELECT * FROM book"
+""")
+
         self.logs(100)
 
         self.call("add_person", "Husserl")

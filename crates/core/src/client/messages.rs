@@ -5,8 +5,8 @@ use crate::host::ArgsTuple;
 use crate::messages::websocket as ws;
 use derive_more::From;
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, FormatSwitch, JsonFormat, WebsocketFormat, SERVER_MSG_COMPRESSION_TAG_BROTLI,
-    SERVER_MSG_COMPRESSION_TAG_NONE,
+    BsatnFormat, Compression, FormatSwitch, JsonFormat, WebsocketFormat, SERVER_MSG_COMPRESSION_TAG_BROTLI,
+    SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
 };
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
@@ -28,8 +28,13 @@ pub(super) type SwitchedServerMessage = FormatSwitch<ws::ServerMessage<BsatnForm
 
 /// Serialize `msg` into a [`DataMessage`] containing a [`ws::ServerMessage`].
 ///
-/// If `protocol` is [`Protocol::Binary`], the message will be compressed by this method.
-pub fn serialize(msg: impl ToProtocol<Encoded = SwitchedServerMessage>, protocol: Protocol) -> DataMessage {
+/// If `protocol` is [`Protocol::Binary`],
+/// the message will be conditionally compressed by this method according to `compression`.
+pub fn serialize(
+    msg: impl ToProtocol<Encoded = SwitchedServerMessage>,
+    protocol: Protocol,
+    compression: Compression,
+) -> DataMessage {
     // TODO(centril, perf): here we are allocating buffers only to throw them away eventually.
     // Consider pooling these allocations so that we reuse them.
     match msg.to_protocol(protocol) {
@@ -40,12 +45,19 @@ pub fn serialize(msg: impl ToProtocol<Encoded = SwitchedServerMessage>, protocol
             bsatn::to_writer(&mut msg_bytes, &msg).unwrap();
 
             // Conditionally compress the message.
-            let msg_bytes = if ws::should_compress(msg_bytes[1..].len()) {
-                let mut out = vec![SERVER_MSG_COMPRESSION_TAG_BROTLI];
-                ws::brotli_compress(&msg_bytes[1..], &mut out);
-                out
-            } else {
-                msg_bytes
+            let srv_msg = &msg_bytes[1..];
+            let msg_bytes = match ws::decide_compression(srv_msg.len(), compression) {
+                Compression::None => msg_bytes,
+                Compression::Brotli => {
+                    let mut out = vec![SERVER_MSG_COMPRESSION_TAG_BROTLI];
+                    ws::brotli_compress(srv_msg, &mut out);
+                    out
+                }
+                Compression::Gzip => {
+                    let mut out = vec![SERVER_MSG_COMPRESSION_TAG_GZIP];
+                    ws::gzip_compress(srv_msg, &mut out);
+                    out
+                }
             };
             msg_bytes.into()
         }
@@ -145,7 +157,7 @@ impl ToProtocol for TransactionUpdateMessage {
                 },
                 energy_quanta_used: event.energy_quanta_used,
                 host_execution_duration_micros: event.host_execution_duration.as_micros() as u64,
-                caller_address: event.caller_address.unwrap_or(Address::zero()),
+                caller_address: event.caller_address.unwrap_or(Address::ZERO),
             };
 
             ws::ServerMessage::TransactionUpdate(tx_update)

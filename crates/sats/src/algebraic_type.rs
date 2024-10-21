@@ -8,9 +8,7 @@ use crate::meta_type::MetaType;
 use crate::product_type::{ADDRESS_TAG, IDENTITY_TAG};
 use crate::sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG};
 use crate::{i256, u256};
-use crate::{
-    AlgebraicTypeRef, AlgebraicValue, ArrayType, MapType, ProductType, SpacetimeType, SumType, SumTypeVariant,
-};
+use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, SpacetimeType, SumType, SumTypeVariant};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 
@@ -81,10 +79,6 @@ pub enum AlgebraicType {
     /// The type of array values where elements are of a base type `elem_ty`.
     /// Values [`AlgebraicValue::Array(array)`](crate::AlgebraicValue::Array) will have this type.
     Array(ArrayType),
-    /// The type of map values consisting of a key type `key_ty` and value `ty`.
-    /// Values [`AlgebraicValue::Map(map)`](crate::AlgebraicValue::Map) will have this type.
-    /// The order of entries in a map value is observable.
-    Map(Box<MapType>),
     /// The UTF-8 encoded `String` type.
     /// Values [`AlgebraicValue::String(s)`](crate::AlgebraicValue::String) will have this type.
     ///
@@ -135,7 +129,6 @@ impl MetaType for AlgebraicType {
             ("sum", SumType::meta_type()),
             ("product", ProductType::meta_type()),
             ("array", ArrayType::meta_type()),
-            ("map", MapType::meta_type()),
             ("string", AlgebraicType::unit()),
             ("bool", AlgebraicType::unit()),
             ("i8", AlgebraicType::unit()),
@@ -272,7 +265,6 @@ impl AlgebraicType {
                 variants.iter().any(|variant| variant.algebraic_type.contains_refs())
             }
             AlgebraicType::Array(array) => array.elem_ty.contains_refs(),
-            AlgebraicType::Map(map) => map.key_ty.contains_refs() || map.ty.contains_refs(),
             _ => false,
         }
     }
@@ -297,19 +289,14 @@ impl AlgebraicType {
         ArrayType { elem_ty: Box::new(ty) }.into()
     }
 
-    /// Returns a map type from the type `key` to the type `value`.
-    pub fn map(key: Self, value: Self) -> Self {
-        MapType::new(key, value).into()
-    }
-
     /// Construct a copy of the `Identity` type.
     pub fn identity() -> Self {
-        AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::bytes())])
+        AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::U256)])
     }
 
     /// Construct a copy of the `Address` type.
     pub fn address() -> Self {
-        AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::bytes())])
+        AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::U128)])
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.
@@ -428,9 +415,6 @@ impl AlgebraicType {
             }
             AlgebraicType::Product(product) => product.is_special() || product.is_unit(),
             AlgebraicType::Array(array) => array.elem_ty.is_valid_for_client_type_use(),
-            AlgebraicType::Map(map) => {
-                map.key_ty.is_valid_for_client_type_use() && map.ty.is_valid_for_client_type_use()
-            }
             AlgebraicType::Ref(_) => true,
             _ => true,
         }
@@ -508,7 +492,6 @@ mod tests {
                     algebraic_type: &0\
                 )>) \
                 | array: &0 \
-                | map: (key_ty: &0, ty: &0) \
                 | string: () \
                 | bool: () \
                 | i8: () | u8: () \
@@ -553,7 +536,6 @@ mod tests {
                     } \
                 }, \
                 array: { ty_: Ref, 0: 0 }, \
-                map: { ty_: Product, key_ty: { ty_: Ref, 0: 0 }, ty: { ty_: Ref, 0: 0 } }, \
                 string: { ty_: Product }, \
                 bool: { ty_: Product }, \
                 i8: { ty_: Product }, u8: { ty_: Product }, \
@@ -641,13 +623,6 @@ mod tests {
                             ]))\
                         ), \
                         (name = (some = \"array\"), {ref0}), \
-                        (\
-                            name = (some = \"map\"), \
-                            algebraic_type = (product = (elements = [\
-                                (name = (some = \"key_ty\"), {ref0}), \
-                                (name = (some = \"ty\"), {ref0})\
-                            ]))\
-                        ), \
                         (name = (some = \"string\"), {unit}), \
                         (name = (some = \"bool\"), {unit}), \
                         (name = (some = \"i8\"), {unit}), \

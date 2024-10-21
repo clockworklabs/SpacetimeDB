@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::{MutexGuard, PoisonError};
 
 use hex::FromHexError;
-use spacetimedb_query_planner::logical::errors::TypingError;
+use spacetimedb_expr::errors::TypingError;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_schema::error::ValidationErrors;
 use spacetimedb_snapshot::SnapshotError;
@@ -17,6 +17,7 @@ use crate::db::datastore::system_tables::SystemTable;
 use crate::host::scheduler::ScheduleError;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::db::error::{LibError, RelationError, SchemaErrors};
+use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::raw_def::RawIndexDefV8;
 use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::ProductValue;
@@ -37,6 +38,8 @@ pub enum TableError {
     NotFound(String),
     #[error("Table with ID `{1}` not found in `{0}`.")]
     IdNotFound(SystemTable, u32),
+    #[error("Sql `{1}` not found in `{0}`.")]
+    RawSqlNotFound(SystemTable, RawSql),
     #[error("Table with ID `{0}` not found in `TxState`.")]
     IdNotFoundState(TableId),
     #[error("Column `{0}.{1}` is missing a name")]

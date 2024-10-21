@@ -32,6 +32,15 @@ pub fn invoke_reducer<'a, A: Args<'a>>(
     with_timestamp_set(ctx.timestamp, || reducer.invoke(&ctx, args))
 }
 /// A trait for types representing the *execution logic* of a reducer.
+#[diagnostic::on_unimplemented(
+    message = "invalid reducer signature",
+    label = "this reducer signature is not valid",
+    note = "",
+    note = "reducer signatures must match the following pattern:",
+    note = "    `Fn(&ReducerContext, [T1, ...]) [-> Result<(), impl Display>]`",
+    note = "where each `Ti` type implements `SpacetimeType`.",
+    note = ""
+)]
 pub trait Reducer<'de, A: Args<'de>> {
     fn invoke(&self, ctx: &ReducerContext, args: A) -> ReducerResult;
 }
@@ -67,6 +76,10 @@ pub trait Args<'de>: Sized {
 }
 
 /// A trait of types representing the result of executing a reducer.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a valid reducer return type",
+    note = "reducers cannot return values -- you can only return `()` or `Result<(), impl Display>`"
+)]
 pub trait IntoReducerResult {
     /// Convert the result into form where there is no value
     /// and the error message is a string.
@@ -85,16 +98,86 @@ impl<E: fmt::Display> IntoReducerResult for Result<(), E> {
     }
 }
 
+#[diagnostic::on_unimplemented(
+    message = "the first argument of a reducer must be `&ReducerContext`",
+    note = "all reducers must take `&ReducerContext` as their first argument"
+)]
+pub trait ReducerContextArg {
+    // a little hack used in the macro to make error messages nicer. it generates <T as ReducerContextArg>::_ITEM
+    #[doc(hidden)]
+    const _ITEM: () = ();
+}
+impl ReducerContextArg for &ReducerContext {}
+
 /// A trait of types that can be an argument of a reducer.
-pub trait ReducerArg<'de> {}
-impl<'de, T: Deserialize<'de>> ReducerArg<'de> for T {}
-impl ReducerArg<'_> for &ReducerContext {}
-/// Assert that `T: ReducerArg`.
-pub fn assert_reducer_arg<'de, T: ReducerArg<'de>>() {}
-/// Assert that `T: IntoReducerResult`.
-pub fn assert_reducer_ret<T: IntoReducerResult>() {}
+#[diagnostic::on_unimplemented(
+    message = "the reducer argument `{Self}` does not implement `SpacetimeType`",
+    note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition"
+)]
+pub trait ReducerArg {
+    // a little hack used in the macro to make error messages nicer. it generates <T as ReducerArg>::_ITEM
+    #[doc(hidden)]
+    const _ITEM: () = ();
+}
+impl<T: SpacetimeType> ReducerArg for T {}
+
 /// Assert that a reducer type-checks with a given type.
-pub const fn assert_reducer_typecheck<'de, A: Args<'de>>(_: impl Reducer<'de, A> + Copy) {}
+pub const fn scheduled_reducer_typecheck<'de, Row>(_x: impl ReducerForScheduledTable<'de, Row>)
+where
+    Row: SpacetimeType + Serialize + Deserialize<'de>,
+{
+    core::mem::forget(_x);
+}
+
+#[diagnostic::on_unimplemented(
+    message = "invalid signature for scheduled table reducer",
+    note = "the scheduled reducer must take `{TableRow}` as its sole argument",
+    note = "e.g: `fn scheduled_reducer(ctx: &ReducerContext, arg: {TableRow})`"
+)]
+pub trait ReducerForScheduledTable<'de, TableRow> {}
+impl<'de, TableRow: SpacetimeType + Serialize + Deserialize<'de>, R: Reducer<'de, (TableRow,)>>
+    ReducerForScheduledTable<'de, TableRow> for R
+{
+}
+
+// the macro generates <T as SpacetimeType>::make_type::<DummyTypespace>
+pub struct DummyTypespace;
+impl TypespaceBuilder for DummyTypespace {
+    fn add(
+        &mut self,
+        _: std::any::TypeId,
+        _: Option<&'static str>,
+        _: impl FnOnce(&mut Self) -> spacetimedb_lib::AlgebraicType,
+    ) -> spacetimedb_lib::AlgebraicType {
+        unreachable!()
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    message = "the column type `{Self}` does not implement `SpacetimeType`",
+    note = "table column types all must implement `SpacetimeType`",
+    note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition"
+)]
+pub trait TableColumn {
+    // a little hack used in the macro to make error messages nicer. it generates <T as TableColumn>::_ITEM
+    #[doc(hidden)]
+    const _ITEM: () = ();
+}
+impl<T: SpacetimeType> TableColumn for T {}
+
+/// Assert that the primary_key column of a scheduled table is a u64.
+pub const fn assert_scheduled_table_primary_key<T: ScheduledTablePrimaryKey>() {}
+
+mod sealed {
+    pub trait Sealed {}
+}
+#[diagnostic::on_unimplemented(
+    message = "scheduled table primary key must be a `u64`",
+    label = "should be `u64`, not `{Self}`"
+)]
+pub trait ScheduledTablePrimaryKey: sealed::Sealed {}
+impl sealed::Sealed for u64 {}
+impl ScheduledTablePrimaryKey for u64 {}
 
 /// Used in the last type parameter of `Reducer` to indicate that the
 /// context argument *should* be passed to the reducer logic.
@@ -221,6 +304,12 @@ impl RepeaterArgs for (Timestamp,) {
     }
 }
 
+/// A trait for types that can *describe* a row-level security policy.
+pub trait RowLevelSecurityInfo {
+    /// The SQL expression for the row-level security policy.
+    const SQL: &'static str;
+}
+
 /// Registers into `DESCRIBERS` a function `f` to modify the module builder.
 fn register_describer(f: fn(&mut ModuleBuilder)) {
     DESCRIBERS.lock().unwrap().push(f)
@@ -256,8 +345,8 @@ pub fn register_table<T: Table>() {
         for &col in T::SEQUENCES {
             table = table.with_column_sequence(col, None);
         }
-        if let Some(scheduled_reducer) = T::SCHEDULED_REDUCER_NAME {
-            table = table.with_schedule(scheduled_reducer, None);
+        if let Some(schedule) = T::SCHEDULE {
+            table = table.with_schedule(schedule.reducer_name, schedule.scheduled_at_column, None);
         }
 
         table.finish();
@@ -280,6 +369,13 @@ pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>)
         let params = A::schema::<I>(&mut module.inner);
         module.inner.add_reducer(I::NAME, params, I::LIFECYCLE);
         module.reducers.push(I::INVOKE);
+    })
+}
+
+/// Registers a row-level security policy.
+pub fn register_row_level_security<R: RowLevelSecurityInfo>() {
+    register_describer(|module| {
+        module.inner.add_row_level_security(R::SQL);
     })
 }
 
@@ -348,7 +444,7 @@ extern "C" fn __describe_module__(description: BytesSink) {
 /// - `sender_3` contains bytes `[24..32]`.
 ///
 /// The `address_{0-1}` are the pieces of a `[u8; 16]` (`u128`) representing the callers's `Address`.
-/// They are encoded as follows (assuming `identity.__address_bytes: [u8; 16]`):
+/// They are encoded as follows (assuming `address.__address__: u128`):
 /// - `address_0` contains bytes `[0 ..8 ]`.
 /// - `address_1` contains bytes `[8 ..16]`.
 ///

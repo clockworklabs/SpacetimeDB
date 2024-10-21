@@ -31,7 +31,7 @@ use bytes::Bytes;
 use futures::StreamExt;
 use futures_channel::mpsc;
 use http::Uri;
-use spacetimedb_client_api_messages::websocket::BsatnFormat;
+use spacetimedb_client_api_messages::websocket::{BsatnFormat, Compression};
 use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address, Identity};
 use std::{
     sync::{Arc, Mutex as StdMutex, OnceLock},
@@ -727,6 +727,8 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
     on_connect: Option<OnConnectCallback<M>>,
     on_connect_error: Option<OnConnectErrorCallback>,
     on_disconnect: Option<OnDisconnectCallback<M>>,
+
+    compression: Compression,
 }
 
 /// This process's global client address, which will be attacked to all connections it makes.
@@ -769,6 +771,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
             on_connect: None,
             on_connect_error: None,
             on_disconnect: None,
+            compression: <_>::default(),
         }
     }
 
@@ -815,6 +818,7 @@ but you must call one of them, or else the connection will never progress.
                 self.module_name.as_ref().unwrap(),
                 self.credentials.as_ref(),
                 get_client_address(),
+                self.compression,
             ))
         })?;
 
@@ -874,6 +878,16 @@ but you must call one of them, or else the connection will never progress.
     // FIXME: currently this causes `disconnect` to be called rather than `on_connect_error`.
     pub fn with_credentials(mut self, credentials: Option<(Identity, String)>) -> Self {
         self.credentials = credentials;
+        self
+    }
+
+    /// Sets the compression used when a certain threshold in the message size has been reached.
+    ///
+    /// The current threshold used by the host is 1KiB for the entire server message
+    /// and for individual query updates.
+    /// Note however that this threshold is not guaranteed and may change without notice.
+    pub fn with_compression(mut self, compression: Compression) -> Self {
+        self.compression = compression;
         self
     }
 

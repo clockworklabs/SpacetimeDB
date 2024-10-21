@@ -15,9 +15,10 @@ use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use spacetimedb_client_api_messages::websocket::FormatSwitch;
+use spacetimedb_expr::check::parse_and_type_sub;
+use spacetimedb_expr::ty::TyCtx;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
-use spacetimedb_query_planner::logical::bind::parse_and_type_sub;
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::AuthAccess;
 use std::time::Duration;
@@ -88,7 +89,11 @@ impl ModuleSubscriptions {
             } else {
                 // NOTE: The following ensures compliance with the 1.0 sql api.
                 // Come 1.0, it will have replaced the current compilation stack.
-                parse_and_type_sub(sql, &SchemaViewer::new(&self.relational_db, &*tx, &auth))?;
+                parse_and_type_sub(
+                    &mut TyCtx::default(),
+                    sql,
+                    &SchemaViewer::new(&self.relational_db, &*tx, &auth),
+                )?;
 
                 let mut compiled = compile_read_only_query(&self.relational_db, &auth, &tx, sql)?;
                 // Note that no error path is needed here.
@@ -120,12 +125,20 @@ impl ModuleSubscriptions {
 
         let slow_query_threshold = StVarTable::sub_limit(&ctx, &self.relational_db, &tx)?.map(Duration::from_millis);
         let database_update = match sender.protocol {
-            Protocol::Text => {
-                FormatSwitch::Json(execution_set.eval(&ctx, &self.relational_db, &tx, slow_query_threshold))
-            }
-            Protocol::Binary => {
-                FormatSwitch::Bsatn(execution_set.eval(&ctx, &self.relational_db, &tx, slow_query_threshold))
-            }
+            Protocol::Text => FormatSwitch::Json(execution_set.eval(
+                &ctx,
+                &self.relational_db,
+                &tx,
+                slow_query_threshold,
+                sender.compression,
+            )),
+            Protocol::Binary => FormatSwitch::Bsatn(execution_set.eval(
+                &ctx,
+                &self.relational_db,
+                &tx,
+                slow_query_threshold,
+                sender.compression,
+            )),
         };
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
@@ -241,9 +254,9 @@ mod tests {
     use crate::error::DBError;
     use crate::execution_context::ExecutionContext;
     use spacetimedb_client_api_messages::websocket::Subscribe;
+    use spacetimedb_expr::errors::{TypingError, Unresolved};
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
-    use spacetimedb_query_planner::logical::errors::{TypingError, Unresolved};
     use spacetimedb_sats::product;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
