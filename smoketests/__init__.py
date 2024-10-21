@@ -141,7 +141,7 @@ def spacetime(*args, **kwargs):
     return run_cmd(SPACETIME_BIN, *args, cmd_name="spacetime", **kwargs)
 
 def new_identity(config_path):
-    identity_response = smoketests.run_cmd("curl", "-X", "POST", "--no-progress-meter", "http://127.0.0.1:3000/identity", full_output=False)
+    identity_response = run_cmd("curl", "-X", "POST", "--no-progress-meter", "http://127.0.0.1:3000/identity", full_output=False)
     identity_response = json.loads(identity_response)
     token = identity_response['token']
     with open(config_path, 'r') as file:
