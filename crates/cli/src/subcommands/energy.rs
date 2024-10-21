@@ -45,11 +45,11 @@ async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
     // let project_name = args.value_of("project name").unwrap();
     let identity = args.get_one::<String>("identity");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    // TODO: should this be allowed for arbitrary users? Shouldn't we be authing?
+    // TODO: We should remove the ability to call this for arbitrary users. At *least* remove it from the CLI.
     let identity = if let Some(identity) = identity {
         identity.clone()
     } else {
-        util::get_identity(&config, server)?
+        util::decode_identity(&config)?
     };
 
     let status = reqwest::Client::new()

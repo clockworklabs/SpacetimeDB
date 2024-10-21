@@ -29,7 +29,7 @@ struct AddressRow {
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = util::get_identity(&config, server)?;
+    let identity = util::decode_identity(&config)?;
 
     let client = reqwest::Client::new();
     let res = client

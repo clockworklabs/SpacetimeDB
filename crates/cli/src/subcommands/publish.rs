@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::util::{add_auth_header_opt, get_auth_header};
-use crate::util::{get_identity, unauth_error_context, y_or_n};
+use crate::util::{decode_identity, unauth_error_context, y_or_n};
 use crate::{build, common_args};
 
 pub fn cli() -> clap::Command {
@@ -150,7 +150,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
-        let identity = get_identity(&config, server)?;
+        let identity = decode_identity(&config)?;
         let err = res.text().await?;
         return unauth_error_context(
             Err(anyhow::anyhow!(err)),
@@ -187,7 +187,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             ));
         }
         PublishResult::PermissionDenied { domain } => {
-            let identity = get_identity(&config, server)?;
+            let identity = decode_identity(&config)?;
             //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
             // we should perhaps generate fun names like 'green-fire-dragon' instead
             let suggested_tld: String = identity.chars().take(12).collect();

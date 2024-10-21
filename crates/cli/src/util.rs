@@ -1,6 +1,8 @@
 use anyhow::Context;
-use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use base64::{
+    engine::general_purpose::STANDARD as BASE_64_STD, engine::general_purpose::STANDARD_NO_PAD as BASE_64_STD_NO_PAD,
+    Engine as _,
+};
 use reqwest::RequestBuilder;
 use serde::Deserialize;
 use spacetimedb::auth::identity::SpacetimeIdentityClaims2;
@@ -262,19 +264,19 @@ Generate a new identity with:
     })
 }
 
-pub fn get_identity(config: &Config, server: Option<&str>) -> anyhow::Result<String> {
+pub fn decode_identity(config: &Config) -> anyhow::Result<String> {
     let token = config.login_token()?;
-
-    match config.server_fingerprint(server)? {
-        None => Err(anyhow::anyhow!("No fingerprint found for server")),
-        Some(public_key) => {
-            let decoding_key = DecodingKey::from_ec_pem(public_key.as_bytes())?;
-            let mut validation = Validation::new(Algorithm::ES256);
-            validation.validate_exp = false;
-            validation.set_required_spec_claims(&["set", "iss", "aud"]);
-            let token_data = decode::<SpacetimeIdentityClaims2>(token, &decoding_key, &validation)?;
-
-            Ok(token_data.claims.identity.to_string())
-        }
+    // Here, we manually extract and decode the claims from the json web token.
+    // We do this without using the `jsonwebtoken` crate because it doesn't seem to have a way to skip signature verification.
+    // But signature verification would require getting the public key from a server, and we don't necessarily want to do that.
+    let token_parts: Vec<_> = token.split('.').collect();
+    if token_parts.len() != 3 {
+        return Err(anyhow::anyhow!("Token does not look like a JSON web token: {}", token));
     }
+    let decoded_bytes = BASE_64_STD_NO_PAD.decode(token_parts[1])?;
+    let decoded_string = String::from_utf8(decoded_bytes)?;
+
+    let claims_data: SpacetimeIdentityClaims2 = serde_json::from_str(decoded_string.as_str())?;
+
+    Ok(claims_data.identity.to_string())
 }
