@@ -137,9 +137,20 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
         output.check_returncode()
     return output if full_output else output.stdout
 
-
 def spacetime(*args, **kwargs):
     return run_cmd(SPACETIME_BIN, *args, cmd_name="spacetime", **kwargs)
+
+def new_identity(config_path):
+    identity_response = smoketests.run_cmd("curl", "-X", "POST", "--no-progress-meter", "http://127.0.0.1:3000/identity", full_output=False)
+    identity_response = json.loads(identity_response)
+    token = identity_response['token']
+    with open(config_path, 'r') as file:
+        lines = file.readlines()
+        pattern = r'^login_token *= *".*"$'
+        replacement = 'login_token = "%s"' % token
+        config_lines = [ re.sub(pattern, replacement, l) for l in lines ]
+    with open(config_path, 'w') as file:
+        file.writelines(config_lines)
 
 class Smoketest(unittest.TestCase):
     MODULE_CODE = TEMPLATE_LIB_RS
@@ -195,16 +206,7 @@ class Smoketest(unittest.TestCase):
         self.spacetime("server", "fingerprint", "localhost", "-y")
 
     def new_identity(self):
-        identity_response = smoketests.run_cmd("curl", "-X", "POST", "--no-progress-meter", "http://127.0.0.1:3000/identity", full_output=False)
-        identity_response = json.loads(identity_response)
-        token = identity_response['token']
-        with open(cls.config_path, 'r') as file:
-            lines = file.readlines()
-            pattern = r'^login_token *= *".*"$'
-            replacement = 'login_token = "%s"' % token
-            config_lines = [ re.sub(pattern, replacement, l) for l in lines ]
-        with open(cls.config_path, 'w') as file:
-            file.writelines(config_lines)
+        new_identity(cls.config_path)
 
     def subscribe(self, *queries, n):
         self._check_published()
