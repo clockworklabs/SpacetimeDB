@@ -206,7 +206,7 @@ class Smoketest(unittest.TestCase):
         self.spacetime("server", "fingerprint", "localhost", "-y")
 
     def new_identity(self):
-        new_identity(cls.config_path)
+        new_identity(Smoketest.config_path)
 
     def subscribe(self, *queries, n):
         self._check_published()
