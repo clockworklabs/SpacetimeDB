@@ -7,6 +7,7 @@ use spacetimedb_lib::buffer::{BufReader, Cursor};
 use spacetimedb_lib::sats::{i256, u256};
 
 pub use spacetimedb_lib::db::raw_def::v9::TableAccess;
+use spacetimedb_lib::Hash;
 pub use spacetimedb_primitives::{ColId, IndexId};
 
 use crate::{bsatn, sys, Address, DeserializeOwned, Identity, IterBuf, Serialize, SpacetimeType, TableId};
@@ -495,6 +496,7 @@ impl_filterable_value! {
     &str => String,
     Identity: Copy,
     Address: Copy,
+    Hash: Copy,
 
     // Some day we will likely also want to support `Vec<u8>` and `[u8]`,
     // as they have trivial portable equality and ordering,
