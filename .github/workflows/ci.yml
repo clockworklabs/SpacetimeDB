@@ -41,7 +41,7 @@ jobs:
         run: docker compose up -d
       - name: Set login token
         run: |
-          TOKEN="$(curl --no-progress-meter -X POST http://localhost:3000/identity | jq -r '.token')"
+          TOKEN="$(curl --no-progress-meter -X POST http://127.0.0.1:3000/identity | jq -r '.token')"
           mkdir ~/.spacetime
           # The config file is not created yet, so we can safely replace it
           echo 'login_token = "$TOKEN"' | tee ~/.spacetime/config.toml
