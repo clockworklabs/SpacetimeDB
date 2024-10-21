@@ -467,7 +467,7 @@ impl From<TableDef> for RawTableDefV9 {
         RawTableDefV9 {
             name: name.into(),
             product_type_ref,
-            primary_key,
+            primary_key: ColList::from_iter(primary_key),
             indexes: to_raw(indexes, |index: &RawIndexDefV9| &index.name),
             constraints: to_raw(constraints, |constraint: &RawConstraintDefV9| &constraint.name),
             sequences: to_raw(sequences, |sequence: &RawSequenceDefV9| &sequence.name),
@@ -740,6 +740,7 @@ impl From<ScheduleDef> for RawScheduleDefV9 {
         RawScheduleDefV9 {
             name: val.name.into(),
             reducer_name: val.reducer_name.into(),
+            scheduled_at_column: val.at_column,
         }
     }
 }

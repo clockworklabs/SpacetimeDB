@@ -1030,7 +1030,19 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
     let unique_col_ids = unique_columns.iter().map(|col| col.index);
     let primary_col_id = primary_key_column.iter().map(|col| col.index);
     let sequence_col_ids = sequenced_columns.iter().map(|col| col.index);
-    let scheduled_reducer_ident = args.scheduled.iter();
+
+    let schedule = args
+        .scheduled
+        .as_ref()
+        .map(|reducer| {
+            // scheduled_at was inserted as the last field
+            let scheduled_at_id = (fields.len() - 1) as u16;
+            quote!(spacetimedb::table::ScheduleDesc {
+                reducer_name: <#reducer as spacetimedb::rt::ReducerInfo>::NAME,
+                scheduled_at_column: #scheduled_at_id,
+            })
+        })
+        .into_iter();
 
     let unique_err = if !unique_columns.is_empty() {
         quote!(spacetimedb::UniqueConstraintViolation)
@@ -1063,7 +1075,7 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
             const INDEXES: &'static [spacetimedb::table::IndexDesc<'static>] = &[#(#index_descs),*];
             #(const PRIMARY_KEY: Option<u16> = Some(#primary_col_id);)*
             const SEQUENCES: &'static [u16] = &[#(#sequence_col_ids),*];
-            #(const SCHEDULED_REDUCER_NAME: Option<&'static str> = Some(<#scheduled_reducer_ident as spacetimedb::rt::ReducerInfo>::NAME);)*
+            #(const SCHEDULE: Option<spacetimedb::table::ScheduleDesc<'static>> = Some(#schedule);)*
 
             #table_id_from_name_func
         }

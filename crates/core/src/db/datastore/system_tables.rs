@@ -266,6 +266,7 @@ st_fields_enum!(enum StScheduledFields {
     "table_id", TableId = 1,
     "reducer_name", ReducerName = 2,
     "schedule_name", ScheduleName = 3,
+    "at_column", AtColumn = 4,
 });
 
 /// Helper method to check that a system table has the correct fields.
@@ -1285,6 +1286,7 @@ pub struct StScheduledRow {
     pub(crate) table_id: TableId,
     pub(crate) reducer_name: Box<str>,
     pub(crate) schedule_name: Box<str>,
+    pub(crate) at_column: ColId,
 }
 
 impl TryFrom<RowRef<'_>> for StScheduledRow {
@@ -1307,6 +1309,7 @@ impl From<StScheduledRow> for ScheduleSchema {
             reducer_name: row.reducer_name,
             schedule_id: row.schedule_id,
             schedule_name: row.schedule_name,
+            at_column: row.at_column,
         }
     }
 }
