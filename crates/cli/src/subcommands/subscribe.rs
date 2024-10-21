@@ -85,7 +85,7 @@ fn reformat_update<'a>(
             let table_schema = schema
                 .tables
                 .iter()
-                .find(|tbl| tbl.name == upd.table_name)
+                .find(|tbl| *tbl.name == *upd.table_name)
                 .context("table not found in schema")?;
             let table_ty = schema.typespace.resolve(table_schema.product_type_ref);
 

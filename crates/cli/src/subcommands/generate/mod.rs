@@ -21,6 +21,7 @@ use spacetimedb_schema::schema::{Schema, TableSchema};
 use std::fs;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use util::{iter_reducers, iter_tables};
 use wasmtime::{Caller, StoreContextMut};
 
 use crate::util::y_or_n;
@@ -284,10 +285,10 @@ pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow
 
 fn generate_lang(module: &ModuleDef, lang: impl Lang, namespace: &str) -> Vec<(String, String)> {
     itertools::chain!(
-        module.tables().map(|tbl| {
+        iter_tables(module).enumerate().map(|(idx, tbl)| {
             (
                 lang.table_filename(module, tbl),
-                lang.generate_table(module, namespace, tbl),
+                lang.generate_table(idx as u32, module, namespace, tbl),
             )
         }),
         module.types().map(|typ| {
@@ -296,10 +297,10 @@ fn generate_lang(module: &ModuleDef, lang: impl Lang, namespace: &str) -> Vec<(S
                 lang.generate_type(module, namespace, typ),
             )
         }),
-        module.reducers().map(|reducer| {
+        iter_reducers(module).enumerate().map(|(idx, reducer)| {
             (
                 lang.reducer_filename(&reducer.name),
-                lang.generate_reducer(module, namespace, reducer),
+                lang.generate_reducer(idx as u32, module, namespace, reducer),
             )
         }),
         lang.generate_globals(module, namespace),
@@ -312,9 +313,9 @@ trait Lang {
     fn type_filename(&self, type_name: &ScopedTypeName) -> String;
     fn reducer_filename(&self, reducer_name: &Identifier) -> String;
 
-    fn generate_table(&self, module: &ModuleDef, namespace: &str, tbl: &TableDef) -> String;
+    fn generate_table(&self, idx: u32, module: &ModuleDef, namespace: &str, tbl: &TableDef) -> String;
     fn generate_type(&self, module: &ModuleDef, namespace: &str, typ: &TypeDef) -> String;
-    fn generate_reducer(&self, module: &ModuleDef, namespace: &str, reducer: &ReducerDef) -> String;
+    fn generate_reducer(&self, idx: u32, module: &ModuleDef, namespace: &str, reducer: &ReducerDef) -> String;
     fn generate_globals(&self, module: &ModuleDef, namespace: &str) -> Vec<(String, String)>;
 }
 

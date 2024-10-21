@@ -35,7 +35,7 @@ pub trait MessageTableAccess {
 impl MessageTableAccess for super::RemoteTables {
     fn message(&self) -> MessageTableHandle<'_> {
         MessageTableHandle {
-            imp: self.imp.get_table::<Message>("message"),
+            imp: self.imp.get_table::<Message>(0),
             ctx: std::marker::PhantomData,
         }
     }

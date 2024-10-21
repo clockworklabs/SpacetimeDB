@@ -107,7 +107,7 @@ impl MutTxId {
         // fail if the table already exists.
         let row = StTableRow {
             table_id: TableId::SENTINEL,
-            table_name: table_schema.table_name[..].into(),
+            table_name: table_schema.table_name.clone(),
             table_type: table_schema.table_type,
             table_access: table_schema.table_access,
             table_primary_key: table_schema.primary_key.map(Into::into),
