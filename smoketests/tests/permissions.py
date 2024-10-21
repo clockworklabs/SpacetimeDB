@@ -14,13 +14,8 @@ class Permissions(Smoketest):
 
         self.publish_module()
 
-        # TODO: can a lot of the usage of reset_config be replaced with just passing -i ? or -a ?
-        self.reset_config()
-        self.new_identity()
-        self.call("say_hello")
+        self.call("say_hello", anon=True)
 
-        self.reset_config()
-        self.import_identity(identity, token, default=True)
         self.assertEqual("\n".join(self.logs(10000)).count("World"), 1)
 
     def test_delete(self):

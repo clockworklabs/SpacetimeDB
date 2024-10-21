@@ -194,6 +194,18 @@ class Smoketest(unittest.TestCase):
         # Fetch the server's fingerprint; required for `identity list`.
         self.spacetime("server", "fingerprint", "localhost", "-y")
 
+    def new_identity(self):
+        identity_response = smoketests.run_cmd("curl", "-X", "POST", "--no-progress-meter", "http://127.0.0.1:3000/identity", full_output=False)
+        identity_response = json.loads(identity_response)
+        token = identity_response['token']
+        with open(cls.config_path, 'r') as file:
+            lines = file.readlines()
+            pattern = r'^login_token *= *".*"$'
+            replacement = 'login_token = "%s"' % token
+            config_lines = [ re.sub(pattern, replacement, l) for l in lines ]
+        with open(cls.config_path, 'w') as file:
+            file.writelines(config_lines)
+
     def subscribe(self, *queries, n):
         self._check_published()
         assert isinstance(n, int)
