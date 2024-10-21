@@ -165,6 +165,20 @@ pub trait TableColumn {
 }
 impl<T: SpacetimeType> TableColumn for T {}
 
+/// Assert that the primary_key column of a scheduled table is a u64.
+pub const fn assert_scheduled_table_primary_key<T: ScheduledTablePrimaryKey>() {}
+
+mod sealed {
+    pub trait Sealed {}
+}
+#[diagnostic::on_unimplemented(
+    message = "scheduled table primary key must be a `u64`",
+    label = "should be `u64`, not `{Self}`"
+)]
+pub trait ScheduledTablePrimaryKey: sealed::Sealed {}
+impl sealed::Sealed for u64 {}
+impl ScheduledTablePrimaryKey for u64 {}
+
 /// Used in the last type parameter of `Reducer` to indicate that the
 /// context argument *should* be passed to the reducer logic.
 pub struct ContextArg;
@@ -331,8 +345,8 @@ pub fn register_table<T: Table>() {
         for &col in T::SEQUENCES {
             table = table.with_column_sequence(col, None);
         }
-        if let Some(scheduled_reducer) = T::SCHEDULED_REDUCER_NAME {
-            table = table.with_schedule(scheduled_reducer, None);
+        if let Some(schedule) = T::SCHEDULE {
+            table = table.with_schedule(schedule.reducer_name, schedule.scheduled_at_column, None);
         }
 
         table.finish();
