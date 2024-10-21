@@ -270,15 +270,10 @@ impl TokenValidator for LocalTokenValidator {
     }
 }
 
-type CacheValue = Arc<JwksValidator>;
-
+// Validates tokens by looking up public keys and caching them.
 pub struct CachingOidcTokenValidator {
     cache: async_cache::AsyncCache<Arc<JwksValidator>, KeyFetcher>,
 }
-
-// pub struct CachingOidcTokenValidator<T: async_cache::Fetcher<Arc<JwksValidator>> + Sync + Send + 'static> {
-//     cache: async_cache::AsyncCache<Arc<JwksValidator>, T>,
-// }
 
 impl CachingOidcTokenValidator {
     fn new(refresh_duration: Duration, expiry: Option<Duration>) -> Self {
@@ -293,6 +288,7 @@ impl CachingOidcTokenValidator {
     }
 }
 
+// Jwks fetcher for the async cache.
 struct KeyFetcher;
 
 use async_cache;
