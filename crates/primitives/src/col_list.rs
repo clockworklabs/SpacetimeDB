@@ -277,7 +277,6 @@ impl ColList {
         addr & 1 != 0
     }
 
-    #[doc(hidden)]
     pub fn heap_size(&self) -> usize {
         match self.as_inline() {
             Ok(_) => 0,
