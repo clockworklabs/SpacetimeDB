@@ -1,5 +1,5 @@
 use super::code_indenter::{CodeIndenter, Indenter};
-use super::util::{collect_case, print_lines, type_ref_name};
+use super::util::{collect_case, iter_reducers, iter_tables, print_lines, type_ref_name};
 use super::Lang;
 use crate::generate::util::{namespace_is_empty_or_default, print_auto_generated_file_comment};
 use convert_case::{Case, Casing};
@@ -763,20 +763,6 @@ fn print_module_reexports(module: &ModuleDef, out: &mut Indenter) {
     }
 }
 
-/// Iterate over all the [`ReducerDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &ReducerDef> {
-    module.reducers().sorted_by_key(|reducer| &reducer.name)
-}
-
-/// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
-    module.tables().sorted_by_key(|table| &table.name)
-}
-
 fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {
     print_enum_derives(out);
     writeln!(
@@ -851,42 +837,45 @@ impl __sdk::spacetime_module::InModule for Reducer {{
                 },
                 "}\n",
             );
-        },
-        "}\n",
-    );
-
-    out.delimited_block(
-        "impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {",
-        |out| {
-            writeln!(out, "type Error = __anyhow::Error;");
             out.delimited_block(
-                "fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {",
-                    |out| {
-                        out.delimited_block(
-                            "match &value.reducer_name[..] {",
-                            |out| {
-                                for reducer in iter_reducers(module) {
-                                    writeln!(
-                                        out,
-                                        "{:?} => Ok(Reducer::{}(__sdk::spacetime_module::parse_reducer_args({:?}, &value.args)?)),",
-                                        reducer.name.deref(),
-                                        reducer_variant_name(&reducer.name),
-                                        reducer.name.deref(),
-                                    );
-                                }
+                "fn parse_call_info(
+                    reducer_id_to_name: &impl Fn(__ws::ReducerId) -> __anyhow::Result<&'static str>,
+                    raw: __ws::ReducerCallInfo<__ws::BsatnFormat>,
+                ) -> __anyhow::Result<Self> {",
+                |out| {
+                    out.delimited_block(
+                        "use __sdk::spacetime_module::parse_reducer_args;
+                        let name = reducer_id_to_name(raw.reducer_id)?;
+                        match name {",
+                        |out| {
+                            for reducer in iter_reducers(module) {
                                 writeln!(
                                     out,
-                                    "_ => Err(__anyhow::anyhow!(\"Unknown reducer {{:?}}\", value.reducer_name)),",
+                                    "{:?} => Ok(Reducer::{}(parse_reducer_args(name, &raw.args)?)),",
+                                    reducer.name.deref(),
+                                    reducer_variant_name(&reducer.name),
                                 );
-                            },
-                            "}\n",
-                        )
-                    },
+                            }
+                            writeln!(out, "_ => unreachable!(),");
+                        },
+                        "
+                        }\n",
+                    )
+                },
                 "}\n",
+            );
+            out.delimited_block(
+                "fn reducer_names() -> &'static [&'static str] {&[",
+                |out| {
+                    for reducer in iter_reducers(module) {
+                        writeln!(out, "{:?},", &reducer.name);
+                    }
+                },
+                "]}\n",
             );
         },
         "}\n",
-    )
+    );
 }
 
 fn print_db_update_defn(module: &ModuleDef, out: &mut Indenter) {
@@ -906,37 +895,6 @@ fn print_db_update_defn(module: &ModuleDef, out: &mut Indenter) {
             }
         },
         "}\n",
-    );
-
-    out.newline();
-
-    out.delimited_block(
-        "
-impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
-    type Error = __anyhow::Error;
-    fn try_from(raw: __ws::DatabaseUpdate<__ws::BsatnFormat>) -> Result<Self, Self::Error> {
-        let mut db_update = DbUpdate::default();
-        for table_update in raw.tables {
-            match &table_update.table_name[..] {
-",
-        |out| {
-            for table in iter_tables(module) {
-                writeln!(
-                    out,
-                    "{:?} => db_update.{} = {}::parse_table_update(table_update)?,",
-                    table.name.deref(),
-                    table_method_name(&table.name),
-                    table_module_name(&table.name),
-                );
-            }
-        },
-        "
-                unknown => __anyhow::bail!(\"Unknown table {unknown:?} in DatabaseUpdate\"),
-            }
-        }
-        Ok(db_update)
-    }
-}",
     );
 
     out.newline();
@@ -983,6 +941,43 @@ impl __sdk::spacetime_module::InModule for DbUpdate {{
                     }
                 },
                 "}\n",
+            );
+
+            out.delimited_block(
+                "fn parse_update(
+                    table_id_to_name: &impl Fn(__ws::TableId) -> __anyhow::Result<&'static str>,
+                    raw: __ws::DatabaseUpdate<__ws::BsatnFormat>,
+                ) -> __anyhow::Result<Self> {
+                    let mut db_update = DbUpdate::default();
+                    for table_update in raw.tables {
+                        match table_id_to_name(table_update.table_id)? {",
+                |out| {
+                    for table in iter_tables(module) {
+                        writeln!(
+                            out,
+                            "{:?} => db_update.{} = {}::parse_table_update(table_update)?,",
+                            table.name.deref(),
+                            table_method_name(&table.name),
+                            table_module_name(&table.name),
+                        );
+                    }
+                },
+                "
+                            _ => unreachable!(),
+                        }
+                    }
+                    Ok(db_update)
+                }\n",
+            );
+
+            out.delimited_block(
+                "fn table_names() -> &'static [&'static str] {&[",
+                |out| {
+                    for table in iter_tables(module) {
+                        writeln!(out, "{:?},", &table.name);
+                    }
+                },
+                "]}\n"
             );
         },
         "}\n",

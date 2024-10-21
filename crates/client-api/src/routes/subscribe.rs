@@ -12,12 +12,12 @@ use futures::{Future, FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
-use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage};
+use spacetimedb::client::messages::{serialize, SerializableMessage};
 use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageHandleError, Protocol};
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::also_poll;
 use spacetimedb::worker_metrics::WORKER_METRICS;
-use spacetimedb_client_api_messages::websocket::Compression;
+use spacetimedb_client_api_messages::websocket::{AfterConnecting, Compression, IdentityToken};
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::Address;
 use std::time::Instant;
@@ -154,22 +154,35 @@ where
             }
         };
 
-        // Send the client their identity token message as the first message
-        // NOTE: We're adding this to the protocol because some client libraries are
-        // unable to access the http response headers.
-        // Clients that receive the token from the response headers should ignore this
-        // message.
-        let message = IdentityTokenMessage {
-            identity: auth.identity,
-            token: identity_token,
-            address: client_address,
-        };
-        if let Err(e) = client.send_message(message) {
-            log::warn!("{e}, before identity token was sent")
-        }
+        send_after_connecting_message(auth, identity_token, client_address, client);
     });
 
     Ok(res)
+}
+
+/// Send the client a first message after connecting.
+/// This will include:
+///
+/// 1. their identity token.
+///    NOTE: We're adding this to the protocol because some client libraries are
+///    unable to access the http response headers.
+///    Clients that receive the token from the response headers should ignore this value.
+///
+/// 2. mappings from/to ids and names for reducers and tables.
+///    Clients must use these mappings
+///    if they do not wish to rely on the ids but rather rely on names instead.
+fn send_after_connecting_message(auth: SpacetimeAuth, token: Box<str>, address: Address, client: ClientConnection) {
+    let message = AfterConnecting {
+        ids_to_names: client.module.ids_to_names(auth.identity),
+        identity_token: IdentityToken {
+            identity: auth.identity,
+            token,
+            address,
+        },
+    };
+    if let Err(e) = client.send_message(message) {
+        log::warn!("{e}, before identity token was sent")
+    }
 }
 
 const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);

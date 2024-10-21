@@ -166,8 +166,8 @@ impl From {
             .chain(self.joins.iter().map(|Join::Inner { rhs, .. }| &**rhs))
     }
 
-    /// Returns all the table names as a `Vec<String>`, including the ones inside the joins.
-    pub fn table_names(&self) -> Vec<Box<str>> {
+    /// Returns all the table names as a `Vec<Arc<str>>`, including the ones inside the joins.
+    pub fn table_names(&self) -> Vec<Arc<str>> {
         self.iter_tables().map(|x| x.table_name.clone()).collect()
     }
 

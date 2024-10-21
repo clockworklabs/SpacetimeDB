@@ -290,7 +290,7 @@ impl HostController {
         trace!("using database {}/{}", database.database_identity, replica_id);
         let module = self.get_or_launch_module_host(database, replica_id).await?;
         let on_panic = self.unregister_fn(replica_id);
-        let result = tokio::task::spawn_blocking(move || f(&module.replica_ctx().relational_db))
+        let result = tokio::task::spawn_blocking(move || f(module.db()))
             .await
             .unwrap_or_else(|e| {
                 warn!("database operation panicked");

@@ -90,6 +90,8 @@ impl<M: SpacetimeModule> Default for ClientCache<M> {
     }
 }
 
+type TableCacheMap<Row> = HashMap<&'static str, Arc<TableCache<Row>>>;
+
 impl<M: SpacetimeModule> ClientCache<M> {
     /// Get a handle on the [`TableCache`] which stores rows of type `Row` for the table `table_name`.
     pub(crate) fn get_table<Row: InModule<Module = M> + Send + Sync + 'static>(
@@ -97,7 +99,7 @@ impl<M: SpacetimeModule> ClientCache<M> {
         table_name: &'static str,
     ) -> Option<&Arc<TableCache<Row>>> {
         self.tables
-            .get::<HashMap<&'static str, Arc<TableCache<Row>>>>()
+            .get::<TableCacheMap<Row>>()
             .and_then(|tables_of_row_type| tables_of_row_type.get(table_name))
     }
 
@@ -122,8 +124,8 @@ impl<M: SpacetimeModule> ClientCache<M> {
 
         table.apply_diff(diff);
         self.tables
-            .entry::<HashMap<&'static str, Arc<TableCache<Row>>>>()
-            .or_insert(HashMap::default())
+            .entry::<TableCacheMap<Row>>()
+            .or_insert(<_>::default())
             .insert(table_name, Arc::new(table));
     }
 }

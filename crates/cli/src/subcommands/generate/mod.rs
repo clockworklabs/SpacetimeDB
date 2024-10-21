@@ -21,6 +21,7 @@ use spacetimedb_schema::schema::{Schema, TableSchema};
 use std::fs;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use util::{iter_reducers, iter_tables};
 use wasmtime::{Caller, StoreContextMut};
 
 use crate::util::y_or_n;
@@ -266,9 +267,7 @@ pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow
             let items = itertools::chain!(
                 types,
                 tables.into_iter().map(GenItem::Table),
-                reducers
-                    .filter(|r| !(r.name.starts_with("__") && r.name.ends_with("__")))
-                    .map(GenItem::Reducer),
+                reducers.map(GenItem::Reducer),
             );
 
             let items: Vec<GenItem> = items.collect();
@@ -284,7 +283,7 @@ pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow
 
 fn generate_lang(module: &ModuleDef, lang: impl Lang, namespace: &str) -> Vec<(String, String)> {
     itertools::chain!(
-        module.tables().map(|tbl| {
+        iter_tables(module).map(|tbl| {
             (
                 lang.table_filename(module, tbl),
                 lang.generate_table(module, namespace, tbl),
@@ -296,7 +295,7 @@ fn generate_lang(module: &ModuleDef, lang: impl Lang, namespace: &str) -> Vec<(S
                 lang.generate_type(module, namespace, typ),
             )
         }),
-        module.reducers().map(|reducer| {
+        iter_reducers(module).map(|reducer| {
             (
                 lang.reducer_filename(&reducer.name),
                 lang.generate_reducer(module, namespace, reducer),

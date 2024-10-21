@@ -38,6 +38,23 @@ async fn read_logs(module: &ModuleHandle) -> Vec<String> {
         .collect::<Vec<_>>()
 }
 
+async fn call_reducer(module: &ModuleHandle, reducer: &str, args: &str, request_id: u32) {
+    let reducer_id = module.client.module.info().reducers_map.lookup_id(reducer).unwrap();
+
+    let json = format!(
+        r#"{{
+        "CallReducer": {{
+            "reducer_id": {reducer_id},
+            "args": "{args}",
+            "request_id": {request_id},
+            "flags": 0
+        }}
+    }}"#
+    )
+    .to_string();
+    module.send(json).await.unwrap();
+}
+
 // The tests MUST be run in sequence because they read the OS environment
 // and can cause a race when run in parallel.
 
@@ -47,24 +64,10 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
     CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
-            let json =
-                r#"{"CallReducer": {"reducer": "add", "args": "[\"Tyrion\", 24]", "request_id": 0, "flags": 0 }}"#
-                    .to_string();
-            module.send(json).await.unwrap();
-
-            let json =
-                r#"{"CallReducer": {"reducer": "add", "args": "[\"Cersei\", 31]", "request_id": 1, "flags": 0 }}"#
-                    .to_string();
-            module.send(json).await.unwrap();
-
-            let json =
-                r#"{"CallReducer": {"reducer": "say_hello", "args": "[]", "request_id": 2, "flags": 0 }}"#.to_string();
-            module.send(json).await.unwrap();
-
-            let json = r#"{"CallReducer": {"reducer": "list_over_age", "args": "[30]", "request_id": 3, "flags": 0 }}"#
-                .to_string();
-            module.send(json).await.unwrap();
-
+            call_reducer(&module, "add", r#"[\"Tyrion\", 24]"#, 0).await;
+            call_reducer(&module, "add", r#"[\"Cersei\", 31]"#, 1).await;
+            call_reducer(&module, "say_hello", "[]", 2).await;
+            call_reducer(&module, "list_over_age", "[30]", 3).await;
             assert_eq!(
                 read_logs(&module).await,
                 [
@@ -175,16 +178,11 @@ fn test_call_query_macro() {
     // Hand-written JSON. This will fail if the JSON encoding of `ClientMessage` changes.
     test_call_query_macro_with_caller(|module| async move {
         // Note that JSON doesn't allow multiline strings, so the encoded args string must be on one line!
-        let json = r#"
-{ "CallReducer": {
-  "reducer": "test",
-  "args":
-    "[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"Foo\": {} }, { \"Baz\": \"buzz\" } ]",
-  "request_id": 0,
-  "flags": 0
-} }"#
-            .to_string();
-        module.send(json).await.unwrap();
+        call_reducer(
+            &module,
+            "test", r#"[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"Foo\": {} }, { \"Baz\": \"buzz\" } ]"#,
+            0,
+        ).await;
     });
 
     let args_pv = &product![

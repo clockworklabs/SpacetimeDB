@@ -3,7 +3,7 @@ use super::{ClientConnection, DataMessage};
 use crate::energy::EnergyQuanta;
 use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::{ReducerArgs, ReducerId, Timestamp};
+use crate::host::{ReducerArgs, ReducerCallError, Timestamp};
 use crate::identity::Identity;
 use crate::messages::websocket::{CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
@@ -12,6 +12,7 @@ use bytestring::ByteString;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{bsatn, Address};
+use spacetimedb_primitives::ReducerId;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -61,20 +62,31 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
     let address = client.module.info().database_identity;
     let res = match message {
         ClientMessage::CallReducer(CallReducer {
-            ref reducer,
+            reducer_id,
             args,
             request_id,
             flags,
         }) => {
-            let res = client.call_reducer(reducer, args, request_id, timer, flags).await;
+            // Translate `reducer_id` to its name.
+            let reducer_name = client.module.info().reducers_map.lookup_name(reducer_id);
+            let reducer_name_for_metrics = reducer_name.as_deref().unwrap_or("<invalid_reducer>");
+
+            // Call the reducer.
+            let res = match &reducer_name {
+                Some(reducer) => client.call_reducer(reducer, args, request_id, timer, flags).await,
+                None => Err(ReducerCallError::NoSuchReducer),
+            };
+
+            // Record roundtrip metrics.
             WORKER_METRICS
                 .request_round_trip
-                .with_label_values(&WorkloadType::Reducer, &address, reducer)
+                .with_label_values(&WorkloadType::Reducer, &address, reducer_name_for_metrics)
                 .observe(timer.elapsed().as_secs_f64());
+
             res.map(drop).map_err(|e| {
                 (
-                    Some(reducer),
-                    client.module.info().reducers_map.lookup_id(reducer),
+                    client.module.info().reducers_map.lookup_name(reducer_id),
+                    Some(reducer_id),
                     e.into(),
                 )
             })
@@ -100,7 +112,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         }
     };
     res.map_err(|(reducer, reducer_id, err)| MessageExecutionError {
-        reducer: reducer.cloned(),
+        reducer,
         reducer_id,
         caller_identity: client.id.identity,
         caller_address: Some(client.id.address),
@@ -113,7 +125,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
 pub struct MessageExecutionError {
-    pub reducer: Option<Box<str>>,
+    pub reducer: Option<Arc<str>>,
     pub reducer_id: Option<ReducerId>,
     pub caller_identity: Identity,
     pub caller_address: Option<Address>,
@@ -128,7 +140,7 @@ impl MessageExecutionError {
             caller_identity: self.caller_identity,
             caller_address: self.caller_address,
             function_call: ModuleFunctionCall {
-                reducer: self.reducer.unwrap_or_else(|| "<none>".into()).into(),
+                reducer: self.reducer.unwrap_or_else(|| "<none>".into()),
                 reducer_id: self.reducer_id.unwrap_or(u32::MAX.into()),
                 args: Default::default(),
             },
