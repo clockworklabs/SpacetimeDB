@@ -39,14 +39,14 @@ pub fn cli() -> clap::Command {
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
 }
 
-pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
+pub(crate) async fn parse_req(config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let database = args.get_one::<String>("database").unwrap();
     let anon_identity = args.get_flag("anon_identity");
 
     Ok(Connection {
         host: config.get_host_url(server)?,
-        auth_header: get_auth_header(&mut config, anon_identity)?,
+        auth_header: get_auth_header(&config, anon_identity)?,
         address: database_address(&config, database, server).await?,
         database: database.to_string(),
     })

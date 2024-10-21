@@ -268,7 +268,6 @@ pub fn get_identity(config: &Config, server: Option<&str>) -> anyhow::Result<Str
     match config.server_fingerprint(server)? {
         None => Err(anyhow::anyhow!("No fingerprint found for server")),
         Some(public_key) => {
-            let public_key = public_key;
             let decoding_key = DecodingKey::from_ec_pem(public_key.as_bytes())?;
             let mut validation = Validation::new(Algorithm::ES256);
             validation.validate_exp = false;

@@ -137,12 +137,12 @@ pub async fn exec_reverse_dns(config: Config, args: &ArgMatches) -> Result<(), a
     }
 }
 
-pub async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec_set_name(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let domain = args.get_one::<String>("domain").unwrap();
     let address = args.get_one::<String>("address").unwrap();
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let identity = get_identity(&config, server)?;
-    let auth_header = get_auth_header(&mut config, false)?;
+    let auth_header = get_auth_header(&config, false)?;
 
     let builder = reqwest::Client::new().get(Url::parse_with_params(
         format!("{}/database/set_name", config.get_host_url(server)?).as_str(),

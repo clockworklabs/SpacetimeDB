@@ -109,14 +109,14 @@ impl clap::ValueEnum for Format {
     }
 }
 
-pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let mut num_lines = args.get_one::<u32>("num_lines").copied();
     let database = args.get_one::<String>("database").unwrap();
     let follow = args.get_flag("follow");
     let format = *args.get_one::<Format>("format").unwrap();
 
-    let auth_header = get_auth_header(&mut config, false)?;
+    let auth_header = get_auth_header(&config, false)?;
 
     let address = database_address(&config, database, server).await?;
 

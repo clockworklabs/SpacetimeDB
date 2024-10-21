@@ -15,14 +15,14 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help delete` for more detailed information.\n")
 }
 
-pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let database = args.get_one::<String>("database").unwrap();
 
     let address = database_address(&config, database, server).await?;
 
     let builder = reqwest::Client::new().post(format!("{}/database/delete/{}", config.get_host_url(server)?, address));
-    let auth_header = get_auth_header(&mut config, false)?;
+    let auth_header = get_auth_header(&config, false)?;
     let builder = add_auth_header_opt(builder, &auth_header);
     builder.send().await?.error_for_status()?;
 
