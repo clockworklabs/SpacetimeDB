@@ -36,7 +36,7 @@ class Domains(Smoketest):
     def test_set_name(self):
         """Tests the functionality of the set-name command"""
 
-        self.spacetime("identity", "init-default")
+        #self.spacetime("identity", "init-default")
         self.publish_module()
 
         rand_name = random_string()
