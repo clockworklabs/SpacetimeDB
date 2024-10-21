@@ -1,7 +1,7 @@
 use anyhow::Context;
 use bytes::Bytes;
 use spacetimedb_client_api_messages::timestamp::Timestamp;
-use spacetimedb_primitives::TableId;
+use spacetimedb_primitives::{ReducerId, TableId};
 use spacetimedb_schema::auto_migrate::ponder_migrate;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::{Schema, TableSchema};
@@ -19,7 +19,7 @@ use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo, ModuleInstance,
 };
-use crate::host::{ArgsTuple, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult};
+use crate::host::{ArgsTuple, ReducerCallResult, ReducerOutcome, Scheduler, UpdateDatabaseResult};
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
@@ -405,11 +405,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let replica_ctx = self.replica_context();
         let stdb = &*replica_ctx.relational_db.clone();
         let address = replica_ctx.database_identity;
-        let reducer_name = self
+        let reducer_name_arc = self
             .info
             .reducers_map
             .lookup_name(reducer_id)
             .expect("reducer not found");
+        let reducer_name = &*reducer_name_arc;
 
         let _outer_span = tracing::trace_span!("call_reducer",
             reducer_name,
@@ -528,7 +529,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             caller_identity,
             caller_address: caller_address_opt,
             function_call: ModuleFunctionCall {
-                reducer: reducer_name.to_owned(),
+                reducer: reducer_name_arc,
                 reducer_id,
                 args,
             },

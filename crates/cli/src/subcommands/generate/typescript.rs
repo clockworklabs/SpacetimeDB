@@ -82,7 +82,7 @@ Requested namespace: {namespace}",
         output.into_inner()
     }
 
-    fn generate_table(&self, module: &ModuleDef, namespace: &str, table: &TableDef) -> String {
+    fn generate_table(&self, _idx: u32, module: &ModuleDef, namespace: &str, table: &TableDef) -> String {
         assert!(
             namespace_is_empty_or_default(namespace),
             "TypeScript codegen does not support namespaces, as TypeScript equates namespaces with files.
@@ -260,7 +260,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         output.into_inner()
     }
 
-    fn generate_reducer(&self, module: &ModuleDef, namespace: &str, reducer: &ReducerDef) -> String {
+    fn generate_reducer(&self, _idx: u32, module: &ModuleDef, namespace: &str, reducer: &ReducerDef) -> String {
         assert!(
             namespace_is_empty_or_default(namespace),
             "TypeScript codegen does not support namespaces, as TypeScript equates namespaces with files.
