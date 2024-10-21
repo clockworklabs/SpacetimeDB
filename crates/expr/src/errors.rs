@@ -1,10 +1,10 @@
-use spacetimedb_sql_parser::{ast::BinOp, parser::errors::SqlParseError};
-use thiserror::Error;
-
 use super::{
-    stmt::InvalidVar,
+    statement::InvalidVar,
     ty::{InvalidTypeId, TypeWithCtx},
 };
+use spacetimedb_sql_parser::ast::BinOp;
+use spacetimedb_sql_parser::parser::errors::SqlParseError;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Unresolved {
@@ -134,6 +134,10 @@ impl UnexpectedType {
 #[error("Duplicate name `{0}`")]
 pub struct DuplicateName(pub String);
 
+#[derive(Debug, Error)]
+#[error("`filter!` does not support column projections; Must return table rows")]
+pub struct FilterReturnType;
+
 #[derive(Error, Debug)]
 pub enum TypingError {
     #[error(transparent)]
@@ -163,4 +167,6 @@ pub enum TypingError {
     Wildcard(#[from] InvalidWildcard),
     #[error(transparent)]
     DuplicateName(#[from] DuplicateName),
+    #[error(transparent)]
+    FilterReturnType(#[from] FilterReturnType),
 }

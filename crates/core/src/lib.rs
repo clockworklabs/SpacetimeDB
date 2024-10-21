@@ -37,7 +37,6 @@ pub mod execution_context;
 pub mod host;
 pub mod module_host_context;
 pub mod replica_context;
-pub mod sendgrid_controller;
 pub mod startup;
 pub mod subscription;
 pub mod util;

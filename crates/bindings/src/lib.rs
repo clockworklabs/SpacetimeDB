@@ -25,7 +25,7 @@ pub use rng::StdbRng;
 pub use sats::SpacetimeType;
 #[doc(hidden)]
 pub use spacetimedb_bindings_macro::__TableHelper;
-pub use spacetimedb_bindings_macro::{duration, reducer, table};
+pub use spacetimedb_bindings_macro::{duration, filter, reducer, table};
 pub use spacetimedb_bindings_sys as sys;
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
@@ -35,6 +35,7 @@ pub use spacetimedb_lib::Address;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::Timestamp;
+pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{AutoIncOverflow, BTreeIndex, Table, TryInsertError, UniqueColumn, UniqueConstraintViolation};

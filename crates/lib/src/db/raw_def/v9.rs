@@ -25,6 +25,9 @@ use crate::db::auth::StTableType;
 /// A not-yet-validated identifier.
 pub type RawIdentifier = Box<str>;
 
+/// A not-yet-validated `sql`.
+pub type RawSql = Box<str>;
+
 /// A possibly-invalid raw module definition.
 ///
 /// ABI Version 9.
@@ -79,6 +82,11 @@ pub struct RawModuleDefV9 {
 
     /// Miscellaneous additional module exports.
     pub misc_exports: Vec<RawMiscModuleExportV9>,
+
+    /// Low level security definitions.
+    ///
+    /// Each definition must have a unique name.
+    pub row_level_security: Vec<RawRowLevelSecurityDefV9>,
 }
 
 /// The definition of a database table.
@@ -114,7 +122,9 @@ pub struct RawTableDefV9 {
     /// Eventually, we may remove the requirement for an index.
     ///
     /// The database engine does not actually care about this, but client code generation does.
-    pub primary_key: Option<ColId>,
+    ///
+    /// A list of length 0 means no primary key. Currently, a list of length >1 is not supported.
+    pub primary_key: ColList,
 
     /// The indices of the table.
     pub indexes: Vec<RawIndexDefV9>,
@@ -295,6 +305,9 @@ pub struct RawScheduleDefV9 {
 
     /// The name of the reducer to call.
     pub reducer_name: RawIdentifier,
+
+    /// The column of the `scheduled_at` field of this scheduled table.
+    pub scheduled_at_column: ColId,
 }
 
 /// A constraint definition attached to a table.
@@ -328,6 +341,15 @@ pub enum RawConstraintDataV9 {
 pub struct RawUniqueConstraintDataV9 {
     /// The columns that must be unique.
     pub columns: ColList,
+}
+
+/// Data for the `RLS` policy on a table.
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialOrd, Ord))]
+pub struct RawRowLevelSecurityDefV9 {
+    /// The `sql` expression to use for row-level security.
+    pub sql: RawSql,
 }
 
 /// A miscellaneous module export.
@@ -454,7 +476,7 @@ impl RawModuleDefV9Builder {
                 constraints: vec![],
                 sequences: vec![],
                 schedule: None,
-                primary_key: None,
+                primary_key: ColList::empty(),
                 table_type: TableType::User,
                 table_access: TableAccess::Public,
             },
@@ -529,6 +551,17 @@ impl RawModuleDefV9Builder {
             params,
             lifecycle,
         });
+    }
+
+    /// Add a row-level security policy to the module.
+    ///
+    /// The `sql` expression should be a valid SQL expression that will be used to filter rows.
+    ///
+    /// **NOTE**: The `sql` expression must be unique within the module.
+    pub fn add_row_level_security(&mut self, sql: &str) {
+        self.module
+            .row_level_security
+            .push(RawRowLevelSecurityDefV9 { sql: sql.into() });
     }
 
     /// Get the typespace of the module.
@@ -634,7 +667,7 @@ impl<'a> RawTableDefBuilder<'a> {
     /// Adds a primary key to the table.
     /// You must also add a unique constraint on the primary key column.
     pub fn with_primary_key(mut self, column: impl Into<ColId>) -> Self {
-        self.table.primary_key = Some(column.into());
+        self.table.primary_key = ColList::new(column.into());
         self
     }
 
@@ -684,10 +717,20 @@ impl<'a> RawTableDefBuilder<'a> {
     /// Adds a schedule definition to the table.
     ///
     /// The table must have the appropriate columns for a scheduled table.
-    pub fn with_schedule(mut self, reducer_name: impl Into<RawIdentifier>, name: Option<RawIdentifier>) -> Self {
+    pub fn with_schedule(
+        mut self,
+        reducer_name: impl Into<RawIdentifier>,
+        scheduled_at_column: impl Into<ColId>,
+        name: Option<RawIdentifier>,
+    ) -> Self {
         let reducer_name = reducer_name.into();
         let name = name.unwrap_or_else(|| self.generate_schedule_name());
-        self.table.schedule = Some(RawScheduleDefV9 { name, reducer_name });
+        let scheduled_at_column = scheduled_at_column.into();
+        self.table.schedule = Some(RawScheduleDefV9 {
+            name,
+            reducer_name,
+            scheduled_at_column,
+        });
         self
     }
 

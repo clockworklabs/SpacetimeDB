@@ -16,6 +16,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         reducers,
         types,
         misc_exports,
+        row_level_security,
     } = def;
 
     let known_type_definitions = types.iter().map(|def| def.ty);
@@ -55,6 +56,11 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
                 .map(|table_def| (table_def.name.clone(), table_def))
         })
         .collect_all_errors();
+
+    let row_level_security_raw = row_level_security
+        .into_iter()
+        .map(|rls| (rls.sql.clone(), rls))
+        .collect();
 
     let mut refmap = HashMap::default();
     let types = types
@@ -99,6 +105,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         typespace_for_generate,
         stored_in_table_def,
         refmap,
+        row_level_security_raw,
     };
 
     result.generate_indexes();
@@ -179,6 +186,7 @@ impl ModuleValidator<'_> {
             .collect_all_errors();
 
         // We can't validate the primary key without validating the unique constraints first.
+        let primary_key_head = primary_key.head();
         let constraints_primary_key = constraints
             .into_iter()
             .map(|constraint| {
@@ -201,7 +209,7 @@ impl ModuleValidator<'_> {
             .collect_all_errors();
 
         let schedule = schedule
-            .map(|schedule| table_in_progress.validate_schedule_def(schedule))
+            .map(|schedule| table_in_progress.validate_schedule_def(schedule, primary_key_head))
             .transpose();
 
         let name = table_in_progress
@@ -448,9 +456,16 @@ impl TableValidator<'_, '_> {
     fn validate_primary_key(
         &mut self,
         validated_constraints: IdentifierMap<ConstraintDef>,
-        primary_key: Option<ColId>,
+        primary_key: ColList,
     ) -> Result<(IdentifierMap<ConstraintDef>, Option<ColId>)> {
+        if primary_key.len() > 1 {
+            return Err(ValidationError::RepeatedPrimaryKey {
+                table: self.raw_name.clone(),
+            }
+            .into());
+        }
         let pk = primary_key
+            .head()
             .map(|pk| -> Result<ColId> {
                 let pk = self.validate_col_id(&self.raw_name, pk)?;
                 let pk_col_list = ColSet::from(pk);
@@ -583,18 +598,25 @@ impl TableValidator<'_, '_> {
     }
 
     /// Validate a schedule definition.
-    fn validate_schedule_def(&mut self, schedule: RawScheduleDefV9) -> Result<ScheduleDef> {
-        let RawScheduleDefV9 { name, reducer_name } = schedule;
+    fn validate_schedule_def(&mut self, schedule: RawScheduleDefV9, primary_key: Option<ColId>) -> Result<ScheduleDef> {
+        let RawScheduleDefV9 {
+            name,
+            reducer_name,
+            scheduled_at_column,
+        } = schedule;
 
         // Find the appropriate columns.
         let at_column = self
             .product_type
             .elements
-            .iter()
-            .enumerate()
-            .find(|(_, element)| element.name() == Some("scheduled_at"));
-        let id_column = self.product_type.elements.iter().enumerate().find(|(_, element)| {
-            element.name() == Some("scheduled_id") && element.algebraic_type == AlgebraicType::U64
+            .get(scheduled_at_column.idx())
+            .is_some_and(|ty| ty.algebraic_type.is_schedule_at())
+            .then_some(scheduled_at_column);
+        let id_column = primary_key.filter(|pk| {
+            self.product_type
+                .elements
+                .get(pk.idx())
+                .is_some_and(|ty| ty.algebraic_type == AlgebraicType::U64)
         });
 
         // Error if either column is missing.
@@ -610,9 +632,6 @@ impl TableValidator<'_, '_> {
         let reducer_name = identifier(reducer_name);
 
         let (name, (at_column, id_column), reducer_name) = (name, at_id, reducer_name).combine_errors()?;
-
-        let at_column = at_column.0.into();
-        let id_column = id_column.0.into();
 
         Ok(ScheduleDef {
             name,
@@ -838,7 +857,8 @@ mod tests {
                 ]),
                 true,
             )
-            .with_schedule("check_deliveries", Some("check_deliveries_schedule".into()))
+            .with_auto_inc_primary_key(2)
+            .with_schedule("check_deliveries", 1, Some("check_deliveries_schedule".into()))
             .with_type(TableType::System)
             .finish();
 
@@ -962,7 +982,7 @@ mod tests {
             &delivery_def.schedule.as_ref().unwrap().reducer_name[..],
             "check_deliveries"
         );
-        assert_eq!(delivery_def.primary_key, None);
+        assert_eq!(delivery_def.primary_key, Some(ColId(2)));
 
         assert_eq!(def.typespace.get(product_type_ref), Some(&product_type));
         assert_eq!(def.typespace.get(sum_type_ref), Some(&sum_type));
@@ -1379,7 +1399,8 @@ mod tests {
                 ]),
                 true,
             )
-            .with_schedule("check_deliveries", Some("check_deliveries_schedule".into()))
+            .with_auto_inc_primary_key(2)
+            .with_schedule("check_deliveries", 1, Some("check_deliveries_schedule".into()))
             .with_type(TableType::System)
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
@@ -1404,7 +1425,8 @@ mod tests {
                 ]),
                 true,
             )
-            .with_schedule("check_deliveries", Some("check_deliveries_schedule".into()))
+            .with_auto_inc_primary_key(2)
+            .with_schedule("check_deliveries", 1, Some("check_deliveries_schedule".into()))
             .with_type(TableType::System)
             .finish();
         builder.add_reducer("check_deliveries", ProductType::from([("a", AlgebraicType::U64)]), None);

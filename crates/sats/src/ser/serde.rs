@@ -34,7 +34,6 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
     type Ok = S::Ok;
     type Error = SerdeError<S::Error>;
     type SerializeArray = SerializeArray<S::SerializeSeq>;
-    type SerializeMap = SerializeMap<S::SerializeMap>;
     type SerializeSeqProduct = SerializeSeqProduct<S::SerializeTuple>;
     type SerializeNamedProduct = SerializeNamedProduct<S::SerializeMap>;
 
@@ -94,11 +93,6 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
     fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error> {
         let seq = self.ser.serialize_seq(Some(len)).map_err(SerdeError)?;
         Ok(SerializeArray { seq })
-    }
-
-    fn serialize_map(self, len: usize) -> Result<Self::SerializeMap, Self::Error> {
-        let map = self.ser.serialize_map(Some(len)).map_err(SerdeError)?;
-        Ok(SerializeMap { map })
     }
 
     fn serialize_seq_product(self, len: usize) -> Result<Self::SerializeSeqProduct, Self::Error> {
@@ -198,31 +192,6 @@ impl<S: serde::SerializeSeq> ser::SerializeArray for SerializeArray<S> {
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
         self.seq.end().map_err(SerdeError)
-    }
-}
-
-/// Serializes map entries by forwarding to `S: serde::SerializeMap`.
-pub struct SerializeMap<S> {
-    /// An implementation of `serde::SerializeMap`.
-    map: S,
-}
-
-impl<S: serde::SerializeMap> ser::SerializeMap for SerializeMap<S> {
-    type Ok = S::Ok;
-    type Error = SerdeError<S::Error>;
-
-    fn serialize_entry<K: ser::Serialize + ?Sized, V: ser::Serialize + ?Sized>(
-        &mut self,
-        key: &K,
-        value: &V,
-    ) -> Result<(), Self::Error> {
-        self.map
-            .serialize_entry(SerializeWrapper::from_ref(key), SerializeWrapper::from_ref(value))
-            .map_err(SerdeError)
-    }
-
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        self.map.end().map_err(SerdeError)
     }
 }
 

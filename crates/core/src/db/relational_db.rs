@@ -18,7 +18,7 @@ use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::messages::control_db::HostType;
 use crate::util::spawn_rayon;
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use fs2::FileExt;
 use futures::channel::mpsc;
 use futures::StreamExt;
@@ -27,15 +27,16 @@ use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, Durability, TxOffset};
 use spacetimedb_lib::address::Address;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
+use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef};
-use spacetimedb_schema::schema::{IndexSchema, Schema, SequenceSchema, TableSchema};
+use spacetimedb_schema::schema::{IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
+use spacetimedb_table::MemoryUsage;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
@@ -490,6 +491,11 @@ impl RelationalDB {
         self.disk_size_fn.as_ref().map_or(Ok(0), |f| f())
     }
 
+    /// The size in bytes of all of the in-memory data in this database.
+    pub fn size_in_memory(&self) -> usize {
+        self.inner.heap_usage()
+    }
+
     pub fn encode_row(row: &ProductValue, bytes: &mut Vec<u8>) {
         // TODO: large file storage of the row elements
         row.encode(bytes);
@@ -521,14 +527,18 @@ impl RelationalDB {
             .get_all_tables_tx(&ExecutionContext::internal(self.address), tx)
     }
 
-    pub fn is_scheduled_table(
+    pub fn table_scheduled_id_and_at(
         &self,
         ctx: &ExecutionContext,
-        tx: &mut MutTx,
+        tx: &impl StateView,
         table_id: TableId,
-    ) -> Result<bool, DBError> {
-        tx.schema_for_table(ctx, table_id)
-            .map(|schema| schema.schedule.is_some())
+    ) -> Result<Option<(ColId, ColId)>, DBError> {
+        let schema = tx.schema_for_table(ctx, table_id)?;
+        let Some(sched) = &schema.schedule else { return Ok(None) };
+        let primary_key = schema
+            .primary_key
+            .context("scheduled table doesn't have a primary key?")?;
+        Ok(Some((primary_key, sched.at_column)))
     }
 
     pub fn decode_column(
@@ -1006,6 +1016,29 @@ impl RelationalDB {
     /// Removes the [index::BTreeIndex] from the database by their `index_id`
     pub fn drop_index(&self, tx: &mut MutTx, index_id: IndexId) -> Result<(), DBError> {
         self.inner.drop_index_mut_tx(tx, index_id)
+    }
+
+    pub fn create_row_level_security(
+        &self,
+        tx: &mut MutTx,
+        row_level_security_schema: RowLevelSecuritySchema,
+    ) -> Result<RawSql, DBError> {
+        let ctx = &ExecutionContext::internal(self.inner.database_address);
+        tx.create_row_level_security(ctx, row_level_security_schema)
+    }
+
+    pub fn drop_row_level_security(&self, tx: &mut MutTx, sql: RawSql) -> Result<(), DBError> {
+        let ctx = &ExecutionContext::internal(self.inner.database_address);
+        tx.drop_row_level_security(ctx, sql)
+    }
+
+    pub fn row_level_security_for_table_id_mut_tx(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+    ) -> Result<Vec<RowLevelSecuritySchema>, DBError> {
+        let ctx = &ExecutionContext::internal(self.inner.database_address);
+        tx.row_level_security_for_table_id(ctx, table_id)
     }
 
     /// Returns an iterator,
@@ -1506,6 +1539,7 @@ mod tests {
     use spacetimedb_sats::bsatn;
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
+    use spacetimedb_schema::schema::RowLevelSecuritySchema;
     use spacetimedb_table::read_column::ReadColumn;
     use spacetimedb_table::table::RowRef;
 
@@ -1876,6 +1910,38 @@ mod tests {
         let stdb = stdb.reopen()?;
         let tx = stdb.begin_tx();
         assert_eq!(tx.table_row_count(table_id).unwrap(), 2);
+        Ok(())
+    }
+
+    // Because we don't create `rls` when first creating the database, check we pass the bootstrap
+    #[test]
+    fn test_row_level_reopen() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let ctx = ExecutionContext::default();
+
+        let schema = my_table(AlgebraicType::I64);
+        let table_id = stdb.create_table(&mut tx, schema)?;
+
+        let rls = RowLevelSecuritySchema {
+            sql: "SELECT * FROM bar".into(),
+            table_id,
+        };
+
+        tx.create_row_level_security(&ctx, rls)?;
+        stdb.commit_tx(&ctx, tx)?;
+
+        let stdb = stdb.reopen()?;
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+
+        assert_eq!(
+            tx.row_level_security_for_table_id(&ctx, table_id)?,
+            vec![RowLevelSecuritySchema {
+                sql: "SELECT * FROM bar".into(),
+                table_id,
+            }]
+        );
+
         Ok(())
     }
 

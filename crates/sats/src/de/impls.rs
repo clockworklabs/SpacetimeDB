@@ -1,18 +1,16 @@
 use super::{
-    BasicMapVisitor, BasicSmallVecVisitor, BasicVecVisitor, Deserialize, DeserializeSeed, Deserializer, Error,
-    FieldNameVisitor, ProductKind, ProductVisitor, SeqProductAccess, SliceVisitor, SumAccess, SumVisitor,
-    VariantAccess, VariantVisitor,
+    BasicSmallVecVisitor, BasicVecVisitor, Deserialize, DeserializeSeed, Deserializer, Error, FieldNameVisitor,
+    ProductKind, ProductVisitor, SeqProductAccess, SliceVisitor, SumAccess, SumVisitor, VariantAccess, VariantVisitor,
 };
 use crate::{
     de::{array_visit, ArrayAccess, ArrayVisitor, GrowingVec},
-    AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue, ProductType, ProductTypeElement,
-    ProductValue, SumType, SumValue, WithTypespace, F32, F64,
+    AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, ProductType, ProductTypeElement, ProductValue, SumType,
+    SumValue, WithTypespace, F32, F64,
 };
 use crate::{i256, u256};
 use core::{marker::PhantomData, ops::Bound};
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, ColList};
-use std::collections::BTreeMap;
 use std::{borrow::Cow, rc::Rc, sync::Arc};
 
 /// Implements [`Deserialize`] for a type in a simplified manner.
@@ -181,11 +179,6 @@ impl<'de, T: ToOwned + ?Sized + 'de> SliceVisitor<'de, T> for CowSliceVisitor {
         Ok(Cow::Borrowed(borrowed_slice))
     }
 }
-
-impl_deserialize!(
-    [K: Deserialize<'de> + Ord, V: Deserialize<'de>] BTreeMap<K, V>,
-    de => de.deserialize_map(BasicMapVisitor)
-);
 
 impl_deserialize!([T: Deserialize<'de>] Box<T>, de => T::deserialize(de).map(Box::new));
 impl_deserialize!([T: Deserialize<'de>] Option<T>, de => de.deserialize_sum(OptionVisitor(PhantomData)));
@@ -378,7 +371,6 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
             AlgebraicType::Sum(sum) => self.with(sum).deserialize(de).map(Into::into),
             AlgebraicType::Product(prod) => self.with(prod).deserialize(de).map(Into::into),
             AlgebraicType::Array(ty) => self.with(ty).deserialize(de).map(Into::into),
-            AlgebraicType::Map(ty) => self.with(&**ty).deserialize(de).map(Into::into),
             AlgebraicType::Bool => bool::deserialize(de).map(Into::into),
             AlgebraicType::I8 => i8::deserialize(de).map(Into::into),
             AlgebraicType::U8 => u8::deserialize(de).map(Into::into),
@@ -526,10 +518,6 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(<Box<[_]>>::from)
                     .map(ArrayValue::Array),
-                AlgebraicType::Map(ty) => deserializer
-                    .deserialize_array_seed(BasicVecVisitor, self.with(&**ty))
-                    .map(<Box<[_]>>::from)
-                    .map(ArrayValue::Map),
                 &AlgebraicType::Bool => de_array(deserializer, ArrayValue::Bool),
                 &AlgebraicType::I8 => de_array(deserializer, ArrayValue::I8),
                 &AlgebraicType::U8 => deserializer
@@ -551,15 +539,6 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                 &AlgebraicType::String => de_array(deserializer, ArrayValue::String),
             };
         }
-    }
-}
-
-impl<'de> DeserializeSeed<'de> for WithTypespace<'_, MapType> {
-    type Output = MapValue;
-
-    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
-        let MapType { key_ty, ty } = self.ty();
-        deserializer.deserialize_map_seed(BasicMapVisitor, self.with(key_ty), self.with(ty))
     }
 }
 

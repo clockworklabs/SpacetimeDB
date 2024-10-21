@@ -5,6 +5,8 @@ use core::{
 pub use internal_unsafe::FixedBitSet;
 use internal_unsafe::Len;
 
+use crate::MemoryUsage;
+
 /// A type used to represent blocks in a bit set.
 /// A smaller type, compared to usize,
 /// means taking less advantage of native operations.
@@ -240,6 +242,12 @@ impl<B: BitBlock> FixedBitSet<B> {
             curr,
             block_idx: block_idx as Len,
         }
+    }
+}
+
+impl<B> MemoryUsage for FixedBitSet<B> {
+    fn heap_usage(&self) -> usize {
+        std::mem::size_of_val(self.storage())
     }
 }
 

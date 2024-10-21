@@ -8,9 +8,9 @@ use crate::product_value::InvalidFieldError;
 use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SpacetimeType, ValueWithType, WithTypespace};
 
 /// The tag used inside the special `Identity` product type.
-pub const IDENTITY_TAG: &str = "__identity_bytes";
+pub const IDENTITY_TAG: &str = "__identity__";
 /// The tag used inside the special `Address` product type.
-pub const ADDRESS_TAG: &str = "__address_bytes";
+pub const ADDRESS_TAG: &str = "__address__";
 /// The tag used inside the special `Timestamp` product type.
 pub const TIMESTAMP_TAG: &str = "__timestamp_nanos_since_unix_epoch";
 /// The tag used inside the special `TimeDuration` product type.
@@ -57,17 +57,17 @@ impl ProductType {
 
     /// Returns the unit product type.
     pub fn unit() -> Self {
-        Self { elements: Box::new([]) }
+        Self::new([].into())
     }
 
-    /// Returns whether this is a "newtype" over bytes.
+    /// Returns whether this is a "newtype" with `label` and satisfying `inner`.
     /// Does not follow `Ref`s.
-    fn is_bytes_newtype(&self, check: &str) -> bool {
+    fn is_newtype(&self, check: &str, inner: impl FnOnce(&AlgebraicType) -> bool) -> bool {
         match &*self.elements {
             [ProductTypeElement {
                 name: Some(name),
                 algebraic_type,
-            }] => &**name == check && algebraic_type.is_bytes(),
+            }] => &**name == check && inner(algebraic_type),
             _ => false,
         }
     }
@@ -75,13 +75,13 @@ impl ProductType {
     /// Returns whether this is the special case of `spacetimedb_lib::Identity`.
     /// Does not follow `Ref`s.
     pub fn is_identity(&self) -> bool {
-        self.is_bytes_newtype(IDENTITY_TAG)
+        self.is_newtype(IDENTITY_TAG, |i| i.is_u256())
     }
 
     /// Returns whether this is the special case of `spacetimedb_lib::Address`.
     /// Does not follow `Ref`s.
     pub fn is_address(&self) -> bool {
-        self.is_bytes_newtype(ADDRESS_TAG)
+        self.is_newtype(ADDRESS_TAG, |i| i.is_u128())
     }
 
     fn is_i64_newtype(&self, expected_tag: &str) -> bool {

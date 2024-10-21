@@ -34,11 +34,9 @@ fn scalar_or_string_name(b: &AlgebraicType) -> Option<&str> {
         AlgebraicType::String => "string",
         AlgebraicType::F32 => "float",
         AlgebraicType::F64 => "double",
-        AlgebraicType::Ref(_)
-        | AlgebraicType::Sum(_)
-        | AlgebraicType::Product(_)
-        | AlgebraicType::Array(_)
-        | AlgebraicType::Map(_) => return None,
+        AlgebraicType::Ref(_) | AlgebraicType::Sum(_) | AlgebraicType::Product(_) | AlgebraicType::Array(_) => {
+            return None
+        }
     })
 }
 
@@ -64,14 +62,6 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
                 f,
                 "System.Collections.Generic.List<{}>",
                 ty_fmt(ctx, elem_ty, namespace)
-            )
-        }
-        AlgebraicType::Map(ty) => {
-            write!(
-                f,
-                "System.Collections.Generic.Dictionary<{}, {}>",
-                ty_fmt(ctx, &ty.ty, namespace),
-                ty_fmt(ctx, &ty.key_ty, namespace)
             )
         }
         AlgebraicType::Ref(r) => {
@@ -107,7 +97,7 @@ fn default_init(ctx: &GenCtx, ty: &AlgebraicType) -> Option<&'static str> {
         // TODO: generate some proper default here (what would it be for tagged enums?).
         AlgebraicType::Sum(_) => Some("null!"),
         // For product types, arrays, and maps, we can use the default constructor.
-        AlgebraicType::Product(_) | AlgebraicType::Array(_) | AlgebraicType::Map(_) => Some("new()"),
+        AlgebraicType::Product(_) | AlgebraicType::Array(_) => Some("new()"),
         // Strings must have explicit default value of "".
         AlgebraicType::String => Some(r#""""#),
         AlgebraicType::Ref(r) => default_init(ctx, &ctx.typespace[*r]),

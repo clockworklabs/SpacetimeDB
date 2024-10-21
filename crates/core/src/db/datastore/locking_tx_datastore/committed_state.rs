@@ -11,9 +11,9 @@ use crate::{
                 system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexAlgorithm, StIndexRow,
                 StSequenceRow, StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID,
                 ST_COLUMN_IDX, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID,
-                ST_INDEX_IDX, ST_INDEX_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_SCHEDULED_ID,
-                ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX,
-                ST_VAR_ID, ST_VAR_IDX,
+                ST_INDEX_IDX, ST_INDEX_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE,
+                ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID, ST_SCHEDULED_IDX, ST_SEQUENCE_ID,
+                ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
             },
             traits::TxData,
         },
@@ -37,6 +37,7 @@ use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     table::{IndexScanIter, InsertError, RowRef, Table},
+    MemoryUsage,
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -53,6 +54,18 @@ pub struct CommittedState {
     pub(crate) blob_store: HashMapBlobStore,
     /// Provides fast lookup for index id -> an index.
     pub(super) index_id_map: IndexIdMap,
+}
+
+impl MemoryUsage for CommittedState {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            next_tx_offset,
+            tables,
+            blob_store,
+            index_id_map,
+        } = self;
+        next_tx_offset.heap_usage() + tables.heap_usage() + blob_store.heap_usage() + index_id_map.heap_usage()
+    }
 }
 
 impl StateView for CommittedState {
@@ -224,6 +237,10 @@ impl CommittedState {
         self.create_table(ST_VAR_ID, schemas[ST_VAR_IDX].clone());
 
         self.create_table(ST_SCHEDULED_ID, schemas[ST_SCHEDULED_IDX].clone());
+
+        self.create_table(ST_ROW_LEVEL_SECURITY_ID, schemas[ST_ROW_LEVEL_SECURITY_IDX].clone());
+
+        // IMPORTANT: It is crucial that the `st_sequences` table is created last
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store) =

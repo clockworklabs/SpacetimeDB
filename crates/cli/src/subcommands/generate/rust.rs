@@ -517,7 +517,6 @@ pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeU
             write_type(module, out, elem_ty)?;
             write!(out, ">")?;
         }
-        AlgebraicTypeUse::Map { .. } => unimplemented!("AlgebraicType::Map is unsupported and will be removed"),
         AlgebraicTypeUse::Ref(r) => {
             write!(out, "{}", type_ref_name(module, *r))?;
         }

@@ -157,7 +157,7 @@ impl ToProtocol for TransactionUpdateMessage {
                 },
                 energy_quanta_used: event.energy_quanta_used,
                 host_execution_duration_micros: event.host_execution_duration.as_micros() as u64,
-                caller_address: event.caller_address.unwrap_or(Address::zero()),
+                caller_address: event.caller_address.unwrap_or(Address::ZERO),
             };
 
             ws::ServerMessage::TransactionUpdate(tx_update)

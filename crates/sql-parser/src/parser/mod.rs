@@ -212,9 +212,9 @@ pub(crate) fn parse_binop(op: BinaryOperator) -> SqlParseResult<BinOp> {
 pub(crate) fn parse_literal(value: Value) -> SqlParseResult<SqlLiteral> {
     match value {
         Value::Boolean(v) => Ok(SqlLiteral::Bool(v)),
-        Value::Number(v, _) => Ok(SqlLiteral::Num(v)),
-        Value::SingleQuotedString(s) => Ok(SqlLiteral::Str(s)),
-        Value::HexStringLiteral(s) => Ok(SqlLiteral::Hex(s)),
+        Value::Number(v, _) => Ok(SqlLiteral::Num(v.into_boxed_str())),
+        Value::SingleQuotedString(s) => Ok(SqlLiteral::Str(s.into_boxed_str())),
+        Value::HexStringLiteral(s) => Ok(SqlLiteral::Hex(s.into_boxed_str())),
         _ => Err(SqlUnsupported::Literal(value).into()),
     }
 }

@@ -943,7 +943,6 @@ pub fn write_type<W: Write>(
             write_type(module, out, elem_ty, ref_prefix)?;
             write!(out, "[]")?;
         }
-        AlgebraicTypeUse::Map { .. } => unimplemented!("AlgebraicType::Map is unsupported and will be removed"),
         AlgebraicTypeUse::Ref(r) => {
             if let Some(prefix) = ref_prefix {
                 write!(out, "{prefix}")?;
@@ -984,7 +983,6 @@ fn convert_algebraic_type<'a>(
         AlgebraicTypeUse::Primitive(prim) => {
             write!(out, "AlgebraicType.create{prim:?}Type()");
         }
-        AlgebraicTypeUse::Map { .. } => unimplemented!(),
         AlgebraicTypeUse::Unit => write!(out, "AlgebraicType.createProductType([])"),
         AlgebraicTypeUse::Never => unimplemented!(),
         AlgebraicTypeUse::String => write!(out, "AlgebraicType.createStringType()"),

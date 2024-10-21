@@ -11,7 +11,7 @@ use spacetimedb_lib::{
     TableDesc as RawTableDescV8,
     TypeAlias as RawTypeAliasV8,
 };
-use spacetimedb_primitives::ColId;
+use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace, WithTypespace};
 
 use crate::def::{validate::Result, ModuleDef};
@@ -58,6 +58,7 @@ fn upgrade_module(def: RawModuleDefV8, extra_errors: &mut Vec<ValidationError>) 
         reducers,
         types,
         misc_exports: Default::default(),
+        row_level_security: vec![], // v8 doesn't have row-level security
     }
 }
 
@@ -88,12 +89,16 @@ fn upgrade_table(
     } = table;
 
     // Check all column defs, then discard them.
+    let scheduled_at_col = columns
+        .iter()
+        .position(|x| &*x.col_name == "scheduled_at")
+        .map(|i| i as u16);
     check_all_column_defs(product_type_ref, columns, &table_name, typespace, extra_errors);
 
     // Now we're ready to go through the various definitions and upgrade them.
     let indexes = convert_all(indexes, upgrade_index);
     let sequences = convert_all(sequences.into_iter().chain(generated_sequences), upgrade_sequence);
-    let schedule = upgrade_schedule(scheduled, &table_name);
+    let schedule = upgrade_schedule(scheduled, &table_name, scheduled_at_col);
 
     // Constraints are pretty hairy, which is why we're getting rid of v8.
     let mut primary_key = None;
@@ -109,7 +114,7 @@ fn upgrade_table(
     RawTableDefV9 {
         name: table_name,
         product_type_ref,
-        primary_key,
+        primary_key: ColList::from_iter(primary_key),
         indexes,
         constraints: unique_constraints,
         sequences,
@@ -268,10 +273,16 @@ fn upgrade_constraint(
     }
 }
 
-fn upgrade_schedule(schedule: Option<RawIdentifier>, table_name: &RawIdentifier) -> Option<RawScheduleDefV9> {
+fn upgrade_schedule(
+    schedule: Option<RawIdentifier>,
+    table_name: &RawIdentifier,
+    scheduled_at_col: Option<u16>,
+) -> Option<RawScheduleDefV9> {
+    let scheduled_at_col = scheduled_at_col?;
     schedule.map(|reducer_name| RawScheduleDefV9 {
         name: format!("{table_name}_schedule").into(),
         reducer_name,
+        scheduled_at_column: scheduled_at_col.into(),
     })
 }
 
@@ -395,6 +406,7 @@ mod tests {
                     ("scheduled_id", AlgebraicType::U64),
                 ]),
             )
+            .with_column_constraint(Constraints::primary_key_auto(), 2)
             .with_scheduled(Some("check_deliveries".into())),
         );
 
@@ -463,7 +475,7 @@ mod tests {
             &delivery_def.schedule.as_ref().unwrap().reducer_name[..],
             "check_deliveries"
         );
-        assert_eq!(delivery_def.primary_key, None);
+        assert_eq!(delivery_def.primary_key, Some(ColId(2)));
 
         assert_eq!(def.typespace.get(product_type_ref), Some(&product_type));
         assert_eq!(def.typespace.get(sum_type_ref), Some(&sum_type));
