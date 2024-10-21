@@ -80,17 +80,7 @@ def main():
         subprocess.Popen(["docker", "logs", "-f", docker_container])
         smoketests.HAVE_DOCKER = True
 
-    # TODO: can this be replaced with a call to `new_identity`?
-    identity_response = smoketests.run_cmd("curl", "-X", "POST", "--no-progress-meter", "http://127.0.0.1:3000/identity", full_output=False)
-    identity_response = json.loads(identity_response)
-    token = identity_response['token']
-    config = 'login_token = "%s"\n' % token
-    with open(TEST_DIR / 'config.toml', 'r') as file:
-        config += file.read()
-    with open(TEST_DIR / 'config.toml', 'w') as file:
-        file.write(config)
-        print("Wrote new config:")
-        print(config)
+    smoketests.new_identity()
 
     if not args.skip_dotnet:
         smoketests.HAVE_DOTNET = check_dotnet()
