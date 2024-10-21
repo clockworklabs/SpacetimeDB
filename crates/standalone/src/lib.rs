@@ -17,15 +17,17 @@ use openssl::pkey::PKey;
 use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
+use spacetimedb::config::MetadataFile;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
-use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::LOCALHOST;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
+use spacetimedb_paths::server::{PidFile, ServerDataPath};
+use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -42,20 +44,32 @@ pub struct StandaloneEnv {
     private_key: EncodingKey,
     public_key_bytes: Box<[u8]>,
     metrics_registry: prometheus::Registry,
+    _pid_file: PidFile,
 }
 
 impl StandaloneEnv {
-    pub async fn init(config: Config) -> anyhow::Result<Arc<Self>> {
-        let control_db = ControlDb::new().context("failed to initialize control db")?;
-        let energy_monitor = Arc::new(StandaloneEnergyMonitor::new(control_db.clone()));
-        let program_store = Arc::new(DiskStorage::new(stdb_path("control_node/program_bytes")).await?);
+    pub async fn init(config: Config, data_dir: Arc<ServerDataPath>) -> anyhow::Result<Arc<Self>> {
+        let _pid_file = data_dir.pid_file()?;
+        let meta_path = data_dir.metadata_toml();
+        let meta = MetadataFile {
+            version: spacetimedb::config::current_version(),
+            edition: "standalone".to_owned(),
+            client_address: None,
+        };
+        if let Some(existing_meta) = MetadataFile::read(&meta_path).context("failed reading metadata.toml")? {
+            anyhow::ensure!(
+                existing_meta.version_compatible_with(&meta.version) && existing_meta.edition == meta.edition,
+                "metadata.toml indicates that this database is from an incompatible \
+                 version of SpacetimeDB. please run a migration before proceeding."
+            );
+        }
+        meta.write(&meta_path).context("failed writing metadata.toml")?;
 
-        let host_controller = HostController::new(
-            stdb_path("worker_node/replicas").into(),
-            config,
-            program_store.clone(),
-            energy_monitor,
-        );
+        let control_db = ControlDb::new(&data_dir.control_db()).context("failed to initialize control db")?;
+        let energy_monitor = Arc::new(StandaloneEnergyMonitor::new(control_db.clone()));
+        let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
+
+        let host_controller = HostController::new(data_dir, config, program_store.clone(), energy_monitor);
         let client_actor_index = ClientActorIndex::new();
         let (public_key, private_key, public_key_bytes) = get_or_create_keys()?;
 
@@ -72,7 +86,12 @@ impl StandaloneEnv {
             private_key,
             public_key_bytes,
             metrics_registry,
+            _pid_file,
         }))
+    }
+
+    pub fn data_dir(&self) -> &Arc<ServerDataPath> {
+        &self.host_controller.data_dir
     }
 }
 

@@ -63,7 +63,6 @@ pub struct ScheduledReducer {
 #[derive(Clone)]
 pub struct Scheduler {
     tx: mpsc::UnboundedSender<MsgOrExit<SchedulerMessage>>,
-    db: Arc<RelationalDB>,
 }
 
 pub struct SchedulerStarter {
@@ -74,11 +73,7 @@ pub struct SchedulerStarter {
 impl Scheduler {
     pub fn open(db: Arc<RelationalDB>) -> (Self, SchedulerStarter) {
         let (tx, rx) = mpsc::unbounded_channel();
-        (Scheduler { tx, db: db.clone() }, SchedulerStarter { rx, db })
-    }
-
-    pub fn new_with_same_db(&self) -> (Self, SchedulerStarter) {
-        Self::open(self.db.clone())
+        (Scheduler { tx }, SchedulerStarter { rx, db })
     }
 }
 

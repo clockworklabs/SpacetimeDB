@@ -1,3 +1,6 @@
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use crate::routes::router;
 use crate::util::{create_dir_or_err, create_file_with_contents};
 use crate::StandaloneEnv;
@@ -6,6 +9,7 @@ use clap::{Arg, ArgMatches};
 use spacetimedb::config::{FilesGlobal, FilesLocal, SpacetimeDbFiles};
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::startup;
+use spacetimedb_paths::server::ServerDataPath;
 use tokio::net::TcpListener;
 
 #[cfg(feature = "string")]
@@ -50,6 +54,14 @@ impl ProgramMode {
     }
 }
 
+pub fn default_data_dir() -> PathBuf {
+    dirs::data_local_dir().unwrap().join(if cfg!(windows) {
+        "SpacetimeDB/data"
+    } else {
+        "spacetime/data"
+    })
+}
+
 pub fn cli(mode: ProgramMode) -> clap::Command {
     let mut log_conf_path_arg = Arg::new("log_conf_path")
         .long("log-conf-path")
@@ -65,6 +77,11 @@ pub fn cli(mode: ProgramMode) -> clap::Command {
     let mut jwt_priv_key_path_arg = Arg::new("jwt_priv_key_path")
         .long("jwt-priv-key-path")
         .help("The path to the private jwt key for issuing identities (SPACETIMEDB_JWT_PRIV_KEY)");
+    let data_dir_arg = Arg::new("data_dir")
+        .long("data-dir")
+        .help("The path to the data directory for the database")
+        .default_value(default_data_dir().into_os_string())
+        .value_parser(clap::value_parser!(PathBuf));
 
     let in_memory_arg = Arg::new("in_memory")
         .long("in-memory")
@@ -122,6 +139,7 @@ pub fn cli(mode: ProgramMode) -> clap::Command {
                 .default_value(mode.listen_addr())
                 .help(mode.listen_addr_help())
         )
+        .arg(data_dir_arg)
         .arg(log_conf_path_arg)
         .arg(log_dir_path_arg)
         .arg(database_path_arg)
@@ -168,6 +186,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let stdb_path = read_argument(args, "database_path", "STDB_PATH");
     let jwt_pub_key_path = read_argument(args, "jwt_pub_key_path", "SPACETIMEDB_JWT_PUB_KEY");
     let jwt_priv_key_path = read_argument(args, "jwt_priv_key_path", "SPACETIMEDB_JWT_PRIV_KEY");
+    let data_dir = args.get_one::<PathBuf>("data_dir").unwrap();
     let enable_tracy = args.get_flag("enable_tracy");
     let storage = if args.get_flag("in_memory") {
         Storage::Memory
@@ -213,7 +232,9 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
 
     startup::StartupOptions::default().configure();
 
-    let ctx = StandaloneEnv::init(config).await?;
+    // TODO:
+    let data_dir = Arc::new(ServerDataPath(data_dir.clone()));
+    let ctx = StandaloneEnv::init(config, data_dir).await?;
 
     let service = router(ctx);
 
