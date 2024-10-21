@@ -5223,6 +5223,7 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
+ "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-testing",
  "tokio",

@@ -11,6 +11,7 @@ use crate::spacetime_module::{InModule, SpacetimeModule, TableUpdate};
 use anymap::{any::CloneAny, Map};
 use bytes::Bytes;
 use im::HashMap;
+use spacetimedb_data_structures::map::IntMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -90,22 +91,25 @@ impl<M: SpacetimeModule> Default for ClientCache<M> {
     }
 }
 
+type TableCacheMap<Row> = IntMap<u32, Arc<TableCache<Row>>>;
+
 impl<M: SpacetimeModule> ClientCache<M> {
-    /// Get a handle on the [`TableCache`] which stores rows of type `Row` for the table `table_name`.
+    /// Get a handle on the [`TableCache`] which stores rows of type `Row`
+    /// for the table with id `table_id`.
     pub(crate) fn get_table<Row: InModule<Module = M> + Send + Sync + 'static>(
         &self,
-        table_name: &'static str,
+        table_idx: u32,
     ) -> Option<&Arc<TableCache<Row>>> {
         self.tables
-            .get::<HashMap<&'static str, Arc<TableCache<Row>>>>()
-            .and_then(|tables_of_row_type| tables_of_row_type.get(table_name))
+            .get::<TableCacheMap<Row>>()
+            .and_then(|tables_of_row_type| tables_of_row_type.get(&table_idx))
     }
 
     /// Apply all the mutations in `diff`
-    /// to the [`TableCache`] which stores rows of type `Row` for the table `table_name`.
+    /// to the [`TableCache`] which stores rows of type `Row` for the table with id `table_id`.
     pub fn apply_diff_to_table<Row: InModule<Module = M> + Clone + Send + Sync + 'static>(
         &mut self,
-        table_name: &'static str,
+        table_idx: u32,
         diff: &TableUpdate<Row>,
     ) {
         if diff.is_empty() {
@@ -116,15 +120,15 @@ impl<M: SpacetimeModule> ClientCache<M> {
         // TODO: Do we need to be `Arc`ing these? `im::HashMap` should be doing sharing internally anyway.
         #[allow(clippy::map_clone)]
         let mut table = self
-            .get_table::<Row>(table_name)
+            .get_table::<Row>(table_idx)
             .map(|tbl| TableCache::clone(tbl))
             .unwrap_or_default();
 
         table.apply_diff(diff);
         self.tables
-            .entry::<HashMap<&'static str, Arc<TableCache<Row>>>>()
-            .or_insert(HashMap::default())
-            .insert(table_name, Arc::new(table));
+            .entry::<TableCacheMap<Row>>()
+            .or_insert(<_>::default())
+            .insert(table_idx, Arc::new(table));
     }
 }
 

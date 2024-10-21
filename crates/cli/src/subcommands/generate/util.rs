@@ -8,7 +8,10 @@ use std::{
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
-use spacetimedb_schema::{def::ModuleDef, identifier::Identifier};
+use spacetimedb_schema::{
+    def::{ModuleDef, ReducerDef, TableDef},
+    identifier::Identifier,
+};
 
 use super::code_indenter::Indenter;
 
@@ -56,4 +59,18 @@ pub(super) fn print_auto_generated_file_comment(output: &mut Indenter) {
 pub(super) fn type_ref_name(module: &ModuleDef, typeref: AlgebraicTypeRef) -> String {
     let (name, _def) = module.type_def_from_ref(typeref).unwrap();
     collect_case(Case::Pascal, name.name_segments())
+}
+
+/// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.
+///
+/// Sorting is necessary to have deterministic reproducable codegen.
+pub(super) fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
+    module.tables().sorted_by_key(|table| &table.name)
+}
+
+/// Iterate over all the [`ReducerDef`]s defined by the module, in alphabetical order by name.
+///
+/// Sorting is necessary to have deterministic reproducable codegen.
+pub(super) fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &ReducerDef> {
+    module.reducers().sorted_by_key(|reducer| &reducer.name)
 }

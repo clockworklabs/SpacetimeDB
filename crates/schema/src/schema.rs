@@ -6,6 +6,7 @@
 // TODO(1.0): change all the `Box<str>`s in this file to `Identifier`.
 // This doesn't affect the ABI so can wait until 1.0.
 
+use core::ops::Deref;
 use itertools::Itertools;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::error::{DefType, SchemaError};
@@ -60,7 +61,7 @@ pub struct TableSchema {
     pub table_id: TableId,
 
     /// The name of the table.
-    pub table_name: Box<str>,
+    pub table_name: Arc<str>,
 
     /// The columns of the table.
     /// Inaccessible to prevent mutation.
@@ -102,7 +103,7 @@ impl TableSchema {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         table_id: TableId,
-        table_name: Box<str>,
+        table_name: Arc<str>,
         columns: Vec<ColumnSchema>,
         indexes: Vec<IndexSchema>,
         constraints: Vec<ConstraintSchema>,
@@ -494,7 +495,7 @@ impl TableSchema {
     /// This method works around this problem by copying the column types from the module def into the table schema.
     /// It can be removed once v8 is removed, since v9 will reject modules with an inconsistency like this.
     pub fn janky_fix_column_defs(&mut self, module_def: &ModuleDef) {
-        let table_name = Identifier::new(self.table_name.clone()).unwrap();
+        let table_name = Identifier::new(self.table_name.deref().into()).unwrap();
         for col in &mut self.columns {
             let def: &ColumnDef = module_def
                 .lookup((&table_name, &Identifier::new(col.col_name.clone()).unwrap()))
@@ -591,7 +592,7 @@ impl Schema for TableSchema {
 
         TableSchema::new(
             table_id,
-            (*name).clone().into(),
+            (&**name).into(),
             columns,
             indexes,
             constraints,

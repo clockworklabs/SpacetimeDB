@@ -102,6 +102,7 @@ impl_deserialize!([T: Deserialize<'de>, const N: usize] SmallVec<[T; N]>, de => 
 });
 impl_deserialize!([T: Deserialize<'de>, const N: usize] [T; N], de => T::__deserialize_array(de));
 impl_deserialize!([] Box<str>, de => String::deserialize(de).map(|s| s.into_boxed_str()));
+impl_deserialize!([] Arc<str>, de => String::deserialize(de).map(|s| s.into()));
 impl_deserialize!([T: Deserialize<'de>] Box<[T]>, de => Vec::deserialize(de).map(|s| s.into_boxed_slice()));
 impl_deserialize!([T: Deserialize<'de>] Rc<[T]>, de => Vec::deserialize(de).map(|s| s.into()));
 impl_deserialize!([T: Deserialize<'de>] Arc<[T]>, de => Vec::deserialize(de).map(|s| s.into()));
@@ -666,6 +667,7 @@ impl_deserialize!([] spacetimedb_primitives::IndexId, de => u32::deserialize(de)
 impl_deserialize!([] spacetimedb_primitives::ConstraintId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::ColId, de => u16::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::ScheduleId, de => u32::deserialize(de).map(Self));
+impl_deserialize!([] spacetimedb_primitives::ReducerId, de => u32::deserialize(de).map(Self));
 
 impl GrowingVec<ColId> for ColList {
     fn with_capacity(cap: usize) -> Self {
