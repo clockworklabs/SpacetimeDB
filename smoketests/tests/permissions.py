@@ -9,8 +9,7 @@ class Permissions(Smoketest):
     def test_call(self):
         """Ensure that anyone has the permission to call any standard reducer"""
 
-        identity = self.new_identity()
-        token = self.token(identity)
+        self.new_identity()
 
         self.publish_module()
 
@@ -21,7 +20,7 @@ class Permissions(Smoketest):
     def test_delete(self):
         """Ensure that you cannot delete a database that you do not own"""
 
-        identity = self.new_identity(default=True)
+        self.new_identity()
 
         self.publish_module()
 
@@ -50,7 +49,7 @@ class Permissions(Smoketest):
         self.call("say_hello")
 
         self.reset_config()
-        identity = self.new_identity(default=True)
+        self.new_identity()
         with self.assertRaises(Exception):
             self.spacetime("logs", self.address, "-n", "10000")
 
