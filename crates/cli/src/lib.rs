@@ -25,7 +25,6 @@ pub fn get_subcommands() -> Vec<Command> {
         logs::cli(),
         call::cli(),
         describe::cli(),
-        identity::cli(),
         energy::cli(),
         sql::cli(),
         dns::cli(),
@@ -45,7 +44,6 @@ pub fn get_subcommands() -> Vec<Command> {
 pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
         "version" => version::exec(config, args).await,
-        "identity" => identity::exec(config, args).await,
         "call" => call::exec(config, args).await,
         "describe" => describe::exec(config, args).await,
         "energy" => energy::exec(config, args).await,

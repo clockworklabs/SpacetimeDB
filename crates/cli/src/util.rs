@@ -1,14 +1,16 @@
 use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use reqwest::RequestBuilder;
 use serde::Deserialize;
+use spacetimedb::auth::identity::SpacetimeIdentityClaims2;
 use spacetimedb_client_api_messages::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::{Address, AlgebraicType, Identity};
 use std::io::Write;
 use std::path::Path;
 
-use crate::config::{Config, IdentityConfig};
+use crate::config::Config;
 
 /// Determine the address of the `database`.
 pub async fn database_address(config: &Config, database: &str, server: Option<&str>) -> Result<Address, anyhow::Error> {
@@ -40,10 +42,9 @@ pub async fn spacetime_dns(
 pub async fn spacetime_register_tld(
     config: &mut Config,
     tld: &str,
-    identity: Option<&String>,
     server: Option<&str>,
 ) -> Result<RegisterTldResult, anyhow::Error> {
-    let auth_header = get_auth_header_only(config, false, identity, server).await.unwrap();
+    let auth_header = get_auth_header(config, false)?;
 
     // TODO(jdetter): Fix URL encoding on specifying this domain
     let builder = reqwest::Client::new()
@@ -87,75 +88,7 @@ pub enum InitDefaultResultType {
 }
 
 pub struct InitDefaultResult {
-    pub identity_config: IdentityConfig,
     pub result_type: InitDefaultResultType,
-}
-
-pub async fn init_default(
-    config: &mut Config,
-    nickname: Option<String>,
-    server: Option<&str>,
-) -> Result<InitDefaultResult, anyhow::Error> {
-    if config.name_exists(nickname.as_ref().unwrap_or(&"".to_string())) {
-        return Err(anyhow::anyhow!("A default identity already exists."));
-    }
-
-    let client = reqwest::Client::new();
-    let builder = client.post(format!("{}/identity", config.get_host_url(server)?));
-
-    if let Ok(identity_config) = config.get_default_identity_config(server) {
-        return Ok(InitDefaultResult {
-            identity_config: identity_config.clone(),
-            result_type: InitDefaultResultType::Existing,
-        });
-    }
-
-    let res = builder.send().await?;
-    let res = res.error_for_status()?;
-
-    let body = res.bytes().await?;
-    let body = String::from_utf8(body.to_vec())?;
-
-    let identity_token: IdentityTokenJson = serde_json::from_str(&body)?;
-
-    let identity = identity_token.identity;
-
-    let identity_config = IdentityConfig {
-        identity: identity_token.identity,
-        token: identity_token.token,
-        nickname: nickname.clone(),
-    };
-    config.identity_configs_mut().push(identity_config.clone());
-    if config.default_identity(server).is_err() {
-        config.set_default_identity(identity.to_hex().to_string(), server)?;
-    }
-    config.save();
-    Ok(InitDefaultResult {
-        identity_config,
-        result_type: InitDefaultResultType::SavedNew,
-    })
-}
-
-/// Selects an `identity_config` from the config file. If you specify the
-/// identity it will either return the `identity_config` for the specified
-/// identity, or return an error if it cannot be found.  If you do not specify
-/// an identity this function will either get the default identity if one exists
-/// or create and save a new default identity.
-
-// TODO: validate identity by server's public key
-pub async fn select_identity_config(
-    config: &mut Config,
-    identity_or_name: Option<&str>,
-    server: Option<&str>,
-) -> Result<IdentityConfig, anyhow::Error> {
-    if let Some(identity_or_name) = identity_or_name {
-        config
-            .get_identity_config(identity_or_name)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("No identity credentials for identity \"{}\"", identity_or_name))
-    } else {
-        Ok(init_default(config, None, server).await?.identity_config)
-    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -189,7 +122,6 @@ pub async fn describe_reducer(
     server: Option<String>,
     reducer_name: String,
     anon_identity: bool,
-    as_identity: Option<String>,
 ) -> anyhow::Result<DescribeReducer> {
     let builder = reqwest::Client::new().get(format!(
         "{}/database/schema/{}/{}/{}",
@@ -198,7 +130,7 @@ pub async fn describe_reducer(
         "reducer",
         reducer_name
     ));
-    let auth_header = get_auth_header_only(config, anon_identity, as_identity.as_ref(), server.as_deref()).await?;
+    let auth_header = get_auth_header(config, anon_identity)?;
     let builder = add_auth_header_opt(builder, &auth_header);
 
     let descr = builder
@@ -220,19 +152,6 @@ pub fn add_auth_header_opt(mut builder: RequestBuilder, auth_header: &Option<Str
     builder
 }
 
-/// See [`get_auth_header`].
-pub async fn get_auth_header_only(
-    config: &mut Config,
-    anon_identity: bool,
-    identity_or_name: Option<&String>,
-    server: Option<&str>,
-) -> anyhow::Result<Option<String>> {
-    let (ah, _) = get_auth_header(config, anon_identity, identity_or_name.map(String::as_str), server)
-        .await?
-        .unzip();
-    Ok(ah)
-}
-
 /// Gets the `auth_header` for a request to the server depending on how you want
 /// to identify yourself.  If you specify `anon_identity = true` then no
 /// `auth_header` is returned. If you specify an identity this function will try
@@ -245,43 +164,16 @@ pub async fn get_auth_header_only(
 ///  * `config` - The config file reference
 ///  * `anon_identity` - Whether or not to just use an anonymous identity (no identity)
 ///  * `identity_or_name` - The identity to try to lookup, which is typically provided from the command line
-pub async fn get_auth_header(
-    config: &mut Config,
-    anon_identity: bool,
-    identity_or_name: Option<&str>,
-    server: Option<&str>,
-) -> anyhow::Result<Option<(String, Identity)>> {
-    Ok(if !anon_identity {
-        let identity_config = select_identity_config(config, identity_or_name, server).await?;
+pub fn get_auth_header(config: &Config, anon_identity: bool) -> anyhow::Result<Option<String>> {
+    if anon_identity {
+        Ok(None)
+    } else {
+        let token = config.login_token()?;
         // The current form is: Authorization: Basic base64("token:<token>")
         let mut auth_header = String::new();
-        auth_header.push_str(
-            format!(
-                "Basic {}",
-                BASE_64_STD.encode(format!("token:{}", identity_config.token))
-            )
-            .as_str(),
-        );
-        Some((auth_header, identity_config.identity))
-    } else {
-        None
-    })
-}
-
-pub fn is_hex_identity(ident: &str) -> bool {
-    ident.len() == 64 && ident.chars().all(|c| c.is_ascii_hexdigit())
-}
-
-pub fn print_identity_config(ident: &IdentityConfig) {
-    println!(" IDENTITY  {}", ident.identity);
-    println!(
-        " NAME      {}",
-        match &ident.nickname {
-            None => "",
-            Some(name) => name.as_str(),
-        }
-    );
-    // TODO: lookup email here when we have an API endpoint for it
+        auth_header.push_str(format!("Basic {}", BASE_64_STD.encode(format!("token:{}", token))).as_str());
+        Ok(Some(auth_header))
+    }
 }
 
 pub const VALID_PROTOCOLS: [&str; 2] = ["http", "https"];
@@ -368,4 +260,21 @@ Generate a new identity with:
 \tspacetime identity new --no-email --server {server} --default"
         )
     })
+}
+
+pub fn get_identity(config: &Config, server: Option<&str>) -> anyhow::Result<String> {
+    let token = config.login_token()?;
+
+    match config.server_fingerprint(server)? {
+        None => Err(anyhow::anyhow!("No fingerprint found for server")),
+        Some(public_key) => {
+            let decoding_key = DecodingKey::from_ec_pem(public_key.as_bytes())?;
+            let mut validation = Validation::new(Algorithm::ES256);
+            validation.validate_exp = false;
+            validation.set_required_spec_claims(&["set", "iss", "aud"]);
+            let token_data = decode::<SpacetimeIdentityClaims2>(token, &decoding_key, &validation)?;
+
+            Ok(token_data.claims.identity.to_string())
+        }
+    }
 }
