@@ -85,7 +85,7 @@ def main():
     token = identity_response['token']
     config = 'login_token = "%s"\n' % token
     with open(TEST_DIR / 'config.toml', 'r') as file:
-        config += file.read(f)
+        config += file.read()
     with open(TEST_DIR / 'config.toml', 'w') as file:
         file.write(config)
         print("Wrote new config:")
