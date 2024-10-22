@@ -52,19 +52,19 @@ pub trait insert_one_u_64 {
 
 impl insert_one_u_64 for super::RemoteReducers {
     fn insert_one_u_64(&self, n: u64) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_u64", InsertOneU64 { n })
+        self.imp.call_reducer(62, InsertOneU64 { n })
     }
     fn on_insert_one_u_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u64) + Send + 'static,
     ) -> InsertOneU64CallbackId {
         InsertOneU64CallbackId(self.imp.on_reducer::<InsertOneU64>(
-            "insert_one_u64",
+            62,
             Box::new(move |ctx: &super::EventContext, args: &InsertOneU64| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_insert_one_u_64(&self, callback: InsertOneU64CallbackId) {
-        self.imp.remove_on_reducer::<InsertOneU64>("insert_one_u64", callback.0)
+        self.imp.remove_on_reducer::<InsertOneU64>(62, callback.0)
     }
 }
 
@@ -84,6 +84,6 @@ pub trait set_flags_for_insert_one_u_64 {
 
 impl set_flags_for_insert_one_u_64 for super::SetReducerFlags {
     fn insert_one_u_64(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_one_u64", flags);
+        self.imp.set_call_reducer_flags(62, flags);
     }
 }

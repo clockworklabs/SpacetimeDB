@@ -35,7 +35,7 @@ pub trait UniqueAddressTableAccess {
 impl UniqueAddressTableAccess for super::RemoteTables {
     fn unique_address(&self) -> UniqueAddressTableHandle<'_> {
         UniqueAddressTableHandle {
-            imp: self.imp.get_table::<UniqueAddress>("unique_address"),
+            imp: self.imp.get_table::<UniqueAddress>(48),
             ctx: std::marker::PhantomData,
         }
     }

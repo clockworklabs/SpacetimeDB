@@ -35,7 +35,7 @@ pub trait OneAddressTableAccess {
 impl OneAddressTableAccess for super::RemoteTables {
     fn one_address(&self) -> OneAddressTableHandle<'_> {
         OneAddressTableHandle {
-            imp: self.imp.get_table::<OneAddress>("one_address"),
+            imp: self.imp.get_table::<OneAddress>(1),
             ctx: std::marker::PhantomData,
         }
     }

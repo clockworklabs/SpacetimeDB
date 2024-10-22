@@ -52,20 +52,19 @@ pub trait delete_unique_u_128 {
 
 impl delete_unique_u_128 for super::RemoteReducers {
     fn delete_unique_u_128(&self, n: u128) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_u128", DeleteUniqueU128 { n })
+        self.imp.call_reducer(26, DeleteUniqueU128 { n })
     }
     fn on_delete_unique_u_128(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u128) + Send + 'static,
     ) -> DeleteUniqueU128CallbackId {
         DeleteUniqueU128CallbackId(self.imp.on_reducer::<DeleteUniqueU128>(
-            "delete_unique_u128",
+            26,
             Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueU128| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_delete_unique_u_128(&self, callback: DeleteUniqueU128CallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueU128>("delete_unique_u128", callback.0)
+        self.imp.remove_on_reducer::<DeleteUniqueU128>(26, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_delete_unique_u_128 {
 
 impl set_flags_for_delete_unique_u_128 for super::SetReducerFlags {
     fn delete_unique_u_128(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_unique_u128", flags);
+        self.imp.set_call_reducer_flags(26, flags);
     }
 }

@@ -35,7 +35,7 @@ pub trait PkStringTableAccess {
 impl PkStringTableAccess for super::RemoteTables {
     fn pk_string(&self) -> PkStringTableHandle<'_> {
         PkStringTableHandle {
-            imp: self.imp.get_table::<PkString>("pk_string"),
+            imp: self.imp.get_table::<PkString>(40),
             ctx: std::marker::PhantomData,
         }
     }

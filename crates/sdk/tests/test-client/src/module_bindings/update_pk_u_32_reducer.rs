@@ -53,19 +53,19 @@ pub trait update_pk_u_32 {
 
 impl update_pk_u_32 for super::RemoteReducers {
     fn update_pk_u_32(&self, n: u32, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_pk_u32", UpdatePkU32 { n, data })
+        self.imp.call_reducer(143, UpdatePkU32 { n, data })
     }
     fn on_update_pk_u_32(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u32, &i32) + Send + 'static,
     ) -> UpdatePkU32CallbackId {
         UpdatePkU32CallbackId(self.imp.on_reducer::<UpdatePkU32>(
-            "update_pk_u32",
+            143,
             Box::new(move |ctx: &super::EventContext, args: &UpdatePkU32| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_update_pk_u_32(&self, callback: UpdatePkU32CallbackId) {
-        self.imp.remove_on_reducer::<UpdatePkU32>("update_pk_u32", callback.0)
+        self.imp.remove_on_reducer::<UpdatePkU32>(143, callback.0)
     }
 }
 
@@ -85,6 +85,6 @@ pub trait set_flags_for_update_pk_u_32 {
 
 impl set_flags_for_update_pk_u_32 for super::SetReducerFlags {
     fn update_pk_u_32(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("update_pk_u32", flags);
+        self.imp.set_call_reducer_flags(143, flags);
     }
 }

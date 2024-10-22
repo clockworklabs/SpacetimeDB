@@ -47,19 +47,19 @@ pub trait no_op_succeeds {
 
 impl no_op_succeeds for super::RemoteReducers {
     fn no_op_succeeds(&self) -> __anyhow::Result<()> {
-        self.imp.call_reducer("no_op_succeeds", NoOpSucceeds {})
+        self.imp.call_reducer(129, NoOpSucceeds {})
     }
     fn on_no_op_succeeds(
         &self,
         mut callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> NoOpSucceedsCallbackId {
         NoOpSucceedsCallbackId(self.imp.on_reducer::<NoOpSucceeds>(
-            "no_op_succeeds",
+            129,
             Box::new(move |ctx: &super::EventContext, args: &NoOpSucceeds| callback(ctx)),
         ))
     }
     fn remove_on_no_op_succeeds(&self, callback: NoOpSucceedsCallbackId) {
-        self.imp.remove_on_reducer::<NoOpSucceeds>("no_op_succeeds", callback.0)
+        self.imp.remove_on_reducer::<NoOpSucceeds>(129, callback.0)
     }
 }
 
@@ -79,6 +79,6 @@ pub trait set_flags_for_no_op_succeeds {
 
 impl set_flags_for_no_op_succeeds for super::SetReducerFlags {
     fn no_op_succeeds(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("no_op_succeeds", flags);
+        self.imp.set_call_reducer_flags(129, flags);
     }
 }

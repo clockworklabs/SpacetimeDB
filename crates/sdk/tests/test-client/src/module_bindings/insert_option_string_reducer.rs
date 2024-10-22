@@ -52,20 +52,19 @@ pub trait insert_option_string {
 
 impl insert_option_string for super::RemoteReducers {
     fn insert_option_string(&self, s: Option<String>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_option_string", InsertOptionString { s })
+        self.imp.call_reducer(69, InsertOptionString { s })
     }
     fn on_insert_option_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Option<String>) + Send + 'static,
     ) -> InsertOptionStringCallbackId {
         InsertOptionStringCallbackId(self.imp.on_reducer::<InsertOptionString>(
-            "insert_option_string",
+            69,
             Box::new(move |ctx: &super::EventContext, args: &InsertOptionString| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_insert_option_string(&self, callback: InsertOptionStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOptionString>("insert_option_string", callback.0)
+        self.imp.remove_on_reducer::<InsertOptionString>(69, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_insert_option_string {
 
 impl set_flags_for_insert_option_string for super::SetReducerFlags {
     fn insert_option_string(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_option_string", flags);
+        self.imp.set_call_reducer_flags(69, flags);
     }
 }

@@ -35,7 +35,7 @@ pub trait DisconnectedTableAccess {
 impl DisconnectedTableAccess for super::RemoteTables {
     fn disconnected(&self) -> DisconnectedTableHandle<'_> {
         DisconnectedTableHandle {
-            imp: self.imp.get_table::<Disconnected>("disconnected"),
+            imp: self.imp.get_table::<Disconnected>(1),
             ctx: std::marker::PhantomData,
         }
     }

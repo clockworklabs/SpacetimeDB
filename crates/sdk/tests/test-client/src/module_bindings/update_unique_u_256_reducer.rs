@@ -53,21 +53,19 @@ pub trait update_unique_u_256 {
 
 impl update_unique_u_256 for super::RemoteReducers {
     fn update_unique_u_256(&self, n: __sats::u256, data: i32) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("update_unique_u256", UpdateUniqueU256 { n, data })
+        self.imp.call_reducer(158, UpdateUniqueU256 { n, data })
     }
     fn on_update_unique_u_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::u256, &i32) + Send + 'static,
     ) -> UpdateUniqueU256CallbackId {
         UpdateUniqueU256CallbackId(self.imp.on_reducer::<UpdateUniqueU256>(
-            "update_unique_u256",
+            158,
             Box::new(move |ctx: &super::EventContext, args: &UpdateUniqueU256| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_update_unique_u_256(&self, callback: UpdateUniqueU256CallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdateUniqueU256>("update_unique_u256", callback.0)
+        self.imp.remove_on_reducer::<UpdateUniqueU256>(158, callback.0)
     }
 }
 
@@ -87,6 +85,6 @@ pub trait set_flags_for_update_unique_u_256 {
 
 impl set_flags_for_update_unique_u_256 for super::SetReducerFlags {
     fn update_unique_u_256(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("update_unique_u256", flags);
+        self.imp.set_call_reducer_flags(158, flags);
     }
 }

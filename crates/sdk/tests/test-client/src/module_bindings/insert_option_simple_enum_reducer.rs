@@ -54,21 +54,19 @@ pub trait insert_option_simple_enum {
 
 impl insert_option_simple_enum for super::RemoteReducers {
     fn insert_option_simple_enum(&self, e: Option<SimpleEnum>) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_option_simple_enum", InsertOptionSimpleEnum { e })
+        self.imp.call_reducer(68, InsertOptionSimpleEnum { e })
     }
     fn on_insert_option_simple_enum(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Option<SimpleEnum>) + Send + 'static,
     ) -> InsertOptionSimpleEnumCallbackId {
         InsertOptionSimpleEnumCallbackId(self.imp.on_reducer::<InsertOptionSimpleEnum>(
-            "insert_option_simple_enum",
+            68,
             Box::new(move |ctx: &super::EventContext, args: &InsertOptionSimpleEnum| callback(ctx, &args.e)),
         ))
     }
     fn remove_on_insert_option_simple_enum(&self, callback: InsertOptionSimpleEnumCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOptionSimpleEnum>("insert_option_simple_enum", callback.0)
+        self.imp.remove_on_reducer::<InsertOptionSimpleEnum>(68, callback.0)
     }
 }
 
@@ -88,6 +86,6 @@ pub trait set_flags_for_insert_option_simple_enum {
 
 impl set_flags_for_insert_option_simple_enum for super::SetReducerFlags {
     fn insert_option_simple_enum(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_option_simple_enum", flags);
+        self.imp.set_call_reducer_flags(68, flags);
     }
 }

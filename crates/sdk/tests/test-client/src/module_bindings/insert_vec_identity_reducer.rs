@@ -52,20 +52,19 @@ pub trait insert_vec_identity {
 
 impl insert_vec_identity for super::RemoteReducers {
     fn insert_vec_identity(&self, i: Vec<__sdk::Identity>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_identity", InsertVecIdentity { i })
+        self.imp.call_reducer(119, InsertVecIdentity { i })
     }
     fn on_insert_vec_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<__sdk::Identity>) + Send + 'static,
     ) -> InsertVecIdentityCallbackId {
         InsertVecIdentityCallbackId(self.imp.on_reducer::<InsertVecIdentity>(
-            "insert_vec_identity",
+            119,
             Box::new(move |ctx: &super::EventContext, args: &InsertVecIdentity| callback(ctx, &args.i)),
         ))
     }
     fn remove_on_insert_vec_identity(&self, callback: InsertVecIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecIdentity>("insert_vec_identity", callback.0)
+        self.imp.remove_on_reducer::<InsertVecIdentity>(119, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_insert_vec_identity {
 
 impl set_flags_for_insert_vec_identity for super::SetReducerFlags {
     fn insert_vec_identity(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_vec_identity", flags);
+        self.imp.set_call_reducer_flags(119, flags);
     }
 }

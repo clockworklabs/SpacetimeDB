@@ -52,20 +52,19 @@ pub trait delete_unique_bool {
 
 impl delete_unique_bool for super::RemoteReducers {
     fn delete_unique_bool(&self, b: bool) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_bool", DeleteUniqueBool { b })
+        self.imp.call_reducer(17, DeleteUniqueBool { b })
     }
     fn on_delete_unique_bool(
         &self,
         mut callback: impl FnMut(&super::EventContext, &bool) + Send + 'static,
     ) -> DeleteUniqueBoolCallbackId {
         DeleteUniqueBoolCallbackId(self.imp.on_reducer::<DeleteUniqueBool>(
-            "delete_unique_bool",
+            17,
             Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueBool| callback(ctx, &args.b)),
         ))
     }
     fn remove_on_delete_unique_bool(&self, callback: DeleteUniqueBoolCallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueBool>("delete_unique_bool", callback.0)
+        self.imp.remove_on_reducer::<DeleteUniqueBool>(17, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_delete_unique_bool {
 
 impl set_flags_for_delete_unique_bool for super::SetReducerFlags {
     fn delete_unique_bool(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_unique_bool", flags);
+        self.imp.set_call_reducer_flags(17, flags);
     }
 }

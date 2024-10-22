@@ -52,21 +52,19 @@ pub trait insert_caller_pk_address {
 
 impl insert_caller_pk_address for super::RemoteReducers {
     fn insert_caller_pk_address(&self, data: i32) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_caller_pk_address", InsertCallerPkAddress { data })
+        self.imp.call_reducer(34, InsertCallerPkAddress { data })
     }
     fn on_insert_caller_pk_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i32) + Send + 'static,
     ) -> InsertCallerPkAddressCallbackId {
         InsertCallerPkAddressCallbackId(self.imp.on_reducer::<InsertCallerPkAddress>(
-            "insert_caller_pk_address",
+            34,
             Box::new(move |ctx: &super::EventContext, args: &InsertCallerPkAddress| callback(ctx, &args.data)),
         ))
     }
     fn remove_on_insert_caller_pk_address(&self, callback: InsertCallerPkAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertCallerPkAddress>("insert_caller_pk_address", callback.0)
+        self.imp.remove_on_reducer::<InsertCallerPkAddress>(34, callback.0)
     }
 }
 
@@ -86,6 +84,6 @@ pub trait set_flags_for_insert_caller_pk_address {
 
 impl set_flags_for_insert_caller_pk_address for super::SetReducerFlags {
     fn insert_caller_pk_address(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_caller_pk_address", flags);
+        self.imp.set_call_reducer_flags(34, flags);
     }
 }

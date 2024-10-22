@@ -35,7 +35,7 @@ pub trait PkAddressTableAccess {
 impl PkAddressTableAccess for super::RemoteTables {
     fn pk_address(&self) -> PkAddressTableHandle<'_> {
         PkAddressTableHandle {
-            imp: self.imp.get_table::<PkAddress>("pk_address"),
+            imp: self.imp.get_table::<PkAddress>(31),
             ctx: std::marker::PhantomData,
         }
     }

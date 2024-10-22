@@ -54,21 +54,19 @@ pub trait insert_one_every_vec_struct {
 
 impl insert_one_every_vec_struct for super::RemoteReducers {
     fn insert_one_every_vec_struct(&self, s: EveryVecStruct) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_one_every_vec_struct", InsertOneEveryVecStruct { s })
+        self.imp.call_reducer(46, InsertOneEveryVecStruct { s })
     }
     fn on_insert_one_every_vec_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &EveryVecStruct) + Send + 'static,
     ) -> InsertOneEveryVecStructCallbackId {
         InsertOneEveryVecStructCallbackId(self.imp.on_reducer::<InsertOneEveryVecStruct>(
-            "insert_one_every_vec_struct",
+            46,
             Box::new(move |ctx: &super::EventContext, args: &InsertOneEveryVecStruct| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_insert_one_every_vec_struct(&self, callback: InsertOneEveryVecStructCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneEveryVecStruct>("insert_one_every_vec_struct", callback.0)
+        self.imp.remove_on_reducer::<InsertOneEveryVecStruct>(46, callback.0)
     }
 }
 
@@ -88,6 +86,6 @@ pub trait set_flags_for_insert_one_every_vec_struct {
 
 impl set_flags_for_insert_one_every_vec_struct for super::SetReducerFlags {
     fn insert_one_every_vec_struct(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_one_every_vec_struct", flags);
+        self.imp.set_call_reducer_flags(46, flags);
     }
 }
