@@ -285,23 +285,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var vis = SyntaxFacts.GetText(Visibility);
         var globalName = $"global::{FullName}";
 
-        foreach (
-            var ct in GetConstraints(viewName)
-                .Where(tuple => tuple.attr.HasFlag(ColumnAttrs.Unique))
-        )
+        foreach (var ct in GetConstraints(viewName, ColumnAttrs.Unique))
         {
             var f = ct.col;
-            if (f.GetAttrs(viewName).HasFlag(ColumnAttrs.Unique))
-            {
-                var iUniqueIndex = $"";
-                yield return $$"""
-                    {{vis}} sealed class {{viewName}}UniqueIndex : UniqueIndex<{{viewName}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
-                        internal {{viewName}}UniqueIndex({{viewName}} handle) : base(handle, "idx_{{viewName}}_{{viewName}}_{{ct.col.Name}}_unique") {}
-                        public bool Update({{globalName}} row) => DoUpdate(row.{{f.Name}}, row);
-                    }
-                    {{vis}} {{viewName}}UniqueIndex {{f.Name}} => new(this);
-                    """;
-            }
+
+            yield return $$"""
+                {{vis}} sealed class {{viewName}}UniqueIndex : UniqueIndex<{{viewName}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
+                    internal {{viewName}}UniqueIndex({{viewName}} handle) : base(handle, "idx_{{viewName}}_{{viewName}}_{{f.Name}}_unique") {}
+                    public bool Update({{globalName}} row) => DoUpdate(row.{{f.Name}}, row);
+                }
+                {{vis}} {{viewName}}UniqueIndex {{f.Name}} => new(this);
+                """;
         }
 
         foreach (var index in Indexes)
