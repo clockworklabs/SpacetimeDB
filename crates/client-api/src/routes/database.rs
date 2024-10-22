@@ -378,14 +378,14 @@ where
 
 #[derive(Deserialize)]
 pub struct InfoParams {
-    name_or_address: NameOrIdentity,
+    name_or_identity: NameOrIdentity,
 }
 pub async fn info<S: ControlStateDelegate>(
     State(worker_ctx): State<S>,
-    Path(InfoParams { name_or_address }): Path<InfoParams>,
+    Path(InfoParams { name_or_identity }): Path<InfoParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    log::trace!("Trying to resolve address: {:?}", name_or_address);
-    let address = name_or_address.resolve(&worker_ctx).await?.into();
+    log::trace!("Trying to resolve address: {:?}", name_or_identity);
+    let address = name_or_identity.resolve(&worker_ctx).await?.into();
     log::trace!("Resolved address to: {address:?}");
     let database = worker_ctx_find_database(&worker_ctx, &address)
         .await?
@@ -404,7 +404,7 @@ pub async fn info<S: ControlStateDelegate>(
 
 #[derive(Deserialize)]
 pub struct LogsParams {
-    name_or_address: NameOrIdentity,
+    name_or_identity: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
@@ -416,7 +416,7 @@ pub struct LogsQuery {
 
 pub async fn logs<S>(
     State(worker_ctx): State<S>,
-    Path(LogsParams { name_or_address }): Path<LogsParams>,
+    Path(LogsParams { name_or_identity }): Path<LogsParams>,
     Query(LogsQuery { num_lines, follow }): Query<LogsQuery>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse>
@@ -426,7 +426,7 @@ where
     // You should not be able to read the logs from a database that you do not own
     // so, unless you are the owner, this will fail.
 
-    let database_identity: Identity = name_or_address.resolve(&worker_ctx).await?.into();
+    let database_identity: Identity = name_or_identity.resolve(&worker_ctx).await?.into();
     let database = worker_ctx_find_database(&worker_ctx, &database_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
@@ -505,7 +505,7 @@ async fn worker_ctx_find_database(
 
 #[derive(Deserialize)]
 pub struct SqlParams {
-    name_or_address: NameOrIdentity,
+    name_or_identity: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
@@ -513,7 +513,7 @@ pub struct SqlQueryParams {}
 
 pub async fn sql<S>(
     State(worker_ctx): State<S>,
-    Path(SqlParams { name_or_address }): Path<SqlParams>,
+    Path(SqlParams { name_or_identity }): Path<SqlParams>,
     Query(SqlQueryParams {}): Query<SqlQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     body: String,
@@ -524,7 +524,7 @@ where
     // Anyone is authorized to execute SQL queries. The SQL engine will determine
     // which queries this identity is allowed to execute against the database.
 
-    let address = name_or_address.resolve(&worker_ctx).await?.into();
+    let address = name_or_identity.resolve(&worker_ctx).await?.into();
     let database = worker_ctx_find_database(&worker_ctx, &address)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
@@ -593,7 +593,7 @@ pub struct DNSParams {
 
 #[derive(Deserialize)]
 pub struct ReverseDNSParams {
-    database_address: IdentityForUrl,
+    database_identity: IdentityForUrl,
 }
 
 #[derive(Deserialize)]
@@ -620,7 +620,7 @@ pub async fn dns<S: ControlStateDelegate>(
 
 pub async fn reverse_dns<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(ReverseDNSParams { database_address }): Path<ReverseDNSParams>,
+    Path(ReverseDNSParams { database_identity: database_address }): Path<ReverseDNSParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let database_address = Identity::from(database_address);
 
@@ -672,14 +672,14 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
     let PublishDatabaseQueryParams {
-        name_or_identity: name_or_address,
+        name_or_identity,
         clear,
     } = query_params;
 
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
 
-    let (db_addr, db_name) = match name_or_address {
+    let (db_addr, db_name) = match name_or_identity {
         Some(noa) => match noa.try_resolve(&ctx).await? {
             Ok(resolved) => resolved.into(),
             Err(domain) => {
@@ -754,12 +754,12 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
 
 #[derive(Deserialize)]
 pub struct DeleteDatabaseParams {
-    address: IdentityForUrl,
+    database_identity: IdentityForUrl,
 }
 
 pub async fn delete_database<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(DeleteDatabaseParams { address }): Path<DeleteDatabaseParams>,
+    Path(DeleteDatabaseParams { database_identity: address }): Path<DeleteDatabaseParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
     let address = Identity::from(address);
@@ -824,7 +824,7 @@ where
         .route("/ping", get(ping::<S>))
         .route("/register_tld", get(register_tld::<S>))
         .route("/publish", post(publish::<S>).layer(DefaultBodyLimit::disable()))
-        .route("/delete/:address", post(delete_database::<S>))
+        .route("/delete/:database_identity", post(delete_database::<S>))
         .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
 }
 
@@ -835,14 +835,14 @@ where
     use axum::routing::{get, post};
     axum::Router::new()
         .route(
-            "/subscribe/:name_or_address",
+            "/subscribe/:name_or_identity",
             get(super::subscribe::handle_websocket::<S>),
         )
-        .route("/call/:name_or_address/:reducer", post(call::<S>))
-        .route("/schema/:name_or_address/:entity_type/:entity", get(describe::<S>))
-        .route("/schema/:name_or_address", get(catalog::<S>))
-        .route("/info/:name_or_address", get(info::<S>))
-        .route("/logs/:name_or_address", get(logs::<S>))
-        .route("/sql/:name_or_address", post(sql::<S>))
+        .route("/call/:name_or_identity/:reducer", post(call::<S>))
+        .route("/schema/:name_or_identity/:entity_type/:entity", get(describe::<S>))
+        .route("/schema/:name_or_identity", get(catalog::<S>))
+        .route("/info/:name_or_identity", get(info::<S>))
+        .route("/logs/:name_or_identity", get(logs::<S>))
+        .route("/sql/:name_or_identity", post(sql::<S>))
         .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
 }
