@@ -20,6 +20,8 @@ pub fn ensure_standalone_process() {
                 //       and all the options for post-`main` cleanup seem sketchy.
                 .into_path();
             std::env::set_var("STDB_PATH", stdb_path);
+            let token = panic!("We need to get a token to store!");
+            invoke_cli(&["login", "--token", token]);
             Mutex::new(Some(std::thread::spawn(|| invoke_cli(&["start"]))))
         };
     }
