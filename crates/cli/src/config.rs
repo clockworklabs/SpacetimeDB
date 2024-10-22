@@ -60,7 +60,7 @@ pub struct RawConfig {
     default_server: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     server_configs: Vec<ServerConfig>,
-    web_session_token: Option<String>,
+    web_session_id: Option<String>,
     spacetimedb_token: Option<String>,
 }
 
@@ -111,7 +111,7 @@ impl RawConfig {
         RawConfig {
             default_server: local.nickname.clone(),
             server_configs: vec![local, testnet],
-            web_session_token: None,
+            web_session_id: None,
             spacetimedb_token: None,
         }
     }
@@ -408,8 +408,8 @@ Fetch the server's fingerprint with:
         Ok(())
     }
 
-    pub fn set_web_session_token(&mut self, token: String) {
-        self.web_session_token = Some(token);
+    pub fn set_web_session_id(&mut self, token: String) {
+        self.web_session_id = Some(token);
     }
 
     pub fn set_spacetimedb_token(&mut self, token: String) {
@@ -702,20 +702,24 @@ Update the server's fingerprint with:
         }
     }
 
-    pub fn set_web_session_token(&mut self, token: String) {
-        self.home.set_web_session_token(token);
+    pub fn set_web_session_id(&mut self, token: String) {
+        self.home.set_web_session_id(token);
     }
 
     pub fn set_spacetimedb_token(&mut self, token: String) {
         self.home.set_spacetimedb_token(token);
     }
 
-    pub fn web_session_token(&self) -> Option<&String> {
-        self.home.web_session_token.as_ref()
+    pub fn web_session_id(&self) -> Option<&String> {
+        self.home.web_session_id.as_ref()
     }
 
-    pub fn spacetimedb_token(&self) -> anyhow::Result<&String> {
-        if let Some(token) = self.home.spacetimedb_token.as_ref() {
+    pub fn spacetimedb_token(&self) -> Option<&String> {
+        self.home.spacetimedb_token.as_ref()
+    }
+
+    pub fn spacetimedb_token_or_error(&self) -> anyhow::Result<&String> {
+        if let Some(token) = self.spacetimedb_token() {
             Ok(token)
         } else {
             Err(anyhow::anyhow!("No login token found. Please run `spacetime login`."))
