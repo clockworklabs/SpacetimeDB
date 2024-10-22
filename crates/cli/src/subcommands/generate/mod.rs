@@ -34,7 +34,7 @@ pub mod typescript;
 mod util;
 
 pub fn cli() -> clap::Command {
-    clap::Command::new("generate")
+    clap::Command::new("generate-test")
         .about("Generate client files for a spacetime module.")
         .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH>]")
         .arg(
