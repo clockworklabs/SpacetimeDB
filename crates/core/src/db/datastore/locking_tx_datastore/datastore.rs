@@ -277,9 +277,18 @@ impl Tx for Locking {
 }
 
 impl TxDatastore for Locking {
-    type Iter<'a> = Iter<'a> where Self: 'a;
-    type IterByColEq<'a, 'r> = IterByColRange<'a, &'r AlgebraicValue> where Self: 'a;
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
+    type Iter<'a>
+        = Iter<'a>
+    where
+        Self: 'a;
+    type IterByColEq<'a, 'r>
+        = IterByColRange<'a, &'r AlgebraicValue>
+    where
+        Self: 'a;
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>
+        = IterByColRange<'a, R>
+    where
+        Self: 'a;
 
     fn iter_tx<'a>(&'a self, ctx: &'a ExecutionContext, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>> {
         tx.iter(ctx, table_id)
@@ -715,7 +724,7 @@ impl<F> Replay<F> {
         f(&mut visitor)
     }
 
-    pub(crate) fn next_tx_offset(&self) -> u64 {
+    pub fn next_tx_offset(&self) -> u64 {
         self.committed_state.read_arc().next_tx_offset
     }
 }
