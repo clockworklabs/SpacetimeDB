@@ -105,7 +105,7 @@ impl TokenValidator for LocalTokenValidator {
     async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
         // TODO: Make this stored in the struct so we don't need to keep creating it.
         let mut validation = Validation::new(jsonwebtoken::Algorithm::ES256);
-        validation.algorithms = vec![jsonwebtoken::Algorithm::ES256, jsonwebtoken::Algorithm::RS256];
+        validation.algorithms = vec![jsonwebtoken::Algorithm::ES256, jsonwebtoken::Algorithm::RS256, jsonwebtoken::Algorithm::HS256];
         validation.set_required_spec_claims(&REQUIRED_CLAIMS);
         validation.set_issuer(&[self.issuer.clone()]);
 

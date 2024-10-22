@@ -101,7 +101,7 @@ url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
 wasmtime.workspace = true
-jwks = "0.1.3"
+jwks = { git = "https://github.com/jsdt/jwks.git", rev = "acb4241f3768ff89515a0c12d927e280a604fff3"}
 async_cache = "0.3.1"
 faststr = "0.2.23"
 
