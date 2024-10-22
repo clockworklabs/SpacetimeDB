@@ -819,7 +819,7 @@ where
     use axum::routing::{get, post};
     axum::Router::new()
         .route("/dns/:database_name", get(dns::<S>))
-        .route("/reverse_dns/:database_address", get(reverse_dns::<S>))
+        .route("/reverse_dns/:database_identity", get(reverse_dns::<S>))
         .route("/set_name", get(set_name::<S>))
         .route("/ping", get(ping::<S>))
         .route("/register_tld", get(register_tld::<S>))
