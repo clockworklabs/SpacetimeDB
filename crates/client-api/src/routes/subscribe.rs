@@ -37,7 +37,7 @@ pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static("v1.bsatn.spaceti
 
 #[derive(Deserialize)]
 pub struct SubscribeParams {
-    pub name_or_address: NameOrIdentity,
+    pub name_or_identity: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
@@ -56,7 +56,7 @@ pub fn generate_random_address() -> Address {
 
 pub async fn handle_websocket<S>(
     State(ctx): State<S>,
-    Path(SubscribeParams { name_or_address }): Path<SubscribeParams>,
+    Path(SubscribeParams { name_or_identity }): Path<SubscribeParams>,
     Query(SubscribeQueryParams {
         client_address,
         compression,
@@ -79,7 +79,7 @@ where
         ))?;
     }
 
-    let db_address = name_or_address.resolve(&ctx).await?.into();
+    let db_address = name_or_identity.resolve(&ctx).await?.into();
 
     let (res, ws_upgrade, protocol) =
         ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
