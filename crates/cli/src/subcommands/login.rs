@@ -23,6 +23,8 @@ pub fn cli() -> Command {
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let host: &String = args.get_one("host").unwrap();
+    // TODO: This `--new` does not (and can not) clear any of the browser's cookies, so it will refresh the tokens stored in config,
+    // but if you're already logged in with the browser, it will not let you e.g. choose a different account.
     let new_login = args.get_flag("new");
     let session_id = if new_login { None } else { config.web_session_id() };
     let session_id = if let Some(session_id) = session_id {
