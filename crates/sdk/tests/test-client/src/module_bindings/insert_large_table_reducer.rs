@@ -234,12 +234,10 @@ impl insert_large_table for super::RemoteReducers {
 /// Implemented for [`super::SetReducerFlags`].
 ///
 /// This type is currently unstable and may be removed without a major version bump.
-/// The ability to send over call-reducer flags in the protocol will however remain.
 pub trait set_flags_for_insert_large_table {
     /// Set the call-reducer flags for the reducer `insert_large_table` to `flags`.
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    /// The ability to send over call-reducer flags in the protocol will however remain.
     fn insert_large_table(&self, flags: __ws::CallReducerFlags);
 }
 

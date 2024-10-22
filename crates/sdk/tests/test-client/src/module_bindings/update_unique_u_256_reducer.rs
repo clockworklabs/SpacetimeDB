@@ -78,12 +78,10 @@ impl update_unique_u_256 for super::RemoteReducers {
 /// Implemented for [`super::SetReducerFlags`].
 ///
 /// This type is currently unstable and may be removed without a major version bump.
-/// The ability to send over call-reducer flags in the protocol will however remain.
 pub trait set_flags_for_update_unique_u_256 {
     /// Set the call-reducer flags for the reducer `update_unique_u256` to `flags`.
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    /// The ability to send over call-reducer flags in the protocol will however remain.
     fn update_unique_u_256(&self, flags: __ws::CallReducerFlags);
 }
 

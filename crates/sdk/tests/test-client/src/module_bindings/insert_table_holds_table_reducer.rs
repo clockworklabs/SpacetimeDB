@@ -81,12 +81,10 @@ impl insert_table_holds_table for super::RemoteReducers {
 /// Implemented for [`super::SetReducerFlags`].
 ///
 /// This type is currently unstable and may be removed without a major version bump.
-/// The ability to send over call-reducer flags in the protocol will however remain.
 pub trait set_flags_for_insert_table_holds_table {
     /// Set the call-reducer flags for the reducer `insert_table_holds_table` to `flags`.
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    /// The ability to send over call-reducer flags in the protocol will however remain.
     fn insert_table_holds_table(&self, flags: __ws::CallReducerFlags);
 }
 

@@ -76,12 +76,10 @@ impl delete_unique_u_16 for super::RemoteReducers {
 /// Implemented for [`super::SetReducerFlags`].
 ///
 /// This type is currently unstable and may be removed without a major version bump.
-/// The ability to send over call-reducer flags in the protocol will however remain.
 pub trait set_flags_for_delete_unique_u_16 {
     /// Set the call-reducer flags for the reducer `delete_unique_u16` to `flags`.
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    /// The ability to send over call-reducer flags in the protocol will however remain.
     fn delete_unique_u_16(&self, flags: __ws::CallReducerFlags);
 }
 

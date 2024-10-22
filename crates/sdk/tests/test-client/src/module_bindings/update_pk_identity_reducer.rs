@@ -78,12 +78,10 @@ impl update_pk_identity for super::RemoteReducers {
 /// Implemented for [`super::SetReducerFlags`].
 ///
 /// This type is currently unstable and may be removed without a major version bump.
-/// The ability to send over call-reducer flags in the protocol will however remain.
 pub trait set_flags_for_update_pk_identity {
     /// Set the call-reducer flags for the reducer `update_pk_identity` to `flags`.
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    /// The ability to send over call-reducer flags in the protocol will however remain.
     fn update_pk_identity(&self, flags: __ws::CallReducerFlags);
 }
 
