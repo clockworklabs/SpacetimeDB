@@ -26,7 +26,7 @@ partial struct TestTypeParams<T> : SpacetimeDB.BSATN.IStructuralReadWrite
             value.WriteFields(writer);
         }
 
-        public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
+        public SpacetimeDB.BSATN.AlgebraicType.Ref GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             registrar.RegisterType<TestTypeParams<T>>(
@@ -37,5 +37,9 @@ partial struct TestTypeParams<T> : SpacetimeDB.BSATN.IStructuralReadWrite
                     }
                 )
             );
+
+        SpacetimeDB.BSATN.AlgebraicType SpacetimeDB.BSATN.IReadWrite<TestTypeParams>.GetAlgebraicType(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => GetAlgebraicType(registrar);
     }
 } // TestTypeParams<T>

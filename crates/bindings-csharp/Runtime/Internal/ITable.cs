@@ -5,9 +5,6 @@ using SpacetimeDB.BSATN;
 public interface ITable<T> : IStructuralReadWrite
     where T : ITable<T>, new()
 {
-    // These are the methods that codegen needs to implement.
-    static abstract IEnumerable<TableDesc> MakeTableDesc(ITypeRegistrar registrar);
-
     internal abstract class RawTableIterBase
     {
         public class Enumerator(FFI.RowIter handle) : IDisposable
@@ -111,6 +108,9 @@ public interface ITableView<View, T>
     where View : ITableView<View, T>
     where T : ITable<T>, new()
 {
+    // These are the methods that codegen needs to implement.
+    static abstract RawTableDefV9 MakeTableDesc(ITypeRegistrar registrar);
+
     static abstract T ReadGenFields(BinaryReader reader, T row);
 
     // These are static helpers that codegen can use.
@@ -121,11 +121,13 @@ public interface ITableView<View, T>
             FFI.datastore_table_scan_bsatn(tableId, out handle);
     }
 
+    private static readonly string tableName = typeof(View).Name;
+
     // Note: this must be Lazy to ensure that we don't try to get the tableId during startup, before the module is initialized.
     private static readonly Lazy<FFI.TableId> tableId_ =
         new(() =>
         {
-            var name_bytes = System.Text.Encoding.UTF8.GetBytes(typeof(View).Name);
+            var name_bytes = System.Text.Encoding.UTF8.GetBytes(tableName);
             FFI.table_id_from_name(name_bytes, (uint)name_bytes.Length, out var out_);
             return out_;
         });
@@ -167,4 +169,23 @@ public interface ITableView<View, T>
         FFI.datastore_delete_all_by_eq_bsatn(tableId, bytes, (uint)bytes.Length, out var out_);
         return out_ > 0;
     }
+
+    protected static RawScheduleDefV9 MakeSchedule(string reducerName, ushort colIndex) =>
+        new(Name: $"{tableName}_schedule", ReducerName: reducerName, ScheduledAtColumn: colIndex);
+
+    protected static RawSequenceDefV9 MakeSequence(ushort colIndex, string colName) =>
+        new(
+            Name: $"seq_{tableName}_{colName}",
+            Column: colIndex,
+            Start: null,
+            MinValue: null,
+            MaxValue: null,
+            Increment: 1
+        );
+
+    protected static RawConstraintDefV9 MakeUniqueConstraint(ushort colIndex, string colName) =>
+        new(
+            Name: $"ct_{tableName}_{colName}_unique",
+            Data: new RawConstraintDataV9.Unique(new([colIndex]))
+        );
 }
