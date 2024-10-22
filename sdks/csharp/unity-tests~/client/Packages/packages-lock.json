@@ -1,11 +1,10 @@
 {
   "dependencies": {
     "com.clockworklabs.spacetimedbsdk": {
-      "version": "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git#jeremie-one-off-query-decoupled-from-table",
+      "version": "file:../../../",
       "depth": 0,
-      "source": "git",
-      "dependencies": {},
-      "hash": "6a5b68251bb29432ad3f34261ed285026e766b3c"
+      "source": "local",
+      "dependencies": {}
     },
     "com.unity.2d.animation": {
       "version": "9.1.1",
