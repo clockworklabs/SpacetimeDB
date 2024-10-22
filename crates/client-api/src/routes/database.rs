@@ -47,7 +47,7 @@ impl IntoResponse for DomainParsingRejection {
 
 #[derive(Deserialize)]
 pub struct CallParams {
-    name_or_address: NameOrIdentity,
+    name_or_identity: NameOrIdentity,
     reducer: String,
 }
 
@@ -60,7 +60,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     Extension(auth): Extension<SpacetimeAuth>,
     Path(CallParams {
-        name_or_address,
+        name_or_identity: name_or_address,
         reducer,
     }): Path<CallParams>,
     Query(CallQueryParams { client_address }): Query<CallQueryParams>,
@@ -251,7 +251,7 @@ fn entity_description_json(description: WithTypespace<EntityDef>) -> Option<Valu
 
 #[derive(Deserialize)]
 pub struct DescribeParams {
-    name_or_address: NameOrIdentity,
+    name_or_identity: NameOrIdentity,
     entity_type: String,
     entity: String,
 }
@@ -259,7 +259,7 @@ pub struct DescribeParams {
 pub async fn describe<S>(
     State(worker_ctx): State<S>,
     Path(DescribeParams {
-        name_or_address,
+        name_or_identity,
         entity_type,
         entity,
     }): Path<DescribeParams>,
@@ -268,7 +268,7 @@ pub async fn describe<S>(
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let address = name_or_address.resolve(&worker_ctx).await?.into();
+    let address = name_or_identity.resolve(&worker_ctx).await?.into();
     let database = worker_ctx_find_database(&worker_ctx, &address)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
@@ -320,7 +320,7 @@ fn get_entity<'a>(host: &'a ModuleHost, entity: &'_ str, entity_type: DescribedE
 
 #[derive(Deserialize)]
 pub struct CatalogParams {
-    name_or_address: NameOrIdentity,
+    name_or_identity: NameOrIdentity,
 }
 #[derive(Deserialize)]
 pub struct CatalogQueryParams {
@@ -329,14 +329,14 @@ pub struct CatalogQueryParams {
 }
 pub async fn catalog<S>(
     State(worker_ctx): State<S>,
-    Path(CatalogParams { name_or_address }): Path<CatalogParams>,
+    Path(CatalogParams { name_or_identity }): Path<CatalogParams>,
     Query(CatalogQueryParams { module_def }): Query<CatalogQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse>
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let address = name_or_address.resolve(&worker_ctx).await?.into();
+    let address = name_or_identity.resolve(&worker_ctx).await?.into();
     let database = worker_ctx_find_database(&worker_ctx, &address)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
