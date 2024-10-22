@@ -358,10 +358,10 @@ where
     T: 'a,
 {
     commits
-        .map(|x| x.map_err(Into::into))
+        .map(|x| x.map_err(D::Error::from))
         .map_ok(move |(version, commit)| commit.into_transactions(version, de))
         .flatten_ok()
-        .flatten_ok()
+        .map(|x| x.and_then(|y| y))
         .skip_while(move |x| x.as_ref().map(|tx| tx.offset < offset).unwrap_or(false))
 }
 
