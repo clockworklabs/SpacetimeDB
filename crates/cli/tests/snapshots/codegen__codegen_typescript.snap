@@ -1049,7 +1049,7 @@ export class RemoteReducers {
   }
 
   testBtreeIndexArgs() {
-    this.connection.callReducer("test_btree_index_args", new Uint8Array(0));
+    this.connection.callReducer("test_btree_index_args", new Uint8Array(0), this.setCallReducerFlags.testBtreeIndexArgsFlags);
   }
 
   onTestBtreeIndexArgs(callback: (ctx: EventContext) => void) {
@@ -1063,49 +1063,54 @@ export class RemoteReducers {
 }
 
 export class SetReducerFlags {
-  identityConnectedFlags: CallReducerFlags;
+  identityConnectedFlags: CallReducerFlags = 'FullUpdate';
   identityConnected(flags: CallReducerFlags) {
     this.identityConnectedFlags = flags;
   }
 
-  initFlags: CallReducerFlags;
+  initFlags: CallReducerFlags = 'FullUpdate';
   init(flags: CallReducerFlags) {
     this.initFlags = flags;
   }
 
-  addPlayerFlags: CallReducerFlags;
+  addPlayerFlags: CallReducerFlags = 'FullUpdate';
   addPlayer(flags: CallReducerFlags) {
     this.addPlayerFlags = flags;
   }
 
-  addPrivateFlags: CallReducerFlags;
+  addPrivateFlags: CallReducerFlags = 'FullUpdate';
   addPrivate(flags: CallReducerFlags) {
     this.addPrivateFlags = flags;
   }
 
-  deletePlayerFlags: CallReducerFlags;
+  deletePlayerFlags: CallReducerFlags = 'FullUpdate';
   deletePlayer(flags: CallReducerFlags) {
     this.deletePlayerFlags = flags;
   }
 
-  deletePlayersByNameFlags: CallReducerFlags;
+  deletePlayersByNameFlags: CallReducerFlags = 'FullUpdate';
   deletePlayersByName(flags: CallReducerFlags) {
     this.deletePlayersByNameFlags = flags;
   }
 
-  queryPrivateFlags: CallReducerFlags;
+  queryPrivateFlags: CallReducerFlags = 'FullUpdate';
   queryPrivate(flags: CallReducerFlags) {
     this.queryPrivateFlags = flags;
   }
 
-  repeatingTestFlags: CallReducerFlags;
+  repeatingTestFlags: CallReducerFlags = 'FullUpdate';
   repeatingTest(flags: CallReducerFlags) {
     this.repeatingTestFlags = flags;
   }
 
-  testFlags: CallReducerFlags;
+  testFlags: CallReducerFlags = 'FullUpdate';
   test(flags: CallReducerFlags) {
     this.testFlags = flags;
+  }
+
+  testBtreeIndexArgsFlags: CallReducerFlags = 'FullUpdate';
+  testBtreeIndexArgs(flags: CallReducerFlags) {
+    this.testBtreeIndexArgsFlags = flags;
   }
 
 }
@@ -2519,6 +2524,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore

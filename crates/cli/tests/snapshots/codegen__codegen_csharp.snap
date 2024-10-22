@@ -1008,7 +1008,7 @@ namespace SpacetimeDB
 
 		public void TestBtreeIndexArgs()
 		{
-			conn.InternalCallReducer(new TestBtreeIndexArgs {  });
+			conn.InternalCallReducer(new TestBtreeIndexArgs {  }, this.SetCallReducerFlags.TestBtreeIndexArgsFlags);
 		}
 
 		public bool InvokeTestBtreeIndexArgs(EventContext ctx, TestBtreeIndexArgs args)
@@ -1038,6 +1038,8 @@ namespace SpacetimeDB
 		public void RepeatingTest(CallReducerFlags flags) { this.RepeatingTestFlags = flags; }
 		internal CallReducerFlags TestFlags;
 		public void Test(CallReducerFlags flags) { this.TestFlags = flags; }
+		internal CallReducerFlags TestBtreeIndexArgsFlags;
+		public void TestBtreeIndexArgs(CallReducerFlags flags) { this.TestBtreeIndexArgsFlags = flags; }
 	}
 
 	public partial record EventContext : DbContext<RemoteTables>, IEventContext

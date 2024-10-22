@@ -519,7 +519,7 @@ fn print_set_reducer_flags(module: &ModuleDef, out: &mut Indenter) {
 
     for reducer in iter_reducers(module) {
         let reducer_function_name = reducer_function_name(reducer);
-        writeln!(out, "{reducer_function_name}Flags: CallReducerFlags;");
+        writeln!(out, "{reducer_function_name}Flags: CallReducerFlags = 'FullUpdate';");
         writeln!(out, "{reducer_function_name}(flags: CallReducerFlags) {{");
         out.with_indent(|out| {
             writeln!(out, "this.{reducer_function_name}Flags = flags;");
