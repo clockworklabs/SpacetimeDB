@@ -56,7 +56,7 @@ class Permissions(Smoketest):
     def test_publish(self):
         """This test checks to make sure that you cannot publish to an address that you do not own."""
 
-        self.new_identity(default=True)
+        self.new_identity()
         self.publish_module()
 
         self.reset_config()
