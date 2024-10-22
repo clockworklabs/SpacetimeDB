@@ -88,7 +88,7 @@ fn default_init(ctx: &GenCtx, ty: &AlgebraicType, namespace: &str) -> Option<Str
         AlgebraicType::Sum(sum_type) if sum_type.is_option() || sum_type.is_simple_enum() => None,
         // TODO: generate some proper default here (what would it be for tagged enums?).
         AlgebraicType::Sum(_) => Some("null!".into()),
-        ty if ty.is_bytes() => Some(format!("Array.Empty<{}>()", ty_fmt(ctx, ty, namespace))),
+        AlgebraicType::Array(arr_ty) => Some(format!("Array.Empty<{}>()", ty_fmt(ctx, &arr_ty.elem_ty, namespace))),
         // For product types, we can use the default constructor.
         AlgebraicType::Product(_) => Some("new()".into()),
         // Strings must have explicit default value of "".
