@@ -671,7 +671,10 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
-    let PublishDatabaseQueryParams { name_or_identity: name_or_address, clear } = query_params;
+    let PublishDatabaseQueryParams {
+        name_or_identity: name_or_address,
+        clear,
+    } = query_params;
 
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
