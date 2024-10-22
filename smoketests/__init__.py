@@ -146,8 +146,8 @@ def new_identity(config_path):
     token = identity_response['token']
     with open(config_path, 'r') as file:
         lines = file.readlines()
-        pattern = r'^login_token *= *".*"$'
-        replacement = 'login_token = "%s"' % token
+        pattern = r'^spacetimedb_token *= *".*"$'
+        replacement = 'spacetimedb_token = "%s"' % token
         config_lines = [ re.sub(pattern, replacement, l) for l in lines ]
     with open(config_path, 'w') as file:
         file.writelines(config_lines)

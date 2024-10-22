@@ -1,5 +1,5 @@
 default_server = "127.0.0.1:3000"
-login_token = ""
+spacetimedb_token = ""
 
 [[server_configs]]
 nickname = "localhost"
