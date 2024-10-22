@@ -10,6 +10,9 @@ partial class Reducers
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
         new PublicTable.BSATN().Write(writer, data);
-        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate("InsertData", stream);
+        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
+            nameof(InsertData),
+            stream
+        );
     }
 } // Reducers
