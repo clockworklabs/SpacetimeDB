@@ -79,12 +79,10 @@ impl insert_primitives_as_strings for super::RemoteReducers {
 /// Implemented for [`super::SetReducerFlags`].
 ///
 /// This type is currently unstable and may be removed without a major version bump.
-/// The ability to send over call-reducer flags in the protocol will however remain.
 pub trait set_flags_for_insert_primitives_as_strings {
     /// Set the call-reducer flags for the reducer `insert_primitives_as_strings` to `flags`.
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    /// The ability to send over call-reducer flags in the protocol will however remain.
     fn insert_primitives_as_strings(&self, flags: __ws::CallReducerFlags);
 }
 

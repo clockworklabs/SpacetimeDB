@@ -81,12 +81,10 @@ impl insert_option_every_primitive_struct for super::RemoteReducers {
 /// Implemented for [`super::SetReducerFlags`].
 ///
 /// This type is currently unstable and may be removed without a major version bump.
-/// The ability to send over call-reducer flags in the protocol will however remain.
 pub trait set_flags_for_insert_option_every_primitive_struct {
     /// Set the call-reducer flags for the reducer `insert_option_every_primitive_struct` to `flags`.
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    /// The ability to send over call-reducer flags in the protocol will however remain.
     fn insert_option_every_primitive_struct(&self, flags: __ws::CallReducerFlags);
 }
 

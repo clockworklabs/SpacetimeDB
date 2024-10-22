@@ -79,12 +79,10 @@ impl insert_vec_enum_with_payload for super::RemoteReducers {
 /// Implemented for [`super::SetReducerFlags`].
 ///
 /// This type is currently unstable and may be removed without a major version bump.
-/// The ability to send over call-reducer flags in the protocol will however remain.
 pub trait set_flags_for_insert_vec_enum_with_payload {
     /// Set the call-reducer flags for the reducer `insert_vec_enum_with_payload` to `flags`.
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    /// The ability to send over call-reducer flags in the protocol will however remain.
     fn insert_vec_enum_with_payload(&self, flags: __ws::CallReducerFlags);
 }
 

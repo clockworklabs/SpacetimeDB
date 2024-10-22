@@ -75,12 +75,10 @@ impl identity_disconnected for super::RemoteReducers {
 /// Implemented for [`super::SetReducerFlags`].
 ///
 /// This type is currently unstable and may be removed without a major version bump.
-/// The ability to send over call-reducer flags in the protocol will however remain.
 pub trait set_flags_for_identity_disconnected {
     /// Set the call-reducer flags for the reducer `__identity_disconnected__` to `flags`.
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    /// The ability to send over call-reducer flags in the protocol will however remain.
     fn identity_disconnected(&self, flags: __ws::CallReducerFlags);
 }
 

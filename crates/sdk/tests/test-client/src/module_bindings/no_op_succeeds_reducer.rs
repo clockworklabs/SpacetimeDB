@@ -70,12 +70,10 @@ impl no_op_succeeds for super::RemoteReducers {
 /// Implemented for [`super::SetReducerFlags`].
 ///
 /// This type is currently unstable and may be removed without a major version bump.
-/// The ability to send over call-reducer flags in the protocol will however remain.
 pub trait set_flags_for_no_op_succeeds {
     /// Set the call-reducer flags for the reducer `no_op_succeeds` to `flags`.
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    /// The ability to send over call-reducer flags in the protocol will however remain.
     fn no_op_succeeds(&self, flags: __ws::CallReducerFlags);
 }
 

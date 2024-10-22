@@ -142,7 +142,6 @@ impl __sdk::spacetime_module::InModule for RemoteReducers {
 /// Each method sets the flags for the reducer with the same name.
 ///
 /// This type is currently unstable and may be removed without a major version bump.
-/// The ability to send over call-reducer flags in the protocol will however remain.
 pub struct SetReducerFlags {
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
 }
@@ -187,7 +186,6 @@ pub struct DbConnection {
     /// via extension traits implemented for [`SetReducerFlags`].
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    /// The ability to send over call-reducer flags in the protocol will however remain.
     pub set_reducer_flags: SetReducerFlags,
 
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
@@ -327,7 +325,6 @@ pub struct EventContext {
     /// via extension traits implemented for [`SetReducerFlags`].
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    /// The ability to send over call-reducer flags in the protocol will however remain.
     pub set_reducer_flags: SetReducerFlags,
     /// The event which caused these callbacks to run.
     pub event: __sdk::event::Event<Reducer>,

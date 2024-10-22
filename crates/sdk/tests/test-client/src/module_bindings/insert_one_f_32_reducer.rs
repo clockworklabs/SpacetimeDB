@@ -75,12 +75,10 @@ impl insert_one_f_32 for super::RemoteReducers {
 /// Implemented for [`super::SetReducerFlags`].
 ///
 /// This type is currently unstable and may be removed without a major version bump.
-/// The ability to send over call-reducer flags in the protocol will however remain.
 pub trait set_flags_for_insert_one_f_32 {
     /// Set the call-reducer flags for the reducer `insert_one_f32` to `flags`.
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    /// The ability to send over call-reducer flags in the protocol will however remain.
     fn insert_one_f_32(&self, flags: __ws::CallReducerFlags);
 }
 

@@ -72,12 +72,10 @@ impl set_name for super::RemoteReducers {
 /// Implemented for [`super::SetReducerFlags`].
 ///
 /// This type is currently unstable and may be removed without a major version bump.
-/// The ability to send over call-reducer flags in the protocol will however remain.
 pub trait set_flags_for_set_name {
     /// Set the call-reducer flags for the reducer `set_name` to `flags`.
     ///
     /// This type is currently unstable and may be removed without a major version bump.
-    /// The ability to send over call-reducer flags in the protocol will however remain.
     fn set_name(&self, flags: __ws::CallReducerFlags);
 }
 
