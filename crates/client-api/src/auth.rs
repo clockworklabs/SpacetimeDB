@@ -11,7 +11,10 @@ use spacetimedb::auth::identity::{
     decode_token, encode_token, DecodingKey, EncodingKey, JwtError, JwtErrorKind, SpacetimeIdentityClaims,
 };
 use spacetimedb::auth::identity::{
-    InitialTestingTokenValidator, SpacetimeIdentityClaims2, TokenValidationError, TokenValidator,
+    SpacetimeIdentityClaims2
+};
+use spacetimedb::auth::token_validation::{
+    InitialTestingTokenValidator, TokenValidationError, TokenValidator,
 };
 use spacetimedb::energy::EnergyQuanta;
 use spacetimedb::identity::Identity;
