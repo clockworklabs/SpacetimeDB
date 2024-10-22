@@ -35,7 +35,7 @@ pub trait UniqueI8TableAccess {
 impl UniqueI8TableAccess for super::RemoteTables {
     fn unique_i_8(&self) -> UniqueI8TableHandle<'_> {
         UniqueI8TableHandle {
-            imp: self.imp.get_table::<UniqueI8>("unique_i8"),
+            imp: self.imp.get_table::<UniqueI8>(55),
             ctx: std::marker::PhantomData,
         }
     }

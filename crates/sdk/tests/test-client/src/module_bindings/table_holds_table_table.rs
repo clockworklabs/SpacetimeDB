@@ -37,7 +37,7 @@ pub trait TableHoldsTableTableAccess {
 impl TableHoldsTableTableAccess for super::RemoteTables {
     fn table_holds_table(&self) -> TableHoldsTableTableHandle<'_> {
         TableHoldsTableTableHandle {
-            imp: self.imp.get_table::<TableHoldsTable>("table_holds_table"),
+            imp: self.imp.get_table::<TableHoldsTable>(47),
             ctx: std::marker::PhantomData,
         }
     }

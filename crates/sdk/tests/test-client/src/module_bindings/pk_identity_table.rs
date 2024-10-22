@@ -35,7 +35,7 @@ pub trait PkIdentityTableAccess {
 impl PkIdentityTableAccess for super::RemoteTables {
     fn pk_identity(&self) -> PkIdentityTableHandle<'_> {
         PkIdentityTableHandle {
-            imp: self.imp.get_table::<PkIdentity>("pk_identity"),
+            imp: self.imp.get_table::<PkIdentity>(39),
             ctx: std::marker::PhantomData,
         }
     }

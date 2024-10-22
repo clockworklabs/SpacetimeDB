@@ -52,21 +52,19 @@ pub trait delete_unique_identity {
 
 impl delete_unique_identity for super::RemoteReducers {
     fn delete_unique_identity(&self, i: __sdk::Identity) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("delete_unique_identity", DeleteUniqueIdentity { i })
+        self.imp.call_reducer(24, DeleteUniqueIdentity { i })
     }
     fn on_delete_unique_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Identity) + Send + 'static,
     ) -> DeleteUniqueIdentityCallbackId {
         DeleteUniqueIdentityCallbackId(self.imp.on_reducer::<DeleteUniqueIdentity>(
-            "delete_unique_identity",
+            24,
             Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueIdentity| callback(ctx, &args.i)),
         ))
     }
     fn remove_on_delete_unique_identity(&self, callback: DeleteUniqueIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueIdentity>("delete_unique_identity", callback.0)
+        self.imp.remove_on_reducer::<DeleteUniqueIdentity>(24, callback.0)
     }
 }
 
@@ -86,6 +84,6 @@ pub trait set_flags_for_delete_unique_identity {
 
 impl set_flags_for_delete_unique_identity for super::SetReducerFlags {
     fn delete_unique_identity(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_unique_identity", flags);
+        self.imp.set_call_reducer_flags(24, flags);
     }
 }

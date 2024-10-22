@@ -53,20 +53,19 @@ pub trait update_unique_u_16 {
 
 impl update_unique_u_16 for super::RemoteReducers {
     fn update_unique_u_16(&self, n: u16, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_unique_u16", UpdateUniqueU16 { n, data })
+        self.imp.call_reducer(157, UpdateUniqueU16 { n, data })
     }
     fn on_update_unique_u_16(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u16, &i32) + Send + 'static,
     ) -> UpdateUniqueU16CallbackId {
         UpdateUniqueU16CallbackId(self.imp.on_reducer::<UpdateUniqueU16>(
-            "update_unique_u16",
+            157,
             Box::new(move |ctx: &super::EventContext, args: &UpdateUniqueU16| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_update_unique_u_16(&self, callback: UpdateUniqueU16CallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdateUniqueU16>("update_unique_u16", callback.0)
+        self.imp.remove_on_reducer::<UpdateUniqueU16>(157, callback.0)
     }
 }
 
@@ -86,6 +85,6 @@ pub trait set_flags_for_update_unique_u_16 {
 
 impl set_flags_for_update_unique_u_16 for super::SetReducerFlags {
     fn update_unique_u_16(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("update_unique_u16", flags);
+        self.imp.set_call_reducer_flags(157, flags);
     }
 }

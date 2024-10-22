@@ -52,20 +52,19 @@ pub trait insert_vec_u_256 {
 
 impl insert_vec_u_256 for super::RemoteReducers {
     fn insert_vec_u_256(&self, n: Vec<__sats::u256>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_u256", InsertVecU256 { n })
+        self.imp.call_reducer(124, InsertVecU256 { n })
     }
     fn on_insert_vec_u_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<__sats::u256>) + Send + 'static,
     ) -> InsertVecU256CallbackId {
         InsertVecU256CallbackId(self.imp.on_reducer::<InsertVecU256>(
-            "insert_vec_u256",
+            124,
             Box::new(move |ctx: &super::EventContext, args: &InsertVecU256| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_insert_vec_u_256(&self, callback: InsertVecU256CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecU256>("insert_vec_u256", callback.0)
+        self.imp.remove_on_reducer::<InsertVecU256>(124, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_insert_vec_u_256 {
 
 impl set_flags_for_insert_vec_u_256 for super::SetReducerFlags {
     fn insert_vec_u_256(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_vec_u256", flags);
+        self.imp.set_call_reducer_flags(124, flags);
     }
 }

@@ -52,20 +52,19 @@ pub trait delete_pk_identity {
 
 impl delete_pk_identity for super::RemoteReducers {
     fn delete_pk_identity(&self, i: __sdk::Identity) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_identity", DeletePkIdentity { i })
+        self.imp.call_reducer(8, DeletePkIdentity { i })
     }
     fn on_delete_pk_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Identity) + Send + 'static,
     ) -> DeletePkIdentityCallbackId {
         DeletePkIdentityCallbackId(self.imp.on_reducer::<DeletePkIdentity>(
-            "delete_pk_identity",
+            8,
             Box::new(move |ctx: &super::EventContext, args: &DeletePkIdentity| callback(ctx, &args.i)),
         ))
     }
     fn remove_on_delete_pk_identity(&self, callback: DeletePkIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<DeletePkIdentity>("delete_pk_identity", callback.0)
+        self.imp.remove_on_reducer::<DeletePkIdentity>(8, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_delete_pk_identity {
 
 impl set_flags_for_delete_pk_identity for super::SetReducerFlags {
     fn delete_pk_identity(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_pk_identity", flags);
+        self.imp.set_call_reducer_flags(8, flags);
     }
 }

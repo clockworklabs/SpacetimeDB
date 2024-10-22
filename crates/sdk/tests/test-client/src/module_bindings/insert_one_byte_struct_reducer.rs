@@ -54,21 +54,19 @@ pub trait insert_one_byte_struct {
 
 impl insert_one_byte_struct for super::RemoteReducers {
     fn insert_one_byte_struct(&self, s: ByteStruct) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_one_byte_struct", InsertOneByteStruct { s })
+        self.imp.call_reducer(43, InsertOneByteStruct { s })
     }
     fn on_insert_one_byte_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &ByteStruct) + Send + 'static,
     ) -> InsertOneByteStructCallbackId {
         InsertOneByteStructCallbackId(self.imp.on_reducer::<InsertOneByteStruct>(
-            "insert_one_byte_struct",
+            43,
             Box::new(move |ctx: &super::EventContext, args: &InsertOneByteStruct| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_insert_one_byte_struct(&self, callback: InsertOneByteStructCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneByteStruct>("insert_one_byte_struct", callback.0)
+        self.imp.remove_on_reducer::<InsertOneByteStruct>(43, callback.0)
     }
 }
 
@@ -88,6 +86,6 @@ pub trait set_flags_for_insert_one_byte_struct {
 
 impl set_flags_for_insert_one_byte_struct for super::SetReducerFlags {
     fn insert_one_byte_struct(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_one_byte_struct", flags);
+        self.imp.set_call_reducer_flags(43, flags);
     }
 }

@@ -35,7 +35,7 @@ pub trait VecStringTableAccess {
 impl VecStringTableAccess for super::RemoteTables {
     fn vec_string(&self) -> VecStringTableHandle<'_> {
         VecStringTableHandle {
-            imp: self.imp.get_table::<VecString>("vec_string"),
+            imp: self.imp.get_table::<VecString>(80),
             ctx: std::marker::PhantomData,
         }
     }

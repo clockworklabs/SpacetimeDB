@@ -35,7 +35,7 @@ pub trait VecI128TableAccess {
 impl VecI128TableAccess for super::RemoteTables {
     fn vec_i_128(&self) -> VecI128TableHandle<'_> {
         VecI128TableHandle {
-            imp: self.imp.get_table::<VecI128>("vec_i128"),
+            imp: self.imp.get_table::<VecI128>(72),
             ctx: std::marker::PhantomData,
         }
     }

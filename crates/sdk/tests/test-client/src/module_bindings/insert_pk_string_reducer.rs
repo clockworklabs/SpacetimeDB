@@ -53,20 +53,19 @@ pub trait insert_pk_string {
 
 impl insert_pk_string for super::RemoteReducers {
     fn insert_pk_string(&self, s: String, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_pk_string", InsertPkString { s, data })
+        self.imp.call_reducer(80, InsertPkString { s, data })
     }
     fn on_insert_pk_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String, &i32) + Send + 'static,
     ) -> InsertPkStringCallbackId {
         InsertPkStringCallbackId(self.imp.on_reducer::<InsertPkString>(
-            "insert_pk_string",
+            80,
             Box::new(move |ctx: &super::EventContext, args: &InsertPkString| callback(ctx, &args.s, &args.data)),
         ))
     }
     fn remove_on_insert_pk_string(&self, callback: InsertPkStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertPkString>("insert_pk_string", callback.0)
+        self.imp.remove_on_reducer::<InsertPkString>(80, callback.0)
     }
 }
 
@@ -86,6 +85,6 @@ pub trait set_flags_for_insert_pk_string {
 
 impl set_flags_for_insert_pk_string for super::SetReducerFlags {
     fn insert_pk_string(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_pk_string", flags);
+        self.imp.set_call_reducer_flags(80, flags);
     }
 }

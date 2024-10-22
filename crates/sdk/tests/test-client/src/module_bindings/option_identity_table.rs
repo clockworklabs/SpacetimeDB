@@ -35,7 +35,7 @@ pub trait OptionIdentityTableAccess {
 impl OptionIdentityTableAccess for super::RemoteTables {
     fn option_identity(&self) -> OptionIdentityTableHandle<'_> {
         OptionIdentityTableHandle {
-            imp: self.imp.get_table::<OptionIdentity>("option_identity"),
+            imp: self.imp.get_table::<OptionIdentity>(27),
             ctx: std::marker::PhantomData,
         }
     }

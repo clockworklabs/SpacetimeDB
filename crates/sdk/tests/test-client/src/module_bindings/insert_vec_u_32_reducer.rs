@@ -52,19 +52,19 @@ pub trait insert_vec_u_32 {
 
 impl insert_vec_u_32 for super::RemoteReducers {
     fn insert_vec_u_32(&self, n: Vec<u32>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_u32", InsertVecU32 { n })
+        self.imp.call_reducer(125, InsertVecU32 { n })
     }
     fn on_insert_vec_u_32(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<u32>) + Send + 'static,
     ) -> InsertVecU32CallbackId {
         InsertVecU32CallbackId(self.imp.on_reducer::<InsertVecU32>(
-            "insert_vec_u32",
+            125,
             Box::new(move |ctx: &super::EventContext, args: &InsertVecU32| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_insert_vec_u_32(&self, callback: InsertVecU32CallbackId) {
-        self.imp.remove_on_reducer::<InsertVecU32>("insert_vec_u32", callback.0)
+        self.imp.remove_on_reducer::<InsertVecU32>(125, callback.0)
     }
 }
 
@@ -84,6 +84,6 @@ pub trait set_flags_for_insert_vec_u_32 {
 
 impl set_flags_for_insert_vec_u_32 for super::SetReducerFlags {
     fn insert_vec_u_32(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_vec_u32", flags);
+        self.imp.set_call_reducer_flags(125, flags);
     }
 }

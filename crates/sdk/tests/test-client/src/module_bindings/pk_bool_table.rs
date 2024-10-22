@@ -35,7 +35,7 @@ pub trait PkBoolTableAccess {
 impl PkBoolTableAccess for super::RemoteTables {
     fn pk_bool(&self) -> PkBoolTableHandle<'_> {
         PkBoolTableHandle {
-            imp: self.imp.get_table::<PkBool>("pk_bool"),
+            imp: self.imp.get_table::<PkBool>(32),
             ctx: std::marker::PhantomData,
         }
     }

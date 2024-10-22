@@ -59,19 +59,19 @@ pub trait add_player {
 impl add_player for super::RemoteReducers {
     fn add_player(&self, name: String,
 ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("add_player", AddPlayer { name,  })
+        self.imp.call_reducer(2, AddPlayer { name,  })
     }
     fn on_add_player(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static,
     ) -> AddPlayerCallbackId {
         AddPlayerCallbackId(self.imp.on_reducer::<AddPlayer>(
-            "add_player",
+            2,
             Box::new(move |ctx: &super::EventContext, args: &AddPlayer| callback(ctx, &args.name, )),
         ))
     }
     fn remove_on_add_player(&self, callback: AddPlayerCallbackId) {
-        self.imp.remove_on_reducer::<AddPlayer>("add_player", callback.0)
+        self.imp.remove_on_reducer::<AddPlayer>(2, callback.0)
     }
 }
 
@@ -91,7 +91,7 @@ pub trait set_flags_for_add_player {
 
 impl set_flags_for_add_player for super::SetReducerFlags {
     fn add_player(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("add_player", flags);
+        self.imp.set_call_reducer_flags(2, flags);
     }
 }
 
@@ -153,19 +153,19 @@ pub trait add_private {
 impl add_private for super::RemoteReducers {
     fn add_private(&self, name: String,
 ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("add_private", AddPrivate { name,  })
+        self.imp.call_reducer(3, AddPrivate { name,  })
     }
     fn on_add_private(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static,
     ) -> AddPrivateCallbackId {
         AddPrivateCallbackId(self.imp.on_reducer::<AddPrivate>(
-            "add_private",
+            3,
             Box::new(move |ctx: &super::EventContext, args: &AddPrivate| callback(ctx, &args.name, )),
         ))
     }
     fn remove_on_add_private(&self, callback: AddPrivateCallbackId) {
-        self.imp.remove_on_reducer::<AddPrivate>("add_private", callback.0)
+        self.imp.remove_on_reducer::<AddPrivate>(3, callback.0)
     }
 }
 
@@ -185,7 +185,7 @@ pub trait set_flags_for_add_private {
 
 impl set_flags_for_add_private for super::SetReducerFlags {
     fn add_private(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("add_private", flags);
+        self.imp.set_call_reducer_flags(3, flags);
     }
 }
 
@@ -272,19 +272,19 @@ pub trait delete_player {
 impl delete_player for super::RemoteReducers {
     fn delete_player(&self, id: u64,
 ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_player", DeletePlayer { id,  })
+        self.imp.call_reducer(4, DeletePlayer { id,  })
     }
     fn on_delete_player(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u64, ) + Send + 'static,
     ) -> DeletePlayerCallbackId {
         DeletePlayerCallbackId(self.imp.on_reducer::<DeletePlayer>(
-            "delete_player",
+            4,
             Box::new(move |ctx: &super::EventContext, args: &DeletePlayer| callback(ctx, &args.id, )),
         ))
     }
     fn remove_on_delete_player(&self, callback: DeletePlayerCallbackId) {
-        self.imp.remove_on_reducer::<DeletePlayer>("delete_player", callback.0)
+        self.imp.remove_on_reducer::<DeletePlayer>(4, callback.0)
     }
 }
 
@@ -304,7 +304,7 @@ pub trait set_flags_for_delete_player {
 
 impl set_flags_for_delete_player for super::SetReducerFlags {
     fn delete_player(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_player", flags);
+        self.imp.set_call_reducer_flags(4, flags);
     }
 }
 
@@ -366,19 +366,19 @@ pub trait delete_players_by_name {
 impl delete_players_by_name for super::RemoteReducers {
     fn delete_players_by_name(&self, name: String,
 ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_players_by_name", DeletePlayersByName { name,  })
+        self.imp.call_reducer(5, DeletePlayersByName { name,  })
     }
     fn on_delete_players_by_name(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static,
     ) -> DeletePlayersByNameCallbackId {
         DeletePlayersByNameCallbackId(self.imp.on_reducer::<DeletePlayersByName>(
-            "delete_players_by_name",
+            5,
             Box::new(move |ctx: &super::EventContext, args: &DeletePlayersByName| callback(ctx, &args.name, )),
         ))
     }
     fn remove_on_delete_players_by_name(&self, callback: DeletePlayersByNameCallbackId) {
-        self.imp.remove_on_reducer::<DeletePlayersByName>("delete_players_by_name", callback.0)
+        self.imp.remove_on_reducer::<DeletePlayersByName>(5, callback.0)
     }
 }
 
@@ -398,7 +398,7 @@ pub trait set_flags_for_delete_players_by_name {
 
 impl set_flags_for_delete_players_by_name for super::SetReducerFlags {
     fn delete_players_by_name(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_players_by_name", flags);
+        self.imp.set_call_reducer_flags(5, flags);
     }
 }
 
@@ -474,7 +474,7 @@ pub trait HasSpecialStuffTableAccess {
 impl HasSpecialStuffTableAccess for super::RemoteTables {
     fn has_special_stuff(&self) -> HasSpecialStuffTableHandle<'_> {
         HasSpecialStuffTableHandle {
-            imp: self.imp.get_table::<HasSpecialStuff>("has_special_stuff"),
+            imp: self.imp.get_table::<HasSpecialStuff>(0),
             ctx: std::marker::PhantomData,
         }
     }
@@ -605,19 +605,19 @@ pub trait identity_connected {
 
 impl identity_connected for super::RemoteReducers {
     fn identity_connected(&self, ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("__identity_connected__", IdentityConnected {  })
+        self.imp.call_reducer(0, IdentityConnected {  })
     }
     fn on_identity_connected(
         &self,
         mut callback: impl FnMut(&super::EventContext, ) + Send + 'static,
     ) -> IdentityConnectedCallbackId {
         IdentityConnectedCallbackId(self.imp.on_reducer::<IdentityConnected>(
-            "__identity_connected__",
+            0,
             Box::new(move |ctx: &super::EventContext, args: &IdentityConnected| callback(ctx, )),
         ))
     }
     fn remove_on_identity_connected(&self, callback: IdentityConnectedCallbackId) {
-        self.imp.remove_on_reducer::<IdentityConnected>("__identity_connected__", callback.0)
+        self.imp.remove_on_reducer::<IdentityConnected>(0, callback.0)
     }
 }
 
@@ -637,7 +637,7 @@ pub trait set_flags_for_identity_connected {
 
 impl set_flags_for_identity_connected for super::SetReducerFlags {
     fn identity_connected(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("__identity_connected__", flags);
+        self.imp.set_call_reducer_flags(0, flags);
     }
 }
 
@@ -696,19 +696,19 @@ pub trait init {
 
 impl init for super::RemoteReducers {
     fn init(&self, ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("__init__", Init {  })
+        self.imp.call_reducer(1, Init {  })
     }
     fn on_init(
         &self,
         mut callback: impl FnMut(&super::EventContext, ) + Send + 'static,
     ) -> InitCallbackId {
         InitCallbackId(self.imp.on_reducer::<Init>(
-            "__init__",
+            1,
             Box::new(move |ctx: &super::EventContext, args: &Init| callback(ctx, )),
         ))
     }
     fn remove_on_init(&self, callback: InitCallbackId) {
-        self.imp.remove_on_reducer::<Init>("__init__", callback.0)
+        self.imp.remove_on_reducer::<Init>(1, callback.0)
     }
 }
 
@@ -728,7 +728,7 @@ pub trait set_flags_for_init {
 
 impl set_flags_for_init for super::SetReducerFlags {
     fn init(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("__init__", flags);
+        self.imp.set_call_reducer_flags(1, flags);
     }
 }
 
@@ -840,18 +840,18 @@ impl __sdk::spacetime_module::InModule for Reducer {
 }
 
 impl __sdk::spacetime_module::Reducer for Reducer {
-	fn reducer_name(&self) -> &'static str {
+	fn reducer_index(&self) -> u32 {
 		match self {
-						Reducer::IdentityConnected(_) => "__identity_connected__",
-			Reducer::Init(_) => "__init__",
-			Reducer::AddPlayer(_) => "add_player",
-			Reducer::AddPrivate(_) => "add_private",
-			Reducer::DeletePlayer(_) => "delete_player",
-			Reducer::DeletePlayersByName(_) => "delete_players_by_name",
-			Reducer::QueryPrivate(_) => "query_private",
-			Reducer::RepeatingTest(_) => "repeating_test",
-			Reducer::Test(_) => "test",
-			Reducer::TestBtreeIndexArgs(_) => "test_btree_index_args",
+						Reducer::IdentityConnected(_) => 0,
+			Reducer::Init(_) => 1,
+			Reducer::AddPlayer(_) => 2,
+			Reducer::AddPrivate(_) => 3,
+			Reducer::DeletePlayer(_) => 4,
+			Reducer::DeletePlayersByName(_) => 5,
+			Reducer::QueryPrivate(_) => 6,
+			Reducer::RepeatingTest(_) => 7,
+			Reducer::Test(_) => 8,
+			Reducer::TestBtreeIndexArgs(_) => 9,
 }
 }
 fn reducer_args(&self) -> &dyn std::any::Any {
@@ -868,24 +868,40 @@ fn reducer_args(&self) -> &dyn std::any::Any {
 			Reducer::TestBtreeIndexArgs(args) => args,
 }
 }
+fn parse_call_info(
+                    reducer_id_to_idx: &impl Fn(__ws::ReducerId) -> anyhow::Result<u32>,
+                    raw: __ws::ReducerCallInfo<__ws::BsatnFormat>,
+                ) -> anyhow::Result<Self> {
+		use __sdk::spacetime_module::parse_reducer_args;
+                        let reducer_idx = reducer_id_to_idx(raw.reducer_id)?;
+                        let name = Self::reducer_names()[reducer_idx as usize];
+                        match reducer_id_to_idx(raw.reducer_id)? {
+						0 => Ok(Reducer::IdentityConnected(parse_reducer_args(name, &raw.args)?)),
+			1 => Ok(Reducer::Init(parse_reducer_args(name, &raw.args)?)),
+			2 => Ok(Reducer::AddPlayer(parse_reducer_args(name, &raw.args)?)),
+			3 => Ok(Reducer::AddPrivate(parse_reducer_args(name, &raw.args)?)),
+			4 => Ok(Reducer::DeletePlayer(parse_reducer_args(name, &raw.args)?)),
+			5 => Ok(Reducer::DeletePlayersByName(parse_reducer_args(name, &raw.args)?)),
+			6 => Ok(Reducer::QueryPrivate(parse_reducer_args(name, &raw.args)?)),
+			7 => Ok(Reducer::RepeatingTest(parse_reducer_args(name, &raw.args)?)),
+			8 => Ok(Reducer::Test(parse_reducer_args(name, &raw.args)?)),
+			9 => Ok(Reducer::TestBtreeIndexArgs(parse_reducer_args(name, &raw.args)?)),
+			_ => unreachable!(),
+
+                        }
 }
-impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
-		type Error = __anyhow::Error;
-fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {
-		match &value.reducer_name[..] {
-						"__identity_connected__" => Ok(Reducer::IdentityConnected(__sdk::spacetime_module::parse_reducer_args("__identity_connected__", &value.args)?)),
-			"__init__" => Ok(Reducer::Init(__sdk::spacetime_module::parse_reducer_args("__init__", &value.args)?)),
-			"add_player" => Ok(Reducer::AddPlayer(__sdk::spacetime_module::parse_reducer_args("add_player", &value.args)?)),
-			"add_private" => Ok(Reducer::AddPrivate(__sdk::spacetime_module::parse_reducer_args("add_private", &value.args)?)),
-			"delete_player" => Ok(Reducer::DeletePlayer(__sdk::spacetime_module::parse_reducer_args("delete_player", &value.args)?)),
-			"delete_players_by_name" => Ok(Reducer::DeletePlayersByName(__sdk::spacetime_module::parse_reducer_args("delete_players_by_name", &value.args)?)),
-			"query_private" => Ok(Reducer::QueryPrivate(__sdk::spacetime_module::parse_reducer_args("query_private", &value.args)?)),
-			"repeating_test" => Ok(Reducer::RepeatingTest(__sdk::spacetime_module::parse_reducer_args("repeating_test", &value.args)?)),
-			"test" => Ok(Reducer::Test(__sdk::spacetime_module::parse_reducer_args("test", &value.args)?)),
-			"test_btree_index_args" => Ok(Reducer::TestBtreeIndexArgs(__sdk::spacetime_module::parse_reducer_args("test_btree_index_args", &value.args)?)),
-			_ => Err(__anyhow::anyhow!("Unknown reducer {:?}", value.reducer_name)),
-}
-}
+fn reducer_names() -> &'static [&'static str] {&[
+				"__identity_connected__",
+		"__init__",
+		"add_player",
+		"add_private",
+		"delete_player",
+		"delete_players_by_name",
+		"query_private",
+		"repeating_test",
+		"test",
+		"test_btree_index_args",
+]}
 }
 
 #[derive(Default)]
@@ -904,57 +920,66 @@ pub struct DbUpdate {
 }
 
 
-impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
-    type Error = __anyhow::Error;
-    fn try_from(raw: __ws::DatabaseUpdate<__ws::BsatnFormat>) -> Result<Self, Self::Error> {
-        let mut db_update = DbUpdate::default();
-        for table_update in raw.tables {
-            match &table_update.table_name[..] {
-
-		"has_special_stuff" => db_update.has_special_stuff = has_special_stuff_table::parse_table_update(table_update)?,
-	"pk_multi_identity" => db_update.pk_multi_identity = pk_multi_identity_table::parse_table_update(table_update)?,
-	"points" => db_update.points = points_table::parse_table_update(table_update)?,
-	"private" => db_update.private = private_table::parse_table_update(table_update)?,
-	"repeating_test_arg" => db_update.repeating_test_arg = repeating_test_arg_table::parse_table_update(table_update)?,
-	"test_a" => db_update.test_a = test_a_table::parse_table_update(table_update)?,
-	"test_d" => db_update.test_d = test_d_table::parse_table_update(table_update)?,
-	"test_e" => db_update.test_e = test_e_table::parse_table_update(table_update)?,
-	"test_f" => db_update.test_f = test_f_table::parse_table_update(table_update)?,
-
-                unknown => __anyhow::bail!("Unknown table {unknown:?} in DatabaseUpdate"),
-            }
-        }
-        Ok(db_update)
-    }
-}
-
 impl __sdk::spacetime_module::InModule for DbUpdate {
     type Module = RemoteModule;
 }
 
 impl __sdk::spacetime_module::DbUpdate for DbUpdate {
 	fn apply_to_client_cache(&self, cache: &mut __sdk::client_cache::ClientCache<RemoteModule>) {
-				cache.apply_diff_to_table::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff);
-		cache.apply_diff_to_table::<PkMultiIdentity>("pk_multi_identity", &self.pk_multi_identity);
-		cache.apply_diff_to_table::<Point>("points", &self.points);
-		cache.apply_diff_to_table::<Private>("private", &self.private);
-		cache.apply_diff_to_table::<RepeatingTestArg>("repeating_test_arg", &self.repeating_test_arg);
-		cache.apply_diff_to_table::<TestA>("test_a", &self.test_a);
-		cache.apply_diff_to_table::<TestD>("test_d", &self.test_d);
-		cache.apply_diff_to_table::<TestE>("test_e", &self.test_e);
-		cache.apply_diff_to_table::<TestFoobar>("test_f", &self.test_f);
+				cache.apply_diff_to_table::<HasSpecialStuff>(0, &self.has_special_stuff);
+		cache.apply_diff_to_table::<PkMultiIdentity>(1, &self.pk_multi_identity);
+		cache.apply_diff_to_table::<Point>(2, &self.points);
+		cache.apply_diff_to_table::<Private>(3, &self.private);
+		cache.apply_diff_to_table::<RepeatingTestArg>(4, &self.repeating_test_arg);
+		cache.apply_diff_to_table::<TestA>(5, &self.test_a);
+		cache.apply_diff_to_table::<TestD>(6, &self.test_d);
+		cache.apply_diff_to_table::<TestE>(7, &self.test_e);
+		cache.apply_diff_to_table::<TestFoobar>(8, &self.test_f);
 }
 fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::callbacks::DbCallbacks<RemoteModule>) {
-				callbacks.invoke_table_row_callbacks::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff, event);
-		callbacks.invoke_table_row_callbacks::<PkMultiIdentity>("pk_multi_identity", &self.pk_multi_identity, event);
-		callbacks.invoke_table_row_callbacks::<Point>("points", &self.points, event);
-		callbacks.invoke_table_row_callbacks::<Private>("private", &self.private, event);
-		callbacks.invoke_table_row_callbacks::<RepeatingTestArg>("repeating_test_arg", &self.repeating_test_arg, event);
-		callbacks.invoke_table_row_callbacks::<TestA>("test_a", &self.test_a, event);
-		callbacks.invoke_table_row_callbacks::<TestD>("test_d", &self.test_d, event);
-		callbacks.invoke_table_row_callbacks::<TestE>("test_e", &self.test_e, event);
-		callbacks.invoke_table_row_callbacks::<TestFoobar>("test_f", &self.test_f, event);
+				callbacks.invoke_table_row_callbacks::<HasSpecialStuff>(0, &self.has_special_stuff, event);
+		callbacks.invoke_table_row_callbacks::<PkMultiIdentity>(1, &self.pk_multi_identity, event);
+		callbacks.invoke_table_row_callbacks::<Point>(2, &self.points, event);
+		callbacks.invoke_table_row_callbacks::<Private>(3, &self.private, event);
+		callbacks.invoke_table_row_callbacks::<RepeatingTestArg>(4, &self.repeating_test_arg, event);
+		callbacks.invoke_table_row_callbacks::<TestA>(5, &self.test_a, event);
+		callbacks.invoke_table_row_callbacks::<TestD>(6, &self.test_d, event);
+		callbacks.invoke_table_row_callbacks::<TestE>(7, &self.test_e, event);
+		callbacks.invoke_table_row_callbacks::<TestFoobar>(8, &self.test_f, event);
 }
+fn parse_update(
+                    table_id_to_idx: &impl Fn(__ws::TableId) -> anyhow::Result<u32>,
+                    raw: __ws::DatabaseUpdate<__ws::BsatnFormat>,
+                ) -> anyhow::Result<Self> {
+                    let mut db_update = DbUpdate::default();
+                    for table_update in raw.tables {
+                        match table_id_to_idx(table_update.table_id)? {
+				0 => db_update.has_special_stuff = has_special_stuff_table::parse_table_update(table_update)?,
+		1 => db_update.pk_multi_identity = pk_multi_identity_table::parse_table_update(table_update)?,
+		2 => db_update.points = points_table::parse_table_update(table_update)?,
+		3 => db_update.private = private_table::parse_table_update(table_update)?,
+		4 => db_update.repeating_test_arg = repeating_test_arg_table::parse_table_update(table_update)?,
+		5 => db_update.test_a = test_a_table::parse_table_update(table_update)?,
+		6 => db_update.test_d = test_d_table::parse_table_update(table_update)?,
+		7 => db_update.test_e = test_e_table::parse_table_update(table_update)?,
+		8 => db_update.test_f = test_f_table::parse_table_update(table_update)?,
+
+                            _ => unreachable!(),
+                        }
+                    }
+                    Ok(db_update)
+                }
+fn table_names() -> &'static [&'static str] {&[
+				"has_special_stuff",
+		"pk_multi_identity",
+		"points",
+		"private",
+		"repeating_test_arg",
+		"test_a",
+		"test_d",
+		"test_e",
+		"test_f",
+]}
 }
 
 
@@ -1370,7 +1395,7 @@ pub trait PkMultiIdentityTableAccess {
 impl PkMultiIdentityTableAccess for super::RemoteTables {
     fn pk_multi_identity(&self) -> PkMultiIdentityTableHandle<'_> {
         PkMultiIdentityTableHandle {
-            imp: self.imp.get_table::<PkMultiIdentity>("pk_multi_identity"),
+            imp: self.imp.get_table::<PkMultiIdentity>(1),
             ctx: std::marker::PhantomData,
         }
     }
@@ -1591,7 +1616,7 @@ pub trait PointsTableAccess {
 impl PointsTableAccess for super::RemoteTables {
     fn points(&self) -> PointsTableHandle<'_> {
         PointsTableHandle {
-            imp: self.imp.get_table::<Point>("points"),
+            imp: self.imp.get_table::<Point>(2),
             ctx: std::marker::PhantomData,
         }
     }
@@ -1681,7 +1706,7 @@ pub trait PrivateTableAccess {
 impl PrivateTableAccess for super::RemoteTables {
     fn private(&self) -> PrivateTableHandle<'_> {
         PrivateTableHandle {
-            imp: self.imp.get_table::<Private>("private"),
+            imp: self.imp.get_table::<Private>(3),
             ctx: std::marker::PhantomData,
         }
     }
@@ -1811,19 +1836,19 @@ pub trait query_private {
 
 impl query_private for super::RemoteReducers {
     fn query_private(&self, ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("query_private", QueryPrivate {  })
+        self.imp.call_reducer(6, QueryPrivate {  })
     }
     fn on_query_private(
         &self,
         mut callback: impl FnMut(&super::EventContext, ) + Send + 'static,
     ) -> QueryPrivateCallbackId {
         QueryPrivateCallbackId(self.imp.on_reducer::<QueryPrivate>(
-            "query_private",
+            6,
             Box::new(move |ctx: &super::EventContext, args: &QueryPrivate| callback(ctx, )),
         ))
     }
     fn remove_on_query_private(&self, callback: QueryPrivateCallbackId) {
-        self.imp.remove_on_reducer::<QueryPrivate>("query_private", callback.0)
+        self.imp.remove_on_reducer::<QueryPrivate>(6, callback.0)
     }
 }
 
@@ -1843,7 +1868,7 @@ pub trait set_flags_for_query_private {
 
 impl set_flags_for_query_private for super::SetReducerFlags {
     fn query_private(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("query_private", flags);
+        self.imp.set_call_reducer_flags(6, flags);
     }
 }
 
@@ -1887,7 +1912,7 @@ pub trait RepeatingTestArgTableAccess {
 impl RepeatingTestArgTableAccess for super::RemoteTables {
     fn repeating_test_arg(&self) -> RepeatingTestArgTableHandle<'_> {
         RepeatingTestArgTableHandle {
-            imp: self.imp.get_table::<RepeatingTestArg>("repeating_test_arg"),
+            imp: self.imp.get_table::<RepeatingTestArg>(4),
             ctx: std::marker::PhantomData,
         }
     }
@@ -2072,19 +2097,19 @@ pub trait repeating_test {
 impl repeating_test for super::RemoteReducers {
     fn repeating_test(&self, arg: RepeatingTestArg,
 ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("repeating_test", RepeatingTest { arg,  })
+        self.imp.call_reducer(7, RepeatingTest { arg,  })
     }
     fn on_repeating_test(
         &self,
         mut callback: impl FnMut(&super::EventContext, &RepeatingTestArg, ) + Send + 'static,
     ) -> RepeatingTestCallbackId {
         RepeatingTestCallbackId(self.imp.on_reducer::<RepeatingTest>(
-            "repeating_test",
+            7,
             Box::new(move |ctx: &super::EventContext, args: &RepeatingTest| callback(ctx, &args.arg, )),
         ))
     }
     fn remove_on_repeating_test(&self, callback: RepeatingTestCallbackId) {
-        self.imp.remove_on_reducer::<RepeatingTest>("repeating_test", callback.0)
+        self.imp.remove_on_reducer::<RepeatingTest>(7, callback.0)
     }
 }
 
@@ -2104,7 +2129,7 @@ pub trait set_flags_for_repeating_test {
 
 impl set_flags_for_repeating_test for super::SetReducerFlags {
     fn repeating_test(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("repeating_test", flags);
+        self.imp.set_call_reducer_flags(7, flags);
     }
 }
 
@@ -2148,7 +2173,7 @@ pub trait TestATableAccess {
 impl TestATableAccess for super::RemoteTables {
     fn test_a(&self) -> TestATableHandle<'_> {
         TestATableHandle {
-            imp: self.imp.get_table::<TestA>("test_a"),
+            imp: self.imp.get_table::<TestA>(5),
             ctx: std::marker::PhantomData,
         }
     }
@@ -2305,19 +2330,19 @@ pub trait test_btree_index_args {
 
 impl test_btree_index_args for super::RemoteReducers {
     fn test_btree_index_args(&self, ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("test_btree_index_args", TestBtreeIndexArgs {  })
+        self.imp.call_reducer(9, TestBtreeIndexArgs {  })
     }
     fn on_test_btree_index_args(
         &self,
         mut callback: impl FnMut(&super::EventContext, ) + Send + 'static,
     ) -> TestBtreeIndexArgsCallbackId {
         TestBtreeIndexArgsCallbackId(self.imp.on_reducer::<TestBtreeIndexArgs>(
-            "test_btree_index_args",
+            9,
             Box::new(move |ctx: &super::EventContext, args: &TestBtreeIndexArgs| callback(ctx, )),
         ))
     }
     fn remove_on_test_btree_index_args(&self, callback: TestBtreeIndexArgsCallbackId) {
-        self.imp.remove_on_reducer::<TestBtreeIndexArgs>("test_btree_index_args", callback.0)
+        self.imp.remove_on_reducer::<TestBtreeIndexArgs>(9, callback.0)
     }
 }
 
@@ -2337,7 +2362,7 @@ pub trait set_flags_for_test_btree_index_args {
 
 impl set_flags_for_test_btree_index_args for super::SetReducerFlags {
     fn test_btree_index_args(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("test_btree_index_args", flags);
+        self.imp.set_call_reducer_flags(9, flags);
     }
 }
 
@@ -2382,7 +2407,7 @@ pub trait TestDTableAccess {
 impl TestDTableAccess for super::RemoteTables {
     fn test_d(&self) -> TestDTableHandle<'_> {
         TestDTableHandle {
-            imp: self.imp.get_table::<TestD>("test_d"),
+            imp: self.imp.get_table::<TestD>(6),
             ctx: std::marker::PhantomData,
         }
     }
@@ -2498,7 +2523,7 @@ pub trait TestETableAccess {
 impl TestETableAccess for super::RemoteTables {
     fn test_e(&self) -> TestETableHandle<'_> {
         TestETableHandle {
-            imp: self.imp.get_table::<TestE>("test_e"),
+            imp: self.imp.get_table::<TestE>(7),
             ctx: std::marker::PhantomData,
         }
     }
@@ -2664,7 +2689,7 @@ pub trait TestFTableAccess {
 impl TestFTableAccess for super::RemoteTables {
     fn test_f(&self) -> TestFTableHandle<'_> {
         TestFTableHandle {
-            imp: self.imp.get_table::<TestFoobar>("test_f"),
+            imp: self.imp.get_table::<TestFoobar>(8),
             ctx: std::marker::PhantomData,
         }
     }
@@ -2811,19 +2836,19 @@ arg_2: TestB,
 arg_3: NamespaceTestC,
 arg_4: NamespaceTestF,
 ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("test", Test { arg, arg_2, arg_3, arg_4,  })
+        self.imp.call_reducer(8, Test { arg, arg_2, arg_3, arg_4,  })
     }
     fn on_test(
         &self,
         mut callback: impl FnMut(&super::EventContext, &TestA, &TestB, &NamespaceTestC, &NamespaceTestF, ) + Send + 'static,
     ) -> TestCallbackId {
         TestCallbackId(self.imp.on_reducer::<Test>(
-            "test",
+            8,
             Box::new(move |ctx: &super::EventContext, args: &Test| callback(ctx, &args.arg, &args.arg_2, &args.arg_3, &args.arg_4, )),
         ))
     }
     fn remove_on_test(&self, callback: TestCallbackId) {
-        self.imp.remove_on_reducer::<Test>("test", callback.0)
+        self.imp.remove_on_reducer::<Test>(8, callback.0)
     }
 }
 
@@ -2843,7 +2868,7 @@ pub trait set_flags_for_test {
 
 impl set_flags_for_test for super::SetReducerFlags {
     fn test(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("test", flags);
+        self.imp.set_call_reducer_flags(8, flags);
     }
 }
 

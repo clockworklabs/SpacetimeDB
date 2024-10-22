@@ -35,7 +35,7 @@ pub trait OneIdentityTableAccess {
 impl OneIdentityTableAccess for super::RemoteTables {
     fn one_identity(&self) -> OneIdentityTableHandle<'_> {
         OneIdentityTableHandle {
-            imp: self.imp.get_table::<OneIdentity>("one_identity"),
+            imp: self.imp.get_table::<OneIdentity>(15),
             ctx: std::marker::PhantomData,
         }
     }

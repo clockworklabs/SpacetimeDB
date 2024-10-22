@@ -52,20 +52,19 @@ pub trait delete_pk_string {
 
 impl delete_pk_string for super::RemoteReducers {
     fn delete_pk_string(&self, s: String) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_string", DeletePkString { s })
+        self.imp.call_reducer(9, DeletePkString { s })
     }
     fn on_delete_pk_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String) + Send + 'static,
     ) -> DeletePkStringCallbackId {
         DeletePkStringCallbackId(self.imp.on_reducer::<DeletePkString>(
-            "delete_pk_string",
+            9,
             Box::new(move |ctx: &super::EventContext, args: &DeletePkString| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_delete_pk_string(&self, callback: DeletePkStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<DeletePkString>("delete_pk_string", callback.0)
+        self.imp.remove_on_reducer::<DeletePkString>(9, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_delete_pk_string {
 
 impl set_flags_for_delete_pk_string for super::SetReducerFlags {
     fn delete_pk_string(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_pk_string", flags);
+        self.imp.set_call_reducer_flags(9, flags);
     }
 }

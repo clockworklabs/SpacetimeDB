@@ -35,7 +35,7 @@ pub trait PkU256TableAccess {
 impl PkU256TableAccess for super::RemoteTables {
     fn pk_u_256(&self) -> PkU256TableHandle<'_> {
         PkU256TableHandle {
-            imp: self.imp.get_table::<PkU256>("pk_u256"),
+            imp: self.imp.get_table::<PkU256>(43),
             ctx: std::marker::PhantomData,
         }
     }

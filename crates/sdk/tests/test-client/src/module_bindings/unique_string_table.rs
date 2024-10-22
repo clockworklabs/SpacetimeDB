@@ -35,7 +35,7 @@ pub trait UniqueStringTableAccess {
 impl UniqueStringTableAccess for super::RemoteTables {
     fn unique_string(&self) -> UniqueStringTableHandle<'_> {
         UniqueStringTableHandle {
-            imp: self.imp.get_table::<UniqueString>("unique_string"),
+            imp: self.imp.get_table::<UniqueString>(57),
             ctx: std::marker::PhantomData,
         }
     }
