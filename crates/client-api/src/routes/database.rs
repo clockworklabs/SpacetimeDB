@@ -605,11 +605,11 @@ pub async fn dns<S: ControlStateDelegate>(
     Query(DNSQueryParams {}): Query<DNSQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let domain = database_name.parse().map_err(|_| DomainParsingRejection)?;
-    let address = ctx.lookup_identity(&domain).map_err(log_and_500)?;
-    let response = if let Some(address) = address {
+    let db_identity = ctx.lookup_identity(&domain).map_err(log_and_500)?;
+    let response = if let Some(db_identity) = db_identity {
         DnsLookupResponse::Success {
             domain,
-            identity: address,
+            identity: db_identity,
         }
     } else {
         DnsLookupResponse::Failure { domain }

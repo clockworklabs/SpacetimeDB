@@ -70,13 +70,13 @@ impl MemoryUsage for Locking {
         let Self {
             committed_state,
             sequence_state,
-            database_identity: database_address,
+            database_identity,
         } = self;
         std::mem::size_of_val(&**committed_state)
             + committed_state.read().heap_usage()
             + std::mem::size_of_val(&**sequence_state)
             + sequence_state.lock().heap_usage()
-            + database_address.heap_usage()
+            + database_identity.heap_usage()
     }
 }
 
@@ -98,7 +98,7 @@ impl Locking {
         // This is intentional.
         let datastore = Self::new(database_identity);
         let mut commit_state = datastore.committed_state.write_arc();
-        let database_address = datastore.database_identity;
+        let database_identity = datastore.database_identity;
         // TODO(cloutiertyler): One thing to consider in the future is, should
         // we persist the bootstrap transaction in the message log? My intuition
         // is no, because then if we change the schema of the system tables we
@@ -107,7 +107,7 @@ impl Locking {
         // for code that relies on the old schema...
 
         // Create the system tables and insert information about themselves into
-        commit_state.bootstrap_system_tables(database_address)?;
+        commit_state.bootstrap_system_tables(database_identity)?;
         // The database tables are now initialized with the correct data.
         // Now we have to build our in memory structures.
         commit_state.build_sequence_state(&mut datastore.sequence_state.lock())?;

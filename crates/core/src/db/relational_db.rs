@@ -325,7 +325,7 @@ impl RelationalDB {
         if let Some(meta) = db.metadata()? {
             if meta.database_identity != database_identity {
                 return Err(anyhow!(
-                    "mismatched database address: {} != {}",
+                    "mismatched database identity: {} != {}",
                     meta.database_identity,
                     database_identity
                 )
@@ -494,7 +494,7 @@ impl RelationalDB {
         self
     }
 
-    /// Returns the address for this database
+    /// Returns the identity for this database
     pub fn database_identity(&self) -> Identity {
         self.database_identity
     }

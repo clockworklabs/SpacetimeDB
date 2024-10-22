@@ -182,7 +182,7 @@ pub struct ModuleInfo {
     pub reducers_map: ReducersMap,
     /// The identity of the module.
     pub owner_identity: Identity,
-    /// The address of the database.
+    /// The identity of the database.
     pub database_identity: Identity,
     /// The hash of the module.
     pub module_hash: Hash,
