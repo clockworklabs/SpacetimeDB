@@ -13,7 +13,7 @@ partial struct TestIncompatibleSchedule
         using var writer = new BinaryWriter(stream);
         new TestIncompatibleSchedule.BSATN().Write(writer, table);
         SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-            "TestIncompatibleScheduleReducer",
+            nameof(TestIncompatibleScheduleReducer),
             stream
         );
     }

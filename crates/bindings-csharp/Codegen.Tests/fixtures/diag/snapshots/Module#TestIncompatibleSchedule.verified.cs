@@ -3,7 +3,7 @@
 #nullable enable
 
 [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
-partial struct TestIncompatibleSchedule : SpacetimeDB.Internal.ITable<TestIncompatibleSchedule>
+partial struct TestIncompatibleSchedule : SpacetimeDB.BSATN.IStructuralReadWrite
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
@@ -30,7 +30,7 @@ partial struct TestIncompatibleSchedule : SpacetimeDB.Internal.ITable<TestIncomp
             value.WriteFields(writer);
         }
 
-        public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
+        public SpacetimeDB.BSATN.AlgebraicType.Ref GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             registrar.RegisterType<TestIncompatibleSchedule>(
@@ -42,72 +42,12 @@ partial struct TestIncompatibleSchedule : SpacetimeDB.Internal.ITable<TestIncomp
                     }
                 )
             );
+
+        SpacetimeDB.BSATN.AlgebraicType SpacetimeDB.BSATN.IReadWrite<TestIncompatibleSchedule>.GetAlgebraicType(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => GetAlgebraicType(registrar);
     }
 
     public ulong ScheduledId;
     public SpacetimeDB.ScheduleAt ScheduledAt;
-
-    static IEnumerable<SpacetimeDB.Internal.TableDesc> SpacetimeDB.Internal.ITable<TestIncompatibleSchedule>.MakeTableDesc(
-        SpacetimeDB.BSATN.ITypeRegistrar registrar
-    ) =>
-        [
-            new(
-                new(
-                    TableName: nameof(SpacetimeDB.Local.TestIncompatibleSchedule1),
-                    Columns:
-                    [
-                        new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
-                        new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar))
-                    ],
-                    Indexes: [],
-                    Constraints:
-                    [
-                        new(
-                            "TestIncompatibleSchedule1_ScheduledId",
-                            (byte)SpacetimeDB.Internal.ColumnAttrs.PrimaryKeyAuto,
-                            [0]
-                        )
-                    ],
-                    Sequences: [],
-                    // "system" | "user"
-                    TableType: "user",
-                    // "public" | "private"
-                    TableAccess: "private",
-                    Scheduled: "TestIncompatibleScheduleReducer"
-                ),
-                (uint)
-                    (
-                        (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
-                    ).Ref_
-            ),
-            new(
-                new(
-                    TableName: nameof(SpacetimeDB.Local.TestIncompatibleSchedule2),
-                    Columns:
-                    [
-                        new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
-                        new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar))
-                    ],
-                    Indexes: [],
-                    Constraints:
-                    [
-                        new(
-                            "TestIncompatibleSchedule2_ScheduledId",
-                            (byte)SpacetimeDB.Internal.ColumnAttrs.PrimaryKeyAuto,
-                            [0]
-                        )
-                    ],
-                    Sequences: [],
-                    // "system" | "user"
-                    TableType: "user",
-                    // "public" | "private"
-                    TableAccess: "private",
-                    Scheduled: null
-                ),
-                (uint)
-                    (
-                        (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
-                    ).Ref_
-            ),
-        ];
 } // TestIncompatibleSchedule
