@@ -19,7 +19,7 @@ type Imports = BTreeSet<AlgebraicTypeRef>;
 
 // TODO(cloutiertyler): Rust should probably use four spaces instead of tabs
 // but I'm keeping this so as to not explode the diff.
-const INDENT: &str = "\t";
+const INDENT: &str = "TEST \t";
 
 pub struct Rust;
 
