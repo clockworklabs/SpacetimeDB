@@ -80,7 +80,7 @@ impl WebLoginSessionResponse {
     }
 }
 
-async fn web_login(remote: &String) -> Result<String, anyhow::Error> {
+async fn web_login(remote: &str) -> Result<String, anyhow::Error> {
     // Users like to provide URLs with trailing slashes, which can cause issues due to double-slashes in the routes below.
     let remote = remote.trim_end_matches('/');
 
@@ -127,7 +127,7 @@ struct SpacetimeDBTokenResponse {
     token: String,
 }
 
-async fn spacetimedb_login(remote: &String, web_session_id: &String) -> Result<String, anyhow::Error> {
+async fn spacetimedb_login(remote: &str, web_session_id: &String) -> Result<String, anyhow::Error> {
     // Users like to provide URLs with trailing slashes, which can cause issues due to double-slashes in the routes below.
     let remote = remote.trim_end_matches('/');
 
