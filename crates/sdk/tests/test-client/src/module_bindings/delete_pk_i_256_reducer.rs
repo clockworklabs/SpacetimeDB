@@ -52,19 +52,19 @@ pub trait delete_pk_i_256 {
 
 impl delete_pk_i_256 for super::RemoteReducers {
     fn delete_pk_i_256(&self, n: __sats::i256) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_i256", DeletePkI256 { n })
+        self.imp.call_reducer(4, DeletePkI256 { n })
     }
     fn on_delete_pk_i_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::i256) + Send + 'static,
     ) -> DeletePkI256CallbackId {
         DeletePkI256CallbackId(self.imp.on_reducer::<DeletePkI256>(
-            "delete_pk_i256",
+            4,
             Box::new(move |ctx: &super::EventContext, args: &DeletePkI256| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_delete_pk_i_256(&self, callback: DeletePkI256CallbackId) {
-        self.imp.remove_on_reducer::<DeletePkI256>("delete_pk_i256", callback.0)
+        self.imp.remove_on_reducer::<DeletePkI256>(4, callback.0)
     }
 }
 
@@ -84,6 +84,6 @@ pub trait set_flags_for_delete_pk_i_256 {
 
 impl set_flags_for_delete_pk_i_256 for super::SetReducerFlags {
     fn delete_pk_i_256(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_pk_i256", flags);
+        self.imp.set_call_reducer_flags(4, flags);
     }
 }

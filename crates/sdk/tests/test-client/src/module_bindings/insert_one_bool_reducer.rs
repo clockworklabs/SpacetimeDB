@@ -52,20 +52,19 @@ pub trait insert_one_bool {
 
 impl insert_one_bool for super::RemoteReducers {
     fn insert_one_bool(&self, b: bool) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_bool", InsertOneBool { b })
+        self.imp.call_reducer(42, InsertOneBool { b })
     }
     fn on_insert_one_bool(
         &self,
         mut callback: impl FnMut(&super::EventContext, &bool) + Send + 'static,
     ) -> InsertOneBoolCallbackId {
         InsertOneBoolCallbackId(self.imp.on_reducer::<InsertOneBool>(
-            "insert_one_bool",
+            42,
             Box::new(move |ctx: &super::EventContext, args: &InsertOneBool| callback(ctx, &args.b)),
         ))
     }
     fn remove_on_insert_one_bool(&self, callback: InsertOneBoolCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneBool>("insert_one_bool", callback.0)
+        self.imp.remove_on_reducer::<InsertOneBool>(42, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_insert_one_bool {
 
 impl set_flags_for_insert_one_bool for super::SetReducerFlags {
     fn insert_one_bool(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_one_bool", flags);
+        self.imp.set_call_reducer_flags(42, flags);
     }
 }

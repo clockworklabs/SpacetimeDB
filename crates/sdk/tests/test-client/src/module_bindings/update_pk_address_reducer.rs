@@ -53,20 +53,19 @@ pub trait update_pk_address {
 
 impl update_pk_address for super::RemoteReducers {
     fn update_pk_address(&self, a: __sdk::Address, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_pk_address", UpdatePkAddress { a, data })
+        self.imp.call_reducer(130, UpdatePkAddress { a, data })
     }
     fn on_update_pk_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Address, &i32) + Send + 'static,
     ) -> UpdatePkAddressCallbackId {
         UpdatePkAddressCallbackId(self.imp.on_reducer::<UpdatePkAddress>(
-            "update_pk_address",
+            130,
             Box::new(move |ctx: &super::EventContext, args: &UpdatePkAddress| callback(ctx, &args.a, &args.data)),
         ))
     }
     fn remove_on_update_pk_address(&self, callback: UpdatePkAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdatePkAddress>("update_pk_address", callback.0)
+        self.imp.remove_on_reducer::<UpdatePkAddress>(130, callback.0)
     }
 }
 
@@ -86,6 +85,6 @@ pub trait set_flags_for_update_pk_address {
 
 impl set_flags_for_update_pk_address for super::SetReducerFlags {
     fn update_pk_address(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("update_pk_address", flags);
+        self.imp.set_call_reducer_flags(130, flags);
     }
 }

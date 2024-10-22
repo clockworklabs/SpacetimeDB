@@ -36,7 +36,7 @@ pub trait VecEveryVecStructTableAccess {
 impl VecEveryVecStructTableAccess for super::RemoteTables {
     fn vec_every_vec_struct(&self) -> VecEveryVecStructTableHandle<'_> {
         VecEveryVecStructTableHandle {
-            imp: self.imp.get_table::<VecEveryVecStruct>("vec_every_vec_struct"),
+            imp: self.imp.get_table::<VecEveryVecStruct>(69),
             ctx: std::marker::PhantomData,
         }
     }

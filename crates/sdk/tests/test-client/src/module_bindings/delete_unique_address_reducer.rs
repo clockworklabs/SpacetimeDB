@@ -52,21 +52,19 @@ pub trait delete_unique_address {
 
 impl delete_unique_address for super::RemoteReducers {
     fn delete_unique_address(&self, a: __sdk::Address) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("delete_unique_address", DeleteUniqueAddress { a })
+        self.imp.call_reducer(16, DeleteUniqueAddress { a })
     }
     fn on_delete_unique_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Address) + Send + 'static,
     ) -> DeleteUniqueAddressCallbackId {
         DeleteUniqueAddressCallbackId(self.imp.on_reducer::<DeleteUniqueAddress>(
-            "delete_unique_address",
+            16,
             Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueAddress| callback(ctx, &args.a)),
         ))
     }
     fn remove_on_delete_unique_address(&self, callback: DeleteUniqueAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueAddress>("delete_unique_address", callback.0)
+        self.imp.remove_on_reducer::<DeleteUniqueAddress>(16, callback.0)
     }
 }
 
@@ -86,6 +84,6 @@ pub trait set_flags_for_delete_unique_address {
 
 impl set_flags_for_delete_unique_address for super::SetReducerFlags {
     fn delete_unique_address(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_unique_address", flags);
+        self.imp.set_call_reducer_flags(16, flags);
     }
 }

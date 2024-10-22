@@ -35,7 +35,7 @@ pub trait OptionStringTableAccess {
 impl OptionStringTableAccess for super::RemoteTables {
     fn option_string(&self) -> OptionStringTableHandle<'_> {
         OptionStringTableHandle {
-            imp: self.imp.get_table::<OptionString>("option_string"),
+            imp: self.imp.get_table::<OptionString>(29),
             ctx: std::marker::PhantomData,
         }
     }

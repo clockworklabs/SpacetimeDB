@@ -35,7 +35,7 @@ pub trait OneI128TableAccess {
 impl OneI128TableAccess for super::RemoteTables {
     fn one_i_128(&self) -> OneI128TableHandle<'_> {
         OneI128TableHandle {
-            imp: self.imp.get_table::<OneI128>("one_i128"),
+            imp: self.imp.get_table::<OneI128>(9),
             ctx: std::marker::PhantomData,
         }
     }

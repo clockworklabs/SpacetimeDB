@@ -52,19 +52,19 @@ pub trait insert_vec_i_16 {
 
 impl insert_vec_i_16 for super::RemoteReducers {
     fn insert_vec_i_16(&self, n: Vec<i16>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_i16", InsertVecI16 { n })
+        self.imp.call_reducer(114, InsertVecI16 { n })
     }
     fn on_insert_vec_i_16(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<i16>) + Send + 'static,
     ) -> InsertVecI16CallbackId {
         InsertVecI16CallbackId(self.imp.on_reducer::<InsertVecI16>(
-            "insert_vec_i16",
+            114,
             Box::new(move |ctx: &super::EventContext, args: &InsertVecI16| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_insert_vec_i_16(&self, callback: InsertVecI16CallbackId) {
-        self.imp.remove_on_reducer::<InsertVecI16>("insert_vec_i16", callback.0)
+        self.imp.remove_on_reducer::<InsertVecI16>(114, callback.0)
     }
 }
 
@@ -84,6 +84,6 @@ pub trait set_flags_for_insert_vec_i_16 {
 
 impl set_flags_for_insert_vec_i_16 for super::SetReducerFlags {
     fn insert_vec_i_16(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_vec_i16", flags);
+        self.imp.set_call_reducer_flags(114, flags);
     }
 }

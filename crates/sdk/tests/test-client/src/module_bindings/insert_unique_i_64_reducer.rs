@@ -53,20 +53,19 @@ pub trait insert_unique_i_64 {
 
 impl insert_unique_i_64 for super::RemoteReducers {
     fn insert_unique_i_64(&self, n: i64, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_unique_i64", InsertUniqueI64 { n, data })
+        self.imp.call_reducer(95, InsertUniqueI64 { n, data })
     }
     fn on_insert_unique_i_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i64, &i32) + Send + 'static,
     ) -> InsertUniqueI64CallbackId {
         InsertUniqueI64CallbackId(self.imp.on_reducer::<InsertUniqueI64>(
-            "insert_unique_i64",
+            95,
             Box::new(move |ctx: &super::EventContext, args: &InsertUniqueI64| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_insert_unique_i_64(&self, callback: InsertUniqueI64CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueI64>("insert_unique_i64", callback.0)
+        self.imp.remove_on_reducer::<InsertUniqueI64>(95, callback.0)
     }
 }
 
@@ -86,6 +85,6 @@ pub trait set_flags_for_insert_unique_i_64 {
 
 impl set_flags_for_insert_unique_i_64 for super::SetReducerFlags {
     fn insert_unique_i_64(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_unique_i64", flags);
+        self.imp.set_call_reducer_flags(95, flags);
     }
 }

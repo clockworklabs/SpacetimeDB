@@ -53,21 +53,19 @@ pub trait update_unique_bool {
 
 impl update_unique_bool for super::RemoteReducers {
     fn update_unique_bool(&self, b: bool, data: i32) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("update_unique_bool", UpdateUniqueBool { b, data })
+        self.imp.call_reducer(147, UpdateUniqueBool { b, data })
     }
     fn on_update_unique_bool(
         &self,
         mut callback: impl FnMut(&super::EventContext, &bool, &i32) + Send + 'static,
     ) -> UpdateUniqueBoolCallbackId {
         UpdateUniqueBoolCallbackId(self.imp.on_reducer::<UpdateUniqueBool>(
-            "update_unique_bool",
+            147,
             Box::new(move |ctx: &super::EventContext, args: &UpdateUniqueBool| callback(ctx, &args.b, &args.data)),
         ))
     }
     fn remove_on_update_unique_bool(&self, callback: UpdateUniqueBoolCallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdateUniqueBool>("update_unique_bool", callback.0)
+        self.imp.remove_on_reducer::<UpdateUniqueBool>(147, callback.0)
     }
 }
 
@@ -87,6 +85,6 @@ pub trait set_flags_for_update_unique_bool {
 
 impl set_flags_for_update_unique_bool for super::SetReducerFlags {
     fn update_unique_bool(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("update_unique_bool", flags);
+        self.imp.set_call_reducer_flags(147, flags);
     }
 }

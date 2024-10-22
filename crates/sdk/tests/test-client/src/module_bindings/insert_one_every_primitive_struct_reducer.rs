@@ -54,21 +54,20 @@ pub trait insert_one_every_primitive_struct {
 
 impl insert_one_every_primitive_struct for super::RemoteReducers {
     fn insert_one_every_primitive_struct(&self, s: EveryPrimitiveStruct) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_one_every_primitive_struct", InsertOneEveryPrimitiveStruct { s })
+        self.imp.call_reducer(45, InsertOneEveryPrimitiveStruct { s })
     }
     fn on_insert_one_every_primitive_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &EveryPrimitiveStruct) + Send + 'static,
     ) -> InsertOneEveryPrimitiveStructCallbackId {
         InsertOneEveryPrimitiveStructCallbackId(self.imp.on_reducer::<InsertOneEveryPrimitiveStruct>(
-            "insert_one_every_primitive_struct",
+            45,
             Box::new(move |ctx: &super::EventContext, args: &InsertOneEveryPrimitiveStruct| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_insert_one_every_primitive_struct(&self, callback: InsertOneEveryPrimitiveStructCallbackId) {
         self.imp
-            .remove_on_reducer::<InsertOneEveryPrimitiveStruct>("insert_one_every_primitive_struct", callback.0)
+            .remove_on_reducer::<InsertOneEveryPrimitiveStruct>(45, callback.0)
     }
 }
 
@@ -88,7 +87,6 @@ pub trait set_flags_for_insert_one_every_primitive_struct {
 
 impl set_flags_for_insert_one_every_primitive_struct for super::SetReducerFlags {
     fn insert_one_every_primitive_struct(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("insert_one_every_primitive_struct", flags);
+        self.imp.set_call_reducer_flags(45, flags);
     }
 }

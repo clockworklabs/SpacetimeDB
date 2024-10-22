@@ -50,21 +50,19 @@ pub trait insert_caller_vec_address {
 
 impl insert_caller_vec_address for super::RemoteReducers {
     fn insert_caller_vec_address(&self) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_caller_vec_address", InsertCallerVecAddress {})
+        self.imp.call_reducer(38, InsertCallerVecAddress {})
     }
     fn on_insert_caller_vec_address(
         &self,
         mut callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> InsertCallerVecAddressCallbackId {
         InsertCallerVecAddressCallbackId(self.imp.on_reducer::<InsertCallerVecAddress>(
-            "insert_caller_vec_address",
+            38,
             Box::new(move |ctx: &super::EventContext, args: &InsertCallerVecAddress| callback(ctx)),
         ))
     }
     fn remove_on_insert_caller_vec_address(&self, callback: InsertCallerVecAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertCallerVecAddress>("insert_caller_vec_address", callback.0)
+        self.imp.remove_on_reducer::<InsertCallerVecAddress>(38, callback.0)
     }
 }
 
@@ -84,6 +82,6 @@ pub trait set_flags_for_insert_caller_vec_address {
 
 impl set_flags_for_insert_caller_vec_address for super::SetReducerFlags {
     fn insert_caller_vec_address(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_caller_vec_address", flags);
+        self.imp.set_call_reducer_flags(38, flags);
     }
 }

@@ -53,21 +53,19 @@ pub trait insert_unique_address {
 
 impl insert_unique_address for super::RemoteReducers {
     fn insert_unique_address(&self, a: __sdk::Address, data: i32) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_unique_address", InsertUniqueAddress { a, data })
+        self.imp.call_reducer(89, InsertUniqueAddress { a, data })
     }
     fn on_insert_unique_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Address, &i32) + Send + 'static,
     ) -> InsertUniqueAddressCallbackId {
         InsertUniqueAddressCallbackId(self.imp.on_reducer::<InsertUniqueAddress>(
-            "insert_unique_address",
+            89,
             Box::new(move |ctx: &super::EventContext, args: &InsertUniqueAddress| callback(ctx, &args.a, &args.data)),
         ))
     }
     fn remove_on_insert_unique_address(&self, callback: InsertUniqueAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueAddress>("insert_unique_address", callback.0)
+        self.imp.remove_on_reducer::<InsertUniqueAddress>(89, callback.0)
     }
 }
 
@@ -87,6 +85,6 @@ pub trait set_flags_for_insert_unique_address {
 
 impl set_flags_for_insert_unique_address for super::SetReducerFlags {
     fn insert_unique_address(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_unique_address", flags);
+        self.imp.set_call_reducer_flags(89, flags);
     }
 }

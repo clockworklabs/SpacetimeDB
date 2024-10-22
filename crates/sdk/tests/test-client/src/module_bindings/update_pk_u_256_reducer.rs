@@ -53,19 +53,19 @@ pub trait update_pk_u_256 {
 
 impl update_pk_u_256 for super::RemoteReducers {
     fn update_pk_u_256(&self, n: __sats::u256, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_pk_u256", UpdatePkU256 { n, data })
+        self.imp.call_reducer(142, UpdatePkU256 { n, data })
     }
     fn on_update_pk_u_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::u256, &i32) + Send + 'static,
     ) -> UpdatePkU256CallbackId {
         UpdatePkU256CallbackId(self.imp.on_reducer::<UpdatePkU256>(
-            "update_pk_u256",
+            142,
             Box::new(move |ctx: &super::EventContext, args: &UpdatePkU256| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_update_pk_u_256(&self, callback: UpdatePkU256CallbackId) {
-        self.imp.remove_on_reducer::<UpdatePkU256>("update_pk_u256", callback.0)
+        self.imp.remove_on_reducer::<UpdatePkU256>(142, callback.0)
     }
 }
 
@@ -85,6 +85,6 @@ pub trait set_flags_for_update_pk_u_256 {
 
 impl set_flags_for_update_pk_u_256 for super::SetReducerFlags {
     fn update_pk_u_256(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("update_pk_u256", flags);
+        self.imp.set_call_reducer_flags(142, flags);
     }
 }

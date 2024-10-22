@@ -54,23 +54,20 @@ pub trait insert_option_every_primitive_struct {
 
 impl insert_option_every_primitive_struct for super::RemoteReducers {
     fn insert_option_every_primitive_struct(&self, s: Option<EveryPrimitiveStruct>) -> __anyhow::Result<()> {
-        self.imp.call_reducer(
-            "insert_option_every_primitive_struct",
-            InsertOptionEveryPrimitiveStruct { s },
-        )
+        self.imp.call_reducer(65, InsertOptionEveryPrimitiveStruct { s })
     }
     fn on_insert_option_every_primitive_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Option<EveryPrimitiveStruct>) + Send + 'static,
     ) -> InsertOptionEveryPrimitiveStructCallbackId {
         InsertOptionEveryPrimitiveStructCallbackId(self.imp.on_reducer::<InsertOptionEveryPrimitiveStruct>(
-            "insert_option_every_primitive_struct",
+            65,
             Box::new(move |ctx: &super::EventContext, args: &InsertOptionEveryPrimitiveStruct| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_insert_option_every_primitive_struct(&self, callback: InsertOptionEveryPrimitiveStructCallbackId) {
         self.imp
-            .remove_on_reducer::<InsertOptionEveryPrimitiveStruct>("insert_option_every_primitive_struct", callback.0)
+            .remove_on_reducer::<InsertOptionEveryPrimitiveStruct>(65, callback.0)
     }
 }
 
@@ -90,7 +87,6 @@ pub trait set_flags_for_insert_option_every_primitive_struct {
 
 impl set_flags_for_insert_option_every_primitive_struct for super::SetReducerFlags {
     fn insert_option_every_primitive_struct(&self, flags: __ws::CallReducerFlags) {
-        self.imp
-            .set_call_reducer_flags("insert_option_every_primitive_struct", flags);
+        self.imp.set_call_reducer_flags(65, flags);
     }
 }

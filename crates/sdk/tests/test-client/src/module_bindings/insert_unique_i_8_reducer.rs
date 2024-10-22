@@ -53,20 +53,19 @@ pub trait insert_unique_i_8 {
 
 impl insert_unique_i_8 for super::RemoteReducers {
     fn insert_unique_i_8(&self, n: i8, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_unique_i8", InsertUniqueI8 { n, data })
+        self.imp.call_reducer(96, InsertUniqueI8 { n, data })
     }
     fn on_insert_unique_i_8(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i8, &i32) + Send + 'static,
     ) -> InsertUniqueI8CallbackId {
         InsertUniqueI8CallbackId(self.imp.on_reducer::<InsertUniqueI8>(
-            "insert_unique_i8",
+            96,
             Box::new(move |ctx: &super::EventContext, args: &InsertUniqueI8| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_insert_unique_i_8(&self, callback: InsertUniqueI8CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueI8>("insert_unique_i8", callback.0)
+        self.imp.remove_on_reducer::<InsertUniqueI8>(96, callback.0)
     }
 }
 
@@ -86,6 +85,6 @@ pub trait set_flags_for_insert_unique_i_8 {
 
 impl set_flags_for_insert_unique_i_8 for super::SetReducerFlags {
     fn insert_unique_i_8(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_unique_i8", flags);
+        self.imp.set_call_reducer_flags(96, flags);
     }
 }

@@ -35,7 +35,7 @@ pub trait OneBoolTableAccess {
 impl OneBoolTableAccess for super::RemoteTables {
     fn one_bool(&self) -> OneBoolTableHandle<'_> {
         OneBoolTableHandle {
-            imp: self.imp.get_table::<OneBool>("one_bool"),
+            imp: self.imp.get_table::<OneBool>(2),
             ctx: std::marker::PhantomData,
         }
     }

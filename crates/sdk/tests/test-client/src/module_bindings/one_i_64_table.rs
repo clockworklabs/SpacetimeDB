@@ -35,7 +35,7 @@ pub trait OneI64TableAccess {
 impl OneI64TableAccess for super::RemoteTables {
     fn one_i_64(&self) -> OneI64TableHandle<'_> {
         OneI64TableHandle {
-            imp: self.imp.get_table::<OneI64>("one_i64"),
+            imp: self.imp.get_table::<OneI64>(13),
             ctx: std::marker::PhantomData,
         }
     }

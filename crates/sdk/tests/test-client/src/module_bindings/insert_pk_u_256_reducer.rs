@@ -53,19 +53,19 @@ pub trait insert_pk_u_256 {
 
 impl insert_pk_u_256 for super::RemoteReducers {
     fn insert_pk_u_256(&self, n: __sats::u256, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_pk_u256", InsertPkU256 { n, data })
+        self.imp.call_reducer(83, InsertPkU256 { n, data })
     }
     fn on_insert_pk_u_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::u256, &i32) + Send + 'static,
     ) -> InsertPkU256CallbackId {
         InsertPkU256CallbackId(self.imp.on_reducer::<InsertPkU256>(
-            "insert_pk_u256",
+            83,
             Box::new(move |ctx: &super::EventContext, args: &InsertPkU256| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_insert_pk_u_256(&self, callback: InsertPkU256CallbackId) {
-        self.imp.remove_on_reducer::<InsertPkU256>("insert_pk_u256", callback.0)
+        self.imp.remove_on_reducer::<InsertPkU256>(83, callback.0)
     }
 }
 
@@ -85,6 +85,6 @@ pub trait set_flags_for_insert_pk_u_256 {
 
 impl set_flags_for_insert_pk_u_256 for super::SetReducerFlags {
     fn insert_pk_u_256(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_pk_u256", flags);
+        self.imp.set_call_reducer_flags(83, flags);
     }
 }

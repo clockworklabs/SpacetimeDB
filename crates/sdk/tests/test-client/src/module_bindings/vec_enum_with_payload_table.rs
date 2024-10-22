@@ -36,7 +36,7 @@ pub trait VecEnumWithPayloadTableAccess {
 impl VecEnumWithPayloadTableAccess for super::RemoteTables {
     fn vec_enum_with_payload(&self) -> VecEnumWithPayloadTableHandle<'_> {
         VecEnumWithPayloadTableHandle {
-            imp: self.imp.get_table::<VecEnumWithPayload>("vec_enum_with_payload"),
+            imp: self.imp.get_table::<VecEnumWithPayload>(67),
             ctx: std::marker::PhantomData,
         }
     }

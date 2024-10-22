@@ -53,21 +53,19 @@ pub trait update_pk_identity {
 
 impl update_pk_identity for super::RemoteReducers {
     fn update_pk_identity(&self, i: __sdk::Identity, data: i32) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("update_pk_identity", UpdatePkIdentity { i, data })
+        self.imp.call_reducer(138, UpdatePkIdentity { i, data })
     }
     fn on_update_pk_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Identity, &i32) + Send + 'static,
     ) -> UpdatePkIdentityCallbackId {
         UpdatePkIdentityCallbackId(self.imp.on_reducer::<UpdatePkIdentity>(
-            "update_pk_identity",
+            138,
             Box::new(move |ctx: &super::EventContext, args: &UpdatePkIdentity| callback(ctx, &args.i, &args.data)),
         ))
     }
     fn remove_on_update_pk_identity(&self, callback: UpdatePkIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdatePkIdentity>("update_pk_identity", callback.0)
+        self.imp.remove_on_reducer::<UpdatePkIdentity>(138, callback.0)
     }
 }
 
@@ -87,6 +85,6 @@ pub trait set_flags_for_update_pk_identity {
 
 impl set_flags_for_update_pk_identity for super::SetReducerFlags {
     fn update_pk_identity(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("update_pk_identity", flags);
+        self.imp.set_call_reducer_flags(138, flags);
     }
 }

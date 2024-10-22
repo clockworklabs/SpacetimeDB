@@ -35,7 +35,7 @@ pub trait UniqueU16TableAccess {
 impl UniqueU16TableAccess for super::RemoteTables {
     fn unique_u_16(&self) -> UniqueU16TableHandle<'_> {
         UniqueU16TableHandle {
-            imp: self.imp.get_table::<UniqueU16>("unique_u16"),
+            imp: self.imp.get_table::<UniqueU16>(59),
             ctx: std::marker::PhantomData,
         }
     }

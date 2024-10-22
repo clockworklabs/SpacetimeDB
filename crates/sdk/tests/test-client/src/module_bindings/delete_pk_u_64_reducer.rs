@@ -52,19 +52,19 @@ pub trait delete_pk_u_64 {
 
 impl delete_pk_u_64 for super::RemoteReducers {
     fn delete_pk_u_64(&self, n: u64) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_u64", DeletePkU64 { n })
+        self.imp.call_reducer(14, DeletePkU64 { n })
     }
     fn on_delete_pk_u_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u64) + Send + 'static,
     ) -> DeletePkU64CallbackId {
         DeletePkU64CallbackId(self.imp.on_reducer::<DeletePkU64>(
-            "delete_pk_u64",
+            14,
             Box::new(move |ctx: &super::EventContext, args: &DeletePkU64| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_delete_pk_u_64(&self, callback: DeletePkU64CallbackId) {
-        self.imp.remove_on_reducer::<DeletePkU64>("delete_pk_u64", callback.0)
+        self.imp.remove_on_reducer::<DeletePkU64>(14, callback.0)
     }
 }
 
@@ -84,6 +84,6 @@ pub trait set_flags_for_delete_pk_u_64 {
 
 impl set_flags_for_delete_pk_u_64 for super::SetReducerFlags {
     fn delete_pk_u_64(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_pk_u64", flags);
+        self.imp.set_call_reducer_flags(14, flags);
     }
 }

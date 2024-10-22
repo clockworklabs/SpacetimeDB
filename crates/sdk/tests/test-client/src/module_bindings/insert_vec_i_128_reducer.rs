@@ -52,20 +52,19 @@ pub trait insert_vec_i_128 {
 
 impl insert_vec_i_128 for super::RemoteReducers {
     fn insert_vec_i_128(&self, n: Vec<i128>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_i128", InsertVecI128 { n })
+        self.imp.call_reducer(113, InsertVecI128 { n })
     }
     fn on_insert_vec_i_128(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<i128>) + Send + 'static,
     ) -> InsertVecI128CallbackId {
         InsertVecI128CallbackId(self.imp.on_reducer::<InsertVecI128>(
-            "insert_vec_i128",
+            113,
             Box::new(move |ctx: &super::EventContext, args: &InsertVecI128| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_insert_vec_i_128(&self, callback: InsertVecI128CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecI128>("insert_vec_i128", callback.0)
+        self.imp.remove_on_reducer::<InsertVecI128>(113, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_insert_vec_i_128 {
 
 impl set_flags_for_insert_vec_i_128 for super::SetReducerFlags {
     fn insert_vec_i_128(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_vec_i128", flags);
+        self.imp.set_call_reducer_flags(113, flags);
     }
 }

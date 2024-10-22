@@ -53,21 +53,19 @@ pub trait insert_pk_identity {
 
 impl insert_pk_identity for super::RemoteReducers {
     fn insert_pk_identity(&self, i: __sdk::Identity, data: i32) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_pk_identity", InsertPkIdentity { i, data })
+        self.imp.call_reducer(79, InsertPkIdentity { i, data })
     }
     fn on_insert_pk_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Identity, &i32) + Send + 'static,
     ) -> InsertPkIdentityCallbackId {
         InsertPkIdentityCallbackId(self.imp.on_reducer::<InsertPkIdentity>(
-            "insert_pk_identity",
+            79,
             Box::new(move |ctx: &super::EventContext, args: &InsertPkIdentity| callback(ctx, &args.i, &args.data)),
         ))
     }
     fn remove_on_insert_pk_identity(&self, callback: InsertPkIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertPkIdentity>("insert_pk_identity", callback.0)
+        self.imp.remove_on_reducer::<InsertPkIdentity>(79, callback.0)
     }
 }
 
@@ -87,6 +85,6 @@ pub trait set_flags_for_insert_pk_identity {
 
 impl set_flags_for_insert_pk_identity for super::SetReducerFlags {
     fn insert_pk_identity(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_pk_identity", flags);
+        self.imp.set_call_reducer_flags(79, flags);
     }
 }
