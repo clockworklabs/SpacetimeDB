@@ -55,14 +55,7 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
         }
         // Arbitrary product types should fail.
         AlgebraicType::Product(_) => unimplemented!(),
-        ty if ty.is_bytes() => f.write_str("byte[]"),
-        AlgebraicType::Array(ArrayType { elem_ty }) => {
-            write!(
-                f,
-                "System.Collections.Generic.List<{}>",
-                ty_fmt(ctx, elem_ty, namespace)
-            )
-        }
+        AlgebraicType::Array(ArrayType { elem_ty }) => write!(f, "{}[]", ty_fmt(ctx, elem_ty, namespace)),
         AlgebraicType::Ref(r) => {
             let name = csharp_typename(ctx, *r);
             match &ctx.typespace[*r] {
@@ -89,18 +82,18 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
     })
 }
 
-fn default_init(ctx: &GenCtx, ty: &AlgebraicType) -> Option<&'static str> {
+fn default_init(ctx: &GenCtx, ty: &AlgebraicType, namespace: &str) -> Option<String> {
     match ty {
         // Options have a default value of null which is fine for us, and simple enums have their own default.
         AlgebraicType::Sum(sum_type) if sum_type.is_option() || sum_type.is_simple_enum() => None,
         // TODO: generate some proper default here (what would it be for tagged enums?).
-        AlgebraicType::Sum(_) => Some("null!"),
-        ty if ty.is_bytes() => Some("Array.Empty<byte>()"),
-        // For product types, arrays, and maps, we can use the default constructor.
-        AlgebraicType::Product(_) | AlgebraicType::Array(_) => Some("new()"),
+        AlgebraicType::Sum(_) => Some("null!".into()),
+        ty if ty.is_bytes() => Some(format!("Array.Empty<{}>()", ty_fmt(ctx, ty, namespace))),
+        // For product types, we can use the default constructor.
+        AlgebraicType::Product(_) => Some("new()".into()),
         // Strings must have explicit default value of "".
-        AlgebraicType::String => Some(r#""""#),
-        AlgebraicType::Ref(r) => default_init(ctx, &ctx.typespace[*r]),
+        AlgebraicType::String => Some(r#""""#.into()),
+        AlgebraicType::Ref(r) => default_init(ctx, &ctx.typespace[*r], namespace),
         _ => {
             debug_assert!(ty.is_scalar());
             None
@@ -349,7 +342,7 @@ fn autogen_csharp_product_table_common(
             writeln!(output, "public {name}()");
             indented_block(output, |output| {
                 for ((field_name, _ty), field) in fields.iter().zip(&*product_type.elements) {
-                    if let Some(default) = default_init(ctx, &field.algebraic_type) {
+                    if let Some(default) = default_init(ctx, &field.algebraic_type, namespace) {
                         writeln!(output, "this.{field_name} = {default};");
                     }
                 }
@@ -531,7 +524,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
             write!(output, "public {arg_type_str} {field_name}");
             // Skip default initializer if it's the same as the implicit default.
-            if let Some(default) = default_init(ctx, &arg.algebraic_type) {
+            if let Some(default) = default_init(ctx, &arg.algebraic_type, namespace) {
                 write!(output, " = {default}");
             }
             writeln!(output, ";");
