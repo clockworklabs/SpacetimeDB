@@ -3,6 +3,7 @@
 /.github/CODEOWNERS @cloutiertyler
 LICENSE.txt @cloutiertyler
 /crates/client-api-messages/src/websocket.rs @centril @gefjon
+
 /crates/cli/src/ @bfops @jdetter @cloutiertyler
 /crates/cli/src/generate/ # No owners
-/crates/cli/src/generate/mod.rs @bfops @jdetter @cloutiertyler # The root itself
+/crates/cli/src/generate/mod.rs @bfops @jdetter @cloutiertyler # These codeowners should be the same as the "root" CLI codeowners
