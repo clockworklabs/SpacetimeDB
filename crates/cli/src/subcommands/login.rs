@@ -23,12 +23,24 @@ struct TokenResponse {
 #[derive(Deserialize)]
 struct LoginTokenResponse {
     approved: bool,
-    session: Option<LoginTokenResponseSession>,
+    session: Option<String>,
 }
 
 #[derive(Deserialize)]
-struct LoginTokenResponseSession {
-    token: String,
+struct LoginTokenResponseApproved {
+    session_id: String,
+}
+
+impl LoginTokenResponse {
+    fn approved(&self) -> Option<LoginTokenResponseApproved> {
+        if self.approved {
+            Some(LoginTokenResponseApproved {
+                session_id: self.session.clone().unwrap(),
+            })
+        } else {
+            None
+        }
+    }
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
@@ -49,8 +61,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let temp_token = response.token.as_str();
 
     let browser_url = Url::parse_with_params(route("/login/cli").as_str(), vec![("token", temp_token)])?;
+    println!("Opening your browser to {}", browser_url);
     if webbrowser::open(browser_url.as_str()).is_err() {
-        println!("Please open the following URL in your browser: {}", browser_url);
+        println!("Unable to open your browser! Please open the URL manually.");
     }
 
     println!("Waiting to hear response from the server...");
@@ -64,8 +77,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             .await?
             .json()
             .await?;
-        if response.approved {
-            config.set_login_token(response.session.unwrap().token);
+        if let Some(approved) = response.approved() {
+            config.set_web_session_token(approved.session_id);
+            config.save();
             println!("Login successful!");
             break;
         }

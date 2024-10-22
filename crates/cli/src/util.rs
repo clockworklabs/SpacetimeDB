@@ -170,7 +170,7 @@ pub fn get_auth_header(config: &Config, anon_identity: bool) -> anyhow::Result<O
     if anon_identity {
         Ok(None)
     } else {
-        let token = config.login_token()?;
+        let token = config.spacetimedb_token()?;
         // The current form is: Authorization: Basic base64("token:<token>")
         let mut auth_header = String::new();
         auth_header.push_str(format!("Basic {}", BASE_64_STD.encode(format!("token:{}", token))).as_str());
@@ -265,7 +265,7 @@ Generate a new identity with:
 }
 
 pub fn decode_identity(config: &Config) -> anyhow::Result<String> {
-    let token = config.login_token()?;
+    let token = config.spacetimedb_token()?;
     // Here, we manually extract and decode the claims from the json web token.
     // We do this without using the `jsonwebtoken` crate because it doesn't seem to have a way to skip signature verification.
     // But signature verification would require getting the public key from a server, and we don't necessarily want to do that.

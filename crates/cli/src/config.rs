@@ -60,7 +60,8 @@ pub struct RawConfig {
     default_server: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     server_configs: Vec<ServerConfig>,
-    login_token: Option<String>,
+    web_session_token: Option<String>,
+    spacetimedb_token: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -110,7 +111,8 @@ impl RawConfig {
         RawConfig {
             default_server: local.nickname.clone(),
             server_configs: vec![local, testnet],
-            login_token: None,
+            web_session_token: None,
+            spacetimedb_token: None,
         }
     }
 
@@ -406,8 +408,12 @@ Fetch the server's fingerprint with:
         Ok(())
     }
 
-    pub fn set_login_token(&mut self, token: String) {
-        self.login_token = Some(token);
+    pub fn set_web_session_token(&mut self, token: String) {
+        self.web_session_token = Some(token);
+    }
+
+    pub fn set_spacetimedb_token(&mut self, token: String) {
+        self.spacetimedb_token = Some(token);
     }
 }
 
@@ -696,12 +702,20 @@ Update the server's fingerprint with:
         }
     }
 
-    pub fn set_login_token(&mut self, token: String) {
-        self.home.set_login_token(token);
+    pub fn set_web_session_token(&mut self, token: String) {
+        self.home.set_web_session_token(token);
     }
 
-    pub fn login_token(&self) -> anyhow::Result<&String> {
-        if let Some(token) = self.home.login_token.as_ref() {
+    pub fn set_spacetimedb_token(&mut self, token: String) {
+        self.home.set_spacetimedb_token(token);
+    }
+
+    pub fn web_session_token(&self) -> Option<&String> {
+        self.home.web_session_token.as_ref()
+    }
+
+    pub fn spacetimedb_token(&self) -> anyhow::Result<&String> {
+        if let Some(token) = self.home.spacetimedb_token.as_ref() {
             Ok(token)
         } else {
             Err(anyhow::anyhow!("No login token found. Please run `spacetime login`."))
