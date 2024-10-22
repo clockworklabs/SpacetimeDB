@@ -620,9 +620,9 @@ pub async fn dns<S: ControlStateDelegate>(
 
 pub async fn reverse_dns<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(ReverseDNSParams { database_identity: database_address }): Path<ReverseDNSParams>,
+    Path(ReverseDNSParams { database_identity }): Path<ReverseDNSParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let database_address = Identity::from(database_address);
+    let database_address = Identity::from(database_identity);
 
     let names = ctx.reverse_lookup(&database_address).map_err(log_and_500)?;
 
@@ -759,7 +759,9 @@ pub struct DeleteDatabaseParams {
 
 pub async fn delete_database<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(DeleteDatabaseParams { database_identity: address }): Path<DeleteDatabaseParams>,
+    Path(DeleteDatabaseParams {
+        database_identity: address,
+    }): Path<DeleteDatabaseParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
     let address = Identity::from(address);
