@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
@@ -19,19 +19,31 @@
     <AssemblyVersion>1.0.0</AssemblyVersion>
     <Version>1.0.0-rc1</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
+    <!-- Disable default compile items to prevent duplicate inclusion -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <!-- We want to save DLLs for Unity which doesn't support NuGet. -->
     <RestorePackagesPath>packages</RestorePackagesPath>
   </PropertyGroup>
 
+  <!-- Package references -->
   <ItemGroup>
     <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="1.0.0-rc1" />
 
     <InternalsVisibleTo Include="SpacetimeDB.Tests" />
   </ItemGroup>
 
+  <!-- Include non-code files -->
   <ItemGroup>
     <None Update="logo.png" Pack="true" PackagePath="" />
     <None Update="README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+  <!-- Explicitly include all .cs files except Unity-related scripts -->
+  <ItemGroup>
+    <Compile Include="src/**/*.cs" Exclude="unity-tests/client/Assets/**/*.cs" />
+
+    <!-- Optionally include Unity-related scripts for Unity builds -->
+    <Compile Include="unity-tests/client/Assets/**/*.cs" Condition="'$(BuildingUnity)' == 'true'" />
   </ItemGroup>
 
 </Project>
