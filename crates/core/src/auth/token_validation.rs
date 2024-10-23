@@ -470,7 +470,9 @@ mod tests {
     // It will also host jwks at `{base_url}/jwks.json`
     struct OIDCServerHandle {
         pub base_url: String,
+        #[allow(dead_code)]
         pub shutdown_tx: oneshot::Sender<()>,
+        #[allow(dead_code)]
         join_handle: tokio::task::JoinHandle<()>,
     }
 
