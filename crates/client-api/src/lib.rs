@@ -8,10 +8,15 @@ use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{DynDurabilityFut, HostController, UpdateDatabaseResult};
-use spacetimedb::identity::Identity;
+use spacetimedb::host::{DynDurabilityFut, HostController, ModuleHost, NoSuchModule, UpdateDatabaseResult};
+use spacetimedb::identity::{AuthCtx, Identity};
+use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
+use spacetimedb::sql;
+use spacetimedb::sql::execute::{ctx_sql, translate_col};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
+use spacetimedb_lib::ProductTypeElement;
+use tokio::sync::watch;
 
 pub mod auth;
 pub mod routes;
@@ -22,9 +27,9 @@ pub mod util;
 ///
 /// Types returned here should be considered internal state and **never** be
 /// surfaced to the API.
+#[async_trait]
 pub trait NodeDelegate: Send + Sync {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily>;
-    fn host_controller(&self) -> &HostController;
     fn client_actor_index(&self) -> &ClientActorIndex;
 
     /// Return a JWT decoding key for verifying credentials.
@@ -38,8 +43,100 @@ pub trait NodeDelegate: Send + Sync {
     /// Return a JWT encoding key for signing credentials.
     fn private_key(&self) -> &EncodingKey;
 
-    /// Return `DynDurabilityFut`, a future to open `impl Durabulity` of a replica.
-    fn durability(&self, replica_id: u64) -> anyhow::Result<DynDurabilityFut>;
+    /// Return Ok(None), If this node is not suppose to host leader replica for the given
+    /// database else spawn a new `ModuleHost`, if already not running and return the `Host` object.
+    async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>>;
+}
+
+/// Client view to Host
+pub struct Host {
+    pub replica_id: u64,
+    host_controller: HostController,
+}
+
+impl Host {
+    pub fn new(replica_id: u64, host_controller: HostController) -> Self {
+        Self {
+            replica_id,
+            host_controller,
+        }
+    }
+
+    pub async fn module(&self) -> Result<ModuleHost, NoSuchModule> {
+        self.host_controller.get_module_host(self.replica_id).await
+    }
+
+    pub async fn module_watcher(&self) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
+        self.host_controller.watch_module_host(self.replica_id).await
+    }
+
+    pub async fn exec_sql(
+        &self,
+        auth: AuthCtx,
+        database: Database,
+        body: String,
+    ) -> axum::response::Result<Vec<StmtResultJson>> {
+        let module_host = self
+            .module()
+            .await
+            .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
+
+        let json = self
+            .host_controller
+            .using_database(
+                database,
+                self.replica_id,
+                move |db| -> axum::response::Result<_, (StatusCode, String)> {
+                    tracing::info!(sql = body);
+                    let results =
+                        sql::execute::run(db, &body, auth, Some(&module_host.info().subscriptions)).map_err(|e| {
+                            if let Some(auth_err) = e.get_auth_error() {
+                                (StatusCode::UNAUTHORIZED, auth_err.to_string())
+                            } else {
+                                (StatusCode::BAD_REQUEST, e.to_string())
+                            }
+                        })?;
+
+                    let json = db.with_read_only(&ctx_sql(db), |tx| {
+                        results
+                            .into_iter()
+                            .map(|result| {
+                                let rows = result.data;
+                                let schema = result
+                                    .head
+                                    .fields
+                                    .iter()
+                                    .map(|x| {
+                                        let ty = x.algebraic_type.clone();
+                                        let name = translate_col(tx, x.field);
+                                        ProductTypeElement::new(ty, name)
+                                    })
+                                    .collect();
+                                StmtResultJson { schema, rows }
+                            })
+                            .collect::<Vec<_>>()
+                    });
+
+                    Ok(json)
+                },
+            )
+            .await
+            .map_err(|e| log_and_500(e))??;
+
+        Ok(json)
+    }
+
+    pub async fn update(
+        &self,
+        database: Database,
+        host_type: HostType,
+        program_bytes: Box<[u8]>,
+        durability: DynDurabilityFut,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.host_controller
+            .update_module_host(database, host_type, self.replica_id, durability, program_bytes)
+            .await
+    }
 }
 
 /// Parameters for publishing a database.
@@ -95,7 +192,6 @@ pub trait ControlStateReadAccess {
     // Replicas
     fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>>;
     fn get_replicas(&self) -> anyhow::Result<Vec<Replica>>;
-    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica>;
 
     // Energy
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
@@ -171,9 +267,6 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
         (**self).get_replicas()
     }
-    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
-        (**self).get_leader_replica_by_database(database_id)
-    }
 
     // Energy
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
@@ -229,13 +322,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
     }
 }
 
+#[async_trait]
 impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         (**self).gather_metrics()
-    }
-
-    fn host_controller(&self) -> &HostController {
-        (**self).host_controller()
     }
 
     fn client_actor_index(&self) -> &ClientActorIndex {
@@ -254,8 +344,8 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
         (**self).private_key()
     }
 
-    fn durability(&self, replica_id: u64) -> anyhow::Result<DynDurabilityFut> {
-        (**self).durability(replica_id)
+    async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>> {
+        (**self).leader(database_id).await
     }
 }
 

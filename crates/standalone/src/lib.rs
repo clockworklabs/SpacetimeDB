@@ -25,7 +25,7 @@ use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::{db, stdb_path};
-use spacetimedb_client_api::{ControlStateReadAccess, NodeDelegate};
+use spacetimedb_client_api::{Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use std::fs::File;
 use std::io::Write;
@@ -149,13 +149,10 @@ fn get_key_path(env: &str) -> Option<PathBuf> {
     std::env::var_os(env).map(std::path::PathBuf::from)
 }
 
+#[async_trait]
 impl NodeDelegate for StandaloneEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         self.metrics_registry.gather()
-    }
-
-    fn host_controller(&self) -> &HostController {
-        &self.host_controller
     }
 
     fn client_actor_index(&self) -> &ClientActorIndex {
@@ -174,22 +171,36 @@ impl NodeDelegate for StandaloneEnv {
         &self.private_key
     }
 
-    fn durability(&self, replica_id: u64) -> anyhow::Result<DynDurabilityFut> {
-        let replica = self
-            .get_replica_by_id(replica_id)?
-            .ok_or_else(|| anyhow::anyhow!("Not found: replica with id {}", replica_id))?;
+    async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>> {
+        let leader = match self.control_db.get_leader_replica_by_database(database_id) {
+            Some(leader) => leader,
+            None => return Ok(None),
+        };
 
         let database = self
-            .get_database_by_id(replica.database_id)?
-            .ok_or_else(|| anyhow::anyhow!("Not found: database with id {}", replica.database_id))?;
+            .control_db
+            .get_database_by_id(database_id)?
+            .ok_or_else(|| anyhow::anyhow!("Database {} has no associated database", database_id))?;
 
-        let db_path = self.host_controller().get_replica_path(&database.address, replica_id);
+        let durability = durability(self.host_controller.clone(), &database.address, leader.id);
+        self.host_controller
+            .get_or_launch_module_host(database, leader.id, durability)
+            .await
+            .context("failed to get or launch module host")?;
 
-        match self.host_controller().get_config().storage {
-            db::Storage::Disk => Ok(Box::pin(relational_db::local_durability_dyn(db_path))),
-            db::Storage::Memory => Ok(Box::pin(async {
-                Err(anyhow::anyhow!("Memory storage not supported for durability"))
-            })),
+        Ok(Some(Host::new(leader.id, self.host_controller.clone())))
+    }
+}
+
+pub fn durability(ctrl: HostController, address: &Address, replica_id: u64) -> DynDurabilityFut {
+    match ctrl.get_config().storage {
+        db::Storage::Disk => {
+            let db_path = ctrl.get_replica_path(&address, replica_id);
+            Box::pin(async { relational_db::local_durability_dyn(db_path).await })
+        }
+        db::Storage::Memory => {
+            let err_fut = async { Err(anyhow::anyhow!("Memory storage not supported for durability")) };
+            Box::pin(err_fut)
         }
     }
 }
@@ -235,10 +246,6 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
 
     fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
         Ok(self.control_db.get_replicas()?)
-    }
-
-    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
-        self.control_db.get_leader_replica_by_database(database_id)
     }
 
     // Energy
@@ -300,25 +307,18 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 let database_id = database.id;
                 let database_addr = database.address;
 
+                let num_replicas = spec.num_replicas;
                 let leader = self
-                    .control_db
-                    .get_leader_replica_by_database(database_id)
-                    .with_context(|| format!("Not found: leader instance for database `{}`", database_addr))?;
-                let durability = self.durability(leader.id)?;
-                let update_result = self
-                    .host_controller
-                    .update_module_host(
-                        database,
-                        spec.host_type,
-                        leader.id,
-                        durability,
-                        spec.program_bytes.into(),
-                    )
+                    .leader(database_id)
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
+                let durability = durability(self.host_controller.clone(), &database_addr, leader.replica_id);
+                let update_result = leader
+                    .update(database, spec.host_type, spec.program_bytes.into(), durability)
                     .await?;
-
                 if update_result.was_successful() {
                     let replicas = self.control_db.get_replicas_by_database(database_id)?;
-                    let desired_replicas = spec.num_replicas as usize;
+                    let desired_replicas = num_replicas as usize;
                     if desired_replicas == 0 {
                         log::info!("Decommissioning all replicas of database {}", database_addr);
                         for instance in replicas {
@@ -462,11 +462,7 @@ impl StandaloneEnv {
                         instance.database_id, instance.id
                     )
                 })?;
-            let durability = self.durability(instance.id)?;
-            self.host_controller
-                .get_or_launch_module_host(database, instance.id, durability)
-                .await
-                .map(drop)?
+            self.leader(database.id).await?;
         }
 
         Ok(())
