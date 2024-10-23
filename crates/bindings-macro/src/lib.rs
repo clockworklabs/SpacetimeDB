@@ -340,7 +340,8 @@ pub fn schema_type(input: StdTokenStream) -> StdTokenStream {
 /// For example, it could refer to a non-existent table.
 #[proc_macro]
 pub fn filter(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    filter::filter_impl(input.into())
+    let arg = syn::parse_macro_input!(input);
+    filter::filter_impl(arg)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

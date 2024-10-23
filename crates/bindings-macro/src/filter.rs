@@ -1,32 +1,32 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{self, BuildHasher};
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::parse::{ParseStream, Parser};
+use syn::parse::{Parse, ParseStream};
+use syn::LitStr;
 
-fn parse_sql(input: ParseStream) -> syn::Result<String> {
-    use spacetimedb_sql_parser::parser::sub;
+pub(crate) struct FilterArg {
+    sql: LitStr,
+}
+impl Parse for FilterArg {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        use spacetimedb_sql_parser::parser::sub;
 
-    let lookahead = input.lookahead1();
-    let sql = if lookahead.peek(syn::LitStr) {
-        let s = input.parse::<syn::LitStr>()?;
+        let sql = input.parse::<LitStr>()?;
         // Checks the query is syntactically valid
-        let _ = sub::parse_subscription(&s.value()).map_err(|e| syn::Error::new(s.span(), format_args!("{e}")))?;
+        let _ = sub::parse_subscription(&sql.value()).map_err(|e| syn::Error::new(sql.span(), e))?;
 
-        s.value()
-    } else {
-        return Err(lookahead.error());
-    };
-
-    Ok(sql)
+        Ok(Self { sql })
+    }
 }
 
-pub(crate) fn filter_impl(input: TokenStream) -> syn::Result<TokenStream> {
-    let rls_sql = parse_sql.parse2(input)?;
+// DefaultHasher::default() is not randomized, so the macro is still deterministic.
+type Hasher = hash::BuildHasherDefault<hash::DefaultHasher>;
 
-    let mut hasher = DefaultHasher::new();
-    rls_sql.hash(&mut hasher);
-    let rls_name = format_ident!("rls_{}", hasher.finish());
+pub(crate) fn filter_impl(arg: FilterArg) -> syn::Result<TokenStream> {
+    let rls_sql = arg.sql;
+
+    let rls_name = format_ident!("rls_{}", Hasher::default().hash_one(rls_sql.value()));
 
     let register_rls_symbol = format!("__preinit__20_register_{rls_name}");
 
@@ -40,11 +40,11 @@ pub(crate) fn filter_impl(input: TokenStream) -> syn::Result<TokenStream> {
     Ok(quote! {
         const _: () = {
             #generated_describe_function
+            #[allow(non_camel_case_types)]
+            struct #rls_name;
+            impl spacetimedb::rt::RowLevelSecurityInfo for #rls_name {
+                const SQL: &'static str = #rls_sql;
+            }
         };
-        #[allow(non_camel_case_types)]
-        struct #rls_name { _never: ::core::convert::Infallible }
-        impl spacetimedb::rt::RowLevelSecurityInfo for #rls_name {
-            const SQL: &'static str = #rls_sql;
-        }
     })
 }
