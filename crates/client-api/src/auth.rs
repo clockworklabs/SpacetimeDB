@@ -11,6 +11,7 @@ use spacetimedb::auth::identity::SpacetimeIdentityClaims2;
 use spacetimedb::auth::identity::{
     decode_token, encode_token, DecodingKey, EncodingKey, JwtError, JwtErrorKind, SpacetimeIdentityClaims,
 };
+use spacetimedb::auth::token_validation::{validate_token, TokenValidationError};
 use spacetimedb::energy::EnergyQuanta;
 use spacetimedb::identity::Identity;
 use uuid::Uuid;
@@ -106,27 +107,11 @@ struct TokenClaims {
     pub subject: String,
     pub audience: Vec<String>,
 }
-use blake3;
 
 impl TokenClaims {
     // Compute the id from the issuer and subject.
     fn id(&self) -> Identity {
-        let input = format!("{}|{}", self.issuer, self.subject);
-        let first_hash = blake3::hash(input.as_bytes());
-        let id_hash = &first_hash.as_bytes()[..26];
-        let mut checksum_input = [0u8; 28];
-        // TODO: double check this gets the right number...
-        checksum_input[2..].copy_from_slice(id_hash);
-        checksum_input[0] = 0xc2;
-        checksum_input[1] = 0x00;
-        let checksum_hash = &blake3::hash(&checksum_input);
-
-        let mut final_bytes = [0u8; 32];
-        final_bytes[0] = 0xc2;
-        final_bytes[1] = 0x00;
-        final_bytes[2..6].copy_from_slice(&checksum_hash.as_bytes()[..4]);
-        final_bytes[6..].copy_from_slice(id_hash);
-        Identity::from_byte_array(final_bytes)
+        Identity::from_claims(&self.issuer, &self.subject)
     }
 
     fn encode_and_sign(&self, private_key: &EncodingKey) -> Result<String, JwtError> {
@@ -177,16 +162,32 @@ impl SpacetimeAuth {
 mod tests {
     use crate::auth::TokenClaims;
     use anyhow::Ok;
-    // use jsonwebkey as jwk;
     use jsonwebkey as jwk;
+    use jsonwebtoken::{DecodingKey, EncodingKey};
     use spacetimedb::auth::identity;
+
+    // TODO: this keypair stuff is duplicated. We should create a test-only crate with helpers.
+    struct KeyPair {
+        pub public_key: DecodingKey,
+        pub private_key: EncodingKey,
+    }
+
+    fn new_keypair() -> anyhow::Result<KeyPair> {
+        let mut my_jwk = jwk::JsonWebKey::new(jwk::Key::generate_p256());
+
+        my_jwk.set_algorithm(jwk::Algorithm::ES256).unwrap();
+        let public_key = jsonwebtoken::DecodingKey::from_ec_pem(my_jwk.key.to_public().unwrap().to_pem().as_bytes())?;
+        let private_key = jsonwebtoken::EncodingKey::from_ec_pem(my_jwk.key.try_to_pem()?.as_bytes())?;
+        Ok(KeyPair {
+            public_key,
+            private_key,
+        })
+    }
 
     // Make sure that when we encode TokenClaims, we can decode to get the expected identity.
     #[test]
     fn decode_encoded_token() -> Result<(), anyhow::Error> {
-        let mut my_jwk = jwk::JsonWebKey::new(jwk::Key::generate_p256());
-        my_jwk.set_algorithm(jwk::Algorithm::ES256)?;
-        let encoding_key = my_jwk.key.to_encoding_key();
+        let kp = new_keypair()?;
 
         let claims = TokenClaims {
             issuer: "localhost".to_string(),
@@ -194,9 +195,9 @@ mod tests {
             audience: vec!["spacetimedb".to_string()],
         };
         let id = claims.id();
-        let token = claims.encode_and_sign(&encoding_key)?;
+        let token = claims.encode_and_sign(&kp.private_key)?;
 
-        let decoded = identity::decode_token(&my_jwk.key.to_decoding_key(), &token)?;
+        let decoded = identity::decode_token(&kp.public_key, &token)?;
         assert_eq!(decoded.claims.identity, id);
         Ok(())
     }
@@ -213,7 +214,11 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
         let Some(creds) = SpacetimeCreds::from_request_parts(parts)? else {
             return Ok(Self { auth: None });
         };
-        let claims = creds.decode_token(state.public_key())?;
+
+        let claims = validate_token(state.public_key().clone(), &state.local_issuer(), &creds.token)
+            .await
+            .map_err(AuthorizationRejection::Custom)?;
+
         let auth = SpacetimeAuth {
             creds,
             identity: claims.identity,
@@ -227,6 +232,7 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
 pub enum AuthorizationRejection {
     Jwt(JwtError),
     Header(headers::Error),
+    Custom(TokenValidationError),
     Required,
 }
 
@@ -247,6 +253,7 @@ impl IntoResponse for AuthorizationRejection {
         match self {
             AuthorizationRejection::Jwt(e) if *e.kind() == JwtErrorKind::InvalidSignature => ROTATED.into_response(),
             AuthorizationRejection::Jwt(_) | AuthorizationRejection::Header(_) => INVALID.into_response(),
+            AuthorizationRejection::Custom(msg) => (StatusCode::UNAUTHORIZED, format!("{:?}", msg)).into_response(),
             AuthorizationRejection::Required => REQUIRED.into_response(),
         }
     }

@@ -38,6 +38,7 @@ hex.workspace = true
 itertools.workspace = true
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
+blake3.workspace = true
 
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
