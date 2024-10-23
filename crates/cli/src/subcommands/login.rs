@@ -20,10 +20,10 @@ pub fn cli() -> Command {
                 .help("Do a new login even if we're already logged in."),
         )
         .arg(
-            Arg::new("new")
-                .long("new")
+            Arg::new("refresh")
+                .long("refresh")
                 .action(ArgAction::SetTrue)
-                .help("Do a new login even if we're already logged in."),
+                .help("Refresh the cached tokens"),
         )
         .about("Login the CLI in to SpacetimeDB")
 }
@@ -31,42 +31,47 @@ pub fn cli() -> Command {
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let spacetimedb_token: Option<&String> = args.get_one("spacetimedb-token");
     let host: &String = args.get_one("host").unwrap();
-    // TODO: This `--new` does not (and can not) clear any of the browser's cookies, so it will refresh the tokens stored in config,
+    // TODO: This `--refresh` does not (and can not) clear any of the browser's cookies, so it will refresh the tokens stored in config,
     // but if you're already logged in with the browser, it will not let you e.g. choose a different account.
-    let new_login = args.get_flag("new");
+    let clear_cache = args.get_flag("refresh");
 
-    // Currently, this token does not expire. However, it will at some point in the future. When that happens,
-    // this code will need to happen before any request to a spacetimedb server, rather than at the end of the login flow here.
-    let spacetimedb_token = if let Some(token) = spacetimedb_token {
+    if let Some(token) = spacetimedb_token {
         config.set_spacetimedb_token(token.clone());
         config.save();
-        Some(token)
-    } else if new_login {
-        None
-    } else {
-        config.spacetimedb_token()
-    };
-    let _spacetimedb_token = if let Some(token) = spacetimedb_token {
-        token.clone()
-    } else {
-        let session_id = if new_login { None } else { config.web_session_id() };
-        let session_id = if let Some(session_id) = session_id {
-            // Currently, these session IDs do not expire. At some point in the future, we may also need to check this session ID for validity.
-            session_id.clone()
-        } else {
-            let session_id = web_login(host).await?;
-            config.set_web_session_id(session_id.clone());
-            config.save();
-            session_id
-        };
+        return Ok(());
+    }
 
+    spacetimedb_token_cached(&mut config, host, clear_cache).await?;
+
+    Ok(())
+}
+
+async fn spacetimedb_token_cached(config: &mut Config, host: &String, clear_cache: bool) -> anyhow::Result<String> {
+    // Currently, this token does not expire. However, it will at some point in the future. When that happens,
+    // this code will need to happen before any request to a spacetimedb server, rather than at the end of the login flow here.
+    let spacetimedb_token = config.spacetimedb_token().filter(|_| !clear_cache);
+    if let Some(token) = spacetimedb_token {
+        Ok(token.clone())
+    } else {
+        let session_id = web_login_cached(config, host, clear_cache).await?;
         let token = spacetimedb_login(host, &session_id).await?;
         config.set_spacetimedb_token(token.clone());
         config.save();
-        token
-    };
+        Ok(token)
+    }
+}
 
-    Ok(())
+async fn web_login_cached(config: &mut Config, host: &String, clear_cache: bool) -> anyhow::Result<String> {
+    let session_id = config.web_session_id().filter(|_| !clear_cache);
+    if let Some(session_id) = session_id {
+        // Currently, these session IDs do not expire. At some point in the future, we may also need to check this session ID for validity.
+        Ok(session_id.clone())
+    } else {
+        let session_id = web_login(host).await?;
+        config.set_web_session_id(session_id.clone());
+        config.save();
+        Ok(session_id)
+    }
 }
 
 #[derive(Deserialize)]

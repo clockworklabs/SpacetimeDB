@@ -60,6 +60,8 @@ pub struct RawConfig {
     default_server: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     server_configs: Vec<ServerConfig>,
+    // TODO: Consider how these tokens should look to be backwards-compatible with the future changes (e.g. we may want to allow users to `login` to switch between multiple accounts - what will we cache and where?)
+    // TODO: Move these IDs/tokens out of config so we're no longer storing sensitive tokens in a human-edited file.
     web_session_id: Option<String>,
     spacetimedb_token: Option<String>,
 }
