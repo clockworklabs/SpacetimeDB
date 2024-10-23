@@ -96,13 +96,16 @@ public class SnapshotTests
         }
     }
 
-    private static ServerMessage.IdentityToken SampleId(string identity, string token, string address) =>
-        new(new()
+    private static IdentityToken SampleId(string identity, string token, string address) =>
+        new()
         {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Token = token,
             Address = Address.From(Convert.FromBase64String(address)) ?? throw new InvalidDataException("address")
-        });
+        };
+
+    private static ServerMessage.AfterConnecting SampleHandshake(string identity, string token, string address, IdsToNames idsToNames) =>
+        new(new(SampleId(identity, token, address), idsToNames));
 
     private static ServerMessage.InitialSubscription SampleSubscriptionUpdate(
         uint requestId,
@@ -123,7 +126,7 @@ public class SnapshotTests
         string callerIdentity,
         string callerAddress,
         uint requestId,
-        string reducerName,
+        uint reducerId,
         ulong energyQuantaUsed,
         ulong hostExecutionDuration,
         List<TableUpdate> updates,
@@ -141,7 +144,7 @@ public class SnapshotTests
         ReducerCall = new()
         {
             RequestId = requestId,
-            ReducerName = reducerName,
+            ReducerId = reducerId,
             Args = args ?? []
         },
         Status = new UpdateStatus.Committed(new()
@@ -152,13 +155,11 @@ public class SnapshotTests
 
     private static TableUpdate SampleUpdate<T>(
         uint tableId,
-        string tableName,
         List<T> inserts,
         List<T> deletes
     ) where T : IStructuralReadWrite => new()
     {
         TableId = tableId,
-        TableName = tableName,
         NumRows = (ulong)(inserts.Count + deletes.Count),
         Updates = [new CompressableQueryUpdate.Uncompressed(new QueryUpdate(
             EncodeRowList<T>(deletes), EncodeRowList<T>(inserts)))]
@@ -190,7 +191,7 @@ public class SnapshotTests
     }
 
     private static TableUpdate SampleUserInsert(string identity, string? name, bool online) =>
-        SampleUpdate(4097, "user", [new User
+        SampleUpdate(4097, [new User
         {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Name = name,
@@ -198,7 +199,7 @@ public class SnapshotTests
         }], []);
 
     private static TableUpdate SampleUserUpdate(string identity, string? oldName, string? newName, bool oldOnline, bool newOnline) =>
-        SampleUpdate(4097, "user", [new User
+        SampleUpdate(4097, [new User
         {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Name = newName,
@@ -211,7 +212,7 @@ public class SnapshotTests
         }]);
 
     private static TableUpdate SampleMessage(string identity, ulong sent, string text) =>
-        SampleUpdate(4098, "message", [new Message
+        SampleUpdate(4098, [new Message
         {
             Sender = Identity.From(Convert.FromBase64String(identity)),
             Sent = sent,
@@ -219,55 +220,61 @@ public class SnapshotTests
         }], []);
 
     private static ServerMessage[] SampleDump() => [
-        SampleId(
+        SampleHandshake(
             "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=",
             "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJoZXhfaWRlbnRpdHkiOiI4ZjkwY2M5NGE5OTY4ZGY2ZDI5N2JhYTY2NTAzYTg5M2IxYzM0YjBiMDAyNjhhNTE0ODk4ZGQ5NTRiMGRhMjBiIiwiaWF0IjoxNzE4NDg3NjY4LCJleHAiOm51bGx9.PSn481bLRqtFwIh46nOXDY14X3GKbz8t4K4GmBmz50loU6xzeL7zDdCh1V2cmiQsoGq8Erxg0r_6b6Y5SqKoBA",
-            "Vd4dFzcEzhLHJ6uNL8VXFg=="
+            "Vd4dFzcEzhLHJ6uNL8VXFg==",
+            new IdsToNames(
+                [],
+                [],
+                [4097, 4098],
+                ["user", "message"]
+            )
         ),
         SampleSubscriptionUpdate(
             1, 366, [SampleUserInsert("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)]
         ),
         SampleTransactionUpdate(0, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-            0, "unknown-reducer", 0, 40, [], null
+            0, 50, 0, 40, [], null
         ),
         SampleTransactionUpdate(
             1718487763059031, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-            0, "__identity_connected__", 1957615, 66, [SampleUserInsert("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, true)],
+            0, 0, 1957615, 66, [SampleUserInsert("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, true)],
             null
         ),
         SampleTransactionUpdate(
             1718487768057579, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
-            1, "set_name", 4345615, 70, [SampleUserUpdate("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, "A", true, true)],
+            1, 4, 4345615, 70, [SampleUserUpdate("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, "A", true, true)],
             Encode(new SetName { Name = "A" })
         ),
         SampleTransactionUpdate(
             1718487775346381, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-            1, "send_message", 2779615, 57, [SampleMessage("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", 1718487775346381, "Hello, A!")],
+            1, 3, 2779615, 57, [SampleMessage("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", 1718487775346381, "Hello, A!")],
             Encode(new SendMessage { Text = "Hello, A!" })
         ),
         SampleTransactionUpdate(
             1718487777307855, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-            2, "set_name", 4268615, 98, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, "B", true, true)],
+            2, 4, 4268615, 98, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, "B", true, true)],
             Encode(new SetName { Name = "B" })
         ),
         SampleTransactionUpdate(
             1718487783175083, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
-            2, "send_message", 2677615, 40, [SampleMessage("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", 1718487783175083, "Hello, B!")],
+            2, 3, 2677615, 40, [SampleMessage("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", 1718487783175083, "Hello, B!")],
             Encode(new SendMessage { Text = "Hello, B!" })
         ),
         SampleTransactionUpdate(
             1718487787645364, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-            3, "send_message", 2636615, 28, [SampleMessage("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", 1718487787645364, "Goodbye!")],
+            3, 3, 2636615, 28, [SampleMessage("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", 1718487787645364, "Goodbye!")],
             Encode(new SendMessage { Text = "Goodbye!" })
         ),
         SampleTransactionUpdate(
             1718487791901504, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-            0, "__identity_disconnected__", 3595615, 75, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "B", "B", true, false)],
+            0, 1, 3595615, 75, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "B", "B", true, false)],
             null
         ),
         SampleTransactionUpdate(
             1718487794937841, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
-            3, "send_message", 2636615, 34, [SampleMessage("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", 1718487794937841, "Goodbye!")],
+            3, 3, 2636615, 34, [SampleMessage("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", 1718487794937841, "Goodbye!")],
             Encode(new SendMessage { Text = "Goodbye!" })
         ),
     ];

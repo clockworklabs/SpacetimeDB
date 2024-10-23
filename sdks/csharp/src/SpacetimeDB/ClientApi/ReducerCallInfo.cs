@@ -15,8 +15,6 @@ namespace SpacetimeDB.ClientApi
 	[DataContract]
 	public partial class ReducerCallInfo
 	{
-		[DataMember(Name = "reducer_name")]
-		public string ReducerName;
 		[DataMember(Name = "reducer_id")]
 		public uint ReducerId;
 		[DataMember(Name = "args")]
@@ -25,13 +23,11 @@ namespace SpacetimeDB.ClientApi
 		public uint RequestId;
 
 		public ReducerCallInfo(
-			string ReducerName,
 			uint ReducerId,
 			byte[] Args,
 			uint RequestId
 		)
 		{
-			this.ReducerName = ReducerName;
 			this.ReducerId = ReducerId;
 			this.Args = Args;
 			this.RequestId = RequestId;
@@ -39,7 +35,6 @@ namespace SpacetimeDB.ClientApi
 
 		public ReducerCallInfo()
 		{
-			this.ReducerName = "";
 			this.Args = Array.Empty<byte>();
 		}
 

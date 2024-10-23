@@ -6,7 +6,7 @@ namespace SpacetimeDB
 
     public interface IReducerArgs : BSATN.IStructuralReadWrite
     {
-        string ReducerName { get; }
+        uint ReducerIndex { get; }
     }
 
     [Type]

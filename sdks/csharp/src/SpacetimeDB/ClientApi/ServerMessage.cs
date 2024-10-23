@@ -14,7 +14,7 @@ namespace SpacetimeDB.ClientApi
 		SpacetimeDB.ClientApi.InitialSubscription InitialSubscription,
 		SpacetimeDB.ClientApi.TransactionUpdate TransactionUpdate,
 		SpacetimeDB.ClientApi.TransactionUpdateLight TransactionUpdateLight,
-		SpacetimeDB.ClientApi.IdentityToken IdentityToken,
+		SpacetimeDB.ClientApi.AfterConnecting AfterConnecting,
 		SpacetimeDB.ClientApi.OneOffQueryResponse OneOffQueryResponse
 	)>;
 }

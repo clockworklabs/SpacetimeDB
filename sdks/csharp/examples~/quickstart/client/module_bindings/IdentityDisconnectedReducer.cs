@@ -10,10 +10,8 @@ using SpacetimeDB;
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
-	public partial class SendMessage : IReducerArgs
+	public partial class IdentityDisconnected : IReducerArgs
 	{
-		uint IReducerArgs.ReducerIndex => 3;
-
-		public string Text = "";
+		uint IReducerArgs.ReducerIndex => 1;
 	}
 }

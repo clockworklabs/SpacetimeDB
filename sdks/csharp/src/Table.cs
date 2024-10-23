@@ -38,19 +38,19 @@ namespace SpacetimeDB
         internal void InvokeBeforeDelete(IEventContext context, IDatabaseRow row);
         internal void InvokeUpdate(IEventContext context, IDatabaseRow oldRow, IDatabaseRow newRow);
 
-        internal void Initialize(string name, IDbConnection conn);
+        internal void Initialize(uint tableIdx, IDbConnection conn);
     }
 
     public abstract class RemoteTableHandle<EventContext, Row> : IRemoteTableHandle
         where EventContext : class, IEventContext
         where Row : IDatabaseRow, new()
     {
-        string? name;
+        uint tableIdx;
         IDbConnection? conn;
 
-        void IRemoteTableHandle.Initialize(string name, IDbConnection conn)
+        void IRemoteTableHandle.Initialize(uint tableIdx, IDbConnection conn)
         {
-            this.name = name;
+            this.tableIdx = tableIdx;
             this.conn = conn;
         }
 
@@ -106,7 +106,7 @@ namespace SpacetimeDB
         protected IEnumerable<Row> Query(Func<Row, bool> filter) => Iter().Where(filter);
 
         public Task<Row[]> RemoteQuery(string query) =>
-            conn!.RemoteQuery<Row>($"SELECT * FROM {name!} {query}");
+            conn!.RemoteQuery<Row>($"SELECT * FROM {conn.TableName(tableIdx)!} {query}");
 
         void IRemoteTableHandle.InvokeInsert(IEventContext context, IDatabaseRow row) =>
             OnInsert?.Invoke((EventContext)context, (Row)row);

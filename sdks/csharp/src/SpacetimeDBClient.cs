@@ -101,6 +101,7 @@ namespace SpacetimeDB
         void Disconnect();
 
         internal Task<T[]> RemoteQuery<T>(string query) where T : IDatabaseRow, new();
+        string TableName(uint tableIdx);
     }
 
     public abstract class DbConnectionBase<DbConnection, Reducer> : IDbConnection
@@ -150,7 +151,7 @@ namespace SpacetimeDB
         private bool connectionClosed;
         protected readonly ClientCache clientDB;
 
-        protected abstract Reducer ToReducer(TransactionUpdate update);
+        protected abstract Reducer ToReducer(uint reducerIdx, TransactionUpdate update);
         protected abstract IEventContext ToEventContext(Event<Reducer> reducerEvent);
 
         private readonly Dictionary<Guid, TaskCompletionSource<OneOffQueryResponse>> waitingOneOffQueries = new();
@@ -158,6 +159,29 @@ namespace SpacetimeDB
         private bool isClosing;
         private readonly Thread networkMessageProcessThread;
         public readonly Stats stats = new();
+
+        private Dictionary<uint, uint> reducerIdToIdx = new();
+        private List<uint> reducerIdxToId = new();
+        private List<string> reducerIdxToName = new();
+        private Dictionary<uint, uint> tableIdToIdx = new();
+        private List<string> tableIdxToName = new();
+        private void InitIds(IdsToNames idsToNames)
+        {
+            reducerIdxToId = idsToNames.ReducerIds;
+            reducerIdxToName = idsToNames.ReducerNames;
+            tableIdxToName = idsToNames.TableNames;
+
+            for (int reducerIdx = 0; reducerIdx < reducerIdxToId.Count; reducerIdx++)
+            {
+                reducerIdToIdx.Add(reducerIdxToId[reducerIdx], (uint)reducerIdx);
+            }
+            for (int tableIdx = 0; tableIdx < idsToNames.TableIds.Count; tableIdx++)
+            {
+                tableIdToIdx.Add(idsToNames.TableIds[tableIdx], (uint)tableIdx);
+            }
+        }
+        string IDbConnection.TableName(uint tableIdx) => tableIdxToName[(int)tableIdx];
+        private string TableIdToName(uint tableId) => tableIdxToName[(int)tableIdToIdx[tableId]];
 
         protected DbConnectionBase()
         {
@@ -351,11 +375,11 @@ namespace SpacetimeDB
             {
                 foreach (var update in updates.Tables)
                 {
-                    var tableName = update.TableName;
-                    var table = clientDB.GetTable(tableName);
+                    var tableIdx = tableIdToIdx[update.TableId];
+                    var table = clientDB.GetTable(tableIdx);
                     if (table == null)
                     {
-                        Log.Error($"Unknown table name: {tableName}");
+                        Log.Error($"Unknown table name: {update.TableId}");
                         continue;
                     }
 
@@ -446,7 +470,7 @@ namespace SpacetimeDB
                                 {
                                     if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
                                     {
-                                        Log.Warn($"Update with the same primary key was applied multiple times! tableName={update.TableName}");
+                                        Log.Warn($"Update with the same primary key was applied multiple times! tableName={TableIdToName(update.TableId)}");
                                         // TODO(jdetter): Is this a correctable error? This would be a major error on the
                                         // SpacetimeDB side.
                                         continue;
@@ -481,7 +505,7 @@ namespace SpacetimeDB
                                 {
                                     if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
                                     {
-                                        Log.Warn($"Update with the same primary key was applied multiple times! tableName={update.TableName}");
+                                        Log.Warn($"Update with the same primary key was applied multiple times! tableName={TableIdToName(update.TableId)}");
                                         // TODO(jdetter): Is this a correctable error? This would be a major error on the
                                         // SpacetimeDB side.
                                         continue;
@@ -547,6 +571,7 @@ namespace SpacetimeDB
                         // Convert the generic event arguments in to a domain specific event object
                         try
                         {
+                            var reducerIdx = reducerIdToIdx[transactionUpdate.ReducerCall.ReducerId];
                             reducerEvent = new(
                                 DateTimeOffset.FromUnixTimeMilliseconds((long)transactionUpdate.Timestamp.Microseconds / 1000),
                                 transactionUpdate.Status switch
@@ -559,7 +584,7 @@ namespace SpacetimeDB
                                 transactionUpdate.CallerIdentity,
                                 transactionUpdate.CallerAddress,
                                 transactionUpdate.EnergyQuantaUsed.Quanta,
-                                ToReducer(transactionUpdate));
+                                ToReducer(reducerIdx, transactionUpdate));
                         }
                         catch (Exception e)
                         {
@@ -574,7 +599,8 @@ namespace SpacetimeDB
                     case ServerMessage.TransactionUpdateLight(var update):
                         dbOps = PreProcessDatabaseUpdate(update.Update);
                         break;
-                    case ServerMessage.IdentityToken(var identityToken):
+                    case ServerMessage.AfterConnecting(var afterConnecting):
+                        InitIds(afterConnecting.IdsToNames);
                         break;
                     case ServerMessage.OneOffQueryResponse(var resp):
                         PreProcessOneOffQuery(resp);
@@ -793,7 +819,7 @@ namespace SpacetimeDB
 
                 case ServerMessage.TransactionUpdate(var transactionUpdate):
                     {
-                        var reducer = transactionUpdate.ReducerCall.ReducerName;
+                        var reducer = reducerIdxToName[(int)reducerIdToIdx[transactionUpdate.ReducerCall.ReducerId]];
                         stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.TransactionUpdate)},reducer={reducer}");
                         var hostDuration = TimeSpan.FromMilliseconds(transactionUpdate.HostExecutionDurationMicros / 1000.0d);
                         stats.AllReducersTracker.InsertRequest(hostDuration, $"reducer={reducer}");
@@ -840,9 +866,10 @@ namespace SpacetimeDB
                         }
                         break;
                     }
-                case ServerMessage.IdentityToken(var identityToken):
+                case ServerMessage.AfterConnecting(var afterConnecting):
                     try
                     {
+                        var identityToken = afterConnecting.IdentityToken;
                         Identity = identityToken.Identity;
                         onConnect?.Invoke(identityToken.Identity, identityToken.Token);
                     }
@@ -875,10 +902,14 @@ namespace SpacetimeDB
                 return;
             }
 
+            var reducerIdx = (int)args.ReducerIndex;
+            var reducerId = reducerIdxToId[reducerIdx];
+            var reducerName = reducerIdxToName[reducerIdx];
+
             webSocket.Send(new ClientMessage.CallReducer(new CallReducer(
-                args.ReducerName,
+                reducerId,
                 IStructuralReadWrite.ToBytes(args),
-                stats.ReducerRequestTracker.StartTrackingRequest(args.ReducerName),
+                stats.ReducerRequestTracker.StartTrackingRequest(reducerName),
                 (byte)flags
             )));
         }
@@ -950,11 +981,11 @@ namespace SpacetimeDB
             }
 
             var resultTable = result.Tables[0];
-            var cacheTable = clientDB.GetTable(resultTable.TableName);
+            var cacheTable = clientDB.GetTable(resultTable.TableId);
 
             if (cacheTable?.ClientTableType != typeof(T))
             {
-                return LogAndThrow($"Mismatched result type, expected {typeof(T)} but got {resultTable.TableName}");
+                return LogAndThrow($"Mismatched result type, expected {typeof(T)} but got {TableIdToName(resultTable.TableId)}");
             }
 
             return BsatnRowListIter(resultTable.Rows)

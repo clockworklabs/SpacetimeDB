@@ -12,7 +12,7 @@ namespace SpacetimeDB.Types
 	[SpacetimeDB.Type]
 	public partial class SetName : IReducerArgs
 	{
-		string IReducerArgs.ReducerName => "set_name";
+		uint IReducerArgs.ReducerIndex => 4;
 
 		public string Name = "";
 	}
