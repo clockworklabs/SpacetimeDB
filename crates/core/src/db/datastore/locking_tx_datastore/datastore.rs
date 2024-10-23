@@ -33,13 +33,16 @@ use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
-use spacetimedb_snapshot::ReconstructedSnapshot;
+use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
 use spacetimedb_table::{
     indexes::RowPointer,
     table::{RowRef, Table},
 };
-use std::time::{Duration, Instant};
 use std::{borrow::Cow, sync::Arc};
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, DBError>;
@@ -207,6 +210,20 @@ impl Locking {
         Ok(datastore)
     }
 
+    pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<PathBuf> {
+        let mut committed_state = self.committed_state.write();
+        let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {
+            return Err(anyhow!("Refusing to take snapshot at tx_offset -1").into());
+        };
+        let CommittedState {
+            ref mut tables,
+            ref blob_store,
+            ..
+        } = *committed_state;
+
+        Ok(repo.create_snapshot(tables.values_mut(), blob_store, tx_offset)?)
+    }
+
     /// Returns a list over all the currently connected clients,
     /// reading from the `st_clients` system table.
     pub fn connected_clients<'a>(
@@ -261,9 +278,18 @@ impl Tx for Locking {
 }
 
 impl TxDatastore for Locking {
-    type Iter<'a> = Iter<'a> where Self: 'a;
-    type IterByColEq<'a, 'r> = IterByColRange<'a, &'r AlgebraicValue> where Self: 'a;
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
+    type Iter<'a>
+        = Iter<'a>
+    where
+        Self: 'a;
+    type IterByColEq<'a, 'r>
+        = IterByColRange<'a, &'r AlgebraicValue>
+    where
+        Self: 'a;
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>
+        = IterByColRange<'a, R>
+    where
+        Self: 'a;
 
     fn iter_tx<'a>(&'a self, ctx: &'a ExecutionContext, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>> {
         tx.iter(ctx, table_id)
@@ -699,7 +725,7 @@ impl<F> Replay<F> {
         f(&mut visitor)
     }
 
-    pub(crate) fn next_tx_offset(&self) -> u64 {
+    pub fn next_tx_offset(&self) -> u64 {
         self.committed_state.read_arc().next_tx_offset
     }
 }

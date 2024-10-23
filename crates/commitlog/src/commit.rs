@@ -126,16 +126,19 @@ impl Commit {
     pub fn into_transactions<D: Decoder>(
         self,
         version: u8,
+        start: u64,
         de: &D,
     ) -> impl Iterator<Item = Result<Transaction<D::Record>, D::Error>> + '_ {
         let records = Cursor::new(self.records);
-        (self.min_tx_offset..(self.min_tx_offset + self.n as u64)).scan(records, move |recs, offset| {
-            let mut cursor = &*recs;
-            let tx = de
-                .decode_record(version, offset, &mut cursor)
-                .map(|txdata| Transaction { offset, txdata });
-            Some(tx)
-        })
+        (self.min_tx_offset..(self.min_tx_offset + self.n as u64))
+            .skip_while(move |offset| offset < &start)
+            .scan(records, move |recs, offset| {
+                let mut cursor = &*recs;
+                let tx = de
+                    .decode_record(version, offset, &mut cursor)
+                    .map(|txdata| Transaction { offset, txdata });
+                Some(tx)
+            })
     }
 }
 
@@ -216,9 +219,10 @@ impl StoredCommit {
     pub fn into_transactions<D: Decoder>(
         self,
         version: u8,
+        start: u64,
         de: &D,
     ) -> impl Iterator<Item = Result<Transaction<D::Record>, D::Error>> + '_ {
-        Commit::from(self).into_transactions(version, de)
+        Commit::from(self).into_transactions(version, start, de)
     }
 }
 
