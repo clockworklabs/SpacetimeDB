@@ -30,7 +30,7 @@ class Domains(Smoketest):
 
         self.publish_module(rand_domain)
 
-        names = self.spacetime("dns", "reverse-lookup", self.resolved_address).splitlines()
+        names = self.spacetime("dns", "reverse-lookup", self.resolved_identity).splitlines()
         self.assertIn(rand_domain, names)
 
     def test_set_name(self):

@@ -1,7 +1,7 @@
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st};
 use std::{borrow::Borrow, fmt, ops::Deref, str::FromStr};
 
-use spacetimedb_lib::Address;
+use spacetimedb_lib::Identity;
 
 #[cfg(test)]
 mod tests;
@@ -10,7 +10,7 @@ mod tests;
 pub enum InsertDomainResult {
     Success {
         domain: DomainName,
-        address: Address,
+        database_identity: Identity,
     },
 
     /// The top level domain for the database name is not registered. For example:
@@ -18,9 +18,7 @@ pub enum InsertDomainResult {
     ///  - `clockworklabs/bitcraft`
     ///
     /// if `clockworklabs` is not registered, this error is returned.
-    TldNotRegistered {
-        domain: DomainName,
-    },
+    TldNotRegistered { domain: DomainName },
 
     /// The top level domain for the database name is registered, but the identity that you provided does
     /// not have permission to insert the given database name. For example:
@@ -30,9 +28,7 @@ pub enum InsertDomainResult {
     /// If you were trying to insert this database name, but the tld `clockworklabs` is
     /// owned by an identity other than the identity that you provided, then you will receive
     /// this error.
-    PermissionDenied {
-        domain: DomainName,
-    },
+    PermissionDenied { domain: DomainName },
 
     /// Some unspecified error occurred.
     OtherError(String),
@@ -52,14 +48,14 @@ pub enum PublishResult {
         /// otherwise.
         ///
         /// In other words, this echoes back a domain name if one was given. If
-        /// the database name given was in fact a database address, this will be
+        /// the database name given was in fact a database identity, this will be
         /// `None`.
         domain: Option<String>,
-        /// The address of the published database.
+        /// The identity of the published database.
         ///
         /// Always set, regardless of whether publish resolved a domain name first
         /// or not.
-        address: Address,
+        database_identity: Identity,
         op: PublishOp,
     },
 
@@ -84,8 +80,8 @@ pub enum PublishResult {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum DnsLookupResponse {
-    /// The lookup was successful and the domain and address are returned.
-    Success { domain: DomainName, address: Address },
+    /// The lookup was successful and the domain and identity are returned.
+    Success { domain: DomainName, identity: Identity },
 
     /// There was no domain registered with the given domain name
     Failure { domain: DomainName },
@@ -428,11 +424,11 @@ pub struct ReverseDNSResponse {
     pub names: Vec<DomainName>,
 }
 
-/// Returns whether a hex string is a valid address.
+/// Returns whether a hex string is a valid identity.
 ///
-/// Any string that is a valid address is an invalid database name.
-pub fn is_address(hex: &str) -> bool {
-    Address::from_hex(hex).is_ok()
+/// Any string that is a valid identity is an invalid database name.
+pub fn is_identity(hex: &str) -> bool {
+    Identity::from_hex(hex).is_ok()
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -445,8 +441,8 @@ pub struct DomainParsingError(#[from] ParseError);
 enum ParseError {
     #[error("Database names cannot be empty")]
     Empty,
-    #[error("Addresses cannot be database names: `{part}`")]
-    Address { part: String },
+    #[error("Identities cannot be database names: `{part}`")]
+    Identity { part: String },
     #[error("Database names must not start with a slash: `{input}`")]
     StartsSlash { input: String },
     #[error("Database names must not end with a slash: `{input}`")]
@@ -521,8 +517,8 @@ fn ensure_domain_tld(input: &str) -> Result<(), ParseError> {
     let DomainSegment(input) = DomainSegment::try_from(input)?;
     if input.contains('/') {
         Err(ParseError::ContainsSlash { part: input.to_owned() })
-    } else if is_address(input) {
-        Err(ParseError::Address { part: input.to_owned() })
+    } else if is_identity(input) {
+        Err(ParseError::Identity { part: input.to_owned() })
     } else {
         Ok(())
     }

@@ -183,8 +183,8 @@ class Smoketest(unittest.TestCase):
             "--project-path", self.project_path,
             capture_stderr=capture_stderr,
         )
-        self.resolved_address = re.search(r"address: ([0-9a-fA-F]+)", publish_output)[1]
-        self.address = domain if domain is not None else self.resolved_address
+        self.resolved_identity = re.search(r"identity: ([0-9a-fA-F]+)", publish_output)[1]
+        self.address = domain if domain is not None else self.resolved_identity
 
     @classmethod
     def reset_config(cls):

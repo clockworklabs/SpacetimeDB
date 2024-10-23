@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header_only};
 use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use is_terminal::IsTerminal;
@@ -16,7 +16,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("database")
                 .required(true)
-                .help("The domain or address of the database to print logs from"),
+                .help("The name or identity of the database to print logs from"),
         )
         .arg(
             common_args::server()
@@ -123,7 +123,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let auth_header = get_auth_header_only(&mut config, false, identity, server).await?;
 
-    let address = database_address(&config, database, server).await?;
+    let database_identity = database_identity(&config, database, server).await?;
 
     if follow && num_lines.is_none() {
         // We typically don't want logs from the very beginning if we're also following.
@@ -133,7 +133,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let host_url = config.get_host_url(server)?;
 
-    let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", host_url, address));
+    let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", host_url, database_identity));
     let builder = add_auth_header_opt(builder, &auth_header);
     let mut res = builder.query(&query_parms).send().await?;
     let status = res.status();

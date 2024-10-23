@@ -6,10 +6,9 @@ use std::time::Instant;
 
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb::Identity;
+use spacetimedb_client_api::routes::subscribe::generate_random_address;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use tokio::runtime::{Builder, Runtime};
-
-use spacetimedb::address::Address;
 
 use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
@@ -46,7 +45,7 @@ pub struct ModuleHandle {
     // Needs to hold a reference to the standalone env.
     _env: Arc<StandaloneEnv>,
     pub client: ClientConnection,
-    pub db_address: Address,
+    pub db_identity: Identity,
 }
 
 impl ModuleHandle {
@@ -76,7 +75,7 @@ impl ModuleHandle {
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
-        let filepath = DatabaseLogger::filepath(&self.db_address, self.client.replica_id);
+        let filepath = DatabaseLogger::filepath(&self.db_identity, self.client.replica_id);
         DatabaseLogger::read_latest(&filepath, size).await
     }
 }
@@ -153,8 +152,8 @@ impl CompiledModule {
         let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
-        let db_address = env.create_address().await.unwrap();
-        let client_address = env.create_address().await.unwrap();
+        let db_identity = Identity::placeholder();
+        let client_address = generate_random_address();
 
         let program_bytes = self
             .program_bytes
@@ -164,7 +163,7 @@ impl CompiledModule {
         env.publish_database(
             &identity,
             DatabaseDef {
-                address: db_address,
+                database_identity: db_identity,
                 program_bytes,
                 num_replicas: 1,
                 host_type: HostType::Wasm,
@@ -173,7 +172,7 @@ impl CompiledModule {
         .await
         .unwrap();
 
-        let database = env.get_database_by_address(&db_address).unwrap().unwrap();
+        let database = env.get_database_by_identity(&db_identity).unwrap().unwrap();
         let instance = env.get_leader_replica_by_database(database.id).unwrap();
 
         let client_id = ClientActorId {
@@ -196,7 +195,7 @@ impl CompiledModule {
         ModuleHandle {
             _env: env,
             client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module_rx),
-            db_address,
+            db_identity,
         }
     }
 }
