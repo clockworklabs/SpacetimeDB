@@ -16,9 +16,6 @@
     "spacetime:publish:local": "spacetime publish game --project-path server --server local",
     "spacetime:publish": "spacetime publish game --project-path server --server testnet"
   },
-  "workspaces": [
-    "packages/*"
-  ],
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

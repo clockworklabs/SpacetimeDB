@@ -34,7 +34,9 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
-} from '../index';
+  // @ts-ignore
+  deepEqual,
+} from '..';
 // @ts-ignore
 import { CallReducer as __CallReducer } from './call_reducer_type';
 // @ts-ignore

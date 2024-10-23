@@ -34,7 +34,9 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
-} from '../index';
+  // @ts-ignore
+  deepEqual,
+} from '..';
 // @ts-ignore
 import { RowSizeHint as __RowSizeHint } from './row_size_hint_type';
 
