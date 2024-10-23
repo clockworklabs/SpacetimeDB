@@ -16,6 +16,7 @@ internal static class Util
     // Similarly, we need some constants that are not available in .NET Standard.
     public const long NanosecondsPerTick = 100;
     public const long NanosecondsPerMicrosecond = 1000;
+    public const long NanosecondsPerSecond = 1_000_000_000;
 
 }
 
@@ -178,6 +179,16 @@ public partial struct Timestamp(long nanosecondsSinceUnixEpoch) : SpacetimeDB.BS
     // For backwards-compatibility.
     public readonly DateTimeOffset ToStd() => this;
 
+    // Should be consistent with Rust implementation of Display.
+    public override string ToString()
+    {
+        var sign = NanosecondsSinceUnixEpoch < 0 ? "-" : "";
+        var pos = Math.Abs(NanosecondsSinceUnixEpoch);
+        var secs = pos / Util.NanosecondsPerSecond;
+        var nanosRemaining = pos % Util.NanosecondsPerSecond;
+        return $"{sign}{secs}.{nanosRemaining:D9}";
+    }
+
     // --- auto-generated ---
     public void ReadFields(System.IO.BinaryReader reader)
     {
@@ -221,6 +232,15 @@ public partial struct TimeDuration(long nanoseconds) : SpacetimeDB.BSATN.IStruct
     // For backwards-compatibility.
     public readonly TimeSpan ToStd() => this;
 
+    // Should be consistent with Rust implementation of Display.
+    public override string ToString()
+    {
+        var sign = Nanoseconds < 0 ? "-" : "+";
+        var pos = Math.Abs(Nanoseconds);
+        var secs = pos / Util.NanosecondsPerSecond;
+        var nanosRemaining = pos % Util.NanosecondsPerSecond;
+        return $"{sign}{secs}.{nanosRemaining:D9}";
+    }
     // --- auto-generated ---
 
     public void ReadFields(System.IO.BinaryReader reader)

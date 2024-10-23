@@ -33,6 +33,7 @@ public static partial class Module
             string Str,
             Identity Identity,
             Address Address,
+            Timestamp Timestamp,
             List<byte> Bytes,
             List<int> Ints,
             List<string> Strings,
@@ -69,6 +70,8 @@ public static partial class Module
         public string p;
         public Identity q;
         public Address r;
+        public Timestamp s;
+        public TimeDuration t;
     }
 
     [SpacetimeDB.Type]
@@ -92,6 +95,7 @@ public static partial class Module
         public List<string> p;
         public List<Identity> q;
         public List<Address> r;
+        public List<Timestamp> s;
     }
 
     [SpacetimeDB.Table(Name = "one_u8", Public = true)]
@@ -308,6 +312,18 @@ public static partial class Module
     public static void insert_one_address(ReducerContext ctx, Address a)
     {
         ctx.Db.one_address.Insert(new OneAddress { a = a });
+    }
+
+    [SpacetimeDB.Table(Name = "one_timestamp", Public = true)]
+    public partial struct OneTimestamp
+    {
+        public Timestamp t;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_one_timestamp(ReducerContext ctx, Timestamp t)
+    {
+        ctx.Db.one_timestamp.Insert(new OneTimestamp { t = t });
     }
 
     [SpacetimeDB.Table(Name = "one_simple_enum", Public = true)]
@@ -596,6 +612,18 @@ public static partial class Module
     public static void insert_vec_address(ReducerContext ctx, List<Address> a)
     {
         ctx.Db.vec_address.Insert(new VecAddress { a = a });
+    }
+
+    [SpacetimeDB.Table(Name = "vec_timestamp", Public = true)]
+    public partial struct VecTimestamp
+    {
+        public List<Timestamp> t;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_vec_timestamp(ReducerContext ctx, List<Timestamp> t)
+    {
+        ctx.Db.vec_timestamp.Insert(new VecTimestamp { t = t });
     }
 
     [SpacetimeDB.Table(Name = "vec_simple_enum", Public = true)]
@@ -1713,7 +1741,8 @@ public static partial class Module
         EveryVecStruct v
     )
     {
-        ctx.Db.large_table.Insert(new LargeTable {
+        ctx.Db.large_table.Insert(new LargeTable
+        {
             a = a,
             b = b,
             c = c,
@@ -1742,12 +1771,19 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_primitives_as_strings(ReducerContext ctx, EveryPrimitiveStruct s)
     {
-        ctx.Db.vec_string.Insert(new VecString {
+        ctx.Db.vec_string.Insert(new VecString
+        {
             s = typeof(EveryPrimitiveStruct)
                 .GetFields()
                 .Select(f => f.GetValue(s)!.ToString()!.ToLowerInvariant())
                 .ToList()
         });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_call_timestamp(ReducerContext ctx)
+    {
+        ctx.Db.one_timestamp.Insert(new OneTimestamp { t = ctx.Timestamp });
     }
 
     [SpacetimeDB.Table(Name = "table_holds_table", Public = true)]

@@ -9,6 +9,7 @@
 use anyhow::{Context, Result};
 use spacetimedb::{
     sats::{i256, u256},
+    spacetimedb_lib::TimeDuration,
     Address, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
 };
 
@@ -77,6 +78,7 @@ pub struct EveryPrimitiveStruct {
     q: Identity,
     r: Address,
     s: Timestamp,
+    t: TimeDuration,
 }
 
 #[derive(SpacetimeType)]
@@ -605,6 +607,7 @@ fn insert_primitives_as_strings(ctx: &ReducerContext, s: EveryPrimitiveStruct) {
             s.p.to_string(),
             s.q.to_string(),
             s.r.to_string(),
+            s.s.to_string(),
         ],
     });
 }

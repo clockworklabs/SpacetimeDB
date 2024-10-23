@@ -7,7 +7,7 @@ use module_bindings::*;
 use spacetimedb_sdk::{
     credentials,
     sats::{i256, u256},
-    Address, DbContext, Event, Identity, ReducerEvent, Status, Table, Timestamp,
+    Address, DbContext, Event, Identity, ReducerEvent, Status, Table, TimeDuration, Timestamp,
 };
 use test_counter::TestCounter;
 
@@ -1041,7 +1041,8 @@ fn every_primitive_struct() -> EveryPrimitiveStruct {
         p: "string".to_string(),
         q: Identity::__dummy(),
         r: Address::default(),
-        s: Timestamp::now(),
+        s: Timestamp::from_nanos_since_unix_epoch(69_420_000_000_003),
+        t: TimeDuration::from_nanos(-67_419_000_000_003),
     }
 }
 
@@ -1358,6 +1359,8 @@ fn exec_insert_primitives_as_strings() {
                 s.p.to_string(),
                 s.q.to_string(),
                 s.r.to_string(),
+                s.s.to_string(),
+                s.t.to_string(),
             ];
 
             ctx.db.vec_string().on_insert(move |ctx, row| {

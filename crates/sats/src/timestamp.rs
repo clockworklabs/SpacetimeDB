@@ -1,4 +1,5 @@
 use crate::{de::Deserialize, impl_st, ser::Serialize, time_duration::TimeDuration, AlgebraicType};
+use std::fmt;
 use std::time::{Duration, SystemTime};
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize, Debug)]
@@ -142,6 +143,20 @@ impl Timestamp {
             .to_nanos_since_unix_epoch()
             .checked_sub(earlier.to_nanos_since_unix_epoch())?;
         Some(TimeDuration::from_nanos(delta))
+    }
+}
+
+pub(crate) const NANOSECONDS_PER_SECOND: i64 = 1_000_000_000;
+
+impl std::fmt::Display for Timestamp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let nanos = self.to_nanos_since_unix_epoch();
+        let sign = if nanos < 0 { "-" } else { "" };
+        let pos = nanos.abs();
+        let secs = pos / NANOSECONDS_PER_SECOND;
+        let nanos_remaining = pos % NANOSECONDS_PER_SECOND;
+
+        write!(f, "{sign}{secs}.{nanos_remaining:09}",)
     }
 }
 

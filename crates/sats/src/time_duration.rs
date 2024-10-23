@@ -1,4 +1,6 @@
+use crate::timestamp::NANOSECONDS_PER_SECOND;
 use crate::{de::Deserialize, impl_st, ser::Serialize, AlgebraicType};
+use std::fmt;
 use std::time::Duration;
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize, Debug)]
@@ -80,6 +82,17 @@ impl TryFrom<TimeDuration> for Duration {
     /// If `d` is negative, returns its magnitude as the `Err` variant.
     fn try_from(d: TimeDuration) -> Result<Duration, Duration> {
         d.to_duration()
+    }
+}
+
+impl fmt::Display for TimeDuration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let nanos = self.to_nanos();
+        let sign = if nanos < 0 { "-" } else { "+" };
+        let pos = nanos.abs();
+        let secs = pos / NANOSECONDS_PER_SECOND;
+        let nanos_remaining = pos % NANOSECONDS_PER_SECOND;
+        write!(f, "{sign}{secs}.{nanos_remaining:09}")
     }
 }
 
