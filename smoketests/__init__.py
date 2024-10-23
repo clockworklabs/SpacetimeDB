@@ -144,13 +144,7 @@ def new_identity(config_path):
     identity_response = run_cmd("curl", "-X", "POST", "--no-progress-meter", "http://127.0.0.1:3000/identity", full_output=False)
     identity_response = json.loads(identity_response)
     token = identity_response['token']
-    with open(config_path, 'r') as file:
-        lines = file.readlines()
-        pattern = r'^spacetimedb_token *= *".*"$'
-        replacement = 'spacetimedb_token = "%s"' % token
-        config_lines = [ re.sub(pattern, replacement, l) for l in lines ]
-    with open(config_path, 'w') as file:
-        file.writelines(config_lines)
+    spacetime("login", "--token", token)
 
 class Smoketest(unittest.TestCase):
     MODULE_CODE = TEMPLATE_LIB_RS
