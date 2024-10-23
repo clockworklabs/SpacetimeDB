@@ -1,5 +1,10 @@
 import { Address } from './address.ts';
-import type { Timestamp, UpdateStatus } from './client_api/index.ts';
+import type {
+  Timestamp,
+  UpdateStatus,
+  IdentityToken,
+  IdsToNames,
+} from './client_api/index.ts';
 import { Identity } from './identity.ts';
 import type { TableUpdate } from './table_cache.ts';
 
@@ -13,8 +18,7 @@ export type TransactionUpdateMessage = {
   tableUpdates: TableUpdate[];
   identity: Identity;
   address: Address | null;
-  originalReducerName: string;
-  reducerName: string;
+  reducerId: number;
   args: Uint8Array;
   status: UpdateStatus;
   message: string;
@@ -27,15 +31,14 @@ export type TransactionUpdateLightMessage = {
   tableUpdates: TableUpdate[];
 };
 
-export type IdentityTokenMessage = {
-  tag: 'IdentityToken';
-  identity: Identity;
-  token: string;
-  address: Address;
+export type AfterConnectingMessage = {
+  tag: 'AfterConnecting';
+  identityToken: IdentityToken;
+  idsToNames: IdsToNames;
 };
 
 export type Message =
   | InitialSubscriptionMessage
   | TransactionUpdateMessage
   | TransactionUpdateLightMessage
-  | IdentityTokenMessage;
+  | AfterConnectingMessage;

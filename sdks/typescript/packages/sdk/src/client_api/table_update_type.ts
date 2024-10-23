@@ -13,6 +13,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -42,7 +44,7 @@ import { CompressableQueryUpdate as __CompressableQueryUpdate } from './compress
 
 export type TableUpdate = {
   tableId: number;
-  tableName: string;
+  tableName: void;
   numRows: bigint;
   updates: __CompressableQueryUpdate[];
 };
@@ -58,7 +60,7 @@ export namespace TableUpdate {
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
       new ProductTypeElement('tableId', AlgebraicType.createU32Type()),
-      new ProductTypeElement('tableName', AlgebraicType.createStringType()),
+      new ProductTypeElement('tableName', AlgebraicType.createProductType([])),
       new ProductTypeElement('numRows', AlgebraicType.createU64Type()),
       new ProductTypeElement(
         'updates',

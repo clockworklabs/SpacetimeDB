@@ -13,6 +13,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -41,7 +43,7 @@ import {
 import { BsatnRowList as __BsatnRowList } from './bsatn_row_list_type';
 
 export type OneOffTable = {
-  tableName: string;
+  tableId: number;
   rows: __BsatnRowList;
 };
 
@@ -55,7 +57,7 @@ export namespace OneOffTable {
    */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement('tableName', AlgebraicType.createStringType()),
+      new ProductTypeElement('tableId', AlgebraicType.createU32Type()),
       new ProductTypeElement(
         'rows',
         __BsatnRowList.getTypeScriptAlgebraicType()

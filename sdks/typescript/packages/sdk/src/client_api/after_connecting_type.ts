@@ -39,29 +39,45 @@ import {
   // @ts-ignore
   deepEqual,
 } from '..';
-export type Timestamp = {
-  microseconds: bigint;
+// @ts-ignore
+import { IdentityToken as __IdentityToken } from './identity_token_type';
+// @ts-ignore
+import { IdsToNames as __IdsToNames } from './ids_to_names_type';
+
+export type AfterConnecting = {
+  identityToken: __IdentityToken;
+  idsToNames: __IdsToNames;
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace Timestamp {
+export namespace AfterConnecting {
   /**
    * A function which returns this type represented as an AlgebraicType.
    * This function is derived from the AlgebraicType used to generate this type.
    */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement('microseconds', AlgebraicType.createU64Type()),
+      new ProductTypeElement(
+        'identityToken',
+        __IdentityToken.getTypeScriptAlgebraicType()
+      ),
+      new ProductTypeElement(
+        'idsToNames',
+        __IdsToNames.getTypeScriptAlgebraicType()
+      ),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: Timestamp): void {
-    Timestamp.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: AfterConnecting
+  ): void {
+    AfterConnecting.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): Timestamp {
-    return Timestamp.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): AfterConnecting {
+    return AfterConnecting.getTypeScriptAlgebraicType().deserialize(reader);
   }
 }

@@ -45,6 +45,8 @@ import {
 // Import and reexport all table handle types
 
 // Import and reexport all types
+import { AfterConnecting } from './after_connecting_type.ts';
+export { AfterConnecting };
 import { BsatnRowList } from './bsatn_row_list_type.ts';
 export { BsatnRowList };
 import { CallReducer } from './call_reducer_type.ts';
@@ -59,6 +61,8 @@ import { EnergyQuanta } from './energy_quanta_type.ts';
 export { EnergyQuanta };
 import { IdentityToken } from './identity_token_type.ts';
 export { IdentityToken };
+import { IdsToNames } from './ids_to_names_type.ts';
+export { IdsToNames };
 import { InitialSubscription } from './initial_subscription_type.ts';
 export { InitialSubscription };
 import { OneOffQuery } from './one_off_query_type.ts';

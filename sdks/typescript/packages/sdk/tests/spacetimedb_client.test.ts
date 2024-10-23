@@ -87,6 +87,24 @@ function encodeCreatePlayerArgs(name: string, location: Point): Uint8Array {
   return writer.getBuffer();
 }
 
+function after_connecting_msg(identity: Identity): ws.ServerMessage {
+  const identityToken = {
+    identity,
+    token: 'a-token',
+    address: Address.random(),
+  };
+  const idsToNames = {
+    reducerIds: [0],
+    reducerNames: ['create_player'],
+    tableIds: [35, 36, 37],
+    tableNames: ['Player', 'Point', 'User'],
+  };
+  return ws.ServerMessage.AfterConnecting({
+    identityToken,
+    idsToNames,
+  });
+}
+
 describe('SpacetimeDBClient', () => {
   test('auto subscribe on connect', async () => {
     const wsAdapter = new WebsocketTestAdapter();
@@ -147,12 +165,7 @@ describe('SpacetimeDBClient', () => {
     await client.wsPromise;
     wsAdapter.acceptConnection();
 
-    const tokenMessage = ws.ServerMessage.IdentityToken({
-      identity: anIdentity,
-      token: 'a-token',
-      address: Address.random(),
-    });
-    wsAdapter.sendToClient(tokenMessage);
+    wsAdapter.sendToClient(after_connecting_msg(anIdentity));
 
     await onConnectPromise.promise;
 
@@ -174,12 +187,7 @@ describe('SpacetimeDBClient', () => {
     await client.wsPromise;
     wsAdapter.acceptConnection();
 
-    const tokenMessage = ws.ServerMessage.IdentityToken({
-      identity: anIdentity,
-      token: 'a-token',
-      address: Address.random(),
-    });
-    wsAdapter.sendToClient(tokenMessage);
+    wsAdapter.sendToClient(after_connecting_msg(anIdentity));
 
     const inserts: {
       reducerEvent:
@@ -225,7 +233,7 @@ describe('SpacetimeDBClient', () => {
           tables: [
             {
               tableId: 35,
-              tableName: 'player',
+              tableName: undefined,
               numRows: BigInt(1),
               updates: [
                 ws.CompressableQueryUpdate.Uncompressed({
@@ -263,7 +271,7 @@ describe('SpacetimeDBClient', () => {
         tables: [
           {
             tableId: 35,
-            tableName: 'player',
+            tableName: undefined,
             numRows: BigInt(2),
             updates: [
               ws.CompressableQueryUpdate.Uncompressed({
@@ -288,7 +296,7 @@ describe('SpacetimeDBClient', () => {
       callerIdentity: anIdentity,
       callerAddress: Address.random(),
       reducerCall: {
-        reducerName: 'create_player',
+        reducerName: undefined,
         reducerId: 0,
         args: encodeCreatePlayerArgs('A Player', { x: 2, y: 3 }),
         requestId: 0,
@@ -332,12 +340,7 @@ describe('SpacetimeDBClient', () => {
     await client.wsPromise;
     wsAdapter.acceptConnection();
 
-    const tokenMessage = ws.ServerMessage.IdentityToken({
-      identity: anIdentity,
-      token: 'a-token',
-      address: Address.random(),
-    });
-    wsAdapter.sendToClient(tokenMessage);
+    wsAdapter.sendToClient(after_connecting_msg(anIdentity));
 
     const update1Promise = new Deferred<void>();
     const update2Promise = new Deferred<void>();
@@ -361,7 +364,7 @@ describe('SpacetimeDBClient', () => {
         tables: [
           {
             tableId: 35,
-            tableName: 'player',
+            tableName: undefined,
             numRows: BigInt(2),
             updates: [
               ws.CompressableQueryUpdate.Uncompressed({
@@ -407,7 +410,7 @@ describe('SpacetimeDBClient', () => {
         tables: [
           {
             tableId: 35,
-            tableName: 'player',
+            tableName: undefined,
             numRows: BigInt(2),
             updates: [
               ws.CompressableQueryUpdate.Uncompressed({
@@ -436,7 +439,7 @@ describe('SpacetimeDBClient', () => {
       callerIdentity: anIdentity,
       callerAddress: Address.random(),
       reducerCall: {
-        reducerName: 'create_player',
+        reducerName: undefined,
         reducerId: 0,
         args: encodeCreatePlayerArgs('A Player', { x: 2, y: 3 }),
         requestId: 0,
@@ -490,7 +493,7 @@ describe('SpacetimeDBClient', () => {
         tables: [
           {
             tableId: 35,
-            tableName: 'player',
+            tableName: undefined,
             numRows: BigInt(1),
             updates: [
               ws.CompressableQueryUpdate.Uncompressed({
@@ -518,7 +521,7 @@ describe('SpacetimeDBClient', () => {
       callerIdentity: anIdentity,
       callerAddress: Address.random(),
       reducerCall: {
-        reducerName: 'create_player',
+        reducerName: undefined,
         reducerId: 0,
         args: encodeCreatePlayerArgs('A Player', { x: 2, y: 3 }),
         requestId: 0,
@@ -548,14 +551,13 @@ describe('SpacetimeDBClient', () => {
     await client.wsPromise;
     wsAdapter.acceptConnection();
 
-    const tokenMessage = ws.ServerMessage.IdentityToken({
-      identity: Identity.fromString(
-        '0000000000000000000000000000000000000000000000000000000000000069'
-      ),
-      token: 'a-token',
-      address: Address.random(),
-    });
-    wsAdapter.sendToClient(tokenMessage);
+    wsAdapter.sendToClient(
+      after_connecting_msg(
+        Identity.fromString(
+          '0000000000000000000000000000000000000000000000000000000000000069'
+        )
+      )
+    );
 
     const update1Promise = new Deferred<void>();
     const update2Promise = new Deferred<void>();
@@ -578,8 +580,8 @@ describe('SpacetimeDBClient', () => {
       databaseUpdate: {
         tables: [
           {
-            tableId: 35,
-            tableName: 'user',
+            tableId: 37,
+            tableName: undefined,
             numRows: BigInt(1),
             updates: [
               // pgoldman 2024-06-25: This is weird, `InitialSubscription`s aren't supposed to contain deletes or updates.
@@ -628,8 +630,8 @@ describe('SpacetimeDBClient', () => {
       status: ws.UpdateStatus.Committed({
         tables: [
           {
-            tableId: 35,
-            tableName: 'user',
+            tableId: 37,
+            tableName: undefined,
             numRows: BigInt(1),
             updates: [
               ws.CompressableQueryUpdate.Uncompressed({
@@ -665,7 +667,7 @@ describe('SpacetimeDBClient', () => {
       callerIdentity: anIdentity,
       callerAddress: Address.random(),
       reducerCall: {
-        reducerName: 'create_player',
+        reducerName: undefined,
         reducerId: 0,
         args: encodeCreatePlayerArgs('A Player', { x: 2, y: 3 }),
         requestId: 0,

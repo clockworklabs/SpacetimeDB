@@ -13,6 +13,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -38,8 +40,8 @@ import {
   deepEqual,
 } from '..';
 export type ReducerCallInfo = {
-  reducerName: string;
   reducerId: number;
+  reducerName: void;
   args: Uint8Array;
   requestId: number;
 };
@@ -54,8 +56,11 @@ export namespace ReducerCallInfo {
    */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement('reducerName', AlgebraicType.createStringType()),
       new ProductTypeElement('reducerId', AlgebraicType.createU32Type()),
+      new ProductTypeElement(
+        'reducerName',
+        AlgebraicType.createProductType([])
+      ),
       new ProductTypeElement(
         'args',
         AlgebraicType.createArrayType(AlgebraicType.createU8Type())

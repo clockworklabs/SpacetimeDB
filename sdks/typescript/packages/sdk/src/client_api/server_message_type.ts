@@ -13,6 +13,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -44,7 +46,7 @@ import { TransactionUpdate as __TransactionUpdate } from './transaction_update_t
 // @ts-ignore
 import { TransactionUpdateLight as __TransactionUpdateLight } from './transaction_update_light_type';
 // @ts-ignore
-import { IdentityToken as __IdentityToken } from './identity_token_type';
+import { AfterConnecting as __AfterConnecting } from './after_connecting_type';
 // @ts-ignore
 import { OneOffQueryResponse as __OneOffQueryResponse } from './one_off_query_response_type';
 
@@ -65,7 +67,10 @@ export namespace ServerMessage {
     tag: 'TransactionUpdateLight';
     value: __TransactionUpdateLight;
   };
-  export type IdentityToken = { tag: 'IdentityToken'; value: __IdentityToken };
+  export type AfterConnecting = {
+    tag: 'AfterConnecting';
+    value: __AfterConnecting;
+  };
   export type OneOffQueryResponse = {
     tag: 'OneOffQueryResponse';
     value: __OneOffQueryResponse;
@@ -86,8 +91,8 @@ export namespace ServerMessage {
   export const TransactionUpdateLight = (
     value: __TransactionUpdateLight
   ): ServerMessage => ({ tag: 'TransactionUpdateLight', value });
-  export const IdentityToken = (value: __IdentityToken): ServerMessage => ({
-    tag: 'IdentityToken',
+  export const AfterConnecting = (value: __AfterConnecting): ServerMessage => ({
+    tag: 'AfterConnecting',
     value,
   });
   export const OneOffQueryResponse = (
@@ -109,8 +114,8 @@ export namespace ServerMessage {
         __TransactionUpdateLight.getTypeScriptAlgebraicType()
       ),
       new SumTypeVariant(
-        'IdentityToken',
-        __IdentityToken.getTypeScriptAlgebraicType()
+        'AfterConnecting',
+        __AfterConnecting.getTypeScriptAlgebraicType()
       ),
       new SumTypeVariant(
         'OneOffQueryResponse',
@@ -133,7 +138,7 @@ export type ServerMessage =
   | ServerMessage.InitialSubscription
   | ServerMessage.TransactionUpdate
   | ServerMessage.TransactionUpdateLight
-  | ServerMessage.IdentityToken
+  | ServerMessage.AfterConnecting
   | ServerMessage.OneOffQueryResponse;
 
 export default ServerMessage;

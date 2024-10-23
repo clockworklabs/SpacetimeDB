@@ -24,7 +24,7 @@ import { type EventContextInterface } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
 import { decompress } from './decompress.ts';
 import type { Identity } from './identity.ts';
-import type { IdentityTokenMessage, Message } from './message_types.ts';
+import type { AfterConnectingMessage, Message } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import type SpacetimeModule from './spacetime_module.ts';
 import { TableCache, type Operation, type TableUpdate } from './table_cache.ts';
@@ -101,6 +101,10 @@ export class DBConnectionImpl<
 
   #messageQueue = Promise.resolve();
 
+  #tableIdToName: { [tableId: number]: string } = {};
+  #reducerIdToName: { [reducerId: number]: string } = {};
+  #reducerNameToId: { [reducerName: string]: number } = {};
+
   constructor(remoteModule: SpacetimeModule, emitter: EventEmitter) {
     this.clientCache = new ClientCache();
     this.#emitter = emitter;
@@ -164,7 +168,7 @@ export class DBConnectionImpl<
     const parseTableUpdate = async (
       rawTableUpdate: ws.TableUpdate
     ): Promise<TableUpdate> => {
-      const tableName = rawTableUpdate.tableName;
+      const tableName = this.#tableIdToName[rawTableUpdate.tableId];
       let operations: Operation[] = [];
       for (const update of rawTableUpdate.updates) {
         let decompressed: ws.QueryUpdate;
@@ -229,8 +233,7 @@ export class DBConnectionImpl<
         const txUpdate = message.value;
         const identity = txUpdate.callerIdentity;
         const address = Address.nullIfZero(txUpdate.callerAddress);
-        const originalReducerName = txUpdate.reducerCall.reducerName;
-        const reducerName: string = toPascalCase(originalReducerName);
+        const reducerId = txUpdate.reducerCall.reducerId;
         const args = txUpdate.reducerCall.args;
         const energyQuantaUsed = txUpdate.energyQuantaUsed;
 
@@ -253,8 +256,7 @@ export class DBConnectionImpl<
           tableUpdates,
           identity,
           address,
-          originalReducerName,
-          reducerName,
+          reducerId,
           args,
           status: txUpdate.status,
           energyConsumed: energyQuantaUsed.quanta,
@@ -265,14 +267,15 @@ export class DBConnectionImpl<
         break;
       }
 
-      case 'IdentityToken': {
-        const identityTokenMessage: IdentityTokenMessage = {
-          tag: 'IdentityToken',
-          identity: message.value.identity,
-          token: message.value.token,
-          address: message.value.address,
+      case 'AfterConnecting': {
+        const identityToken = message.value.identityToken;
+        const idsToNames = message.value.idsToNames;
+        const afterConnectingMessage: AfterConnectingMessage = {
+          tag: 'AfterConnecting',
+          idsToNames: idsToNames,
+          identityToken: identityToken,
         };
-        callback(identityTokenMessage);
+        callback(afterConnectingMessage);
         break;
       }
 
@@ -347,7 +350,7 @@ export class DBConnectionImpl<
     flags: CallReducerFlags
   ): void {
     const message = ws.ClientMessage.CallReducer({
-      reducer: reducerName,
+      reducerId: this.#reducerNameToId[reducerName],
       args: argsBuffer,
       // The TypeScript SDK doesn't currently track `request_id`s,
       // so always use 0.
@@ -357,7 +360,7 @@ export class DBConnectionImpl<
     this.#sendMessage(message);
   }
 
-  /**s
+  /**
    * Handles WebSocket onOpen event.
    */
   handleOnOpen(): void {
@@ -403,15 +406,16 @@ export class DBConnectionImpl<
           );
           this.#applyTableUpdates(message.tableUpdates, eventContext);
         } else if (message.tag === 'TransactionUpdate') {
-          const reducerName = message.originalReducerName;
-          const reducerTypeInfo = this.remoteModule.reducers[reducerName]!;
+          const reducerId = message.reducerId;
 
-          if (reducerName == '<none>') {
+          if (reducerId == 4294967295 /* u32::MAX */) {
             let errorMessage = message.message;
             console.error(
               `Received an error from the database: ${errorMessage}`
             );
           } else {
+            const reducerName = this.#reducerIdToName[reducerId];
+            const reducerTypeInfo = this.remoteModule.reducers[reducerName]!;
             const reader = new BinaryReader(message.args as Uint8Array);
             const reducerArgs = reducerTypeInfo.argsType.deserialize(reader);
             const reducerEvent = {
@@ -441,12 +445,28 @@ export class DBConnectionImpl<
             );
             this.#reducerEmitter.emit(reducerName, eventContext, ...argsArray);
           }
-        } else if (message.tag === 'IdentityToken') {
-          this.identity = message.identity;
-          if (!this.token && message.token) {
-            this.token = message.token;
+        } else if (message.tag === 'AfterConnecting') {
+          const idsToNames = message.idsToNames;
+          // TODO: validate that table and reducer names match with actual.
+          for (let index = 0; index < idsToNames.reducerIds.length; index++) {
+            const id = idsToNames.reducerIds[index];
+            const name = idsToNames.reducerNames[index];
+            this.#reducerIdToName[id] = name;
+            this.#reducerNameToId[name] = id;
           }
-          this.clientAddress = message.address;
+          for (let index = 0; index < idsToNames.tableIds.length; index++) {
+            const id = idsToNames.tableIds[index];
+            const name = idsToNames.tableNames[index];
+            this.#tableIdToName[id] = name;
+          }
+
+          const identityToken = message.identityToken;
+          this.identity = identityToken.identity;
+          if (!this.token && identityToken.token) {
+            this.token = identityToken.token;
+          }
+          this.clientAddress = identityToken.address;
+
           this.#emitter.emit('connect', this, this.identity, this.token);
         }
       })

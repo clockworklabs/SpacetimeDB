@@ -39,29 +39,47 @@ import {
   // @ts-ignore
   deepEqual,
 } from '..';
-export type Timestamp = {
-  microseconds: bigint;
+export type IdsToNames = {
+  reducerIds: number[];
+  reducerNames: string[];
+  tableIds: number[];
+  tableNames: string[];
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace Timestamp {
+export namespace IdsToNames {
   /**
    * A function which returns this type represented as an AlgebraicType.
    * This function is derived from the AlgebraicType used to generate this type.
    */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement('microseconds', AlgebraicType.createU64Type()),
+      new ProductTypeElement(
+        'reducerIds',
+        AlgebraicType.createArrayType(AlgebraicType.createU32Type())
+      ),
+      new ProductTypeElement(
+        'reducerNames',
+        AlgebraicType.createArrayType(AlgebraicType.createStringType())
+      ),
+      new ProductTypeElement(
+        'tableIds',
+        AlgebraicType.createArrayType(AlgebraicType.createU32Type())
+      ),
+      new ProductTypeElement(
+        'tableNames',
+        AlgebraicType.createArrayType(AlgebraicType.createStringType())
+      ),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: Timestamp): void {
-    Timestamp.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(writer: BinaryWriter, value: IdsToNames): void {
+    IdsToNames.getTypeScriptAlgebraicType().serialize(writer, value);
   }
 
-  export function deserialize(reader: BinaryReader): Timestamp {
-    return Timestamp.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): IdsToNames {
+    return IdsToNames.getTypeScriptAlgebraicType().deserialize(reader);
   }
 }
