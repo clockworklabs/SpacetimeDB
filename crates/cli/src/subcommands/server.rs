@@ -195,7 +195,7 @@ pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyho
                 "Unable to retrieve fingerprint for server: {url}
 Is the server running?
 Add a server without retrieving its fingerprint with:
-\tspacetime server add {url} --no-fingerprint",
+\tspacetime server add --url {url} --no-fingerprint",
             )
         })?;
         println!("For server {}, got fingerprint:\n{}", url, fingerprint);

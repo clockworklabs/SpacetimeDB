@@ -1,5 +1,8 @@
 use crate::from_hex_pad;
+use blake3;
 use core::mem;
+use rand;
+use rand::Rng;
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::hex::HexString;
 use spacetimedb_sats::{hash, impl_st, u256, AlgebraicType, AlgebraicValue};
@@ -50,6 +53,13 @@ impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
 impl Identity {
     pub const ZERO: Self = Self::from_u256(u256::ZERO);
 
+    pub fn placeholder() -> Self {
+        // Generate a random identity.
+        let mut rng = rand::thread_rng();
+        let mut random_bytes = [0u8; 32];
+        rng.fill(&mut random_bytes);
+        Identity::from_byte_array(random_bytes)
+    }
     /// Returns an `Identity` defined as the given `bytes` byte array.
     pub const fn from_byte_array(bytes: [u8; 32]) -> Self {
         // SAFETY: The transmute is an implementation of `u256::from_ne_bytes`,
@@ -75,6 +85,25 @@ impl Identity {
     #[doc(hidden)]
     pub fn __dummy() -> Self {
         Self::ZERO
+    }
+
+    pub fn from_claims(issuer: &str, subject: &str) -> Self {
+        let input = format!("{}|{}", issuer, subject);
+        let first_hash = blake3::hash(input.as_bytes());
+        let id_hash = &first_hash.as_bytes()[..26];
+        let mut checksum_input = [0u8; 28];
+        // TODO: double check this gets the right number...
+        checksum_input[2..].copy_from_slice(id_hash);
+        checksum_input[0] = 0xc2;
+        checksum_input[1] = 0x00;
+        let checksum_hash = &blake3::hash(&checksum_input);
+
+        let mut final_bytes = [0u8; 32];
+        final_bytes[0] = 0xc2;
+        final_bytes[1] = 0x00;
+        final_bytes[2..6].copy_from_slice(&checksum_hash.as_bytes()[..4]);
+        final_bytes[6..].copy_from_slice(id_hash);
+        Identity::from_byte_array(final_bytes)
     }
 
     /// Returns this `Identity` as a byte array.

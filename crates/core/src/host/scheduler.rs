@@ -87,7 +87,7 @@ impl SchedulerStarter {
     // time to make it better right now.
     pub fn start(mut self, module_host: &ModuleHost) -> anyhow::Result<()> {
         let mut queue: DelayQueue<QueueItem> = DelayQueue::new();
-        let ctx = &ExecutionContext::internal(self.db.address());
+        let ctx = &ExecutionContext::internal(self.db.database_identity());
         let tx = self.db.begin_tx();
 
         // Draining rx before processing schedules from the DB to ensure there are no in-flight messages,
@@ -302,8 +302,8 @@ impl SchedulerActor {
             return;
         };
         let db = module_host.replica_ctx().relational_db.clone();
-        let ctx = ExecutionContext::internal(db.address());
-        let caller_identity = module_host.info().identity;
+        let ctx = ExecutionContext::internal(db.database_identity());
+        let caller_identity = module_host.info().owner_identity;
         let module_info = module_host.info.clone();
 
         let call_reducer_params = move |tx: &MutTxId| -> Result<Option<CallReducerParams>, anyhow::Error> {
@@ -360,7 +360,7 @@ impl SchedulerActor {
 
         let db = module_host.replica_ctx().relational_db.clone();
         let module_host_clone = module_host.clone();
-        let ctx = ExecutionContext::internal(db.address());
+        let ctx = ExecutionContext::internal(db.database_identity());
 
         let res = tokio::spawn(async move { module_host.call_scheduled_reducer(call_reducer_params).await }).await;
 
@@ -435,7 +435,7 @@ impl SchedulerActor {
 }
 
 fn commit_and_broadcast_deletion_event(ctx: &ExecutionContext, tx: MutTxId, module_host: ModuleHost) {
-    let caller_identity = module_host.info().identity;
+    let caller_identity = module_host.info().owner_identity;
 
     let event = ModuleEvent {
         timestamp: Timestamp::now(),

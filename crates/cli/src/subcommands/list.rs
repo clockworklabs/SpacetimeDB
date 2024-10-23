@@ -4,7 +4,7 @@ use crate::Config;
 use clap::{ArgMatches, Command};
 use reqwest::StatusCode;
 use serde::Deserialize;
-use spacetimedb_lib::Address;
+use spacetimedb::Identity;
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
     Table, Tabled,
@@ -18,13 +18,13 @@ pub fn cli() -> Command {
 
 #[derive(Deserialize)]
 struct DatabasesResult {
-    pub addresses: Vec<AddressRow>,
+    pub identities: Vec<IdentityRow>,
 }
 
 #[derive(Tabled, Deserialize)]
 #[serde(transparent)]
-struct AddressRow {
-    pub db_address: Address,
+struct IdentityRow {
+    pub db_identity: Identity,
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
@@ -51,12 +51,12 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let result: DatabasesResult = res.json().await?;
 
-    if !result.addresses.is_empty() {
-        let mut table = Table::new(result.addresses);
+    if !result.identities.is_empty() {
+        let mut table = Table::new(result.identities);
         table
             .with(Style::psql())
             .with(Modify::new(Columns::first()).with(Alignment::left()));
-        println!("Associated database addresses for {}:\n", identity);
+        println!("Associated database identities for {}:\n", identity);
         println!("{}", table);
     } else {
         println!("No databases found for {}.", identity);

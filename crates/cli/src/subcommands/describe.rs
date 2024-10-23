@@ -1,6 +1,6 @@
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_address, get_auth_header};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
 use clap::{Arg, ArgMatches};
 
 pub fn cli() -> clap::Command {
@@ -9,7 +9,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("database")
                 .required(true)
-                .help("The domain or address of the database to describe"),
+                .help("The name or identity of the database to describe"),
         )
         .arg(
             Arg::new("entity_type")
@@ -34,14 +34,14 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let anon_identity = args.get_flag("anon_identity");
 
-    let address = database_address(&config, database, server).await?;
+    let database_identity = database_identity(&config, database, server).await?;
 
     let builder = reqwest::Client::new().get(match entity_name {
-        None => format!("{}/database/schema/{}", config.get_host_url(server)?, address),
+        None => format!("{}/database/schema/{}", config.get_host_url(server)?, database_identity),
         Some(entity_name) => format!(
             "{}/database/schema/{}/{}/{}",
             config.get_host_url(server)?,
-            address,
+            database_identity,
             entity_type.unwrap(),
             entity_name
         ),

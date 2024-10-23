@@ -11,7 +11,7 @@ use tabled::settings::Style;
 
 use crate::config::Config;
 use crate::errors::error_for_status;
-use crate::util::{database_address, get_auth_header};
+use crate::util::{database_identity, get_auth_header};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
@@ -19,7 +19,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("database")
                 .required(true)
-                .help("The domain or address of the database you would like to query"),
+                .help("The name or identity of the database you would like to query"),
         )
         .arg(
             Arg::new("query")
@@ -41,14 +41,14 @@ pub fn cli() -> clap::Command {
 
 pub(crate) async fn parse_req(config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let database = args.get_one::<String>("database").unwrap();
+    let database_name_or_identity = args.get_one::<String>("database").unwrap();
     let anon_identity = args.get_flag("anon_identity");
 
     Ok(Connection {
         host: config.get_host_url(server)?,
         auth_header: get_auth_header(&config, anon_identity)?,
-        address: database_address(&config, database, server).await?,
-        database: database.to_string(),
+        database_identity: database_identity(&config, database_name_or_identity, server).await?,
+        database: database_name_or_identity.to_string(),
     })
 }
 
