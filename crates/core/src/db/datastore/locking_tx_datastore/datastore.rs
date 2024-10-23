@@ -62,7 +62,7 @@ pub struct Locking {
     /// The state of sequence generation in this database.
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The address of this database.
-    pub(crate) database_address: Address,
+    pub(crate) database_identity: Identity,
 }
 
 impl MemoryUsage for Locking {
@@ -70,35 +70,35 @@ impl MemoryUsage for Locking {
         let Self {
             committed_state,
             sequence_state,
-            database_address,
+            database_identity,
         } = self;
         std::mem::size_of_val(&**committed_state)
             + committed_state.read().heap_usage()
             + std::mem::size_of_val(&**sequence_state)
             + sequence_state.lock().heap_usage()
-            + database_address.heap_usage()
+            + database_identity.heap_usage()
     }
 }
 
 impl Locking {
-    pub fn new(database_address: Address) -> Self {
+    pub fn new(database_identity: Identity) -> Self {
         Self {
             committed_state: <_>::default(),
             sequence_state: <_>::default(),
-            database_address,
+            database_identity,
         }
     }
 
     /// IMPORTANT! This the most delicate function in the entire codebase.
     /// DO NOT CHANGE UNLESS YOU KNOW WHAT YOU'RE DOING!!!
-    pub fn bootstrap(database_address: Address) -> Result<Self> {
+    pub fn bootstrap(database_identity: Identity) -> Result<Self> {
         log::trace!("DATABASE: BOOTSTRAPPING SYSTEM TABLES...");
 
         // NOTE! The bootstrapping process does not take plan in a transaction.
         // This is intentional.
-        let datastore = Self::new(database_address);
+        let datastore = Self::new(database_identity);
         let mut commit_state = datastore.committed_state.write_arc();
-        let database_address = datastore.database_address;
+        let database_identity = datastore.database_identity;
         // TODO(cloutiertyler): One thing to consider in the future is, should
         // we persist the bootstrap transaction in the message log? My intuition
         // is no, because then if we change the schema of the system tables we
@@ -107,7 +107,7 @@ impl Locking {
         // for code that relies on the old schema...
 
         // Create the system tables and insert information about themselves into
-        commit_state.bootstrap_system_tables(database_address)?;
+        commit_state.bootstrap_system_tables(database_identity)?;
         // The database tables are now initialized with the correct data.
         // Now we have to build our in memory structures.
         commit_state.build_sequence_state(&mut datastore.sequence_state.lock())?;
@@ -143,7 +143,7 @@ impl Locking {
     /// _before_ the transaction is applied to the database state.
     pub fn replay<F: FnMut(u64)>(&self, progress: F) -> Replay<F> {
         Replay {
-            database_address: self.database_address,
+            database_identity: self.database_identity,
             committed_state: self.committed_state.clone(),
             progress: RefCell::new(progress),
         }
@@ -163,18 +163,18 @@ impl Locking {
     ///   after replaying the suffix of the commitlog.
     pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot) -> Result<Self> {
         let ReconstructedSnapshot {
-            database_address,
+            database_identity,
             tx_offset,
             blob_store,
             tables,
             ..
         } = snapshot;
 
-        let datastore = Self::new(database_address);
+        let datastore = Self::new(database_identity);
         let mut committed_state = datastore.committed_state.write_arc();
         committed_state.blob_store = blob_store;
 
-        let ctx = ExecutionContext::internal(datastore.database_address);
+        let ctx = ExecutionContext::internal(datastore.database_identity);
 
         // Note that `tables` is a `BTreeMap`, and so iterates in increasing order.
         // This means that we will instantiate and populate the system tables before any user tables.
@@ -203,19 +203,19 @@ impl Locking {
             // and therefore has performance implications and must not be disabled.
             DB_METRICS
                 .rdb_num_table_rows
-                .with_label_values(&database_address, &table_id.0, &schema.table_name)
+                .with_label_values(&database_identity, &table_id.0, &schema.table_name)
                 .set(table.row_count as i64);
 
             // Also set the `rdb_table_size` metric for the table.
             let table_size = table.bytes_occupied_overestimate();
             DB_METRICS
                 .rdb_table_size
-                .with_label_values(&database_address, &table_id.into(), &schema.table_name)
+                .with_label_values(&database_identity, &table_id.into(), &schema.table_name)
                 .set(table_size as i64);
         }
 
         // Fix up auto_inc IDs in the cached system table schemas.
-        committed_state.reset_system_table_schemas(database_address)?;
+        committed_state.reset_system_table_schemas(database_identity)?;
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
@@ -243,7 +243,7 @@ impl Locking {
             .table_id_from_name_mut_tx(tx, &name)?
             .ok_or_else(|| TableError::NotFound(name.into()))?;
 
-        tx.alter_table_access(self.database_address, table_id, access)
+        tx.alter_table_access(self.database_identity, table_id, access)
     }
 }
 
@@ -312,7 +312,7 @@ impl TxDatastore for Locking {
     }
 
     fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> Result<Option<TableId>> {
-        tx.table_id_from_name(table_name, self.database_address)
+        tx.table_id_from_name(table_name, self.database_identity)
     }
 
     fn table_name_from_id_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Option<Cow<'a, str>>> {
@@ -320,7 +320,7 @@ impl TxDatastore for Locking {
     }
 
     fn schema_for_table_tx(&self, tx: &Self::Tx, table_id: TableId) -> Result<Arc<TableSchema>> {
-        tx.schema_for_table(&ExecutionContext::internal(self.database_address), table_id)
+        tx.schema_for_table(&ExecutionContext::internal(self.database_identity), table_id)
     }
 
     fn get_all_tables_tx(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Vec<Arc<TableSchema>>> {
@@ -353,7 +353,7 @@ impl TxDatastore for Locking {
 
 impl MutTxDatastore for Locking {
     fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: TableSchema) -> Result<TableId> {
-        tx.create_table(schema, self.database_address)
+        tx.create_table(schema, self.database_identity)
     }
 
     /// This function is used to get the `ProductType` of the rows in a
@@ -370,7 +370,7 @@ impl MutTxDatastore for Locking {
     ///
     /// This function is known to be called quite frequently.
     fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<RowTypeForTable<'tx>> {
-        tx.row_type_for_table(table_id, self.database_address)
+        tx.row_type_for_table(table_id, self.database_identity)
     }
 
     /// IMPORTANT! This function is relatively expensive, and much more
@@ -378,21 +378,21 @@ impl MutTxDatastore for Locking {
     /// `row_type_for_table_mut_tx` if you only need to access the `ProductType`
     /// of the table.
     fn schema_for_table_mut_tx(&self, tx: &Self::MutTx, table_id: TableId) -> Result<Arc<TableSchema>> {
-        tx.schema_for_table(&ExecutionContext::internal(self.database_address), table_id)
+        tx.schema_for_table(&ExecutionContext::internal(self.database_identity), table_id)
     }
 
     /// This function is relatively expensive because it needs to be
     /// transactional, however we don't expect to be dropping tables very often.
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId) -> Result<()> {
-        tx.drop_table(table_id, self.database_address)
+        tx.drop_table(table_id, self.database_identity)
     }
 
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: &str) -> Result<()> {
-        tx.rename_table(table_id, new_name, self.database_address)
+        tx.rename_table(table_id, new_name, self.database_identity)
     }
 
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTx, table_name: &str) -> Result<Option<TableId>> {
-        tx.table_id_from_name(table_name, self.database_address)
+        tx.table_id_from_name(table_name, self.database_identity)
     }
 
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool {
@@ -410,41 +410,41 @@ impl MutTxDatastore for Locking {
     }
 
     fn create_index_mut_tx(&self, tx: &mut Self::MutTx, index_schema: IndexSchema, is_unique: bool) -> Result<IndexId> {
-        let ctx = &ExecutionContext::internal(self.database_address);
+        let ctx = &ExecutionContext::internal(self.database_identity);
         tx.create_index(ctx, index_schema, is_unique)
     }
 
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTx, index_id: IndexId) -> Result<()> {
-        tx.drop_index(index_id, self.database_address)
+        tx.drop_index(index_id, self.database_identity)
     }
 
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> Result<Option<IndexId>> {
-        tx.index_id_from_name(index_name, self.database_address)
+        tx.index_id_from_name(index_name, self.database_identity)
     }
 
     fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<i128> {
-        tx.get_next_sequence_value(seq_id, self.database_address)
+        tx.get_next_sequence_value(seq_id, self.database_identity)
     }
 
     fn create_sequence_mut_tx(&self, tx: &mut Self::MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId> {
-        tx.create_sequence(sequence_schema, self.database_address)
+        tx.create_sequence(sequence_schema, self.database_identity)
     }
 
     fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<()> {
-        tx.drop_sequence(seq_id, self.database_address)
+        tx.drop_sequence(seq_id, self.database_identity)
     }
 
     fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> Result<Option<SequenceId>> {
-        tx.sequence_id_from_name(sequence_name, self.database_address)
+        tx.sequence_id_from_name(sequence_name, self.database_identity)
     }
 
     fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint_id: ConstraintId) -> Result<()> {
-        let ctx = &ExecutionContext::internal(self.database_address);
+        let ctx = &ExecutionContext::internal(self.database_identity);
         tx.drop_constraint(ctx, constraint_id)
     }
 
     fn constraint_id_from_name(&self, tx: &Self::MutTx, constraint_name: &str) -> Result<Option<ConstraintId>> {
-        let ctx = &ExecutionContext::internal(self.database_address);
+        let ctx = &ExecutionContext::internal(self.database_identity);
         tx.constraint_id_from_name(ctx, constraint_name)
     }
 
@@ -527,17 +527,17 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         mut row: ProductValue,
     ) -> Result<(AlgebraicValue, RowRef<'a>)> {
-        let (gens, row_ref) = tx.insert(table_id, &mut row, self.database_address)?;
+        let (gens, row_ref) = tx.insert(table_id, &mut row, self.database_identity)?;
         Ok((gens, row_ref.collapse()))
     }
 
     fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>> {
-        let ctx = ExecutionContext::internal(self.database_address);
+        let ctx = ExecutionContext::internal(self.database_identity);
         tx.iter(&ctx, ST_MODULE_ID)?.next().map(metadata_from_row).transpose()
     }
 
     fn update_program(&self, tx: &mut Self::MutTx, program_kind: ModuleKind, program: Program) -> Result<()> {
-        let ctx = ExecutionContext::internal(self.database_address);
+        let ctx = ExecutionContext::internal(self.database_identity);
         let old = tx
             .iter(&ctx, ST_MODULE_ID)?
             .next()
@@ -554,11 +554,15 @@ impl MutTxDatastore for Locking {
                 row.program_bytes = program.bytes;
 
                 tx.delete(ST_MODULE_ID, ptr)?;
-                tx.insert(ST_MODULE_ID, &mut row.into(), self.database_address)
+                tx.insert(ST_MODULE_ID, &mut row.into(), self.database_identity)
                     .map(drop)
             }
 
-            None => Err(anyhow!("database {} improperly initialized: no metadata", self.database_address).into()),
+            None => Err(anyhow!(
+                "database {} improperly initialized: no metadata",
+                self.database_identity
+            )
+            .into()),
         }
     }
 }
@@ -573,7 +577,7 @@ pub(super) fn record_metrics(
     committed_state: Option<&CommittedState>,
 ) {
     let workload = &ctx.workload();
-    let db = &ctx.database();
+    let db = &ctx.database_identity();
     let reducer = ctx.reducer_name();
     let elapsed_time = tx_timer.elapsed();
     let cpu_time = elapsed_time - lock_wait_time;
@@ -599,7 +603,7 @@ pub(super) fn record_metrics(
 
     /// Update table rows and table size gauges,
     /// and sets them to zero if no table is present.
-    fn update_table_gauges(db: &Address, table_id: &TableId, table_name: &str, table: Option<&Table>) {
+    fn update_table_gauges(db: &Identity, table_id: &TableId, table_name: &str, table: Option<&Table>) {
         let (mut table_rows, mut table_size) = (0, 0);
         if let Some(table) = table {
             table_rows = table.row_count as i64;
@@ -699,7 +703,7 @@ pub enum ReplayError {
 /// A [`spacetimedb_commitlog::Decoder`] suitable for replaying a transaction
 /// history into the database state.
 pub struct Replay<F> {
-    database_address: Address,
+    database_identity: Identity,
     committed_state: Arc<RwLock<CommittedState>>,
     progress: RefCell<F>,
 }
@@ -708,7 +712,7 @@ impl<F> Replay<F> {
     fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<F>) -> T) -> T {
         let mut committed_state = self.committed_state.write_arc();
         let mut visitor = ReplayVisitor {
-            database_address: &self.database_address,
+            database_identity: &self.database_identity,
             committed_state: &mut committed_state,
             progress: &mut *self.progress.borrow_mut(),
         };
@@ -813,7 +817,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
 // unnecessary.
 
 struct ReplayVisitor<'a, F> {
-    database_address: &'a Address,
+    database_identity: &'a Identity,
     committed_state: &'a mut CommittedState,
     progress: &'a mut F,
 }
@@ -860,7 +864,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         // and therefore has performance implications and must not be disabled.
         DB_METRICS
             .rdb_num_table_rows
-            .with_label_values(self.database_address, &table_id.into(), &schema.table_name)
+            .with_label_values(self.database_identity, &table_id.into(), &schema.table_name)
             .inc();
 
         Ok(row)
@@ -890,7 +894,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         // and therefore has performance implications and must not be disabled.
         DB_METRICS
             .rdb_num_table_rows
-            .with_label_values(self.database_address, &table_id.into(), &table_name)
+            .with_label_values(self.database_identity, &table_id.into(), &table_name)
             .dec();
 
         Ok(row)
@@ -932,7 +936,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
 /// reading only the columns necessary to construct the value.
 fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
     Ok(Metadata {
-        database_address: read_addr_from_col(row, StModuleFields::DatabaseAddress)?,
+        database_identity: read_addr_from_col(row, StModuleFields::DatabaseIdentity)?,
         owner_identity: read_identity_from_col(row, StModuleFields::OwnerIdentity)?,
         program_hash: read_hash_from_col(row, StModuleFields::ProgramHash)?,
     })
@@ -954,7 +958,6 @@ mod tests {
     use crate::error::{DBError, IndexError};
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
-    use spacetimedb_lib::address::Address;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::resolved_type_via_v9;
@@ -1058,7 +1061,7 @@ mod tests {
     }
 
     fn get_datastore() -> Result<Locking> {
-        Locking::bootstrap(Address::ZERO)
+        Locking::bootstrap(Identity::ZERO)
     }
 
     fn col(col: u16) -> ColList {
@@ -1374,7 +1377,7 @@ mod tests {
             ColRow { table: ST_CONSTRAINT_ID.into(), pos: 2, name: "table_id", ty: TableId::get_type() },
             ColRow { table: ST_CONSTRAINT_ID.into(), pos: 3, name: "constraint_data", ty: resolved_type_via_v9::<StConstraintData>() },
 
-            ColRow { table: ST_MODULE_ID.into(), pos: 0, name: "database_address", ty: AlgebraicType::U128 },
+            ColRow { table: ST_MODULE_ID.into(), pos: 0, name: "database_identity", ty: AlgebraicType::U256 },
             ColRow { table: ST_MODULE_ID.into(), pos: 1, name: "owner_identity", ty: AlgebraicType::U256 },
             ColRow { table: ST_MODULE_ID.into(), pos: 2, name: "program_kind", ty: AlgebraicType::U8 },
             ColRow { table: ST_MODULE_ID.into(), pos: 3, name: "program_hash", ty: AlgebraicType::U256 },
@@ -1391,6 +1394,7 @@ mod tests {
             ColRow { table: ST_SCHEDULED_ID.into(), pos: 1, name: "table_id", ty: TableId::get_type() },
             ColRow { table: ST_SCHEDULED_ID.into(), pos: 2, name: "reducer_name", ty: AlgebraicType::String },
             ColRow { table: ST_SCHEDULED_ID.into(), pos: 3, name: "schedule_name", ty: AlgebraicType::String },
+            ColRow { table: ST_SCHEDULED_ID.into(), pos: 4, name: "at_column", ty: AlgebraicType::U16 },
 
             ColRow { table: ST_ROW_LEVEL_SECURITY_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
             ColRow { table: ST_ROW_LEVEL_SECURITY_ID.into(), pos: 1, name: "sql", ty: AlgebraicType::String },

@@ -4,6 +4,9 @@ use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::hex::HexString;
 use spacetimedb_sats::{hash, impl_st, u256, AlgebraicType, AlgebraicValue};
 use std::{fmt, str::FromStr};
+use rand;
+use blake3;
+use rand::Rng;
 
 pub type RequestId = u32;
 
@@ -47,11 +50,16 @@ impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
     }
 }
 
-use blake3;
 impl Identity {
     pub const ZERO: Self = Self::from_u256(u256::ZERO);
 
-
+    pub fn placeholder() -> Self {
+        // Generate a random identity.
+        let mut rng = rand::thread_rng();
+        let mut random_bytes = [0u8; 32];
+        rng.fill(&mut random_bytes);
+        Identity::from_byte_array(random_bytes)
+    }
     /// Returns an `Identity` defined as the given `bytes` byte array.
     pub const fn from_byte_array(bytes: [u8; 32]) -> Self {
         // SAFETY: The transmute is an implementation of `u256::from_ne_bytes`,

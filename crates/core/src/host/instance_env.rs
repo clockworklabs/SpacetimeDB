@@ -94,7 +94,7 @@ impl InstanceEnv {
         self.replica_ctx.logger.write(level, record, bt);
         log::trace!(
             "MOD({}): {}",
-            self.replica_ctx.address.to_abbreviated_hex(),
+            self.replica_ctx.database_identity.to_abbreviated_hex(),
             record.message
         );
     }
@@ -128,14 +128,14 @@ impl InstanceEnv {
                 }
             })?;
 
-        if stdb.is_scheduled_table(ctx, tx, table_id)? {
+        if let Some((id_column, at_column)) = stdb.table_scheduled_id_and_at(ctx, tx, table_id)? {
             let row_ref = tx.get(table_id, row_ptr)?.unwrap();
-            let (schedule_id, schedule_at) = get_schedule_from_row(tx, stdb, table_id, &row_ref)
+            let (schedule_id, schedule_at) = get_schedule_from_row(&row_ref, id_column, at_column)
                 // NOTE(centril): Should never happen,
                 // as we successfully inserted and thus `ret` is verified against the table schema.
                 .map_err(|e| NodesError::ScheduleError(ScheduleError::DecodingError(e)))?;
             self.scheduler
-                .schedule(table_id, schedule_id, schedule_at)
+                .schedule(table_id, schedule_id, schedule_at, id_column, at_column)
                 .map_err(NodesError::ScheduleError)?;
         }
 

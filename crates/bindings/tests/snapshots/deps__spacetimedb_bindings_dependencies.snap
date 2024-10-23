@@ -70,6 +70,7 @@ spacetimedb
 │   │   └── syn (*)
 │   ├── hex
 │   ├── itertools (*)
+│   ├── rand (*)
 │   ├── spacetimedb_bindings_macro (*)
 │   ├── spacetimedb_data_structures
 │   │   ├── hashbrown

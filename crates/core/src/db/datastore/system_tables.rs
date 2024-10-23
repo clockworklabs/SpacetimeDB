@@ -243,7 +243,7 @@ st_fields_enum!(enum StRowLevelSecurityFields {
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StModuleFields {
-    "database_address", DatabaseAddress = 0,
+    "database_identity", DatabaseIdentity = 0,
     "owner_identity", OwnerIdentity = 1,
     "program_kind", ProgramKind = 2,
     "program_hash", ProgramHash = 3,
@@ -266,6 +266,7 @@ st_fields_enum!(enum StScheduledFields {
     "table_id", TableId = 1,
     "reducer_name", ReducerName = 2,
     "schedule_name", ScheduleName = 3,
+    "at_column", AtColumn = 4,
 });
 
 /// Helper method to check that a system table has the correct fields.
@@ -830,20 +831,20 @@ impl From<Identity> for IdentityViaU256 {
 /// This table holds exactly one row, describing the latest version of the
 /// SpacetimeDB module associated with the database:
 ///
-/// * `database_address` is the [`Address`] of the database.
+/// * `database_identity` is the [`Identity`] of the database.
 /// * `owner_identity` is the [`Identity`] of the owner of the database.
 /// * `program_kind` is the [`ModuleKind`] (currently always [`WASM_MODULE`]).
 /// * `program_hash` is the [`Hash`] of the raw bytes of the (compiled) module.
 /// * `program_bytes` are the raw bytes of the (compiled) module.
 /// * `module_version` is the version of the module.
 ///
-/// | database_address | owner_identity |  program_kind | program_bytes | program_hash        | module_version |
+/// | identity | owner_identity |  program_kind | program_bytes | program_hash        | module_version |
 /// |------------------|----------------|---------------|---------------|---------------------|----------------|
 /// | <bytes>          | <bytes>        |  0            | <bytes>       | <bytes>             | <string>       |
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StModuleRow {
-    pub(crate) database_address: AddressViaU128,
+    pub(crate) database_identity: IdentityViaU256,
     pub(crate) owner_identity: IdentityViaU256,
     pub(crate) program_kind: ModuleKind,
     pub(crate) program_hash: Hash,
@@ -868,9 +869,9 @@ pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u
 /// Read an [`Address`] directly from the column `col` in `row`.
 ///
 /// The [`Address`] is assumed to be stored as an u128.
-pub fn read_addr_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Address, DBError> {
-    let val: u128 = row.read_col(col.col_id())?;
-    Ok(val.into())
+pub fn read_addr_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Identity, DBError> {
+    let val: u256 = row.read_col(col.col_id())?;
+    Ok(Identity::from_u256(val))
 }
 
 /// Read an [`Identity`] directly from the column `col` in `row`.
@@ -1285,6 +1286,7 @@ pub struct StScheduledRow {
     pub(crate) table_id: TableId,
     pub(crate) reducer_name: Box<str>,
     pub(crate) schedule_name: Box<str>,
+    pub(crate) at_column: ColId,
 }
 
 impl TryFrom<RowRef<'_>> for StScheduledRow {
@@ -1307,6 +1309,7 @@ impl From<StScheduledRow> for ScheduleSchema {
             reducer_name: row.reducer_name,
             schedule_id: row.schedule_id,
             schedule_name: row.schedule_name,
+            at_column: row.at_column,
         }
     }
 }

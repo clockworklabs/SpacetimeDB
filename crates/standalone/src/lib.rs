@@ -14,7 +14,6 @@ use energy_monitor::StandaloneEnergyMonitor;
 use openssl::ec::{EcGroup, EcKey};
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
-use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
@@ -204,8 +203,8 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
         Ok(self.control_db.get_database_by_id(id)?)
     }
 
-    fn get_database_by_address(&self, address: &Address) -> anyhow::Result<Option<Database>> {
-        Ok(self.control_db.get_database_by_address(address)?)
+    fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>> {
+        Ok(self.control_db.get_database_by_identity(database_identity)?)
     }
 
     fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
@@ -231,27 +230,23 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     }
 
     // DNS
-    fn lookup_address(&self, domain: &DomainName) -> anyhow::Result<Option<Address>> {
+    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Identity>> {
         Ok(self.control_db.spacetime_dns(domain)?)
     }
 
-    fn reverse_lookup(&self, address: &Address) -> anyhow::Result<Vec<DomainName>> {
-        Ok(self.control_db.spacetime_reverse_dns(address)?)
+    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
+        Ok(self.control_db.spacetime_reverse_dns(database_identity)?)
     }
 }
 
 #[async_trait]
 impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
-    async fn create_address(&self) -> anyhow::Result<Address> {
-        Ok(self.control_db.alloc_spacetime_address()?)
-    }
-
     async fn publish_database(
         &self,
-        identity: &Identity,
+        publisher: &Identity,
         spec: spacetimedb_client_api::DatabaseDef,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
-        let existing_db = self.control_db.get_database_by_address(&spec.address)?;
+        let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
 
         match existing_db {
             // The database does not already exist, so we'll create it.
@@ -259,8 +254,8 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 let initial_program = self.program_store.put(&spec.program_bytes).await?;
                 let mut database = Database {
                     id: 0,
-                    address: spec.address,
-                    owner_identity: *identity,
+                    database_identity: spec.database_identity,
+                    owner_identity: *publisher,
                     host_type: spec.host_type,
                     initial_program,
                 };
@@ -275,19 +270,19 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             // If that fails, we'll keep the old one.
             Some(database) => {
                 ensure!(
-                    &database.owner_identity == identity,
+                    &database.owner_identity == publisher,
                     "Permission denied: `{}` does not own database `{}`",
-                    identity,
-                    spec.address.to_abbreviated_hex()
+                    publisher,
+                    spec.database_identity.to_abbreviated_hex()
                 );
 
                 let database_id = database.id;
-                let database_addr = database.address;
+                let database_identity = database.database_identity;
 
                 let leader = self
                     .control_db
                     .get_leader_replica_by_database(database_id)
-                    .with_context(|| format!("Not found: leader instance for database `{}`", database_addr))?;
+                    .with_context(|| format!("Not found: leader instance for database `{}`", database_identity))?;
                 let update_result = self
                     .host_controller
                     .update_module_host(database, spec.host_type, leader.id, spec.program_bytes.into())
@@ -297,7 +292,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     let replicas = self.control_db.get_replicas_by_database(database_id)?;
                     let desired_replicas = spec.num_replicas as usize;
                     if desired_replicas == 0 {
-                        log::info!("Decommissioning all replicas of database {}", database_addr);
+                        log::info!("Decommissioning all replicas of database {}", database_identity);
                         for instance in replicas {
                             self.delete_replica(instance.id).await?;
                         }
@@ -305,7 +300,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                         let n = desired_replicas - replicas.len();
                         log::info!(
                             "Scaling up database {} from {} to {} replicas",
-                            database_addr,
+                            database_identity,
                             replicas.len(),
                             n
                         );
@@ -322,7 +317,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                         let n = replicas.len() - desired_replicas;
                         log::info!(
                             "Scaling down database {} from {} to {} replicas",
-                            database_addr,
+                            database_identity,
                             replicas.len(),
                             n
                         );
@@ -333,7 +328,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                         log::debug!(
                             "Desired replica count {} for database {} already satisfied",
                             desired_replicas,
-                            database_addr
+                            database_identity
                         );
                     }
                 }
@@ -343,17 +338,17 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         }
     }
 
-    async fn delete_database(&self, identity: &Identity, address: &Address) -> anyhow::Result<()> {
-        let Some(database) = self.control_db.get_database_by_address(address)? else {
+    async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
+        let Some(database) = self.control_db.get_database_by_identity(database_identity)? else {
             return Ok(());
         };
         anyhow::ensure!(
-            &database.owner_identity == identity,
+            &database.owner_identity == caller_identity,
             // TODO: `PermissionDenied` should be a variant of `Error`,
             //       so we can match on it and return better error responses
             //       from HTTP endpoints.
-            "Permission denied: `{identity}` does not own database `{}`",
-            address.to_abbreviated_hex()
+            "Permission denied: `{caller_identity}` does not own database `{}`",
+            database_identity.to_abbreviated_hex()
         );
 
         self.control_db.delete_database(database.id)?;
@@ -385,13 +380,13 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 
     async fn create_dns_record(
         &self,
-        identity: &Identity,
+        owner_identity: &Identity,
         domain: &DomainName,
-        address: &Address,
+        database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult> {
         Ok(self
             .control_db
-            .spacetime_insert_domain(address, domain.clone(), *identity, true)?)
+            .spacetime_insert_domain(database_identity, domain.clone(), *owner_identity, true)?)
     }
 }
 
