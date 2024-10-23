@@ -685,8 +685,8 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
             Err(domain) => {
                 // `name_or_address` was a `NameOrAddress::Name`, but no record
                 // exists yet. Create it now with a fresh address.
-                let auth = SpacetimeAuth::alloc(&ctx).await?;
-                let database_identity = auth.identity;
+                let database_auth = SpacetimeAuth::alloc(&ctx).await?;
+                let database_identity = database_auth.identity;
                 ctx.create_dns_record(&auth.identity, &domain, &database_identity)
                     .await
                     .map_err(log_and_500)?;
