@@ -46,7 +46,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     Ok(())
 }
 
-async fn spacetimedb_token_cached(config: &mut Config, host: &String, clear_cache: bool) -> anyhow::Result<String> {
+async fn spacetimedb_token_cached(config: &mut Config, host: &str, clear_cache: bool) -> anyhow::Result<String> {
     // Currently, this token does not expire. However, it will at some point in the future. When that happens,
     // this code will need to happen before any request to a spacetimedb server, rather than at the end of the login flow here.
     let spacetimedb_token = config.spacetimedb_token().filter(|_| !clear_cache);
@@ -61,7 +61,7 @@ async fn spacetimedb_token_cached(config: &mut Config, host: &String, clear_cach
     }
 }
 
-async fn web_login_cached(config: &mut Config, host: &String, clear_cache: bool) -> anyhow::Result<String> {
+async fn web_login_cached(config: &mut Config, host: &str, clear_cache: bool) -> anyhow::Result<String> {
     let session_id = config.web_session_id().filter(|_| !clear_cache);
     if let Some(session_id) = session_id {
         // Currently, these session IDs do not expire. At some point in the future, we may also need to check this session ID for validity.
