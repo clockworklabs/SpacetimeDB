@@ -694,8 +694,8 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
             }
         },
         None => {
-            let auth = SpacetimeAuth::alloc(&ctx).await?;
-            let database_identity = auth.identity;
+            let database_auth = SpacetimeAuth::alloc(&ctx).await?;
+            let database_identity = database_auth.identity;
             (database_identity, None)
         }
     };
