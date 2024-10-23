@@ -1,21 +1,19 @@
 use anyhow;
-use lazy_static::lazy_static;
-use thiserror;
-use async_trait::async_trait;
 use async_cache;
-use jwks::Jwks;
+use async_trait::async_trait;
 use faststr::FastStr;
 use jsonwebtoken::decode_header;
 pub use jsonwebtoken::errors::Error as JwtError;
 pub use jsonwebtoken::errors::ErrorKind as JwtErrorKind;
-use jsonwebtoken::{decode, Header, TokenData, Validation};
+use jsonwebtoken::{decode, Validation};
 pub use jsonwebtoken::{DecodingKey, EncodingKey};
-use serde::{Deserialize, Serialize};
+use jwks::Jwks;
+use lazy_static::lazy_static;
 use std::sync::Arc;
 use std::time::Duration;
+use thiserror;
 
-use super::identity::{SpacetimeIdentityClaims2, IncomingClaims};
-
+use super::identity::{IncomingClaims, SpacetimeIdentityClaims2};
 
 #[derive(thiserror::Error, Debug)]
 pub enum TokenValidationError {
@@ -62,6 +60,43 @@ impl TokenValidator for UnimplementedTokenValidator {
     }
 }
 
+
+pub struct FullTokenValidator {
+    pub public_key: DecodingKey,
+    pub caching_validator: CachingOidcTokenValidator,
+}
+
+#[async_trait]
+impl TokenValidator for FullTokenValidator {
+    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
+        let issuer = get_raw_issuer(token)?;
+        if issuer == "localhost" {
+            let claims = LocalTokenValidator {
+                public_key: self.public_key.clone(),
+                issuer,
+            }
+            .validate_token(token)
+            .await?;
+            return Ok(claims);
+        }
+        self.caching_validator.validate_token(token).await
+    }
+}
+
+pub async fn validate_token(local_key: DecodingKey, local_issuer: &str, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
+    let issuer = get_raw_issuer(token)?;
+    if issuer == local_issuer {
+        let claims = LocalTokenValidator {
+            public_key: local_key,
+            issuer,
+        }
+        .validate_token(token)
+        .await?;
+        return Ok(claims);
+    }
+    GLOBAL_OIDC_VALIDATOR.clone().validate_token(token).await
+}
+
 pub struct InitialTestingTokenValidator {
     pub public_key: DecodingKey,
 }
@@ -90,10 +125,14 @@ struct LocalTokenValidator {
     pub issuer: String,
 }
 
-
 lazy_static! {
     // Eventually we will want to add more required claims.
     static ref REQUIRED_CLAIMS: Vec<&'static str> = vec!["sub", "iss"];
+}
+
+lazy_static! {
+    // Eventually we will want to add more required claims.
+    static ref GLOBAL_OIDC_VALIDATOR: Arc<CachingOidcTokenValidator> = Arc::new(CachingOidcTokenValidator::default());
 }
 
 // Just make some token website thing.
@@ -105,7 +144,11 @@ impl TokenValidator for LocalTokenValidator {
     async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
         // TODO: Make this stored in the struct so we don't need to keep creating it.
         let mut validation = Validation::new(jsonwebtoken::Algorithm::ES256);
-        validation.algorithms = vec![jsonwebtoken::Algorithm::ES256, jsonwebtoken::Algorithm::RS256, jsonwebtoken::Algorithm::HS256];
+        validation.algorithms = vec![
+            jsonwebtoken::Algorithm::ES256,
+            jsonwebtoken::Algorithm::RS256,
+            jsonwebtoken::Algorithm::HS256,
+        ];
         validation.set_required_spec_claims(&REQUIRED_CLAIMS);
         validation.set_issuer(&[self.issuer.clone()]);
 
@@ -131,21 +174,20 @@ pub struct CachingOidcTokenValidator {
 }
 
 impl CachingOidcTokenValidator {
-    fn new(refresh_duration: Duration, expiry: Option<Duration>) -> Self {
+    pub fn new(refresh_duration: Duration, expiry: Option<Duration>) -> Self {
         let cache = async_cache::Options::new(refresh_duration, KeyFetcher)
             .with_expire(expiry)
             .build();
         CachingOidcTokenValidator { cache }
     }
 
-    fn default() -> Self {
+    pub fn default() -> Self {
         Self::new(Duration::from_secs(300), Some(Duration::from_secs(7200)))
     }
 }
 
 // Jwks fetcher for the async cache.
 struct KeyFetcher;
-
 
 impl async_cache::Fetcher<Arc<JwksValidator>> for KeyFetcher {
     type Error = TokenValidationError;
@@ -266,13 +308,9 @@ mod tests {
 
     use std::sync::Arc;
 
-    use std::time::SystemTime;
-    use crate::auth::identity::{
-        IncomingClaims, SpacetimeIdentityClaims2
-        };
+    use crate::auth::identity::{IncomingClaims, SpacetimeIdentityClaims2};
     use crate::auth::token_validation::{
-        CachingOidcTokenValidator, LocalTokenValidator, OidcTokenValidator,
-        TokenValidator,
+        CachingOidcTokenValidator, LocalTokenValidator, OidcTokenValidator, TokenValidator,
     };
     use env_logger;
     use jsonwebkey as jwk;
@@ -281,6 +319,7 @@ mod tests {
     use rand::{thread_rng, Rng};
     use serde_json;
     use spacetimedb_lib::Identity;
+    use std::time::SystemTime;
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -443,7 +482,6 @@ mod tests {
     }
 
     // use jsonwebtoken::jwk::JwkSet
-    use axum::http::{Request, StatusCode};
     use axum::routing::get;
     use axum::Json;
     use axum::Router;
@@ -498,10 +536,7 @@ mod tests {
                     "/jwks.json",
                     get({
                         let jwks = jwks_json.clone();
-                        move || async move {
-                            jwks
-                            //Json(kp.to_public_jwks())
-                        }
+                        move || async move { jwks }
                     }),
                 )
                 .route("/ok", get(|| async move { "OK" }));
@@ -515,7 +550,6 @@ mod tests {
                     })
                     .await
                     .unwrap();
-                println!("Server shut down");
             });
 
             Ok(OIDCServerHandle {
@@ -566,93 +600,14 @@ mod tests {
 
         Ok(())
     }
+
     #[tokio::test]
-    async fn test_oidc_flow_2() -> anyhow::Result<()> {
+    async fn test_oidc_flow() -> anyhow::Result<()> {
         run_oidc_test(OidcTokenValidator).await
     }
     #[tokio::test]
     async fn test_caching_oidc_flow() -> anyhow::Result<()> {
         let v = CachingOidcTokenValidator::default();
         run_oidc_test(v).await
-    }
-
-    #[tokio::test]
-    async fn test_oidc_flow() -> anyhow::Result<()> {
-        // We will put 2 keys in the keyset.
-        let kp1 = Arc::new(KeyPair::generate_p256()?);
-        let kp2 = Arc::new(KeyPair::generate_p256()?);
-
-        // We won't put this in the keyset.
-        let invalid_kp = KeyPair::generate_p256()?;
-
-        let handle = OIDCServerHandle::start_new(vec![kp1.clone(), kp2.clone()]).await?;
-
-        let issuer = handle.base_url.clone();
-        let subject = "test_subject";
-
-        let orig_claims = IncomingClaims {
-            identity: None,
-            subject: subject.to_string(),
-            issuer: issuer.clone(),
-            audience: vec![],
-            iat: std::time::SystemTime::now(),
-            exp: None,
-        };
-        let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
-        for kp in [kp1, kp2] {
-            let token = jsonwebtoken::encode(&header, &orig_claims, &kp.private_key)?;
-
-            let validated_claims = OidcTokenValidator.validate_token(&token).await?;
-            assert_eq!(validated_claims.issuer, issuer);
-            assert_eq!(validated_claims.subject, subject);
-            assert_eq!(validated_claims.identity, Identity::from_claims(&issuer, subject));
-        }
-
-        let invalid_token = jsonwebtoken::encode(&header, &orig_claims, &invalid_kp.private_key)?;
-        assert!(OidcTokenValidator.validate_token(&invalid_token).await.is_err());
-        // tokio::spawn(server);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_oidc_caching_flow() -> anyhow::Result<()> {
-        // We will put 2 keys in the keyset.
-        let kp1 = Arc::new(KeyPair::generate_p256()?);
-        let kp2 = Arc::new(KeyPair::generate_p256()?);
-
-        // We won't put this in the keyset.
-        let invalid_kp = KeyPair::generate_p256()?;
-
-        let handle = OIDCServerHandle::start_new(vec![kp1.clone(), kp2.clone()]).await?;
-
-        let issuer = handle.base_url.clone();
-        let subject = "test_subject";
-
-        let orig_claims = IncomingClaims {
-            identity: None,
-            subject: subject.to_string(),
-            issuer: issuer.clone(),
-            audience: vec![],
-            iat: std::time::SystemTime::now(),
-            exp: None,
-        };
-        let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
-        for kp in [kp1, kp2] {
-            let token = jsonwebtoken::encode(&header, &orig_claims, &kp.private_key)?;
-
-            let validated_claims = OidcTokenValidator.validate_token(&token).await?;
-            assert_eq!(validated_claims.issuer, issuer);
-            assert_eq!(validated_claims.subject, subject);
-            assert_eq!(validated_claims.identity, Identity::from_claims(&issuer, subject));
-        }
-
-        let invalid_token = jsonwebtoken::encode(&header, &orig_claims, &invalid_kp.private_key)?;
-        let validator = CachingOidcTokenValidator::default();
-        println!("Starting invalid token test");
-        assert!(validator.validate_token(&invalid_token).await.is_err());
-        // tokio::spawn(server);
-
-        Ok(())
     }
 }

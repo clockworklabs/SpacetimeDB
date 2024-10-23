@@ -1,12 +1,10 @@
 use crate::identity::Identity;
-use jsonwebtoken::decode_header;
 pub use jsonwebtoken::errors::Error as JwtError;
 pub use jsonwebtoken::errors::ErrorKind as JwtErrorKind;
 use jsonwebtoken::{decode, encode, Header, TokenData, Validation};
 pub use jsonwebtoken::{DecodingKey, EncodingKey};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 

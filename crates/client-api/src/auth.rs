@@ -7,15 +7,11 @@ use axum_extra::typed_header::TypedHeader;
 use headers::{authorization, HeaderMapExt};
 use http::{request, HeaderValue, StatusCode};
 use serde::Deserialize;
+use spacetimedb::auth::identity::SpacetimeIdentityClaims2;
 use spacetimedb::auth::identity::{
     decode_token, encode_token, DecodingKey, EncodingKey, JwtError, JwtErrorKind, SpacetimeIdentityClaims,
 };
-use spacetimedb::auth::identity::{
-    SpacetimeIdentityClaims2
-};
-use spacetimedb::auth::token_validation::{
-    InitialTestingTokenValidator, TokenValidationError, TokenValidator,
-};
+use spacetimedb::auth::token_validation::{TokenValidationError, validate_token};
 use spacetimedb::energy::EnergyQuanta;
 use spacetimedb::identity::Identity;
 use uuid::Uuid;
@@ -219,16 +215,10 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
             return Ok(Self { auth: None });
         };
 
-        // creds.token
-        let validator = InitialTestingTokenValidator {
-            public_key: state.public_key().clone(),
-        };
-        let claims = validator
-            .validate_token(&creds.token)
+        let claims = validate_token(state.public_key().clone(), &state.local_issuer(), &creds.token)
             .await
-            .map_err(|e| AuthorizationRejection::Custom(e))?;
-        //let claims = creds.decode_token(state.public_key())?;
-        // let claims = claims.into();
+            .map_err(AuthorizationRejection::Custom)?;
+
         let auth = SpacetimeAuth {
             creds,
             identity: claims.identity,
