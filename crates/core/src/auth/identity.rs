@@ -42,12 +42,12 @@ pub struct SpacetimeIdentityClaims2 {
     pub exp: Option<SystemTime>,
 }
 
-impl Into<SpacetimeIdentityClaims> for SpacetimeIdentityClaims2 {
-    fn into(self) -> SpacetimeIdentityClaims {
+impl From<SpacetimeIdentityClaims2> for SpacetimeIdentityClaims {
+    fn from(claims: SpacetimeIdentityClaims2) -> Self {
         SpacetimeIdentityClaims {
-            identity: self.identity,
-            iat: self.iat,
-            exp: self.exp,
+            identity: claims.identity,
+            iat: claims.iat,
+            exp: claims.exp,
         }
     }
 }

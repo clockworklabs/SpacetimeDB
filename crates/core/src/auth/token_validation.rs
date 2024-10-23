@@ -60,7 +60,6 @@ impl TokenValidator for UnimplementedTokenValidator {
     }
 }
 
-
 pub struct FullTokenValidator {
     pub public_key: DecodingKey,
     pub caching_validator: CachingOidcTokenValidator,
@@ -83,7 +82,11 @@ impl TokenValidator for FullTokenValidator {
     }
 }
 
-pub async fn validate_token(local_key: DecodingKey, local_issuer: &str, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
+pub async fn validate_token(
+    local_key: DecodingKey,
+    local_issuer: &str,
+    token: &str,
+) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
     let issuer = get_raw_issuer(token)?;
     if issuer == local_issuer {
         let claims = LocalTokenValidator {
@@ -132,7 +135,7 @@ lazy_static! {
 
 lazy_static! {
     // Eventually we will want to add more required claims.
-    static ref GLOBAL_OIDC_VALIDATOR: Arc<CachingOidcTokenValidator> = Arc::new(CachingOidcTokenValidator::default());
+    static ref GLOBAL_OIDC_VALIDATOR: Arc<CachingOidcTokenValidator> = Arc::new(CachingOidcTokenValidator::get_default());
 }
 
 // Just make some token website thing.
@@ -181,7 +184,7 @@ impl CachingOidcTokenValidator {
         CachingOidcTokenValidator { cache }
     }
 
-    pub fn default() -> Self {
+    pub fn get_default() -> Self {
         Self::new(Duration::from_secs(300), Some(Duration::from_secs(7200)))
     }
 }
@@ -607,7 +610,7 @@ mod tests {
     }
     #[tokio::test]
     async fn test_caching_oidc_flow() -> anyhow::Result<()> {
-        let v = CachingOidcTokenValidator::default();
+        let v = CachingOidcTokenValidator::get_default();
         run_oidc_test(v).await
     }
 }

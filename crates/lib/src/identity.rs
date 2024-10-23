@@ -1,12 +1,12 @@
 use crate::from_hex_pad;
+use blake3;
 use core::mem;
+use rand;
+use rand::Rng;
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::hex::HexString;
 use spacetimedb_sats::{hash, impl_st, u256, AlgebraicType, AlgebraicValue};
 use std::{fmt, str::FromStr};
-use rand;
-use blake3;
-use rand::Rng;
 
 pub type RequestId = u32;
 

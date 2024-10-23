@@ -11,7 +11,7 @@ use spacetimedb::auth::identity::SpacetimeIdentityClaims2;
 use spacetimedb::auth::identity::{
     decode_token, encode_token, DecodingKey, EncodingKey, JwtError, JwtErrorKind, SpacetimeIdentityClaims,
 };
-use spacetimedb::auth::token_validation::{TokenValidationError, validate_token};
+use spacetimedb::auth::token_validation::{validate_token, TokenValidationError};
 use spacetimedb::energy::EnergyQuanta;
 use spacetimedb::identity::Identity;
 use uuid::Uuid;
