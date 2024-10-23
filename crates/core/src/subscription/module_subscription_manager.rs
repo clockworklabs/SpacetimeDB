@@ -135,7 +135,7 @@ impl SubscriptionManager {
             // Collect the delta tables for each query.
             // For selects this is just a single table.
             // For joins it's two tables.
-            let mut units: HashMap<_, ArrayVec<_, 2>> = HashMap::new();
+            let mut units: HashMap<_, ArrayVec<_, 2>> = HashMap::default();
             for table @ DatabaseTableUpdate { table_id, .. } in tables {
                 if let Some(hashes) = self.tables.get(table_id) {
                     for hash in hashes {
@@ -531,7 +531,7 @@ mod tests {
             timer: None,
         });
 
-        let ctx = ExecutionContext::incremental_update(db.address());
+        let ctx = ExecutionContext::incremental_update(db.database_identity());
         db.with_read_only(&ctx, |tx| {
             subscriptions.eval_updates(&ctx, &db, tx, event, Some(&client0), None)
         });

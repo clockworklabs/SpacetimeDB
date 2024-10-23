@@ -80,7 +80,7 @@ Or initialize a default identity with:
                 format!(
                     "Cannot verify tokens using invalid saved fingerprint from server: {server}
 Update the fingerprint with:
-\tspacetime server fingerprint -s {server}",
+\tspacetime server fingerprint {server}",
                 )
             })?;
             decode_token(&decoder, &id.token).map_err(|_| {
@@ -120,13 +120,13 @@ const NO_DEFAULT_SERVER_ERROR_MESSAGE: &str = "No default server configuration.
 Set an existing server as the default with:
 \tspacetime server set-default <server>
 Or add a new server which will become the default:
-\tspacetime server add <url> --default";
+\tspacetime server add {server} <url> --default";
 
 fn no_such_server_error(server: &str) -> anyhow::Error {
     anyhow::anyhow!(
         "No such saved server configuration: {server}
 Add a new server configuration with:
-\tspacetime server add <url>",
+\tspacetime server add {server} --url <url>",
     )
 }
 
@@ -973,7 +973,7 @@ Import an existing identity with:
                     format!(
                         "Unable to parse invalid saved server fingerprint as ECDSA public key.
 Update the server's fingerprint with:
-\tspacetime server fingerprint -s {}",
+\tspacetime server fingerprint {}",
                         server.unwrap_or("")
                     )
                 })

@@ -27,7 +27,7 @@ use crate::auth::SpacetimeAuth;
 use crate::util::websocket::{
     CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade,
 };
-use crate::util::{NameOrAddress, XForwardedFor};
+use crate::util::{NameOrIdentity, XForwardedFor};
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 #[allow(clippy::declare_interior_mutable_const)]
@@ -37,7 +37,7 @@ pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static("v1.bsatn.spaceti
 
 #[derive(Deserialize)]
 pub struct SubscribeParams {
-    pub name_or_address: NameOrAddress,
+    pub name_or_identity: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
@@ -56,7 +56,7 @@ pub fn generate_random_address() -> Address {
 
 pub async fn handle_websocket<S>(
     State(ctx): State<S>,
-    Path(SubscribeParams { name_or_address }): Path<SubscribeParams>,
+    Path(SubscribeParams { name_or_identity }): Path<SubscribeParams>,
     Query(SubscribeQueryParams {
         client_address,
         compression,
@@ -79,7 +79,7 @@ where
         ))?;
     }
 
-    let db_address = name_or_address.resolve(&ctx).await?.into();
+    let db_address = name_or_identity.resolve(&ctx).await?.into();
 
     let (res, ws_upgrade, protocol) =
         ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
@@ -91,7 +91,7 @@ where
     // to connect to multiple modules
 
     let database = ctx
-        .get_database_by_address(&db_address)
+        .get_database_by_identity(&db_address)
         .unwrap()
         .ok_or(StatusCode::NOT_FOUND)?;
 
@@ -218,7 +218,7 @@ async fn ws_client_actor_inner(
     let mut closed = false;
     let mut rx_buf = Vec::new();
 
-    let addr = client.module.info().address;
+    let addr = client.module.info().database_identity;
 
     loop {
         rx_buf.clear();

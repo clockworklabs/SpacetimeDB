@@ -11,7 +11,7 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use core::ops::RangeBounds;
-use spacetimedb_lib::address::Address;
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
@@ -23,8 +23,8 @@ use std::sync::Arc;
 pub trait StateView {
     fn get_schema(&self, table_id: TableId) -> Option<&Arc<TableSchema>>;
 
-    fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
-        let ctx = ExecutionContext::internal(database_address);
+    fn table_id_from_name(&self, table_name: &str, database_identity: Identity) -> Result<Option<TableId>> {
+        let ctx = ExecutionContext::internal(database_identity);
         let name = &<Box<str>>::from(table_name).into();
         let row = self
             .iter_by_col_eq(&ctx, ST_TABLE_ID, StTableFields::TableName, name)?

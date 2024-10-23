@@ -9,9 +9,6 @@ use spacetimedb_schema::schema::{Schema, TableSchema};
 use std::sync::Arc;
 use std::time::Duration;
 
-use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::{bsatn, Address, RawModuleDef};
-
 use super::instrumentation::CallTimes;
 use crate::database_logger::SystemLogger;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -28,10 +25,14 @@ use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
+use crate::sql::parser::RowLevelExpr;
 use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
+use spacetimedb_lib::buffer::DecodeError;
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::{bsatn, Address, RawModuleDef};
 
 use super::*;
 
@@ -138,7 +139,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let module_hash = program.hash;
         log::trace!(
             "Making new module host actor for database {} with module {}",
-            replica_context.address,
+            replica_context.database_identity,
             module_hash,
         );
         let log_tx = replica_context.logger.tx.clone();
@@ -164,7 +165,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let info = ModuleInfo::new(
             def,
             replica_context.owner_identity,
-            replica_context.address,
+            replica_context.database_identity,
             module_hash,
             log_tx,
             replica_context.subscriptions.clone(),
@@ -262,7 +263,8 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         log::debug!("init database");
         let timestamp = Timestamp::now();
         let stdb = &*self.replica_context().relational_db;
-        let ctx = ExecutionContext::internal(stdb.address());
+        let ctx = ExecutionContext::internal(stdb.database_identity());
+        let auth_ctx = AuthCtx::for_current(self.replica_context().database.owner_identity);
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let (tx, ()) = stdb
             .with_auto_rollback(&ctx, tx, |tx| {
@@ -275,6 +277,19 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     let schema = TableSchema::from_module_def(&self.info.module_def, def, (), TableId::SENTINEL);
                     stdb.create_table(tx, schema)
                         .with_context(|| format!("failed to create table {table_name}"))?;
+                }
+                // Insert the late-bound row-level security expressions.
+                for rls in self.info.module_def.row_level_security() {
+                    self.system_logger()
+                        .info(&format!("Creating row level security `{}`", rls.sql));
+
+                    let rls = RowLevelExpr::build_row_level_expr(stdb, tx, &auth_ctx, rls)
+                        .with_context(|| format!("failed to create row-level security: `{}`", rls.sql))?;
+                    let table_id = rls.def.table_id;
+                    let sql = rls.def.sql.clone();
+                    stdb.create_row_level_security(tx, rls.def).with_context(|| {
+                        format!("failed to create row-level security for table `{table_id}`: `{sql}`",)
+                    })?;
                 }
 
                 stdb.set_initialized(tx, HostType::Wasm, program)?;
@@ -328,18 +343,19 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             }
         };
         let stdb = &*self.replica_context().relational_db;
-        let ctx = Lazy::new(|| ExecutionContext::internal(stdb.address()));
+        let ctx = Lazy::new(|| ExecutionContext::internal(stdb.database_identity()));
 
         let program_hash = program.hash;
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let (mut tx, _) = stdb.with_auto_rollback(&ctx, tx, |tx| stdb.update_program(tx, HostType::Wasm, program))?;
         self.system_logger().info(&format!("Updated program to {program_hash}"));
 
-        let res = crate::db::update::update_database(stdb, &mut tx, plan, self.system_logger());
+        let auth_ctx = AuthCtx::for_current(self.replica_context().database.owner_identity);
+        let res = crate::db::update::update_database(stdb, &mut tx, auth_ctx, plan, self.system_logger());
 
         match res {
             Err(e) => {
-                log::warn!("Database update failed: {} @ {}", e, stdb.address());
+                log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
                 self.system_logger().warn(&format!("Database update failed: {e}"));
                 stdb.rollback_mut_tx(&ctx, tx);
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
@@ -347,7 +363,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             Ok(()) => {
                 stdb.commit_tx(&ctx, tx)?;
                 self.system_logger().info("Database updated");
-                log::info!("Database updated, {}", stdb.address());
+                log::info!("Database updated, {}", stdb.database_identity());
                 Ok(UpdateDatabaseResult::UpdatePerformed)
             }
         }
@@ -391,7 +407,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let replica_ctx = self.replica_context();
         let stdb = &*replica_ctx.relational_db.clone();
-        let address = replica_ctx.address;
+        let address = replica_ctx.database_identity;
         let reducer_name = self
             .info
             .reducers_map
@@ -407,7 +423,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let energy_fingerprint = ReducerFingerprint {
             module_hash: self.info.module_hash,
-            module_identity: self.info.identity,
+            module_identity: self.info.owner_identity,
             caller_identity,
             reducer_name,
         };

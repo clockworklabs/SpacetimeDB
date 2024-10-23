@@ -183,8 +183,8 @@ class Smoketest(unittest.TestCase):
             "--project-path", self.project_path,
             capture_stderr=capture_stderr,
         )
-        self.resolved_address = re.search(r"address: ([0-9a-fA-F]+)", publish_output)[1]
-        self.address = domain if domain is not None else self.resolved_address
+        self.resolved_identity = re.search(r"identity: ([0-9a-fA-F]+)", publish_output)[1]
+        self.address = domain if domain is not None else self.resolved_identity
 
     @classmethod
     def reset_config(cls):
@@ -192,7 +192,7 @@ class Smoketest(unittest.TestCase):
 
     def fingerprint(self):
         # Fetch the server's fingerprint; required for `identity list`.
-        self.spacetime("server", "fingerprint", "-s", "localhost", "-y")
+        self.spacetime("server", "fingerprint", "localhost", "-y")
 
     def new_identity(self, *, default=False):
         output = self.spacetime("identity", "new")

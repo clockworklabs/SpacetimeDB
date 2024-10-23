@@ -122,7 +122,9 @@ pub struct RawTableDefV9 {
     /// Eventually, we may remove the requirement for an index.
     ///
     /// The database engine does not actually care about this, but client code generation does.
-    pub primary_key: Option<ColId>,
+    ///
+    /// A list of length 0 means no primary key. Currently, a list of length >1 is not supported.
+    pub primary_key: ColList,
 
     /// The indices of the table.
     pub indexes: Vec<RawIndexDefV9>,
@@ -303,6 +305,9 @@ pub struct RawScheduleDefV9 {
 
     /// The name of the reducer to call.
     pub reducer_name: RawIdentifier,
+
+    /// The column of the `scheduled_at` field of this scheduled table.
+    pub scheduled_at_column: ColId,
 }
 
 /// A constraint definition attached to a table.
@@ -339,9 +344,9 @@ pub struct RawUniqueConstraintDataV9 {
 }
 
 /// Data for the `RLS` policy on a table.
-#[derive(Debug, Clone, SpacetimeType)]
+#[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = crate)]
-#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+#[cfg_attr(feature = "test", derive(PartialOrd, Ord))]
 pub struct RawRowLevelSecurityDefV9 {
     /// The `sql` expression to use for row-level security.
     pub sql: RawSql,
@@ -471,7 +476,7 @@ impl RawModuleDefV9Builder {
                 constraints: vec![],
                 sequences: vec![],
                 schedule: None,
-                primary_key: None,
+                primary_key: ColList::empty(),
                 table_type: TableType::User,
                 table_access: TableAccess::Public,
             },
@@ -662,7 +667,7 @@ impl<'a> RawTableDefBuilder<'a> {
     /// Adds a primary key to the table.
     /// You must also add a unique constraint on the primary key column.
     pub fn with_primary_key(mut self, column: impl Into<ColId>) -> Self {
-        self.table.primary_key = Some(column.into());
+        self.table.primary_key = ColList::new(column.into());
         self
     }
 
@@ -712,10 +717,20 @@ impl<'a> RawTableDefBuilder<'a> {
     /// Adds a schedule definition to the table.
     ///
     /// The table must have the appropriate columns for a scheduled table.
-    pub fn with_schedule(mut self, reducer_name: impl Into<RawIdentifier>, name: Option<RawIdentifier>) -> Self {
+    pub fn with_schedule(
+        mut self,
+        reducer_name: impl Into<RawIdentifier>,
+        scheduled_at_column: impl Into<ColId>,
+        name: Option<RawIdentifier>,
+    ) -> Self {
         let reducer_name = reducer_name.into();
         let name = name.unwrap_or_else(|| self.generate_schedule_name());
-        self.table.schedule = Some(RawScheduleDefV9 { name, reducer_name });
+        let scheduled_at_column = scheduled_at_column.into();
+        self.table.schedule = Some(RawScheduleDefV9 {
+            name,
+            reducer_name,
+            scheduled_at_column,
+        });
         self
     }
 

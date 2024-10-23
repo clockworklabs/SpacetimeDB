@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use axum::extract::{Query, Request, State};
 use axum::middleware::Next;
@@ -6,13 +6,15 @@ use axum::response::IntoResponse;
 use axum_extra::typed_header::TypedHeader;
 use headers::{authorization, HeaderMapExt};
 use http::{request, HeaderValue, StatusCode};
-use rand::Rng;
 use serde::Deserialize;
+use spacetimedb::auth::identity::SpacetimeIdentityClaims2;
 use spacetimedb::auth::identity::{
     decode_token, encode_token, DecodingKey, EncodingKey, JwtError, JwtErrorKind, SpacetimeIdentityClaims,
 };
+use spacetimedb::auth::token_validation::{validate_token, TokenValidationError};
 use spacetimedb::energy::EnergyQuanta;
 use spacetimedb::identity::Identity;
+use uuid::Uuid;
 
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
@@ -33,6 +35,7 @@ pub struct SpacetimeCreds {
     token: String,
 }
 
+pub const LOCALHOST: &str = "localhost";
 const TOKEN_USERNAME: &str = "token";
 impl authorization::Credentials for SpacetimeCreds {
     const SCHEME: &'static str = authorization::Basic::SCHEME;
@@ -57,6 +60,9 @@ impl SpacetimeCreds {
     /// Decode this token into auth claims.
     pub fn decode_token(&self, public_key: &DecodingKey) -> Result<SpacetimeIdentityClaims, JwtError> {
         decode_token(public_key, self.token()).map(|x| x.claims)
+    }
+    fn from_signed_token(token: String) -> Self {
+        Self { token }
     }
     /// Mint a new credentials JWT for an identity.
     pub fn encode_token(private_key: &EncodingKey, identity: Identity) -> Result<Self, JwtError> {
@@ -94,19 +100,51 @@ pub struct SpacetimeAuth {
     pub identity: Identity,
 }
 
+use jsonwebtoken;
+
+struct TokenClaims {
+    pub issuer: String,
+    pub subject: String,
+    pub audience: Vec<String>,
+}
+
+impl TokenClaims {
+    // Compute the id from the issuer and subject.
+    fn id(&self) -> Identity {
+        Identity::from_claims(&self.issuer, &self.subject)
+    }
+
+    fn encode_and_sign(&self, private_key: &EncodingKey) -> Result<String, JwtError> {
+        let claims = SpacetimeIdentityClaims2 {
+            identity: self.id(),
+            subject: self.subject.clone(),
+            issuer: self.issuer.clone(),
+            audience: self.audience.clone(),
+            iat: SystemTime::now(),
+            exp: None,
+        };
+        let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
+        jsonwebtoken::encode(&header, &claims, private_key)
+    }
+}
+
 impl SpacetimeAuth {
     /// Allocate a new identity, and mint a new token for it.
     pub async fn alloc(ctx: &(impl NodeDelegate + ControlStateDelegate + ?Sized)) -> axum::response::Result<Self> {
-        // TODO: I'm just sticking in a random string until we change how identities are generated.
-        let identity = {
-            let mut rng = rand::thread_rng();
-            let mut random_bytes = [0u8; 16]; // Example: 16 random bytes
-            rng.fill(&mut random_bytes);
-
-            let preimg = [b"clockworklabs:", &random_bytes[..]].concat();
-            Identity::from_hashing_bytes(preimg)
+        // Generate claims with a random subject.
+        let claims = TokenClaims {
+            issuer: ctx.local_issuer(),
+            subject: Uuid::new_v4().to_string(),
+            // Placeholder audience.
+            audience: vec!["spacetimedb".to_string()],
         };
-        let creds = SpacetimeCreds::encode_token(ctx.private_key(), identity).map_err(log_and_500)?;
+
+        let identity = claims.id();
+        let creds = {
+            let token = claims.encode_and_sign(ctx.private_key()).map_err(log_and_500)?;
+            SpacetimeCreds::from_signed_token(token)
+        };
+
         Ok(Self { creds, identity })
     }
 
@@ -117,6 +155,51 @@ impl SpacetimeAuth {
             TypedHeader(SpacetimeIdentity(identity)),
             TypedHeader(SpacetimeIdentityToken(creds)),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::auth::TokenClaims;
+    use anyhow::Ok;
+    use jsonwebkey as jwk;
+    use jsonwebtoken::{DecodingKey, EncodingKey};
+    use spacetimedb::auth::identity;
+
+    // TODO: this keypair stuff is duplicated. We should create a test-only crate with helpers.
+    struct KeyPair {
+        pub public_key: DecodingKey,
+        pub private_key: EncodingKey,
+    }
+
+    fn new_keypair() -> anyhow::Result<KeyPair> {
+        let mut my_jwk = jwk::JsonWebKey::new(jwk::Key::generate_p256());
+
+        my_jwk.set_algorithm(jwk::Algorithm::ES256).unwrap();
+        let public_key = jsonwebtoken::DecodingKey::from_ec_pem(my_jwk.key.to_public().unwrap().to_pem().as_bytes())?;
+        let private_key = jsonwebtoken::EncodingKey::from_ec_pem(my_jwk.key.try_to_pem()?.as_bytes())?;
+        Ok(KeyPair {
+            public_key,
+            private_key,
+        })
+    }
+
+    // Make sure that when we encode TokenClaims, we can decode to get the expected identity.
+    #[test]
+    fn decode_encoded_token() -> Result<(), anyhow::Error> {
+        let kp = new_keypair()?;
+
+        let claims = TokenClaims {
+            issuer: "localhost".to_string(),
+            subject: "test-subject".to_string(),
+            audience: vec!["spacetimedb".to_string()],
+        };
+        let id = claims.id();
+        let token = claims.encode_and_sign(&kp.private_key)?;
+
+        let decoded = identity::decode_token(&kp.public_key, &token)?;
+        assert_eq!(decoded.claims.identity, id);
+        Ok(())
     }
 }
 
@@ -131,7 +214,11 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
         let Some(creds) = SpacetimeCreds::from_request_parts(parts)? else {
             return Ok(Self { auth: None });
         };
-        let claims = creds.decode_token(state.public_key())?;
+
+        let claims = validate_token(state.public_key().clone(), &state.local_issuer(), &creds.token)
+            .await
+            .map_err(AuthorizationRejection::Custom)?;
+
         let auth = SpacetimeAuth {
             creds,
             identity: claims.identity,
@@ -145,6 +232,7 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
 pub enum AuthorizationRejection {
     Jwt(JwtError),
     Header(headers::Error),
+    Custom(TokenValidationError),
     Required,
 }
 
@@ -165,6 +253,7 @@ impl IntoResponse for AuthorizationRejection {
         match self {
             AuthorizationRejection::Jwt(e) if *e.kind() == JwtErrorKind::InvalidSignature => ROTATED.into_response(),
             AuthorizationRejection::Jwt(_) | AuthorizationRejection::Header(_) => INVALID.into_response(),
+            AuthorizationRejection::Custom(msg) => (StatusCode::UNAUTHORIZED, format!("{:?}", msg)).into_response(),
             AuthorizationRejection::Required => REQUIRED.into_response(),
         }
     }

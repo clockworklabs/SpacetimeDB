@@ -48,7 +48,7 @@ fn test_domain() -> anyhow::Result<()> {
 
     let cdb = ControlDb::at(tmp.path())?;
 
-    let addr = Address::zero();
+    let addr = Identity::ZERO;
     let res = cdb.spacetime_insert_domain(&addr, domain.clone(), *ALICE, true)?;
     assert!(matches!(res, InsertDomainResult::Success { .. }));
 
@@ -97,7 +97,7 @@ fn test_decode() -> ResultTest<()> {
 
     let db = Database {
         id: 0,
-        address: Default::default(),
+        database_identity: Default::default(),
         owner_identity: id,
         host_type: HostType::Wasm,
         initial_program: Hash::ZERO,

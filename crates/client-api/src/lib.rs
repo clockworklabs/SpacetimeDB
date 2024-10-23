@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use axum::response::ErrorResponse;
 use http::StatusCode;
 
-use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
@@ -34,6 +33,9 @@ pub trait NodeDelegate: Send + Sync {
 
     /// Return a JWT decoding key for verifying credentials.
     fn public_key(&self) -> &DecodingKey;
+
+    // The issuer to use when signing JWTs.
+    fn local_issuer(&self) -> String;
 
     /// Return the public key used to verify JWTs, as the bytes of a PEM public key file.
     ///
@@ -143,10 +145,10 @@ impl Host {
 ///
 /// See [`ControlStateDelegate::publish_database`].
 pub struct DatabaseDef {
-    /// The [`Address`] the database shall have.
+    /// The [`Identity`] the database shall have.
     ///
     /// Addresses are allocated via [`ControlStateDelegate::create_address`].
-    pub address: Address,
+    pub database_identity: Identity,
     /// The compiled program of the database module.
     pub program_bytes: Vec<u8>,
     /// The desired number of replicas the database shall have.
@@ -186,7 +188,7 @@ pub trait ControlStateReadAccess {
 
     // Databases
     fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>>;
-    fn get_database_by_address(&self, address: &Address) -> anyhow::Result<Option<Database>>;
+    fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>>;
     fn get_databases(&self) -> anyhow::Result<Vec<Database>>;
 
     // Replicas
@@ -197,16 +199,13 @@ pub trait ControlStateReadAccess {
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
 
     // DNS
-    fn lookup_address(&self, domain: &DomainName) -> anyhow::Result<Option<Address>>;
-    fn reverse_lookup(&self, address: &Address) -> anyhow::Result<Vec<DomainName>>;
+    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Identity>>;
+    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
 }
 
 /// Write operations on the SpacetimeDB control plane.
 #[async_trait]
 pub trait ControlStateWriteAccess: Send + Sync {
-    // Databases
-    async fn create_address(&self) -> anyhow::Result<Address>;
-
     /// Publish a database acc. to [`DatabaseDef`].
     ///
     /// If the database with the given address was successfully published before,
@@ -217,11 +216,11 @@ pub trait ControlStateWriteAccess: Send + Sync {
     /// initialized.
     async fn publish_database(
         &self,
-        identity: &Identity,
+        publisher: &Identity,
         spec: DatabaseDef,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>>;
 
-    async fn delete_database(&self, identity: &Identity, address: &Address) -> anyhow::Result<()>;
+    async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
 
     // Energy
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()>;
@@ -233,7 +232,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
         &self,
         identity: &Identity,
         domain: &DomainName,
-        address: &Address,
+        database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult>;
 }
 
@@ -253,8 +252,8 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
         (**self).get_database_by_id(id)
     }
-    fn get_database_by_address(&self, address: &Address) -> anyhow::Result<Option<Database>> {
-        (**self).get_database_by_address(address)
+    fn get_database_by_identity(&self, identity: &Identity) -> anyhow::Result<Option<Database>> {
+        (**self).get_database_by_identity(identity)
     }
     fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
         (**self).get_databases()
@@ -274,21 +273,17 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     }
 
     // DNS
-    fn lookup_address(&self, domain: &DomainName) -> anyhow::Result<Option<Address>> {
-        (**self).lookup_address(domain)
+    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Identity>> {
+        (**self).lookup_identity(domain)
     }
 
-    fn reverse_lookup(&self, address: &Address) -> anyhow::Result<Vec<DomainName>> {
-        (**self).reverse_lookup(address)
+    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
+        (**self).reverse_lookup(database_identity)
     }
 }
 
 #[async_trait]
 impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
-    async fn create_address(&self) -> anyhow::Result<Address> {
-        (**self).create_address().await
-    }
-
     async fn publish_database(
         &self,
         identity: &Identity,
@@ -297,8 +292,8 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         (**self).publish_database(identity, spec).await
     }
 
-    async fn delete_database(&self, identity: &Identity, address: &Address) -> anyhow::Result<()> {
-        (**self).delete_database(identity, address).await
+    async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
+        (**self).delete_database(caller_identity, database_identity).await
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
@@ -316,9 +311,9 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         &self,
         identity: &Identity,
         domain: &DomainName,
-        address: &Address,
+        database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult> {
-        (**self).create_dns_record(identity, domain, address).await
+        (**self).create_dns_record(identity, domain, database_identity).await
     }
 }
 
@@ -326,6 +321,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
 impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         (**self).gather_metrics()
+    }
+
+    fn local_issuer(&self) -> String {
+        (**self).local_issuer()
     }
 
     fn client_actor_index(&self) -> &ClientActorIndex {

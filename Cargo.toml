@@ -169,7 +169,7 @@ indicatif = "0.16"
 insta = { version = "1.21.0", features = ["toml"] }
 is-terminal = "0.4"
 itertools = "0.12"
-jsonwebtoken = { version = "8.1.0" }
+jsonwebtoken = { git = "https://github.com/jsdt/jsonwebtoken.git", rev = "7f0cef63c74f58dfa912e88da844932ba4c71562"}
 lazy_static = "1.4.0"
 log = "0.4.17"
 mimalloc = "0.1.39"
@@ -202,7 +202,7 @@ scoped-tls = "1.0.1"
 scopeguard = "1.1.0"
 second-stack = "0.3"
 serde = { version = "1.0.136", features = ["derive"] }
-serde_json = { version = "1.0.87", features = ["raw_value"] }
+serde_json = { version = "1.0.128", features = ["raw_value", "arbitrary_precision"] }
 serde_path_to_error = "0.1.9"
 serde_with = { version = "3.3.0", features = ["base64", "hex"] }
 serial_test = "2.0.0"
@@ -239,6 +239,7 @@ tracing-core = "0.1.31"
 tracing-flame = "0.2.0"
 tracing-log = "0.1.3"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+trybuild = "1"
 typed-arena = "2.0"
 unicode-ident = "1.0.12"
 unicode-normalization = "0.1.23"

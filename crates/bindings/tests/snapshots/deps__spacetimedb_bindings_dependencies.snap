@@ -2,7 +2,7 @@
 source: crates/bindings/tests/deps.rs
 expression: "cargo tree -p spacetimedb -f {lib} -e no-dev"
 ---
-total crates: 62
+total crates: 69
 spacetimedb
 ├── bytemuck
 ├── derive_more
@@ -48,12 +48,29 @@ spacetimedb
 │   │   ├── itertools
 │   │   │   └── either
 │   │   └── nohash_hasher
+│   ├── spacetimedb_sql_parser
+│   │   ├── derive_more (*)
+│   │   ├── sqlparser
+│   │   │   └── log
+│   │   └── thiserror
+│   │       └── thiserror_impl
+│   │           ├── proc_macro2 (*)
+│   │           ├── quote (*)
+│   │           └── syn (*)
 │   └── syn (*)
 ├── spacetimedb_bindings_sys
 │   └── spacetimedb_primitives (*)
 ├── spacetimedb_lib
 │   ├── anyhow
 │   ├── bitflags
+│   ├── blake3
+│   │   ├── arrayref
+│   │   ├── arrayvec
+│   │   ├── cfg_if
+│   │   └── constant_time_eq
+│   │   [build-dependencies]
+│   │   └── cc
+│   │       └── shlex
 │   ├── derive_more (*)
 │   ├── enum_as_inner
 │   │   ├── heck
@@ -62,6 +79,7 @@ spacetimedb
 │   │   └── syn (*)
 │   ├── hex
 │   ├── itertools (*)
+│   ├── rand (*)
 │   ├── spacetimedb_bindings_macro (*)
 │   ├── spacetimedb_data_structures
 │   │   ├── ahash
@@ -75,11 +93,7 @@ spacetimedb
 │   │   │   └── equivalent
 │   │   ├── nohash_hasher
 │   │   ├── smallvec
-│   │   └── thiserror
-│   │       └── thiserror_impl
-│   │           ├── proc_macro2 (*)
-│   │           ├── quote (*)
-│   │           └── syn (*)
+│   │   └── thiserror (*)
 │   ├── spacetimedb_primitives (*)
 │   ├── spacetimedb_sats
 │   │   ├── arrayvec

@@ -1,8 +1,11 @@
 use crate::from_hex_pad;
+use blake3;
+use core::mem;
+use rand;
+use rand::Rng;
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::hex::HexString;
-use spacetimedb_sats::product_type::IDENTITY_TAG;
-use spacetimedb_sats::{hash, impl_st, AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_sats::{hash, impl_st, u256, AlgebraicType, AlgebraicValue};
 use std::{fmt, str::FromStr};
 
 pub type RequestId = u32;
@@ -35,10 +38,10 @@ impl AuthCtx {
 /// This is a special type.
 #[derive(Default, Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Serialize, Deserialize)]
 pub struct Identity {
-    __identity_bytes: [u8; 32],
+    __identity__: u256,
 }
 
-impl_st!([] Identity, AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::bytes())]));
+impl_st!([] Identity, AlgebraicType::identity());
 
 #[cfg(feature = "metrics_impls")]
 impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
@@ -48,15 +51,30 @@ impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
 }
 
 impl Identity {
-    pub const ZERO: Self = Self {
-        __identity_bytes: [0; 32],
-    };
+    pub const ZERO: Self = Self::from_u256(u256::ZERO);
 
+    pub fn placeholder() -> Self {
+        // Generate a random identity.
+        let mut rng = rand::thread_rng();
+        let mut random_bytes = [0u8; 32];
+        rng.fill(&mut random_bytes);
+        Identity::from_byte_array(random_bytes)
+    }
     /// Returns an `Identity` defined as the given `bytes` byte array.
     pub const fn from_byte_array(bytes: [u8; 32]) -> Self {
-        Self {
-            __identity_bytes: bytes,
-        }
+        // SAFETY: The transmute is an implementation of `u256::from_ne_bytes`,
+        // but works in a const context.
+        Self::from_u256(u256::from_le(unsafe { mem::transmute(bytes) }))
+    }
+
+    /// Converts `__identity__: u256` to `Identity`.
+    pub const fn from_u256(__identity__: u256) -> Self {
+        Self { __identity__ }
+    }
+
+    /// Converts this identity to an `u256`.
+    pub const fn to_u256(&self) -> u256 {
+        self.__identity__
     }
 
     /// Returns an `Identity` defined as the given byte `slice`.
@@ -66,33 +84,43 @@ impl Identity {
 
     #[doc(hidden)]
     pub fn __dummy() -> Self {
-        Self::from_byte_array([0; 32])
+        Self::ZERO
     }
 
-    /// Get the special `AlgebraicType` for `Identity`.
-    pub fn get_type() -> AlgebraicType {
-        AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::bytes())])
+    pub fn from_claims(issuer: &str, subject: &str) -> Self {
+        let input = format!("{}|{}", issuer, subject);
+        let first_hash = blake3::hash(input.as_bytes());
+        let id_hash = &first_hash.as_bytes()[..26];
+        let mut checksum_input = [0u8; 28];
+        // TODO: double check this gets the right number...
+        checksum_input[2..].copy_from_slice(id_hash);
+        checksum_input[0] = 0xc2;
+        checksum_input[1] = 0x00;
+        let checksum_hash = &blake3::hash(&checksum_input);
+
+        let mut final_bytes = [0u8; 32];
+        final_bytes[0] = 0xc2;
+        final_bytes[1] = 0x00;
+        final_bytes[2..6].copy_from_slice(&checksum_hash.as_bytes()[..4]);
+        final_bytes[6..].copy_from_slice(id_hash);
+        Identity::from_byte_array(final_bytes)
     }
 
-    /// Returns a borrowed view of the byte array defining this `Identity`.
-    pub fn as_bytes(&self) -> &[u8; 32] {
-        &self.__identity_bytes
-    }
-
-    pub fn to_vec(&self) -> Vec<u8> {
-        self.__identity_bytes.to_vec()
+    /// Returns this `Identity` as a byte array.
+    pub fn to_byte_array(&self) -> [u8; 32] {
+        self.__identity__.to_le_bytes()
     }
 
     pub fn to_hex(&self) -> HexString<32> {
-        spacetimedb_sats::hex::encode(&self.__identity_bytes)
+        spacetimedb_sats::hex::encode(&self.to_byte_array())
     }
 
-    pub fn abbreviate(&self) -> &[u8; 8] {
-        self.__identity_bytes[..8].try_into().unwrap()
+    pub fn abbreviate(&self) -> [u8; 8] {
+        self.to_byte_array()[..8].try_into().unwrap()
     }
 
     pub fn to_abbreviated_hex(&self) -> HexString<8> {
-        spacetimedb_sats::hex::encode(self.abbreviate())
+        spacetimedb_sats::hex::encode(&self.abbreviate())
     }
 
     pub fn from_hex(hex: impl AsRef<[u8]>) -> Result<Self, hex::FromHexError> {
@@ -100,7 +128,7 @@ impl Identity {
     }
 
     pub fn from_hashing_bytes(bytes: impl AsRef<[u8]>) -> Self {
-        Identity::from_byte_array(hash::hash_bytes(bytes).data)
+        Self::from_byte_array(hash::hash_bytes(bytes).data)
     }
 }
 
@@ -120,8 +148,7 @@ impl hex::FromHex for Identity {
     type Error = hex::FromHexError;
 
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
-        let data = from_hex_pad(hex)?;
-        Ok(Identity { __identity_bytes: data })
+        from_hex_pad(hex).map(Identity::from_byte_array)
     }
 }
 
@@ -135,14 +162,14 @@ impl FromStr for Identity {
 
 impl From<Identity> for AlgebraicValue {
     fn from(value: Identity) -> Self {
-        AlgebraicValue::Product(ProductValue::from(AlgebraicValue::Bytes(value.to_vec().into())))
+        AlgebraicValue::product([value.to_u256().into()])
     }
 }
 
 #[cfg(feature = "serde")]
 impl serde::Serialize for Identity {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        spacetimedb_sats::ser::serde::serialize_to(self.as_bytes(), serializer)
+        spacetimedb_sats::ser::serde::serialize_to(&self.to_byte_array(), serializer)
     }
 }
 
@@ -157,6 +184,7 @@ impl<'de> serde::Deserialize<'de> for Identity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spacetimedb_sats::GroundSpacetimeType as _;
 
     #[test]
     fn identity_is_special() {

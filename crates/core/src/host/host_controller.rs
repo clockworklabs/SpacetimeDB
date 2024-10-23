@@ -21,7 +21,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability as durability;
-use spacetimedb_lib::{hash_bytes, Address};
+use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_sats::hash::Hash;
 use std::fmt;
 use std::future::Future;
@@ -240,7 +240,7 @@ impl HostController {
         {
             let guard = self.acquire_read_lock(replica_id).await;
             if let Some(host) = &*guard {
-                trace!("cached host {}/{}", database.address, replica_id);
+                trace!("cached host {}/{}", database.database_identity, replica_id);
                 return Ok(host.module.subscribe());
             }
         }
@@ -250,11 +250,15 @@ impl HostController {
         // we'll need to check again if a module was added meanwhile.
         let mut guard = self.acquire_write_lock(replica_id).await;
         if let Some(host) = &*guard {
-            trace!("cached host {}/{} (lock upgrade)", database.address, replica_id);
+            trace!(
+                "cached host {}/{} (lock upgrade)",
+                database.database_identity,
+                replica_id
+            );
             return Ok(host.module.subscribe());
         }
 
-        trace!("launch host {}/{}", database.address, replica_id);
+        trace!("launch host {}/{}", database.database_identity, replica_id);
         let host = self.try_init_host(database, replica_id, durability).await?;
 
         let rx = host.module.subscribe();
@@ -274,7 +278,7 @@ impl HostController {
         F: FnOnce(&RelationalDB) -> T + Send + 'static,
         T: Send + 'static,
     {
-        trace!("using database {}/{}", database.address, replica_id);
+        trace!("using database {}/{}", database.database_identity, replica_id);
         let module = self.get_module_host(replica_id).await?;
         let on_panic = self.unregister_fn(replica_id);
         let result = tokio::task::spawn_blocking(move || f(&module.replica_ctx().relational_db))
@@ -310,7 +314,7 @@ impl HostController {
         };
         trace!(
             "update module host {}/{}: genesis={} update-to={}",
-            database.address,
+            database.database_identity,
             replica_id,
             database.initial_program,
             program.hash
@@ -361,9 +365,9 @@ impl HostController {
         durability: DynDurabilityFut,
         expected_hash: Option<Hash>,
     ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
-        trace!("custom bootstrap {}/{}", database.address, replica_id);
+        trace!("custom bootstrap {}/{}", database.database_identity, replica_id);
 
-        let db_addr = database.address;
+        let db_addr = database.database_identity;
         let host_type = database.host_type;
         let program_hash = database.initial_program;
 
@@ -499,7 +503,7 @@ impl HostController {
         durability: DynDurabilityFut,
     ) -> anyhow::Result<Host> {
         Host::try_init(
-            &self.get_replica_path(&database.address, replica_id),
+            &self.get_replica_path(&database.database_identity, replica_id),
             self.default_config,
             database,
             replica_id,
@@ -511,7 +515,7 @@ impl HostController {
         .await
     }
 
-    pub fn get_replica_path(&self, database_address: &Address, replica_id: u64) -> PathBuf {
+    pub fn get_replica_path(&self, database_address: &Identity, replica_id: u64) -> PathBuf {
         let mut db_path = self.root_dir.to_path_buf();
         db_path.extend([&*database_address.to_hex(), &replica_id.to_string()]);
         db_path.push("database");
@@ -533,7 +537,7 @@ async fn make_replica_ctx(
     replica_id: u64,
     relational_db: Arc<RelationalDB>,
 ) -> anyhow::Result<ReplicaContext> {
-    let log_path = DatabaseLogger::filepath(&database.address, replica_id);
+    let log_path = DatabaseLogger::filepath(&database.database_identity, replica_id);
     let logger = tokio::task::block_in_place(|| Arc::new(DatabaseLogger::open(log_path)));
     let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.owner_identity);
 
@@ -599,7 +603,7 @@ async fn launch_module(
     relational_db: Arc<RelationalDB>,
     energy_monitor: Arc<dyn EnergyMonitor>,
 ) -> anyhow::Result<(Program, LaunchedModule)> {
-    let address = database.address;
+    let address = database.database_identity;
     let host_type = database.host_type;
 
     let replica_ctx = make_replica_ctx(database, replica_id, relational_db)
@@ -644,7 +648,7 @@ async fn update_module(
     program: Program,
     old_module_info: Arc<ModuleInfo>,
 ) -> anyhow::Result<UpdateDatabaseResult> {
-    let addr = db.address();
+    let addr = db.database_identity();
     match stored_program_hash(db)? {
         None => Err(anyhow!("database `{}` not yet initialized", addr)),
         Some(stored) => {
@@ -710,7 +714,7 @@ impl Host {
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
                 &db_path,
-                database.address,
+                database.database_identity,
                 database.owner_identity,
                 EmptyHistory::new(),
                 None,
@@ -720,11 +724,12 @@ impl Host {
                 let durability = durability.await?;
                 // History trait does not let use `DynDurabilityFut` directly
                 let (local_durability, _) = relational_db::local_durability(&db_path).await?;
-                let snapshot_repo = relational_db::open_snapshot_repo(&db_path, database.address, replica_id)?;
+                let snapshot_repo =
+                    relational_db::open_snapshot_repo(&db_path, database.database_identity, replica_id)?;
                 let history = local_durability.clone();
                 RelationalDB::open(
                     &db_path,
-                    database.address,
+                    database.database_identity,
                     database.owner_identity,
                     history,
                     Some(durability),
@@ -783,7 +788,7 @@ impl Host {
                 .with_context(|| {
                     format!(
                         "Error calling disconnect for {} {} on {}",
-                        identity, address, replica_ctx.address
+                        identity, address, replica_ctx.database_identity
                     )
                 })?;
         }
@@ -880,13 +885,13 @@ async fn storage_monitor(replica_ctx: Arc<ReplicaContext>, energy_monitor: Arc<d
         if let Some(num_bytes) = disk_usage.durability {
             DB_METRICS
                 .message_log_size
-                .with_label_values(&replica_ctx.address)
+                .with_label_values(&replica_ctx.database_identity)
                 .set(num_bytes as i64);
         }
         if let Some(num_bytes) = disk_usage.logs {
             DB_METRICS
                 .module_log_file_size
-                .with_label_values(&replica_ctx.address)
+                .with_label_values(&replica_ctx.database_identity)
                 .set(num_bytes as i64);
         }
         let disk_usage = disk_usage.or(prev_disk_usage);

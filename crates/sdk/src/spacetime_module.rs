@@ -10,7 +10,7 @@ use crate::{
 };
 use anyhow::Context;
 use bytes::Bytes;
-use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
+use spacetimedb_data_structures::map::{DefaultHashBuilder, HashCollectionExt, HashMap};
 use spacetimedb_lib::{bsatn, de::DeserializeOwned};
 use std::{any::Any, fmt::Debug, hash::Hash};
 
@@ -196,7 +196,8 @@ impl<Row: DeserializeOwned + Debug> TableUpdate<Row> {
         };
 
         // Pre-allocate plenty of space to minimize hash collisions.
-        let mut diff: HashMap<Pk, DiffEntry<Row>> = HashMap::with_capacity(raw_updates.num_rows() * 2);
+        let mut diff: HashMap<Pk, DiffEntry<Row>> =
+            HashMap::<_, _, DefaultHashBuilder>::with_capacity(raw_updates.num_rows() * 2);
 
         // Traverse the `table_update` to construct a diff, merging duplicated `Insert`
         // and `Delete` into `Update`.

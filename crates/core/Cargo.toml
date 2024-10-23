@@ -101,6 +101,9 @@ url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
 wasmtime.workspace = true
+jwks = { git = "https://github.com/jsdt/jwks.git", rev = "acb4241f3768ff89515a0c12d927e280a604fff3"}
+async_cache = "0.3.1"
+faststr = "0.2.23"
 
 [features]
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
@@ -121,3 +124,7 @@ proptest-derive.workspace = true
 rand.workspace = true
 env_logger.workspace = true
 pretty_assertions.workspace = true
+jsonwebkey = { version = "0.3.5", features = ["generate", "jwt-convert"] }
+jsonwebtoken.workspace = true
+axum-test = "16.2.0"
+axum.workspace = true

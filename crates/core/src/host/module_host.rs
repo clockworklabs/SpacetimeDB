@@ -181,9 +181,9 @@ pub struct ModuleInfo {
     /// Reducer names are sorted alphabetically.
     pub reducers_map: ReducersMap,
     /// The identity of the module.
-    pub identity: Identity,
-    /// The address of the module.
-    pub address: Address,
+    pub owner_identity: Identity,
+    /// The identity of the database.
+    pub database_identity: Identity,
     /// The hash of the module.
     pub module_hash: Hash,
     /// Allows subscribing to module logs.
@@ -197,8 +197,8 @@ impl ModuleInfo {
     /// Reducers are sorted alphabetically by name and assigned IDs.
     pub fn new(
         module_def: ModuleDef,
-        identity: Identity,
-        address: Address,
+        owner_identity: Identity,
+        database_identity: Identity,
         module_hash: Hash,
         log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
         subscriptions: ModuleSubscriptions,
@@ -208,8 +208,8 @@ impl ModuleInfo {
         Arc::new(ModuleInfo {
             module_def,
             reducers_map,
-            identity,
-            address,
+            owner_identity,
+            database_identity,
             module_hash,
             log_tx,
             subscriptions,
@@ -368,7 +368,7 @@ impl fmt::Debug for ModuleHost {
 
 #[async_trait::async_trait]
 trait DynModuleHost: Send + Sync + 'static {
-    async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
+    async fn get_instance(&self, db: Identity) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
     fn replica_ctx(&self) -> &ReplicaContext;
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
@@ -405,7 +405,7 @@ async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> 
 
 #[async_trait::async_trait]
 impl<T: Module> DynModuleHost for HostControllerActor<T> {
-    async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
+    async fn get_instance(&self, db: Identity) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
         // in the future we should do something like in the else branch here -- add more instances based on load.
         // we need to do write-skew retries first - right now there's only ever once instance per module.
         let inst = if true {
@@ -522,9 +522,9 @@ impl ModuleHost {
             // Record the time spent waiting in the queue
             let _guard = WORKER_METRICS
                 .reducer_wait_time
-                .with_label_values(&self.info.address, reducer)
+                .with_label_values(&self.info.database_identity, reducer)
                 .start_timer();
-            self.inner.get_instance(self.info.address).await?
+            self.inner.get_instance(self.info.database_identity).await?
         };
 
         let result = tokio::task::spawn_blocking(move || f(&mut *inst))
@@ -569,7 +569,7 @@ impl ModuleHost {
         let db = &self.inner.replica_ctx().relational_db;
         let ctx = || {
             ExecutionContext::reducer(
-                db.address(),
+                db.database_identity(),
                 ReducerContext {
                     name: reducer_name.to_owned(),
                     caller_identity,
@@ -638,7 +638,7 @@ impl ModuleHost {
         connected: bool,
     ) -> Result<(), DBError> {
         let db = &*self.inner.replica_ctx().relational_db;
-        let ctx = &ExecutionContext::internal(db.address());
+        let ctx = &ExecutionContext::internal(db.database_identity());
         let row = &StClientRow {
             identity: caller_identity.into(),
             address: caller_address.into(),
@@ -827,7 +827,7 @@ impl ModuleHost {
         let db = &replica_ctx.relational_db;
         let auth = AuthCtx::new(replica_ctx.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
-        let ctx = &ExecutionContext::sql(db.address());
+        let ctx = &ExecutionContext::sql(db.database_identity());
         db.with_read_only(ctx, |tx| {
             let ast = sql::compiler::compile_sql(db, &auth, tx, &query)?;
             sql::execute::execute_sql_tx(db, tx, &query, ast, auth)?
@@ -840,7 +840,7 @@ impl ModuleHost {
     /// Note: this doesn't drop the table, it just clears it!
     pub fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
         let db = &*self.replica_ctx().relational_db;
-        db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
+        db.with_auto_commit(&ExecutionContext::internal(db.database_identity()), |tx| {
             let tables = db.get_all_tables_mut(tx)?;
             // We currently have unique table names,
             // so we can assume there's only one table to clear.
