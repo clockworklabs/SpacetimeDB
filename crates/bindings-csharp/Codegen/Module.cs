@@ -158,6 +158,7 @@ record ViewIndex
     public readonly EquatableArray<string> Columns;
     public readonly string? Table;
     public readonly string Name;
+    public bool HasExplicitName;
     public readonly ViewIndexType Type;
 
     public ViewIndex(AttributeData data, TypeDeclarationSyntax decl, DiagReporter diag)
@@ -170,6 +171,7 @@ record ViewIndex
         Type = ViewIndexType.BTree;
 
         Table = attr.Table;
+        HasExplicitName = attr.Name is not null;
         Name = attr.Name ?? string.Join("", Columns);
 
         if (Columns.Length == 0)
@@ -178,12 +180,21 @@ record ViewIndex
         }
     }
 
-    public string GenerateIndexDef(string viewName, EquatableArray<ColumnDeclaration> columns)
+    public string GenerateIndexDef(string viewName, EquatableArray<ColumnDeclaration> allColumns)
     {
-        var cols = Columns.Select(c =>
-            columns.Select((c, i) => (c, i)).First(cd => cd.c.Name == c).i
+        var columnIndices = string.Join(
+            ", ",
+            Columns.Select(c =>
+                allColumns.Select((c, i) => (c.Name, i)).First(cd => cd.Name == c).i
+            )
         );
-        return $"new(\"bt_{viewName}_{Name}\", null, new SpacetimeDB.Internal.RawIndexAlgorithm.{Type}([{string.Join(", ", cols)}]))";
+        return $$"""
+            new(
+                "{{viewName}}_btree_{{Name}}",
+                {{(HasExplicitName ? $"\"{Name}\"" : "null")}},
+                new SpacetimeDB.Internal.RawIndexAlgorithm.{{Type}}([{{columnIndices}}])
+            )
+            """;
     }
 }
 
@@ -306,7 +317,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             }
 
             yield return $$"""
-                    {{vis}} sealed class {{index.Name}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("bt_{{viewName}}_{{index.Name}}") {
+                    {{vis}} sealed class {{index.Name}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("{{viewName}}_btree_{{index.Name}}") {
                 """;
 
             var members = index.Columns.Select(s => Members.First(x => x.Name == s)).ToArray();
