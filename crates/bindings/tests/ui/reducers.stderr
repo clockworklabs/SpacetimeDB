@@ -10,16 +10,27 @@ error: const parameters are not allowed on reducers
 20 | fn const_param<const X: u8>() {}
    |                ^^^^^^^^^^^
 
-error[E0593]: function is expected to take 2 arguments, but it takes 3 arguments
-  --> tests/ui/reducers.rs:28:56
+error: scheduled table missing required columns; add these to your struct:
+       #[primary_key]
+       #[auto_inc]
+       scheduled_id: u64,
+       #[scheduled_at]
+       scheduled_at: spacetimedb::ScheduleAt,
+  --> tests/ui/reducers.rs:29:8
    |
-28 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_reducer))]
+29 | struct ScheduledTableMissingRows {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0593]: function is expected to take 2 arguments, but it takes 3 arguments
+  --> tests/ui/reducers.rs:37:56
+   |
+37 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_reducer))]
    | -------------------------------------------------------^^^^^^^^^^^^^^^^^^^^^^^---
    | |                                                      |
    | |                                                      expected function that takes 2 arguments
    | required by a bound introduced by this call
 ...
-35 | fn scheduled_table_reducer(_ctx: &ReducerContext, _x: u8, _y: u8) {}
+49 | fn scheduled_table_reducer(_ctx: &ReducerContext, _x: u8, _y: u8) {}
    | ----------------------------------------------------------------- takes 3 arguments
    |
    = note: required for `for<'a> fn(&'a ReducerContext, u8, u8) {scheduled_table_reducer}` to implement `Reducer<'_, (ScheduledTable,)>`

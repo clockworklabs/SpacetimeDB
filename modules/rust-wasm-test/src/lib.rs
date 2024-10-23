@@ -104,6 +104,11 @@ pub type TestAlias = TestA;
 
 #[spacetimedb::table(name = repeating_test_arg, scheduled(repeating_test))]
 pub struct RepeatingTestArg {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    #[scheduled_at]
+    scheduled_at: spacetimedb::ScheduleAt,
     prev_time: Timestamp,
 }
 
