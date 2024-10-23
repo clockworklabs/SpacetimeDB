@@ -8,7 +8,6 @@ use crate::{
         ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
     },
     error::TableError,
-    execution_context::ExecutionContext,
 };
 use core::ops::RangeBounds;
 use spacetimedb_primitives::{ColList, TableId};
@@ -288,12 +287,8 @@ impl<'a> Iterator for Iter<'a> {
 }
 
 pub struct IndexSeekIterMutTxId<'a> {
-    #[allow(dead_code)]
-    pub(super) ctx: &'a ExecutionContext,
     pub(super) table_id: TableId,
     pub(super) tx_state: &'a TxState,
-    #[allow(dead_code)]
-    pub(super) committed_state: &'a CommittedState,
     pub(super) inserted_rows: IndexScanIter<'a>,
     pub(super) committed_rows: Option<IndexScanIter<'a>>,
     pub(super) num_committed_rows_fetched: u64,

@@ -406,6 +406,7 @@ impl WasmInstanceEnv {
         Self::cvt_ret(caller, AbiCall::DatastoreTableScanBsatn, out, |caller| {
             let env = caller.data_mut();
             // Retrieve the execution context for the current reducer.
+            // TODO: Why is necessary to drop the context here?
             let ctx = env.reducer_context()?;
             // Collect the iterator chunks.
             let chunks = env.instance_env.datastore_table_scan_bsatn_chunks(table_id.into())?;
