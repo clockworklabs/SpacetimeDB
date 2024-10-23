@@ -578,7 +578,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
 
     public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, int?, SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>> {
                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique") {}
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "TestUniqueNotEquatable_btree_UniqueField") {}
 */
     Message: Partial declarations of 'TestUniqueNotEquatable.TestUniqueNotEquatableUniqueIndex' must not specify different base classes,
     Severity: Error,
@@ -599,7 +599,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
   },
   {/*
     public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, int?, SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>> {
-    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique") {}
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "TestUniqueNotEquatable_btree_UniqueField") {}
                                                                                 ^^^^
     public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.UniqueField, row);
 */
@@ -621,7 +621,7 @@ public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<Tes
     }
   },
   {/*
-    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique") {}
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "TestUniqueNotEquatable_btree_UniqueField") {}
     public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.UniqueField, row);
                                                               ^^^^^^^^
 }
@@ -670,7 +670,7 @@ public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNo
 public TestUniqueNotEquatableUniqueIndex UniqueField => new(this);
 public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, TestEnumWithExplicitValues, SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>> {
                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "TestUniqueNotEquatable_btree_PrimaryKeyField") {}
 */
     Message: The type 'TestUniqueNotEquatable' already contains a definition for 'TestUniqueNotEquatableUniqueIndex',
     Severity: Error,
@@ -691,7 +691,7 @@ public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNo
   },
   {/*
 public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, TestEnumWithExplicitValues, SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>> {
-    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "TestUniqueNotEquatable_btree_PrimaryKeyField") {}
              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.PrimaryKeyField, row);
 */
@@ -714,7 +714,7 @@ public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNo
   },
   {/*
 public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNotEquatable, global::TestUniqueNotEquatable, TestEnumWithExplicitValues, SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>> {
-    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "TestUniqueNotEquatable_btree_PrimaryKeyField") {}
                                                                                 ^^^^
     public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.PrimaryKeyField, row);
 */
@@ -736,7 +736,7 @@ public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNo
     }
   },
   {/*
-    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "TestUniqueNotEquatable_btree_PrimaryKeyField") {}
     public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.PrimaryKeyField, row);
                 ^^^^^^
 }
@@ -759,7 +759,7 @@ public sealed class TestUniqueNotEquatableUniqueIndex : UniqueIndex<TestUniqueNo
     }
   },
   {/*
-    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique") {}
+    internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle) : base(handle, "TestUniqueNotEquatable_btree_PrimaryKeyField") {}
     public bool Update(global::TestUniqueNotEquatable row) => DoUpdate(row.PrimaryKeyField, row);
                                                               ^^^^^^^^
 }

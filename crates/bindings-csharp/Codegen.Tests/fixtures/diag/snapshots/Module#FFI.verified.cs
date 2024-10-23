@@ -63,7 +63,14 @@ namespace SpacetimeDB
                     ProductTypeRef: (uint)
                         new global::TestAutoIncNotInteger.BSATN().GetAlgebraicType(registrar).Ref_,
                     PrimaryKey: [],
-                    Indexes: [],
+                    Indexes:
+                    [
+                        new(
+                            "TestAutoIncNotInteger_btree_IdentityField",
+                            "IdentityField",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                        )
+                    ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
@@ -123,10 +130,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestAutoIncNotIntegerUniqueIndex(TestAutoIncNotInteger handle)
-                    : base(
-                        handle,
-                        "idx_TestAutoIncNotInteger_TestAutoIncNotInteger_IdentityField_unique"
-                    ) { }
+                    : base(handle, "TestAutoIncNotInteger_btree_IdentityField") { }
 
                 public bool Update(global::TestAutoIncNotInteger row) =>
                     DoUpdate(row.IdentityField, row);
@@ -222,7 +226,14 @@ namespace SpacetimeDB
                             .GetAlgebraicType(registrar)
                             .Ref_,
                     PrimaryKey: [0],
-                    Indexes: [],
+                    Indexes:
+                    [
+                        new(
+                            "TestIncompatibleSchedule1_btree_ScheduledId",
+                            "ScheduledId",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        )
+                    ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
@@ -281,10 +292,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestIncompatibleSchedule1UniqueIndex(TestIncompatibleSchedule1 handle)
-                    : base(
-                        handle,
-                        "idx_TestIncompatibleSchedule1_TestIncompatibleSchedule1_ScheduledId_unique"
-                    ) { }
+                    : base(handle, "TestIncompatibleSchedule1_btree_ScheduledId") { }
 
                 public bool Update(global::TestIncompatibleSchedule row) =>
                     DoUpdate(row.ScheduledId, row);
@@ -324,7 +332,14 @@ namespace SpacetimeDB
                             .GetAlgebraicType(registrar)
                             .Ref_,
                     PrimaryKey: [0],
-                    Indexes: [],
+                    Indexes:
+                    [
+                        new(
+                            "TestIncompatibleSchedule2_btree_ScheduledId",
+                            "ScheduledId",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        )
+                    ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
@@ -380,10 +395,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestIncompatibleSchedule2UniqueIndex(TestIncompatibleSchedule2 handle)
-                    : base(
-                        handle,
-                        "idx_TestIncompatibleSchedule2_TestIncompatibleSchedule2_ScheduledId_unique"
-                    ) { }
+                    : base(handle, "TestIncompatibleSchedule2_btree_ScheduledId") { }
 
                 public bool Update(global::TestIncompatibleSchedule row) =>
                     DoUpdate(row.ScheduledId, row);
@@ -468,7 +480,19 @@ namespace SpacetimeDB
                     ProductTypeRef: (uint)
                         new global::TestUniqueNotEquatable.BSATN().GetAlgebraicType(registrar).Ref_,
                     PrimaryKey: [1],
-                    Indexes: [],
+                    Indexes:
+                    [
+                        new(
+                            "TestUniqueNotEquatable_btree_UniqueField",
+                            "UniqueField",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        ),
+                        new(
+                            "TestUniqueNotEquatable_btree_PrimaryKeyField",
+                            "PrimaryKeyField",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                        )
+                    ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
@@ -525,10 +549,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle)
-                    : base(
-                        handle,
-                        "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique"
-                    ) { }
+                    : base(handle, "TestUniqueNotEquatable_btree_UniqueField") { }
 
                 public bool Update(global::TestUniqueNotEquatable row) =>
                     DoUpdate(row.UniqueField, row);
@@ -545,10 +566,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle)
-                    : base(
-                        handle,
-                        "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique"
-                    ) { }
+                    : base(handle, "TestUniqueNotEquatable_btree_PrimaryKeyField") { }
 
                 public bool Update(global::TestUniqueNotEquatable row) =>
                     DoUpdate(row.PrimaryKeyField, row);

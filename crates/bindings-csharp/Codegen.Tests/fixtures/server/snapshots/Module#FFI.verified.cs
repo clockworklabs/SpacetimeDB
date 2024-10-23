@@ -54,8 +54,8 @@ namespace SpacetimeDB
                     Indexes:
                     [
                         new(
-                            "bt_BTreeMultiColumn_Location",
-                            null,
+                            "BTreeMultiColumn_btree_Location",
+                            "Location",
                             new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0, 1, 2])
                         )
                     ],
@@ -92,7 +92,7 @@ namespace SpacetimeDB
 
             internal sealed class LocationIndex()
                 : SpacetimeDB.Internal.IndexBase<global::BTreeMultiColumn>(
-                    "bt_BTreeMultiColumn_Location"
+                    "BTreeMultiColumn_btree_Location"
                 )
             {
                 public IEnumerable<global::BTreeMultiColumn> Filter(uint X) =>
@@ -232,13 +232,18 @@ namespace SpacetimeDB
                     Indexes:
                     [
                         new(
-                            "bt_BTreeViews_Location",
-                            null,
+                            "BTreeViews_btree_Id",
+                            "Id",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        ),
+                        new(
+                            "BTreeViews_btree_Location",
+                            "Location",
                             new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1, 2])
                         ),
                         new(
-                            "bt_BTreeViews_Faction",
-                            null,
+                            "BTreeViews_btree_Faction",
+                            "Faction",
                             new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([3])
                         )
                     ],
@@ -276,7 +281,7 @@ namespace SpacetimeDB
                 >
             {
                 internal BTreeViewsUniqueIndex(BTreeViews handle)
-                    : base(handle, "idx_BTreeViews_BTreeViews_Id_unique") { }
+                    : base(handle, "BTreeViews_btree_Id") { }
 
                 public bool Update(global::BTreeViews row) => DoUpdate(row.Id, row);
             }
@@ -284,7 +289,7 @@ namespace SpacetimeDB
             internal BTreeViewsUniqueIndex Id => new(this);
 
             internal sealed class LocationIndex()
-                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("bt_BTreeViews_Location")
+                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_btree_Location")
             {
                 public IEnumerable<global::BTreeViews> Filter(uint X) =>
                     DoFilter(
@@ -350,7 +355,7 @@ namespace SpacetimeDB
             internal LocationIndex Location => new();
 
             internal sealed class FactionIndex()
-                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("bt_BTreeViews_Faction")
+                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_btree_Faction")
             {
                 public IEnumerable<global::BTreeViews> Filter(string Faction) =>
                     DoFilter(
@@ -411,7 +416,12 @@ namespace SpacetimeDB
                     Indexes:
                     [
                         new(
-                            "bt_MultiTable1_Name",
+                            "MultiTable1_btree_Foo",
+                            "Foo",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                        ),
+                        new(
+                            "MultiTable1_btree_Name",
                             null,
                             new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                         )
@@ -451,7 +461,7 @@ namespace SpacetimeDB
                 : UniqueIndex<MultiTable1, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
             {
                 internal MultiTable1UniqueIndex(MultiTable1 handle)
-                    : base(handle, "idx_MultiTable1_MultiTable1_Foo_unique") { }
+                    : base(handle, "MultiTable1_btree_Foo") { }
 
                 public bool Update(global::MultiTableRow row) => DoUpdate(row.Foo, row);
             }
@@ -459,7 +469,7 @@ namespace SpacetimeDB
             public MultiTable1UniqueIndex Foo => new(this);
 
             public sealed class NameIndex()
-                : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>("bt_MultiTable1_Name")
+                : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>("MultiTable1_btree_Name")
             {
                 public IEnumerable<global::MultiTableRow> Filter(string Name) =>
                     DoFilter(
@@ -517,7 +527,14 @@ namespace SpacetimeDB
                     ProductTypeRef: (uint)
                         new global::MultiTableRow.BSATN().GetAlgebraicType(registrar).Ref_,
                     PrimaryKey: [],
-                    Indexes: [],
+                    Indexes:
+                    [
+                        new(
+                            "MultiTable2_btree_Bar",
+                            "Bar",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([2])
+                        )
+                    ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
@@ -553,7 +570,7 @@ namespace SpacetimeDB
                 : UniqueIndex<MultiTable2, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
             {
                 internal MultiTable2UniqueIndex(MultiTable2 handle)
-                    : base(handle, "idx_MultiTable2_MultiTable2_Bar_unique") { }
+                    : base(handle, "MultiTable2_btree_Bar") { }
 
                 public bool Update(global::MultiTableRow row) => DoUpdate(row.Bar, row);
             }
@@ -626,7 +643,14 @@ namespace SpacetimeDB
                     ProductTypeRef: (uint)
                         new global::PublicTable.BSATN().GetAlgebraicType(registrar).Ref_,
                     PrimaryKey: [0],
-                    Indexes: [],
+                    Indexes:
+                    [
+                        new(
+                            "PublicTable_btree_Id",
+                            "Id",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        )
+                    ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
@@ -662,7 +686,7 @@ namespace SpacetimeDB
                 : UniqueIndex<PublicTable, global::PublicTable, int, SpacetimeDB.BSATN.I32>
             {
                 internal PublicTableUniqueIndex(PublicTable handle)
-                    : base(handle, "idx_PublicTable_PublicTable_Id_unique") { }
+                    : base(handle, "PublicTable_btree_Id") { }
 
                 public bool Update(global::PublicTable row) => DoUpdate(row.Id, row);
             }
@@ -698,7 +722,14 @@ namespace SpacetimeDB
                             .GetAlgebraicType(registrar)
                             .Ref_,
                     PrimaryKey: [1],
-                    Indexes: [],
+                    Indexes:
+                    [
+                        new(
+                            "SendMessageTimer_btree_ScheduledId",
+                            "ScheduledId",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                        )
+                    ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
@@ -757,7 +788,7 @@ namespace SpacetimeDB
                 >
             {
                 internal SendMessageTimerUniqueIndex(SendMessageTimer handle)
-                    : base(handle, "idx_SendMessageTimer_SendMessageTimer_ScheduledId_unique") { }
+                    : base(handle, "SendMessageTimer_btree_ScheduledId") { }
 
                 public bool Update(global::Timers.SendMessageTimer row) =>
                     DoUpdate(row.ScheduledId, row);

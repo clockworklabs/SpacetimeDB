@@ -180,21 +180,50 @@ record ViewIndex
         }
     }
 
-    public string GenerateIndexDef(string viewName, EquatableArray<ColumnDeclaration> allColumns)
-    {
-        var columnIndices = string.Join(
-            ", ",
+    public string GenerateIndexDef(string viewName, EquatableArray<ColumnDeclaration> allColumns) =>
+        GenerateIndexDef(
+            viewName,
+            HasExplicitName,
+            Name,
+            Type,
             Columns.Select(c =>
-                allColumns.Select((c, i) => (c.Name, i)).First(cd => cd.Name == c).i
+                allColumns.Select((col, pos) => (col.Name, pos)).First(x => x.Name == c).pos
             )
         );
+
+    public string GenerateIndexName(string viewName) => GenerateIndexName(viewName, Name, Type);
+
+    public static string GenerateIndexDef(
+        string viewName,
+        bool hasExplicitName,
+        string name,
+        ViewIndexType type,
+        IEnumerable<int> columnIndices
+    )
+    {
+        var indexName = GenerateIndexName(viewName, name, type);
+
         return $$"""
             new(
-                "{{viewName}}_btree_{{Name}}",
-                {{(HasExplicitName ? $"\"{Name}\"" : "null")}},
-                new SpacetimeDB.Internal.RawIndexAlgorithm.{{Type}}([{{columnIndices}}])
+                "{{indexName}}",
+                {{(hasExplicitName ? $"\"{name}\"" : "null")}},
+                new SpacetimeDB.Internal.RawIndexAlgorithm.{{type}}([{{string.Join(
+                    ", ",
+                    columnIndices
+                )}}])
             )
             """;
+    }
+
+    public static string GenerateIndexName(string viewName, string name, ViewIndexType type)
+    {
+        var typeSuffix = type switch
+        {
+            ViewIndexType.BTree => "btree",
+            _ => throw new InvalidOperationException("invalid type"),
+        };
+
+        return $"{viewName}_{typeSuffix}_{name}";
     }
 }
 
@@ -300,9 +329,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         {
             var f = ct.col;
 
+            var indexName = ViewIndex.GenerateIndexName(viewName, f.Name, ViewIndexType.BTree);
+
             yield return $$"""
                 {{vis}} sealed class {{viewName}}UniqueIndex : UniqueIndex<{{viewName}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
-                    internal {{viewName}}UniqueIndex({{viewName}} handle) : base(handle, "idx_{{viewName}}_{{viewName}}_{{f.Name}}_unique") {}
+                    internal {{viewName}}UniqueIndex({{viewName}} handle) : base(handle, "{{indexName}}") {}
                     public bool Update({{globalName}} row) => DoUpdate(row.{{f.Name}}, row);
                 }
                 {{vis}} {{viewName}}UniqueIndex {{f.Name}} => new(this);
@@ -316,8 +347,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 continue;
             }
 
+            var indexName = index.GenerateIndexName(viewName);
+
             yield return $$"""
-                    {{vis}} sealed class {{index.Name}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("{{viewName}}_btree_{{index.Name}}") {
+                    {{vis}} sealed class {{index.Name}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("{{indexName}}") {
                 """;
 
             var members = index.Columns.Select(s => Members.First(x => x.Name == s)).ToArray();
@@ -402,9 +435,16 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     ProductTypeRef: (uint) new {{globalName}}.BSATN().GetAlgebraicType(registrar).Ref_,
                     PrimaryKey: [{{GetPrimaryKey(v.Name)?.ToString() ?? ""}}],
                     Indexes: [
-                        {{string.Join(",\n", Indexes
-                        .Where(b => b.Table == null || b.Table == v.Name)
-                        .Select(b => b.GenerateIndexDef(v.Name, Members)))}}
+                        {{string.Join(
+                            ",\n",
+                            GetConstraints(v.Name, ColumnAttrs.Unique)
+                            .Select(c => ViewIndex.GenerateIndexDef(v.Name, true, c.col.Name, ViewIndexType.BTree, [c.pos]))
+                            .Concat(
+                                Indexes
+                                .Where(b => b.Table == null || b.Table == v.Name)
+                                .Select(b => b.GenerateIndexDef(v.Name, Members))
+                            )
+                        )}}
                     ],
                     Constraints: {{GenConstraintList(v.Name, ColumnAttrs.Unique, globalName, $"{iTable}.MakeUniqueConstraint")}},
                     Sequences: {{GenConstraintList(v.Name, ColumnAttrs.AutoInc, globalName, $"{iTable}.MakeSequence")}},
