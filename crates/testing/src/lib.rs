@@ -20,12 +20,23 @@ pub fn set_key_env_vars(paths: &FilesLocal) {
     set_if_not_exist("SPACETIMEDB_JWT_PRIV_KEY", paths.private_key());
 }
 
-pub fn invoke_cli(args: &[&str]) {
+pub fn block_on<T, F>(f: F) -> T
+    where F: FnOnce() -> impl Future<Output=T>
+{
     lazy_static::lazy_static! {
         static ref RUNTIME: tokio::runtime::Runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap();
+    }
+
+    RUNTIME
+        .block_on(f())
+        .unwrap()
+}
+
+pub fn invoke_cli(args: &[&str]) {
+    lazy_static::lazy_static! {
         static ref COMMAND: Command = Command::new("spacetime").no_binary_name(true).subcommands(spacetimedb_cli::get_subcommands());
         static ref CONFIG: Config = Config::new_with_localhost();
     }
@@ -33,7 +44,5 @@ pub fn invoke_cli(args: &[&str]) {
     let args = COMMAND.clone().get_matches_from(args);
     let (cmd, args) = args.subcommand().expect("Could not split subcommand and args");
 
-    RUNTIME
-        .block_on(spacetimedb_cli::exec_subcommand((*CONFIG).clone(), cmd, args))
-        .unwrap()
+    block_on(() => spacetimedb_cli::exec_subcommand((*CONFIG).clone(), cmd, args))
 }
