@@ -307,17 +307,12 @@ mod tests {
     use crate::auth::token_validation::{
         CachingOidcTokenValidator, LocalTokenValidator, OidcTokenValidator, TokenValidator,
     };
-    use env_logger;
     use jsonwebkey as jwk;
     use jsonwebtoken::{DecodingKey, EncodingKey};
     use rand::distributions::{Alphanumeric, DistString};
     use rand::thread_rng;
     use serde_json;
     use spacetimedb_lib::Identity;
-
-    fn init() {
-        let _ = env_logger::builder().is_test(true).try_init();
-    }
 
     struct KeyPair {
         pub public_key: DecodingKey,
@@ -341,16 +336,6 @@ mod tests {
     }
 
     impl KeyPair {
-        fn new(key_id: String, key: jwk::JsonWebKey) -> anyhow::Result<Self> {
-            let public_key = jsonwebtoken::DecodingKey::from_ec_pem(key.key.to_public().unwrap().to_pem().as_bytes())?;
-            let private_key = jsonwebtoken::EncodingKey::from_ec_pem(key.key.try_to_pem()?.as_bytes())?;
-            Ok(KeyPair {
-                public_key,
-                private_key,
-                key_id,
-                jwk: key,
-            })
-        }
 
         fn generate_p256() -> anyhow::Result<KeyPair> {
             let key_id = Alphanumeric.sample_string(&mut thread_rng(), 16);
@@ -374,11 +359,6 @@ mod tests {
             public_only
         }
 
-        fn to_public_jwks(&self) -> String {
-            let mut public_only = self.jwk.clone();
-            public_only.key = Box::from(public_only.key.to_public().unwrap().into_owned());
-            format!(r#"{{"keys":[{}]}}"#, serde_json::to_string(&self.jwk).unwrap())
-        }
     }
 
     #[tokio::test]
