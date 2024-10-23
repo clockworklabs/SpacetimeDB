@@ -1,56 +1,14 @@
 use duct::cmd;
 use lazy_static::lazy_static;
 use rand::distributions::{Alphanumeric, DistString};
-use serde::{Deserialize, Serialize};
 use spacetimedb_data_structures::map::HashMap;
 use std::fs::create_dir_all;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 
+use crate::invoke_cli;
 use crate::modules::{CompilationMode, CompiledModule};
-use crate::{block_on, invoke_cli};
 use tempfile::TempDir;
-
-// Copied from crates/client-api/src/routes/identity.rs, to make the fields pub.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateIdentityResponse {
-    pub identity: String,
-    pub token: String,
-}
-
-async fn try_get_token(client: &reqwest::Client) -> anyhow::Result<String> {
-    log::debug!(
-        "{}",
-        client
-            .post("http://localhost:3000/identity")
-            .send()
-            .await?
-            .text()
-            .await?
-    );
-    let response: CreateIdentityResponse = client
-        .post("http://localhost:3000/identity")
-        .send()
-        .await?
-        .json()
-        .await?;
-    Ok(response.token)
-}
-
-async fn get_token() -> String {
-    let client = reqwest::Client::new();
-    loop {
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        match try_get_token(&client).await {
-            Ok(token) => {
-                return token;
-            }
-            Err(err) => {
-                log::debug!("Error getting token: {}", err);
-            }
-        }
-    }
-}
 
 pub fn ensure_standalone_process() {
     lazy_static! {
@@ -62,10 +20,7 @@ pub fn ensure_standalone_process() {
                 //       and all the options for post-`main` cleanup seem sketchy.
                 .into_path();
             std::env::set_var("STDB_PATH", stdb_path);
-            let r = Mutex::new(Some(std::thread::spawn(|| invoke_cli(&["start"]))));
-            let token = block_on(get_token);
-            invoke_cli(&["login", "--token", &token]);
-            r
+            Mutex::new(Some(std::thread::spawn(|| invoke_cli(&["start"]))))
         };
     }
 
