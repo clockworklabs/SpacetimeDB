@@ -2,7 +2,7 @@
 source: crates/bindings/tests/deps.rs
 expression: "cargo tree -p spacetimedb -f {lib} -e no-dev"
 ---
-total crates: 64
+total crates: 67
 spacetimedb
 ├── bytemuck
 ├── derive_more
@@ -48,21 +48,20 @@ spacetimedb
 │   │   ├── itertools
 │   │   │   └── either
 │   │   └── nohash_hasher
-│   ├── spacetimedb_sql_parser
-│   │   ├── derive_more (*)
-│   │   ├── sqlparser
-│   │   │   └── log
-│   │   └── thiserror
-│   │       └── thiserror_impl
-│   │           ├── proc_macro2 (*)
-│   │           ├── quote (*)
-│   │           └── syn (*)
 │   └── syn (*)
 ├── spacetimedb_bindings_sys
 │   └── spacetimedb_primitives (*)
 ├── spacetimedb_lib
 │   ├── anyhow
 │   ├── bitflags
+│   ├── blake3
+│   │   ├── arrayref
+│   │   ├── arrayvec
+│   │   ├── cfg_if
+│   │   └── constant_time_eq
+│   │   [build-dependencies]
+│   │   └── cc
+│   │       └── shlex
 │   ├── derive_more (*)
 │   ├── enum_as_inner
 │   │   ├── heck
@@ -73,18 +72,21 @@ spacetimedb
 │   ├── itertools (*)
 │   ├── spacetimedb_bindings_macro (*)
 │   ├── spacetimedb_data_structures
-│   │   ├── ahash
-│   │   │   ├── cfg_if
-│   │   │   ├── getrandom (*)
-│   │   │   ├── once_cell
-│   │   │   └── zerocopy (*)
-│   │   │   [build-dependencies]
-│   │   │   └── version_check
 │   │   ├── hashbrown
-│   │   │   └── equivalent
+│   │   │   ├── ahash
+│   │   │   │   ├── cfg_if
+│   │   │   │   ├── once_cell
+│   │   │   │   └── zerocopy (*)
+│   │   │   │   [build-dependencies]
+│   │   │   │   └── version_check
+│   │   │   └── allocator_api2
 │   │   ├── nohash_hasher
 │   │   ├── smallvec
-│   │   └── thiserror (*)
+│   │   └── thiserror
+│   │       └── thiserror_impl
+│   │           ├── proc_macro2 (*)
+│   │           ├── quote (*)
+│   │           └── syn (*)
 │   ├── spacetimedb_primitives (*)
 │   ├── spacetimedb_sats
 │   │   ├── arrayvec
