@@ -544,7 +544,7 @@ mod tests {
 
             Ok(OIDCServerHandle {
                 base_url,
-                shutdown_tx, /* , join_handle*/
+                shutdown_tx,
                 join_handle,
             })
         }
