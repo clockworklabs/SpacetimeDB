@@ -1441,12 +1441,10 @@ impl StateView for MutTxId {
         if let Some(inserted_rows) = self.tx_state.index_seek(table_id, &cols, &range) {
             // The current transaction has modified this table, and the table is indexed.
             Ok(IterByColRange::Index(IndexSeekIterMutTxId {
-                ctx: &self.ctx,
                 table_id,
                 tx_state: &self.tx_state,
                 inserted_rows,
                 committed_rows: self.committed_state_write_lock.index_seek(table_id, &cols, &range),
-                committed_state: &self.committed_state_write_lock,
                 num_committed_rows_fetched: 0,
             }))
         } else {
