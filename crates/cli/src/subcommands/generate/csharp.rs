@@ -648,7 +648,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
     indented_block(&mut output, |output| {
         writeln!(
             output,
-            "internal RemoteReducers(DbConnection conn) : base(conn) {{ this.SetCallReducerFlags = SetReducerFlags; }}"
+            "internal RemoteReducers(DbConnection conn, SetReducerFlags SetReducerFlags) : base(conn) {{ this.SetCallReducerFlags = SetReducerFlags; }}"
         );
         writeln!(output, "internal readonly SetReducerFlags SetCallReducerFlags;");
 

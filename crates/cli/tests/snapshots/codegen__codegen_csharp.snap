@@ -880,7 +880,7 @@ namespace SpacetimeDB
 
 	public sealed class RemoteReducers : RemoteBase<DbConnection>
 	{
-		internal RemoteReducers(DbConnection conn) : base(conn) { this.SetCallReducerFlags = SetReducerFlags; }
+		internal RemoteReducers(DbConnection conn, SetReducerFlags SetReducerFlags) : base(conn) { this.SetCallReducerFlags = SetReducerFlags; }
 		internal readonly SetReducerFlags SetCallReducerFlags;
 		public delegate void AddPlayerHandler(EventContext ctx, string name);
 		public event AddPlayerHandler? OnAddPlayer;
