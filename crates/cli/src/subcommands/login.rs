@@ -29,7 +29,7 @@ pub fn cli() -> Command {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let spacetimedb_token = args.get_one("spacetimedb-token");
+    let spacetimedb_token: Option<&String> = args.get_one("spacetimedb-token");
     let host: &String = args.get_one("host").unwrap();
     // TODO: This `--new` does not (and can not) clear any of the browser's cookies, so it will refresh the tokens stored in config,
     // but if you're already logged in with the browser, it will not let you e.g. choose a different account.
@@ -38,6 +38,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // Currently, this token does not expire. However, it will at some point in the future. When that happens,
     // this code will need to happen before any request to a spacetimedb server, rather than at the end of the login flow here.
     let spacetimedb_token = if let Some(token) = spacetimedb_token {
+        config.set_spacetimedb_token(token.clone());
+        config.save();
         Some(token)
     } else if new_login {
         None
