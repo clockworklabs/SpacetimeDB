@@ -17,13 +17,13 @@ pub fn cli() -> Command {
                 .long("token")
                 .conflicts_with("host")
                 .conflicts_with("new")
-                .help("Do a new login even if we're already logged in."),
+                .help("Bypass the login flow and use a login token directly"),
         )
         .arg(
-            Arg::new("refresh")
-                .long("refresh")
+            Arg::new("refresh-cache")
+                .long("refresh-cache")
                 .action(ArgAction::SetTrue)
-                .help("Refresh the cached tokens"),
+                .help("Clear the cached tokens and re-fetch them"),
         )
         .about("Login the CLI in to SpacetimeDB")
 }
@@ -31,9 +31,9 @@ pub fn cli() -> Command {
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let spacetimedb_token: Option<&String> = args.get_one("spacetimedb-token");
     let host: &String = args.get_one("host").unwrap();
-    // TODO: This `--refresh` does not (and can not) clear any of the browser's cookies, so it will refresh the tokens stored in config,
+    // TODO: This `--refresh-cache` does not (and can not) clear any of the browser's cookies, so it will refresh the tokens stored in config,
     // but if you're already logged in with the browser, it will not let you e.g. choose a different account.
-    let clear_cache = args.get_flag("refresh");
+    let clear_cache = args.get_flag("refresh-cache");
 
     if let Some(token) = spacetimedb_token {
         config.set_spacetimedb_token(token.clone());
