@@ -77,7 +77,7 @@ pub struct HostController {
     /// The [`ProgramStorage`] to query when instantiating a module.
     program_storage: ProgramStorage,
     /// The [`EnergyMonitor`] used by this controller.
-    energy_monitor: Arc<dyn EnergyMonitor>,
+    pub energy_monitor: Arc<dyn EnergyMonitor>,
 }
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Serialize, Debug)]
@@ -505,10 +505,17 @@ async fn make_replica_ctx(
     database: Database,
     replica_id: u64,
     relational_db: Arc<RelationalDB>,
+    energy_monitor: Arc<dyn EnergyMonitor>,
 ) -> anyhow::Result<ReplicaContext> {
     let log_path = DatabaseLogger::filepath(&database.database_identity, replica_id);
     let logger = tokio::task::block_in_place(|| Arc::new(DatabaseLogger::open(log_path)));
-    let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.owner_identity);
+    let subscriptions = ModuleSubscriptions::new(
+        relational_db.clone(),
+        database.owner_identity,
+        energy_monitor,
+        database.clone(),
+        replica_id,
+    );
 
     Ok(ReplicaContext {
         database,
@@ -575,7 +582,7 @@ async fn launch_module(
     let address = database.database_identity;
     let host_type = database.host_type;
 
-    let replica_ctx = make_replica_ctx(database, replica_id, relational_db)
+    let replica_ctx = make_replica_ctx(database, replica_id, relational_db, energy_monitor.clone())
         .await
         .map(Arc::new)?;
     let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db.clone());
