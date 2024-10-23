@@ -16,7 +16,7 @@ pub fn cli() -> Command {
             Arg::new("spacetimedb-token")
                 .long("token")
                 .conflicts_with("host")
-                .conflicts_with("new")
+                .conflicts_with("refresh-cache")
                 .help("Bypass the login flow and use a login token directly"),
         )
         .arg(
