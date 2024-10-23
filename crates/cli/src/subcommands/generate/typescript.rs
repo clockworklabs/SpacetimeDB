@@ -390,7 +390,7 @@ dbViewConstructor: (imp: DBConnectionImpl) => {{
 }},
 reducersConstructor: (imp: DBConnectionImpl, setReducerFlags: SetReducerFlags) => {{
   return new RemoteReducers(imp, setReducerFlags);
-}}
+}},
 setReducerFlagsConstructor: () => {{
   return new SetReducerFlags();
 }}"
