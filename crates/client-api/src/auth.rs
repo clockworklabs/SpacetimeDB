@@ -176,8 +176,8 @@ mod tests {
         let mut my_jwk = jwk::JsonWebKey::new(jwk::Key::generate_p256());
 
         my_jwk.set_algorithm(jwk::Algorithm::ES256).unwrap();
-        let public_key = jsonwebtoken::DecodingKey::from_ec_pem(&my_jwk.key.to_public().unwrap().to_pem().as_bytes())?;
-        let private_key = jsonwebtoken::EncodingKey::from_ec_pem(&my_jwk.key.try_to_pem()?.as_bytes())?;
+        let public_key = jsonwebtoken::DecodingKey::from_ec_pem(my_jwk.key.to_public().unwrap().to_pem().as_bytes())?;
+        let private_key = jsonwebtoken::EncodingKey::from_ec_pem(my_jwk.key.try_to_pem()?.as_bytes())?;
         Ok(KeyPair {
             public_key,
             private_key,
