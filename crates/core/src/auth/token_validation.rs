@@ -138,10 +138,6 @@ lazy_static! {
     static ref GLOBAL_OIDC_VALIDATOR: Arc<CachingOidcTokenValidator> = Arc::new(CachingOidcTokenValidator::get_default());
 }
 
-// Just make some token website thing.
-
-// Get a minimal branch out that doesn't do any caching or fancy stuff.
-
 #[async_trait]
 impl TokenValidator for LocalTokenValidator {
     async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
@@ -197,7 +193,6 @@ impl async_cache::Fetcher<Arc<JwksValidator>> for KeyFetcher {
 
     async fn fetch(&self, key: FastStr) -> Result<Arc<JwksValidator>, Self::Error> {
         // TODO: Make this stored in the struct so we don't need to keep creating it.
-        // let raw_issuer = get_raw_issuer(token)?;
         let raw_issuer = key.to_string();
         log::info!("Fetching key for issuer {}", raw_issuer.clone());
         // TODO: Consider checking for trailing slashes or requiring a scheme.
@@ -280,14 +275,11 @@ impl TokenValidator for JwksValidator {
             return validator.validate_token(token).await;
         }
         log::debug!("No key id in header. Trying all keys.");
-        // println!("No key id in header. Trying all keys.");
-        // return Err(TokenValidationError::Other(anyhow::anyhow!("No kid found")));
         // TODO: Consider returning an error if no kid is given?
         // For now, lets just try all the keys.
         let mut last_error = TokenValidationError::Other(anyhow::anyhow!("No kid found"));
         for (kid, key) in &self.keyset.keys {
             log::debug!("Trying key {}", kid);
-            // let stack_size = thread::current().stack_size();
             let validator = LocalTokenValidator {
                 public_key: key.decoding_key.clone(),
                 issuer: self.issuer.clone(),
@@ -332,7 +324,6 @@ mod tests {
         pub public_key: DecodingKey,
         pub private_key: EncodingKey,
         pub key_id: String,
-        // pub jwks: String,
         pub jwk: jwk::JsonWebKey,
     }
 
@@ -340,7 +331,6 @@ mod tests {
     where
         I: IntoIterator<Item = K>,
         K: AsRef<KeyPair>,
-        // I: IntoIterator<Item = KeyPair>,
     {
         format!(
             r#"{{"keys":[{}]}}"#,
@@ -484,7 +474,6 @@ mod tests {
         Ok(())
     }
 
-    // use jsonwebtoken::jwk::JwkSet
     use axum::routing::get;
     use axum::Json;
     use axum::Router;
@@ -513,7 +502,6 @@ mod tests {
     impl OIDCServerHandle {
         pub async fn start_new<I, K>(ks: I) -> anyhow::Result<Self>
         where
-            // Keys: IntoIterator<Item = AsRef<KeyPair>>,
             I: IntoIterator<Item = K>,
             K: AsRef<KeyPair>,
         {
@@ -549,7 +537,6 @@ mod tests {
                 axum::serve(listener, app)
                     .with_graceful_shutdown(async {
                         shutdown_rx.await.ok();
-                        println!("Shutting down");
                     })
                     .await
                     .unwrap();
@@ -589,7 +576,6 @@ mod tests {
             log::debug!("Testing with key {}", kp.key_id);
             let token = jsonwebtoken::encode(&header, &orig_claims, &kp.private_key)?;
 
-            // let validated_claims = OidcTokenValidator.validate_token(&token).await?;
             let validated_claims = validator.validate_token(&token).await?;
             assert_eq!(validated_claims.issuer, issuer);
             assert_eq!(validated_claims.subject, subject);
@@ -598,8 +584,6 @@ mod tests {
 
         let invalid_token = jsonwebtoken::encode(&header, &orig_claims, &invalid_kp.private_key)?;
         assert!(validator.validate_token(&invalid_token).await.is_err());
-        //assert!(OidcTokenValidator.validate_token(&invalid_token).await.is_err());
-        // tokio::spawn(server);
 
         Ok(())
     }
