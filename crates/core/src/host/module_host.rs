@@ -932,7 +932,9 @@ impl ModuleHost {
         let db = self.db();
         let auth = self.auth_ctx_for(identity);
         let (table_names, table_ids): (Vec<_>, Vec<_>) = db
-            .with_read_only(&ExecutionContext::internal(db.address()), |tx| db.get_all_tables(tx))
+            .with_read_only(&ExecutionContext::internal(db.database_identity()), |tx| {
+                db.get_all_tables(tx)
+            })
             .expect("ids_to_name: database in a broken state?")
             .iter()
             .filter(|schema| is_table_visible(schema, &auth))
