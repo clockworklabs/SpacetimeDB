@@ -1,0 +1,10 @@
+{
+  "mode": "pre",
+  "tag": "next",
+  "initialVersions": {
+    "client-vite": "0.0.2",
+    "@clockworklabs/spacetimedb-sdk": "0.12.1",
+    "@clockworklabs/test-app": "0.0.2"
+  },
+  "changesets": []
+}
