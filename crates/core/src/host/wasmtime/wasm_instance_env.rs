@@ -408,9 +408,7 @@ impl WasmInstanceEnv {
             // Retrieve the execution context for the current reducer.
             let ctx = env.reducer_context()?;
             // Collect the iterator chunks.
-            let chunks = env
-                .instance_env
-                .datastore_table_scan_bsatn_chunks(&ctx, table_id.into())?;
+            let chunks = env.instance_env.datastore_table_scan_bsatn_chunks(table_id.into())?;
             drop(ctx);
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
@@ -687,8 +685,7 @@ impl WasmInstanceEnv {
 
             // Insert the row into the DB.
             // This will return back the generated column values.
-            let ctx = env.reducer_context()?;
-            let gen_cols = env.instance_env.insert(&ctx, table_id.into(), row)?;
+            let gen_cols = env.instance_env.insert(table_id.into(), row)?;
 
             // Write back the generated column values to `row`
             // and the encoded length to `row_len`.

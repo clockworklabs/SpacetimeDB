@@ -77,26 +77,25 @@ impl StateView for CommittedState {
         self.get_table(table_id).map(|table| table.row_count)
     }
 
-    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Iter<'a>> {
+    fn iter(&self, table_id: TableId) -> Result<Iter<'_>> {
         if let Some(table_name) = self.table_name(table_id) {
-            return Ok(Iter::new(ctx, table_id, table_name, None, self));
+            return Ok(Iter::new(table_id, table_name, None, self));
         }
         Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
     /// where the values of `cols` are contained in `range`.
-    fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
-        &'a self,
-        ctx: &'a ExecutionContext,
+    fn iter_by_col_range<R: RangeBounds<AlgebraicValue>>(
+        &self,
         table_id: TableId,
         cols: ColList,
         range: R,
-    ) -> Result<IterByColRange<'a, R>> {
+    ) -> Result<IterByColRange<'_, R>> {
         // TODO: Why does this unconditionally return a `Scan` iter,
         // instead of trying to return a `CommittedIndex` iter?
         Ok(IterByColRange::Scan(ScanIterByColRange::new(
-            self.iter(ctx, table_id)?,
+            self.iter(table_id)?,
             cols,
             range,
         )))
@@ -274,7 +273,7 @@ impl CommittedState {
             with_label_values(ST_SEQUENCE_ID, ST_SEQUENCE_NAME).inc();
         }
 
-        self.reset_system_table_schemas(database_identity)?;
+        self.reset_system_table_schemas()?;
 
         Ok(())
     }
@@ -286,12 +285,11 @@ impl CommittedState {
     /// for objects like indexes and constraints
     /// which are computed at insert-time,
     /// and therefore not included in the hardcoded schemas.
-    pub(super) fn reset_system_table_schemas(&mut self, database_identity: Identity) -> Result<()> {
+    pub(super) fn reset_system_table_schemas(&mut self) -> Result<()> {
         // Re-read the schema with the correct ids...
-        let ctx = ExecutionContext::internal(database_identity);
         for schema in system_tables() {
             self.tables.get_mut(&schema.table_id).unwrap().schema =
-                Arc::new(self.schema_for_table_raw(&ctx, schema.table_id)?);
+                Arc::new(self.schema_for_table_raw(schema.table_id)?);
         }
 
         Ok(())
@@ -384,7 +382,7 @@ impl CommittedState {
         // For already built tables, we need to reschema them to account for constraints et al.
         let mut schemas = Vec::with_capacity(self.tables.len());
         for table_id in self.tables.keys().copied() {
-            schemas.push(self.schema_for_table_raw(&ExecutionContext::default(), table_id)?);
+            schemas.push(self.schema_for_table_raw(table_id)?);
         }
         for (table, schema) in self.tables.values_mut().zip(schemas) {
             table.with_mut_schema(|s| *s = schema);
@@ -407,7 +405,7 @@ impl CommittedState {
 
         // Construct their schemas and insert tables for them.
         for table_id in table_ids {
-            let schema = self.schema_for_table(&ExecutionContext::default(), table_id)?;
+            let schema = self.schema_for_table(table_id)?;
             self.tables.insert(table_id, Self::make_table(schema));
         }
         Ok(())
@@ -467,12 +465,7 @@ impl CommittedState {
         // Note that this may change in the future: some analytics and/or
         // timetravel queries may benefit from seeing all inputs, even if
         // the database state did not change.
-        tx_data.inserts().any(|(_, inserted_rows)| !inserted_rows.is_empty())
-            || tx_data.deletes().any(|(_, deleted_rows)| !deleted_rows.is_empty())
-            || matches!(
-                ctx.reducer_context().map(|rcx| rcx.name.strip_prefix("__identity_")),
-                Some(Some("connected__" | "disconnected__"))
-            )
+        tx_data.has_rows_or_connect_disconnect(ctx.reducer_context())
     }
 
     pub(super) fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
@@ -636,8 +629,6 @@ impl CommittedState {
 }
 
 pub struct CommittedIndexIter<'a> {
-    #[allow(dead_code)]
-    ctx: &'a ExecutionContext,
     table_id: TableId,
     tx_state: Option<&'a TxState>,
     #[allow(dead_code)]
@@ -648,14 +639,12 @@ pub struct CommittedIndexIter<'a> {
 
 impl<'a> CommittedIndexIter<'a> {
     pub(super) fn new(
-        ctx: &'a ExecutionContext,
         table_id: TableId,
         tx_state: Option<&'a TxState>,
         committed_state: &'a CommittedState,
         committed_rows: IndexScanIter<'a>,
     ) -> Self {
         Self {
-            ctx,
             table_id,
             tx_state,
             committed_state,
