@@ -2,6 +2,7 @@ use clap::Command;
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb_cli::Config;
 use std::env;
+use std::future::Future;
 
 pub mod modules;
 pub mod sdk;
@@ -20,9 +21,10 @@ pub fn set_key_env_vars(paths: &FilesLocal) {
     set_if_not_exist("SPACETIMEDB_JWT_PRIV_KEY", paths.private_key());
 }
 
-pub fn block_on<T, F>(f: F) -> T
+pub fn block_on<T, X, F>(f: F) -> X
 where
-    F: FnOnce() -> impl Future<Output = T>,
+    F: FnOnce() -> T,
+    T: Future<Output = X>,
 {
     lazy_static::lazy_static! {
         static ref RUNTIME: tokio::runtime::Runtime = tokio::runtime::Builder::new_multi_thread()
@@ -31,7 +33,7 @@ where
             .unwrap();
     }
 
-    RUNTIME.block_on(f()).unwrap()
+    RUNTIME.block_on(f())
 }
 
 pub fn invoke_cli(args: &[&str]) {
@@ -43,5 +45,5 @@ pub fn invoke_cli(args: &[&str]) {
     let args = COMMAND.clone().get_matches_from(args);
     let (cmd, args) = args.subcommand().expect("Could not split subcommand and args");
 
-    block_on(|| spacetimedb_cli::exec_subcommand((*CONFIG).clone(), cmd, args))
+    block_on(|| spacetimedb_cli::exec_subcommand((*CONFIG).clone(), cmd, args)).unwrap()
 }

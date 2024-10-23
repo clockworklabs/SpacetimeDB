@@ -1,7 +1,7 @@
 use duct::cmd;
 use lazy_static::lazy_static;
 use rand::distributions::{Alphanumeric, DistString};
-use spacetimedb_client_api::CreateIdentityResponse;
+use serde::{Deserialize, Serialize};
 use spacetimedb_data_structures::map::HashMap;
 use std::fs::create_dir_all;
 use std::sync::Mutex;
@@ -11,15 +11,30 @@ use crate::modules::{CompilationMode, CompiledModule};
 use crate::{block_on, invoke_cli};
 use tempfile::TempDir;
 
-async fn get_token(client: &reqwest::Client) -> anyhow::Result<String> {
+// Copied from crates/client-api/src/routes/identity.rs, to make the fields pub.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateIdentityResponse {
+    pub token: String,
+}
+
+async fn try_get_token(client: &reqwest::Client) -> anyhow::Result<String> {
     let response: CreateIdentityResponse = client
-        .get(route("/api/spacetimedb-token"))
-        .header("Authorization", format!("Bearer {}", web_session_id))
+        .get("http://localhost:3000/identity")
         .send()
         .await?
         .json()
         .await?;
-    response.token
+    Ok(response.token)
+}
+
+async fn get_token() -> String {
+    let client = reqwest::Client::new();
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        if let Ok(token) = try_get_token(&client).await {
+            return token;
+        }
+    }
 }
 
 pub fn ensure_standalone_process() {
@@ -32,17 +47,9 @@ pub fn ensure_standalone_process() {
                 //       and all the options for post-`main` cleanup seem sketchy.
                 .into_path();
             std::env::set_var("STDB_PATH", stdb_path);
-            let r = Mutex::new(Some(std::thread::spawn(|| invoke_cli(&["start"]))))
-            let token = block_on(async || {
-                let client = reqwest::Client::new();
-                loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    if let Ok(token) = get_token(&client).await {
-                        return token;
-                    }
-                }
-            });
-            invoke_cli(&["login", "--token", token]);
+            let r = Mutex::new(Some(std::thread::spawn(|| invoke_cli(&["start"]))));
+            let token = block_on(get_token);
+            invoke_cli(&["login", "--token", &token]);
             r
         };
     }
