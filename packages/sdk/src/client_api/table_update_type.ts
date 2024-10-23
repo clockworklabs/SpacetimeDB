@@ -34,7 +34,9 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
-} from '../index';
+  // @ts-ignore
+  deepEqual,
+} from '..';
 // @ts-ignore
 import { CompressableQueryUpdate as __CompressableQueryUpdate } from './compressable_query_update_type';
 

@@ -1,5 +1,4 @@
-import decompress from 'brotli/decompress';
-import { Buffer } from 'buffer';
+import { decompress } from './decompress';
 
 export class WebsocketDecompressAdapter {
   onclose?: (...ev: any[]) => void;
@@ -9,18 +8,22 @@ export class WebsocketDecompressAdapter {
 
   #ws: WebSocket;
 
-  #handleOnMessage(msg: MessageEvent) {
+  async #handleOnMessage(msg: MessageEvent) {
     const buffer = new Uint8Array(msg.data);
     let decompressed: Uint8Array;
-    switch (buffer[0]) {
-      case 0:
-        decompressed = buffer.slice(1);
-        break;
-      case 1:
-        decompressed = decompress(Buffer.from(buffer.slice(1)));
-        break;
-      default:
-        throw new Error('Invalid message type');
+
+    if (buffer[0] === 0) {
+      decompressed = buffer.slice(1);
+    } else if (buffer[0] === 1) {
+      throw new Error(
+        'Brotli Compression not supported. Please use gzip or none compression in withCompression method on DbConnection.'
+      );
+    } else if (buffer[0] === 2) {
+      decompressed = await decompress(buffer.slice(1), 'gzip');
+    } else {
+      throw new Error(
+        'Unexpected Compression Algorithm. Please use `gzip` or `none`'
+      );
     }
 
     this.onmessage?.({ data: decompressed });
@@ -62,10 +65,12 @@ export class WebsocketDecompressAdapter {
     url,
     wsProtocol,
     authToken,
+    compression,
   }: {
     url: URL;
     wsProtocol: string;
     authToken?: string;
+    compression: 'gzip' | 'none';
   }): Promise<WebsocketDecompressAdapter> {
     const headers = new Headers();
     if (authToken) {
@@ -91,6 +96,10 @@ export class WebsocketDecompressAdapter {
     if (response.ok) {
       const { token } = await response.json();
       url.searchParams.set('token', btoa('token:' + token));
+      url.searchParams.set(
+        'compression',
+        compression === 'gzip' ? 'Gzip' : 'None'
+      );
     }
     const ws = new WS(url, wsProtocol);
 

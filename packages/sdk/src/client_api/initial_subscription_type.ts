@@ -34,7 +34,9 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
-} from '../index';
+  // @ts-ignore
+  deepEqual,
+} from '..';
 // @ts-ignore
 import { DatabaseUpdate as __DatabaseUpdate } from './database_update_type';
 

@@ -34,7 +34,9 @@ import {
   SumTypeVariant,
   // @ts-ignore
   TableCache,
-} from '../index';
+  // @ts-ignore
+  deepEqual,
+} from '..';
 // @ts-ignore
 import { BsatnRowList as __BsatnRowList } from './bsatn_row_list_type';
 

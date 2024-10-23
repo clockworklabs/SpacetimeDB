@@ -15,6 +15,7 @@ export class DBConnectionBuilder<DBConnection> {
   #token?: string;
   #emitter: EventEmitter = new EventEmitter();
   #createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
+  #compression: 'gzip' | 'none' = 'gzip';
 
   /**
    * Creates a new `SpacetimeDBClient` database client and set the initial parameters.
@@ -70,6 +71,13 @@ export class DBConnectionBuilder<DBConnection> {
     return this;
   }
 
+  withCompression(
+    compression: 'gzip' | 'none'
+  ): DBConnectionBuilder<DBConnection> {
+    this.#compression = compression;
+    return this;
+  }
+
   /**
    * Connect to The SpacetimeDB Websocket For Your Module. By default, this will use a secure websocket connection. The parameters are optional, and if not provided, will use the values provided on construction of the client.
    *
@@ -118,6 +126,7 @@ export class DBConnectionBuilder<DBConnection> {
       url,
       wsProtocol: 'v1.bsatn.spacetimedb',
       authToken: connection.token,
+      compression: this.#compression,
     })
       .then(v => {
         connection.ws = v;
