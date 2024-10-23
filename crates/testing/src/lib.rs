@@ -21,7 +21,8 @@ pub fn set_key_env_vars(paths: &FilesLocal) {
 }
 
 pub fn block_on<T, F>(f: F) -> T
-    where F: FnOnce() -> impl Future<Output=T>
+where
+    F: FnOnce() -> impl Future<Output = T>,
 {
     lazy_static::lazy_static! {
         static ref RUNTIME: tokio::runtime::Runtime = tokio::runtime::Builder::new_multi_thread()
@@ -30,9 +31,7 @@ pub fn block_on<T, F>(f: F) -> T
             .unwrap();
     }
 
-    RUNTIME
-        .block_on(f())
-        .unwrap()
+    RUNTIME.block_on(f()).unwrap()
 }
 
 pub fn invoke_cli(args: &[&str]) {
@@ -44,5 +43,5 @@ pub fn invoke_cli(args: &[&str]) {
     let args = COMMAND.clone().get_matches_from(args);
     let (cmd, args) = args.subcommand().expect("Could not split subcommand and args");
 
-    block_on(() => spacetimedb_cli::exec_subcommand((*CONFIG).clone(), cmd, args))
+    block_on(|| spacetimedb_cli::exec_subcommand((*CONFIG).clone(), cmd, args))
 }
