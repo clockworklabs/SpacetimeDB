@@ -14,12 +14,22 @@ use tempfile::TempDir;
 // Copied from crates/client-api/src/routes/identity.rs, to make the fields pub.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateIdentityResponse {
+    pub identity: String,
     pub token: String,
 }
 
 async fn try_get_token(client: &reqwest::Client) -> anyhow::Result<String> {
+    log::debug!(
+        "{}",
+        client
+            .post("http://localhost:3000/identity")
+            .send()
+            .await?
+            .text()
+            .await?
+    );
     let response: CreateIdentityResponse = client
-        .get("http://localhost:3000/identity")
+        .post("http://localhost:3000/identity")
         .send()
         .await?
         .json()
@@ -31,8 +41,13 @@ async fn get_token() -> String {
     let client = reqwest::Client::new();
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        if let Ok(token) = try_get_token(&client).await {
-            return token;
+        match try_get_token(&client).await {
+            Ok(token) => {
+                return token;
+            }
+            Err(err) => {
+                log::debug!("Error getting token: {}", err);
+            }
         }
     }
 }
@@ -175,7 +190,15 @@ fn compile_module(module: &str) -> String {
 // module as a separate clean database instance for isolation purposes.
 fn publish_module(wasm_file: &str) -> String {
     let name = random_module_name();
-    invoke_cli(&["publish", "--server", "local", "--bin-path", wasm_file, &name]);
+    invoke_cli(&[
+        "publish",
+        "--anonymous",
+        "--server",
+        "local",
+        "--bin-path",
+        wasm_file,
+        &name,
+    ]);
     name
 }
 
