@@ -311,10 +311,9 @@ mod tests {
     use jsonwebkey as jwk;
     use jsonwebtoken::{DecodingKey, EncodingKey};
     use rand::distributions::{Alphanumeric, DistString};
-    use rand::{thread_rng};
+    use rand::thread_rng;
     use serde_json;
     use spacetimedb_lib::Identity;
-    
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
