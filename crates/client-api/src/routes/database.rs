@@ -1,6 +1,6 @@
 use crate::auth::{
     anon_auth_middleware, SpacetimeAuth, SpacetimeAuthHeader, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros,
-    SpacetimeIdentity, SpacetimeIdentityToken, LOCALHOST,
+    SpacetimeIdentity, SpacetimeIdentityToken
 };
 use crate::routes::subscribe::generate_random_address;
 use crate::util::{ByteStringBody, NameOrIdentity};
