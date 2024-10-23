@@ -115,7 +115,7 @@ impl<const N: usize> Decoder for ArrayDecoder<N> {
         _tx_offset: u64,
         reader: &mut R,
     ) -> Result<Self::Record, Self::Error> {
-        Ok(reader.get_array()?)
+        Ok(*reader.get_array()?)
     }
 
     fn skip_record<'a, R: BufReader<'a>>(
