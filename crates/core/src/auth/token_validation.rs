@@ -336,7 +336,6 @@ mod tests {
     }
 
     impl KeyPair {
-
         fn generate_p256() -> anyhow::Result<KeyPair> {
             let key_id = Alphanumeric.sample_string(&mut thread_rng(), 16);
             let mut my_jwk = jwk::JsonWebKey::new(jwk::Key::generate_p256());
@@ -358,7 +357,6 @@ mod tests {
             public_only.key = Box::from(public_only.key.to_public().unwrap().into_owned());
             public_only
         }
-
     }
 
     #[tokio::test]
