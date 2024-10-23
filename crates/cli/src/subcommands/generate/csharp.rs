@@ -766,7 +766,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
         for reducer_name in &reducer_names {
             writeln!(output, "{reducer_name} {reducer_name},");
         }
-        writeln!(output, "Unit StdbNone,");
+        writeln!(output, "Unit StdbNone");
     }
     writeln!(output, ")>;");
 
