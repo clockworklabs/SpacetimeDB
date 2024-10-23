@@ -75,6 +75,19 @@ impl StandaloneEnv {
             metrics_registry,
         }))
     }
+
+    pub fn durability(&self, address: &Identity, replica_id: u64) -> DynDurabilityFut {
+        match self.host_controller.get_config().storage {
+            db::Storage::Disk => {
+                let db_path = self.host_controller.get_replica_path(address, replica_id);
+                Box::pin(async move { relational_db::local_durability_dyn(db_path).await.map_err(Into::into) })
+            }
+            db::Storage::Memory => {
+                let err_fut = async { Err(anyhow::anyhow!("Memory storage not supported for durability")) };
+                Box::pin(err_fut)
+            }
+        }
+    }
 }
 
 fn get_or_create_keys() -> anyhow::Result<(DecodingKey, EncodingKey, Box<[u8]>)> {
@@ -186,26 +199,13 @@ impl NodeDelegate for StandaloneEnv {
             .get_database_by_id(database_id)?
             .ok_or_else(|| anyhow::anyhow!("Database {} has no associated database", database_id))?;
 
-        let durability = durability(self.host_controller.clone(), &database.database_identity, leader.id);
+        let durability = self.durability(&database.database_identity, leader.id);
         self.host_controller
             .get_or_launch_module_host(database, leader.id, durability)
             .await
             .context("failed to get or launch module host")?;
 
         Ok(Some(Host::new(leader.id, self.host_controller.clone())))
-    }
-}
-
-pub fn durability(ctrl: HostController, address: &Identity, replica_id: u64) -> DynDurabilityFut {
-    match ctrl.get_config().storage {
-        db::Storage::Disk => {
-            let db_path = ctrl.get_replica_path(&address, replica_id);
-            Box::pin(async { relational_db::local_durability_dyn(db_path).await })
-        }
-        db::Storage::Memory => {
-            let err_fut = async { Err(anyhow::anyhow!("Memory storage not supported for durability")) };
-            Box::pin(err_fut)
-        }
     }
 }
 
@@ -265,6 +265,10 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
         Ok(self.control_db.spacetime_reverse_dns(database_identity)?)
     }
+
+    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+        self.control_db.get_leader_replica_by_database(database_id)
+    }
 }
 
 #[async_trait]
@@ -312,7 +316,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .leader(database_id)
                     .await?
                     .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
-                let durability = durability(self.host_controller.clone(), &database_identity, leader.replica_id);
+                let durability = self.durability(&database_identity, leader.replica_id);
                 let update_result = leader
                     .update(database, spec.host_type, spec.program_bytes.into(), durability)
                     .await?;

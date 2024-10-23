@@ -1278,13 +1278,14 @@ where
     Ok(())
 }
 
+pub type LocalDurability = Arc<durability::Local<ProductValue>>;
 /// Initialize local durability with the default parameters.
 ///
 /// Also returned is a [`DiskSizeFn`] as required by [`RelationalDB::open`].
 ///
 /// Note that this operation can be expensive, as it needs to traverse a suffix
 /// of the commitlog.
-pub async fn local_durability(db_path: &Path) -> io::Result<(Arc<durability::Local<ProductValue>>, DiskSizeFn)> {
+pub async fn local_durability(db_path: &Path) -> io::Result<(LocalDurability, DiskSizeFn)> {
     let commitlog_dir = db_path.join("clog");
     tokio::fs::create_dir_all(&commitlog_dir).await?;
     let rt = tokio::runtime::Handle::current();

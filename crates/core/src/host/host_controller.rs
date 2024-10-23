@@ -41,7 +41,7 @@ type HostCell = Arc<AsyncRwLock<Option<Host>>>;
 /// The registry of all running hosts.
 type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
 
-/// A future that resolves to a [`Durability`] instance.
+/// A future that resolves to a [`durability::Durability`] instance.
 pub type DynDurabilityFut = BoxFuture<'static, anyhow::Result<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>>;
 
 #[async_trait]
@@ -721,18 +721,18 @@ impl Host {
                 None,
             )?,
             db::Storage::Disk => {
-                let durability = durability.await?;
-                // History trait does not let use `DynDurabilityFut` directly
-                let (local_durability, _) = relational_db::local_durability(&db_path).await?;
+                let (durability, fn_size) = durability.await.unwrap();
                 let snapshot_repo =
                     relational_db::open_snapshot_repo(&db_path, database.database_identity, replica_id)?;
+                let (local_durability, _) = relational_db::local_durability(&db_path).await?;
                 let history = local_durability.clone();
+
                 RelationalDB::open(
                     &db_path,
                     database.database_identity,
                     database.owner_identity,
                     history,
-                    Some(durability),
+                    Some((durability, fn_size)),
                     Some(snapshot_repo),
                 )?
             }

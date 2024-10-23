@@ -123,7 +123,7 @@ impl Host {
                 },
             )
             .await
-            .map_err(|e| log_and_500(e))??;
+            .map_err(log_and_500)??;
 
         Ok(json)
     }
@@ -194,6 +194,7 @@ pub trait ControlStateReadAccess {
     // Replicas
     fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>>;
     fn get_replicas(&self) -> anyhow::Result<Vec<Replica>>;
+    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica>;
 
     // Energy
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
@@ -279,6 +280,10 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
 
     fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
         (**self).reverse_lookup(database_identity)
+    }
+
+    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+        (**self).get_leader_replica_by_database(database_id)
     }
 }
 
