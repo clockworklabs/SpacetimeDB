@@ -267,15 +267,14 @@ pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow
             let items = itertools::chain!(
                 types,
                 tables.into_iter().map(GenItem::Table),
-                reducers
-                    .filter(|r| !(r.name.starts_with("__") && r.name.ends_with("__")))
-                    .map(GenItem::Reducer),
+                reducers.map(GenItem::Reducer),
             );
 
             let items: Vec<GenItem> = items.collect();
+            let reducer_idx = &mut 0;
             let mut files: Vec<(String, String)> = items
                 .iter()
-                .filter_map(|item| item.generate(&ctx, lang, namespace))
+                .filter_map(|item| item.generate(&ctx, reducer_idx, lang, namespace))
                 .collect();
             files.extend(generate_globals(&ctx, lang, namespace, &items));
             files
@@ -340,15 +339,21 @@ fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenI
 }
 
 impl GenItem {
-    fn generate(&self, ctx: &GenCtx, lang: Language, namespace: &str) -> Option<(String, String)> {
+    fn generate(
+        &self,
+        ctx: &GenCtx,
+        reducer_idx: &mut usize,
+        lang: Language,
+        namespace: &str,
+    ) -> Option<(String, String)> {
         match lang {
-            Language::Csharp => self.generate_csharp(ctx, namespace),
+            Language::Csharp => self.generate_csharp(ctx, reducer_idx, namespace),
             Language::TypeScript => unreachable!(),
             Language::Rust => unreachable!(),
         }
     }
 
-    fn generate_csharp(&self, ctx: &GenCtx, namespace: &str) -> Option<(String, String)> {
+    fn generate_csharp(&self, ctx: &GenCtx, reducer_idx: &mut usize, namespace: &str) -> Option<(String, String)> {
         match self {
             GenItem::Table(table) => {
                 let code = csharp::autogen_csharp_table(ctx, table, namespace);
@@ -367,7 +372,8 @@ impl GenItem {
                 _ => todo!(),
             },
             GenItem::Reducer(reducer) => {
-                let code = csharp::autogen_csharp_reducer(ctx, reducer, namespace);
+                let code = csharp::autogen_csharp_reducer(ctx, *reducer_idx, reducer, namespace);
+                *reducer_idx += 1;
                 let pascalcase = reducer.name.deref().to_case(Case::Pascal);
                 Some((pascalcase + "Reducer.cs", code))
             }
