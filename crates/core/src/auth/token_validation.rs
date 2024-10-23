@@ -311,10 +311,10 @@ mod tests {
     use jsonwebkey as jwk;
     use jsonwebtoken::{DecodingKey, EncodingKey};
     use rand::distributions::{Alphanumeric, DistString};
-    use rand::{thread_rng, Rng};
+    use rand::{thread_rng};
     use serde_json;
     use spacetimedb_lib::Identity;
-    use std::time::SystemTime;
+    
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
@@ -341,14 +341,10 @@ mod tests {
         )
     }
 
-    struct KeySet {
-        pub keys: Vec<KeyPair>,
-    }
-
     impl KeyPair {
         fn new(key_id: String, key: jwk::JsonWebKey) -> anyhow::Result<Self> {
-            let public_key = jsonwebtoken::DecodingKey::from_ec_pem(&key.key.to_public().unwrap().to_pem().as_bytes())?;
-            let private_key = jsonwebtoken::EncodingKey::from_ec_pem(&key.key.try_to_pem()?.as_bytes())?;
+            let public_key = jsonwebtoken::DecodingKey::from_ec_pem(key.key.to_public().unwrap().to_pem().as_bytes())?;
+            let private_key = jsonwebtoken::EncodingKey::from_ec_pem(key.key.try_to_pem()?.as_bytes())?;
             Ok(KeyPair {
                 public_key,
                 private_key,
@@ -363,8 +359,8 @@ mod tests {
             my_jwk.key_id = Some(key_id.clone());
             my_jwk.set_algorithm(jwk::Algorithm::ES256).unwrap();
             let public_key =
-                jsonwebtoken::DecodingKey::from_ec_pem(&my_jwk.key.to_public().unwrap().to_pem().as_bytes())?;
-            let private_key = jsonwebtoken::EncodingKey::from_ec_pem(&my_jwk.key.try_to_pem()?.as_bytes())?;
+                jsonwebtoken::DecodingKey::from_ec_pem(my_jwk.key.to_public().unwrap().to_pem().as_bytes())?;
+            let private_key = jsonwebtoken::EncodingKey::from_ec_pem(my_jwk.key.try_to_pem()?.as_bytes())?;
             Ok(KeyPair {
                 public_key,
                 private_key,
