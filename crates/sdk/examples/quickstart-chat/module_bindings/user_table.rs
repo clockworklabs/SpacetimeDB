@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::user_type::User;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `user`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.user().on_insert(...)`.
 pub struct UserTableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<User>,
+    imp: __sdk::TableHandle<User>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl UserTableAccess for super::RemoteTables {
     }
 }
 
-pub struct UserInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct UserDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct UserInsertCallbackId(__sdk::CallbackId);
+pub struct UserDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for UserTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for UserTableHandle<'ctx> {
     type Row = User;
     type EventContext = super::EventContext;
 
@@ -82,9 +81,9 @@ impl<'ctx> __sdk::table::Table for UserTableHandle<'ctx> {
     }
 }
 
-pub struct UserUpdateCallbackId(__sdk::callbacks::CallbackId);
+pub struct UserUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::TableWithPrimaryKey for UserTableHandle<'ctx> {
+impl<'ctx> __sdk::TableWithPrimaryKey for UserTableHandle<'ctx> {
     type UpdateCallbackId = UserUpdateCallbackId;
 
     fn on_update(
@@ -102,12 +101,9 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for UserTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<User>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<__sdk::Identity>(
-        raw_updates,
-        |row: &User| &row.identity,
-    )
-    .context("Failed to parse table update for table \"user\"")
+) -> __anyhow::Result<__sdk::TableUpdate<User>> {
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<__sdk::Identity>(raw_updates, |row: &User| &row.identity)
+        .context("Failed to parse table update for table \"user\"")
 }
 
 /// Access to the `identity` unique index on the table `user`,
@@ -118,7 +114,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.user().identity().find(...)`.
 pub struct UserIdentityUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraintHandle<User, __sdk::Identity>,
+    imp: __sdk::UniqueConstraintHandle<User, __sdk::Identity>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

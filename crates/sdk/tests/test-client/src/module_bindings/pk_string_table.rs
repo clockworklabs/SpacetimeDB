@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::pk_string_type::PkString;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `pk_string`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.pk_string().on_insert(...)`.
 pub struct PkStringTableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<PkString>,
+    imp: __sdk::TableHandle<PkString>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl PkStringTableAccess for super::RemoteTables {
     }
 }
 
-pub struct PkStringInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct PkStringDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct PkStringInsertCallbackId(__sdk::CallbackId);
+pub struct PkStringDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for PkStringTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for PkStringTableHandle<'ctx> {
     type Row = PkString;
     type EventContext = super::EventContext;
 
@@ -82,9 +81,9 @@ impl<'ctx> __sdk::table::Table for PkStringTableHandle<'ctx> {
     }
 }
 
-pub struct PkStringUpdateCallbackId(__sdk::callbacks::CallbackId);
+pub struct PkStringUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::TableWithPrimaryKey for PkStringTableHandle<'ctx> {
+impl<'ctx> __sdk::TableWithPrimaryKey for PkStringTableHandle<'ctx> {
     type UpdateCallbackId = PkStringUpdateCallbackId;
 
     fn on_update(
@@ -102,12 +101,9 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkStringTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<PkString>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<String>(
-        raw_updates,
-        |row: &PkString| &row.s,
-    )
-    .context("Failed to parse table update for table \"pk_string\"")
+) -> __anyhow::Result<__sdk::TableUpdate<PkString>> {
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<String>(raw_updates, |row: &PkString| &row.s)
+        .context("Failed to parse table update for table \"pk_string\"")
 }
 
 /// Access to the `s` unique index on the table `pk_string`,
@@ -118,7 +114,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.pk_string().s().find(...)`.
 pub struct PkStringSUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraintHandle<PkString, String>,
+    imp: __sdk::UniqueConstraintHandle<PkString, String>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

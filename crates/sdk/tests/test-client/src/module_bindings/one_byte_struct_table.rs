@@ -4,10 +4,9 @@
 #![allow(unused)]
 use super::byte_struct_type::ByteStruct;
 use super::one_byte_struct_type::OneByteStruct;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `one_byte_struct`.
@@ -19,7 +18,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.one_byte_struct().on_insert(...)`.
 pub struct OneByteStructTableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<OneByteStruct>,
+    imp: __sdk::TableHandle<OneByteStruct>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -42,10 +41,10 @@ impl OneByteStructTableAccess for super::RemoteTables {
     }
 }
 
-pub struct OneByteStructInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct OneByteStructDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct OneByteStructInsertCallbackId(__sdk::CallbackId);
+pub struct OneByteStructDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for OneByteStructTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for OneByteStructTableHandle<'ctx> {
     type Row = OneByteStruct;
     type EventContext = super::EventContext;
 
@@ -86,7 +85,7 @@ impl<'ctx> __sdk::table::Table for OneByteStructTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneByteStruct>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<OneByteStruct>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"one_byte_struct\"")
 }

@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::unique_u_8_type::UniqueU8;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `unique_u8`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.unique_u_8().on_insert(...)`.
 pub struct UniqueU8TableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<UniqueU8>,
+    imp: __sdk::TableHandle<UniqueU8>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl UniqueU8TableAccess for super::RemoteTables {
     }
 }
 
-pub struct UniqueU8InsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct UniqueU8DeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct UniqueU8InsertCallbackId(__sdk::CallbackId);
+pub struct UniqueU8DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for UniqueU8TableHandle<'ctx> {
+impl<'ctx> __sdk::Table for UniqueU8TableHandle<'ctx> {
     type Row = UniqueU8;
     type EventContext = super::EventContext;
 
@@ -85,8 +84,8 @@ impl<'ctx> __sdk::table::Table for UniqueU8TableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueU8>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<UniqueU8>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"unique_u8\"")
 }
 
@@ -98,7 +97,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.unique_u_8().n().find(...)`.
 pub struct UniqueU8NUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraintHandle<UniqueU8, u8>,
+    imp: __sdk::UniqueConstraintHandle<UniqueU8, u8>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

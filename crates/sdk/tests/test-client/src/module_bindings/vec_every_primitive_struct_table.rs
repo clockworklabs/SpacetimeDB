@@ -4,10 +4,9 @@
 #![allow(unused)]
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 use super::vec_every_primitive_struct_type::VecEveryPrimitiveStruct;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `vec_every_primitive_struct`.
@@ -19,7 +18,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.vec_every_primitive_struct().on_insert(...)`.
 pub struct VecEveryPrimitiveStructTableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<VecEveryPrimitiveStruct>,
+    imp: __sdk::TableHandle<VecEveryPrimitiveStruct>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -44,10 +43,10 @@ impl VecEveryPrimitiveStructTableAccess for super::RemoteTables {
     }
 }
 
-pub struct VecEveryPrimitiveStructInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct VecEveryPrimitiveStructDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct VecEveryPrimitiveStructInsertCallbackId(__sdk::CallbackId);
+pub struct VecEveryPrimitiveStructDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for VecEveryPrimitiveStructTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for VecEveryPrimitiveStructTableHandle<'ctx> {
     type Row = VecEveryPrimitiveStruct;
     type EventContext = super::EventContext;
 
@@ -88,7 +87,7 @@ impl<'ctx> __sdk::table::Table for VecEveryPrimitiveStructTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<VecEveryPrimitiveStruct>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<VecEveryPrimitiveStruct>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"vec_every_primitive_struct\"")
 }

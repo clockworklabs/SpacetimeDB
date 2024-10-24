@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::pk_i_32_type::PkI32;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `pk_i32`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.pk_i_32().on_insert(...)`.
 pub struct PkI32TableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<PkI32>,
+    imp: __sdk::TableHandle<PkI32>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl PkI32TableAccess for super::RemoteTables {
     }
 }
 
-pub struct PkI32InsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct PkI32DeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct PkI32InsertCallbackId(__sdk::CallbackId);
+pub struct PkI32DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for PkI32TableHandle<'ctx> {
+impl<'ctx> __sdk::Table for PkI32TableHandle<'ctx> {
     type Row = PkI32;
     type EventContext = super::EventContext;
 
@@ -82,9 +81,9 @@ impl<'ctx> __sdk::table::Table for PkI32TableHandle<'ctx> {
     }
 }
 
-pub struct PkI32UpdateCallbackId(__sdk::callbacks::CallbackId);
+pub struct PkI32UpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::TableWithPrimaryKey for PkI32TableHandle<'ctx> {
+impl<'ctx> __sdk::TableWithPrimaryKey for PkI32TableHandle<'ctx> {
     type UpdateCallbackId = PkI32UpdateCallbackId;
 
     fn on_update(
@@ -102,8 +101,8 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkI32TableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<PkI32>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<i32>(raw_updates, |row: &PkI32| &row.n)
+) -> __anyhow::Result<__sdk::TableUpdate<PkI32>> {
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<i32>(raw_updates, |row: &PkI32| &row.n)
         .context("Failed to parse table update for table \"pk_i32\"")
 }
 
@@ -115,7 +114,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.pk_i_32().n().find(...)`.
 pub struct PkI32NUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraintHandle<PkI32, i32>,
+    imp: __sdk::UniqueConstraintHandle<PkI32, i32>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

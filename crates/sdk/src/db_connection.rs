@@ -24,13 +24,14 @@ use crate::{
     spacetime_module::{DbConnection, DbUpdate, EventContext, InModule, SpacetimeModule},
     subscription::{OnAppliedCallback, OnErrorCallback, SubscriptionManager},
     websocket::WsConnection,
-    ws_messages as ws, Event, ReducerEvent, Status,
+    Event, ReducerEvent, Status,
 };
 use anyhow::{bail, Context, Result};
 use bytes::Bytes;
 use futures::StreamExt;
 use futures_channel::mpsc;
 use http::Uri;
+use spacetimedb_client_api_messages::websocket as ws;
 use spacetimedb_client_api_messages::websocket::{BsatnFormat, Compression};
 use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address, Identity};
 use std::{

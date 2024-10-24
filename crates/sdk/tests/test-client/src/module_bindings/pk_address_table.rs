@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::pk_address_type::PkAddress;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `pk_address`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.pk_address().on_insert(...)`.
 pub struct PkAddressTableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<PkAddress>,
+    imp: __sdk::TableHandle<PkAddress>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl PkAddressTableAccess for super::RemoteTables {
     }
 }
 
-pub struct PkAddressInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct PkAddressDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct PkAddressInsertCallbackId(__sdk::CallbackId);
+pub struct PkAddressDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for PkAddressTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for PkAddressTableHandle<'ctx> {
     type Row = PkAddress;
     type EventContext = super::EventContext;
 
@@ -82,9 +81,9 @@ impl<'ctx> __sdk::table::Table for PkAddressTableHandle<'ctx> {
     }
 }
 
-pub struct PkAddressUpdateCallbackId(__sdk::callbacks::CallbackId);
+pub struct PkAddressUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::TableWithPrimaryKey for PkAddressTableHandle<'ctx> {
+impl<'ctx> __sdk::TableWithPrimaryKey for PkAddressTableHandle<'ctx> {
     type UpdateCallbackId = PkAddressUpdateCallbackId;
 
     fn on_update(
@@ -102,12 +101,9 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkAddressTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<PkAddress>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<__sdk::Address>(
-        raw_updates,
-        |row: &PkAddress| &row.a,
-    )
-    .context("Failed to parse table update for table \"pk_address\"")
+) -> __anyhow::Result<__sdk::TableUpdate<PkAddress>> {
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<__sdk::Address>(raw_updates, |row: &PkAddress| &row.a)
+        .context("Failed to parse table update for table \"pk_address\"")
 }
 
 /// Access to the `a` unique index on the table `pk_address`,
@@ -118,7 +114,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.pk_address().a().find(...)`.
 pub struct PkAddressAUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraintHandle<PkAddress, __sdk::Address>,
+    imp: __sdk::UniqueConstraintHandle<PkAddress, __sdk::Address>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

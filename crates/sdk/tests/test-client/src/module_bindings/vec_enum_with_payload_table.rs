@@ -4,10 +4,9 @@
 #![allow(unused)]
 use super::enum_with_payload_type::EnumWithPayload;
 use super::vec_enum_with_payload_type::VecEnumWithPayload;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `vec_enum_with_payload`.
@@ -19,7 +18,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.vec_enum_with_payload().on_insert(...)`.
 pub struct VecEnumWithPayloadTableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<VecEnumWithPayload>,
+    imp: __sdk::TableHandle<VecEnumWithPayload>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -42,10 +41,10 @@ impl VecEnumWithPayloadTableAccess for super::RemoteTables {
     }
 }
 
-pub struct VecEnumWithPayloadInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct VecEnumWithPayloadDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct VecEnumWithPayloadInsertCallbackId(__sdk::CallbackId);
+pub struct VecEnumWithPayloadDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for VecEnumWithPayloadTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for VecEnumWithPayloadTableHandle<'ctx> {
     type Row = VecEnumWithPayload;
     type EventContext = super::EventContext;
 
@@ -86,7 +85,7 @@ impl<'ctx> __sdk::table::Table for VecEnumWithPayloadTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<VecEnumWithPayload>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<VecEnumWithPayload>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"vec_enum_with_payload\"")
 }

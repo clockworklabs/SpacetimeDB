@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::option_identity_type::OptionIdentity;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `option_identity`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.option_identity().on_insert(...)`.
 pub struct OptionIdentityTableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<OptionIdentity>,
+    imp: __sdk::TableHandle<OptionIdentity>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl OptionIdentityTableAccess for super::RemoteTables {
     }
 }
 
-pub struct OptionIdentityInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct OptionIdentityDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct OptionIdentityInsertCallbackId(__sdk::CallbackId);
+pub struct OptionIdentityDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for OptionIdentityTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for OptionIdentityTableHandle<'ctx> {
     type Row = OptionIdentity;
     type EventContext = super::EventContext;
 
@@ -85,7 +84,7 @@ impl<'ctx> __sdk::table::Table for OptionIdentityTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OptionIdentity>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<OptionIdentity>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"option_identity\"")
 }

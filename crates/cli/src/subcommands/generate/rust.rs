@@ -81,7 +81,7 @@ Requested namespace: {namespace}",
         writeln!(
             out,
             "
-impl __sdk::spacetime_module::InModule for {type_name} {{
+impl __sdk::InModule for {type_name} {{
     type Module = super::RemoteModule;
 }}
 ",
@@ -145,7 +145,7 @@ Requested namespace: {namespace}",
 /// but to directly chain method calls,
 /// like `ctx.db.{accessor_method}().on_insert(...)`.
 pub struct {table_handle}<'ctx> {{
-    imp: __sdk::client_cache::TableHandle<{row_type}>,
+    imp: __sdk::TableHandle<{row_type}>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }}
 
@@ -168,10 +168,10 @@ impl {accessor_trait} for super::RemoteTables {{
     }}
 }}
 
-pub struct {insert_callback_id}(__sdk::callbacks::CallbackId);
-pub struct {delete_callback_id}(__sdk::callbacks::CallbackId);
+pub struct {insert_callback_id}(__sdk::CallbackId);
+pub struct {delete_callback_id}(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for {table_handle}<'ctx> {{
+impl<'ctx> __sdk::Table for {table_handle}<'ctx> {{
     type Row = {row_type};
     type EventContext = super::EventContext;
 
@@ -217,9 +217,9 @@ impl<'ctx> __sdk::table::Table for {table_handle}<'ctx> {{
             write!(
                 out,
                 "
-pub struct {update_callback_id}(__sdk::callbacks::CallbackId);
+pub struct {update_callback_id}(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::TableWithPrimaryKey for {table_handle}<'ctx> {{
+impl<'ctx> __sdk::TableWithPrimaryKey for {table_handle}<'ctx> {{
     type UpdateCallbackId = {update_callback_id};
 
     fn on_update(
@@ -237,8 +237,8 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for {table_handle}<'ctx> {{
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<{row_type}>> {{
-    __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<{pk_field_type}>(
+) -> __anyhow::Result<__sdk::TableUpdate<{row_type}>> {{
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<{pk_field_type}>(
         raw_updates,
         |row: &{row_type}| &row.{pk_field_name},
     ).context(\"Failed to parse table update for table \\\"{table_name}\\\"\")
@@ -252,8 +252,8 @@ pub(super) fn parse_table_update(
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<{row_type}>> {{
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<{row_type}>> {{
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context(\"Failed to parse table update for table \\\"{table_name}\\\"\")
 }}
 "
@@ -282,7 +282,7 @@ pub(super) fn parse_table_update(
         /// but to directly chain method calls,
         /// like `ctx.db.{accessor_method}().{unique_field_name}().find(...)`.
         pub struct {unique_constraint}<'ctx> {{
-            imp: __sdk::client_cache::UniqueConstraintHandle<{row_type}, {unique_field_type}>,
+            imp: __sdk::UniqueConstraintHandle<{row_type}, {unique_field_type}>,
             phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }}
 
@@ -381,11 +381,11 @@ Requested namespace: {namespace}",
         writeln!(
             out,
             "
-impl __sdk::spacetime_module::InModule for {args_type} {{
+impl __sdk::InModule for {args_type} {{
     type Module = super::RemoteModule;
 }}
 
-pub struct {callback_id}(__sdk::callbacks::CallbackId);
+pub struct {callback_id}(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `{reducer_name}`.
@@ -531,12 +531,12 @@ pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
 const ALLOW_UNUSED: &str = "#![allow(unused)]";
 
 const SPACETIMEDB_IMPORTS: &[&str] = &[
-    "use spacetimedb_sdk::{",
+    "use spacetimedb_sdk::__codegen::{",
     "\tself as __sdk,",
     "\tanyhow::{self as __anyhow, Context as _},",
-    "\tlib as __lib,",
-    "\tsats as __sats,",
-    "\tws_messages as __ws,",
+    "\t__lib,",
+    "\t__sats,",
+    "\t__ws,",
     "};",
 ];
 
@@ -786,14 +786,14 @@ fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {
     writeln!(
         out,
         "
-impl __sdk::spacetime_module::InModule for Reducer {{
+impl __sdk::InModule for Reducer {{
     type Module = RemoteModule;
 }}
 ",
     );
 
     out.delimited_block(
-        "impl __sdk::spacetime_module::Reducer for Reducer {",
+        "impl __sdk::Reducer for Reducer {",
         |out| {
             out.delimited_block(
                 "fn reducer_name(&self) -> &'static str {",
@@ -840,27 +840,27 @@ impl __sdk::spacetime_module::InModule for Reducer {{
             writeln!(out, "type Error = __anyhow::Error;");
             out.delimited_block(
                 "fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {",
-                    |out| {
-                        out.delimited_block(
-                            "match &value.reducer_name[..] {",
-                            |out| {
-                                for reducer in iter_reducers(module) {
-                                    writeln!(
-                                        out,
-                                        "{:?} => Ok(Reducer::{}(__sdk::spacetime_module::parse_reducer_args({:?}, &value.args)?)),",
-                                        reducer.name.deref(),
-                                        reducer_variant_name(&reducer.name),
-                                        reducer.name.deref(),
-                                    );
-                                }
+                |out| {
+                    out.delimited_block(
+                        "match &value.reducer_name[..] {",
+                        |out| {
+                            for reducer in iter_reducers(module) {
                                 writeln!(
                                     out,
-                                    "_ => Err(__anyhow::anyhow!(\"Unknown reducer {{:?}}\", value.reducer_name)),",
+                                    "{:?} => Ok(Reducer::{}(__sdk::parse_reducer_args({:?}, &value.args)?)),",
+                                    reducer.name.deref(),
+                                    reducer_variant_name(&reducer.name),
+                                    reducer.name.deref(),
                                 );
-                            },
-                            "}\n",
-                        )
-                    },
+                            }
+                            writeln!(
+                                out,
+                                "_ => Err(__anyhow::anyhow!(\"Unknown reducer {{:?}}\", value.reducer_name)),",
+                            );
+                        },
+                        "}\n",
+                    )
+                },
                 "}\n",
             );
         },
@@ -878,7 +878,7 @@ fn print_db_update_defn(module: &ModuleDef, out: &mut Indenter) {
             for table in iter_tables(module) {
                 writeln!(
                     out,
-                    "{}: __sdk::spacetime_module::TableUpdate<{}>,",
+                    "{}: __sdk::TableUpdate<{}>,",
                     table_method_name(&table.name),
                     type_ref_name(module, table.product_type_ref),
                 );
@@ -923,17 +923,17 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
     writeln!(
         out,
         "
-impl __sdk::spacetime_module::InModule for DbUpdate {{
+impl __sdk::InModule for DbUpdate {{
     type Module = RemoteModule;
 }}
 ",
     );
 
     out.delimited_block(
-        "impl __sdk::spacetime_module::DbUpdate for DbUpdate {",
+        "impl __sdk::DbUpdate for DbUpdate {",
         |out| {
             out.delimited_block(
-                "fn apply_to_client_cache(&self, cache: &mut __sdk::client_cache::ClientCache<RemoteModule>) {",
+                "fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) {",
                 |out| {
                     for table in iter_tables(module) {
                         writeln!(
@@ -949,7 +949,7 @@ impl __sdk::spacetime_module::InModule for DbUpdate {{
             );
 
             out.delimited_block(
-                "fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::callbacks::DbCallbacks<RemoteModule>) {",
+                "fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {",
                 |out| {
                     for table in iter_tables(module) {
                         writeln!(
@@ -975,11 +975,11 @@ fn print_const_db_context_types(out: &mut Indenter) {
 #[doc(hidden)]
 pub struct RemoteModule;
 
-impl __sdk::spacetime_module::InModule for RemoteModule {{
+impl __sdk::InModule for RemoteModule {{
     type Module = Self;
 }}
 
-impl __sdk::spacetime_module::SpacetimeModule for RemoteModule {{
+impl __sdk::SpacetimeModule for RemoteModule {{
     type DbConnection = DbConnection;
     type EventContext = EventContext;
     type Reducer = Reducer;
@@ -992,20 +992,20 @@ impl __sdk::spacetime_module::SpacetimeModule for RemoteModule {{
 /// The `reducers` field of [`EventContext`] and [`DbConnection`],
 /// with methods provided by extension traits for each reducer defined by the module.
 pub struct RemoteReducers {{
-    imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
+    imp: __sdk::DbContextImpl<RemoteModule>,
 }}
 
-impl __sdk::spacetime_module::InModule for RemoteReducers {{
+impl __sdk::InModule for RemoteReducers {{
     type Module = RemoteModule;
 }}
 
 /// The `db` field of [`EventContext`] and [`DbConnection`],
 /// with methods provided by extension traits for each table defined by the module.
 pub struct RemoteTables {{
-    imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
+    imp: __sdk::DbContextImpl<RemoteModule>,
 }}
 
-impl __sdk::spacetime_module::InModule for RemoteTables {{
+impl __sdk::InModule for RemoteTables {{
     type Module = RemoteModule;
 }}
 
@@ -1031,14 +1031,14 @@ pub struct DbConnection {{
     /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
 
-    imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
+    imp: __sdk::DbContextImpl<RemoteModule>,
 }}
 
-impl __sdk::spacetime_module::InModule for DbConnection {{
+impl __sdk::InModule for DbConnection {{
     type Module = RemoteModule;
 }}
 
-impl __sdk::db_context::DbContext for DbConnection {{
+impl __sdk::DbContext for DbConnection {{
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
 
@@ -1057,10 +1057,10 @@ impl __sdk::db_context::DbContext for DbConnection {{
         self.imp.disconnect()
     }}
 
-    type SubscriptionBuilder = __sdk::subscription::SubscriptionBuilder<RemoteModule>;
+    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
 
     fn subscription_builder(&self) -> Self::SubscriptionBuilder {{
-        __sdk::subscription::SubscriptionBuilder::new(&self.imp)
+        __sdk::SubscriptionBuilder::new(&self.imp)
     }}
 
     fn try_identity(&self) -> Option<__sdk::Identity> {{
@@ -1076,7 +1076,7 @@ impl DbConnection {{
     ///
     /// See [`__sdk::DbConnectionBuilder`] for required and optional configuration for the new connection.
     pub fn builder() -> __sdk::DbConnectionBuilder<RemoteModule> {{
-        __sdk::db_connection::DbConnectionBuilder::new()
+        __sdk::DbConnectionBuilder::new()
     }}
 
     /// If any WebSocket messages are waiting, process one of them.
@@ -1142,8 +1142,8 @@ impl DbConnection {{
     }}
 }}
 
-impl __sdk::spacetime_module::DbConnection for DbConnection {{
-    fn new(imp: __sdk::db_connection::DbContextImpl<RemoteModule>) -> Self {{
+impl __sdk::DbConnection for DbConnection {{
+    fn new(imp: __sdk::DbContextImpl<RemoteModule>) -> Self {{
         Self {{
             db: RemoteTables {{ imp: imp.clone() }},
             reducers: RemoteReducers {{ imp: imp.clone() }},
@@ -1160,15 +1160,15 @@ pub struct EventContext {{
     /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
     /// The event which caused these callbacks to run.
-    pub event: __sdk::event::Event<Reducer>,
-    imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
+    pub event: __sdk::Event<Reducer>,
+    imp: __sdk::DbContextImpl<RemoteModule>,
 }}
 
-impl __sdk::spacetime_module::InModule for EventContext {{
+impl __sdk::InModule for EventContext {{
     type Module = RemoteModule;
 }}
 
-impl __sdk::db_context::DbContext for EventContext {{
+impl __sdk::DbContext for EventContext {{
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
 
@@ -1183,14 +1183,14 @@ impl __sdk::db_context::DbContext for EventContext {{
         self.imp.is_active()
     }}
 
-    fn disconnect(&self) -> spacetimedb_sdk::anyhow::Result<()> {{
+    fn disconnect(&self) -> __anyhow::Result<()> {{
         self.imp.disconnect()
     }}
 
-    type SubscriptionBuilder = __sdk::subscription::SubscriptionBuilder<RemoteModule>;
+    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
 
     fn subscription_builder(&self) -> Self::SubscriptionBuilder {{
-        __sdk::subscription::SubscriptionBuilder::new(&self.imp)
+        __sdk::SubscriptionBuilder::new(&self.imp)
     }}
 
     fn try_identity(&self) -> Option<__sdk::Identity> {{
@@ -1201,11 +1201,11 @@ impl __sdk::db_context::DbContext for EventContext {{
     }}
 }}
 
-impl __sdk::spacetime_module::EventContext for EventContext {{
-    fn event(&self) -> &__sdk::event::Event<Reducer> {{
+impl __sdk::EventContext for EventContext {{
+    fn event(&self) -> &__sdk::Event<Reducer> {{
         &self.event
     }}
-    fn new(imp: __sdk::db_connection::DbContextImpl<RemoteModule>, event: __sdk::event::Event<Reducer>) -> Self {{
+    fn new(imp: __sdk::DbContextImpl<RemoteModule>, event: __sdk::Event<Reducer>) -> Self {{
         Self {{
             db: RemoteTables {{ imp: imp.clone() }},
             reducers: RemoteReducers {{ imp: imp.clone() }},
@@ -1218,15 +1218,15 @@ impl __sdk::spacetime_module::EventContext for EventContext {{
 /// A handle on a subscribed query.
 // TODO: Document this better after implementing the new subscription API.
 pub struct SubscriptionHandle {{
-    imp: __sdk::subscription::SubscriptionHandleImpl<RemoteModule>,
+    imp: __sdk::SubscriptionHandleImpl<RemoteModule>,
 }}
 
-impl __sdk::spacetime_module::InModule for SubscriptionHandle {{
+impl __sdk::InModule for SubscriptionHandle {{
     type Module = RemoteModule;
 }}
 
-impl __sdk::spacetime_module::SubscriptionHandle for SubscriptionHandle {{
-    fn new(imp: __sdk::subscription::SubscriptionHandleImpl<RemoteModule>) -> Self {{
+impl __sdk::SubscriptionHandle for SubscriptionHandle {{
+    fn new(imp: __sdk::SubscriptionHandleImpl<RemoteModule>) -> Self {{
         Self {{ imp }}
     }}
 }}
@@ -1239,12 +1239,12 @@ impl __sdk::spacetime_module::SubscriptionHandle for SubscriptionHandle {{
 pub trait RemoteDbContext: __sdk::DbContext<
     DbView = RemoteTables,
     Reducers = RemoteReducers,
-    SubscriptionBuilder = __sdk::subscription::SubscriptionBuilder<RemoteModule>,
+    SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
 > {{}}
 impl<Ctx: __sdk::DbContext<
     DbView = RemoteTables,
     Reducers = RemoteReducers,
-    SubscriptionBuilder = __sdk::subscription::SubscriptionBuilder<RemoteModule>,
+    SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
 >> RemoteDbContext for Ctx {{}}
 ",
     );

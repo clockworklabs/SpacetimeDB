@@ -5,10 +5,9 @@
 use super::one_u_8_type::OneU8;
 use super::table_holds_table_type::TableHoldsTable;
 use super::vec_u_8_type::VecU8;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `table_holds_table`.
@@ -20,7 +19,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.table_holds_table().on_insert(...)`.
 pub struct TableHoldsTableTableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<TableHoldsTable>,
+    imp: __sdk::TableHandle<TableHoldsTable>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -43,10 +42,10 @@ impl TableHoldsTableTableAccess for super::RemoteTables {
     }
 }
 
-pub struct TableHoldsTableInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct TableHoldsTableDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct TableHoldsTableInsertCallbackId(__sdk::CallbackId);
+pub struct TableHoldsTableDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for TableHoldsTableTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for TableHoldsTableTableHandle<'ctx> {
     type Row = TableHoldsTable;
     type EventContext = super::EventContext;
 
@@ -87,7 +86,7 @@ impl<'ctx> __sdk::table::Table for TableHoldsTableTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<TableHoldsTable>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<TableHoldsTable>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"table_holds_table\"")
 }

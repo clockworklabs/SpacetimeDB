@@ -9,10 +9,9 @@ use super::every_vec_struct_type::EveryVecStruct;
 use super::large_table_type::LargeTable;
 use super::simple_enum_type::SimpleEnum;
 use super::unit_struct_type::UnitStruct;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `large_table`.
@@ -24,7 +23,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.large_table().on_insert(...)`.
 pub struct LargeTableTableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<LargeTable>,
+    imp: __sdk::TableHandle<LargeTable>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -47,10 +46,10 @@ impl LargeTableTableAccess for super::RemoteTables {
     }
 }
 
-pub struct LargeTableInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct LargeTableDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct LargeTableInsertCallbackId(__sdk::CallbackId);
+pub struct LargeTableDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for LargeTableTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for LargeTableTableHandle<'ctx> {
     type Row = LargeTable;
     type EventContext = super::EventContext;
 
@@ -91,7 +90,7 @@ impl<'ctx> __sdk::table::Table for LargeTableTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<LargeTable>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<LargeTable>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"large_table\"")
 }

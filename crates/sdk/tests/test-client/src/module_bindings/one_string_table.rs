@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::one_string_type::OneString;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `one_string`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.one_string().on_insert(...)`.
 pub struct OneStringTableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<OneString>,
+    imp: __sdk::TableHandle<OneString>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl OneStringTableAccess for super::RemoteTables {
     }
 }
 
-pub struct OneStringInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct OneStringDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct OneStringInsertCallbackId(__sdk::CallbackId);
+pub struct OneStringDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for OneStringTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for OneStringTableHandle<'ctx> {
     type Row = OneString;
     type EventContext = super::EventContext;
 
@@ -85,7 +84,7 @@ impl<'ctx> __sdk::table::Table for OneStringTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneString>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<OneString>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"one_string\"")
 }

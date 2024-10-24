@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::unique_string_type::UniqueString;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `unique_string`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.unique_string().on_insert(...)`.
 pub struct UniqueStringTableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<UniqueString>,
+    imp: __sdk::TableHandle<UniqueString>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl UniqueStringTableAccess for super::RemoteTables {
     }
 }
 
-pub struct UniqueStringInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct UniqueStringDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct UniqueStringInsertCallbackId(__sdk::CallbackId);
+pub struct UniqueStringDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for UniqueStringTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for UniqueStringTableHandle<'ctx> {
     type Row = UniqueString;
     type EventContext = super::EventContext;
 
@@ -85,8 +84,8 @@ impl<'ctx> __sdk::table::Table for UniqueStringTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueString>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<UniqueString>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"unique_string\"")
 }
 
@@ -98,7 +97,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.unique_string().s().find(...)`.
 pub struct UniqueStringSUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraintHandle<UniqueString, String>,
+    imp: __sdk::UniqueConstraintHandle<UniqueString, String>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

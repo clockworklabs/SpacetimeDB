@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::pk_identity_type::PkIdentity;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `pk_identity`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.pk_identity().on_insert(...)`.
 pub struct PkIdentityTableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<PkIdentity>,
+    imp: __sdk::TableHandle<PkIdentity>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl PkIdentityTableAccess for super::RemoteTables {
     }
 }
 
-pub struct PkIdentityInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct PkIdentityDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct PkIdentityInsertCallbackId(__sdk::CallbackId);
+pub struct PkIdentityDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for PkIdentityTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for PkIdentityTableHandle<'ctx> {
     type Row = PkIdentity;
     type EventContext = super::EventContext;
 
@@ -82,9 +81,9 @@ impl<'ctx> __sdk::table::Table for PkIdentityTableHandle<'ctx> {
     }
 }
 
-pub struct PkIdentityUpdateCallbackId(__sdk::callbacks::CallbackId);
+pub struct PkIdentityUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::TableWithPrimaryKey for PkIdentityTableHandle<'ctx> {
+impl<'ctx> __sdk::TableWithPrimaryKey for PkIdentityTableHandle<'ctx> {
     type UpdateCallbackId = PkIdentityUpdateCallbackId;
 
     fn on_update(
@@ -102,12 +101,9 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkIdentityTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<PkIdentity>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<__sdk::Identity>(
-        raw_updates,
-        |row: &PkIdentity| &row.i,
-    )
-    .context("Failed to parse table update for table \"pk_identity\"")
+) -> __anyhow::Result<__sdk::TableUpdate<PkIdentity>> {
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<__sdk::Identity>(raw_updates, |row: &PkIdentity| &row.i)
+        .context("Failed to parse table update for table \"pk_identity\"")
 }
 
 /// Access to the `i` unique index on the table `pk_identity`,
@@ -118,7 +114,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.pk_identity().i().find(...)`.
 pub struct PkIdentityIUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraintHandle<PkIdentity, __sdk::Identity>,
+    imp: __sdk::UniqueConstraintHandle<PkIdentity, __sdk::Identity>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

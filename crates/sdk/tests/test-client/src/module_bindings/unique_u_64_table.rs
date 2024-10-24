@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::unique_u_64_type::UniqueU64;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `unique_u64`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.unique_u_64().on_insert(...)`.
 pub struct UniqueU64TableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<UniqueU64>,
+    imp: __sdk::TableHandle<UniqueU64>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl UniqueU64TableAccess for super::RemoteTables {
     }
 }
 
-pub struct UniqueU64InsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct UniqueU64DeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct UniqueU64InsertCallbackId(__sdk::CallbackId);
+pub struct UniqueU64DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for UniqueU64TableHandle<'ctx> {
+impl<'ctx> __sdk::Table for UniqueU64TableHandle<'ctx> {
     type Row = UniqueU64;
     type EventContext = super::EventContext;
 
@@ -85,8 +84,8 @@ impl<'ctx> __sdk::table::Table for UniqueU64TableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueU64>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<UniqueU64>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"unique_u64\"")
 }
 
@@ -98,7 +97,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.unique_u_64().n().find(...)`.
 pub struct UniqueU64NUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraintHandle<UniqueU64, u64>,
+    imp: __sdk::UniqueConstraintHandle<UniqueU64, u64>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

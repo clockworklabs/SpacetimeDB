@@ -12,7 +12,7 @@
 
 use crate::spacetime_module::SpacetimeModule;
 use anyhow::Context as _;
-use spacetimedb_client_api_messages::websocket::BsatnFormat;
+use spacetimedb_client_api_messages::websocket as ws;
 use spacetimedb_lib::{Address, Identity};
 use std::time::SystemTime;
 
@@ -100,15 +100,15 @@ pub enum Status {
 
 impl Status {
     pub(crate) fn parse_status_and_update<M: SpacetimeModule>(
-        status: crate::ws_messages::UpdateStatus<BsatnFormat>,
+        status: ws::UpdateStatus<ws::BsatnFormat>,
     ) -> anyhow::Result<(Self, Option<M::DbUpdate>)> {
         Ok(match status {
-            crate::ws_messages::UpdateStatus::Committed(update) => (
+            ws::UpdateStatus::Committed(update) => (
                 Self::Committed,
                 Some(M::DbUpdate::try_from(update).context("Failed to parse DatabaseUpdate from UpdateStatus")?),
             ),
-            crate::ws_messages::UpdateStatus::Failed(errmsg) => (Self::Failed(errmsg), None),
-            crate::ws_messages::UpdateStatus::OutOfEnergy => (Self::OutOfEnergy, None),
+            ws::UpdateStatus::Failed(errmsg) => (Self::Failed(errmsg), None),
+            ws::UpdateStatus::OutOfEnergy => (Self::OutOfEnergy, None),
         })
     }
 }

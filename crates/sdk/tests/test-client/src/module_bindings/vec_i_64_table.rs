@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::vec_i_64_type::VecI64;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `vec_i64`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.vec_i_64().on_insert(...)`.
 pub struct VecI64TableHandle<'ctx> {
-    imp: __sdk::client_cache::TableHandle<VecI64>,
+    imp: __sdk::TableHandle<VecI64>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl VecI64TableAccess for super::RemoteTables {
     }
 }
 
-pub struct VecI64InsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct VecI64DeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct VecI64InsertCallbackId(__sdk::CallbackId);
+pub struct VecI64DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for VecI64TableHandle<'ctx> {
+impl<'ctx> __sdk::Table for VecI64TableHandle<'ctx> {
     type Row = VecI64;
     type EventContext = super::EventContext;
 
@@ -85,7 +84,7 @@ impl<'ctx> __sdk::table::Table for VecI64TableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<VecI64>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<VecI64>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"vec_i64\"")
 }
