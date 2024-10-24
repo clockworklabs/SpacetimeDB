@@ -8,5 +8,7 @@ description = "The SpacetimeDB SQL AST and Parser"
 
 [dependencies]
 derive_more.workspace = true
-sqlparser.workspace = true
+#TODO: Remove this once the sqlparser crate is integrated
+#sqlparser.workspace = true
+sqlparser = "0.50.0"
 thiserror.workspace = true

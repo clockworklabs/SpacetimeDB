@@ -77,6 +77,7 @@ trait RelParser {
                 args: None,
                 with_hints,
                 version: None,
+                with_ordinality: false,
                 partitions,
             } if with_hints.is_empty() && partitions.is_empty() => Ok((RelExpr::Var(parse_ident(name)?), None)),
             // Relvar with alias
@@ -86,6 +87,7 @@ trait RelParser {
                 args: None,
                 with_hints,
                 version: None,
+                with_ordinality: false,
                 partitions,
             } if with_hints.is_empty() && partitions.is_empty() && columns.is_empty() => {
                 Ok((RelExpr::Var(parse_ident(name)?), Some(alias.into())))
@@ -124,6 +126,7 @@ pub(crate) fn parse_projection(mut items: Vec<SelectItem>) -> SqlParseResult<Pro
 pub(crate) fn parse_project(item: SelectItem) -> SqlParseResult<Project> {
     match item {
         SelectItem::Wildcard(WildcardAdditionalOptions {
+            opt_ilike: None,
             opt_exclude: None,
             opt_except: None,
             opt_rename: None,
@@ -132,6 +135,7 @@ pub(crate) fn parse_project(item: SelectItem) -> SqlParseResult<Project> {
         SelectItem::QualifiedWildcard(
             table_name,
             WildcardAdditionalOptions {
+                opt_ilike: None,
                 opt_exclude: None,
                 opt_except: None,
                 opt_rename: None,
