@@ -133,37 +133,30 @@ impl SnapshotWorker {
     }
 
     fn take_snapshot(committed_state: &RwLock<CommittedState>, snapshot_repo: &SnapshotRepository) {
-        let mut committed_state = committed_state.write();
-        let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {
-            log::info!("SnapshotWorker::take_snapshot: refusing to take snapshot at tx_offset -1");
-            return;
-        };
-        log::info!(
-            "Capturing snapshot of database {:?} at TX offset {}",
-            snapshot_repo.database_identity(),
-            tx_offset,
-        );
-
         let start_time = std::time::Instant::now();
+        match Locking::take_snapshot_internal(committed_state, snapshot_repo) {
+            Err(e) => {
+                log::error!(
+                    "Error capturing snapshot of database {:?}: {e:?}",
+                    snapshot_repo.database_identity()
+                );
+            }
 
-        let CommittedState {
-            ref mut tables,
-            ref blob_store,
-            ..
-        } = *committed_state;
+            Ok(None) => {
+                log::warn!(
+                    "SnapshotWorker::take_snapshot: refusing to take snapshot of database {} at TX offset -1",
+                    snapshot_repo.database_identity()
+                );
+            }
 
-        if let Err(e) = snapshot_repo.create_snapshot(tables.values_mut(), blob_store, tx_offset) {
-            log::error!(
-                "Error capturing snapshot of database {:?}: {e:?}",
-                snapshot_repo.database_identity()
-            );
-        } else {
-            log::info!(
-                "Captured snapshot of database {:?} at TX offset {} in {:?}",
-                snapshot_repo.database_identity(),
-                tx_offset,
-                start_time.elapsed()
-            );
+            Ok(Some((tx_offset, _path))) => {
+                log::info!(
+                    "Captured snapshot of database {:?} at TX offset {} in {:?}",
+                    snapshot_repo.database_identity(),
+                    tx_offset,
+                    start_time.elapsed()
+                );
+            }
         }
     }
 }
