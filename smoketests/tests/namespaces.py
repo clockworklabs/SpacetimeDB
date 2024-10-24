@@ -23,7 +23,7 @@ class Namespaces(Smoketest):
         with tempfile.TemporaryDirectory() as tmpdir:
             self.spacetime("generate", "--out-dir", tmpdir, "--lang=cs", "--project-path", self.project_path)
 
-            self.assertEqual(count_matches(tmpdir, f"namespace {namespace}"), 4)
+            self.assertEqual(count_matches(tmpdir, f"namespace {namespace}"), 7)
 
     def test_custom_ns_csharp(self):
         """Ensure that when a custom namespace is specified on the command line, it actually gets used in generation"""
@@ -33,5 +33,5 @@ class Namespaces(Smoketest):
         with tempfile.TemporaryDirectory() as tmpdir:
             self.spacetime("generate", "--out-dir", tmpdir, "--lang=cs", "--namespace", namespace, "--project-path", self.project_path)
 
-            self.assertEqual(count_matches(tmpdir, f"namespace {namespace}"), 4)
-            self.assertEqual(count_matches(tmpdir, "using SpacetimeDB;"), 4)
+            self.assertEqual(count_matches(tmpdir, f"namespace {namespace}"), 7)
+            self.assertEqual(count_matches(tmpdir, "using SpacetimeDB;"), 7)
