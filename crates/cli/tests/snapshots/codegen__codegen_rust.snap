@@ -377,7 +377,7 @@ use super::has_special_stuff_type::HasSpecialStuff;
 /// but to directly chain method calls,
 /// like `ctx.db.has_special_stuff().on_insert(...)`.
 pub struct HasSpecialStuffTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<HasSpecialStuff>,
+    imp: __sdk::client_cache::TableHandle<HasSpecialStuff>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -1195,7 +1195,7 @@ use super::pk_multi_identity_type::PkMultiIdentity;
 /// but to directly chain method calls,
 /// like `ctx.db.pk_multi_identity().on_insert(...)`.
 pub struct PkMultiIdentityTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<PkMultiIdentity>,
+    imp: __sdk::client_cache::TableHandle<PkMultiIdentity>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -1290,7 +1290,7 @@ pub(super) fn parse_table_update(
         /// but to directly chain method calls,
         /// like `ctx.db.pk_multi_identity().id().find(...)`.
         pub struct PkMultiIdentityIdUnique<'ctx> {
-            imp: __sdk::client_cache::UniqueConstraint<PkMultiIdentity, u32>,
+            imp: __sdk::client_cache::UniqueConstraintHandle<PkMultiIdentity, u32>,
             phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
 
@@ -1320,7 +1320,7 @@ pub(super) fn parse_table_update(
         /// but to directly chain method calls,
         /// like `ctx.db.pk_multi_identity().other().find(...)`.
         pub struct PkMultiIdentityOtherUnique<'ctx> {
-            imp: __sdk::client_cache::UniqueConstraint<PkMultiIdentity, u32>,
+            imp: __sdk::client_cache::UniqueConstraintHandle<PkMultiIdentity, u32>,
             phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
 
@@ -1416,7 +1416,7 @@ use super::point_type::Point;
 /// but to directly chain method calls,
 /// like `ctx.db.points().on_insert(...)`.
 pub struct PointsTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<Point>,
+    imp: __sdk::client_cache::TableHandle<Point>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -1506,7 +1506,7 @@ use super::private_type::Private;
 /// but to directly chain method calls,
 /// like `ctx.db.private().on_insert(...)`.
 pub struct PrivateTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<Private>,
+    imp: __sdk::client_cache::TableHandle<Private>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -1692,7 +1692,7 @@ use super::repeating_test_arg_type::RepeatingTestArg;
 /// but to directly chain method calls,
 /// like `ctx.db.repeating_test_arg().on_insert(...)`.
 pub struct RepeatingTestArgTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<RepeatingTestArg>,
+    imp: __sdk::client_cache::TableHandle<RepeatingTestArg>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -1787,7 +1787,7 @@ pub(super) fn parse_table_update(
         /// but to directly chain method calls,
         /// like `ctx.db.repeating_test_arg().scheduled_id().find(...)`.
         pub struct RepeatingTestArgScheduledIdUnique<'ctx> {
-            imp: __sdk::client_cache::UniqueConstraint<RepeatingTestArg, u64>,
+            imp: __sdk::client_cache::UniqueConstraintHandle<RepeatingTestArg, u64>,
             phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
 
@@ -1933,7 +1933,7 @@ use super::test_a_type::TestA;
 /// but to directly chain method calls,
 /// like `ctx.db.test_a().on_insert(...)`.
 pub struct TestATableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<TestA>,
+    imp: __sdk::client_cache::TableHandle<TestA>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -2147,7 +2147,7 @@ use super::namespace_test_c_type::NamespaceTestC;
 /// but to directly chain method calls,
 /// like `ctx.db.test_d().on_insert(...)`.
 pub struct TestDTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<TestD>,
+    imp: __sdk::client_cache::TableHandle<TestD>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -2263,7 +2263,7 @@ use super::test_e_type::TestE;
 /// but to directly chain method calls,
 /// like `ctx.db.test_e().on_insert(...)`.
 pub struct TestETableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<TestE>,
+    imp: __sdk::client_cache::TableHandle<TestE>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -2358,7 +2358,7 @@ pub(super) fn parse_table_update(
         /// but to directly chain method calls,
         /// like `ctx.db.test_e().id().find(...)`.
         pub struct TestEIdUnique<'ctx> {
-            imp: __sdk::client_cache::UniqueConstraint<TestE, u64>,
+            imp: __sdk::client_cache::UniqueConstraintHandle<TestE, u64>,
             phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
 
@@ -2429,7 +2429,7 @@ use super::foobar_type::Foobar;
 /// but to directly chain method calls,
 /// like `ctx.db.test_f().on_insert(...)`.
 pub struct TestFTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<TestFoobar>,
+    imp: __sdk::client_cache::TableHandle<TestFoobar>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
