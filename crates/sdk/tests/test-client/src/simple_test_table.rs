@@ -1,8 +1,5 @@
 use crate::module_bindings::*;
-use spacetimedb_sdk::{
-    sats::{i256, u256},
-    Address, Event, Identity, Table,
-};
+use spacetimedb_sdk::{i256, u256, Address, Event, Identity, Table};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,

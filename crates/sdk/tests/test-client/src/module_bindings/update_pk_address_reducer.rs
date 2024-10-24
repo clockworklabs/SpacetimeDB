@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -15,11 +14,11 @@ pub struct UpdatePkAddress {
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for UpdatePkAddress {
+impl __sdk::InModule for UpdatePkAddress {
     type Module = super::RemoteModule;
 }
 
-pub struct UpdatePkAddressCallbackId(__sdk::callbacks::CallbackId);
+pub struct UpdatePkAddressCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `update_pk_address`.

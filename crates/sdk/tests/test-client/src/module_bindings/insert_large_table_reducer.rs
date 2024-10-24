@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::byte_struct_type::ByteStruct;
@@ -42,11 +41,11 @@ pub struct InsertLargeTable {
     pub v: EveryVecStruct,
 }
 
-impl __sdk::spacetime_module::InModule for InsertLargeTable {
+impl __sdk::InModule for InsertLargeTable {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertLargeTableCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertLargeTableCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_large_table`.

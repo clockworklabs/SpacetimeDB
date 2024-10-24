@@ -2,21 +2,20 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct InsertCallerVecIdentity {}
 
-impl __sdk::spacetime_module::InModule for InsertCallerVecIdentity {
+impl __sdk::InModule for InsertCallerVecIdentity {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertCallerVecIdentityCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertCallerVecIdentityCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_caller_vec_identity`.

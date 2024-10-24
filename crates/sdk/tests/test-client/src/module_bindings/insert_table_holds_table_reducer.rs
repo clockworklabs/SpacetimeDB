@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::one_u_8_type::OneU8;
@@ -18,11 +17,11 @@ pub struct InsertTableHoldsTable {
     pub b: VecU8,
 }
 
-impl __sdk::spacetime_module::InModule for InsertTableHoldsTable {
+impl __sdk::InModule for InsertTableHoldsTable {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertTableHoldsTableCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertTableHoldsTableCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_table_holds_table`.

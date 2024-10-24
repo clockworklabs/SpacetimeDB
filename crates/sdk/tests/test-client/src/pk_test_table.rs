@@ -1,8 +1,5 @@
 use crate::module_bindings::*;
-use spacetimedb_sdk::{
-    sats::{i256, u256},
-    Address, Event, Identity, Table, TableWithPrimaryKey,
-};
+use spacetimedb_sdk::{i256, u256, Address, Event, Identity, Table, TableWithPrimaryKey};
 use std::sync::Arc;
 use test_counter::TestCounter;
 

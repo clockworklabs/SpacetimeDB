@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::simple_enum_type::SimpleEnum;
@@ -16,11 +15,11 @@ pub struct InsertOneSimpleEnum {
     pub e: SimpleEnum,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOneSimpleEnum {
+impl __sdk::InModule for InsertOneSimpleEnum {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOneSimpleEnumCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOneSimpleEnumCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_one_simple_enum`.
