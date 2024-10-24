@@ -91,16 +91,16 @@ impl NameOrIdentity {
         ctx: &(impl ControlStateReadAccess + ?Sized),
     ) -> axum::response::Result<Result<ResolvedIdentity, DomainName>> {
         Ok(match self {
-            Self::Identity(addr) => Ok(ResolvedIdentity {
-                identity: Identity::from(*addr),
+            Self::Identity(identity) => Ok(ResolvedIdentity {
+                identity: Identity::from(*identity),
                 domain: None,
             }),
             Self::Name(name) => {
                 let domain = name.parse().map_err(|_| DomainParsingRejection)?;
-                let address = ctx.lookup_identity(&domain).map_err(log_and_500)?;
-                match address {
-                    Some(address) => Ok(ResolvedIdentity {
-                        identity: address,
+                let identity = ctx.lookup_identity(&domain).map_err(log_and_500)?;
+                match identity {
+                    Some(identity) => Ok(ResolvedIdentity {
+                        identity,
                         domain: Some(domain),
                     }),
                     None => Err(domain),

@@ -68,3 +68,23 @@ impl insert_pk_i_256 for super::RemoteReducers {
         self.imp.remove_on_reducer::<InsertPkI256>("insert_pk_i256", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_pk_i256`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_pk_i_256 {
+    /// Set the call-reducer flags for the reducer `insert_pk_i256` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_pk_i_256(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_pk_i_256 for super::SetReducerFlags {
+    fn insert_pk_i_256(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_pk_i256", flags);
+    }
+}

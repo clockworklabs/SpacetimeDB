@@ -66,7 +66,7 @@ spacetimedb::filter!("SELECT * FROM book");
 
     def assertSql(self, sql, expected):
         self.maxDiff = None
-        sql_out = self.spacetime("sql", self.address, sql)
+        sql_out = self.spacetime("sql", self.database_identity, sql)
         sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
         expected = "\n".join([line.rstrip() for line in expected.splitlines()])
         self.assertMultiLineEqual(sql_out, expected)
@@ -98,7 +98,7 @@ spacetimedb::filter!("SELECT * FROM book");
         )
 
         self.write_module_code(self.MODULE_CODE_UPDATED)
-        self.publish_module(self.address, clear=False)
+        self.publish_module(self.database_identity, clear=False)
 
         logging.info("Updated")
 
@@ -176,6 +176,6 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
 
         with self.assertRaises(Exception):
             self.write_module_code(self.MODULE_CODE_UPDATED)
-            self.publish_module(self.address, clear=False)
+            self.publish_module(self.database_identity, clear=False)
 
         logging.info("Rejected as expected.")
