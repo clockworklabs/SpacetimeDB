@@ -63,10 +63,10 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
     CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
-            call_reducer(&module, "add", "[\"Tyrion\", 24]", 0).await;
-            call_reducer(&module, "add", "[\"Cersei\", 31]", 1).await;
-            call_reducer(&module, "say_hello", "[]", 2).await;
-            call_reducer(&module, "list_over_age", "[30]", 3).await;
+            call_reducer(&module, "add", r#"[\"Tyrion\", 24]"#, 0).await;
+            call_reducer(&module, "add", r#"[\"Cersei\", 31]"#, 1).await;
+            call_reducer(&module, "say_hello", r#"[]"#, 2).await;
+            call_reducer(&module, "list_over_age", r#"[30]"#, 3).await;
             assert_eq!(
                 read_logs(&module).await,
                 [
@@ -179,7 +179,7 @@ fn test_call_query_macro() {
         // Note that JSON doesn't allow multiline strings, so the encoded args string must be on one line!
         call_reducer(
             &module,
-            "test", "[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"Foo\": {} }, { \"Baz\": \"buzz\" } ]",
+            "test", r#"[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"Foo\": {} }, { \"Baz\": \"buzz\" } ]"#,
             0,
         ).await;
     });
@@ -254,7 +254,7 @@ fn test_index_scans() {
 }
 
 async fn bench_call<'a>(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
-    let args = format!("\"[{count}]\"");
+    let args = format!(r#"[{count}]"#);
     let now = Instant::now();
     call_reducer(module, call, &args, 0).await;
     now.elapsed()
