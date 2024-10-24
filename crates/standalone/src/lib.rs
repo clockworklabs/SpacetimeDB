@@ -16,14 +16,16 @@ use openssl::nid::Nid;
 use openssl::pkey::PKey;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
+use spacetimedb::db::relational_db;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
+use spacetimedb::host::{DiskStorage, DynDurabilityFut, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
-use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
+use spacetimedb::{db, stdb_path};
 use spacetimedb_client_api::auth::LOCALHOST;
+use spacetimedb_client_api::{Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use std::fs::File;
 use std::io::Write;
@@ -72,6 +74,19 @@ impl StandaloneEnv {
             public_key_bytes,
             metrics_registry,
         }))
+    }
+
+    pub fn durability(&self, address: &Identity, replica_id: u64) -> DynDurabilityFut {
+        match self.host_controller.get_config().storage {
+            db::Storage::Disk => {
+                let db_path = self.host_controller.get_replica_path(address, replica_id);
+                Box::pin(async move { relational_db::local_durability_dyn(db_path).await.map_err(Into::into) })
+            }
+            db::Storage::Memory => {
+                let err_fut = async { Err(anyhow::anyhow!("Memory storage not supported for durability")) };
+                Box::pin(err_fut)
+            }
+        }
     }
 }
 
@@ -147,13 +162,10 @@ fn get_key_path(env: &str) -> Option<PathBuf> {
     std::env::var_os(env).map(std::path::PathBuf::from)
 }
 
-impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
+#[async_trait]
+impl NodeDelegate for StandaloneEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         self.metrics_registry.gather()
-    }
-
-    fn host_controller(&self) -> &HostController {
-        &self.host_controller
     }
 
     fn client_actor_index(&self) -> &ClientActorIndex {
@@ -174,6 +186,26 @@ impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
 
     fn private_key(&self) -> &EncodingKey {
         &self.private_key
+    }
+
+    async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>> {
+        let leader = match self.control_db.get_leader_replica_by_database(database_id) {
+            Some(leader) => leader,
+            None => return Ok(None),
+        };
+
+        let database = self
+            .control_db
+            .get_database_by_id(database_id)?
+            .ok_or_else(|| anyhow::anyhow!("Database {} has no associated database", database_id))?;
+
+        let durability = self.durability(&database.database_identity, leader.id);
+        self.host_controller
+            .get_or_launch_module_host(database, leader.id, durability)
+            .await
+            .context("failed to get or launch module host")?;
+
+        Ok(Some(Host::new(leader.id, self.host_controller.clone())))
     }
 }
 
@@ -220,10 +252,6 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
         Ok(self.control_db.get_replicas()?)
     }
 
-    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
-        self.control_db.get_leader_replica_by_database(database_id)
-    }
-
     // Energy
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
         Ok(self.control_db.get_energy_balance(identity)?)
@@ -236,6 +264,10 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
 
     fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
         Ok(self.control_db.spacetime_reverse_dns(database_identity)?)
+    }
+
+    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+        self.control_db.get_leader_replica_by_database(database_id)
     }
 }
 
@@ -279,18 +311,18 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 let database_id = database.id;
                 let database_identity = database.database_identity;
 
+                let num_replicas = spec.num_replicas;
                 let leader = self
-                    .control_db
-                    .get_leader_replica_by_database(database_id)
-                    .with_context(|| format!("Not found: leader instance for database `{}`", database_identity))?;
-                let update_result = self
-                    .host_controller
-                    .update_module_host(database, spec.host_type, leader.id, spec.program_bytes.into())
+                    .leader(database_id)
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
+                let durability = self.durability(&database_identity, leader.replica_id);
+                let update_result = leader
+                    .update(database, spec.host_type, spec.program_bytes.into(), durability)
                     .await?;
-
                 if update_result.was_successful() {
                     let replicas = self.control_db.get_replicas_by_database(database_id)?;
-                    let desired_replicas = spec.num_replicas as usize;
+                    let desired_replicas = num_replicas as usize;
                     if desired_replicas == 0 {
                         log::info!("Decommissioning all replicas of database {}", database_identity);
                         for instance in replicas {
@@ -434,10 +466,7 @@ impl StandaloneEnv {
                         instance.database_id, instance.id
                     )
                 })?;
-            self.host_controller
-                .get_or_launch_module_host(database, instance.id)
-                .await
-                .map(drop)?
+            self.leader(database.id).await?;
         }
 
         Ok(())
