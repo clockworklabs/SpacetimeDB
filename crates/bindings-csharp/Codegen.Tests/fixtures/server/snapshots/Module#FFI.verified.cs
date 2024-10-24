@@ -42,6 +42,30 @@ namespace SpacetimeDB
                 return row;
             }
 
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                BTreeMultiColumn,
+                global::BTreeMultiColumn
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(BTreeMultiColumn),
+                    ProductTypeRef: (uint)
+                        new global::BTreeMultiColumn.BSATN().GetAlgebraicType(registrar).Ref_,
+                    PrimaryKey: [],
+                    Indexes:
+                    [
+                        new(
+                            "BTreeMultiColumn_btree_Location",
+                            "Location",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0, 1, 2])
+                        )
+                    ],
+                    Constraints: [],
+                    Sequences: [],
+                    Schedule: null,
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
+
             public ulong Count =>
                 SpacetimeDB.Internal.ITableView<
                     BTreeMultiColumn,
@@ -68,7 +92,7 @@ namespace SpacetimeDB
 
             internal sealed class LocationIndex()
                 : SpacetimeDB.Internal.IndexBase<global::BTreeMultiColumn>(
-                    "bt_BTreeMultiColumn_Location"
+                    "BTreeMultiColumn_btree_Location"
                 )
             {
                 public IEnumerable<global::BTreeMultiColumn> Filter(uint X) =>
@@ -196,6 +220,46 @@ namespace SpacetimeDB
                 return row;
             }
 
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                BTreeViews,
+                global::BTreeViews
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(BTreeViews),
+                    ProductTypeRef: (uint)
+                        new global::BTreeViews.BSATN().GetAlgebraicType(registrar).Ref_,
+                    PrimaryKey: [0],
+                    Indexes:
+                    [
+                        new(
+                            "BTreeViews_btree_Id",
+                            "Id",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        ),
+                        new(
+                            "BTreeViews_btree_Location",
+                            "Location",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1, 2])
+                        ),
+                        new(
+                            "BTreeViews_btree_Faction",
+                            "Faction",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([3])
+                        )
+                    ],
+                    Constraints:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            BTreeViews,
+                            global::BTreeViews
+                        >.MakeUniqueConstraint(0, nameof(global::BTreeViews.Id))
+                    ],
+                    Sequences: [],
+                    Schedule: null,
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
+
             public ulong Count =>
                 SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoCount();
 
@@ -217,7 +281,7 @@ namespace SpacetimeDB
                 >
             {
                 internal BTreeViewsUniqueIndex(BTreeViews handle)
-                    : base(handle, "idx_BTreeViews_BTreeViews_Id_unique") { }
+                    : base(handle, "BTreeViews_btree_Id") { }
 
                 public bool Update(global::BTreeViews row) => DoUpdate(row.Id, row);
             }
@@ -225,7 +289,7 @@ namespace SpacetimeDB
             internal BTreeViewsUniqueIndex Id => new(this);
 
             internal sealed class LocationIndex()
-                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("bt_BTreeViews_Location")
+                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_btree_Location")
             {
                 public IEnumerable<global::BTreeViews> Filter(uint X) =>
                     DoFilter(
@@ -291,7 +355,7 @@ namespace SpacetimeDB
             internal LocationIndex Location => new();
 
             internal sealed class FactionIndex()
-                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("bt_BTreeViews_Faction")
+                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_btree_Faction")
             {
                 public IEnumerable<global::BTreeViews> Filter(string Faction) =>
                     DoFilter(
@@ -340,6 +404,47 @@ namespace SpacetimeDB
                 return row;
             }
 
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                MultiTable1,
+                global::MultiTableRow
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(MultiTable1),
+                    ProductTypeRef: (uint)
+                        new global::MultiTableRow.BSATN().GetAlgebraicType(registrar).Ref_,
+                    PrimaryKey: [1],
+                    Indexes:
+                    [
+                        new(
+                            "MultiTable1_btree_Foo",
+                            "Foo",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                        ),
+                        new(
+                            "MultiTable1_btree_Name",
+                            null,
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        )
+                    ],
+                    Constraints:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            MultiTable1,
+                            global::MultiTableRow
+                        >.MakeUniqueConstraint(1, nameof(global::MultiTableRow.Foo))
+                    ],
+                    Sequences:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            MultiTable1,
+                            global::MultiTableRow
+                        >.MakeSequence(1, nameof(global::MultiTableRow.Foo))
+                    ],
+                    Schedule: null,
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Public
+                );
+
             public ulong Count =>
                 SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoCount();
 
@@ -356,7 +461,7 @@ namespace SpacetimeDB
                 : UniqueIndex<MultiTable1, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
             {
                 internal MultiTable1UniqueIndex(MultiTable1 handle)
-                    : base(handle, "idx_MultiTable1_MultiTable1_Foo_unique") { }
+                    : base(handle, "MultiTable1_btree_Foo") { }
 
                 public bool Update(global::MultiTableRow row) => DoUpdate(row.Foo, row);
             }
@@ -364,7 +469,7 @@ namespace SpacetimeDB
             public MultiTable1UniqueIndex Foo => new(this);
 
             public sealed class NameIndex()
-                : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>("bt_MultiTable1_Name")
+                : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>("MultiTable1_btree_Name")
             {
                 public IEnumerable<global::MultiTableRow> Filter(string Name) =>
                     DoFilter(
@@ -413,6 +518,42 @@ namespace SpacetimeDB
                 return row;
             }
 
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                MultiTable2,
+                global::MultiTableRow
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(MultiTable2),
+                    ProductTypeRef: (uint)
+                        new global::MultiTableRow.BSATN().GetAlgebraicType(registrar).Ref_,
+                    PrimaryKey: [],
+                    Indexes:
+                    [
+                        new(
+                            "MultiTable2_btree_Bar",
+                            "Bar",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([2])
+                        )
+                    ],
+                    Constraints:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            MultiTable2,
+                            global::MultiTableRow
+                        >.MakeUniqueConstraint(2, nameof(global::MultiTableRow.Bar))
+                    ],
+                    Sequences:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            MultiTable2,
+                            global::MultiTableRow
+                        >.MakeSequence(1, nameof(global::MultiTableRow.Foo))
+                    ],
+                    Schedule: null,
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
+
             public ulong Count =>
                 SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoCount();
 
@@ -429,7 +570,7 @@ namespace SpacetimeDB
                 : UniqueIndex<MultiTable2, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
             {
                 internal MultiTable2UniqueIndex(MultiTable2 handle)
-                    : base(handle, "idx_MultiTable2_MultiTable2_Bar_unique") { }
+                    : base(handle, "MultiTable2_btree_Bar") { }
 
                 public bool Update(global::MultiTableRow row) => DoUpdate(row.Bar, row);
             }
@@ -447,6 +588,23 @@ namespace SpacetimeDB
             {
                 return row;
             }
+
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                PrivateTable,
+                global::PrivateTable
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(PrivateTable),
+                    ProductTypeRef: (uint)
+                        new global::PrivateTable.BSATN().GetAlgebraicType(registrar).Ref_,
+                    PrimaryKey: [],
+                    Indexes: [],
+                    Constraints: [],
+                    Sequences: [],
+                    Schedule: null,
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
 
             public ulong Count =>
                 SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoCount();
@@ -476,6 +634,42 @@ namespace SpacetimeDB
                 return row;
             }
 
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                PublicTable,
+                global::PublicTable
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(PublicTable),
+                    ProductTypeRef: (uint)
+                        new global::PublicTable.BSATN().GetAlgebraicType(registrar).Ref_,
+                    PrimaryKey: [0],
+                    Indexes:
+                    [
+                        new(
+                            "PublicTable_btree_Id",
+                            "Id",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        )
+                    ],
+                    Constraints:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            PublicTable,
+                            global::PublicTable
+                        >.MakeUniqueConstraint(0, nameof(global::PublicTable.Id))
+                    ],
+                    Sequences:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            PublicTable,
+                            global::PublicTable
+                        >.MakeSequence(0, nameof(global::PublicTable.Id))
+                    ],
+                    Schedule: null,
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
+
             public ulong Count =>
                 SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoCount();
 
@@ -492,7 +686,7 @@ namespace SpacetimeDB
                 : UniqueIndex<PublicTable, global::PublicTable, int, SpacetimeDB.BSATN.I32>
             {
                 internal PublicTableUniqueIndex(PublicTable handle)
-                    : base(handle, "idx_PublicTable_PublicTable_Id_unique") { }
+                    : base(handle, "PublicTable_btree_Id") { }
 
                 public bool Update(global::PublicTable row) => DoUpdate(row.Id, row);
             }
@@ -516,6 +710,50 @@ namespace SpacetimeDB
                 }
                 return row;
             }
+
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                SendMessageTimer,
+                global::Timers.SendMessageTimer
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(SendMessageTimer),
+                    ProductTypeRef: (uint)
+                        new global::Timers.SendMessageTimer.BSATN()
+                            .GetAlgebraicType(registrar)
+                            .Ref_,
+                    PrimaryKey: [1],
+                    Indexes:
+                    [
+                        new(
+                            "SendMessageTimer_btree_ScheduledId",
+                            "ScheduledId",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                        )
+                    ],
+                    Constraints:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            SendMessageTimer,
+                            global::Timers.SendMessageTimer
+                        >.MakeUniqueConstraint(
+                            1,
+                            nameof(global::Timers.SendMessageTimer.ScheduledId)
+                        )
+                    ],
+                    Sequences:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            SendMessageTimer,
+                            global::Timers.SendMessageTimer
+                        >.MakeSequence(1, nameof(global::Timers.SendMessageTimer.ScheduledId))
+                    ],
+                    Schedule: SpacetimeDB.Internal.ITableView<
+                        SendMessageTimer,
+                        global::Timers.SendMessageTimer
+                    >.MakeSchedule("SendScheduledMessage", 2),
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
 
             public ulong Count =>
                 SpacetimeDB.Internal.ITableView<
@@ -550,7 +788,7 @@ namespace SpacetimeDB
                 >
             {
                 internal SendMessageTimerUniqueIndex(SendMessageTimer handle)
-                    : base(handle, "idx_SendMessageTimer_SendMessageTimer_ScheduledId_unique") { }
+                    : base(handle, "SendMessageTimer_btree_ScheduledId") { }
 
                 public bool Update(global::Timers.SendMessageTimer row) =>
                     DoUpdate(row.ScheduledId, row);
@@ -576,9 +814,9 @@ static class ModuleRegistration
 {
     class Init : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("__init__", []);
+        ) => new(nameof(Init), [], SpacetimeDB.Internal.Lifecycle.Init);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -590,9 +828,9 @@ static class ModuleRegistration
     {
         private static readonly PublicTable.BSATN data = new();
 
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("InsertData", [new(nameof(data), data.GetAlgebraicType(registrar))]);
+        ) => new(nameof(InsertData), [new(nameof(data), data.GetAlgebraicType(registrar))], null);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -604,9 +842,9 @@ static class ModuleRegistration
     {
         private static readonly PublicTable.BSATN data = new();
 
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("InsertData2", [new(nameof(data), data.GetAlgebraicType(registrar))]);
+        ) => new(nameof(InsertData2), [new(nameof(data), data.GetAlgebraicType(registrar))], null);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -621,9 +859,14 @@ static class ModuleRegistration
     {
         private static readonly MultiTableRow.BSATN data = new();
 
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("InsertMultiData", [new(nameof(data), data.GetAlgebraicType(registrar))]);
+        ) =>
+            new(
+                nameof(InsertMultiData),
+                [new(nameof(data), data.GetAlgebraicType(registrar))],
+                null
+            );
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -635,9 +878,14 @@ static class ModuleRegistration
     {
         private static readonly PublicTable.BSATN data = new();
 
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("ScheduleImmediate", [new(nameof(data), data.GetAlgebraicType(registrar))]);
+        ) =>
+            new(
+                nameof(ScheduleImmediate),
+                [new(nameof(data), data.GetAlgebraicType(registrar))],
+                null
+            );
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -649,9 +897,14 @@ static class ModuleRegistration
     {
         private static readonly Timers.SendMessageTimer.BSATN arg = new();
 
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("SendScheduledMessage", [new(nameof(arg), arg.GetAlgebraicType(registrar))]);
+        ) =>
+            new(
+                nameof(SendScheduledMessage),
+                [new(nameof(arg), arg.GetAlgebraicType(registrar))],
+                null
+            );
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -683,12 +936,34 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterReducer<InsertMultiData>();
         SpacetimeDB.Internal.Module.RegisterReducer<ScheduleImmediate>();
         SpacetimeDB.Internal.Module.RegisterReducer<SendScheduledMessage>();
-        SpacetimeDB.Internal.Module.RegisterTable<global::BTreeMultiColumn>();
-        SpacetimeDB.Internal.Module.RegisterTable<global::BTreeViews>();
-        SpacetimeDB.Internal.Module.RegisterTable<global::MultiTableRow>();
-        SpacetimeDB.Internal.Module.RegisterTable<global::PrivateTable>();
-        SpacetimeDB.Internal.Module.RegisterTable<global::PublicTable>();
-        SpacetimeDB.Internal.Module.RegisterTable<global::Timers.SendMessageTimer>();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::BTreeMultiColumn,
+            SpacetimeDB.Internal.TableHandles.BTreeMultiColumn
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::BTreeViews,
+            SpacetimeDB.Internal.TableHandles.BTreeViews
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::MultiTableRow,
+            SpacetimeDB.Internal.TableHandles.MultiTable1
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::MultiTableRow,
+            SpacetimeDB.Internal.TableHandles.MultiTable2
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::PrivateTable,
+            SpacetimeDB.Internal.TableHandles.PrivateTable
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::PublicTable,
+            SpacetimeDB.Internal.TableHandles.PublicTable
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::Timers.SendMessageTimer,
+            SpacetimeDB.Internal.TableHandles.SendMessageTimer
+        >();
     }
 
     // Exports only work from the main assembly, so we need to generate forwarding methods.

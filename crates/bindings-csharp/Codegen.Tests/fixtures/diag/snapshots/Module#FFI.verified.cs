@@ -54,6 +54,49 @@ namespace SpacetimeDB
                 return row;
             }
 
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                TestAutoIncNotInteger,
+                global::TestAutoIncNotInteger
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(TestAutoIncNotInteger),
+                    ProductTypeRef: (uint)
+                        new global::TestAutoIncNotInteger.BSATN().GetAlgebraicType(registrar).Ref_,
+                    PrimaryKey: [],
+                    Indexes:
+                    [
+                        new(
+                            "TestAutoIncNotInteger_btree_IdentityField",
+                            "IdentityField",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                        )
+                    ],
+                    Constraints:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            TestAutoIncNotInteger,
+                            global::TestAutoIncNotInteger
+                        >.MakeUniqueConstraint(
+                            1,
+                            nameof(global::TestAutoIncNotInteger.IdentityField)
+                        )
+                    ],
+                    Sequences:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            TestAutoIncNotInteger,
+                            global::TestAutoIncNotInteger
+                        >.MakeSequence(0, nameof(global::TestAutoIncNotInteger.AutoIncField)),
+                        SpacetimeDB.Internal.ITableView<
+                            TestAutoIncNotInteger,
+                            global::TestAutoIncNotInteger
+                        >.MakeSequence(1, nameof(global::TestAutoIncNotInteger.IdentityField))
+                    ],
+                    Schedule: null,
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
+
             public ulong Count =>
                 SpacetimeDB.Internal.ITableView<
                     TestAutoIncNotInteger,
@@ -87,10 +130,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestAutoIncNotIntegerUniqueIndex(TestAutoIncNotInteger handle)
-                    : base(
-                        handle,
-                        "idx_TestAutoIncNotInteger_TestAutoIncNotInteger_IdentityField_unique"
-                    ) { }
+                    : base(handle, "TestAutoIncNotInteger_btree_IdentityField") { }
 
                 public bool Update(global::TestAutoIncNotInteger row) =>
                     DoUpdate(row.IdentityField, row);
@@ -112,6 +152,23 @@ namespace SpacetimeDB
             {
                 return row;
             }
+
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                TestDuplicateTableName,
+                global::TestDuplicateTableName
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(TestDuplicateTableName),
+                    ProductTypeRef: (uint)
+                        new global::TestDuplicateTableName.BSATN().GetAlgebraicType(registrar).Ref_,
+                    PrimaryKey: [],
+                    Indexes: [],
+                    Constraints: [],
+                    Sequences: [],
+                    Schedule: null,
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
 
             public ulong Count =>
                 SpacetimeDB.Internal.ITableView<
@@ -158,6 +215,50 @@ namespace SpacetimeDB
                 return row;
             }
 
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                TestIncompatibleSchedule1,
+                global::TestIncompatibleSchedule
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(TestIncompatibleSchedule1),
+                    ProductTypeRef: (uint)
+                        new global::TestIncompatibleSchedule.BSATN()
+                            .GetAlgebraicType(registrar)
+                            .Ref_,
+                    PrimaryKey: [0],
+                    Indexes:
+                    [
+                        new(
+                            "TestIncompatibleSchedule1_btree_ScheduledId",
+                            "ScheduledId",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        )
+                    ],
+                    Constraints:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            TestIncompatibleSchedule1,
+                            global::TestIncompatibleSchedule
+                        >.MakeUniqueConstraint(
+                            0,
+                            nameof(global::TestIncompatibleSchedule.ScheduledId)
+                        )
+                    ],
+                    Sequences:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            TestIncompatibleSchedule1,
+                            global::TestIncompatibleSchedule
+                        >.MakeSequence(0, nameof(global::TestIncompatibleSchedule.ScheduledId))
+                    ],
+                    Schedule: SpacetimeDB.Internal.ITableView<
+                        TestIncompatibleSchedule1,
+                        global::TestIncompatibleSchedule
+                    >.MakeSchedule("TestIncompatibleScheduleReducer", 1),
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
+
             public ulong Count =>
                 SpacetimeDB.Internal.ITableView<
                     TestIncompatibleSchedule1,
@@ -191,10 +292,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestIncompatibleSchedule1UniqueIndex(TestIncompatibleSchedule1 handle)
-                    : base(
-                        handle,
-                        "idx_TestIncompatibleSchedule1_TestIncompatibleSchedule1_ScheduledId_unique"
-                    ) { }
+                    : base(handle, "TestIncompatibleSchedule1_btree_ScheduledId") { }
 
                 public bool Update(global::TestIncompatibleSchedule row) =>
                     DoUpdate(row.ScheduledId, row);
@@ -222,6 +320,47 @@ namespace SpacetimeDB
                 }
                 return row;
             }
+
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                TestIncompatibleSchedule2,
+                global::TestIncompatibleSchedule
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(TestIncompatibleSchedule2),
+                    ProductTypeRef: (uint)
+                        new global::TestIncompatibleSchedule.BSATN()
+                            .GetAlgebraicType(registrar)
+                            .Ref_,
+                    PrimaryKey: [0],
+                    Indexes:
+                    [
+                        new(
+                            "TestIncompatibleSchedule2_btree_ScheduledId",
+                            "ScheduledId",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        )
+                    ],
+                    Constraints:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            TestIncompatibleSchedule2,
+                            global::TestIncompatibleSchedule
+                        >.MakeUniqueConstraint(
+                            0,
+                            nameof(global::TestIncompatibleSchedule.ScheduledId)
+                        )
+                    ],
+                    Sequences:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            TestIncompatibleSchedule2,
+                            global::TestIncompatibleSchedule
+                        >.MakeSequence(0, nameof(global::TestIncompatibleSchedule.ScheduledId))
+                    ],
+                    Schedule: null,
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
 
             public ulong Count =>
                 SpacetimeDB.Internal.ITableView<
@@ -256,10 +395,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestIncompatibleSchedule2UniqueIndex(TestIncompatibleSchedule2 handle)
-                    : base(
-                        handle,
-                        "idx_TestIncompatibleSchedule2_TestIncompatibleSchedule2_ScheduledId_unique"
-                    ) { }
+                    : base(handle, "TestIncompatibleSchedule2_btree_ScheduledId") { }
 
                 public bool Update(global::TestIncompatibleSchedule row) =>
                     DoUpdate(row.ScheduledId, row);
@@ -278,6 +414,23 @@ namespace SpacetimeDB
             {
                 return row;
             }
+
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                TestTableTaggedEnum,
+                global::TestTableTaggedEnum
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(TestTableTaggedEnum),
+                    ProductTypeRef: (uint)
+                        new global::TestTableTaggedEnum.BSATN().GetAlgebraicType(registrar).Ref_,
+                    PrimaryKey: [],
+                    Indexes: [],
+                    Constraints: [],
+                    Sequences: [],
+                    Schedule: null,
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
 
             public ulong Count =>
                 SpacetimeDB.Internal.ITableView<
@@ -318,6 +471,51 @@ namespace SpacetimeDB
                 return row;
             }
 
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                TestUniqueNotEquatable,
+                global::TestUniqueNotEquatable
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(TestUniqueNotEquatable),
+                    ProductTypeRef: (uint)
+                        new global::TestUniqueNotEquatable.BSATN().GetAlgebraicType(registrar).Ref_,
+                    PrimaryKey: [1],
+                    Indexes:
+                    [
+                        new(
+                            "TestUniqueNotEquatable_btree_UniqueField",
+                            "UniqueField",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        ),
+                        new(
+                            "TestUniqueNotEquatable_btree_PrimaryKeyField",
+                            "PrimaryKeyField",
+                            new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                        )
+                    ],
+                    Constraints:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            TestUniqueNotEquatable,
+                            global::TestUniqueNotEquatable
+                        >.MakeUniqueConstraint(
+                            0,
+                            nameof(global::TestUniqueNotEquatable.UniqueField)
+                        ),
+                        SpacetimeDB.Internal.ITableView<
+                            TestUniqueNotEquatable,
+                            global::TestUniqueNotEquatable
+                        >.MakeUniqueConstraint(
+                            1,
+                            nameof(global::TestUniqueNotEquatable.PrimaryKeyField)
+                        )
+                    ],
+                    Sequences: [],
+                    Schedule: null,
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
+
             public ulong Count =>
                 SpacetimeDB.Internal.ITableView<
                     TestUniqueNotEquatable,
@@ -351,10 +549,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle)
-                    : base(
-                        handle,
-                        "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique"
-                    ) { }
+                    : base(handle, "TestUniqueNotEquatable_btree_UniqueField") { }
 
                 public bool Update(global::TestUniqueNotEquatable row) =>
                     DoUpdate(row.UniqueField, row);
@@ -371,10 +566,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle)
-                    : base(
-                        handle,
-                        "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique"
-                    ) { }
+                    : base(handle, "TestUniqueNotEquatable_btree_PrimaryKeyField") { }
 
                 public bool Update(global::TestUniqueNotEquatable row) =>
                     DoUpdate(row.PrimaryKeyField, row);
@@ -397,23 +589,11 @@ namespace SpacetimeDB
 
 static class ModuleRegistration
 {
-    class TestDuplicateReducerKind1 : SpacetimeDB.Internal.IReducer
-    {
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
-            SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("__init__", []);
-
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
-        {
-            Reducers.TestDuplicateReducerKind1((SpacetimeDB.ReducerContext)ctx);
-        }
-    }
-
     class __ReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("__ReducerWithReservedPrefix", []);
+        ) => new(nameof(__ReducerWithReservedPrefix), [], null);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -423,9 +603,9 @@ static class ModuleRegistration
 
     class OnReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("OnReducerWithReservedPrefix", []);
+        ) => new(nameof(OnReducerWithReservedPrefix), [], null);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -433,11 +613,35 @@ static class ModuleRegistration
         }
     }
 
+    class TestDuplicateReducerKind1 : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new(nameof(TestDuplicateReducerKind1), [], SpacetimeDB.Internal.Lifecycle.Init);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.TestDuplicateReducerKind1((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
+    class TestDuplicateReducerKind2 : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => new(nameof(TestDuplicateReducerKind2), [], SpacetimeDB.Internal.Lifecycle.Init);
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            Reducers.TestDuplicateReducerKind2((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
     class TestDuplicateReducerName : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("TestDuplicateReducerName", []);
+        ) => new(nameof(TestDuplicateReducerName), [], null);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -449,12 +653,13 @@ static class ModuleRegistration
     {
         private static readonly TestIncompatibleSchedule.BSATN table = new();
 
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
-                "TestIncompatibleScheduleReducer",
-                [new(nameof(table), table.GetAlgebraicType(registrar))]
+                nameof(TestIncompatibleScheduleReducer),
+                [new(nameof(table), table.GetAlgebraicType(registrar))],
+                null
             );
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
@@ -468,9 +673,9 @@ static class ModuleRegistration
 
     class TestReducerReturnType : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("TestReducerReturnType", []);
+        ) => new(nameof(TestReducerReturnType), [], null);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -480,9 +685,9 @@ static class ModuleRegistration
 
     class TestReducerWithoutContext : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("TestReducerWithoutContext", []);
+        ) => new(nameof(TestReducerWithoutContext), [], null);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
@@ -508,18 +713,38 @@ static class ModuleRegistration
                 new SpacetimeDB.ReducerContext(identity, address, random, time)
         );
 
-        SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerKind1>();
         SpacetimeDB.Internal.Module.RegisterReducer<__ReducerWithReservedPrefix>();
         SpacetimeDB.Internal.Module.RegisterReducer<OnReducerWithReservedPrefix>();
+        SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerKind1>();
+        SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerKind2>();
         SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerName>();
         SpacetimeDB.Internal.Module.RegisterReducer<TestIncompatibleScheduleReducer>();
         SpacetimeDB.Internal.Module.RegisterReducer<TestReducerReturnType>();
         SpacetimeDB.Internal.Module.RegisterReducer<TestReducerWithoutContext>();
-        SpacetimeDB.Internal.Module.RegisterTable<global::TestAutoIncNotInteger>();
-        SpacetimeDB.Internal.Module.RegisterTable<global::TestDuplicateTableName>();
-        SpacetimeDB.Internal.Module.RegisterTable<global::TestIncompatibleSchedule>();
-        SpacetimeDB.Internal.Module.RegisterTable<global::TestTableTaggedEnum>();
-        SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable>();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::TestAutoIncNotInteger,
+            SpacetimeDB.Internal.TableHandles.TestAutoIncNotInteger
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::TestDuplicateTableName,
+            SpacetimeDB.Internal.TableHandles.TestDuplicateTableName
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::TestIncompatibleSchedule,
+            SpacetimeDB.Internal.TableHandles.TestIncompatibleSchedule1
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::TestIncompatibleSchedule,
+            SpacetimeDB.Internal.TableHandles.TestIncompatibleSchedule2
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::TestTableTaggedEnum,
+            SpacetimeDB.Internal.TableHandles.TestTableTaggedEnum
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::TestUniqueNotEquatable,
+            SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable
+        >();
     }
 
     // Exports only work from the main assembly, so we need to generate forwarding methods.

@@ -222,19 +222,6 @@ public partial struct TestIndexWithEmptyColumns { }
     },
     {
       Location: ,
-      Message: Reducer with the same export name __init__ is registered in multiple places: Reducers.TestDuplicateReducerKind1, Reducers.TestDuplicateReducerKind2,
-      Severity: Error,
-      Descriptor: {
-        Id: STDB0007,
-        Title: Duplicate exports,
-        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
-        Category: SpacetimeDB,
-        DefaultSeverity: Error,
-        IsEnabledByDefault: true
-      }
-    },
-    {
-      Location: ,
       Message: Reducer with the same export name TestDuplicateReducerName is registered in multiple places: Reducers.TestDuplicateReducerName, Reducers.InAnotherNamespace.TestDuplicateReducerName,
       Severity: Error,
       Descriptor: {

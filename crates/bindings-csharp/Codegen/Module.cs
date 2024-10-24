@@ -148,19 +148,30 @@ record TableView
     }
 }
 
-abstract record ViewIndex
+enum ViewIndexType
 {
-    public EquatableArray<string> Columns;
-    public string? Table;
-    public string Name;
+    BTree,
+}
 
-    protected abstract string Type { get; }
+record ViewIndex
+{
+    public readonly EquatableArray<string> Columns;
+    public readonly string? Table;
+    public readonly string Name;
+    public bool HasExplicitName;
+    public readonly ViewIndexType Type;
 
     public ViewIndex(AttributeData data, TypeDeclarationSyntax decl, DiagReporter diag)
     {
         var attr = data.ParseAs<IndexAttribute>();
+
+        // TODO: check other properties when we support types other than BTree.
+        // Then make sure we don't allow multiple index types on the same attribute via diagnostics.
         Columns = new((attr.BTree ?? []).ToImmutableArray());
+        Type = ViewIndexType.BTree;
+
         Table = attr.Table;
+        HasExplicitName = attr.Name is not null;
         Name = attr.Name ?? string.Join("", Columns);
 
         if (Columns.Length == 0)
@@ -169,28 +180,58 @@ abstract record ViewIndex
         }
     }
 
-    public string GenerateIndexDef(string viewName, IEnumerable<ColumnDeclaration> columns)
-    {
-        var cols = Columns.Select(c =>
-            columns.Select((c, i) => (c, i)).First(cd => cd.c.Name == c).i
+    public string GenerateIndexDef(string viewName, EquatableArray<ColumnDeclaration> allColumns) =>
+        GenerateIndexDef(
+            viewName,
+            HasExplicitName,
+            Name,
+            Type,
+            Columns.Select(c =>
+                allColumns.Select((col, pos) => (col.Name, pos)).First(x => x.Name == c).pos
+            )
         );
-        return $"new(\"bt_{viewName}_{Name}\", false, SpacetimeDB.Internal.IndexType.{Type}, [{string.Join(", ", cols)}])";
+
+    public string GenerateIndexName(string viewName) => GenerateIndexName(viewName, Name, Type);
+
+    public static string GenerateIndexDef(
+        string viewName,
+        bool hasExplicitName,
+        string name,
+        ViewIndexType type,
+        IEnumerable<int> columnIndices
+    )
+    {
+        var indexName = GenerateIndexName(viewName, name, type);
+
+        return $$"""
+            new(
+                "{{indexName}}",
+                {{(hasExplicitName ? $"\"{name}\"" : "null")}},
+                new SpacetimeDB.Internal.RawIndexAlgorithm.{{type}}([{{string.Join(
+                    ", ",
+                    columnIndices
+                )}}])
+            )
+            """;
     }
-}
 
-record ViewBTree : ViewIndex
-{
-    public ViewBTree(AttributeData data, TypeDeclarationSyntax decl, DiagReporter diag)
-        : base(data, decl, diag) { }
+    public static string GenerateIndexName(string viewName, string name, ViewIndexType type)
+    {
+        var typeSuffix = type switch
+        {
+            ViewIndexType.BTree => "btree",
+            _ => throw new InvalidOperationException("invalid type"),
+        };
 
-    protected override string Type => "BTree";
+        return $"{viewName}_{typeSuffix}_{name}";
+    }
 }
 
 record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 {
     public readonly Accessibility Visibility;
     public readonly EquatableArray<TableView> Views;
-    public readonly EquatableArray<ViewBTree> BTrees;
+    public readonly EquatableArray<ViewIndex> Indexes;
 
     private static ColumnDeclaration[] ScheduledColumns(string tableName) =>
         [
@@ -249,11 +290,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
 
         Views = new(context.Attributes.Select(a => new TableView(this, a)).ToImmutableArray());
-        BTrees = new(
+        Indexes = new(
             context
                 .TargetSymbol.GetAttributes()
                 .Where(a => a.AttributeClass?.ToString() == typeof(IndexAttribute).FullName)
-                .Select(a => new ViewBTree(a, (TypeDeclarationSyntax)context.TargetNode, diag))
+                .Select(a => new ViewIndex(a, (TypeDeclarationSyntax)context.TargetNode, diag))
                 .ToImmutableArray()
         );
 
@@ -284,37 +325,35 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var vis = SyntaxFacts.GetText(Visibility);
         var globalName = $"global::{FullName}";
 
-        foreach (
-            var ct in GetConstraints(viewName)
-                .Where(tuple => tuple.attr.HasFlag(ColumnAttrs.Unique))
-        )
+        foreach (var ct in GetConstraints(viewName, ColumnAttrs.Unique))
         {
             var f = ct.col;
-            if (f.GetAttrs(viewName).HasFlag(ColumnAttrs.Unique))
-            {
-                var iUniqueIndex = $"";
-                yield return $$"""
-                    {{vis}} sealed class {{viewName}}UniqueIndex : UniqueIndex<{{viewName}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
-                        internal {{viewName}}UniqueIndex({{viewName}} handle) : base(handle, "idx_{{viewName}}_{{viewName}}_{{ct.col.Name}}_unique") {}
-                        public bool Update({{globalName}} row) => DoUpdate(row.{{f.Name}}, row);
-                    }
-                    {{vis}} {{viewName}}UniqueIndex {{f.Name}} => new(this);
-                    """;
-            }
+
+            var indexName = ViewIndex.GenerateIndexName(viewName, f.Name, ViewIndexType.BTree);
+
+            yield return $$"""
+                {{vis}} sealed class {{viewName}}UniqueIndex : UniqueIndex<{{viewName}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
+                    internal {{viewName}}UniqueIndex({{viewName}} handle) : base(handle, "{{indexName}}") {}
+                    public bool Update({{globalName}} row) => DoUpdate(row.{{f.Name}}, row);
+                }
+                {{vis}} {{viewName}}UniqueIndex {{f.Name}} => new(this);
+                """;
         }
 
-        foreach (var btree in BTrees)
+        foreach (var index in Indexes)
         {
-            if (btree.Table != null && btree.Table != viewName)
+            if (index.Table != null && index.Table != viewName)
             {
                 continue;
             }
 
+            var indexName = index.GenerateIndexName(viewName);
+
             yield return $$"""
-                    {{vis}} sealed class {{btree.Name}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("bt_{{viewName}}_{{btree.Name}}") {
+                    {{vis}} sealed class {{index.Name}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("{{indexName}}") {
                 """;
 
-            var members = btree.Columns.Select(s => Members.First(x => x.Name == s)).ToArray();
+            var members = index.Columns.Select(s => Members.First(x => x.Name == s)).ToArray();
 
             for (var n = 0; n < members.Length; n++)
             {
@@ -355,7 +394,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     """;
             }
 
-            yield return $"}}\n {vis} {btree.Name}Index {btree.Name} => new();\n";
+            yield return $"}}\n {vis} {index.Name}Index {index.Name} => new();\n";
         }
     }
 
@@ -391,6 +430,33 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     return row;
                 }
 
+                static SpacetimeDB.Internal.RawTableDefV9 {{iTable}}.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                    Name: nameof({{v.Name}}),
+                    ProductTypeRef: (uint) new {{globalName}}.BSATN().GetAlgebraicType(registrar).Ref_,
+                    PrimaryKey: [{{GetPrimaryKey(v.Name)?.ToString() ?? ""}}],
+                    Indexes: [
+                        {{string.Join(
+                            ",\n",
+                            GetConstraints(v.Name, ColumnAttrs.Unique)
+                            .Select(c => ViewIndex.GenerateIndexDef(v.Name, true, c.col.Name, ViewIndexType.BTree, [c.pos]))
+                            .Concat(
+                                Indexes
+                                .Where(b => b.Table == null || b.Table == v.Name)
+                                .Select(b => b.GenerateIndexDef(v.Name, Members))
+                            )
+                        )}}
+                    ],
+                    Constraints: {{GenConstraintList(v.Name, ColumnAttrs.Unique, globalName, $"{iTable}.MakeUniqueConstraint")}},
+                    Sequences: {{GenConstraintList(v.Name, ColumnAttrs.AutoInc, globalName, $"{iTable}.MakeSequence")}},
+                    Schedule: {{(
+                        v.Scheduled is {} scheduled
+                        ? $"{iTable}.MakeSchedule(\"{scheduled}\", {/* ScheduledAt is the last column */ Members.Length - 1})"
+                        : "null"
+                    )}},
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.{{(v.IsPublic ? "Public" : "Private")}}
+                );
+
                 public ulong Count => {{iTable}}.DoCount();
                 public IEnumerable<{{globalName}}> Iter() => {{iTable}}.DoIter();
                 public {{globalName}} Insert({{globalName}} row) => {{iTable}}.DoInsert(row);
@@ -406,11 +472,36 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
     public record struct Constraint(ColumnDeclaration col, int pos, ColumnAttrs attr);
 
-    public IEnumerable<Constraint> GetConstraints(string viewName) =>
+    public IEnumerable<Constraint> GetConstraints(
+        string viewName,
+        ColumnAttrs filterByAttr = ~ColumnAttrs.UnSet
+    ) =>
         Members
             // Important: the position must be stored here, before filtering.
             .Select((col, pos) => new Constraint(col, pos, col.GetAttrs(viewName)))
-            .Where(c => c.attr != ColumnAttrs.UnSet);
+            .Where(c => c.attr.HasFlag(filterByAttr));
+
+    // Reimplementation of V8 -> V9 constraint conversion in Rust.
+    // See https://github.com/clockworklabs/SpacetimeDB/blob/13a800e9f88cbe885b98eab9e45b0fcfd3ab7014/crates/schema/src/def/validate/v8.rs#L74-L78
+    // and https://github.com/clockworklabs/SpacetimeDB/blob/13a800e9f88cbe885b98eab9e45b0fcfd3ab7014/crates/lib/src/db/raw_def/v8.rs#L460-L510
+    private string GenConstraintList(
+        string viewName,
+        ColumnAttrs filterByAttr,
+        string tableName,
+        string makeConstraintFn
+    ) =>
+        $$"""
+        [
+            {{string.Join(
+                ",\n",
+                GetConstraints(viewName, filterByAttr)
+                    .Select(pair => $"{makeConstraintFn}({pair.pos}, nameof({tableName}.{pair.col.Name}))")
+            )}}
+        ]
+        """;
+
+    private int? GetPrimaryKey(string viewName) =>
+        GetConstraints(viewName, ColumnAttrs.PrimaryKey).Select(c => (int?)c.pos).SingleOrDefault();
 
     public override Scope.Extensions ToExtensions()
     {
@@ -449,45 +540,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
         extensions.Contents.Append(
             $$"""
-            static IEnumerable<SpacetimeDB.Internal.TableDesc> {{iTable}}.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => [
-            {{string.Join("\n", Views.Select(v => $$"""
-            new (
-                new (
-                    TableName: nameof(SpacetimeDB.Local.{{v.Name}}),
-                    Columns: [
-                        {{string.Join(",\n", Members.Select(m => m.GenerateColumnDef()))}}
-                    ],
-                    Indexes: [
-                        {{string.Join(",\n", BTrees
-                        .Where(b => b.Table == null || b.Table == v.Name)
-                        .Select(b => b.GenerateIndexDef(v.Name, Members)))}}
-                    ],
-                    Constraints: [
-                        {{string.Join(
-                            ",\n",
-                            GetConstraints(v.Name)
-                            .Select(ct =>
-                                $$"""
-                                new (
-                                    "{{v.Name}}_{{ct.col.Name}}",
-                                    (byte)SpacetimeDB.Internal.ColumnAttrs.{{ct.attr}},
-                                    [{{ct.pos}}]
-                                )
-                                """
-                            )
-                        )}}
-                    ],
-                    Sequences: [],
-                    // "system" | "user"
-                    TableType: "user",
-                    // "public" | "private"
-                    TableAccess: "{{(v.IsPublic ? "public" : "private")}}",
-                    Scheduled: {{(v.Scheduled is not null ? $"\"{v.Scheduled}\"" : "null")}}
-                ),
-                (uint) ((SpacetimeDB.BSATN.AlgebraicType.Ref) new BSATN().GetAlgebraicType(registrar)).Ref_
-            ),
-            """))}}
-            ];
+            
             """
         );
 
@@ -498,7 +551,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 record ReducerDeclaration
 {
     public readonly string Name;
-    public readonly string ExportName;
+    public readonly ReducerKind Kind;
     public readonly string FullName;
     public readonly EquatableArray<MemberDeclaration> Args;
     public readonly Scope Scope;
@@ -532,13 +585,7 @@ record ReducerDeclaration
             }
         }
 
-        ExportName = attr.Kind switch
-        {
-            ReducerKind.Init => "__init__",
-            ReducerKind.ClientConnected => "__identity_connected__",
-            ReducerKind.ClientDisconnected => "__identity_disconnected__",
-            _ => Name,
-        };
+        Kind = attr.Kind;
         FullName = SymbolToName(method);
         Args = new(
             method
@@ -559,9 +606,15 @@ record ReducerDeclaration
             class {{Name}}: SpacetimeDB.Internal.IReducer {
                 {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
 
-                public SpacetimeDB.Internal.ReducerDef MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
-                    "{{ExportName}}",
-                    [{{MemberDeclaration.GenerateDefs(Args)}}]
+                public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                    nameof({{Name}}),
+                    [{{MemberDeclaration.GenerateDefs(Args)}}],
+                    {{Kind switch {
+                        ReducerKind.Init => "SpacetimeDB.Internal.Lifecycle.Init",
+                        ReducerKind.ClientConnected => "SpacetimeDB.Internal.Lifecycle.OnConnect",
+                        ReducerKind.ClientDisconnected => "SpacetimeDB.Internal.Lifecycle.OnDisconnect",
+                        _ => "null"
+                    }}}
                 );
 
                 public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
@@ -592,7 +645,7 @@ record ReducerDeclaration
                     "\n",
                     Args.Select(a => $"new {a.TypeInfo}().Write(writer, {a.Name});")
                 )}}
-                SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate("{{ExportName}}", stream);
+                SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }
             """
         );
@@ -698,9 +751,9 @@ public class Module : IIncrementalGenerator
             "Reducer",
             context,
             reducers
-                .Select((r, ct) => (r.Name, r.ExportName, r.FullName, Class: r.GenerateClass()))
+                .Select((r, ct) => (r.Name, r.FullName, Class: r.GenerateClass()))
                 .WithTrackingName("SpacetimeDB.Reducer.GenerateClass"),
-            r => r.ExportName,
+            r => r.Name,
             r => r.FullName
         );
 
@@ -780,7 +833,7 @@ public class Module : IIncrementalGenerator
                             )}}
                             {{string.Join(
                                 "\n",
-                                tableViews.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}>();").Distinct()
+                                tableViews.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}, SpacetimeDB.Internal.TableHandles.{t.viewName}>();")
                             )}}
                         }
 
