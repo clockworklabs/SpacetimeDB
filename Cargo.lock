@@ -5175,7 +5175,6 @@ dependencies = [
  "hex",
  "home",
  "http 1.1.0",
- "itertools 0.12.1",
  "log",
  "rand 0.8.5",
  "spacetimedb-client-api-messages",

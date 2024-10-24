@@ -22,7 +22,6 @@ futures.workspace = true
 futures-channel.workspace = true
 home.workspace = true
 http.workspace = true
-itertools.workspace = true
 log.workspace = true
 rand.workspace = true
 tokio.workspace = true
