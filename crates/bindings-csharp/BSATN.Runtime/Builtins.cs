@@ -4,15 +4,21 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SpacetimeDB.BSATN;
-using SpacetimeDB.Internal;
 
 internal static class Util
 {
     // Same as `Convert.ToHexString`, but that method is not available in .NET Standard
     // which we need to target for Unity support.
     public static string ToHex<T>(T val)
-        where T : struct =>
-        BitConverter.ToString(MemoryMarshal.AsBytes([val]).ToArray()).Replace("-", "");
+        where T : struct
+    {
+        var bytes = MemoryMarshal.AsBytes([val]);
+#if NET5_0_OR_GREATER
+        return Convert.ToHexString(bytes);
+#else
+        return BitConverter.ToString(bytes.ToArray()).Replace("-", "");
+#endif
+    }
 }
 
 public readonly partial struct Unit
