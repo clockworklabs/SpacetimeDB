@@ -101,7 +101,7 @@ pub async fn create_websocket_token<S: NodeDelegate>(
 ) -> axum::response::Result<impl IntoResponse> {
     let expiry = Duration::from_secs(60);
     let token = auth
-        .resign_with_expiry(ctx.private_key(), expiry)
+        .re_sign_with_expiry(ctx.private_key(), expiry)
         .map_err(log_and_500)?;
     // let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(expiry)).map_err(log_and_500)?;
     Ok(axum::Json(WebsocketTokenResponse { token }))

@@ -185,7 +185,10 @@ impl SpacetimeAuth {
         )
     }
 
-    pub fn resign_with_expiry(&self, private_key: &EncodingKey, expiry: Duration) -> Result<String, JwtError> {
+    // Sign a new token with the same claims and a new expiry.
+    // Note that this will not change the issuer, so the private_key might not match.
+    // We do this to create short-lived tokens that we will be able to verify.
+    pub fn re_sign_with_expiry(&self, private_key: &EncodingKey, expiry: Duration) -> Result<String, JwtError> {
         TokenClaims::from(self.clone()).encode_and_sign_with_expiry(private_key, Some(expiry))
     }
 }
