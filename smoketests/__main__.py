@@ -80,6 +80,8 @@ def main():
         subprocess.Popen(["docker", "logs", "-f", docker_container])
         smoketests.HAVE_DOCKER = True
 
+    smoketests.new_identity(TEST_DIR / 'config.toml')
+
     if not args.skip_dotnet:
         smoketests.HAVE_DOTNET = check_dotnet()
         if not smoketests.HAVE_DOTNET:
