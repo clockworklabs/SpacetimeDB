@@ -36,7 +36,7 @@ pub trait OneEnumWithPayloadTableAccess {
 impl OneEnumWithPayloadTableAccess for super::RemoteTables {
     fn one_enum_with_payload(&self) -> OneEnumWithPayloadTableHandle<'_> {
         OneEnumWithPayloadTableHandle {
-            imp: self.imp.get_table::<OneEnumWithPayload>("one_enum_with_payload"),
+            imp: self.imp.get_table::<OneEnumWithPayload>(4),
             ctx: std::marker::PhantomData,
         }
     }

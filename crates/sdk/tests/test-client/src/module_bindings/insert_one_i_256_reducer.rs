@@ -52,20 +52,19 @@ pub trait insert_one_i_256 {
 
 impl insert_one_i_256 for super::RemoteReducers {
     fn insert_one_i_256(&self, n: __sats::i256) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_i256", InsertOneI256 { n })
+        self.imp.call_reducer(51, InsertOneI256 { n })
     }
     fn on_insert_one_i_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::i256) + Send + 'static,
     ) -> InsertOneI256CallbackId {
         InsertOneI256CallbackId(self.imp.on_reducer::<InsertOneI256>(
-            "insert_one_i256",
+            51,
             Box::new(move |ctx: &super::EventContext, args: &InsertOneI256| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_insert_one_i_256(&self, callback: InsertOneI256CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneI256>("insert_one_i256", callback.0)
+        self.imp.remove_on_reducer::<InsertOneI256>(51, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_insert_one_i_256 {
 
 impl set_flags_for_insert_one_i_256 for super::SetReducerFlags {
     fn insert_one_i_256(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_one_i256", flags);
+        self.imp.set_call_reducer_flags(51, flags);
     }
 }

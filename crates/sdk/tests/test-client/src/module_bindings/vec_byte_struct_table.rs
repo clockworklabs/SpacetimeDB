@@ -36,7 +36,7 @@ pub trait VecByteStructTableAccess {
 impl VecByteStructTableAccess for super::RemoteTables {
     fn vec_byte_struct(&self) -> VecByteStructTableHandle<'_> {
         VecByteStructTableHandle {
-            imp: self.imp.get_table::<VecByteStruct>("vec_byte_struct"),
+            imp: self.imp.get_table::<VecByteStruct>(66),
             ctx: std::marker::PhantomData,
         }
     }

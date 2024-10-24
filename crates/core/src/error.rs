@@ -1,7 +1,7 @@
 use std::io;
 use std::num::ParseIntError;
 use std::path::PathBuf;
-use std::sync::{MutexGuard, PoisonError};
+use std::sync::{Arc, MutexGuard, PoisonError};
 
 use hex::FromHexError;
 use spacetimedb_expr::errors::TypingError;
@@ -114,11 +114,11 @@ pub enum PlanError {
     #[error("Qualified Table `{expect}` not found")]
     TableNotFoundQualified { expect: String },
     #[error("Unknown field: `{field}` not found in the table(s): `{tables:?}`")]
-    UnknownField { field: String, tables: Vec<Box<str>> },
+    UnknownField { field: String, tables: Vec<Arc<str>> },
     #[error("Unknown field name: `{field}` not found in the table(s): `{tables:?}`")]
-    UnknownFieldName { field: FieldName, tables: Vec<Box<str>> },
+    UnknownFieldName { field: FieldName, tables: Vec<Arc<str>> },
     #[error("Field(s): `{fields:?}` not found in the table(s): `{tables:?}`")]
-    UnknownFields { fields: Vec<String>, tables: Vec<Box<str>> },
+    UnknownFields { fields: Vec<String>, tables: Vec<Arc<str>> },
     #[error("Ambiguous field: `{field}`. Also found in {found:?}")]
     AmbiguousField { field: String, found: Vec<String> },
     #[error("Plan error: `{0}`")]

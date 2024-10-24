@@ -52,20 +52,19 @@ pub trait insert_vec_string {
 
 impl insert_vec_string for super::RemoteReducers {
     fn insert_vec_string(&self, s: Vec<String>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_string", InsertVecString { s })
+        self.imp.call_reducer(121, InsertVecString { s })
     }
     fn on_insert_vec_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<String>) + Send + 'static,
     ) -> InsertVecStringCallbackId {
         InsertVecStringCallbackId(self.imp.on_reducer::<InsertVecString>(
-            "insert_vec_string",
+            121,
             Box::new(move |ctx: &super::EventContext, args: &InsertVecString| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_insert_vec_string(&self, callback: InsertVecStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecString>("insert_vec_string", callback.0)
+        self.imp.remove_on_reducer::<InsertVecString>(121, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_insert_vec_string {
 
 impl set_flags_for_insert_vec_string for super::SetReducerFlags {
     fn insert_vec_string(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_vec_string", flags);
+        self.imp.set_call_reducer_flags(121, flags);
     }
 }

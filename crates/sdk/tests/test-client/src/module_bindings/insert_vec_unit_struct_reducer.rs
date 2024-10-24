@@ -54,21 +54,19 @@ pub trait insert_vec_unit_struct {
 
 impl insert_vec_unit_struct for super::RemoteReducers {
     fn insert_vec_unit_struct(&self, s: Vec<UnitStruct>) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_vec_unit_struct", InsertVecUnitStruct { s })
+        self.imp.call_reducer(128, InsertVecUnitStruct { s })
     }
     fn on_insert_vec_unit_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<UnitStruct>) + Send + 'static,
     ) -> InsertVecUnitStructCallbackId {
         InsertVecUnitStructCallbackId(self.imp.on_reducer::<InsertVecUnitStruct>(
-            "insert_vec_unit_struct",
+            128,
             Box::new(move |ctx: &super::EventContext, args: &InsertVecUnitStruct| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_insert_vec_unit_struct(&self, callback: InsertVecUnitStructCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecUnitStruct>("insert_vec_unit_struct", callback.0)
+        self.imp.remove_on_reducer::<InsertVecUnitStruct>(128, callback.0)
     }
 }
 
@@ -88,6 +86,6 @@ pub trait set_flags_for_insert_vec_unit_struct {
 
 impl set_flags_for_insert_vec_unit_struct for super::SetReducerFlags {
     fn insert_vec_unit_struct(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_vec_unit_struct", flags);
+        self.imp.set_call_reducer_flags(128, flags);
     }
 }

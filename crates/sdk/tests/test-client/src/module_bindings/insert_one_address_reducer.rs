@@ -52,20 +52,19 @@ pub trait insert_one_address {
 
 impl insert_one_address for super::RemoteReducers {
     fn insert_one_address(&self, a: __sdk::Address) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_address", InsertOneAddress { a })
+        self.imp.call_reducer(41, InsertOneAddress { a })
     }
     fn on_insert_one_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Address) + Send + 'static,
     ) -> InsertOneAddressCallbackId {
         InsertOneAddressCallbackId(self.imp.on_reducer::<InsertOneAddress>(
-            "insert_one_address",
+            41,
             Box::new(move |ctx: &super::EventContext, args: &InsertOneAddress| callback(ctx, &args.a)),
         ))
     }
     fn remove_on_insert_one_address(&self, callback: InsertOneAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneAddress>("insert_one_address", callback.0)
+        self.imp.remove_on_reducer::<InsertOneAddress>(41, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_insert_one_address {
 
 impl set_flags_for_insert_one_address for super::SetReducerFlags {
     fn insert_one_address(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_one_address", flags);
+        self.imp.set_call_reducer_flags(41, flags);
     }
 }

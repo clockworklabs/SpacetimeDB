@@ -107,3 +107,8 @@ system_id! {
     pub struct ColId(pub u16);
 }
 // ColId works differently from other system IDs and is not auto-incremented.
+
+system_id! {
+    /// The module-local id for a particular reducer.
+    pub struct ReducerId(pub u32);
+}

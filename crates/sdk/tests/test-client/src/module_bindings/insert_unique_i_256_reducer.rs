@@ -53,21 +53,19 @@ pub trait insert_unique_i_256 {
 
 impl insert_unique_i_256 for super::RemoteReducers {
     fn insert_unique_i_256(&self, n: __sats::i256, data: i32) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_unique_i256", InsertUniqueI256 { n, data })
+        self.imp.call_reducer(93, InsertUniqueI256 { n, data })
     }
     fn on_insert_unique_i_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::i256, &i32) + Send + 'static,
     ) -> InsertUniqueI256CallbackId {
         InsertUniqueI256CallbackId(self.imp.on_reducer::<InsertUniqueI256>(
-            "insert_unique_i256",
+            93,
             Box::new(move |ctx: &super::EventContext, args: &InsertUniqueI256| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_insert_unique_i_256(&self, callback: InsertUniqueI256CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueI256>("insert_unique_i256", callback.0)
+        self.imp.remove_on_reducer::<InsertUniqueI256>(93, callback.0)
     }
 }
 
@@ -87,6 +85,6 @@ pub trait set_flags_for_insert_unique_i_256 {
 
 impl set_flags_for_insert_unique_i_256 for super::SetReducerFlags {
     fn insert_unique_i_256(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_unique_i256", flags);
+        self.imp.set_call_reducer_flags(93, flags);
     }
 }

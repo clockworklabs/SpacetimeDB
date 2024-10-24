@@ -36,7 +36,7 @@ pub trait OneUnitStructTableAccess {
 impl OneUnitStructTableAccess for super::RemoteTables {
     fn one_unit_struct(&self) -> OneUnitStructTableHandle<'_> {
         OneUnitStructTableHandle {
-            imp: self.imp.get_table::<OneUnitStruct>("one_unit_struct"),
+            imp: self.imp.get_table::<OneUnitStruct>(24),
             ctx: std::marker::PhantomData,
         }
     }

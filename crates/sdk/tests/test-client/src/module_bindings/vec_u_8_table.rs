@@ -35,7 +35,7 @@ pub trait VecU8TableAccess {
 impl VecU8TableAccess for super::RemoteTables {
     fn vec_u_8(&self) -> VecU8TableHandle<'_> {
         VecU8TableHandle {
-            imp: self.imp.get_table::<VecU8>("vec_u8"),
+            imp: self.imp.get_table::<VecU8>(86),
             ctx: std::marker::PhantomData,
         }
     }

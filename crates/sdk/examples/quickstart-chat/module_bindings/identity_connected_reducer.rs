@@ -50,20 +50,19 @@ pub trait identity_connected {
 
 impl identity_connected for super::RemoteReducers {
     fn identity_connected(&self) -> __anyhow::Result<()> {
-        self.imp.call_reducer("__identity_connected__", IdentityConnected {})
+        self.imp.call_reducer(0, IdentityConnected {})
     }
     fn on_identity_connected(
         &self,
         mut callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> IdentityConnectedCallbackId {
         IdentityConnectedCallbackId(self.imp.on_reducer::<IdentityConnected>(
-            "__identity_connected__",
+            0,
             Box::new(move |ctx: &super::EventContext, args: &IdentityConnected| callback(ctx)),
         ))
     }
     fn remove_on_identity_connected(&self, callback: IdentityConnectedCallbackId) {
-        self.imp
-            .remove_on_reducer::<IdentityConnected>("__identity_connected__", callback.0)
+        self.imp.remove_on_reducer::<IdentityConnected>(0, callback.0)
     }
 }
 
@@ -83,6 +82,6 @@ pub trait set_flags_for_identity_connected {
 
 impl set_flags_for_identity_connected for super::SetReducerFlags {
     fn identity_connected(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("__identity_connected__", flags);
+        self.imp.set_call_reducer_flags(0, flags);
     }
 }

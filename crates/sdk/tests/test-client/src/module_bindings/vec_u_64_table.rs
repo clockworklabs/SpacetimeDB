@@ -35,7 +35,7 @@ pub trait VecU64TableAccess {
 impl VecU64TableAccess for super::RemoteTables {
     fn vec_u_64(&self) -> VecU64TableHandle<'_> {
         VecU64TableHandle {
-            imp: self.imp.get_table::<VecU64>("vec_u64"),
+            imp: self.imp.get_table::<VecU64>(85),
             ctx: std::marker::PhantomData,
         }
     }

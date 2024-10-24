@@ -53,19 +53,19 @@ pub trait update_pk_bool {
 
 impl update_pk_bool for super::RemoteReducers {
     fn update_pk_bool(&self, b: bool, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_pk_bool", UpdatePkBool { b, data })
+        self.imp.call_reducer(131, UpdatePkBool { b, data })
     }
     fn on_update_pk_bool(
         &self,
         mut callback: impl FnMut(&super::EventContext, &bool, &i32) + Send + 'static,
     ) -> UpdatePkBoolCallbackId {
         UpdatePkBoolCallbackId(self.imp.on_reducer::<UpdatePkBool>(
-            "update_pk_bool",
+            131,
             Box::new(move |ctx: &super::EventContext, args: &UpdatePkBool| callback(ctx, &args.b, &args.data)),
         ))
     }
     fn remove_on_update_pk_bool(&self, callback: UpdatePkBoolCallbackId) {
-        self.imp.remove_on_reducer::<UpdatePkBool>("update_pk_bool", callback.0)
+        self.imp.remove_on_reducer::<UpdatePkBool>(131, callback.0)
     }
 }
 
@@ -85,6 +85,6 @@ pub trait set_flags_for_update_pk_bool {
 
 impl set_flags_for_update_pk_bool for super::SetReducerFlags {
     fn update_pk_bool(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("update_pk_bool", flags);
+        self.imp.set_call_reducer_flags(131, flags);
     }
 }

@@ -52,19 +52,19 @@ pub trait insert_vec_u_8 {
 
 impl insert_vec_u_8 for super::RemoteReducers {
     fn insert_vec_u_8(&self, n: Vec<u8>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_u8", InsertVecU8 { n })
+        self.imp.call_reducer(127, InsertVecU8 { n })
     }
     fn on_insert_vec_u_8(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<u8>) + Send + 'static,
     ) -> InsertVecU8CallbackId {
         InsertVecU8CallbackId(self.imp.on_reducer::<InsertVecU8>(
-            "insert_vec_u8",
+            127,
             Box::new(move |ctx: &super::EventContext, args: &InsertVecU8| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_insert_vec_u_8(&self, callback: InsertVecU8CallbackId) {
-        self.imp.remove_on_reducer::<InsertVecU8>("insert_vec_u8", callback.0)
+        self.imp.remove_on_reducer::<InsertVecU8>(127, callback.0)
     }
 }
 
@@ -84,6 +84,6 @@ pub trait set_flags_for_insert_vec_u_8 {
 
 impl set_flags_for_insert_vec_u_8 for super::SetReducerFlags {
     fn insert_vec_u_8(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_vec_u8", flags);
+        self.imp.set_call_reducer_flags(127, flags);
     }
 }

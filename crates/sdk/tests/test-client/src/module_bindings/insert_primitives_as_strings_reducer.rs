@@ -54,21 +54,19 @@ pub trait insert_primitives_as_strings {
 
 impl insert_primitives_as_strings for super::RemoteReducers {
     fn insert_primitives_as_strings(&self, s: EveryPrimitiveStruct) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_primitives_as_strings", InsertPrimitivesAsStrings { s })
+        self.imp.call_reducer(87, InsertPrimitivesAsStrings { s })
     }
     fn on_insert_primitives_as_strings(
         &self,
         mut callback: impl FnMut(&super::EventContext, &EveryPrimitiveStruct) + Send + 'static,
     ) -> InsertPrimitivesAsStringsCallbackId {
         InsertPrimitivesAsStringsCallbackId(self.imp.on_reducer::<InsertPrimitivesAsStrings>(
-            "insert_primitives_as_strings",
+            87,
             Box::new(move |ctx: &super::EventContext, args: &InsertPrimitivesAsStrings| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_insert_primitives_as_strings(&self, callback: InsertPrimitivesAsStringsCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertPrimitivesAsStrings>("insert_primitives_as_strings", callback.0)
+        self.imp.remove_on_reducer::<InsertPrimitivesAsStrings>(87, callback.0)
     }
 }
 
@@ -88,6 +86,6 @@ pub trait set_flags_for_insert_primitives_as_strings {
 
 impl set_flags_for_insert_primitives_as_strings for super::SetReducerFlags {
     fn insert_primitives_as_strings(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_primitives_as_strings", flags);
+        self.imp.set_call_reducer_flags(87, flags);
     }
 }

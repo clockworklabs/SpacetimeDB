@@ -36,7 +36,7 @@ pub trait VecUnitStructTableAccess {
 impl VecUnitStructTableAccess for super::RemoteTables {
     fn vec_unit_struct(&self) -> VecUnitStructTableHandle<'_> {
         VecUnitStructTableHandle {
-            imp: self.imp.get_table::<VecUnitStruct>("vec_unit_struct"),
+            imp: self.imp.get_table::<VecUnitStruct>(87),
             ctx: std::marker::PhantomData,
         }
     }

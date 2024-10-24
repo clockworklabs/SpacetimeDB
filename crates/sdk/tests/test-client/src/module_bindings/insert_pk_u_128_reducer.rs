@@ -53,19 +53,19 @@ pub trait insert_pk_u_128 {
 
 impl insert_pk_u_128 for super::RemoteReducers {
     fn insert_pk_u_128(&self, n: u128, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_pk_u128", InsertPkU128 { n, data })
+        self.imp.call_reducer(81, InsertPkU128 { n, data })
     }
     fn on_insert_pk_u_128(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u128, &i32) + Send + 'static,
     ) -> InsertPkU128CallbackId {
         InsertPkU128CallbackId(self.imp.on_reducer::<InsertPkU128>(
-            "insert_pk_u128",
+            81,
             Box::new(move |ctx: &super::EventContext, args: &InsertPkU128| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_insert_pk_u_128(&self, callback: InsertPkU128CallbackId) {
-        self.imp.remove_on_reducer::<InsertPkU128>("insert_pk_u128", callback.0)
+        self.imp.remove_on_reducer::<InsertPkU128>(81, callback.0)
     }
 }
 
@@ -85,6 +85,6 @@ pub trait set_flags_for_insert_pk_u_128 {
 
 impl set_flags_for_insert_pk_u_128 for super::SetReducerFlags {
     fn insert_pk_u_128(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_pk_u128", flags);
+        self.imp.set_call_reducer_flags(81, flags);
     }
 }

@@ -35,7 +35,7 @@ pub trait PkU8TableAccess {
 impl PkU8TableAccess for super::RemoteTables {
     fn pk_u_8(&self) -> PkU8TableHandle<'_> {
         PkU8TableHandle {
-            imp: self.imp.get_table::<PkU8>("pk_u8"),
+            imp: self.imp.get_table::<PkU8>(46),
             ctx: std::marker::PhantomData,
         }
     }

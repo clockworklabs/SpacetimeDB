@@ -35,7 +35,7 @@ pub trait VecI16TableAccess {
 impl VecI16TableAccess for super::RemoteTables {
     fn vec_i_16(&self) -> VecI16TableHandle<'_> {
         VecI16TableHandle {
-            imp: self.imp.get_table::<VecI16>("vec_i16"),
+            imp: self.imp.get_table::<VecI16>(73),
             ctx: std::marker::PhantomData,
         }
     }

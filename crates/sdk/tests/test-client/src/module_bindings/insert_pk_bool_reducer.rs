@@ -53,19 +53,19 @@ pub trait insert_pk_bool {
 
 impl insert_pk_bool for super::RemoteReducers {
     fn insert_pk_bool(&self, b: bool, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_pk_bool", InsertPkBool { b, data })
+        self.imp.call_reducer(72, InsertPkBool { b, data })
     }
     fn on_insert_pk_bool(
         &self,
         mut callback: impl FnMut(&super::EventContext, &bool, &i32) + Send + 'static,
     ) -> InsertPkBoolCallbackId {
         InsertPkBoolCallbackId(self.imp.on_reducer::<InsertPkBool>(
-            "insert_pk_bool",
+            72,
             Box::new(move |ctx: &super::EventContext, args: &InsertPkBool| callback(ctx, &args.b, &args.data)),
         ))
     }
     fn remove_on_insert_pk_bool(&self, callback: InsertPkBoolCallbackId) {
-        self.imp.remove_on_reducer::<InsertPkBool>("insert_pk_bool", callback.0)
+        self.imp.remove_on_reducer::<InsertPkBool>(72, callback.0)
     }
 }
 
@@ -85,6 +85,6 @@ pub trait set_flags_for_insert_pk_bool {
 
 impl set_flags_for_insert_pk_bool for super::SetReducerFlags {
     fn insert_pk_bool(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_pk_bool", flags);
+        self.imp.set_call_reducer_flags(72, flags);
     }
 }

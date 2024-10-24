@@ -35,7 +35,7 @@ pub trait OneStringTableAccess {
 impl OneStringTableAccess for super::RemoteTables {
     fn one_string(&self) -> OneStringTableHandle<'_> {
         OneStringTableHandle {
-            imp: self.imp.get_table::<OneString>("one_string"),
+            imp: self.imp.get_table::<OneString>(17),
             ctx: std::marker::PhantomData,
         }
     }

@@ -35,7 +35,7 @@ pub trait OneI8TableAccess {
 impl OneI8TableAccess for super::RemoteTables {
     fn one_i_8(&self) -> OneI8TableHandle<'_> {
         OneI8TableHandle {
-            imp: self.imp.get_table::<OneI8>("one_i8"),
+            imp: self.imp.get_table::<OneI8>(14),
             ctx: std::marker::PhantomData,
         }
     }

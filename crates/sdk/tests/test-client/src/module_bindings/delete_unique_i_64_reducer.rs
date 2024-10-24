@@ -52,20 +52,19 @@ pub trait delete_unique_i_64 {
 
 impl delete_unique_i_64 for super::RemoteReducers {
     fn delete_unique_i_64(&self, n: i64) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_i64", DeleteUniqueI64 { n })
+        self.imp.call_reducer(22, DeleteUniqueI64 { n })
     }
     fn on_delete_unique_i_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i64) + Send + 'static,
     ) -> DeleteUniqueI64CallbackId {
         DeleteUniqueI64CallbackId(self.imp.on_reducer::<DeleteUniqueI64>(
-            "delete_unique_i64",
+            22,
             Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueI64| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_delete_unique_i_64(&self, callback: DeleteUniqueI64CallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueI64>("delete_unique_i64", callback.0)
+        self.imp.remove_on_reducer::<DeleteUniqueI64>(22, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_delete_unique_i_64 {
 
 impl set_flags_for_delete_unique_i_64 for super::SetReducerFlags {
     fn delete_unique_i_64(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_unique_i64", flags);
+        self.imp.set_call_reducer_flags(22, flags);
     }
 }

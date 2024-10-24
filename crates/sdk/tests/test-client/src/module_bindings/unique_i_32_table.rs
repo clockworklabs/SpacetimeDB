@@ -35,7 +35,7 @@ pub trait UniqueI32TableAccess {
 impl UniqueI32TableAccess for super::RemoteTables {
     fn unique_i_32(&self) -> UniqueI32TableHandle<'_> {
         UniqueI32TableHandle {
-            imp: self.imp.get_table::<UniqueI32>("unique_i32"),
+            imp: self.imp.get_table::<UniqueI32>(53),
             ctx: std::marker::PhantomData,
         }
     }

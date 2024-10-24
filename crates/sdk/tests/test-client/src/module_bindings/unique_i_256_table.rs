@@ -35,7 +35,7 @@ pub trait UniqueI256TableAccess {
 impl UniqueI256TableAccess for super::RemoteTables {
     fn unique_i_256(&self) -> UniqueI256TableHandle<'_> {
         UniqueI256TableHandle {
-            imp: self.imp.get_table::<UniqueI256>("unique_i256"),
+            imp: self.imp.get_table::<UniqueI256>(52),
             ctx: std::marker::PhantomData,
         }
     }

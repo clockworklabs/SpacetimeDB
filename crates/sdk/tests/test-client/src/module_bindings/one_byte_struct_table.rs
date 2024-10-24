@@ -36,7 +36,7 @@ pub trait OneByteStructTableAccess {
 impl OneByteStructTableAccess for super::RemoteTables {
     fn one_byte_struct(&self) -> OneByteStructTableHandle<'_> {
         OneByteStructTableHandle {
-            imp: self.imp.get_table::<OneByteStruct>("one_byte_struct"),
+            imp: self.imp.get_table::<OneByteStruct>(3),
             ctx: std::marker::PhantomData,
         }
     }

@@ -52,20 +52,19 @@ pub trait delete_pk_address {
 
 impl delete_pk_address for super::RemoteReducers {
     fn delete_pk_address(&self, a: __sdk::Address) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_address", DeletePkAddress { a })
+        self.imp.call_reducer(0, DeletePkAddress { a })
     }
     fn on_delete_pk_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Address) + Send + 'static,
     ) -> DeletePkAddressCallbackId {
         DeletePkAddressCallbackId(self.imp.on_reducer::<DeletePkAddress>(
-            "delete_pk_address",
+            0,
             Box::new(move |ctx: &super::EventContext, args: &DeletePkAddress| callback(ctx, &args.a)),
         ))
     }
     fn remove_on_delete_pk_address(&self, callback: DeletePkAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<DeletePkAddress>("delete_pk_address", callback.0)
+        self.imp.remove_on_reducer::<DeletePkAddress>(0, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_delete_pk_address {
 
 impl set_flags_for_delete_pk_address for super::SetReducerFlags {
     fn delete_pk_address(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_pk_address", flags);
+        self.imp.set_call_reducer_flags(0, flags);
     }
 }
