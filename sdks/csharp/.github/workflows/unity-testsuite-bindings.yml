@@ -1,4 +1,4 @@
-name: Unity Test Suite
+name: Check Unity Testsuite Bindings
 
 on:
   push:
