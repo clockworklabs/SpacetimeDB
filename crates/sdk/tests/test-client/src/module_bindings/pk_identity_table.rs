@@ -18,7 +18,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.pk_identity().on_insert(...)`.
 pub struct PkIdentityTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<PkIdentity>,
+    imp: __sdk::client_cache::TableHandle<PkIdentity>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -118,7 +118,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.pk_identity().i().find(...)`.
 pub struct PkIdentityIUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraint<PkIdentity, __sdk::Identity>,
+    imp: __sdk::client_cache::UniqueConstraintHandle<PkIdentity, __sdk::Identity>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

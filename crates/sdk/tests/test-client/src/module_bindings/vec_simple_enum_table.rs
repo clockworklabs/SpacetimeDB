@@ -19,7 +19,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.vec_simple_enum().on_insert(...)`.
 pub struct VecSimpleEnumTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<VecSimpleEnum>,
+    imp: __sdk::client_cache::TableHandle<VecSimpleEnum>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

@@ -18,7 +18,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.pk_bool().on_insert(...)`.
 pub struct PkBoolTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<PkBool>,
+    imp: __sdk::client_cache::TableHandle<PkBool>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -117,7 +117,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.pk_bool().b().find(...)`.
 pub struct PkBoolBUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraint<PkBool, bool>,
+    imp: __sdk::client_cache::UniqueConstraintHandle<PkBool, bool>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

@@ -18,7 +18,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.message().on_insert(...)`.
 pub struct MessageTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<Message>,
+    imp: __sdk::client_cache::TableHandle<Message>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
