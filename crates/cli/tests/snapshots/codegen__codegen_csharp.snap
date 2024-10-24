@@ -880,13 +880,14 @@ namespace SpacetimeDB
 
 	public sealed class RemoteReducers : RemoteBase<DbConnection>
 	{
-		internal RemoteReducers(DbConnection conn) : base(conn) {}
+		internal RemoteReducers(DbConnection conn, SetReducerFlags SetReducerFlags) : base(conn) { this.SetCallReducerFlags = SetReducerFlags; }
+		internal readonly SetReducerFlags SetCallReducerFlags;
 		public delegate void AddPlayerHandler(EventContext ctx, string name);
 		public event AddPlayerHandler? OnAddPlayer;
 
 		public void AddPlayer(string name)
 		{
-			conn.InternalCallReducer(new AddPlayer { Name = name });
+			conn.InternalCallReducer(new AddPlayer { Name = name }, this.SetCallReducerFlags.AddPlayerFlags);
 		}
 
 		public bool InvokeAddPlayer(EventContext ctx, AddPlayer args)
@@ -903,7 +904,7 @@ namespace SpacetimeDB
 
 		public void AddPrivate(string name)
 		{
-			conn.InternalCallReducer(new AddPrivate { Name = name });
+			conn.InternalCallReducer(new AddPrivate { Name = name }, this.SetCallReducerFlags.AddPrivateFlags);
 		}
 
 		public bool InvokeAddPrivate(EventContext ctx, AddPrivate args)
@@ -920,7 +921,7 @@ namespace SpacetimeDB
 
 		public void DeletePlayer(ulong id)
 		{
-			conn.InternalCallReducer(new DeletePlayer { Id = id });
+			conn.InternalCallReducer(new DeletePlayer { Id = id }, this.SetCallReducerFlags.DeletePlayerFlags);
 		}
 
 		public bool InvokeDeletePlayer(EventContext ctx, DeletePlayer args)
@@ -937,7 +938,7 @@ namespace SpacetimeDB
 
 		public void DeletePlayersByName(string name)
 		{
-			conn.InternalCallReducer(new DeletePlayersByName { Name = name });
+			conn.InternalCallReducer(new DeletePlayersByName { Name = name }, this.SetCallReducerFlags.DeletePlayersByNameFlags);
 		}
 
 		public bool InvokeDeletePlayersByName(EventContext ctx, DeletePlayersByName args)
@@ -954,7 +955,7 @@ namespace SpacetimeDB
 
 		public void QueryPrivate()
 		{
-			conn.InternalCallReducer(new QueryPrivate {  });
+			conn.InternalCallReducer(new QueryPrivate {  }, this.SetCallReducerFlags.QueryPrivateFlags);
 		}
 
 		public bool InvokeQueryPrivate(EventContext ctx, QueryPrivate args)
@@ -970,7 +971,7 @@ namespace SpacetimeDB
 
 		public void RepeatingTest(SpacetimeDB.RepeatingTestArg arg)
 		{
-			conn.InternalCallReducer(new RepeatingTest { Arg = arg });
+			conn.InternalCallReducer(new RepeatingTest { Arg = arg }, this.SetCallReducerFlags.RepeatingTestFlags);
 		}
 
 		public bool InvokeRepeatingTest(EventContext ctx, RepeatingTest args)
@@ -987,7 +988,7 @@ namespace SpacetimeDB
 
 		public void Test(SpacetimeDB.TestA arg, SpacetimeDB.TestB arg2, SpacetimeDB.Namespace.Types.TestC arg3, SpacetimeDB.Namespace.TestF arg4)
 		{
-			conn.InternalCallReducer(new Test { Arg = arg, Arg2 = arg2, Arg3 = arg3, Arg4 = arg4 });
+			conn.InternalCallReducer(new Test { Arg = arg, Arg2 = arg2, Arg3 = arg3, Arg4 = arg4 }, this.SetCallReducerFlags.TestFlags);
 		}
 
 		public bool InvokeTest(EventContext ctx, Test args)
@@ -1007,7 +1008,7 @@ namespace SpacetimeDB
 
 		public void TestBtreeIndexArgs()
 		{
-			conn.InternalCallReducer(new TestBtreeIndexArgs {  });
+			conn.InternalCallReducer(new TestBtreeIndexArgs {  }, this.SetCallReducerFlags.TestBtreeIndexArgsFlags);
 		}
 
 		public bool InvokeTestBtreeIndexArgs(EventContext ctx, TestBtreeIndexArgs args)
@@ -1020,14 +1021,37 @@ namespace SpacetimeDB
 		}
 	}
 
+	public sealed class SetReducerFlags
+	{
+		internal SetReducerFlags() { }
+		internal CallReducerFlags AddPlayerFlags;
+		public void AddPlayer(CallReducerFlags flags) { this.AddPlayerFlags = flags; }
+		internal CallReducerFlags AddPrivateFlags;
+		public void AddPrivate(CallReducerFlags flags) { this.AddPrivateFlags = flags; }
+		internal CallReducerFlags DeletePlayerFlags;
+		public void DeletePlayer(CallReducerFlags flags) { this.DeletePlayerFlags = flags; }
+		internal CallReducerFlags DeletePlayersByNameFlags;
+		public void DeletePlayersByName(CallReducerFlags flags) { this.DeletePlayersByNameFlags = flags; }
+		internal CallReducerFlags QueryPrivateFlags;
+		public void QueryPrivate(CallReducerFlags flags) { this.QueryPrivateFlags = flags; }
+		internal CallReducerFlags RepeatingTestFlags;
+		public void RepeatingTest(CallReducerFlags flags) { this.RepeatingTestFlags = flags; }
+		internal CallReducerFlags TestFlags;
+		public void Test(CallReducerFlags flags) { this.TestFlags = flags; }
+		internal CallReducerFlags TestBtreeIndexArgsFlags;
+		public void TestBtreeIndexArgs(CallReducerFlags flags) { this.TestBtreeIndexArgsFlags = flags; }
+	}
+
 	public partial record EventContext : DbContext<RemoteTables>, IEventContext
 	{
 		public readonly RemoteReducers Reducers;
+		public readonly SetReducerFlags SetReducerFlags;
 		public readonly Event<Reducer> Event;
 
 		internal EventContext(DbConnection conn, Event<Reducer> reducerEvent) : base(conn.Db)
 		{
 			Reducers = conn.Reducers;
+			SetReducerFlags = conn.SetReducerFlags;
 			Event = reducerEvent;
 		}
 	}
@@ -1050,10 +1074,12 @@ namespace SpacetimeDB
 	{
 		public readonly RemoteTables Db = new();
 		public readonly RemoteReducers Reducers;
+		public readonly SetReducerFlags SetReducerFlags;
 
 		public DbConnection()
 		{
-			Reducers = new(this);
+			SetReducerFlags = new();
+			Reducers = new(this, this.SetReducerFlags);
 
 			clientDB.AddTable<HasSpecialStuff>("has_special_stuff", Db.HasSpecialStuff);
 			clientDB.AddTable<PkMultiIdentity>("pk_multi_identity", Db.PkMultiIdentity);

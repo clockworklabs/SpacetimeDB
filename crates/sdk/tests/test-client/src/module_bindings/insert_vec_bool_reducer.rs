@@ -68,3 +68,23 @@ impl insert_vec_bool for super::RemoteReducers {
             .remove_on_reducer::<InsertVecBool>("insert_vec_bool", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_vec_bool`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_vec_bool {
+    /// Set the call-reducer flags for the reducer `insert_vec_bool` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_vec_bool(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_vec_bool for super::SetReducerFlags {
+    fn insert_vec_bool(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_vec_bool", flags);
+    }
+}
