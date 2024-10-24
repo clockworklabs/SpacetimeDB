@@ -44,7 +44,7 @@ async fn call_reducer(module: &ModuleHandle, reducer: &str, args: &str, request_
         r#"{{
         "CallReducer": {{
             "reducer_id": {reducer_id},
-            "args": {args},
+            "args": "{args}",
             "request_id": {request_id},
             "flags": 0
         }}
@@ -65,8 +65,8 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
         |module| async move {
             call_reducer(&module, "add", r#"[\"Tyrion\", 24]"#, 0).await;
             call_reducer(&module, "add", r#"[\"Cersei\", 31]"#, 1).await;
-            call_reducer(&module, "say_hello", r#"[]"#, 2).await;
-            call_reducer(&module, "list_over_age", r#"[30]"#, 3).await;
+            call_reducer(&module, "say_hello", "[]", 2).await;
+            call_reducer(&module, "list_over_age", "[30]", 3).await;
             assert_eq!(
                 read_logs(&module).await,
                 [
@@ -254,7 +254,7 @@ fn test_index_scans() {
 }
 
 async fn bench_call<'a>(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
-    let args = format!(r#"[{count}]"#);
+    let args = format!("[{count}]");
     let now = Instant::now();
     call_reducer(module, call, &args, 0).await;
     now.elapsed()
