@@ -5,7 +5,6 @@ use crate::messages::control_db::Database;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use std::io;
 use std::ops::Deref;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 pub type Result<T> = anyhow::Result<T>;
@@ -21,13 +20,6 @@ pub struct ReplicaContext {
 }
 
 impl ReplicaContext {
-    pub fn scheduler_db_path(&self, root_db_path: PathBuf) -> PathBuf {
-        let mut scheduler_db_path = root_db_path;
-        scheduler_db_path.extend([&*self.database_identity.to_hex(), &*self.replica_id.to_string()]);
-        scheduler_db_path.push("scheduler");
-        scheduler_db_path
-    }
-
     /// The number of bytes on disk occupied by the database's durability layer.
     ///
     /// An in-memory database will return `Ok(0)`.

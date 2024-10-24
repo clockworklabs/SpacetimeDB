@@ -1,13 +1,12 @@
 use std::borrow::Cow;
 
 use anyhow::Context;
-use once_cell::sync::Lazy;
+use spacetimedb_paths::server::{ServerDataDir, WasmtimeCacheDir};
 use wasmtime::{Engine, Linker, Module, StoreContext, StoreContextMut};
 
 use crate::energy::{EnergyQuanta, ReducerBudget};
 use crate::error::NodesError;
 use crate::module_host_context::ModuleCreationContext;
-use crate::stdb_path;
 
 mod wasm_instance_env;
 mod wasmtime_module;
@@ -19,56 +18,66 @@ use self::wasm_instance_env::WasmInstanceEnv;
 use super::wasm_common::module_host_actor::InitializationError;
 use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
 
-static ENGINE: Lazy<Engine> = Lazy::new(|| {
-    let mut config = wasmtime::Config::new();
-    config
-        .cranelift_opt_level(wasmtime::OptLevel::Speed)
-        .consume_fuel(true)
-        .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
-
-    let cache_config = toml::toml! {
-        // see <https://docs.wasmtime.dev/cli-cache.html> for options here
-        [cache]
-        enabled = true
-        directory = (toml::Value::try_from(stdb_path("worker_node/wasmtime_cache")).unwrap())
-    };
-    // ignore errors for this - if we're not able to set up caching, that's fine, it's just an optimization
-    let _ = set_cache_config(&mut config, cache_config);
-
-    Engine::new(&config).unwrap()
-});
-
-fn set_cache_config(config: &mut wasmtime::Config, cache_config: toml::value::Table) -> anyhow::Result<()> {
-    use std::io::Write;
-    let tmpfile = tempfile::NamedTempFile::new()?;
-    write!(&tmpfile, "{cache_config}")?;
-    config.cache_config_load(tmpfile.path())?;
-    Ok(())
+pub struct WasmtimeRuntime {
+    engine: Engine,
+    linker: Box<Linker<WasmInstanceEnv>>,
 }
 
-static LINKER: Lazy<Linker<WasmInstanceEnv>> = Lazy::new(|| {
-    let mut linker = Linker::new(&ENGINE);
-    WasmtimeModule::link_imports(&mut linker).unwrap();
-    linker
-});
+impl WasmtimeRuntime {
+    pub fn new(data_dir: &ServerDataDir) -> Self {
+        let mut config = wasmtime::Config::new();
+        config
+            .cranelift_opt_level(wasmtime::OptLevel::Speed)
+            .consume_fuel(true)
+            .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
 
-pub fn make_actor(mcc: ModuleCreationContext) -> Result<impl super::module_host::Module, ModuleCreationError> {
-    let module = Module::new(&ENGINE, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
+        // ignore errors for this - if we're not able to set up caching, that's fine, it's just an optimization
+        let _ = Self::set_cache_config(&mut config, data_dir.wasmtime_cache());
 
-    let func_imports = module
-        .imports()
-        .filter(|imp| matches!(imp.ty(), wasmtime::ExternType::Func(_)));
-    let abi = abi::determine_spacetime_abi(func_imports, |imp| imp.module())?;
+        let engine = Engine::new(&config).unwrap();
 
-    abi::verify_supported(WasmtimeModule::IMPLEMENTED_ABI, abi)?;
+        let mut linker = Box::new(Linker::new(&engine));
+        WasmtimeModule::link_imports(&mut linker).unwrap();
 
-    let module = LINKER
-        .instantiate_pre(&module)
-        .map_err(InitializationError::Instantiation)?;
+        WasmtimeRuntime { engine, linker }
+    }
 
-    let module = WasmtimeModule::new(module);
+    fn set_cache_config(config: &mut wasmtime::Config, cache_dir: WasmtimeCacheDir) -> anyhow::Result<()> {
+        use std::io::Write;
+        let cache_config = toml::toml! {
+            // see <https://docs.wasmtime.dev/cli-cache.html> for options here
+            [cache]
+            enabled = true
+            directory = (toml::Value::try_from(cache_dir.0)?)
+        };
+        let tmpfile = tempfile::NamedTempFile::new()?;
+        write!(&tmpfile, "{}", cache_config)?;
+        config.cache_config_load(tmpfile.path())?;
+        Ok(())
+    }
 
-    WasmModuleHostActor::new(mcc, module).map_err(Into::into)
+    pub fn make_actor(
+        &self,
+        mcc: ModuleCreationContext,
+    ) -> Result<impl super::module_host::Module, ModuleCreationError> {
+        let module = Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
+
+        let func_imports = module
+            .imports()
+            .filter(|imp| matches!(imp.ty(), wasmtime::ExternType::Func(_)));
+        let abi = abi::determine_spacetime_abi(func_imports, |imp| imp.module())?;
+
+        abi::verify_supported(WasmtimeModule::IMPLEMENTED_ABI, abi)?;
+
+        let module = self
+            .linker
+            .instantiate_pre(&module)
+            .map_err(InitializationError::Instantiation)?;
+
+        let module = WasmtimeModule::new(module);
+
+        WasmModuleHostActor::new(mcc, module).map_err(Into::into)
+    }
 }
 
 #[derive(Debug, derive_more::From)]
