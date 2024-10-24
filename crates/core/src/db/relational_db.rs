@@ -1557,7 +1557,6 @@ mod tests {
     use spacetimedb_lib::db::raw_def::v9::RawTableDefBuilder;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
-    use spacetimedb_sats::bsatn;
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
     use spacetimedb_schema::schema::RowLevelSecuritySchema;
@@ -2450,26 +2449,25 @@ mod tests {
 
         // Also assert that we got what we put in.
         for (i, input) in inputs.inputs.into_iter().enumerate() {
-            let reducer_name = input.reducer_name.as_str();
+            let ReducerContext {
+                name: reducer_name,
+                caller_identity,
+                caller_address,
+                timestamp: reducer_timestamp,
+                arg_bsatn,
+            } = ReducerContext::try_from(&input).unwrap();
             if i == 0 {
                 assert_eq!(reducer_name, "__identity_connected__");
             } else {
                 assert_eq!(reducer_name, "abstract_concrete_proxy_factory_impl");
             }
-            let mut args = input.reducer_args.as_ref();
-            let identity: Identity =
-                bsatn::from_reader(&mut args).expect("failed to decode caller identity from reducer args");
-            let address: Address =
-                bsatn::from_reader(&mut args).expect("failed to decode caller address from reducer args");
-            let timestamp1: Timestamp =
-                bsatn::from_reader(&mut args).expect("failed to decode timestamp from reducer args");
             assert!(
-                args.is_empty(),
+                arg_bsatn.is_empty(),
                 "expected args to be exhausted because nullary args were given"
             );
-            assert_eq!(identity, Identity::ZERO);
-            assert_eq!(address, Address::ZERO);
-            assert_eq!(timestamp1, timestamp);
+            assert_eq!(caller_identity, Identity::ZERO);
+            assert_eq!(caller_address, Address::ZERO);
+            assert_eq!(reducer_timestamp, timestamp);
         }
     }
 }
