@@ -18,7 +18,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.vec_u_256().on_insert(...)`.
 pub struct VecU256TableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<VecU256>,
+    imp: __sdk::client_cache::TableHandle<VecU256>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

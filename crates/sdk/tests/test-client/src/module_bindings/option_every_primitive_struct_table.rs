@@ -19,7 +19,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.option_every_primitive_struct().on_insert(...)`.
 pub struct OptionEveryPrimitiveStructTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<OptionEveryPrimitiveStruct>,
+    imp: __sdk::client_cache::TableHandle<OptionEveryPrimitiveStruct>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

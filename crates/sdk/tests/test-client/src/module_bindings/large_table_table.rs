@@ -24,7 +24,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.large_table().on_insert(...)`.
 pub struct LargeTableTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<LargeTable>,
+    imp: __sdk::client_cache::TableHandle<LargeTable>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

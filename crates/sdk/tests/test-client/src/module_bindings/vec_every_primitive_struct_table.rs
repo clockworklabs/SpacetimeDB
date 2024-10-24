@@ -19,7 +19,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.vec_every_primitive_struct().on_insert(...)`.
 pub struct VecEveryPrimitiveStructTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<VecEveryPrimitiveStruct>,
+    imp: __sdk::client_cache::TableHandle<VecEveryPrimitiveStruct>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

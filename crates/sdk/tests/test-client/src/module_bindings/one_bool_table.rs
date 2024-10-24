@@ -18,7 +18,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.one_bool().on_insert(...)`.
 pub struct OneBoolTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<OneBool>,
+    imp: __sdk::client_cache::TableHandle<OneBool>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

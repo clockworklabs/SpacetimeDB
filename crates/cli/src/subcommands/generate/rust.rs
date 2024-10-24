@@ -145,7 +145,7 @@ Requested namespace: {namespace}",
 /// but to directly chain method calls,
 /// like `ctx.db.{accessor_method}().on_insert(...)`.
 pub struct {table_handle}<'ctx> {{
-    imp: __sdk::db_connection::TableHandle<{row_type}>,
+    imp: __sdk::client_cache::TableHandle<{row_type}>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }}
 
@@ -282,7 +282,7 @@ pub(super) fn parse_table_update(
         /// but to directly chain method calls,
         /// like `ctx.db.{accessor_method}().{unique_field_name}().find(...)`.
         pub struct {unique_constraint}<'ctx> {{
-            imp: __sdk::client_cache::UniqueConstraint<{row_type}, {unique_field_type}>,
+            imp: __sdk::client_cache::UniqueConstraintHandle<{row_type}, {unique_field_type}>,
             phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }}
 

@@ -19,7 +19,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.one_enum_with_payload().on_insert(...)`.
 pub struct OneEnumWithPayloadTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<OneEnumWithPayload>,
+    imp: __sdk::client_cache::TableHandle<OneEnumWithPayload>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

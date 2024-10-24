@@ -18,7 +18,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.unique_address().on_insert(...)`.
 pub struct UniqueAddressTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<UniqueAddress>,
+    imp: __sdk::client_cache::TableHandle<UniqueAddress>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -98,7 +98,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.unique_address().a().find(...)`.
 pub struct UniqueAddressAUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraint<UniqueAddress, __sdk::Address>,
+    imp: __sdk::client_cache::UniqueConstraintHandle<UniqueAddress, __sdk::Address>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 

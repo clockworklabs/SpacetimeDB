@@ -18,7 +18,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.one_identity().on_insert(...)`.
 pub struct OneIdentityTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<OneIdentity>,
+    imp: __sdk::client_cache::TableHandle<OneIdentity>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
