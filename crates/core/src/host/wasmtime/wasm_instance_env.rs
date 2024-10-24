@@ -1,10 +1,8 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::ops::DerefMut;
 use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
-use crate::execution_context::ExecutionContext;
 use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{
@@ -178,11 +176,6 @@ impl WasmInstanceEnv {
 
         self.call_reducer_args = None;
         (timings, self.take_standard_bytes_sink())
-    }
-
-    /// Returns an execution context for a reducer call.
-    fn reducer_context(&self) -> Result<impl DerefMut<Target = ExecutionContext> + '_, WasmError> {
-        self.instance_env().get_ctx().map_err(|err| WasmError::Db(err.into()))
     }
 
     fn with_span<R>(mut caller: Caller<'_, Self>, func: AbiCall, run: impl FnOnce(&mut Caller<'_, Self>) -> R) -> R {
@@ -405,12 +398,8 @@ impl WasmInstanceEnv {
     ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::DatastoreTableScanBsatn, out, |caller| {
             let env = caller.data_mut();
-            // Retrieve the execution context for the current reducer.
-            // TODO: Why is necessary to drop the context here?
-            let ctx = env.reducer_context()?;
             // Collect the iterator chunks.
             let chunks = env.instance_env.datastore_table_scan_bsatn_chunks(table_id.into())?;
-            drop(ctx);
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
             Ok(env.iters.insert(chunks.into_iter()))
