@@ -69,3 +69,23 @@ impl update_unique_i_16 for super::RemoteReducers {
             .remove_on_reducer::<UpdateUniqueI16>("update_unique_i16", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `update_unique_i16`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_update_unique_i_16 {
+    /// Set the call-reducer flags for the reducer `update_unique_i16` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn update_unique_i_16(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_update_unique_i_16 for super::SetReducerFlags {
+    fn update_unique_i_16(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("update_unique_i16", flags);
+    }
+}
