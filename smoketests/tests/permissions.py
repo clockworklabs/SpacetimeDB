@@ -9,24 +9,18 @@ class Permissions(Smoketest):
     def test_call(self):
         """Ensure that anyone has the permission to call any standard reducer"""
 
-        identity = self.new_identity()
-        token = self.token(identity)
+        self.new_identity()
 
         self.publish_module()
 
-        # TODO: can a lot of the usage of reset_config be replaced with just passing -i ? or -a ?
-        self.reset_config()
-        self.new_identity()
-        self.call("say_hello")
+        self.call("say_hello", anon=True)
 
-        self.reset_config()
-        self.import_identity(identity, token, default=True)
         self.assertEqual("\n".join(self.logs(10000)).count("World"), 1)
 
     def test_delete(self):
         """Ensure that you cannot delete a database that you do not own"""
 
-        identity = self.new_identity(default=True)
+        self.new_identity()
 
         self.publish_module()
 
@@ -55,14 +49,14 @@ class Permissions(Smoketest):
         self.call("say_hello")
 
         self.reset_config()
-        identity = self.new_identity(default=True)
+        self.new_identity()
         with self.assertRaises(Exception):
             self.spacetime("logs", self.database_identity, "-n", "10000")
 
     def test_publish(self):
         """This test checks to make sure that you cannot publish to an address that you do not own."""
 
-        self.new_identity(default=True)
+        self.new_identity()
         self.publish_module()
 
         self.reset_config()
