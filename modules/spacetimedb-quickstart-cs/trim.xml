@@ -1,0 +1,13 @@
+<linker>
+  <assembly fullname="StdbModule">
+    <type fullname="ModuleRegistration">
+      <method name="Preinit" />
+    </type>
+  </assembly>
+  <assembly fullname="SpacetimeDB.Runtime">
+    <type fullname="SpacetimeDB.Internal.Module">
+      <method name="DescribeModule" />
+	  <method name="CallReducer" />
+    </type>
+  </assembly>
+</linker>
