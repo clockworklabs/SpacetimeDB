@@ -10,7 +10,7 @@ use spacetimedb::auth::identity::encode_token_with_expiry;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::Identity;
 
-use crate::auth::{SpacetimeAuth, SpacetimeAuthRequired};
+use crate::auth::{SpacetimeAuth, SpacetimeAuthRequired, TokenClaims};
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,7 +101,9 @@ pub async fn create_websocket_token<S: NodeDelegate>(
     SpacetimeAuthRequired(auth): SpacetimeAuthRequired,
 ) -> axum::response::Result<impl IntoResponse> {
     let expiry = Duration::from_secs(60);
-    let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(expiry)).map_err(log_and_500)?;
+    let claims: TokenClaims = TokenClaims::from(auth);
+    let token = claims.encode_and_sign_with_expiry(ctx.private_key(), Some(expiry)).map_err(log_and_500)?;
+    // let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(expiry)).map_err(log_and_500)?;
     Ok(axum::Json(WebsocketTokenResponse { token }))
 }
 

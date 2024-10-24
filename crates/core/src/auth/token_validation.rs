@@ -60,6 +60,7 @@ impl TokenValidator for UnimplementedTokenValidator {
     }
 }
 
+/* 
 pub struct FullTokenValidator {
     pub public_key: DecodingKey,
     pub caching_validator: CachingOidcTokenValidator,
@@ -70,7 +71,7 @@ impl TokenValidator for FullTokenValidator {
     async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
         let issuer = get_raw_issuer(token)?;
         if issuer == "localhost" {
-            let claims = LocalTokenValidator {
+            let claims = BasicTokenValidator {
                 public_key: self.public_key.clone(),
                 issuer,
             }
@@ -81,23 +82,33 @@ impl TokenValidator for FullTokenValidator {
         self.caching_validator.validate_token(token).await
     }
 }
+    */
 
 pub async fn validate_token(
     local_key: DecodingKey,
     local_issuer: &str,
     token: &str,
 ) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
-    let issuer = get_raw_issuer(token)?;
-    if issuer == local_issuer {
-        let claims = LocalTokenValidator {
-            public_key: local_key,
-            issuer,
+        let local_key_error = {
+
+            let first_validator = BasicTokenValidator {
+                public_key: local_key.clone(),
+                issuer: None,
+            };
+            match first_validator.validate_token(token).await {
+                Ok(claims) => return Ok(claims),
+                Err(e) => e,
+            }
+        };
+
+        // If that fails, we try the OIDC validator.
+        let issuer = get_raw_issuer(token)?;
+        // If we are the issuer, then we should have already validated the token.
+        // TODO: "localhost" should not be hard-coded.
+        if issuer == local_issuer {
+            return Err(local_key_error);
         }
-        .validate_token(token)
-        .await?;
-        return Ok(claims);
-    }
-    GLOBAL_OIDC_VALIDATOR.clone().validate_token(token).await
+        GLOBAL_OIDC_VALIDATOR.clone().validate_token(token).await
 }
 
 pub struct InitialTestingTokenValidator {
@@ -107,15 +118,25 @@ pub struct InitialTestingTokenValidator {
 #[async_trait]
 impl TokenValidator for InitialTestingTokenValidator {
     async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
-        let issuer = get_raw_issuer(token)?;
-        if issuer == "localhost" {
-            let claims = LocalTokenValidator {
+        // Initially, we check if we signed the key.
+        let local_key_error = {
+
+            let first_validator = BasicTokenValidator {
                 public_key: self.public_key.clone(),
-                issuer,
+                issuer: None,
+            };
+            match first_validator.validate_token(token).await {
+                Ok(claims) => return Ok(claims),
+                Err(e) => e,
             }
-            .validate_token(token)
-            .await?;
-            return Ok(claims);
+        };
+
+        // If that fails, we try the OIDC validator.
+        let issuer = get_raw_issuer(token)?;
+        // If we are the issuer, then we should have already validated the token.
+        // TODO: "localhost" should not be hard-coded.
+        if issuer == "localhost" {
+            return Err(local_key_error);
         }
         let validator = OidcTokenValidator;
         validator.validate_token(token).await
@@ -123,9 +144,11 @@ impl TokenValidator for InitialTestingTokenValidator {
 }
 
 // This verifies against a given public key and expected issuer.
-struct LocalTokenValidator {
+// The issuer should only be None if we are checking with a local key.
+// We do that because we signed short-lived keys with different issuers.
+struct BasicTokenValidator {
     pub public_key: DecodingKey,
-    pub issuer: String,
+    pub issuer: Option<String>,
 }
 
 lazy_static! {
@@ -139,7 +162,7 @@ lazy_static! {
 }
 
 #[async_trait]
-impl TokenValidator for LocalTokenValidator {
+impl TokenValidator for BasicTokenValidator {
     async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
         // TODO: Make this stored in the struct so we don't need to keep creating it.
         let mut validation = Validation::new(jsonwebtoken::Algorithm::ES256);
@@ -149,20 +172,26 @@ impl TokenValidator for LocalTokenValidator {
             jsonwebtoken::Algorithm::HS256,
         ];
         validation.set_required_spec_claims(&REQUIRED_CLAIMS);
-        validation.set_issuer(&[self.issuer.clone()]);
+
+        if let Some(expected_issuer) = &self.issuer {
+            validation.set_issuer(&[expected_issuer.clone()]);
+        }
 
         // TODO: We should require a specific audience at some point.
         validation.validate_aud = false;
 
         let data = decode::<IncomingClaims>(token, &self.public_key, &validation)?;
         let claims = data.claims;
-        if claims.issuer != self.issuer {
-            return Err(TokenValidationError::Other(anyhow::anyhow!(
-                "Issuer mismatch: got {:?}, expected {:?}",
-                claims.issuer,
-                self.issuer
-            )));
-        }
+        if let Some(expected_issuer) = &self.issuer {
+            if claims.issuer != *expected_issuer {
+                return Err(TokenValidationError::Other(anyhow::anyhow!(
+                    "Issuer mismatch: got {:?}, expected {:?}",
+                    claims.issuer,
+                    expected_issuer
+                )));
+            }
+
+        } 
         claims.try_into()
     }
 }
@@ -268,9 +297,9 @@ impl TokenValidator for JwksValidator {
                 .keys
                 .get(&kid)
                 .ok_or_else(|| TokenValidationError::KeyIDNotFound)?;
-            let validator = LocalTokenValidator {
+            let validator = BasicTokenValidator {
                 public_key: key.decoding_key.clone(),
-                issuer: self.issuer.clone(),
+                issuer: Some(self.issuer.clone()),
             };
             return validator.validate_token(token).await;
         }
@@ -280,9 +309,9 @@ impl TokenValidator for JwksValidator {
         let mut last_error = TokenValidationError::Other(anyhow::anyhow!("No kid found"));
         for (kid, key) in &self.keyset.keys {
             log::debug!("Trying key {}", kid);
-            let validator = LocalTokenValidator {
+            let validator = BasicTokenValidator {
                 public_key: key.decoding_key.clone(),
-                issuer: self.issuer.clone(),
+                issuer: Some(self.issuer.clone()),
             };
             match validator.validate_token(token).await {
                 Ok(claims) => return Ok(claims),
@@ -305,7 +334,7 @@ mod tests {
 
     use crate::auth::identity::{IncomingClaims, SpacetimeIdentityClaims2};
     use crate::auth::token_validation::{
-        CachingOidcTokenValidator, LocalTokenValidator, OidcTokenValidator, TokenValidator,
+        CachingOidcTokenValidator, BasicTokenValidator, OidcTokenValidator, TokenValidator,
     };
     use jsonwebkey as jwk;
     use jsonwebtoken::{DecodingKey, EncodingKey};
@@ -379,9 +408,9 @@ mod tests {
 
         {
             // Test that we can validate it.
-            let validator = LocalTokenValidator {
+            let validator = BasicTokenValidator {
                 public_key: kp.public_key.clone(),
-                issuer: issuer.to_string(),
+                issuer: Some(issuer.to_string()),
             };
 
             let parsed_claims: SpacetimeIdentityClaims2 = validator.validate_token(&token).await?;
@@ -391,9 +420,9 @@ mod tests {
         }
         {
             // Now try with the wrong expected issuer.
-            let validator = LocalTokenValidator {
+            let validator = BasicTokenValidator {
                 public_key: kp.public_key.clone(),
-                issuer: "otherissuer".to_string(),
+                issuer: Some("otherissuer".to_string()),
             };
 
             assert!(validator.validate_token(&token).await.is_err());
@@ -422,9 +451,9 @@ mod tests {
 
         {
             // Test that we can validate it.
-            let validator = LocalTokenValidator {
+            let validator = BasicTokenValidator {
                 public_key: kp.public_key.clone(),
-                issuer: issuer.to_string(),
+                issuer: Some(issuer.to_string()),
             };
 
             let parsed_claims: SpacetimeIdentityClaims2 = validator.validate_token(&token).await?;
@@ -436,9 +465,9 @@ mod tests {
             // We generate a new keypair and try to decode with that key.
             let other_kp = KeyPair::generate_p256()?;
             // Now try with the wrong expected issuer.
-            let validator = LocalTokenValidator {
+            let validator = BasicTokenValidator {
                 public_key: other_kp.public_key.clone(),
-                issuer: "otherissuer".to_string(),
+                issuer: Some("otherissuer".to_string()),
             };
 
             assert!(validator.validate_token(&token).await.is_err());
