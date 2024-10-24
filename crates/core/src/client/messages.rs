@@ -10,7 +10,7 @@ use spacetimedb_client_api_messages::websocket::{
 };
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
-use spacetimedb_lib::Address;
+use spacetimedb_lib::{Address, TimeDuration};
 use spacetimedb_sats::bsatn;
 use spacetimedb_vm::relation::MemTable;
 use std::sync::Arc;
@@ -156,7 +156,7 @@ impl ToProtocol for TransactionUpdateMessage {
                     request_id: request_id.unwrap_or(0),
                 },
                 energy_quanta_used: event.energy_quanta_used,
-                host_execution_duration_micros: event.host_execution_duration.as_micros() as u64,
+                total_host_execution_duration: event.host_execution_duration.into(),
                 caller_address: event.caller_address.unwrap_or(Address::ZERO),
             };
 
@@ -209,7 +209,7 @@ impl ToProtocol for SubscriptionUpdateMessage {
     type Encoded = SwitchedServerMessage;
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
         let request_id = self.request_id.unwrap_or(0);
-        let total_host_execution_duration_micros = self.timer.map_or(0, |t| t.elapsed().as_micros() as u64);
+        let total_host_execution_duration = self.timer.map_or(TimeDuration::ZERO, |t| t.elapsed().into());
 
         protocol.assert_matches_format_switch(&self.database_update);
         match self.database_update {
@@ -217,14 +217,14 @@ impl ToProtocol for SubscriptionUpdateMessage {
                 FormatSwitch::Bsatn(ws::ServerMessage::InitialSubscription(ws::InitialSubscription {
                     database_update,
                     request_id,
-                    total_host_execution_duration_micros,
+                    total_host_execution_duration,
                 }))
             }
             FormatSwitch::Json(database_update) => {
                 FormatSwitch::Json(ws::ServerMessage::InitialSubscription(ws::InitialSubscription {
                     database_update,
                     request_id,
-                    total_host_execution_duration_micros,
+                    total_host_execution_duration,
                 }))
             }
         }
@@ -236,7 +236,7 @@ pub struct OneOffQueryResponseMessage {
     pub message_id: Vec<u8>,
     pub error: Option<String>,
     pub results: Vec<MemTable>,
-    pub total_host_execution_duration: u64,
+    pub total_host_execution_duration: TimeDuration,
 }
 
 impl OneOffQueryResponseMessage {
@@ -261,7 +261,7 @@ impl ToProtocol for OneOffQueryResponseMessage {
                 message_id: msg.message_id.into(),
                 error: msg.error.map(Into::into),
                 tables,
-                total_host_execution_duration_micros: msg.total_host_execution_duration,
+                total_host_execution_duration: msg.total_host_execution_duration,
             })
         }
 

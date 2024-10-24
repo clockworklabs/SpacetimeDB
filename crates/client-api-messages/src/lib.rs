@@ -2,5 +2,4 @@
 
 pub mod energy;
 pub mod name;
-pub mod timestamp;
 pub mod websocket;

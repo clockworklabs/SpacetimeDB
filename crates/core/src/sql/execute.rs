@@ -14,9 +14,9 @@ use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteC
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{DbProgram, TxMode};
 use itertools::Either;
-use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::FieldName;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{ProductType, ProductValue};
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};

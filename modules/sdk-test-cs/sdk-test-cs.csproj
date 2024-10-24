@@ -10,6 +10,8 @@
     <WasmBuildNative>true</WasmBuildNative>
     <WasmNativeDebugSymbols>true</WasmNativeDebugSymbols>
     <WasmNativeStrip>false</WasmNativeStrip>
+    <!-- You can enable the following to debug generated code -->
+    <!-- <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles> -->
   </PropertyGroup>
 
   <!--

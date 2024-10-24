@@ -191,6 +191,7 @@ fn generate_bindings(language: &str, wasm_file: &str, client_project: &str, gene
             wasm_file,
             "--out-dir",
             generate_dir,
+            "-y", // tests can hang on type definition changes if you don't have this
         ]);
     })
 }

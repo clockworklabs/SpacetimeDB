@@ -1,7 +1,6 @@
 namespace SpacetimeDB;
 
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
@@ -13,6 +12,12 @@ internal static class Util
     public static string ToHex<T>(T val)
         where T : struct =>
         BitConverter.ToString(MemoryMarshal.AsBytes([val]).ToArray()).Replace("-", "");
+
+    // Similarly, we need some constants that are not available in .NET Standard.
+    public const long NanosecondsPerTick = 100;
+    public const long NanosecondsPerMicrosecond = 1000;
+    public const long NanosecondsPerSecond = 1_000_000_000;
+
 }
 
 public readonly partial struct Unit
@@ -72,6 +77,17 @@ public abstract record BytesWrapper
         );
 }
 
+// We manually implement the following few classes to customize their BSATN serialization.
+// In particular, they are all "special" types, so they need to have their BSATN.GetAlgebraicType work in
+// a special way. Rather than registering themselves in the Typespace, and returning an AlgebraicTypeRef,
+// they return an AlgebraicType.Product directly, with a special property name that can be recognised by SpacetimeDB.
+// This behaviour is ONLY used for these special types.
+//
+// If you need to update these types, remove the portion marked "// --- auto-generated ---",
+// add a [SpacetimeDB.Type] annotation to the type, and enable "EmitCompilerGeneratedFiles" in BSATN.Runtime.csproj.
+// Then, you can find the code that needs to be generated in `obj/`, and copy it here.
+// Take extra care to update the code marked with "// --- customized ---".
+
 public readonly record struct Address
 {
     private readonly U128 value;
@@ -93,6 +109,7 @@ public readonly record struct Address
         return Address.From(bytes) ?? default;
     }
 
+    // --- auto-generated ---
     public readonly struct BSATN : IReadWrite<Address>
     {
         public Address Read(BinaryReader reader) =>
@@ -101,8 +118,12 @@ public readonly record struct Address
         public void Write(BinaryWriter writer, Address value) =>
             new SpacetimeDB.BSATN.U128Stdb().Write(writer, value.value);
 
+        // --- / auto-generated ---
+
+        // --- customized ---
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             new AlgebraicType.Product([new("__address__", new AlgebraicType.U128(default))]);
+        // --- / customized ---
     }
 
     public override string ToString() => Util.ToHex(value);
@@ -122,6 +143,7 @@ public readonly record struct Identity
 
     public static Identity From(byte[] bytes) => new(bytes);
 
+    // --- auto-generated ---
     public readonly struct BSATN : IReadWrite<Identity>
     {
         public Identity Read(BinaryReader reader) => new(new SpacetimeDB.BSATN.U256().Read(reader));
@@ -129,88 +151,185 @@ public readonly record struct Identity
         public void Write(BinaryWriter writer, Identity value) =>
             new SpacetimeDB.BSATN.U256().Write(writer, value.value);
 
+        // --- / auto-generated ---
+
+        // --- customized ---
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             new AlgebraicType.Product([new("__identity__", new AlgebraicType.U256(default))]);
+        // --- / customized ---
     }
 
     // This must be explicitly forwarded to base, otherwise record will generate a new implementation.
     public override string ToString() => Util.ToHex(value);
 }
 
-// We store time information in microseconds in internal usages.
-//
-// These utils allow to encode it as such in FFI and BSATN contexts
-// and convert to standard C# types.
-
 [StructLayout(LayoutKind.Sequential)] // we should be able to use it in FFI
-[SpacetimeDB.Type] // we should be able to encode it to BSATN too
-public partial struct DateTimeOffsetRepr(DateTimeOffset time)
+public partial struct Timestamp(long nanosecondsSinceUnixEpoch) : SpacetimeDB.BSATN.IStructuralReadWrite
+
 {
-    public ulong MicrosecondsSinceEpoch = (ulong)time.Ticks / 10;
+    // This has a slightly wonky name, so just use the name directly.
+    private long __timestamp_nanos_since_unix_epoch = nanosecondsSinceUnixEpoch;
 
-    public readonly DateTimeOffset ToStd() =>
-        DateTimeOffset.UnixEpoch.AddTicks(10 * (long)MicrosecondsSinceEpoch);
-}
+    public readonly long NanosecondsSinceUnixEpoch => __timestamp_nanos_since_unix_epoch;
 
-[StructLayout(LayoutKind.Sequential)] // we should be able to use it in FFI
-[SpacetimeDB.Type] // we should be able to encode it to BSATN too
-public partial struct TimeSpanRepr(TimeSpan duration)
-{
-    public ulong Microseconds = (ulong)duration.Ticks / 10;
+    public static implicit operator DateTimeOffset(Timestamp t) => DateTimeOffset.UnixEpoch.AddTicks(t.__timestamp_nanos_since_unix_epoch / Util.NanosecondsPerTick);
+    public static implicit operator Timestamp(DateTimeOffset offset) => new Timestamp(offset.Subtract(DateTimeOffset.UnixEpoch).Ticks * Util.NanosecondsPerTick);
 
-    public readonly TimeSpan ToStd() => TimeSpan.FromTicks(10 * (long)Microseconds);
-}
 
-// [SpacetimeDB.Type] - we have custom representation of time in microseconds, so implementing BSATN manually
-public abstract partial record ScheduleAt
-    : SpacetimeDB.TaggedEnum<(DateTimeOffset Time, TimeSpan Interval)>
-{
-    // Manual expansion of what would be otherwise generated by the [SpacetimeDB.Type] codegen.
-    public sealed record Time(DateTimeOffset Time_) : ScheduleAt;
+    // For backwards-compatibility.
+    public readonly DateTimeOffset ToStd() => this;
 
-    public sealed record Interval(TimeSpan Interval_) : ScheduleAt;
-
-    public static implicit operator ScheduleAt(DateTimeOffset time) => new Time(time);
-
-    public static implicit operator ScheduleAt(TimeSpan interval) => new Interval(interval);
-
-    public readonly partial struct BSATN : IReadWrite<ScheduleAt>
+    // Should be consistent with Rust implementation of Display.
+    public override string ToString()
     {
-        [SpacetimeDB.Type]
-        private partial record ScheduleAtRepr
-            : SpacetimeDB.TaggedEnum<(DateTimeOffsetRepr Time, TimeSpanRepr Interval)>;
+        var sign = NanosecondsSinceUnixEpoch < 0 ? "-" : "";
+        var pos = Math.Abs(NanosecondsSinceUnixEpoch);
+        var secs = pos / Util.NanosecondsPerSecond;
+        var nanosRemaining = pos % Util.NanosecondsPerSecond;
+        return $"{sign}{secs}.{nanosRemaining:D9}";
+    }
 
-        private static readonly ScheduleAtRepr.BSATN ReprBSATN = new();
+    // --- auto-generated ---
+    public void ReadFields(System.IO.BinaryReader reader)
+    {
+        __timestamp_nanos_since_unix_epoch = BSATN.__timestamp_nanos_since_unix_epoch.Read(reader);
+    }
 
-        public ScheduleAt Read(BinaryReader reader) =>
-            ReprBSATN.Read(reader) switch
-            {
-                ScheduleAtRepr.Time(var timeRepr) => new Time(timeRepr.ToStd()),
-                ScheduleAtRepr.Interval(var intervalRepr) => new Interval(intervalRepr.ToStd()),
-                _ => throw new SwitchExpressionException(),
-            };
+    public void WriteFields(System.IO.BinaryWriter writer)
+    {
+        BSATN.__timestamp_nanos_since_unix_epoch.Write(writer, __timestamp_nanos_since_unix_epoch);
+    }
 
-        public void Write(BinaryWriter writer, ScheduleAt value)
+    public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<SpacetimeDB.Timestamp>
+    {
+        internal static readonly SpacetimeDB.BSATN.I64 __timestamp_nanos_since_unix_epoch = new();
+
+        public SpacetimeDB.Timestamp Read(System.IO.BinaryReader reader) => SpacetimeDB.BSATN.IStructuralReadWrite.Read<SpacetimeDB.Timestamp>(reader);
+
+        public void Write(System.IO.BinaryWriter writer, SpacetimeDB.Timestamp value)
         {
-            ReprBSATN.Write(
-                writer,
-                value switch
-                {
-                    Time(var time) => new ScheduleAtRepr.Time(new(time)),
-                    Interval(var interval) => new ScheduleAtRepr.Interval(new(interval)),
-                    _ => throw new SwitchExpressionException(),
-                }
-            );
+            value.WriteFields(writer);
+        }
+        // --- / auto-generated ---
+
+        // --- customized ---
+        public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new AlgebraicType.Product([new("__timestamp_nanos_since_unix_epoch", new AlgebraicType.I64(default))]);
+        // --- / customized ---
+    }
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public partial struct TimeDuration(long nanoseconds) : SpacetimeDB.BSATN.IStructuralReadWrite
+{
+    private long __time_duration_nanos = nanoseconds;
+
+    public readonly long Nanoseconds => __time_duration_nanos;
+
+    public static implicit operator TimeSpan(TimeDuration d) => new TimeSpan(d.__time_duration_nanos / Util.NanosecondsPerTick);
+    public static implicit operator TimeDuration(TimeSpan timeSpan) => new TimeDuration(timeSpan.Ticks * Util.NanosecondsPerTick);
+
+    // For backwards-compatibility.
+    public readonly TimeSpan ToStd() => this;
+
+    // Should be consistent with Rust implementation of Display.
+    public override string ToString()
+    {
+        var sign = Nanoseconds < 0 ? "-" : "+";
+        var pos = Math.Abs(Nanoseconds);
+        var secs = pos / Util.NanosecondsPerSecond;
+        var nanosRemaining = pos % Util.NanosecondsPerSecond;
+        return $"{sign}{secs}.{nanosRemaining:D9}";
+    }
+    // --- auto-generated ---
+
+    public void ReadFields(System.IO.BinaryReader reader)
+    {
+        __time_duration_nanos = BSATN.__time_duration_nanos.Read(reader);
+    }
+
+    public void WriteFields(System.IO.BinaryWriter writer)
+    {
+        BSATN.__time_duration_nanos.Write(writer, __time_duration_nanos);
+    }
+
+    public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<SpacetimeDB.TimeDuration>
+    {
+        internal static readonly SpacetimeDB.BSATN.I64 __time_duration_nanos = new();
+
+        public SpacetimeDB.TimeDuration Read(System.IO.BinaryReader reader) => SpacetimeDB.BSATN.IStructuralReadWrite.Read<SpacetimeDB.TimeDuration>(reader);
+
+        public void Write(System.IO.BinaryWriter writer, SpacetimeDB.TimeDuration value)
+        {
+            value.WriteFields(writer);
         }
 
-        public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-            // Constructing a custom one instead of ScheduleAtRepr.GetAlgebraicType()
-            // to avoid leaking the internal *Repr wrappers in generated SATS.
-            new AlgebraicType.Sum(
-                [
-                    new("Time", new AlgebraicType.U64(default)),
-                    new("Interval", new AlgebraicType.U64(default)),
-                ]
-            );
+        // --- / auto-generated ---
+
+        // --- customized ---
+        public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new AlgebraicType.Product([new("__time_duration_nanos", new AlgebraicType.I64(default))]);
+
+        // --- / customized ---
+    }
+}
+
+public partial record ScheduleAt
+    : SpacetimeDB.TaggedEnum<(TimeDuration Interval, Timestamp Time)>
+{
+    public static implicit operator ScheduleAt(TimeDuration duration) => new Interval(duration);
+    public static implicit operator ScheduleAt(Timestamp time) => new Time(time);
+    public static implicit operator ScheduleAt(TimeSpan duration) => new Interval(duration);
+    public static implicit operator ScheduleAt(DateTimeOffset time) => new Time(time);
+
+
+    // --- auto-generated ---
+    private ScheduleAt() { }
+
+    internal enum @enum : byte
+    {
+        Interval,
+        Time,
+    }
+    public sealed record Interval(SpacetimeDB.TimeDuration Interval_) : ScheduleAt;
+    public sealed record Time(SpacetimeDB.Timestamp Time_) : ScheduleAt;
+
+    public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<SpacetimeDB.ScheduleAt>
+    {
+        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
+        internal static readonly SpacetimeDB.TimeDuration.BSATN Interval = new();
+        internal static readonly SpacetimeDB.Timestamp.BSATN Time = new();
+
+        public SpacetimeDB.ScheduleAt Read(System.IO.BinaryReader reader) => __enumTag.Read(reader) switch
+        {
+            @enum.Interval => new Interval(Interval.Read(reader)),
+            @enum.Time => new Time(Time.Read(reader)),
+            _ => throw new System.InvalidOperationException("Invalid tag value, this state should be unreachable.")
+        };
+
+        public void Write(System.IO.BinaryWriter writer, SpacetimeDB.ScheduleAt value)
+        {
+            switch (value)
+            {
+                case Interval(var inner):
+                    __enumTag.Write(writer, @enum.Interval);
+                    Interval.Write(writer, inner);
+                    break;
+
+                case Time(var inner):
+                    __enumTag.Write(writer, @enum.Time);
+                    Time.Write(writer, inner);
+                    break;
+            }
+        }
+        // --- / auto-generated ---
+
+        // --- customized ---
+        public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            registrar.RegisterType<SpacetimeDB.ScheduleAt>(_ => new SpacetimeDB.BSATN.AlgebraicType.Sum(new SpacetimeDB.BSATN.AggregateElement[] {
+                new(nameof(Interval), Interval.GetAlgebraicType(registrar)),
+                new(nameof(Time), Time.GetAlgebraicType(registrar)),
+            }));
+        // --- / customized ---
     }
 }
