@@ -61,7 +61,7 @@ impl SpacetimeCreds {
     pub fn decode_token(&self, public_key: &DecodingKey) -> Result<SpacetimeIdentityClaims, JwtError> {
         decode_token(public_key, self.token()).map(|x| x.claims)
     }
-    fn from_signed_token(token: String) -> Self {
+    pub fn from_signed_token(token: String) -> Self {
         Self { token }
     }
     /// Mint a new credentials JWT for an identity.
@@ -104,7 +104,7 @@ pub struct SpacetimeAuth {
 
 use jsonwebtoken;
 
-struct TokenClaims {
+pub struct TokenClaims {
     pub issuer: String,
     pub subject: String,
     pub audience: Vec<String>,
@@ -122,12 +122,20 @@ impl From<SpacetimeAuth> for TokenClaims {
 }
 
 impl TokenClaims {
+    pub fn new(issuer: String, subject: String) -> Self {
+        Self {
+            issuer,
+            subject,
+            audience: Vec::new(),
+        }
+    }
+
     // Compute the id from the issuer and subject.
-    fn id(&self) -> Identity {
+    pub fn id(&self) -> Identity {
         Identity::from_claims(&self.issuer, &self.subject)
     }
 
-    fn encode_and_sign_with_expiry(
+    pub fn encode_and_sign_with_expiry(
         &self,
         private_key: &EncodingKey,
         expiry: Option<Duration>,
