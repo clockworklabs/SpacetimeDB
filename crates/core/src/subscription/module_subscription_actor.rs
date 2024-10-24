@@ -7,7 +7,7 @@ use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::db::datastore::system_tables::StVarTable;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
-use crate::execution_context::ExecutionContext;
+use crate::execution_context::Workload;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket::Subscribe;
 use crate::sql::ast::SchemaViewer;
@@ -55,9 +55,8 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(), DBError> {
-        let ctx = ExecutionContext::subscribe(self.relational_db.database_identity());
-        let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
-            self.relational_db.release_tx(&ctx, tx);
+        let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
+            self.relational_db.release_tx(tx);
         });
         let request_id = subscription.request_id;
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
@@ -116,24 +115,21 @@ impl ModuleSubscriptions {
 
         check_row_limit(
             &execution_set,
-            &ctx,
             &self.relational_db,
             &tx,
             |execution_set, tx| execution_set.row_estimate(tx),
             &auth,
         )?;
 
-        let slow_query_threshold = StVarTable::sub_limit(&ctx, &self.relational_db, &tx)?.map(Duration::from_millis);
+        let slow_query_threshold = StVarTable::sub_limit(&self.relational_db, &tx)?.map(Duration::from_millis);
         let database_update = match sender.protocol {
             Protocol::Text => FormatSwitch::Json(execution_set.eval(
-                &ctx,
                 &self.relational_db,
                 &tx,
                 slow_query_threshold,
                 sender.compression,
             )),
             Protocol::Binary => FormatSwitch::Bsatn(execution_set.eval(
-                &ctx,
                 &self.relational_db,
                 &tx,
                 slow_query_threshold,
@@ -185,45 +181,37 @@ impl ModuleSubscriptions {
         &self,
         client: Option<&ClientConnectionSender>,
         mut event: ModuleEvent,
-        ctx: &ExecutionContext,
         tx: MutTx,
     ) -> Result<Result<Arc<ModuleEvent>, WriteConflict>, DBError> {
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
         let subscriptions = self.subscriptions.read();
         let stdb = &self.relational_db;
-
         // Downgrade mutable tx.
         // Ensure tx is released/cleaned up once out of scope.
         let read_tx = scopeguard::guard(
             match &mut event.status {
                 EventStatus::Committed(db_update) => {
-                    let Some((tx_data, read_tx)) = stdb.commit_tx_downgrade(ctx, tx)? else {
+                    let Some((tx_data, read_tx)) = stdb.commit_tx_downgrade(tx, Workload::Update)? else {
                         return Ok(Err(WriteConflict));
                     };
                     *db_update = DatabaseUpdate::from_writes(&tx_data);
                     read_tx
                 }
-                EventStatus::Failed(_) | EventStatus::OutOfEnergy => stdb.rollback_mut_tx_downgrade(ctx, tx),
+                EventStatus::Failed(_) | EventStatus::OutOfEnergy => {
+                    stdb.rollback_mut_tx_downgrade(tx, Workload::Update)
+                }
             },
             |tx| {
-                self.relational_db.release_tx(ctx, tx);
+                self.relational_db.release_tx(tx);
             },
         );
         let event = Arc::new(event);
 
-        // New execution context for the incremental subscription update.
-        // TODO: The tx and the ExecutionContext should be coupled together.
-        let ctx = if let Some(reducer_ctx) = ctx.reducer_context() {
-            ExecutionContext::incremental_update_for_reducer(stdb.database_identity(), reducer_ctx.clone())
-        } else {
-            ExecutionContext::incremental_update(stdb.database_identity())
-        };
-
         match &event.status {
             EventStatus::Committed(_) => {
-                let slow_query_threshold = StVarTable::incr_limit(&ctx, stdb, &read_tx)?.map(Duration::from_millis);
-                subscriptions.eval_updates(&ctx, stdb, &read_tx, event.clone(), client, slow_query_threshold)
+                let slow_query_threshold = StVarTable::incr_limit(stdb, &read_tx)?.map(Duration::from_millis);
+                subscriptions.eval_updates(stdb, &read_tx, event.clone(), client, slow_query_threshold)
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
@@ -252,7 +240,7 @@ mod tests {
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
-    use crate::execution_context::ExecutionContext;
+    use crate::execution_context::Workload;
     use spacetimedb_client_api_messages::websocket::Subscribe;
     use spacetimedb_expr::errors::{TypingError, Unresolved};
     use spacetimedb_lib::db::auth::StAccess;
@@ -285,7 +273,7 @@ mod tests {
 
         // Create table with one row
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+        db.with_auto_commit(Workload::ForTests, |tx| {
             db.insert(tx, table_id, product!(1_u8)).map(drop)
         })?;
 
@@ -302,11 +290,10 @@ mod tests {
                     let _ = send.send(());
                     // Then go to sleep
                     std::thread::sleep(Duration::from_secs(1));
-                    let ctx = ExecutionContext::default();
                     // Assuming subscription evaluation holds a lock on the db,
                     // any mutations to T will necessarily occur after,
                     // and therefore we should only see a single row returned.
-                    assert_eq!(1, db.iter(&ctx, tx, table_id).unwrap().count());
+                    assert_eq!(1, db.iter(tx, table_id).unwrap().count());
                 })),
             )
         });
@@ -314,7 +301,7 @@ mod tests {
         // Write a second row to T concurrently with the reader thread
         let write_handle = runtime.spawn(async move {
             let _ = recv.recv().await;
-            db2.with_auto_commit(&ExecutionContext::default(), |tx| {
+            db2.with_auto_commit(Workload::ForTests, |tx| {
                 db2.insert(tx, table_id, product!(2_u8)).map(drop)
             })
         });

@@ -16,6 +16,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use spacetimedb::address::Address;
 use spacetimedb::database_logger::DatabaseLogger;
+use spacetimedb::execution_context::Workload;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::{DescribedEntityType, UpdateDatabaseResult};
@@ -24,7 +25,7 @@ use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, HostType, Replica};
 use spacetimedb::sql;
-use spacetimedb::sql::execute::{ctx_sql, translate_col};
+use spacetimedb::sql::execute::translate_col;
 use spacetimedb_client_api_messages::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::address::AddressForUrl;
@@ -557,7 +558,7 @@ where
                         }
                     })?;
 
-                let json = db.with_read_only(&ctx_sql(db), |tx| {
+                let json = db.with_read_only(Workload::Sql, |tx| {
                     results
                         .into_iter()
                         .map(|result| {

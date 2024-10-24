@@ -162,6 +162,20 @@ impl From<&ReducerContext> for txdata::Inputs {
     }
 }
 
+/// Represents the type of workload that is being executed.
+///
+/// Used as constructor helper for [ExecutionContext].
+#[derive(Clone)]
+pub enum Workload {
+    #[cfg(test)]
+    ForTests,
+    Reducer(ReducerContext),
+    Sql,
+    Subscribe,
+    Update,
+    Internal,
+}
+
 /// Classifies a transaction according to its workload.
 /// A transaction can be executing a reducer.
 /// It can be used to satisfy a one-off sql query or subscription.
@@ -189,6 +203,19 @@ impl ExecutionContext {
             reducer,
             workload,
             metrics: <_>::default(),
+        }
+    }
+
+    /// Returns an [ExecutionContext] with the provided [Workload] and empty metrics.
+    pub(crate) fn with_workload(database_identity: Identity, workload: Workload) -> Self {
+        match workload {
+            #[cfg(test)]
+            Workload::ForTests => Self::default(),
+            Workload::Internal => Self::internal(database_identity),
+            Workload::Reducer(ctx) => Self::reducer(database_identity, ctx),
+            Workload::Sql => Self::sql(database_identity),
+            Workload::Subscribe => Self::subscribe(database_identity),
+            Workload::Update => Self::incremental_update(database_identity),
         }
     }
 

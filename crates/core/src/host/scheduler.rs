@@ -19,7 +19,7 @@ use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StFields, StScheduledFields, ST_SCHEDULED_ID};
 use crate::db::datastore::traits::IsolationLevel;
 use crate::db::relational_db::RelationalDB;
-use crate::execution_context::ExecutionContext;
+use crate::execution_context::Workload;
 
 use super::module_host::ModuleEvent;
 use super::module_host::ModuleFunctionCall;
@@ -87,8 +87,8 @@ impl SchedulerStarter {
     // time to make it better right now.
     pub fn start(mut self, module_host: &ModuleHost) -> anyhow::Result<()> {
         let mut queue: DelayQueue<QueueItem> = DelayQueue::new();
-        let ctx = &ExecutionContext::internal(self.db.database_identity());
-        let tx = self.db.begin_tx();
+
+        let tx = self.db.begin_tx(Workload::Internal);
 
         // Draining rx before processing schedules from the DB to ensure there are no in-flight messages,
         // as this can result in duplication.
@@ -100,15 +100,15 @@ impl SchedulerStarter {
         while self.rx.try_recv().is_ok() {}
 
         // Find all Scheduled tables
-        for st_scheduled_row in self.db.iter(ctx, &tx, ST_SCHEDULED_ID)? {
+        for st_scheduled_row in self.db.iter(&tx, ST_SCHEDULED_ID)? {
             let table_id = st_scheduled_row.read_col(StScheduledFields::TableId)?;
             let (id_column, at_column) = self
                 .db
-                .table_scheduled_id_and_at(ctx, &tx, table_id)?
+                .table_scheduled_id_and_at(&tx, table_id)?
                 .ok_or_else(|| anyhow!("scheduled table {table_id} doesn't have valid columns"))?;
 
             // Insert each entry (row) in the scheduled table into `queue`.
-            for scheduled_row in self.db.iter(ctx, &tx, table_id)? {
+            for scheduled_row in self.db.iter(&tx, table_id)? {
                 let (schedule_id, schedule_at) = get_schedule_from_row(&scheduled_row, id_column, at_column)?;
                 // calculate duration left to call the scheduled reducer
                 let duration = schedule_at.to_duration_from_now();
@@ -302,8 +302,7 @@ impl SchedulerActor {
             return;
         };
         let db = module_host.replica_ctx().relational_db.clone();
-        let ctx = ExecutionContext::internal(db.database_identity());
-        let caller_identity = module_host.info().owner_identity;
+        let caller_identity = module_host.info().database_identity;
         let module_info = module_host.info.clone();
 
         let call_reducer_params = move |tx: &MutTxId| -> Result<Option<CallReducerParams>, anyhow::Error> {
@@ -328,7 +327,7 @@ impl SchedulerActor {
                 }
             };
 
-            let Ok(schedule_row) = get_schedule_row_mut(&ctx, tx, &db, id) else {
+            let Ok(schedule_row) = get_schedule_row_mut(tx, &db, id) else {
                 // if the row is not found, it means the schedule is cancelled by the user
                 log::debug!(
                     "table row corresponding to yeild scheduler id not found: tableid {}, schedulerId {}",
@@ -338,7 +337,7 @@ impl SchedulerActor {
                 return Ok(None);
             };
 
-            let ScheduledReducer { reducer, bsatn_args } = process_schedule(&ctx, tx, &db, id.table_id, &schedule_row)?;
+            let ScheduledReducer { reducer, bsatn_args } = proccess_schedule(tx, &db, id.table_id, &schedule_row)?;
 
             let (reducer_seed, reducer_id) = module_info
                 .reducer_seed_and_id(&reducer[..])
@@ -360,7 +359,6 @@ impl SchedulerActor {
 
         let db = module_host.replica_ctx().relational_db.clone();
         let module_host_clone = module_host.clone();
-        let ctx = ExecutionContext::internal(db.database_identity());
 
         let res = tokio::spawn(async move { module_host.call_scheduled_reducer(call_reducer_params).await }).await;
 
@@ -372,8 +370,7 @@ impl SchedulerActor {
             // delete the scheduled reducer row if its not repeated reducer
             Ok(_) | Err(_) => {
                 if let Some(id) = id {
-                    self.delete_scheduled_reducer_row(&ctx, &db, id, module_host_clone)
-                        .await;
+                    self.delete_scheduled_reducer_row(&db, id, module_host_clone).await;
                 }
             }
         }
@@ -403,14 +400,13 @@ impl SchedulerActor {
 
     async fn delete_scheduled_reducer_row(
         &mut self,
-        ctx: &ExecutionContext,
         db: &RelationalDB,
         id: ScheduledReducerId,
         module_host: ModuleHost,
     ) {
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
 
-        match get_schedule_row_mut(ctx, &tx, db, id) {
+        match get_schedule_row_mut(&tx, db, id) {
             Ok(schedule_row) => {
                 if let Ok(is_repeated) = self.handle_repeated_schedule(id, &schedule_row) {
                     if is_repeated {
@@ -420,7 +416,7 @@ impl SchedulerActor {
                     let row_ptr = schedule_row.pointer();
                     db.delete(&mut tx, id.table_id, [row_ptr]);
 
-                    commit_and_broadcast_deletion_event(ctx, tx, module_host);
+                    commit_and_broadcast_deletion_event(tx, module_host);
                 }
             }
             Err(_) => {
@@ -434,8 +430,8 @@ impl SchedulerActor {
     }
 }
 
-fn commit_and_broadcast_deletion_event(ctx: &ExecutionContext, tx: MutTxId, module_host: ModuleHost) {
-    let caller_identity = module_host.info().owner_identity;
+fn commit_and_broadcast_deletion_event(tx: MutTxId, module_host: ModuleHost) {
+    let caller_identity = module_host.info().database_identity;
 
     let event = ModuleEvent {
         timestamp: Timestamp::now(),
@@ -453,15 +449,14 @@ fn commit_and_broadcast_deletion_event(ctx: &ExecutionContext, tx: MutTxId, modu
     if let Err(e) = module_host
         .info()
         .subscriptions
-        .commit_and_broadcast_event(None, event, ctx, tx)
+        .commit_and_broadcast_event(None, event, tx)
     {
         log::error!("Failed to broadcast deletion event: {e:#}");
     }
 }
 
 /// Generate `ScheduledReducer` for given `ScheduledReducerId`
-fn process_schedule(
-    ctx: &ExecutionContext,
+fn proccess_schedule(
     tx: &MutTxId,
     db: &RelationalDB,
     table_id: TableId,
@@ -471,7 +466,7 @@ fn process_schedule(
     let table_id_col = StScheduledFields::TableId.col_id();
     let reducer_name_col = StScheduledFields::ReducerName.col_id();
     let st_scheduled_row = db
-        .iter_by_col_eq_mut(ctx, tx, ST_SCHEDULED_ID, table_id_col, &table_id.into())?
+        .iter_by_col_eq_mut(tx, ST_SCHEDULED_ID, table_id_col, &table_id.into())?
         .next()
         .ok_or_else(|| {
             anyhow!(
@@ -489,12 +484,11 @@ fn process_schedule(
 
 /// Helper to get schedule_row with `MutTxId`
 fn get_schedule_row_mut<'a>(
-    ctx: &'a ExecutionContext,
     tx: &'a MutTxId,
     db: &'a RelationalDB,
     id: ScheduledReducerId,
 ) -> anyhow::Result<RowRef<'a>> {
-    db.iter_by_col_eq_mut(ctx, tx, id.table_id, id.id_column, &id.schedule_id.into())?
+    db.iter_by_col_eq_mut(tx, id.table_id, id.id_column, &id.schedule_id.into())?
         .next()
         .ok_or_else(|| anyhow!("Schedule with ID {} not found in table {}", id.schedule_id, id.table_id))
 }

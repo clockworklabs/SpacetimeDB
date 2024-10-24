@@ -13,7 +13,6 @@
 
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
-use crate::execution_context::ExecutionContext;
 use derive_more::From;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawSql};
@@ -938,8 +937,8 @@ pub struct StVarTable;
 
 impl StVarTable {
     /// Read the value of [ST_VARNAME_ROW_LIMIT] from `st_var`
-    pub fn row_limit(ctx: &ExecutionContext, db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        let data = Self::read_var(ctx, db, tx, StVarName::RowLimit);
+    pub fn row_limit(db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
+        let data = Self::read_var(db, tx, StVarName::RowLimit);
 
         if let Some(StVarValue::U64(limit)) = data? {
             return Ok(Some(limit));
@@ -948,38 +947,33 @@ impl StVarTable {
     }
 
     /// Read the value of [ST_VARNAME_SLOW_QRY] from `st_var`
-    pub fn query_limit(ctx: &ExecutionContext, db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = Self::read_var(ctx, db, tx, StVarName::SlowQryThreshold)? {
+    pub fn query_limit(db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
+        if let Some(StVarValue::U64(ms)) = Self::read_var(db, tx, StVarName::SlowQryThreshold)? {
             return Ok(Some(ms));
         }
         Ok(None)
     }
 
     /// Read the value of [ST_VARNAME_SLOW_SUB] from `st_var`
-    pub fn sub_limit(ctx: &ExecutionContext, db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = Self::read_var(ctx, db, tx, StVarName::SlowSubThreshold)? {
+    pub fn sub_limit(db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
+        if let Some(StVarValue::U64(ms)) = Self::read_var(db, tx, StVarName::SlowSubThreshold)? {
             return Ok(Some(ms));
         }
         Ok(None)
     }
 
     /// Read the value of [ST_VARNAME_SLOW_INC] from `st_var`
-    pub fn incr_limit(ctx: &ExecutionContext, db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = Self::read_var(ctx, db, tx, StVarName::SlowIncThreshold)? {
+    pub fn incr_limit(db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
+        if let Some(StVarValue::U64(ms)) = Self::read_var(db, tx, StVarName::SlowIncThreshold)? {
             return Ok(Some(ms));
         }
         Ok(None)
     }
 
     /// Read the value of a system variable from `st_var`
-    pub fn read_var(
-        ctx: &ExecutionContext,
-        db: &RelationalDB,
-        tx: &TxId,
-        name: StVarName,
-    ) -> Result<Option<StVarValue>, DBError> {
+    pub fn read_var(db: &RelationalDB, tx: &TxId, name: StVarName) -> Result<Option<StVarValue>, DBError> {
         if let Some(row_ref) = db
-            .iter_by_col_eq(ctx, tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
+            .iter_by_col_eq(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
             .next()
         {
             return Ok(Some(StVarRow::try_from(row_ref)?.value));
@@ -988,16 +982,10 @@ impl StVarTable {
     }
 
     /// Update the value of a system variable in `st_var`
-    pub fn write_var(
-        ctx: &ExecutionContext,
-        db: &RelationalDB,
-        tx: &mut MutTxId,
-        name: StVarName,
-        literal: &str,
-    ) -> Result<(), DBError> {
+    pub fn write_var(db: &RelationalDB, tx: &mut MutTxId, name: StVarName, literal: &str) -> Result<(), DBError> {
         let value = Self::parse_var(name, literal)?;
         if let Some(row_ref) = db
-            .iter_by_col_eq_mut(ctx, tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
+            .iter_by_col_eq_mut(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
             .next()
         {
             db.delete(tx, ST_VAR_ID, [row_ref.pointer()]);
@@ -1336,20 +1324,19 @@ fn to_product_value<T: Serialize>(value: &T) -> ProductValue {
 
 #[cfg(test)]
 mod tests {
-    use crate::db::relational_db::tests_utils::TestDB;
-
     use super::*;
+    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::execution_context::Workload;
 
     #[test]
     fn test_system_variables() {
         let db = TestDB::durable().expect("failed to create db");
-        let ctx = ExecutionContext::default();
-        let _ = db.with_auto_commit(&ctx, |tx| {
-            StVarTable::write_var(&ctx, &db, tx, StVarName::RowLimit, "5")
+        let _ = db.with_auto_commit(Workload::ForTests, |tx| {
+            StVarTable::write_var(&db, tx, StVarName::RowLimit, "5")
         });
         assert_eq!(
             5,
-            db.with_read_only(&ctx, |tx| StVarTable::row_limit(&ctx, &db, tx))
+            db.with_read_only(Workload::ForTests, |tx| StVarTable::row_limit(&db, tx))
                 .expect("failed to read from st_var")
                 .expect("row_limit does not exist")
         );
