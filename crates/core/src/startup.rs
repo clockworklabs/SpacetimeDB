@@ -82,8 +82,8 @@ fn configure_tracing(opts: TracingOptions) {
 
     let write_to = if let Some(logs_dir) = opts.disk_logging {
         let roller = rolling::Builder::new()
-            .filename_prefix(format!("spacetimedb-{}", opts.edition))
-            .filename_suffix("log")
+            .filename_prefix(LogsDir::filename_prefix(&opts.edition))
+            .filename_suffix(LogsDir::filename_extension())
             .build(logs_dir)
             .unwrap();
         // TODO: syslog?

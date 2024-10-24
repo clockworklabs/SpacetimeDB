@@ -55,7 +55,29 @@ impl ServerDataDir {
 }
 
 path_type!(ConfigToml: file);
-path_type!(LogsDir: dir);
+path_type! {
+    /// The directory in which server logs are to be stored.
+    ///
+    /// The files in this directory have the naming format `spacetime-{edition}.YYYY-MM-DD.log`.
+    LogsDir: dir
+}
+
+impl LogsDir {
+    // we can't be as strongly typed as we might like here, because `tracing_subscriber`'s
+    // `RollingFileAppender` specifically takes the prefix and suffix of the filename, and
+    // sticks the date in between them - so we have to expose those components of the
+    // filename separately, rather than `fn logfile(&self, edition, date) -> LogFilePath`
+
+    /// The prefix before the first `.` of a logfile name.
+    pub fn filename_prefix(edition: &str) -> String {
+        format!("spacetime-{edition}")
+    }
+
+    /// The file extension of a logfile name.
+    pub fn filename_extension() -> String {
+        "log".to_owned()
+    }
+}
 
 path_type!(WasmtimeCacheDir: dir);
 
@@ -95,7 +117,7 @@ impl ReplicaDir {
         SnapshotsPath(self.0.join("snapshots"))
     }
 
-    pub fn commit_log(self) -> CommitLogDir {
+    pub fn commit_log(&self) -> CommitLogDir {
         CommitLogDir(self.0.join("clog"))
     }
 }
