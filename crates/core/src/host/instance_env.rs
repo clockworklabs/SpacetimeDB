@@ -2,7 +2,6 @@ use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::{IndexError, NodesError};
-use crate::execution_context::ExecutionContext;
 use crate::replica_context::ReplicaContext;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
@@ -22,7 +21,6 @@ pub struct InstanceEnv {
 #[derive(Clone, Default)]
 pub struct TxSlot {
     inner: Arc<Mutex<Option<MutTxId>>>,
-    ctx: Arc<Mutex<Option<ExecutionContext>>>,
 }
 
 #[derive(Default)]
@@ -83,10 +81,6 @@ impl InstanceEnv {
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         self.tx.get()
-    }
-
-    pub fn get_ctx(&self) -> Result<impl DerefMut<Target = ExecutionContext> + '_, GetTxError> {
-        self.tx.get_ctx()
     }
 
     #[tracing::instrument(skip_all)]
@@ -297,30 +291,22 @@ impl InstanceEnv {
 }
 
 impl TxSlot {
-    pub fn set<T>(&mut self, ctx: ExecutionContext, tx: MutTxId, f: impl FnOnce() -> T) -> (MutTxId, T) {
-        self.ctx.lock().replace(ctx);
+    pub fn set<T>(&mut self, tx: MutTxId, f: impl FnOnce() -> T) -> (MutTxId, T) {
         let prev = self.inner.lock().replace(tx);
         assert!(prev.is_none(), "reentrant TxSlot::set");
         let remove_tx = || self.inner.lock().take();
 
-        let remove_ctx = || self.ctx.lock().take();
-
         let res = {
-            scopeguard::defer_on_unwind! { remove_ctx(); remove_tx();}
+            scopeguard::defer_on_unwind! { remove_tx(); }
             f()
         };
 
-        remove_ctx().expect("ctx was removed during transaction");
         let tx = remove_tx().expect("tx was removed during transaction");
         (tx, res)
     }
 
     pub fn get(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         MutexGuard::try_map(self.inner.lock(), |map| map.as_mut()).map_err(|_| GetTxError)
-    }
-
-    pub fn get_ctx(&self) -> Result<impl DerefMut<Target = ExecutionContext> + '_, GetTxError> {
-        MutexGuard::try_map(self.ctx.lock(), |map| map.as_mut()).map_err(|_| GetTxError)
     }
 }
 
