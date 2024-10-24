@@ -104,7 +104,7 @@ pub struct SpacetimeAuth {
 
 use jsonwebtoken;
 
-pub struct TokenClaims {
+struct TokenClaims {
     pub issuer: String,
     pub subject: String,
     pub audience: Vec<String>,
@@ -123,11 +123,15 @@ impl From<SpacetimeAuth> for TokenClaims {
 
 impl TokenClaims {
     // Compute the id from the issuer and subject.
-    pub fn id(&self) -> Identity {
+    fn id(&self) -> Identity {
         Identity::from_claims(&self.issuer, &self.subject)
     }
 
-    pub fn encode_and_sign_with_expiry(&self, private_key: &EncodingKey, expiry: Option<Duration>) -> Result<String, JwtError> {
+    fn encode_and_sign_with_expiry(
+        &self,
+        private_key: &EncodingKey,
+        expiry: Option<Duration>,
+    ) -> Result<String, JwtError> {
         let iat = SystemTime::now();
         let exp = expiry.map(|dur| iat + dur);
         let claims = SpacetimeIdentityClaims2 {
@@ -165,7 +169,12 @@ impl SpacetimeAuth {
             SpacetimeCreds::from_signed_token(token)
         };
 
-        Ok(Self { creds, identity, subject, issuer: ctx.local_issuer() })
+        Ok(Self {
+            creds,
+            identity,
+            subject,
+            issuer: ctx.local_issuer(),
+        })
     }
 
     /// Get the auth credentials as headers to be returned from an endpoint.
@@ -174,6 +183,10 @@ impl SpacetimeAuth {
             TypedHeader(SpacetimeIdentity(self.identity)),
             TypedHeader(SpacetimeIdentityToken(self.creds)),
         )
+    }
+
+    pub fn resign_with_expiry(&self, private_key: &EncodingKey, expiry: Duration) -> Result<String, JwtError> {
+        TokenClaims::from(self.clone()).encode_and_sign_with_expiry(private_key, Some(expiry))
     }
 }
 
