@@ -123,19 +123,49 @@ impl Commit {
     ///
     /// The supplied [`Decoder`] is responsible for extracting individual
     /// transactions from the `records` buffer.
+    ///
+    /// `version` is the log format version of the current segment, and gets
+    /// passed to [`Decoder::decode_record`].
+    ///
+    /// `from_offset` is the transaction offset within the current commit from
+    /// which to start decoding. That is:
+    ///
+    /// * if the tx offset within the commit is smaller than `from_offset`,
+    ///   [`Decoder::skip_record`] is called.
+    ///
+    ///   The iterator does not yield a value, unless `skip_record` returns an
+    ///   error.
+    ///
+    /// * if the tx offset within the commit is greater of equal to `from_offset`,
+    ///   [`Decoder::decode_record`] is called.
+    ///
+    ///   The iterator yields the result of this call.
+    ///
+    /// * if `from_offset` doesn't fall into the current commit, the iterator
+    ///   yields nothing.
+    ///
     pub fn into_transactions<D: Decoder>(
         self,
         version: u8,
+        from_offset: u64,
         de: &D,
     ) -> impl Iterator<Item = Result<Transaction<D::Record>, D::Error>> + '_ {
         let records = Cursor::new(self.records);
-        (self.min_tx_offset..(self.min_tx_offset + self.n as u64)).scan(records, move |recs, offset| {
-            let mut cursor = &*recs;
-            let tx = de
-                .decode_record(version, offset, &mut cursor)
-                .map(|txdata| Transaction { offset, txdata });
-            Some(tx)
-        })
+        (self.min_tx_offset..(self.min_tx_offset + self.n as u64))
+            .scan(records, move |recs, offset| {
+                let mut cursor = &*recs;
+                let ret = if offset < from_offset {
+                    de.skip_record(version, offset, &mut cursor).err().map(Err)
+                } else {
+                    let tx = de
+                        .decode_record(version, offset, &mut cursor)
+                        .map(|txdata| Transaction { offset, txdata });
+                    Some(tx)
+                };
+
+                Some(ret)
+            })
+            .flatten()
     }
 }
 
@@ -216,9 +246,10 @@ impl StoredCommit {
     pub fn into_transactions<D: Decoder>(
         self,
         version: u8,
+        from_offset: u64,
         de: &D,
     ) -> impl Iterator<Item = Result<Transaction<D::Record>, D::Error>> + '_ {
-        Commit::from(self).into_transactions(version, de)
+        Commit::from(self).into_transactions(version, from_offset, de)
     }
 }
 
@@ -272,6 +303,7 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
+    use crate::{payload::ArrayDecoder, tests::helpers::enable_logging, DEFAULT_LOG_FORMAT_VERSION};
 
     #[test]
     fn commit_roundtrip() {
@@ -287,6 +319,36 @@ mod tests {
         let commit2 = Commit::decode(&mut buf.as_slice()).unwrap().unwrap();
 
         assert_eq!(commit, commit2);
+    }
+
+    #[test]
+    fn into_transactions_can_skip_txs() {
+        enable_logging();
+
+        let commit = Commit {
+            min_tx_offset: 0,
+            n: 4,
+            records: vec![0; 128],
+        };
+
+        let txs = commit
+            .into_transactions(DEFAULT_LOG_FORMAT_VERSION, 2, &ArrayDecoder::<32>)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert_eq!(
+            txs,
+            vec![
+                Transaction {
+                    offset: 2,
+                    txdata: [0u8; 32]
+                },
+                Transaction {
+                    offset: 3,
+                    txdata: [0; 32]
+                }
+            ]
+        )
     }
 
     proptest! {
