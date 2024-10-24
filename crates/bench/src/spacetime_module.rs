@@ -78,6 +78,8 @@ impl BenchDatabase for SpacetimeModule {
         let module = runtime.block_on(async {
             // We keep a saved database at "crates/bench/.spacetime".
             // This is mainly used for caching wasmtime native artifacts.
+            // It's fine that we're constructing this path ad-hoc, as it's just
+            // a path location for tests, not part of our stable directory structure.
             let path = RootDir(Path::new(env!("CARGO_MANIFEST_DIR")).join(".spacetime"));
             BENCHMARKS_MODULE.load_module(config, Some(&path)).await
         });

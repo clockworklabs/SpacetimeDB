@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license-file = "LICENSE"
-description = "The spacetimedb directory tructure, represented as a type hierarchy"
+description = "The spacetimedb directory structure, represented as a type hierarchy"
 
 [dependencies]
 anyhow.workspace = true
