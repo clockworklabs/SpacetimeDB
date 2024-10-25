@@ -7,6 +7,6 @@ license-file = "LICENSE"
 description = "The SpacetimeDB query engine"
 
 [dependencies]
-spacetimedb-lib.workspace = true
 spacetimedb-expr.workspace = true
+spacetimedb-lib.workspace = true
 spacetimedb-table.workspace = true
