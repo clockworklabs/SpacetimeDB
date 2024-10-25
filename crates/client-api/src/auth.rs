@@ -61,7 +61,7 @@ impl SpacetimeCreds {
     pub fn decode_token(&self, public_key: &DecodingKey) -> Result<SpacetimeIdentityClaims, JwtError> {
         decode_token(public_key, self.token()).map(|x| x.claims)
     }
-    fn from_signed_token(token: String) -> Self {
+    pub fn from_signed_token(token: String) -> Self {
         Self { token }
     }
     /// Mint a new credentials JWT for an identity.
@@ -98,33 +98,64 @@ impl SpacetimeCreds {
 pub struct SpacetimeAuth {
     pub creds: SpacetimeCreds,
     pub identity: Identity,
+    pub subject: String,
+    pub issuer: String,
 }
 
 use jsonwebtoken;
 
-struct TokenClaims {
+pub struct TokenClaims {
     pub issuer: String,
     pub subject: String,
     pub audience: Vec<String>,
 }
 
+impl From<SpacetimeAuth> for TokenClaims {
+    fn from(claims: SpacetimeAuth) -> Self {
+        Self {
+            issuer: claims.issuer,
+            subject: claims.subject,
+            // This will need to be changed when we care about audiencies.
+            audience: Vec::new(),
+        }
+    }
+}
+
 impl TokenClaims {
+    pub fn new(issuer: String, subject: String) -> Self {
+        Self {
+            issuer,
+            subject,
+            audience: Vec::new(),
+        }
+    }
+
     // Compute the id from the issuer and subject.
-    fn id(&self) -> Identity {
+    pub fn id(&self) -> Identity {
         Identity::from_claims(&self.issuer, &self.subject)
     }
 
-    fn encode_and_sign(&self, private_key: &EncodingKey) -> Result<String, JwtError> {
+    pub fn encode_and_sign_with_expiry(
+        &self,
+        private_key: &EncodingKey,
+        expiry: Option<Duration>,
+    ) -> Result<String, JwtError> {
+        let iat = SystemTime::now();
+        let exp = expiry.map(|dur| iat + dur);
         let claims = SpacetimeIdentityClaims2 {
             identity: self.id(),
             subject: self.subject.clone(),
             issuer: self.issuer.clone(),
             audience: self.audience.clone(),
-            iat: SystemTime::now(),
-            exp: None,
+            iat,
+            exp,
         };
         let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
         jsonwebtoken::encode(&header, &claims, private_key)
+    }
+
+    pub fn encode_and_sign(&self, private_key: &EncodingKey) -> Result<String, JwtError> {
+        self.encode_and_sign_with_expiry(private_key, None)
     }
 }
 
@@ -132,9 +163,10 @@ impl SpacetimeAuth {
     /// Allocate a new identity, and mint a new token for it.
     pub async fn alloc(ctx: &(impl NodeDelegate + ControlStateDelegate + ?Sized)) -> axum::response::Result<Self> {
         // Generate claims with a random subject.
+        let subject = Uuid::new_v4().to_string();
         let claims = TokenClaims {
             issuer: ctx.local_issuer(),
-            subject: Uuid::new_v4().to_string(),
+            subject: subject.clone(),
             // Placeholder audience.
             audience: vec!["spacetimedb".to_string()],
         };
@@ -145,16 +177,27 @@ impl SpacetimeAuth {
             SpacetimeCreds::from_signed_token(token)
         };
 
-        Ok(Self { creds, identity })
+        Ok(Self {
+            creds,
+            identity,
+            subject,
+            issuer: ctx.local_issuer(),
+        })
     }
 
     /// Get the auth credentials as headers to be returned from an endpoint.
     pub fn into_headers(self) -> (TypedHeader<SpacetimeIdentity>, TypedHeader<SpacetimeIdentityToken>) {
-        let Self { creds, identity } = self;
         (
-            TypedHeader(SpacetimeIdentity(identity)),
-            TypedHeader(SpacetimeIdentityToken(creds)),
+            TypedHeader(SpacetimeIdentity(self.identity)),
+            TypedHeader(SpacetimeIdentityToken(self.creds)),
         )
+    }
+
+    // Sign a new token with the same claims and a new expiry.
+    // Note that this will not change the issuer, so the private_key might not match.
+    // We do this to create short-lived tokens that we will be able to verify.
+    pub fn re_sign_with_expiry(&self, private_key: &EncodingKey, expiry: Duration) -> Result<String, JwtError> {
+        TokenClaims::from(self.clone()).encode_and_sign_with_expiry(private_key, Some(expiry))
     }
 }
 
@@ -222,6 +265,8 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
         let auth = SpacetimeAuth {
             creds,
             identity: claims.identity,
+            subject: claims.subject,
+            issuer: claims.issuer,
         };
         Ok(Self { auth: Some(auth) })
     }
