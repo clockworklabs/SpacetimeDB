@@ -672,51 +672,45 @@ namespace SpacetimeDB
 
 		public class PkMultiIdentityHandle : RemoteTableHandle<EventContext, PkMultiIdentity>
 		{
-			private Dictionary<uint, PkMultiIdentity> Id_Index = new(16);
-			private Dictionary<uint, PkMultiIdentity> Other_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (PkMultiIdentity)row;
-				Id_Index[value.Id] = value;
-				Other_Index[value.Other] = value;
+				Id.__Cache[value.Id] = value;
+				Other.__Cache[value.Other] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				Id_Index.Remove(((PkMultiIdentity)row).Id);
-				Other_Index.Remove(((PkMultiIdentity)row).Other);
+				Id.__Cache.Remove(((PkMultiIdentity)row).Id);
+				Other.__Cache.Remove(((PkMultiIdentity)row).Other);
 			}
 
-			public readonly ref struct IdUniqueIndex
+			public class IdUniqueIndex
 			{
-				readonly PkMultiIdentityHandle Handle;
-				internal IdUniqueIndex(PkMultiIdentityHandle handle) => Handle = handle;
-
+				internal readonly Dictionary<uint, PkMultiIdentity> __Cache = new(16);
 				public PkMultiIdentity? Find(uint value)
 				{
-					Handle.Id_Index.TryGetValue(value, out var r);
+					__Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public IdUniqueIndex Id => new(this);
+			public IdUniqueIndex Id = new();
 
-			public readonly ref struct OtherUniqueIndex
+			public class OtherUniqueIndex
 			{
-				readonly PkMultiIdentityHandle Handle;
-				internal OtherUniqueIndex(PkMultiIdentityHandle handle) => Handle = handle;
-
+				internal readonly Dictionary<uint, PkMultiIdentity> __Cache = new(16);
 				public PkMultiIdentity? Find(uint value)
 				{
-					Handle.Other_Index.TryGetValue(value, out var r);
+					__Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public OtherUniqueIndex Other => new(this);
+			public OtherUniqueIndex Other = new();
 
 			internal PkMultiIdentityHandle()
 			{
@@ -760,33 +754,30 @@ namespace SpacetimeDB
 
 		public class RepeatingTestArgHandle : RemoteTableHandle<EventContext, RepeatingTestArg>
 		{
-			private Dictionary<ulong, RepeatingTestArg> ScheduledId_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (RepeatingTestArg)row;
-				ScheduledId_Index[value.ScheduledId] = value;
+				ScheduledId.__Cache[value.ScheduledId] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				ScheduledId_Index.Remove(((RepeatingTestArg)row).ScheduledId);
+				ScheduledId.__Cache.Remove(((RepeatingTestArg)row).ScheduledId);
 			}
 
-			public readonly ref struct ScheduledIdUniqueIndex
+			public class ScheduledIdUniqueIndex
 			{
-				readonly RepeatingTestArgHandle Handle;
-				internal ScheduledIdUniqueIndex(RepeatingTestArgHandle handle) => Handle = handle;
-
+				internal readonly Dictionary<ulong, RepeatingTestArg> __Cache = new(16);
 				public RepeatingTestArg? Find(ulong value)
 				{
-					Handle.ScheduledId_Index.TryGetValue(value, out var r);
+					__Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public ScheduledIdUniqueIndex ScheduledId => new(this);
+			public ScheduledIdUniqueIndex ScheduledId = new();
 
 			internal RepeatingTestArgHandle()
 			{
@@ -830,33 +821,30 @@ namespace SpacetimeDB
 
 		public class TestEHandle : RemoteTableHandle<EventContext, TestE>
 		{
-			private Dictionary<ulong, TestE> Id_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (TestE)row;
-				Id_Index[value.Id] = value;
+				Id.__Cache[value.Id] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				Id_Index.Remove(((TestE)row).Id);
+				Id.__Cache.Remove(((TestE)row).Id);
 			}
 
-			public readonly ref struct IdUniqueIndex
+			public class IdUniqueIndex
 			{
-				readonly TestEHandle Handle;
-				internal IdUniqueIndex(TestEHandle handle) => Handle = handle;
-
+				internal readonly Dictionary<ulong, TestE> __Cache = new(16);
 				public TestE? Find(ulong value)
 				{
-					Handle.Id_Index.TryGetValue(value, out var r);
+					__Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public IdUniqueIndex Id => new(this);
+			public IdUniqueIndex Id = new();
 
 			public class NameIndex
 			{
