@@ -60,11 +60,13 @@ impl TokenValidator for UnimplementedTokenValidator {
     }
 }
 
+// This validator accepts any tokens signed with the local key (regardless of issuer).
+// If it is not signed with the local key, we will try to validate it with the OIDC validator.
+// We do this because we sign short lived tokens with different issuers.
 pub struct FullTokenValidator<T: TokenValidator + Send + Sync> {
     pub local_key: DecodingKey,
     pub local_issuer: String,
     pub oidc_validator: T,
-    // pub caching_validator: CachingOidcTokenValidator,
 }
 
 #[async_trait]
@@ -191,8 +193,13 @@ impl async_cache::Fetcher<Arc<JwksValidator>> for KeyFetcher {
         log::info!("Fetching key for issuer {}", raw_issuer.clone());
         // TODO: Consider checking for trailing slashes or requiring a scheme.
         let oidc_url = format!("{}/.well-known/openid-configuration", raw_issuer);
-        // TODO: log errors here.
-        let keys = Jwks::from_oidc_url(oidc_url).await?;
+        let key_or_error = Jwks::from_oidc_url(oidc_url).await;
+        // TODO: We should probably add debouncing to avoid spamming the logs.
+        // Alternatively we could add a backoff before retrying.
+        if let Err(e) = &key_or_error {
+            log::warn!("Error fetching public key for issuer {}: {:?}", raw_issuer, e);
+        }
+        let keys = key_or_error?;
         let validator = JwksValidator {
             issuer: raw_issuer.clone(),
             keyset: keys,
