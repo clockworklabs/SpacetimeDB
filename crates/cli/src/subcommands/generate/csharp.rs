@@ -407,12 +407,12 @@ fn autogen_csharp_access_funcs_for_struct(
             None => continue,
             Some(x) => x,
         };
-        writeln!(
-            output,
-            "public class {csharp_field_name_pascal}UniqueIndex"
-        );
+        writeln!(output, "public class {csharp_field_name_pascal}UniqueIndex");
         indented_block(output, |output| {
-            write!(output, "internal readonly Dictionary<{csharp_field_type}, {csharp_table_name}> __Cache = new(16);");
+            write!(
+                output,
+                "internal readonly Dictionary<{csharp_field_type}, {csharp_table_name}> __Cache = new(16);"
+            );
             writeln!(output);
 
             writeln!(
@@ -420,10 +420,7 @@ fn autogen_csharp_access_funcs_for_struct(
                 "public {struct_name_pascal_case}? Find({csharp_field_type} value)"
             );
             indented_block(output, |output| {
-                writeln!(
-                    output,
-                    "__Cache.TryGetValue(value, out var r);"
-                );
+                writeln!(output, "__Cache.TryGetValue(value, out var r);");
                 writeln!(output, "return r;");
             });
             writeln!(output);
