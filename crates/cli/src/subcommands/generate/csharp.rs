@@ -409,15 +409,10 @@ fn autogen_csharp_access_funcs_for_struct(
         };
         writeln!(
             output,
-            "public readonly ref struct {csharp_field_name_pascal}UniqueIndex"
+            "public class {csharp_field_name_pascal}UniqueIndex"
         );
         indented_block(output, |output| {
-            writeln!(output, "readonly {csharp_table_name}Handle Handle;");
-            write!(
-                output,
-                "internal {csharp_field_name_pascal}UniqueIndex({csharp_table_name}Handle handle) => "
-            );
-            writeln!(output, "Handle = handle;");
+            write!(output, "internal readonly Dictionary<{csharp_field_type}, {csharp_table_name}> __Cache = new(16);");
             writeln!(output);
 
             writeln!(
@@ -427,7 +422,7 @@ fn autogen_csharp_access_funcs_for_struct(
             indented_block(output, |output| {
                 writeln!(
                     output,
-                    "Handle.{csharp_field_name_pascal}_Index.TryGetValue(value, out var r);"
+                    "__Cache.TryGetValue(value, out var r);"
                 );
                 writeln!(output, "return r;");
             });
@@ -436,7 +431,7 @@ fn autogen_csharp_access_funcs_for_struct(
         writeln!(output);
         writeln!(
             output,
-            "public {csharp_field_name_pascal}UniqueIndex {csharp_field_name_pascal} => new(this);"
+            "public {csharp_field_name_pascal}UniqueIndex {csharp_field_name_pascal} = new();"
         );
         writeln!(output);
     }
@@ -597,11 +592,6 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                     if !constraints[&ColList::new(col.col_pos)].has_unique() {
                         continue;
                     }
-                    let type_name = ty_fmt(ctx, &col.col_type, namespace);
-                    writeln!(
-                        output,
-                        "private Dictionary<{type_name}, {table_type}> {field_name}_Index = new(16);"
-                    );
                     unique_indexes.push(field_name);
                 }
                 if !unique_indexes.is_empty() {
@@ -618,7 +608,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                             if !constraints[&ColList::new(col.col_pos)].has_unique() {
                                 continue;
                             }
-                            writeln!(output, "{field_name}_Index[value.{field_name}] = value;");
+                            writeln!(output, "{field_name}.__Cache[value.{field_name}] = value;");
                         }
                     });
                     writeln!(output);
@@ -633,7 +623,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                             if !constraints[&ColList::new(col.col_pos)].has_unique() {
                                 continue;
                             }
-                            writeln!(output, "{field_name}_Index.Remove((({table_type})row).{field_name});");
+                            writeln!(output, "{field_name}.__Cache.Remove((({table_type})row).{field_name});");
                         }
                     });
                     writeln!(output);
