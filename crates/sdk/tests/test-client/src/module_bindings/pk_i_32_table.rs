@@ -81,6 +81,11 @@ impl<'ctx> __sdk::Table for PkI32TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkI32>("pk_i32");
+    _table.add_unique_constraint::<i32>("n", |row| &row.n)
+}
 pub struct PkI32UpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkI32TableHandle<'ctx> {
@@ -122,7 +127,7 @@ impl<'ctx> PkI32TableHandle<'ctx> {
     /// Get a handle on the `n` unique index on the table `pk_i32`.
     pub fn n(&self) -> PkI32NUnique<'ctx> {
         PkI32NUnique {
-            imp: self.imp.get_unique_constraint::<i32>("n", |row| &row.n),
+            imp: self.imp.get_unique_constraint::<i32>("n"),
             phantom: std::marker::PhantomData,
         }
     }

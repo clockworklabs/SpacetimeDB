@@ -81,6 +81,11 @@ impl<'ctx> __sdk::Table for PkBoolTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkBool>("pk_bool");
+    _table.add_unique_constraint::<bool>("b", |row| &row.b)
+}
 pub struct PkBoolUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkBoolTableHandle<'ctx> {
@@ -122,7 +127,7 @@ impl<'ctx> PkBoolTableHandle<'ctx> {
     /// Get a handle on the `b` unique index on the table `pk_bool`.
     pub fn b(&self) -> PkBoolBUnique<'ctx> {
         PkBoolBUnique {
-            imp: self.imp.get_unique_constraint::<bool>("b", |row| &row.b),
+            imp: self.imp.get_unique_constraint::<bool>("b"),
             phantom: std::marker::PhantomData,
         }
     }

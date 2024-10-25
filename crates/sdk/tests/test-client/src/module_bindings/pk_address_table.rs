@@ -81,6 +81,11 @@ impl<'ctx> __sdk::Table for PkAddressTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkAddress>("pk_address");
+    _table.add_unique_constraint::<__sdk::Address>("a", |row| &row.a)
+}
 pub struct PkAddressUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkAddressTableHandle<'ctx> {
@@ -122,7 +127,7 @@ impl<'ctx> PkAddressTableHandle<'ctx> {
     /// Get a handle on the `a` unique index on the table `pk_address`.
     pub fn a(&self) -> PkAddressAUnique<'ctx> {
         PkAddressAUnique {
-            imp: self.imp.get_unique_constraint::<__sdk::Address>("a", |row| &row.a),
+            imp: self.imp.get_unique_constraint::<__sdk::Address>("a"),
             phantom: std::marker::PhantomData,
         }
     }

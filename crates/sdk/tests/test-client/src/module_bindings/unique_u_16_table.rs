@@ -82,6 +82,11 @@ impl<'ctx> __sdk::Table for UniqueU16TableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueU16>("unique_u16");
+    _table.add_unique_constraint::<u16>("n", |row| &row.n)
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::TableUpdate<UniqueU16>> {
@@ -105,7 +110,7 @@ impl<'ctx> UniqueU16TableHandle<'ctx> {
     /// Get a handle on the `n` unique index on the table `unique_u16`.
     pub fn n(&self) -> UniqueU16NUnique<'ctx> {
         UniqueU16NUnique {
-            imp: self.imp.get_unique_constraint::<u16>("n", |row| &row.n),
+            imp: self.imp.get_unique_constraint::<u16>("n"),
             phantom: std::marker::PhantomData,
         }
     }

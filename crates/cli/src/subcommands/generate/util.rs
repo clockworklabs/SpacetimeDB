@@ -8,7 +8,11 @@ use std::{
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
-use spacetimedb_schema::{def::ModuleDef, identifier::Identifier};
+use spacetimedb_schema::{
+    def::ModuleDef,
+    identifier::Identifier,
+    type_for_generate::{AlgebraicTypeUse, PrimitiveType},
+};
 
 use super::code_indenter::Indenter;
 
@@ -56,4 +60,12 @@ pub(super) fn print_auto_generated_file_comment(output: &mut Indenter) {
 pub(super) fn type_ref_name(module: &ModuleDef, typeref: AlgebraicTypeRef) -> String {
     let (name, _def) = module.type_def_from_ref(typeref).unwrap();
     collect_case(Case::Pascal, name.name_segments())
+}
+
+pub(super) fn is_type_filterable(ty: &AlgebraicTypeUse) -> bool {
+    match ty {
+        AlgebraicTypeUse::Primitive(prim) => !matches!(prim, PrimitiveType::F32 | PrimitiveType::F64),
+        AlgebraicTypeUse::String | AlgebraicTypeUse::Identity | AlgebraicTypeUse::Address => true,
+        _ => false,
+    }
 }

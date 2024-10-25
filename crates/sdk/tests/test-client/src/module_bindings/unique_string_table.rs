@@ -82,6 +82,11 @@ impl<'ctx> __sdk::Table for UniqueStringTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueString>("unique_string");
+    _table.add_unique_constraint::<String>("s", |row| &row.s)
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::TableUpdate<UniqueString>> {
@@ -105,7 +110,7 @@ impl<'ctx> UniqueStringTableHandle<'ctx> {
     /// Get a handle on the `s` unique index on the table `unique_string`.
     pub fn s(&self) -> UniqueStringSUnique<'ctx> {
         UniqueStringSUnique {
-            imp: self.imp.get_unique_constraint::<String>("s", |row| &row.s),
+            imp: self.imp.get_unique_constraint::<String>("s"),
             phantom: std::marker::PhantomData,
         }
     }

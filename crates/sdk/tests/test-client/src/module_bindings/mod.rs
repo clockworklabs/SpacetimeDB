@@ -2332,16 +2332,6 @@ impl __sdk::InModule for RemoteModule {
     type Module = Self;
 }
 
-impl __sdk::SpacetimeModule for RemoteModule {
-    type DbConnection = DbConnection;
-    type EventContext = EventContext;
-    type Reducer = Reducer;
-    type DbView = RemoteTables;
-    type Reducers = RemoteReducers;
-    type DbUpdate = DbUpdate;
-    type SubscriptionHandle = SubscriptionHandle;
-}
-
 /// The `reducers` field of [`EventContext`] and [`DbConnection`],
 /// with methods provided by extension traits for each reducer defined by the module.
 pub struct RemoteReducers {
@@ -2605,4 +2595,105 @@ impl<
         >,
     > RemoteDbContext for Ctx
 {
+}
+
+impl __sdk::SpacetimeModule for RemoteModule {
+    type DbConnection = DbConnection;
+    type EventContext = EventContext;
+    type Reducer = Reducer;
+    type DbView = RemoteTables;
+    type Reducers = RemoteReducers;
+    type DbUpdate = DbUpdate;
+    type SubscriptionHandle = SubscriptionHandle;
+
+    fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
+        large_table_table::register_table(client_cache);
+        one_address_table::register_table(client_cache);
+        one_bool_table::register_table(client_cache);
+        one_byte_struct_table::register_table(client_cache);
+        one_enum_with_payload_table::register_table(client_cache);
+        one_every_primitive_struct_table::register_table(client_cache);
+        one_every_vec_struct_table::register_table(client_cache);
+        one_f_32_table::register_table(client_cache);
+        one_f_64_table::register_table(client_cache);
+        one_i_128_table::register_table(client_cache);
+        one_i_16_table::register_table(client_cache);
+        one_i_256_table::register_table(client_cache);
+        one_i_32_table::register_table(client_cache);
+        one_i_64_table::register_table(client_cache);
+        one_i_8_table::register_table(client_cache);
+        one_identity_table::register_table(client_cache);
+        one_simple_enum_table::register_table(client_cache);
+        one_string_table::register_table(client_cache);
+        one_u_128_table::register_table(client_cache);
+        one_u_16_table::register_table(client_cache);
+        one_u_256_table::register_table(client_cache);
+        one_u_32_table::register_table(client_cache);
+        one_u_64_table::register_table(client_cache);
+        one_u_8_table::register_table(client_cache);
+        one_unit_struct_table::register_table(client_cache);
+        option_every_primitive_struct_table::register_table(client_cache);
+        option_i_32_table::register_table(client_cache);
+        option_identity_table::register_table(client_cache);
+        option_simple_enum_table::register_table(client_cache);
+        option_string_table::register_table(client_cache);
+        option_vec_option_i_32_table::register_table(client_cache);
+        pk_address_table::register_table(client_cache);
+        pk_bool_table::register_table(client_cache);
+        pk_i_128_table::register_table(client_cache);
+        pk_i_16_table::register_table(client_cache);
+        pk_i_256_table::register_table(client_cache);
+        pk_i_32_table::register_table(client_cache);
+        pk_i_64_table::register_table(client_cache);
+        pk_i_8_table::register_table(client_cache);
+        pk_identity_table::register_table(client_cache);
+        pk_string_table::register_table(client_cache);
+        pk_u_128_table::register_table(client_cache);
+        pk_u_16_table::register_table(client_cache);
+        pk_u_256_table::register_table(client_cache);
+        pk_u_32_table::register_table(client_cache);
+        pk_u_64_table::register_table(client_cache);
+        pk_u_8_table::register_table(client_cache);
+        table_holds_table_table::register_table(client_cache);
+        unique_address_table::register_table(client_cache);
+        unique_bool_table::register_table(client_cache);
+        unique_i_128_table::register_table(client_cache);
+        unique_i_16_table::register_table(client_cache);
+        unique_i_256_table::register_table(client_cache);
+        unique_i_32_table::register_table(client_cache);
+        unique_i_64_table::register_table(client_cache);
+        unique_i_8_table::register_table(client_cache);
+        unique_identity_table::register_table(client_cache);
+        unique_string_table::register_table(client_cache);
+        unique_u_128_table::register_table(client_cache);
+        unique_u_16_table::register_table(client_cache);
+        unique_u_256_table::register_table(client_cache);
+        unique_u_32_table::register_table(client_cache);
+        unique_u_64_table::register_table(client_cache);
+        unique_u_8_table::register_table(client_cache);
+        vec_address_table::register_table(client_cache);
+        vec_bool_table::register_table(client_cache);
+        vec_byte_struct_table::register_table(client_cache);
+        vec_enum_with_payload_table::register_table(client_cache);
+        vec_every_primitive_struct_table::register_table(client_cache);
+        vec_every_vec_struct_table::register_table(client_cache);
+        vec_f_32_table::register_table(client_cache);
+        vec_f_64_table::register_table(client_cache);
+        vec_i_128_table::register_table(client_cache);
+        vec_i_16_table::register_table(client_cache);
+        vec_i_256_table::register_table(client_cache);
+        vec_i_32_table::register_table(client_cache);
+        vec_i_64_table::register_table(client_cache);
+        vec_i_8_table::register_table(client_cache);
+        vec_identity_table::register_table(client_cache);
+        vec_simple_enum_table::register_table(client_cache);
+        vec_string_table::register_table(client_cache);
+        vec_u_128_table::register_table(client_cache);
+        vec_u_16_table::register_table(client_cache);
+        vec_u_256_table::register_table(client_cache);
+        vec_u_32_table::register_table(client_cache);
+        vec_u_64_table::register_table(client_cache);
+        vec_u_8_table::register_table(client_cache);
+        vec_unit_struct_table::register_table(client_cache);
+    }
 }

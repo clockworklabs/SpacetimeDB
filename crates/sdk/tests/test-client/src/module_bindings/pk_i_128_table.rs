@@ -81,6 +81,11 @@ impl<'ctx> __sdk::Table for PkI128TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkI128>("pk_i128");
+    _table.add_unique_constraint::<i128>("n", |row| &row.n)
+}
 pub struct PkI128UpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkI128TableHandle<'ctx> {
@@ -122,7 +127,7 @@ impl<'ctx> PkI128TableHandle<'ctx> {
     /// Get a handle on the `n` unique index on the table `pk_i128`.
     pub fn n(&self) -> PkI128NUnique<'ctx> {
         PkI128NUnique {
-            imp: self.imp.get_unique_constraint::<i128>("n", |row| &row.n),
+            imp: self.imp.get_unique_constraint::<i128>("n"),
             phantom: std::marker::PhantomData,
         }
     }

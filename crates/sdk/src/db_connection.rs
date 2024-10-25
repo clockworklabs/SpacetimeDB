@@ -716,7 +716,9 @@ but you must call one of them, or else the connection will never progress.
             on_connect_error: self.on_connect_error,
             on_disconnect: self.on_disconnect,
         }));
-        let cache = Arc::new(StdMutex::new(ClientCache::default()));
+        let mut cache = ClientCache::default();
+        M::register_tables(&mut cache);
+        let cache = Arc::new(StdMutex::new(cache));
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
         let ctx_imp = DbContextImpl {
             runtime: handle,

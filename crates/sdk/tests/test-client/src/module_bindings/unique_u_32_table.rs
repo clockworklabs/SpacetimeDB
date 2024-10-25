@@ -82,6 +82,11 @@ impl<'ctx> __sdk::Table for UniqueU32TableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueU32>("unique_u32");
+    _table.add_unique_constraint::<u32>("n", |row| &row.n)
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::TableUpdate<UniqueU32>> {
@@ -105,7 +110,7 @@ impl<'ctx> UniqueU32TableHandle<'ctx> {
     /// Get a handle on the `n` unique index on the table `unique_u32`.
     pub fn n(&self) -> UniqueU32NUnique<'ctx> {
         UniqueU32NUnique {
-            imp: self.imp.get_unique_constraint::<u32>("n", |row| &row.n),
+            imp: self.imp.get_unique_constraint::<u32>("n"),
             phantom: std::marker::PhantomData,
         }
     }

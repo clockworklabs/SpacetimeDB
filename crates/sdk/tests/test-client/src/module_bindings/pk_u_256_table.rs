@@ -81,6 +81,11 @@ impl<'ctx> __sdk::Table for PkU256TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkU256>("pk_u256");
+    _table.add_unique_constraint::<__sats::u256>("n", |row| &row.n)
+}
 pub struct PkU256UpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkU256TableHandle<'ctx> {
@@ -122,7 +127,7 @@ impl<'ctx> PkU256TableHandle<'ctx> {
     /// Get a handle on the `n` unique index on the table `pk_u256`.
     pub fn n(&self) -> PkU256NUnique<'ctx> {
         PkU256NUnique {
-            imp: self.imp.get_unique_constraint::<__sats::u256>("n", |row| &row.n),
+            imp: self.imp.get_unique_constraint::<__sats::u256>("n"),
             phantom: std::marker::PhantomData,
         }
     }

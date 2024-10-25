@@ -81,6 +81,11 @@ impl<'ctx> __sdk::Table for UserTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<User>("user");
+    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity)
+}
 pub struct UserUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for UserTableHandle<'ctx> {
@@ -122,9 +127,7 @@ impl<'ctx> UserTableHandle<'ctx> {
     /// Get a handle on the `identity` unique index on the table `user`.
     pub fn identity(&self) -> UserIdentityUnique<'ctx> {
         UserIdentityUnique {
-            imp: self
-                .imp
-                .get_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity),
+            imp: self.imp.get_unique_constraint::<__sdk::Identity>("identity"),
             phantom: std::marker::PhantomData,
         }
     }

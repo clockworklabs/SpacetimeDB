@@ -82,6 +82,11 @@ impl<'ctx> __sdk::Table for UniqueIdentityTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueIdentity>("unique_identity");
+    _table.add_unique_constraint::<__sdk::Identity>("i", |row| &row.i)
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::TableUpdate<UniqueIdentity>> {
@@ -105,7 +110,7 @@ impl<'ctx> UniqueIdentityTableHandle<'ctx> {
     /// Get a handle on the `i` unique index on the table `unique_identity`.
     pub fn i(&self) -> UniqueIdentityIUnique<'ctx> {
         UniqueIdentityIUnique {
-            imp: self.imp.get_unique_constraint::<__sdk::Identity>("i", |row| &row.i),
+            imp: self.imp.get_unique_constraint::<__sdk::Identity>("i"),
             phantom: std::marker::PhantomData,
         }
     }

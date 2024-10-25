@@ -1,5 +1,5 @@
 use super::code_indenter::{CodeIndenter, Indenter};
-use super::util::{collect_case, print_lines, type_ref_name};
+use super::util::{collect_case, is_type_filterable, print_lines, type_ref_name};
 use super::Lang;
 use crate::generate::util::{namespace_is_empty_or_default, print_auto_generated_file_comment};
 use convert_case::{Case, Casing};
@@ -9,7 +9,7 @@ use spacetimedb_primitives::ColList;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
-use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, PrimitiveType};
+use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, PrimitiveType, ProductTypeDef};
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
 use std::ops::Deref;
@@ -207,6 +207,25 @@ impl<'ctx> __sdk::Table for {table_handle}<'ctx> {{
 "
         );
 
+        out.delimited_block(
+            "
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+",
+            |out| {
+                writeln!(out, "let _table = client_cache.get_or_make_table::<{row_type}>({table_name:?});");
+                for (unique_field_ident, unique_field_type_use) in iter_unique_cols(&schema, product_def) {
+                    let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
+                    let unique_field_type = type_name(module, unique_field_type_use);
+                    writeln!(
+                        out,
+                        "_table.add_unique_constraint::<{unique_field_type}>({unique_field_name:?}, |row| &row.{unique_field_name})",
+                    );
+                }
+            },
+            "}",
+        );
+
         if let Some(pk_field) = schema.pk() {
             let update_callback_id = table_name_pascalcase.clone() + "UpdateCallbackId";
 
@@ -260,20 +279,16 @@ pub(super) fn parse_table_update(
             );
         }
 
-        let constraints = schema.backcompat_column_constraints();
+        for (unique_field_ident, unique_field_type_use) in iter_unique_cols(&schema, product_def) {
+            let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
+            let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
 
-        for field in schema.columns() {
-            if constraints[&ColList::from(field.col_pos)].has_unique() {
-                let (unique_field_ident, unique_field_type_use) = &product_def.elements[field.col_pos.idx()];
-                let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
-                let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
+            let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
+            let unique_field_type = type_name(module, unique_field_type_use);
 
-                let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
-                let unique_field_type = type_name(module, unique_field_type_use);
-
-                write!(
-                    out,
-                    "
+            write!(
+                out,
+                "
         /// Access to the `{unique_field_name}` unique index on the table `{table_name}`,
         /// which allows point queries on the field of the same name
         /// via the [`{unique_constraint}::find`] method.
@@ -290,7 +305,7 @@ pub(super) fn parse_table_update(
             /// Get a handle on the `{unique_field_name}` unique index on the table `{table_name}`.
             pub fn {unique_field_name}(&self) -> {unique_constraint}<'ctx> {{
                 {unique_constraint} {{
-                    imp: self.imp.get_unique_constraint::<{unique_field_type}>({unique_field_name:?}, |row| &row.{unique_field_name}),
+                    imp: self.imp.get_unique_constraint::<{unique_field_type}>({unique_field_name:?}),
                     phantom: std::marker::PhantomData,
                 }}
             }}
@@ -304,8 +319,7 @@ pub(super) fn parse_table_update(
             }}
         }}
         "
-                );
-            }
+            );
         }
 
         // TODO: expose non-unique indices.
@@ -475,6 +489,12 @@ Requested namespace: {namespace}",
         // Define `RemoteModule`, `DbConnection`, `EventContext`, `RemoteTables`, `RemoteReducers` and `SubscriptionHandle`.
         // Note that these do not change based on the module.
         print_const_db_context_types(out);
+
+        out.newline();
+
+        // Implement `SpacetimeModule` for `RemoteModule`.
+        // This includes a method for initializing the tables in the client cache.
+        print_impl_spacetime_module(module, out);
 
         vec![("mod.rs".to_string(), (output.into_inner()))]
     }
@@ -756,6 +776,22 @@ fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
     module.tables().sorted_by_key(|table| &table.name)
 }
 
+fn iter_unique_cols<'a>(
+    schema: &'a TableSchema,
+    product_def: &'a ProductTypeDef,
+) -> impl Iterator<Item = &'a (Identifier, AlgebraicTypeUse)> + 'a {
+    let constraints = schema.backcompat_column_constraints();
+    schema.columns().iter().filter_map(move |field| {
+        constraints[&ColList::from(field.col_pos)]
+            .has_unique()
+            .then(|| {
+                let res @ (_, ref ty) = &product_def.elements[field.col_pos.idx()];
+                is_type_filterable(ty).then_some(res)
+            })
+            .flatten()
+    })
+}
+
 fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {
     print_enum_derives(out);
     writeln!(
@@ -968,6 +1004,36 @@ impl __sdk::InModule for DbUpdate {{
     );
 }
 
+fn print_impl_spacetime_module(module: &ModuleDef, out: &mut Indenter) {
+    out.delimited_block(
+        "impl __sdk::SpacetimeModule for RemoteModule {",
+        |out| {
+            writeln!(
+                out,
+                "
+type DbConnection = DbConnection;
+type EventContext = EventContext;
+type Reducer = Reducer;
+type DbView = RemoteTables;
+type Reducers = RemoteReducers;
+type DbUpdate = DbUpdate;
+type SubscriptionHandle = SubscriptionHandle;
+"
+            );
+            out.delimited_block(
+                "fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {",
+                |out| {
+                    for table in iter_tables(module) {
+                        writeln!(out, "{}::register_table(client_cache);", table_module_name(&table.name));
+                    }
+                },
+                "}\n",
+            );
+        },
+        "}\n",
+    );
+}
+
 fn print_const_db_context_types(out: &mut Indenter) {
     writeln!(
         out,
@@ -977,16 +1043,6 @@ pub struct RemoteModule;
 
 impl __sdk::InModule for RemoteModule {{
     type Module = Self;
-}}
-
-impl __sdk::SpacetimeModule for RemoteModule {{
-    type DbConnection = DbConnection;
-    type EventContext = EventContext;
-    type Reducer = Reducer;
-    type DbView = RemoteTables;
-    type Reducers = RemoteReducers;
-    type DbUpdate = DbUpdate;
-    type SubscriptionHandle = SubscriptionHandle;
 }}
 
 /// The `reducers` field of [`EventContext`] and [`DbConnection`],

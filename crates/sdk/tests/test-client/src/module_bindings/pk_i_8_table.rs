@@ -81,6 +81,11 @@ impl<'ctx> __sdk::Table for PkI8TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkI8>("pk_i8");
+    _table.add_unique_constraint::<i8>("n", |row| &row.n)
+}
 pub struct PkI8UpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkI8TableHandle<'ctx> {
@@ -122,7 +127,7 @@ impl<'ctx> PkI8TableHandle<'ctx> {
     /// Get a handle on the `n` unique index on the table `pk_i8`.
     pub fn n(&self) -> PkI8NUnique<'ctx> {
         PkI8NUnique {
-            imp: self.imp.get_unique_constraint::<i8>("n", |row| &row.n),
+            imp: self.imp.get_unique_constraint::<i8>("n"),
             phantom: std::marker::PhantomData,
         }
     }

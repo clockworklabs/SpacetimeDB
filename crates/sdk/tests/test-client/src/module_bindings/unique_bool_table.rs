@@ -82,6 +82,11 @@ impl<'ctx> __sdk::Table for UniqueBoolTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueBool>("unique_bool");
+    _table.add_unique_constraint::<bool>("b", |row| &row.b)
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __anyhow::Result<__sdk::TableUpdate<UniqueBool>> {
@@ -105,7 +110,7 @@ impl<'ctx> UniqueBoolTableHandle<'ctx> {
     /// Get a handle on the `b` unique index on the table `unique_bool`.
     pub fn b(&self) -> UniqueBoolBUnique<'ctx> {
         UniqueBoolBUnique {
-            imp: self.imp.get_unique_constraint::<bool>("b", |row| &row.b),
+            imp: self.imp.get_unique_constraint::<bool>("b"),
             phantom: std::marker::PhantomData,
         }
     }
