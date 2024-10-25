@@ -6,7 +6,6 @@ use http::header::CONTENT_TYPE;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use spacetimedb::auth::identity::encode_token_with_expiry;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::Identity;
 
@@ -96,12 +95,18 @@ pub struct WebsocketTokenResponse {
     pub token: String,
 }
 
+// This endpoint takes a token from a client and sends a newly signed token with a 60s expiry.
+// Note that even if the token has a different issuer, we will sign it with our key.
+// This is ok because `FullTokenValidator` checks if we signed the token before worrying about the issuer.
 pub async fn create_websocket_token<S: NodeDelegate>(
     State(ctx): State<S>,
     SpacetimeAuthRequired(auth): SpacetimeAuthRequired,
 ) -> axum::response::Result<impl IntoResponse> {
     let expiry = Duration::from_secs(60);
-    let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(expiry)).map_err(log_and_500)?;
+    let token = auth
+        .re_sign_with_expiry(ctx.private_key(), expiry)
+        .map_err(log_and_500)?;
+    // let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(expiry)).map_err(log_and_500)?;
     Ok(axum::Json(WebsocketTokenResponse { token }))
 }
 
