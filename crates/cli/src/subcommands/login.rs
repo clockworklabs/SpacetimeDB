@@ -1,3 +1,4 @@
+use crate::util::decode_identity;
 use crate::Config;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use reqwest::Url;
@@ -6,34 +7,59 @@ use webbrowser;
 
 pub fn cli() -> Command {
     Command::new("login")
+        .args_conflicts_with_subcommands(true)
+        .subcommands(get_subcommands())
         .arg(
-            Arg::new("host")
-                .long("host")
+            Arg::new("auth-host")
+                .long("auth-host")
                 .default_value("https://spacetimedb.com")
                 .help("Fetch login token from a different host"),
         )
         .arg(
+            Arg::new("local")
+                .long("local")
+                .action(ArgAction::SetTrue)
+                .conflicts_with("auth-host")
+                .help("Log in to a SpacetimeDB server on the local machine, without a separate auth server"),
+        )
+        .arg(
             Arg::new("spacetimedb-token")
                 .long("token")
-                .conflicts_with("host")
-                .conflicts_with("refresh-cache")
+                .conflicts_with("auth-host")
+                .conflicts_with("clear-cache")
                 .help("Bypass the login flow and use a login token directly"),
         )
         .arg(
-            Arg::new("refresh-cache")
-                .long("refresh-cache")
+            Arg::new("clear-cache")
+                .long("clear-cache")
                 .action(ArgAction::SetTrue)
                 .help("Clear the cached tokens and re-fetch them"),
         )
-        .about("Login the CLI in to SpacetimeDB")
+        .about("Log the CLI in to SpacetimeDB")
+}
+
+fn get_subcommands() -> Vec<Command> {
+    vec![Command::new("show")
+        .arg(
+            Arg::new("token")
+                .long("token")
+                .action(ArgAction::SetTrue)
+                .help("Also show the auth token"),
+        )
+        .about("Show the current login info")]
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    if let Some((cmd, subcommand_args)) = args.subcommand() {
+        return exec_subcommand(config, cmd, subcommand_args).await;
+    }
+
     let spacetimedb_token: Option<&String> = args.get_one("spacetimedb-token");
-    let host: &String = args.get_one("host").unwrap();
-    // TODO: This `--refresh-cache` does not (and can not) clear any of the browser's cookies, so it will refresh the tokens stored in config,
+    let host: &String = args.get_one("auth-host").unwrap();
+    // TODO: This `--clear-cache` does not (and can not) clear any of the browser's cookies, so it will refresh the tokens stored in config,
     // but if you're already logged in with the browser, it will not let you e.g. choose a different account.
-    let clear_cache = args.get_flag("refresh-cache");
+    let clear_cache = args.get_flag("clear-cache");
+    let local_login = args.get_flag("local");
 
     if let Some(token) = spacetimedb_token {
         config.set_spacetimedb_token(token.clone());
@@ -41,20 +67,52 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         return Ok(());
     }
 
-    spacetimedb_token_cached(&mut config, host, clear_cache).await?;
+    spacetimedb_token_cached(&mut config, host, local_login, clear_cache).await?;
 
     Ok(())
 }
 
-async fn spacetimedb_token_cached(config: &mut Config, host: &str, clear_cache: bool) -> anyhow::Result<String> {
+async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    match cmd {
+        "show" => exec_show(config, args).await,
+        unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
+    }
+}
+
+async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let include_token = args.get_flag("token");
+
+    let identity = decode_identity(&config)?;
+    println!("You are logged in as {}", identity);
+
+    if include_token {
+        // We can `unwrap` because `decode_identity` fetches this too.
+        // TODO: maybe decode_identity should take token as a param.
+        let token = config.spacetimedb_token().unwrap();
+        println!("Your auth token (don't share this!) is {}", token);
+    }
+
+    Ok(())
+}
+
+async fn spacetimedb_token_cached(
+    config: &mut Config,
+    host: &str,
+    local_login: bool,
+    clear_cache: bool,
+) -> anyhow::Result<String> {
     // Currently, this token does not expire. However, it will at some point in the future. When that happens,
     // this code will need to happen before any request to a spacetimedb server, rather than at the end of the login flow here.
     let spacetimedb_token = config.spacetimedb_token().filter(|_| !clear_cache);
     if let Some(token) = spacetimedb_token {
         Ok(token.clone())
     } else {
-        let session_id = web_login_cached(config, host, clear_cache).await?;
-        let token = spacetimedb_login(host, &session_id).await?;
+        let token = if local_login {
+            spacetimedb_local_login().await?
+        } else {
+            let session_id = web_login_cached(config, host, clear_cache).await?;
+            spacetimedb_login(host, &session_id).await?
+        };
         config.set_spacetimedb_token(token.clone());
         config.save();
         Ok(token)
@@ -166,4 +224,22 @@ async fn spacetimedb_login(remote: &str, web_session_id: &String) -> Result<Stri
         .await?;
 
     Ok(response.token.clone())
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct LocalLoginResponse {
+    pub token: String,
+}
+
+async fn spacetimedb_local_login() -> Result<String, anyhow::Error> {
+    let client = reqwest::Client::new();
+
+    let response: LocalLoginResponse = client
+        .post("http://localhost:3000/identity")
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    Ok(response.token)
 }
