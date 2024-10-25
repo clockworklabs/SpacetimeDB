@@ -10,7 +10,7 @@ use spacetimedb_sql_parser::ast::BinOp;
 use super::ty::{InvalidTypeId, Symbol, TyCtx, TyId, Type, TypeWithCtx};
 
 /// A logical relational expression
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RelExpr {
     /// A base table
     RelVar(Arc<TableSchema>, TyId),
@@ -65,7 +65,7 @@ impl RelExpr {
 }
 
 /// A relational select operation or filter
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Select {
     /// The input relation
     pub input: RelExpr,
@@ -74,7 +74,7 @@ pub struct Select {
 }
 
 /// A relational project operation or map
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Project {
     /// The input relation
     pub input: RelExpr,
@@ -86,7 +86,7 @@ pub struct Project {
 ///
 /// Relational operators take a single input paramter.
 /// Let variables explicitly destructure the input row.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Let {
     /// The variable definitions for this let expression
     pub vars: Vec<(Symbol, Expr)>,
@@ -94,8 +94,21 @@ pub struct Let {
     pub exprs: Vec<Expr>,
 }
 
+/// A let context for variable resolution
+pub struct LetCtx<'a> {
+    pub vars: &'a [(Symbol, Expr)],
+}
+
+impl<'a> LetCtx<'a> {
+    pub fn get_var(&self, sym: Symbol) -> Option<&Expr> {
+        self.vars
+            .iter()
+            .find_map(|(s, e)| if *s == sym { Some(e) } else { None })
+    }
+}
+
 /// A typed scalar expression
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     /// A binary expression
     Bin(BinOp, Box<Expr>, Box<Expr>),

@@ -1,13 +1,14 @@
-use std::{ops::Bound, sync::Arc};
-
 use spacetimedb_expr::ty::TyId;
+use spacetimedb_expr::StatementSource;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColId, IndexId};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_sql_parser::ast::BinOp;
+use std::{ops::Bound, sync::Arc};
 
 /// A physical plan is a concrete query evaluation strategy.
 /// As such, we can reason about its energy consumption.
+#[derive(Debug)]
 pub enum PhysicalPlan {
     /// Scan a table row by row, returning row ids
     TableScan(Arc<TableSchema>),
@@ -25,7 +26,34 @@ pub enum PhysicalPlan {
     Project(Project),
 }
 
+impl PhysicalPlan {
+    pub fn as_project(&self) -> Option<&Project> {
+        if let PhysicalPlan::Project(p) = self {
+            Some(p)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_filter(&self) -> Option<&Filter> {
+        if let PhysicalPlan::Filter(p) = self {
+            Some(p)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_cross(&self) -> Option<&CrossJoin> {
+        if let PhysicalPlan::CrossJoin(p) = self {
+            Some(p)
+        } else {
+            None
+        }
+    }
+}
+
 /// Fetch and return row ids from a btree index
+#[derive(Debug)]
 pub struct IndexScan {
     /// The table on which this index is defined
     pub table_schema: Arc<TableSchema>,
@@ -43,6 +71,7 @@ pub struct IndexScan {
 }
 
 /// BTrees support equality and range scans
+#[derive(Debug)]
 pub enum IndexOp {
     Eq(AlgebraicValue, TyId),
     Range(Bound<AlgebraicValue>, Bound<AlgebraicValue>, TyId),
@@ -50,6 +79,7 @@ pub enum IndexOp {
 
 /// Join an input relation with a base table using an index.
 /// Returns a 2-tuple of its lhs and rhs input rows.
+#[derive(Debug)]
 pub struct IndexJoin {
     /// The lhs input used to probe the index
     pub input: Box<PhysicalPlan>,
@@ -71,6 +101,7 @@ pub struct IndexJoin {
 
 /// An index join + projection.
 /// Returns tuples from the lhs (or rhs) exclusively.
+#[derive(Debug)]
 pub struct IndexSemiJoin {
     /// The lhs input used to probe the index
     pub input: Box<PhysicalPlan>,
@@ -90,6 +121,7 @@ pub struct IndexSemiJoin {
 }
 
 /// Which side of a semijoin to project?
+#[derive(Debug)]
 pub enum SemiJoinProj {
     Lhs,
     Rhs,
@@ -97,6 +129,7 @@ pub enum SemiJoinProj {
 
 /// Returns the cross product of two input relations.
 /// Returns a 2-tuple of its lhs and rhs input rows.
+#[derive(Debug)]
 pub struct CrossJoin {
     /// The lhs input relation
     pub lhs: Box<PhysicalPlan>,
@@ -108,6 +141,7 @@ pub struct CrossJoin {
 }
 
 /// A streaming or non-leaf filter operation
+#[derive(Debug)]
 pub struct Filter {
     /// A generic filter always has an input
     pub input: Box<PhysicalPlan>,
@@ -116,6 +150,7 @@ pub struct Filter {
 }
 
 /// A streaming project or map operation
+#[derive(Debug)]
 pub struct Project {
     /// A projection always has an input
     pub input: Box<PhysicalPlan>,
@@ -125,6 +160,7 @@ pub struct Project {
 }
 
 /// A physical scalar expression
+#[derive(Debug)]
 pub enum PhysicalExpr {
     /// A binary expression
     BinOp(BinOp, Box<PhysicalExpr>, Box<PhysicalExpr>),
@@ -136,4 +172,11 @@ pub enum PhysicalExpr {
     Field(Box<PhysicalExpr>, usize, TyId),
     /// The input tuple to a relop
     Input(TyId),
+}
+
+/// A physical context for the result of a query compilation.
+pub struct PhysicalCtx<'a> {
+    pub plan: PhysicalPlan,
+    pub sql: &'a str,
+    pub source: StatementSource,
 }
