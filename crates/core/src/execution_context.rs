@@ -162,6 +162,25 @@ impl From<&ReducerContext> for txdata::Inputs {
     }
 }
 
+impl TryFrom<&txdata::Inputs> for ReducerContext {
+    type Error = bsatn::DecodeError;
+
+    fn try_from(inputs: &txdata::Inputs) -> Result<Self, Self::Error> {
+        let args = &mut inputs.reducer_args.as_ref();
+        let caller_identity = bsatn::from_reader(args)?;
+        let caller_address = bsatn::from_reader(args)?;
+        let timestamp = bsatn::from_reader(args)?;
+
+        Ok(Self {
+            name: inputs.reducer_name.to_string(),
+            caller_identity,
+            caller_address,
+            timestamp,
+            arg_bsatn: Bytes::from(args.to_owned()),
+        })
+    }
+}
+
 /// Classifies a transaction according to its workload.
 /// A transaction can be executing a reducer.
 /// It can be used to satisfy a one-off sql query or subscription.

@@ -133,37 +133,30 @@ impl SnapshotWorker {
     }
 
     fn take_snapshot(committed_state: &RwLock<CommittedState>, snapshot_repo: &SnapshotRepository) {
-        let mut committed_state = committed_state.write();
-        let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {
-            log::info!("SnapshotWorker::take_snapshot: refusing to take snapshot at tx_offset -1");
-            return;
-        };
-        log::info!(
-            "Capturing snapshot of database {:?} at TX offset {}",
-            snapshot_repo.database_identity(),
-            tx_offset,
-        );
-
         let start_time = std::time::Instant::now();
+        match Locking::take_snapshot_internal(committed_state, snapshot_repo) {
+            Err(e) => {
+                log::error!(
+                    "Error capturing snapshot of database {:?}: {e:?}",
+                    snapshot_repo.database_identity()
+                );
+            }
 
-        let CommittedState {
-            ref mut tables,
-            ref blob_store,
-            ..
-        } = *committed_state;
+            Ok(None) => {
+                log::warn!(
+                    "SnapshotWorker::take_snapshot: refusing to take snapshot of database {} at TX offset -1",
+                    snapshot_repo.database_identity()
+                );
+            }
 
-        if let Err(e) = snapshot_repo.create_snapshot(tables.values_mut(), blob_store, tx_offset) {
-            log::error!(
-                "Error capturing snapshot of database {:?}: {e:?}",
-                snapshot_repo.database_identity()
-            );
-        } else {
-            log::info!(
-                "Captured snapshot of database {:?} at TX offset {} in {:?}",
-                snapshot_repo.database_identity(),
-                tx_offset,
-                start_time.elapsed()
-            );
+            Ok(Some((tx_offset, _path))) => {
+                log::info!(
+                    "Captured snapshot of database {:?} at TX offset {} in {:?}",
+                    snapshot_repo.database_identity(),
+                    tx_offset,
+                    start_time.elapsed()
+                );
+            }
         }
     }
 }
@@ -1564,7 +1557,6 @@ mod tests {
     use spacetimedb_lib::db::raw_def::v9::RawTableDefBuilder;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
-    use spacetimedb_sats::bsatn;
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
     use spacetimedb_schema::schema::RowLevelSecuritySchema;
@@ -2457,26 +2449,25 @@ mod tests {
 
         // Also assert that we got what we put in.
         for (i, input) in inputs.inputs.into_iter().enumerate() {
-            let reducer_name = input.reducer_name.as_str();
+            let ReducerContext {
+                name: reducer_name,
+                caller_identity,
+                caller_address,
+                timestamp: reducer_timestamp,
+                arg_bsatn,
+            } = ReducerContext::try_from(&input).unwrap();
             if i == 0 {
                 assert_eq!(reducer_name, "__identity_connected__");
             } else {
                 assert_eq!(reducer_name, "abstract_concrete_proxy_factory_impl");
             }
-            let mut args = input.reducer_args.as_ref();
-            let identity: Identity =
-                bsatn::from_reader(&mut args).expect("failed to decode caller identity from reducer args");
-            let address: Address =
-                bsatn::from_reader(&mut args).expect("failed to decode caller address from reducer args");
-            let timestamp1: Timestamp =
-                bsatn::from_reader(&mut args).expect("failed to decode timestamp from reducer args");
             assert!(
-                args.is_empty(),
+                arg_bsatn.is_empty(),
                 "expected args to be exhausted because nullary args were given"
             );
-            assert_eq!(identity, Identity::ZERO);
-            assert_eq!(address, Address::ZERO);
-            assert_eq!(timestamp1, timestamp);
+            assert_eq!(caller_identity, Identity::ZERO);
+            assert_eq!(caller_address, Address::ZERO);
+            assert_eq!(reducer_timestamp, timestamp);
         }
     }
 }

@@ -41,9 +41,9 @@ class Domains(Smoketest):
         rand_name = random_string()
 
         self.spacetime("dns", "register-tld", rand_name)
-        self.spacetime("dns", "set-name", rand_name, self.address)
+        self.spacetime("dns", "set-name", rand_name, self.database_identity)
         lookup_result = self.spacetime("dns", "lookup", rand_name).strip()
-        self.assertEqual(lookup_result, self.address)
+        self.assertEqual(lookup_result, self.database_identity)
 
-        names = self.spacetime("dns", "reverse-lookup", self.address).splitlines()
+        names = self.spacetime("dns", "reverse-lookup", self.database_identity).splitlines()
         self.assertIn(rand_name, names)

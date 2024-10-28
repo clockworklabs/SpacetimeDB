@@ -9,6 +9,7 @@ import fnmatch
 import json
 from . import TEST_DIR, build_template_target
 import smoketests
+import time
 import logging
 
 def check_docker():

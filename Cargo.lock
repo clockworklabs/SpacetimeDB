@@ -5165,6 +5165,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-execution"
+version = "1.0.0-rc1"
+dependencies = [
+ "spacetimedb-expr",
+ "spacetimedb-lib",
+ "spacetimedb-table",
+]
+
+[[package]]
 name = "spacetimedb-expr"
 version = "1.0.0-rc1"
 dependencies = [
@@ -5224,6 +5233,17 @@ dependencies = [
  "itertools 0.12.1",
  "paste",
  "prometheus",
+]
+
+[[package]]
+name = "spacetimedb-physical-plan"
+version = "1.0.0-rc1"
+dependencies = [
+ "spacetimedb-expr",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-schema",
+ "spacetimedb-sql-parser",
 ]
 
 [[package]]
