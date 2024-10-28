@@ -101,6 +101,7 @@ fn test_decode() -> ResultTest<()> {
         owner_identity: id,
         host_type: HostType::Wasm,
         initial_program: Hash::ZERO,
+        replication: Default::default(),
     };
 
     cdb.insert_database(db.clone())?;

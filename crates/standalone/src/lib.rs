@@ -290,6 +290,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     owner_identity: *publisher,
                     host_type: spec.host_type,
                     initial_program,
+                    replication: Default::default(),
                 };
                 let database_id = self.control_db.insert_database(database.clone())?;
                 database.id = database_id;
