@@ -1318,6 +1318,7 @@ pub mod tests_utils {
     use super::*;
     use core::ops::Deref;
     use durability::EmptyHistory;
+    use spacetimedb_paths::FromPathUnchecked;
     use tempfile::TempDir;
 
     /// A [`RelationalDB`] in a temporary directory.
@@ -1345,7 +1346,7 @@ pub mod tests_utils {
     impl TempReplicaDir {
         fn new() -> io::Result<Self> {
             let dir = TempDir::with_prefix("stdb_test")?;
-            Ok(Self(ReplicaDir(dir.into_path())))
+            Ok(Self(ReplicaDir::from_path_unchecked(dir.into_path())))
         }
     }
     impl Deref for TempReplicaDir {

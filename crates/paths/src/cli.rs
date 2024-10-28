@@ -17,8 +17,8 @@ impl ConfigDir {
     }
 }
 
-path_type!(PrivKeyPath: file);
-path_type!(PubKeyPath: file);
+path_type!(#[non_exhaustive(FALSE)] PrivKeyPath: file);
+path_type!(#[non_exhaustive(FALSE)] PubKeyPath: file);
 
 path_type!(BinFile: file);
 path_type!(BinDir: dir);
