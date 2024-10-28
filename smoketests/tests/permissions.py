@@ -26,7 +26,7 @@ class Permissions(Smoketest):
 
         self.reset_config()
         with self.assertRaises(Exception):
-            self.spacetime("delete", self.address)
+            self.spacetime("delete", self.database_identity)
 
     def test_describe(self):
         """Ensure that anyone can describe any database"""
@@ -36,7 +36,7 @@ class Permissions(Smoketest):
 
         self.reset_config()
         self.new_identity()
-        self.spacetime("describe", self.address)
+        self.spacetime("describe", self.database_identity)
 
     def test_logs(self):
         """Ensure that we are not able to view the logs of a module that we don't have permission to view"""
@@ -51,7 +51,7 @@ class Permissions(Smoketest):
         self.reset_config()
         self.new_identity()
         with self.assertRaises(Exception):
-            self.spacetime("logs", self.address, "-n", "10000")
+            self.spacetime("logs", self.database_identity, "-n", "10000")
 
     def test_publish(self):
         """This test checks to make sure that you cannot publish to an address that you do not own."""
@@ -62,11 +62,11 @@ class Permissions(Smoketest):
         self.reset_config()
 
         with self.assertRaises(Exception):
-            self.spacetime("publish", self.address, "--project-path", self.project_path, "--clear-database", "--yes")
+            self.spacetime("publish", self.database_identity, "--project-path", self.project_path, "--clear-database", "--yes")
 
         # Check that this holds without `--clear-database`, too.
         with self.assertRaises(Exception):
-            self.spacetime("publish", self.address, "--project-path", self.project_path)
+            self.spacetime("publish", self.database_identity, "--project-path", self.project_path)
 
 
 class PrivateTablePermissions(Smoketest):
@@ -98,7 +98,7 @@ pub fn do_thing(ctx: &ReducerContext) {
     def test_private_table(self):
         """Ensure that a private table can only be queried by the database owner"""
 
-        out = self.spacetime("sql", self.address, "select * from secret")
+        out = self.spacetime("sql", self.database_identity, "select * from secret")
         self.assertMultiLineEqual(out, """\
  answer 
 --------
@@ -109,7 +109,7 @@ pub fn do_thing(ctx: &ReducerContext) {
         self.new_identity()
 
         with self.assertRaises(Exception):
-            self.spacetime("sql", self.address, "select * from secret")
+            self.spacetime("sql", self.database_identity, "select * from secret")
 
         with self.assertRaises(Exception):
             self.subscribe("SELECT * FROM secret", n=0)

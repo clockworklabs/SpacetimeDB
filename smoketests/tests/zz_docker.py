@@ -130,7 +130,7 @@ pub fn say_hello(ctx: &ReducerContext) {
 
         restart_docker()
 
-        sql_out = self.spacetime("sql", self.address, "SELECT name FROM person WHERE id = 3")
+        sql_out = self.spacetime("sql", self.database_identity, "SELECT name FROM person WHERE id = 3")
         self.assertMultiLineEqual(sql_out, """ name       \n------------\n "Samantha" \n""")
 
 @requires_docker

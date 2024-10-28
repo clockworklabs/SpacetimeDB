@@ -131,7 +131,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
     async fn register_tld(&self, identity: &Identity, tld: Tld) -> anyhow::Result<RegisterTldResult>;
     async fn create_dns_record(
         &self,
-        identity: &Identity,
+        owner_identity: &Identity,
         domain: &DomainName,
         database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult>;

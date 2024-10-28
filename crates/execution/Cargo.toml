@@ -1,0 +1,12 @@
+[package]
+name = "spacetimedb-execution"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+description = "The SpacetimeDB query engine"
+
+[dependencies]
+spacetimedb-expr.workspace = true
+spacetimedb-lib.workspace = true
+spacetimedb-table.workspace = true
