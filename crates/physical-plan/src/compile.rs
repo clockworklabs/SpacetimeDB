@@ -35,6 +35,7 @@ fn compile_project_list(var: &mut impl VarLabel, expr: ProjectList) -> ProjectLi
                 .map(|(_, expr)| compile_field_project(var, expr))
                 .collect(),
         ),
+        ProjectList::Dedup(proj) => ProjectListPlan::Dedup(Box::new(compile_project_list(var, *proj))),
     }
 }
 

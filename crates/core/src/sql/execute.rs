@@ -702,4 +702,39 @@ pub(crate) mod tests {
 
         Ok(())
     }
+
+    // Test `DISTINCT` keyword
+    #[test]
+    fn test_distinct() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_id = db.create_table_for_test(
+            "T",
+            &[("id", AlgebraicType::U8), ("pos", AlgebraicType::U8)],
+            &[ColId(0)],
+        )?;
+        db.with_auto_commit(Workload::ForTests, |tx| -> Result<_, DBError> {
+            for i in 0..5u8 {
+                insert(&db, tx, table_id, &product!(i, 0u8))?;
+            }
+            Ok(())
+        })?;
+
+        let result = run_for_testing(&db, "SELECT DISTINCT * FROM T")?;
+        assert_eq!(
+            result,
+            vec![
+                product![0u8, 0u8],
+                product![1u8, 0u8],
+                product![2u8, 0u8],
+                product![3u8, 0u8],
+                product![4u8, 0u8]
+            ]
+        );
+
+        let result = run_for_testing(&db, "SELECT DISTINCT pos FROM T WHERE id > 2")?;
+        assert_eq!(result, vec![product![0u8]]);
+
+        Ok(())
+    }
 }

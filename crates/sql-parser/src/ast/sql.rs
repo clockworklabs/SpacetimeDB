@@ -48,12 +48,20 @@ impl SqlAst {
     }
 }
 
+/// A DISTINCT clause in a SQL SELECT statement
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SqlDistinct {
+    No,
+    Yes,
+}
+
 /// A SELECT statement in the SQL query language
 #[derive(Debug)]
 pub struct SqlSelect {
     pub project: Project,
     pub from: SqlFrom,
     pub filter: Option<SqlExpr>,
+    pub distinct: SqlDistinct,
 }
 
 impl SqlSelect {
@@ -63,6 +71,7 @@ impl SqlSelect {
                 project: self.project.qualify_vars(alias.clone()),
                 filter: self.filter.map(|expr| expr.qualify_vars(alias.clone())),
                 from: self.from,
+                distinct: self.distinct,
             },
             SqlFrom::Join(..) => self,
         }

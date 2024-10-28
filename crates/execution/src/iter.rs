@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::{Datastore, DeltaScanIter, DeltaStore, Row, Tuple};
 use anyhow::{anyhow, bail, Result};
 use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
 use spacetimedb_physical_plan::plan::{
@@ -10,8 +11,6 @@ use spacetimedb_table::{
     table::{IndexScanPointIter, IndexScanRangeIter, Table, TableScanIter},
     table_index::{TableIndex, TableIndexPointIter},
 };
-
-use crate::{Datastore, DeltaScanIter, DeltaStore, Row, Tuple};
 
 /// The different iterators for evaluating query plans
 pub enum PlanIter<'a> {
@@ -75,6 +74,7 @@ pub enum Iter<'a> {
     Row(RowRefIter<'a>),
     Join(LeftDeepJoinIter<'a>),
     Filter(Filter<'a, Iter<'a>>),
+    Dedup(Dedup<'a>),
 }
 
 impl<'a> Iterator for Iter<'a> {
@@ -85,6 +85,7 @@ impl<'a> Iterator for Iter<'a> {
             Self::Row(iter) => iter.next().map(Tuple::Row),
             Self::Join(iter) => iter.next(),
             Self::Filter(iter) => iter.next(),
+            Self::Dedup(iter) => iter.next(),
         }
     }
 }
@@ -1067,5 +1068,30 @@ impl<'a> Iterator for Filter<'a, Iter<'a>> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.input.find(|tuple| self.expr.eval_bool(tuple))
+    }
+}
+
+/// A tuple at a time deduplication iterator
+pub struct Dedup<'a> {
+    /// The input iterator
+    input: Box<Iter<'a>>,
+    /// The set of seen row ids
+    seen: HashSet<Tuple<'a>>,
+}
+
+impl<'a> Dedup<'a> {
+    pub fn new(input: Box<Iter<'a>>) -> Self {
+        Self {
+            input,
+            seen: HashSet::new(),
+        }
+    }
+}
+
+impl<'a> Iterator for Dedup<'a> {
+    type Item = Tuple<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.input.find(|tuple| self.seen.insert(tuple.clone()))
     }
 }

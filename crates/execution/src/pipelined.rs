@@ -20,6 +20,7 @@ use crate::{Datastore, DeltaStore, Row, Tuple};
 pub enum ProjectListExecutor {
     Name(PipelinedProject),
     List(PipelinedExecutor, Vec<TupleField>),
+    Dedup(PipelinedDedup),
 }
 
 impl From<ProjectListPlan> for ProjectListExecutor {
@@ -27,6 +28,7 @@ impl From<ProjectListPlan> for ProjectListExecutor {
         match plan {
             ProjectListPlan::Name(plan) => Self::Name(plan.into()),
             ProjectListPlan::List(plan, fields) => Self::List(plan.into(), fields),
+            ProjectListPlan::Dedup(plan) => Self::Dedup(PipelinedDedup::new(ProjectListExecutor::from(*plan))),
         }
     }
 }
@@ -53,6 +55,9 @@ impl ProjectListExecutor {
                 plan.execute(tx, metrics, &mut |t| {
                     f(ProductValue::from_iter(fields.iter().map(|field| t.project(field))))
                 })?;
+            }
+            Self::Dedup(plan) => {
+                plan.execute(tx, metrics, &mut |row| f(row))?;
             }
         }
         metrics.rows_scanned += n;
@@ -856,4 +861,32 @@ fn project(row: &impl ProjectField, field: &TupleField, bytes_scanned: &mut usiz
     let value = row.project(field);
     *bytes_scanned += value.size_of();
     value
+}
+
+/// A pipelined executor for deduplication
+pub struct PipelinedDedup {
+    pub input: Box<ProjectListExecutor>,
+}
+
+impl PipelinedDedup {
+    pub fn new(input: ProjectListExecutor) -> Self {
+        Self { input: Box::new(input) }
+    }
+
+    pub fn execute<Tx: Datastore + DeltaStore>(
+        &self,
+        tx: &Tx,
+        metrics: &mut ExecutionMetrics,
+        f: &mut dyn FnMut(ProductValue) -> Result<()>,
+    ) -> Result<()> {
+        let mut seen = HashSet::new();
+        self.input.execute(tx, metrics, &mut |row| {
+            if seen.insert(row.clone()) {
+                f(row)?;
+            }
+            Ok(())
+        })?;
+        metrics.rows_scanned += seen.len();
+        Ok(())
+    }
 }

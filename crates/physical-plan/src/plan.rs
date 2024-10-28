@@ -101,6 +101,7 @@ impl ProjectPlan {
 pub enum ProjectListPlan {
     Name(ProjectPlan),
     List(PhysicalPlan, Vec<TupleField>),
+    Dedup(Box<ProjectListPlan>),
 }
 
 impl Deref for ProjectListPlan {
@@ -110,6 +111,7 @@ impl Deref for ProjectListPlan {
         match self {
             Self::Name(plan) => plan,
             Self::List(plan, ..) => plan,
+            Self::Dedup(plan) => plan,
         }
     }
 }
@@ -122,6 +124,7 @@ impl ProjectListPlan {
                 plan.optimize(fields.iter().map(|TupleField { label, .. }| label).copied().collect())?,
                 fields,
             )),
+            Self::Dedup(plan) => Ok(Self::Dedup(Box::new(plan.optimize()?))),
         }
     }
 }
@@ -275,6 +278,7 @@ impl PhysicalPlan {
                 // Replace the input only if there is a match
                 Self::Filter(Box::new(input.map_if(f, ok)?), expr)
             }
+
             _ => self,
         })
     }
@@ -998,6 +1002,8 @@ mod tests {
 
     use pretty_assertions::assert_eq;
     use spacetimedb_expr::check::{parse_and_type_sub, SchemaView};
+    use spacetimedb_expr::expr::ProjectList;
+    use spacetimedb_expr::statement::{compile_sql_stmt, Statement};
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
         AlgebraicType, AlgebraicValue,
@@ -1779,5 +1785,36 @@ mod tests {
             }
             plan => panic!("unexpected plan: {:#?}", plan),
         };
+    }
+
+    // Test that we `DISTINCT` is pushed down to the dedup operator
+    #[test]
+    fn distinct() {
+        let t_id = TableId(1);
+
+        let t = Arc::new(schema(
+            t_id,
+            "t",
+            &[("id", AlgebraicType::U64), ("x", AlgebraicType::U64)],
+            &[&[0]],
+            &[&[0]],
+            Some(0),
+        ));
+
+        let db = SchemaViewer {
+            schemas: vec![t.clone()],
+        };
+
+        let sql = "select distinct x from t";
+        let lp = compile_sql_stmt(sql, &db).unwrap();
+
+        match lp.statement {
+            Statement::Select(plan) => {
+                assert!(matches!(plan, ProjectList::Dedup(..)));
+            }
+            Statement::DML(_) => {
+                panic!("unexpected DML");
+            }
+        }
     }
 }
