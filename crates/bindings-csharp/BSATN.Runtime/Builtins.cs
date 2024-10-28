@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SpacetimeDB.BSATN;
-using SpacetimeDB.Internal;
 
 internal static class Util
 {
@@ -27,49 +26,6 @@ public readonly partial struct Unit
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             new AlgebraicType.Product([]);
     }
-}
-
-// A helper for special wrappers around byte arrays like Identity and Address.
-// Makes them equatable, stringifiable, checks length, etc.
-public abstract record BytesWrapper
-{
-    protected abstract int SIZE { get; }
-
-    protected readonly byte[] bytes;
-
-    protected BytesWrapper()
-    {
-        bytes = new byte[SIZE];
-    }
-
-    // We can't hide the base class itself, but at least we can hide the constructor.
-    protected BytesWrapper(byte[] bytes)
-    {
-        Debug.Assert(bytes.Length == SIZE);
-        this.bytes = bytes;
-    }
-
-    public virtual bool Equals(BytesWrapper? other) =>
-        ByteArrayComparer.Instance.Equals(bytes, other?.bytes);
-
-    public override int GetHashCode() => ByteArrayComparer.Instance.GetHashCode(bytes);
-
-    // Same as `Convert.ToHexString`, but that method is not available in .NET Standard
-    // which we need to target for Unity support.
-    public override string ToString() => BitConverter.ToString(bytes).Replace("-", "");
-
-    protected static byte[] ReadRaw(BinaryReader reader) => ByteArray.Instance.Read(reader);
-
-    protected void Write(BinaryWriter writer) => ByteArray.Instance.Write(writer, bytes);
-
-    // Custom BSATN that returns an inline product type with special property name that can be recognised by SpacetimeDB.
-    protected static AlgebraicType GetAlgebraicType(
-        ITypeRegistrar registrar,
-        string wrapperPropertyName
-    ) =>
-        new AlgebraicType.Product(
-            [new(wrapperPropertyName, ByteArray.Instance.GetAlgebraicType(registrar))]
-        );
 }
 
 public readonly record struct Address
