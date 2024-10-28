@@ -81,17 +81,7 @@ def main():
         subprocess.Popen(["docker", "logs", "-f", docker_container])
         smoketests.HAVE_DOCKER = True
 
-    # Loop in case the container is still coming up
-    attempt = 0
-    while True:
-        try:
-            smoketests.new_identity(TEST_DIR / 'config.toml')
-            break
-        except subprocess.CalledProcessError:
-            attempt += 1
-            if attempt > 10:
-                raise Exception("Unable to get new identity")
-            time.sleep(30)
+    smoketests.new_identity(TEST_DIR / 'config.toml')
 
     if not args.skip_dotnet:
         smoketests.HAVE_DOTNET = check_dotnet()
