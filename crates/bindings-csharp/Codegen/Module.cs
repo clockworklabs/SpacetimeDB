@@ -169,8 +169,19 @@ abstract record ViewIndex
         var cols = Columns.Select(c =>
             columns.Select((c, i) => (c, i)).First(cd => cd.c.Name == c).i
         );
+        // TODO: when updating to v9, you can just pass null for the name here (instead of "bt_...").
+        // The resulting index will have a name computed on the host, matching the output of StandardIndexName.
         return $"new(\"bt_{viewName}_{Name}\", false, SpacetimeDB.Internal.IndexType.{Type}, [{string.Join(", ", cols)}])";
     }
+
+    // See: bindings_sys::index_id_from_name for documentation of this format.
+    // Guaranteed not to contain quotes, so does not need to be escaped when embedded in a string.
+    // TODO: when updating to v9, this will be the name generated for indexes with no name set.
+    public static string StandardIndexName(
+        string type,
+        string tableName,
+        IEnumerable<string> columnNames
+    ) => $"index.{type.ToLower()}({tableName},[{string.Join(",", columnNames)}])";
 }
 
 record ViewBTree : ViewIndex
@@ -309,6 +320,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 continue;
             }
 
+            // TODO: when updating to v9, use StandardIndexName instead of the "bt_" string here.
             yield return $$"""
                     {{vis}} sealed class {{btree.Name}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("bt_{{viewName}}_{{btree.Name}}") {
                 """;
@@ -457,9 +469,16 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         {{string.Join(",\n", Members.Select(m => m.GenerateColumnDef()))}}
                     ],
                     Indexes: [
-                        {{string.Join(",\n", BTrees
-                        .Where(b => b.Table == null || b.Table == v.Name)
-                        .Select(b => b.GenerateIndexDef(v.Name, Members)))}}
+                        {{string.Join(",\n", Enumerable.Concat(
+                        BTrees
+                            .Where(b => b.Table == null || b.Table == v.Name)
+                            .Select(b => b.GenerateIndexDef(v.Name, Members)),
+                        // We need to override the new auto-generated index names for unique constriants.
+                        // When we upgrade to v9, we can skip these, and just look up the indexes with StandardIndexName
+                        // for the relevant columns later.
+                        GetConstraints(v.Name)
+                            .Select(ct => $"new(\"idx_{v.Name}_{v.Name}_{ct.col.Name}_unique\", true, SpacetimeDB.Internal.IndexType.BTree, [{ct.pos}])")
+                        ))}}
                     ],
                     Constraints: [
                         {{string.Join(
@@ -467,7 +486,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                             GetConstraints(v.Name)
                             .Select(ct =>
                                 $$"""
-                                new (
+                                new(
                                     "{{v.Name}}_{{ct.col.Name}}",
                                     (byte)SpacetimeDB.Internal.ColumnAttrs.{{ct.attr}},
                                     [{{ct.pos}}]

@@ -66,7 +66,15 @@ partial class Timers
                             new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
                             new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar))
                         ],
-                        Indexes: [],
+                        Indexes:
+                        [
+                            new(
+                                "idx_SendMessageTimer_SendMessageTimer_ScheduledId_unique",
+                                true,
+                                SpacetimeDB.Internal.IndexType.BTree,
+                                [1]
+                            )
+                        ],
                         Constraints:
                         [
                             new(

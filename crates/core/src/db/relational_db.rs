@@ -837,7 +837,7 @@ impl RelationalDB {
         &self,
         name: &str,
         schema: &[(&str, AlgebraicType)],
-        indexes: &[(ColList, &str)],
+        indexes: &[ColList],
         access: StAccess,
     ) -> Result<TableId, DBError> {
         let mut module_def_builder = RawModuleDefV9Builder::new();
@@ -845,13 +845,12 @@ impl RelationalDB {
             .build_table_with_new_type(name, ProductType::from_iter(schema.iter().cloned()), true)
             .with_access(access.into());
 
-        for (columns, name) in indexes {
+        for columns in indexes {
             table_builder = table_builder.with_index(
                 RawIndexAlgorithm::BTree {
                     columns: columns.clone(),
                 },
                 "accessor_name_doesnt_matter",
-                Some((*name).into()),
             );
         }
         table_builder.finish();
@@ -870,13 +869,10 @@ impl RelationalDB {
         &self,
         name: &str,
         schema: &[(&str, AlgebraicType)],
-        indexes: &[(ColId, &str)],
+        indexes: &[ColId],
         access: StAccess,
     ) -> Result<TableId, DBError> {
-        let indexes: Vec<(ColList, &str)> = indexes
-            .iter()
-            .map(|(col_id, index_name)| ((*col_id).into(), *index_name))
-            .collect();
+        let indexes: Vec<ColList> = indexes.iter().map(|col_id| (*col_id).into()).collect();
         self.create_table_for_test_with_the_works(name, schema, &indexes[..], access)
     }
 
@@ -884,7 +880,7 @@ impl RelationalDB {
         &self,
         name: &str,
         schema: &[(&str, AlgebraicType)],
-        indexes: &[(ColId, &str)],
+        indexes: &[ColId],
     ) -> Result<TableId, DBError> {
         self.create_table_for_test_with_access(name, schema, indexes, StAccess::Public)
     }
@@ -895,20 +891,20 @@ impl RelationalDB {
         schema: &[(&str, AlgebraicType)],
         idx_cols: ColList,
     ) -> Result<TableId, DBError> {
-        self.create_table_for_test_with_the_works(name, schema, &[(idx_cols, "the_index")], StAccess::Public)
+        self.create_table_for_test_with_the_works(name, schema, &[idx_cols], StAccess::Public)
     }
 
     pub fn create_table_for_test_mix_indexes(
         &self,
         name: &str,
         schema: &[(&str, AlgebraicType)],
-        idx_cols_single: &[(ColId, &str)],
+        idx_cols_single: &[ColId],
         idx_cols_multi: ColList,
     ) -> Result<TableId, DBError> {
-        let indexes: Vec<(ColList, &str)> = idx_cols_single
+        let indexes: Vec<ColList> = idx_cols_single
             .iter()
-            .map(|(col_id, name)| ((*col_id).into(), *name))
-            .chain(std::iter::once((idx_cols_multi, "the_only_multi_index")))
+            .map(|col_id| (*col_id).into())
+            .chain(std::iter::once(idx_cols_multi))
             .collect();
 
         self.create_table_for_test_with_the_works(name, schema, &indexes[..], StAccess::Public)
@@ -1597,8 +1593,8 @@ mod tests {
             |builder| {
                 builder
                     .with_primary_key(0)
-                    .with_column_sequence(0, None)
-                    .with_unique_constraint(0, None)
+                    .with_column_sequence(0)
+                    .with_unique_constraint(0)
             },
         )
     }
@@ -1611,11 +1607,10 @@ mod tests {
                 let builder = builder.with_index(
                     RawIndexAlgorithm::BTree { columns: 0.into() },
                     "accessor_name_doesnt_matter",
-                    None,
                 );
 
                 if is_unique {
-                    builder.with_unique_constraint(col_list![0], None)
+                    builder.with_unique_constraint(col_list![0])
                 } else {
                     builder
                 }
@@ -1838,7 +1833,7 @@ mod tests {
         let schema = table_auto_inc();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "sequence(MyTable,my_col)")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![0i64])?;
@@ -1856,7 +1851,7 @@ mod tests {
         let schema = table_auto_inc();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "sequence(MyTable,my_col)")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![5i64])?;
@@ -1881,7 +1876,7 @@ mod tests {
 
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "sequence(MyTable,my_col)")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![0i64])?;
@@ -1909,7 +1904,7 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         assert!(
-            stdb.index_id_from_name(&tx, "idx_MyTable_btree_my_col")?.is_some(),
+            stdb.index_id_from_name(&tx, "index.btree(MyTable,[my_col])")?.is_some(),
             "Index not created"
         );
 
@@ -1978,7 +1973,7 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema).expect("stdb.create_table failed");
 
         assert!(
-            stdb.index_id_from_name(&tx, "idx_MyTable_btree_my_col")
+            stdb.index_id_from_name(&tx, "index.btree(MyTable,[my_col])")
                 .expect("index_id_from_name failed")
                 .is_some(),
             "Index not created"
@@ -2012,17 +2007,17 @@ mod tests {
         let schema = table(
             "MyTable",
             ProductType::from([("my_col", AlgebraicType::I64)]),
-            |builder| builder.with_column_sequence(0, None).with_unique_constraint(0, None),
+            |builder| builder.with_column_sequence(0).with_unique_constraint(0),
         );
 
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         assert!(
-            stdb.index_id_from_name(&tx, "idx_MyTable_my_col_unique")?.is_some(),
+            stdb.index_id_from_name(&tx, "index.btree(MyTable,[my_col])")?.is_some(),
             "Index not created"
         );
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "sequence(MyTable,my_col)")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![0i64])?;
@@ -2048,25 +2043,13 @@ mod tests {
             ]),
             |builder| {
                 builder
-                    .with_index(
-                        RawIndexAlgorithm::BTree { columns: col_list![0] },
-                        "MyTable_col1_idx",
-                        None,
-                    )
-                    .with_index(
-                        RawIndexAlgorithm::BTree { columns: col_list![2] },
-                        "MyTable_col3_idx",
-                        None,
-                    )
-                    .with_index(
-                        RawIndexAlgorithm::BTree { columns: col_list![3] },
-                        "MyTable_col4_idx",
-                        None,
-                    )
-                    .with_unique_constraint(0, None)
-                    .with_unique_constraint(1, None)
-                    .with_unique_constraint(3, None)
-                    .with_column_sequence(0, None)
+                    .with_index(RawIndexAlgorithm::BTree { columns: col_list![0] }, "MyTable_col1_idx")
+                    .with_index(RawIndexAlgorithm::BTree { columns: col_list![2] }, "MyTable_col3_idx")
+                    .with_index(RawIndexAlgorithm::BTree { columns: col_list![3] }, "MyTable_col4_idx")
+                    .with_unique_constraint(0)
+                    .with_unique_constraint(1)
+                    .with_unique_constraint(3)
+                    .with_column_sequence(0)
             },
         );
 
@@ -2159,7 +2142,6 @@ mod tests {
                     columns: col_list![0, 1],
                 },
                 "accessor_name_doesnt_matter",
-                None,
             )
         });
 

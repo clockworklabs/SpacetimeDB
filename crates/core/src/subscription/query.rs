@@ -330,7 +330,7 @@ mod tests {
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let table_id = db.create_table_for_test("test", schema, indexes)?;
 
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
@@ -475,11 +475,7 @@ mod tests {
             ("timestamp", AlgebraicType::U64),
             ("dimension", AlgebraicType::U32),
         ];
-        let indexes = &[
-            (0.into(), "entity_id"),
-            (1.into(), "location_x"),
-            (2.into(), "location_z"),
-        ];
+        let indexes = &[0.into(), 1.into(), 2.into()];
         db.create_table_for_test("MobileEntityState", schema, indexes)?;
 
         // Create table [EnemyState]
@@ -490,7 +486,7 @@ mod tests {
             ("type", AlgebraicType::I32),
             ("direction", AlgebraicType::I32),
         ];
-        let indexes = &[(0.into(), "entity_id")];
+        let indexes = &[0.into()];
         db.create_table_for_test("EnemyState", schema, indexes)?;
 
         for sql_insert in [
@@ -576,12 +572,12 @@ mod tests {
 
         // Create table [lhs] with indexes on [id] and [x]
         let schema = &[("id", AlgebraicType::U64), ("x", AlgebraicType::I32)];
-        let indexes = &[(ColId(0), "id"), (ColId(1), "x")];
+        let indexes = &[ColId(0), ColId(1)];
         db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with indexes on [id] and [y]
         let schema = &[("id", AlgebraicType::U64), ("y", AlgebraicType::I32)];
-        let indexes = &[(ColId(0), "id"), (ColId(1), "y")];
+        let indexes = &[ColId(0), ColId(1)];
         db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -630,7 +626,7 @@ mod tests {
     /// Create table [lhs] with index on [id]
     fn create_lhs_table_for_eval_incr(db: &RelationalDB) -> ResultTest<TableId> {
         const I32: AlgebraicType = AlgebraicType::I32;
-        let lhs_id = db.create_table_for_test("lhs", &[("id", I32), ("x", I32)], &[(0.into(), "id")])?;
+        let lhs_id = db.create_table_for_test("lhs", &[("id", I32), ("x", I32)], &[0.into()])?;
         db.with_auto_commit(Workload::ForTests, |tx| {
             for i in 0..5 {
                 db.insert(tx, lhs_id, product!(i, i + 5))?;
@@ -642,7 +638,7 @@ mod tests {
     /// Create table [rhs] with index on [id]
     fn create_rhs_table_for_eval_incr(db: &RelationalDB) -> ResultTest<TableId> {
         const I32: AlgebraicType = AlgebraicType::I32;
-        let rhs_id = db.create_table_for_test("rhs", &[("rid", I32), ("id", I32), ("y", I32)], &[(1.into(), "id")])?;
+        let rhs_id = db.create_table_for_test("rhs", &[("rid", I32), ("id", I32), ("y", I32)], &[1.into()])?;
         db.with_auto_commit(Workload::ForTests, |tx| {
             for i in 10..20 {
                 db.insert(tx, rhs_id, product!(i, i - 10, i - 8))?;

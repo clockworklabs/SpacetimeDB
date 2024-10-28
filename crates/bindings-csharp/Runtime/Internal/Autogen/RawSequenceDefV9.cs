@@ -16,7 +16,7 @@ namespace SpacetimeDB.Internal
 	public partial class RawSequenceDefV9
 	{
 		[DataMember(Name = "name")]
-		public string Name;
+		public string? Name;
 		[DataMember(Name = "column")]
 		public ushort Column;
 		[DataMember(Name = "start")]
@@ -29,7 +29,7 @@ namespace SpacetimeDB.Internal
 		public I128 Increment;
 
 		public RawSequenceDefV9(
-			string Name,
+			string? Name,
 			ushort Column,
 			I128? Start,
 			I128? MinValue,
@@ -47,7 +47,6 @@ namespace SpacetimeDB.Internal
 
 		public RawSequenceDefV9()
 		{
-			this.Name = "";
 		}
 
 	}

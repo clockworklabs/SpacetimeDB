@@ -191,13 +191,21 @@ impl IndexArg {
                 ValidatedIndexType::UniqueBTree { col }
             }
         };
+        // See crates/schema/src/validate/v9.rs for the format of index names.
+        // It's slightly unnerving that we just trust that component to generate this format correctly,
+        // but what can you do.
         let index_name = match &kind {
-            ValidatedIndexType::BTree { cols } => ([table_name, "btree"].into_iter())
-                .chain(cols.iter().map(|col| col.field.name.as_deref().unwrap()))
-                .collect::<Vec<_>>()
-                .join("_"),
+            ValidatedIndexType::BTree { cols } => {
+                let cols = cols
+                    .iter()
+                    .map(|col| col.field.ident.unwrap().to_string())
+                    .collect::<Vec<_>>();
+                let cols = cols.join(",");
+                format!("index.btree({table_name},[{cols}])")
+            }
             ValidatedIndexType::UniqueBTree { col } => {
-                [table_name, "btree", col.field.name.as_deref().unwrap()].join("_")
+                let col = col.field.ident.unwrap().to_string();
+                format!("index.btree({table_name},[{col}])")
             }
         };
         Ok(ValidatedIndex {
@@ -235,10 +243,10 @@ impl ValidatedIndex<'_> {
                 })
             }
         };
-        let index_name = &self.index_name;
         let accessor_name = ident_to_litstr(self.accessor_name);
+        // Note: we do not pass the index_name through here.
+        // We trust the schema validation logic to reconstruct the name we've stored in `self.name`.
         quote!(spacetimedb::table::IndexDesc {
-            name: #index_name,
             accessor_name: #accessor_name,
             algo: #algo,
         })

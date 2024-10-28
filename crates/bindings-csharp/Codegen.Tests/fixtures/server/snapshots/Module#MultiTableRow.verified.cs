@@ -60,7 +60,18 @@ partial struct MultiTableRow : SpacetimeDB.Internal.ITable<MultiTableRow>
                     ],
                     Indexes:
                     [
-                        new("bt_MultiTable1_Name", false, SpacetimeDB.Internal.IndexType.BTree, [0])
+                        new(
+                            "bt_MultiTable1_Name",
+                            false,
+                            SpacetimeDB.Internal.IndexType.BTree,
+                            [0]
+                        ),
+                        new(
+                            "idx_MultiTable1_MultiTable1_Foo_unique",
+                            true,
+                            SpacetimeDB.Internal.IndexType.BTree,
+                            [1]
+                        )
                     ],
                     Constraints:
                     [
@@ -91,7 +102,21 @@ partial struct MultiTableRow : SpacetimeDB.Internal.ITable<MultiTableRow>
                         new(nameof(Foo), BSATN.Foo.GetAlgebraicType(registrar)),
                         new(nameof(Bar), BSATN.Bar.GetAlgebraicType(registrar))
                     ],
-                    Indexes: [],
+                    Indexes:
+                    [
+                        new(
+                            "idx_MultiTable2_MultiTable2_Foo_unique",
+                            true,
+                            SpacetimeDB.Internal.IndexType.BTree,
+                            [1]
+                        ),
+                        new(
+                            "idx_MultiTable2_MultiTable2_Bar_unique",
+                            true,
+                            SpacetimeDB.Internal.IndexType.BTree,
+                            [2]
+                        )
+                    ],
                     Constraints:
                     [
                         new("MultiTable2_Foo", (byte)SpacetimeDB.Internal.ColumnAttrs.AutoInc, [1]),

@@ -76,6 +76,12 @@ partial struct BTreeViews : SpacetimeDB.Internal.ITable<BTreeViews>
                             false,
                             SpacetimeDB.Internal.IndexType.BTree,
                             [3]
+                        ),
+                        new(
+                            "idx_BTreeViews_BTreeViews_Id_unique",
+                            true,
+                            SpacetimeDB.Internal.IndexType.BTree,
+                            [0]
                         )
                     ],
                     Constraints:

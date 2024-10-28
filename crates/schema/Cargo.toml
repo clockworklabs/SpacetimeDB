@@ -35,4 +35,5 @@ spacetimedb-lib = { workspace = true, features = ["test"] }
 spacetimedb-testing = { path = "../testing" }
 spacetimedb-cli.workspace = true
 
+pretty_assertions.workspace = true
 proptest.workspace = true

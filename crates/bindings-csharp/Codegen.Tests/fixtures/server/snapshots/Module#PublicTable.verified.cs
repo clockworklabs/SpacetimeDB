@@ -214,7 +214,15 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
                             BSATN.NullableReferenceField.GetAlgebraicType(registrar)
                         )
                     ],
-                    Indexes: [],
+                    Indexes:
+                    [
+                        new(
+                            "idx_PublicTable_PublicTable_Id_unique",
+                            true,
+                            SpacetimeDB.Internal.IndexType.BTree,
+                            [0]
+                        )
+                    ],
                     Constraints:
                     [
                         new(
