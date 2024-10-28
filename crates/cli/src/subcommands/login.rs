@@ -33,21 +33,21 @@ pub fn cli() -> Command {
 fn get_subcommands() -> Vec<Command> {
     vec![
         Command::new("show")
-        .arg(
-            Arg::new("token")
-                .long("token")
-                .action(ArgAction::SetTrue)
-                .help("Also show the auth token"),
-        )
-        .about("Show the current login info"),
+            .arg(
+                Arg::new("token")
+                    .long("token")
+                    .action(ArgAction::SetTrue)
+                    .help("Also show the auth token"),
+            )
+            .about("Show the current login info"),
         Command::new("clear")
-        .arg(
-            Arg::new("token")
-                .long("token")
-                .action(ArgAction::SetTrue)
-                .help("Also show the auth token"),
-        )
-        .about("Show the current login info")],
+            .arg(
+                Arg::new("token")
+                    .long("token")
+                    .action(ArgAction::SetTrue)
+                    .help("Also show the auth token"),
+            )
+            .about("Show the current login info"),
     ]
 }
 
