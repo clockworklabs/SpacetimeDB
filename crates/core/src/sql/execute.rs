@@ -4,6 +4,7 @@ use super::compiler::compile_sql;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
 use crate::db::datastore::system_tables::StVarTable;
 use crate::db::datastore::traits::IsolationLevel;
+use crate::db::query_context::QueryContext;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
@@ -66,6 +67,7 @@ pub fn ctx_sql(db: &RelationalDB) -> ExecutionContext {
 
 fn execute(
     p: &mut DbProgram<'_, '_>,
+    ctx_query: &QueryContext,
     ast: Vec<CrudExpr>,
     sql: &str,
     updates: &mut Vec<DatabaseTableUpdate>,
@@ -80,6 +82,9 @@ fn execute(
     let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
     // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
     collect_result(&mut result, updates, run_ast(p, query, [].into()).into())?;
+
+    ctx_query.record_query_energy();
+
     Ok(result)
 }
 
@@ -90,6 +95,7 @@ fn execute(
 /// Also, in case the execution takes more than x, log it as `slow query`
 pub fn execute_sql(
     db: &RelationalDB,
+    ctx_query: &QueryContext,
     sql: &str,
     ast: Vec<CrudExpr>,
     auth: AuthCtx,
@@ -101,6 +107,7 @@ pub fn execute_sql(
         db.with_read_only(&ctx, |tx| {
             execute(
                 &mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth),
+                ctx_query,
                 ast,
                 sql,
                 &mut updates,
@@ -111,6 +118,7 @@ pub fn execute_sql(
         db.with_auto_commit(&ctx, |mut_tx| {
             execute(
                 &mut DbProgram::new(&ctx, db, &mut mut_tx.into(), auth),
+                ctx_query,
                 ast,
                 sql,
                 &mut updates,
@@ -121,6 +129,7 @@ pub fn execute_sql(
         let mut updates = Vec::with_capacity(ast.len());
         let res = execute(
             &mut DbProgram::new(&ctx, db, &mut (&mut tx).into(), auth),
+            ctx_query,
             ast,
             sql,
             &mut updates,
@@ -156,6 +165,7 @@ pub fn execute_sql(
 /// Returns None if you pass a mutable query with an immutable tx.
 pub fn execute_sql_tx<'a>(
     db: &RelationalDB,
+    ctx_query: &mut QueryContext,
     tx: impl Into<TxMode<'a>>,
     sql: &str,
     ast: Vec<CrudExpr>,
@@ -169,12 +179,20 @@ pub fn execute_sql_tx<'a>(
 
     let ctx = ctx_sql(db);
     let mut updates = Vec::new(); // No subscription updates in this path, because it requires owning the tx.
-    execute(&mut DbProgram::new(&ctx, db, &mut tx, auth), ast, sql, &mut updates).map(Some)
+    execute(
+        &mut DbProgram::new(&ctx, db, &mut tx, auth),
+        ctx_query,
+        ast,
+        sql,
+        &mut updates,
+    )
+    .map(Some)
 }
 
 /// Run the `SQL` string using the `auth` credentials
 pub fn run(
     db: &RelationalDB,
+    ctx_query: &QueryContext,
     sql_text: &str,
     auth: AuthCtx,
     subs: Option<&ModuleSubscriptions>,
@@ -186,6 +204,7 @@ pub fn run(
             let mut updates = Vec::new();
             let result = execute(
                 &mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth),
+                ctx_query,
                 ast,
                 sql_text,
                 &mut updates,
@@ -202,7 +221,7 @@ pub fn run(
         //       and figure out if we can detect the mutablility of the query before we take
         //       the tx? once we have migrations we probably don't want to have stale
         //       sql queries after a database schema have been updated.
-        Either::Right(ast) => execute_sql(db, sql_text, ast, auth, subs),
+        Either::Right(ast) => execute_sql(db, ctx_query, sql_text, ast, auth, subs),
     }
 }
 
@@ -238,14 +257,17 @@ pub(crate) mod tests {
         sql_text: &str,
         q: Vec<CrudExpr>,
     ) -> Result<Vec<MemTable>, DBError> {
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
-        execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
+        let subs = ModuleSubscriptions::for_testing(Arc::new(db.clone()), Identity::ZERO);
+        let ctx_query = QueryContext::from_subscriptions(&subs);
+        execute_sql(db, &ctx_query, sql_text, q, AuthCtx::for_testing(), Some(&subs))
     }
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
-        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
-        run(db, sql_text, AuthCtx::for_testing(), Some(&subs))
+        let subs = ModuleSubscriptions::for_testing(Arc::new(db.clone()), Identity::ZERO);
+        let ctx_query = QueryContext::from_subscriptions(&subs);
+
+        run(db, &ctx_query, sql_text, AuthCtx::for_testing(), Some(&subs))
     }
 
     fn create_data(total_rows: u64) -> ResultTest<(TestDB, MemTable)> {
@@ -733,24 +755,33 @@ pub(crate) mod tests {
         let internal_auth = AuthCtx::new(server, server);
         let external_auth = AuthCtx::new(server, client);
 
+        let ctx_query = QueryContext::for_testing();
+
         // No row limit, both queries pass.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
+        assert!(run(&db, &ctx_query, "SELECT * FROM T", internal_auth, None).is_ok());
+        assert!(run(&db, &ctx_query, "SELECT * FROM T", external_auth, None).is_ok());
 
         // Set row limit.
-        assert!(run(&db, "SET row_limit = 4", internal_auth, None).is_ok());
+        assert!(run(&db, &ctx_query, "SET row_limit = 4", internal_auth, None).is_ok());
 
         // External query fails.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_err());
+        assert!(run(&db, &ctx_query, "SELECT * FROM T", internal_auth, None).is_ok());
+        assert!(run(&db, &ctx_query, "SELECT * FROM T", external_auth, None).is_err());
 
         // Increase row limit.
-        assert!(run(&db, "DELETE FROM st_var WHERE name = 'row_limit'", internal_auth, None).is_ok());
-        assert!(run(&db, "SET row_limit = 5", internal_auth, None).is_ok());
+        assert!(run(
+            &db,
+            &ctx_query,
+            "DELETE FROM st_var WHERE name = 'row_limit'",
+            internal_auth,
+            None
+        )
+        .is_ok());
+        assert!(run(&db, &ctx_query, "SET row_limit = 5", internal_auth, None).is_ok());
 
         // Both queries pass.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
+        assert!(run(&db, &ctx_query, "SELECT * FROM T", internal_auth, None).is_ok());
+        assert!(run(&db, &ctx_query, "SELECT * FROM T", external_auth, None).is_ok());
 
         Ok(())
     }

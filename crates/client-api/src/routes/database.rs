@@ -16,6 +16,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use spacetimedb::address::Address;
 use spacetimedb::database_logger::DatabaseLogger;
+use spacetimedb::db::query_context::QueryContext;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::{DescribedEntityType, UpdateDatabaseResult};
@@ -541,21 +542,24 @@ where
         .get_or_launch_module_host(database.clone(), replica_id)
         .await
         .map_err(log_and_500)?;
+    let ctx_query = QueryContext::new(host.energy_monitor.clone(), replica_id, auth.owner);
+
     let json = host
         .using_database(
             database,
             replica_id,
             move |db| -> axum::response::Result<_, (StatusCode, String)> {
                 tracing::info!(sql = body);
-                let results =
-                    sql::execute::run(db, &body, auth, Some(&module_host.info().subscriptions)).map_err(|e| {
-                        log::warn!("{}", e);
-                        if let Some(auth_err) = e.get_auth_error() {
-                            (StatusCode::UNAUTHORIZED, auth_err.to_string())
-                        } else {
-                            (StatusCode::BAD_REQUEST, e.to_string())
-                        }
-                    })?;
+
+                let results = sql::execute::run(db, &ctx_query, &body, auth, Some(&module_host.info().subscriptions))
+                    .map_err(|e| {
+                    log::warn!("{}", e);
+                    if let Some(auth_err) = e.get_auth_error() {
+                        (StatusCode::UNAUTHORIZED, auth_err.to_string())
+                    } else {
+                        (StatusCode::BAD_REQUEST, e.to_string())
+                    }
+                })?;
 
                 let json = db.with_read_only(&ctx_sql(db), |tx| {
                     results

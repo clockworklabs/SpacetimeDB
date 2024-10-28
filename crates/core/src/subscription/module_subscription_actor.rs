@@ -6,9 +6,11 @@ use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessag
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::db::datastore::system_tables::StVarTable;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
+use crate::energy::EnergyMonitor;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
+use crate::messages::control_db::Database;
 use crate::messages::websocket::Subscribe;
 use crate::sql::ast::SchemaViewer;
 use crate::vm::check_row_limit;
@@ -19,31 +21,67 @@ use spacetimedb_expr::check::parse_and_type_sub;
 use spacetimedb_expr::ty::TyCtx;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
+use spacetimedb_sats::energy::QueryTimer;
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::AuthAccess;
 use std::time::Duration;
-use std::{sync::Arc, time::Instant};
+use std::{fmt, sync::Arc, time::Instant};
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ModuleSubscriptions {
     relational_db: Arc<RelationalDB>,
     /// If taking a lock (tx) on the db at the same time, ALWAYS lock the db first.
     /// You will deadlock otherwise.
     subscriptions: Subscriptions,
-    owner_identity: Identity,
+    pub(crate) owner_identity: Identity,
+    pub(crate) energy_monitor: Arc<dyn EnergyMonitor>,
+    pub(crate) database: Database,
+    pub replica_id: u64,
+}
+
+impl fmt::Debug for ModuleSubscriptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModuleSubscriptions")
+            .field("relational_db", &self.relational_db)
+            .field("subscriptions", &self.subscriptions)
+            .field("owner_identity", &self.owner_identity)
+            .field("energy_monitor", &"Arc<dyn EnergyMonitor>")
+            .field("database", &self.database)
+            .field("replica_id", &self.replica_id)
+            .finish()
+    }
 }
 
 type AssertTxFn = Arc<dyn Fn(&Tx)>;
 
 impl ModuleSubscriptions {
-    pub fn new(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
+    pub fn new(
+        relational_db: Arc<RelationalDB>,
+        owner_identity: Identity,
+        energy_monitor: Arc<dyn EnergyMonitor>,
+        database: Database,
+        replica_id: u64,
+    ) -> Self {
         Self {
-            relational_db,
             subscriptions: Arc::new(RwLock::new(SubscriptionManager::default())),
             owner_identity,
+            replica_id,
+            database,
+            relational_db,
+            energy_monitor,
         }
+    }
+
+    pub fn for_testing(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
+        Self::new(
+            relational_db,
+            owner_identity,
+            Arc::new(crate::energy::NullEnergyMonitor),
+            Database::for_testing(),
+            0,
+        )
     }
 
     /// Add a subscriber to the module. NOTE: this function is blocking.
@@ -64,6 +102,7 @@ impl ModuleSubscriptions {
         let mut queries = vec![];
 
         let guard = self.subscriptions.read();
+        let query_timer = QueryTimer::default();
 
         for sql in subscription
             .query_strings
@@ -140,6 +179,9 @@ impl ModuleSubscriptions {
                 sender.compression,
             )),
         };
+
+        self.energy_monitor
+            .record_query_energy(self.database.owner_identity, self.replica_id, query_timer.total());
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -266,7 +308,7 @@ mod tests {
         let owner = Identity::from_byte_array([1; 32]);
         let client = ClientActorId::for_test(Identity::ZERO);
         let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
-        let module_subscriptions = ModuleSubscriptions::new(db.clone(), owner);
+        let module_subscriptions = ModuleSubscriptions::for_testing(db.clone(), owner);
 
         let subscribe = Subscribe {
             query_strings: [sql.into()].into(),
