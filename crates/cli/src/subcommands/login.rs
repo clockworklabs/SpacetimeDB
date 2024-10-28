@@ -67,7 +67,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     if let Some(server) = direct_login {
-        let host = config.find_server(server)?.get_host_url();
+        let host = config.get_host_url(Some(server))?;
         spacetimedb_token_cached(&mut config, &host, true, clear_cache).await?;
     } else {
         spacetimedb_token_cached(&mut config, host, false, clear_cache).await?;
