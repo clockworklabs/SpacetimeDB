@@ -92,7 +92,7 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(Handle table, string name)
 {
     private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
 
-    public Row? Find(T key) => DoFilter(ToBounds(key)).Cast<Row?>().SingleOrDefault();
+    protected IEnumerable<Row> DoFilter(T key) => DoFilter(ToBounds(key));
 
     public bool Delete(T key) => DoDelete(ToBounds(key)) > 0;
 
