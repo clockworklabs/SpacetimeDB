@@ -259,13 +259,14 @@ impl<Key: Into<u64> + From<u64>> IndexFile<Key> {
 mod tests {
     use super::*;
     use spacetimedb_paths::server::CommitLogDir;
+    use spacetimedb_paths::FromPathUnchecked;
     use tempfile::TempDir;
 
     /// Create and fill index file with key as first `fill_till - 1` even numbers
     fn create_and_fill_index(cap: u64, fill_till: u64) -> Result<IndexFileMut<u64>, IndexError> {
         // Create a temporary directory for testing
         let temp_dir = TempDir::new()?;
-        let path = CommitLogDir(temp_dir.path().to_path_buf());
+        let path = CommitLogDir::from_path_unchecked(temp_dir.path());
         let index_path = path.index(0);
 
         // Create an index file
@@ -350,7 +351,7 @@ mod tests {
     fn test_close_open_index() -> Result<(), IndexError> {
         // Create a temporary directory for testing
         let temp_dir = TempDir::new()?;
-        let path = CommitLogDir(temp_dir.path().to_path_buf());
+        let path = CommitLogDir::from_path_unchecked(temp_dir.path());
         let index_path = path.index(0);
 
         // Create an index file

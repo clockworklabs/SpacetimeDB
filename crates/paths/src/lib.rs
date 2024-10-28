@@ -165,9 +165,16 @@ mod utils;
 #[doc(hidden)]
 pub use serde as __serde;
 
+pub trait FromPathUnchecked {
+    /// The responsibility is on the caller to verify that the path is valid
+    /// for this directory structure node.
+    fn from_path_unchecked(path: impl Into<std::path::PathBuf>) -> Self;
+}
+
 path_type! {
     /// The --root-dir for the spacetime installation, if specified.
-    RootDir: dir
+    #[non_exhaustive(FALSE)]
+    RootDir
 }
 
 impl RootDir {

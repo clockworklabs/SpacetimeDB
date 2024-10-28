@@ -18,10 +18,11 @@ impl PathBufExt for PathBuf {
 
 #[macro_export]
 macro_rules! path_type {
-    ($(#[$attr:meta])* $name:ident) => {
-        $(#[$attr])*
+    ($(#[doc = $doc:literal])* $(#[non_exhaustive($non_exhaustive:tt)])? $name:ident) => {
+        $(#[doc = $doc])*
         #[derive(Clone, Debug, $crate::__serde::Serialize, $crate::__serde::Deserialize)]
         #[serde(transparent)]
+        #[cfg_attr(all($($non_exhaustive)?), non_exhaustive)]
         pub struct $name(pub std::path::PathBuf);
 
         impl AsRef<std::path::Path> for $name {
@@ -33,6 +34,12 @@ macro_rules! path_type {
         impl From<std::ffi::OsString> for $name {
             fn from(s: std::ffi::OsString) -> Self {
                 Self(s.into())
+            }
+        }
+
+        impl $crate::FromPathUnchecked for $name {
+            fn from_path_unchecked(path: impl Into<std::path::PathBuf>) -> Self {
+                Self(path.into())
             }
         }
 
@@ -48,8 +55,8 @@ macro_rules! path_type {
             }
         }
     };
-    ($(#[$attr:meta])* $name:ident: dir) => {
-        path_type!($(#[$attr])* $name);
+    ($(#[$($attr:tt)+])* $name:ident: dir) => {
+        path_type!($(#[$($attr)+])* $name);
         impl $name {
             #[inline]
             pub fn create(&self) -> std::io::Result<()> {
@@ -65,8 +72,8 @@ macro_rules! path_type {
             }
         }
     };
-    ($(#[$attr:meta])* $name:ident: file) => {
-        path_type!($(#[$attr])* $name);
+    ($(#[$($attr:tt)+])* $name:ident: file) => {
+        path_type!($(#[$($attr)+])* $name);
         impl $name {
             pub fn read(&self) -> std::io::Result<Vec<u8>> {
                 std::fs::read(self)

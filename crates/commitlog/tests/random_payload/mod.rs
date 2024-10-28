@@ -3,6 +3,7 @@ use std::num::NonZeroU16;
 use rand::Rng;
 use spacetimedb_commitlog::{payload, Commitlog, Options};
 use spacetimedb_paths::server::CommitLogDir;
+use spacetimedb_paths::FromPathUnchecked;
 use tempfile::tempdir;
 
 fn gen_payload() -> [u8; 256] {
@@ -16,7 +17,7 @@ fn gen_payload() -> [u8; 256] {
 fn smoke() {
     let root = tempdir().unwrap();
     let clog = Commitlog::open(
-        CommitLogDir(root.path().into()),
+        CommitLogDir::from_path_unchecked(root.path()),
         Options {
             max_segment_size: 8 * 1024,
             max_records_in_commit: NonZeroU16::MIN,
@@ -45,7 +46,7 @@ fn smoke() {
 fn resets() {
     let root = tempdir().unwrap();
     let mut clog = Commitlog::open(
-        CommitLogDir(root.path().into()),
+        CommitLogDir::from_path_unchecked(root.path()),
         Options {
             max_segment_size: 512,
             max_records_in_commit: NonZeroU16::MIN,
