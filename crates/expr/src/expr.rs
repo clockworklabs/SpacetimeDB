@@ -10,7 +10,7 @@ use spacetimedb_sql_parser::ast::BinOp;
 use super::ty::{InvalidTypeId, Symbol, TyCtx, TyId, Type, TypeWithCtx};
 
 /// A logical relational expression
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum RelExpr {
     /// A base table
     RelVar(Arc<TableSchema>, TyId),
@@ -65,7 +65,7 @@ impl RelExpr {
 }
 
 /// A relational select operation or filter
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Select {
     /// The input relation
     pub input: RelExpr,
@@ -74,7 +74,7 @@ pub struct Select {
 }
 
 /// A relational project operation or map
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Project {
     /// The input relation
     pub input: RelExpr,
@@ -86,7 +86,7 @@ pub struct Project {
 ///
 /// Relational operators take a single input paramter.
 /// Let variables explicitly destructure the input row.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Let {
     /// The variable definitions for this let expression
     pub vars: Vec<(Symbol, Expr)>,

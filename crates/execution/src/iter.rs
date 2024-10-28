@@ -2,12 +2,14 @@ use std::ops::{Bound, RangeBounds};
 
 use spacetimedb_lib::{AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{IndexId, TableId};
+use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::{
     blob_store::BlobStore,
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     static_assert_size,
     table::{IndexScanIter, RowRef, Table, TableScanIter},
 };
+use std::collections::HashSet;
 
 /// A row from a base table in the form of a pointer or product value
 #[derive(Clone)]
@@ -238,6 +240,8 @@ pub enum Iter<'a> {
     UniqueIxJoin(LeftDeepJoin<UniqueIndexJoin<'a>>),
     /// A tuple-at-a-time filter iterator
     Filter(Filter<'a>),
+    /// Deduplication
+    Dedup(Dedup<'a>),
 }
 
 impl<'a> Iterator for Iter<'a> {
@@ -267,6 +271,10 @@ impl<'a> Iterator for Iter<'a> {
             }
             Self::Filter(iter) => {
                 // Filter is a passthru
+                iter.next()
+            }
+            Self::Dedup(iter) => {
+                // Dedup is a passthru
                 iter.next()
             }
             Self::NLJoin(iter) => {
@@ -554,6 +562,25 @@ impl<'a> Iterator for Filter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.input
             .find(|tuple| self.program.eval(tuple).as_bool().is_some_and(|ok| *ok))
+    }
+}
+
+/// A tuple at a time deduplication iterator
+pub struct Dedup<'a> {
+    /// The input iterator
+    input: Box<Iter<'a>>,
+    /// The set of seen row ids
+    seen: HashSet<RowPointer>,
+}
+
+impl<'a> Iterator for Dedup<'a> {
+    type Item = Tuple<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.input.find(|tuple| {
+            let ptr = tuple.expect_row().expect_ptr();
+            self.seen.insert(ptr.pointer())
+        })
     }
 }
 

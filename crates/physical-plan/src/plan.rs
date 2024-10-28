@@ -5,7 +5,6 @@ use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColId, IndexId};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_sql_parser::ast::BinOp;
-use std::{ops::Bound, sync::Arc};
 
 /// A physical plan is a concrete evaluation strategy.
 /// As such, we can reason about its energy consumption.
@@ -34,32 +33,8 @@ pub enum PhysicalPlan {
     Filter(Box<PhysicalPlan>, PhysicalExpr),
     /// A tuple-at-a-time projection
     Project(Box<PhysicalPlan>, PhysicalExpr),
-}
-
-impl PhysicalPlan {
-    pub fn as_project(&self) -> Option<&Project> {
-        if let PhysicalPlan::Project(p) = self {
-            Some(p)
-        } else {
-            None
-        }
-    }
-
-    pub fn as_filter(&self) -> Option<&Filter> {
-        if let PhysicalPlan::Filter(p) = self {
-            Some(p)
-        } else {
-            None
-        }
-    }
-
-    pub fn as_cross(&self) -> Option<&CrossJoin> {
-        if let PhysicalPlan::CrossJoin(p) = self {
-            Some(p)
-        } else {
-            None
-        }
-    }
+    /// Deduplicate a relation
+    Dedup(Box<PhysicalPlan>),
 }
 
 /// Fetch and return row ids from a btree index
@@ -161,13 +136,6 @@ pub enum PhysicalExpr {
     /// A temporary tuple value.
     /// A base element for a field projection.
     Tup,
-}
-
-/// A physical context for the result of a query compilation.
-pub struct PhysicalCtx<'a> {
-    pub plan: PhysicalPlan,
-    pub sql: &'a str,
-    pub source: StatementSource,
 }
 
 /// A physical context for the result of a query compilation.
