@@ -353,9 +353,12 @@ impl<R: io::Read + io::Seek> Reader<R> {
         self.commits()
             .with_log_format_version()
             .map(|x| x.map_err(Into::into))
-            .map_ok(move |(version, commit)| commit.into_transactions(version, de))
+            .map_ok(move |(version, commit)| {
+                let start = commit.min_tx_offset;
+                commit.into_transactions(version, start, de)
+            })
             .flatten_ok()
-            .flatten_ok()
+            .map(|x| x.and_then(|y| y))
     }
 
     #[cfg(test)]
