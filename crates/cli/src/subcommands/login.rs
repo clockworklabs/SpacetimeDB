@@ -1,5 +1,5 @@
 use crate::Config;
-use clap::{Arg, ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use reqwest::Url;
 use serde::Deserialize;
 use webbrowser;
@@ -22,7 +22,14 @@ pub fn cli() -> Command {
             Arg::new("spacetimedb-token")
                 .long("token")
                 .conflicts_with("auth-host")
+                .conflicts_with("refresh-cache")
                 .help("Bypass the login flow and use a login token directly"),
+        )
+        .arg(
+            Arg::new("refresh-cache")
+                .long("refresh-cache")
+                .action(ArgAction::SetTrue)
+                .help("Clear the cached tokens and re-fetch them"),
         )
         .about("Log the CLI in to SpacetimeDB")
 }
@@ -31,6 +38,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let spacetimedb_token: Option<&String> = args.get_one("spacetimedb-token");
     let host: &String = args.get_one("auth-host").unwrap();
     let direct_login: Option<&String> = args.get_one("server");
+    // TODO: This `--refresh-cache` does not (and can not) clear any of the browser's cookies, so it will refresh the tokens stored in config,
+    // but if you're already logged in with the browser, it will not let you e.g. choose a different account.
+    let clear_cache = args.get_flag("refresh-cache");
 
     if let Some(token) = spacetimedb_token {
         config.set_spacetimedb_token(token.clone());
@@ -40,24 +50,30 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     if let Some(server) = direct_login {
         let host = config.get_host_url(Some(server))?;
-        spacetimedb_token_cached(&mut config, &host, true).await?;
+        spacetimedb_token_cached(&mut config, &host, true, clear_cache).await?;
     } else {
-        spacetimedb_token_cached(&mut config, host, false).await?;
+        spacetimedb_token_cached(&mut config, host, false, clear_cache).await?;
     }
 
     Ok(())
 }
 
-async fn spacetimedb_token_cached(config: &mut Config, host: &str, direct_login: bool) -> anyhow::Result<String> {
+async fn spacetimedb_token_cached(
+    config: &mut Config,
+    host: &str,
+    direct_login: bool,
+    clear_cache: bool,
+) -> anyhow::Result<String> {
     // Currently, this token does not expire. However, it will at some point in the future. When that happens,
     // this code will need to happen before any request to a spacetimedb server, rather than at the end of the login flow here.
-    if let Some(token) = config.spacetimedb_token() {
+    let spacetimedb_token = config.spacetimedb_token().filter(|_| !clear_cache);
+    if let Some(token) = spacetimedb_token {
         Ok(token.clone())
     } else {
         let token = if direct_login {
             spacetimedb_direct_login(host).await?
         } else {
-            let session_id = web_login_cached(config, host).await?;
+            let session_id = web_login_cached(config, host, clear_cache).await?;
             spacetimedb_login(host, &session_id).await?
         };
         config.set_spacetimedb_token(token.clone());
@@ -66,8 +82,9 @@ async fn spacetimedb_token_cached(config: &mut Config, host: &str, direct_login:
     }
 }
 
-async fn web_login_cached(config: &mut Config, host: &str) -> anyhow::Result<String> {
-    if let Some(session_id) = config.web_session_id() {
+async fn web_login_cached(config: &mut Config, host: &str, clear_cache: bool) -> anyhow::Result<String> {
+    let session_id = config.web_session_id().filter(|_| !clear_cache);
+    if let Some(session_id) = session_id {
         // Currently, these session IDs do not expire. At some point in the future, we may also need to check this session ID for validity.
         Ok(session_id.clone())
     } else {
