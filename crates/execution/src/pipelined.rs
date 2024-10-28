@@ -27,6 +27,17 @@ impl From<ProjectListPlan> for ProjectListExecutor {
         match plan {
             ProjectListPlan::Name(plan) => Self::Name(plan.into()),
             ProjectListPlan::List(plan, fields) => Self::List(plan.into(), fields),
+            ProjectListPlan::Dedup(plan) => match *plan {
+                ProjectListPlan::Name(plan) => {
+                    let plan: PipelinedProject = plan.into();
+                    match plan {
+                        PipelinedProject::None(plan) => Self::Name(PipelinedProject::None(plan.dedup())),
+                        PipelinedProject::Some(plan, i) => Self::Name(PipelinedProject::Some(plan.dedup(), i)),
+                    }
+                }
+                ProjectListPlan::List(plan, fields) => Self::List(plan.dedup().into(), fields),
+                ProjectListPlan::Dedup(plan) => Self::from(*plan),
+            },
         }
     }
 }
@@ -135,6 +146,7 @@ pub enum PipelinedExecutor {
     HashJoin(BlockingHashJoin),
     NLJoin(BlockingNLJoin),
     Filter(PipelinedFilter),
+    Dedup(PipelinedDedup),
 }
 
 impl From<PhysicalPlan> for PipelinedExecutor {
@@ -190,6 +202,11 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                 input: Box::new(PipelinedExecutor::from(*input)),
                 expr,
             }),
+            PhysicalPlan::Dedup(plan) => {
+                // Dedup is a no-op in a pipelined executor.
+                // It is only useful for materialized results.
+                Self::from(*plan)
+            }
         }
     }
 }
@@ -204,7 +221,12 @@ impl PipelinedExecutor {
             Self::HashJoin(join) => join.is_empty(tx),
             Self::NLJoin(join) => join.is_empty(tx),
             Self::Filter(filter) => filter.is_empty(tx),
+            Self::Dedup(plan) => plan.input.is_empty(tx),
         }
+    }
+
+    pub fn dedup(self) -> Self {
+        Self::Dedup(PipelinedDedup { input: Box::new(self) })
     }
 
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
@@ -220,6 +242,7 @@ impl PipelinedExecutor {
             Self::HashJoin(join) => join.execute(tx, metrics, f),
             Self::NLJoin(join) => join.execute(tx, metrics, f),
             Self::Filter(filter) => filter.execute(tx, metrics, f),
+            Self::Dedup(plan) => plan.execute(tx, metrics, f),
         }
     }
 }
@@ -856,4 +879,29 @@ fn project(row: &impl ProjectField, field: &TupleField, bytes_scanned: &mut usiz
     let value = row.project(field);
     *bytes_scanned += value.size_of();
     value
+}
+
+/// A pipelined executor for deduplication
+#[derive(Debug)]
+pub struct PipelinedDedup {
+    pub input: Box<PipelinedExecutor>,
+}
+
+impl PipelinedDedup {
+    pub fn execute<'a, Tx: Datastore + DeltaStore>(
+        &self,
+        tx: &'a Tx,
+        metrics: &mut ExecutionMetrics,
+        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+    ) -> Result<()> {
+        let mut seen = HashSet::new();
+        self.input.execute(tx, metrics, &mut |t| {
+            if seen.insert(t.clone()) {
+                f(t)?;
+            }
+            Ok(())
+        })?;
+        metrics.rows_scanned += seen.len();
+        Ok(())
+    }
 }

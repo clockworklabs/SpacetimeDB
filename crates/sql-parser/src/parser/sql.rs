@@ -127,6 +127,16 @@
 //!     ;
 //! ```
 
+use super::{
+    errors::SqlUnsupported, parse_expr_opt, parse_ident, parse_literal, parse_parts, parse_projection, RelParser,
+    SqlParseResult,
+};
+use crate::ast::sql::SqlDistinct;
+use crate::ast::{
+    sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate, SqlValues},
+    SqlIdent,
+};
+use sqlparser::ast::Distinct;
 use sqlparser::{
     ast::{
         Assignment, Expr, GroupByExpr, ObjectName, Query, Select, SetExpr, Statement, TableFactor, TableWithJoins,
@@ -134,16 +144,6 @@ use sqlparser::{
     },
     dialect::PostgreSqlDialect,
     parser::Parser,
-};
-
-use crate::ast::{
-    sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate, SqlValues},
-    SqlIdent,
-};
-
-use super::{
-    errors::SqlUnsupported, parse_expr_opt, parse_ident, parse_literal, parse_parts, parse_projection, RelParser,
-    SqlParseResult,
 };
 
 /// Parse a SQL string
@@ -362,7 +362,7 @@ fn parse_set_op(expr: SetExpr) -> SqlParseResult<SqlSelect> {
 fn parse_select(select: Select) -> SqlParseResult<SqlSelect> {
     match select {
         Select {
-            distinct: None,
+            distinct,
             top: None,
             projection,
             into: None,
@@ -381,12 +381,18 @@ fn parse_select(select: Select) -> SqlParseResult<SqlSelect> {
             && cluster_by.is_empty()
             && distribute_by.is_empty()
             && sort_by.is_empty()
-            && named_window.is_empty() =>
+            && named_window.is_empty()
+            && matches!(distinct, None | Some(Distinct::Distinct)) =>
         {
             Ok(SqlSelect {
                 project: parse_projection(projection)?,
                 from: SqlParser::parse_from(from)?,
                 filter: parse_expr_opt(selection)?,
+                distinct: if distinct.is_some() {
+                    SqlDistinct::Yes
+                } else {
+                    SqlDistinct::No
+                },
             })
         }
         _ => Err(SqlUnsupported::feature(select).into()),
