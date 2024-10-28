@@ -1,7 +1,6 @@
 ﻿namespace SpacetimeDB.Internal;
 
 using System;
-using System.Linq;
 
 public abstract class IndexBase<Row>
     where Row : ITable<Row>, new()
