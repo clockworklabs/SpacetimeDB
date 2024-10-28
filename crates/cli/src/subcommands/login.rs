@@ -16,11 +16,10 @@ pub fn cli() -> Command {
                 .help("Fetch login token from a different host"),
         )
         .arg(
-            Arg::new("local")
-                .long("local")
-                .action(ArgAction::SetTrue)
+            Arg::new("server")
+                .long("direct")
                 .conflicts_with("auth-host")
-                .help("Log in to a SpacetimeDB server on the local machine, without a separate auth server"),
+                .help("Log in to a SpacetimeDB server directly, without going through a global auth server"),
         )
         .arg(
             Arg::new("spacetimedb-token")
@@ -59,7 +58,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // TODO: This `--clear-cache` does not (and can not) clear any of the browser's cookies, so it will refresh the tokens stored in config,
     // but if you're already logged in with the browser, it will not let you e.g. choose a different account.
     let clear_cache = args.get_flag("clear-cache");
-    let local_login = args.get_flag("local");
+    let direct_login: Option<&String> = args.get_one("server");
 
     if let Some(token) = spacetimedb_token {
         config.set_spacetimedb_token(token.clone());
@@ -67,7 +66,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         return Ok(());
     }
 
-    spacetimedb_token_cached(&mut config, host, local_login, clear_cache).await?;
+    if let Some(server) = direct_login {
+        let host = config.host(Some(server))?.to_owned();
+        spacetimedb_token_cached(&mut config, &host, true, clear_cache).await?;
+    } else {
+        spacetimedb_token_cached(&mut config, host, false, clear_cache).await?;
+    }
 
     Ok(())
 }
@@ -98,7 +102,7 @@ async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
 async fn spacetimedb_token_cached(
     config: &mut Config,
     host: &str,
-    local_login: bool,
+    direct_login: bool,
     clear_cache: bool,
 ) -> anyhow::Result<String> {
     // Currently, this token does not expire. However, it will at some point in the future. When that happens,
@@ -107,8 +111,8 @@ async fn spacetimedb_token_cached(
     if let Some(token) = spacetimedb_token {
         Ok(token.clone())
     } else {
-        let token = if local_login {
-            spacetimedb_local_login().await?
+        let token = if direct_login {
+            spacetimedb_direct_login(host).await?
         } else {
             let session_id = web_login_cached(config, host, clear_cache).await?;
             spacetimedb_login(host, &session_id).await?
@@ -210,9 +214,7 @@ struct SpacetimeDBTokenResponse {
 async fn spacetimedb_login(remote: &str, web_session_id: &String) -> Result<String, anyhow::Error> {
     // Users like to provide URLs with trailing slashes, which can cause issues due to double-slashes in the routes below.
     let remote = remote.trim_end_matches('/');
-
     let route = |path| format!("{}{}", remote, path);
-
     let client = reqwest::Client::new();
 
     let response: SpacetimeDBTokenResponse = client
@@ -231,15 +233,13 @@ struct LocalLoginResponse {
     pub token: String,
 }
 
-async fn spacetimedb_local_login() -> Result<String, anyhow::Error> {
+async fn spacetimedb_direct_login(host: &str) -> Result<String, anyhow::Error> {
+    // Users like to provide URLs with trailing slashes, which can cause issues due to double-slashes in the routes below.
+    let host = host.trim_end_matches('/');
+    let route = |path| format!("{}{}", host, path);
     let client = reqwest::Client::new();
 
-    let response: LocalLoginResponse = client
-        .post("http://localhost:3000/identity")
-        .send()
-        .await?
-        .json()
-        .await?;
+    let response: LocalLoginResponse = client.post(route("/identity")).send().await?.json().await?;
 
     Ok(response.token)
 }

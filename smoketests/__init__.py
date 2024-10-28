@@ -141,19 +141,9 @@ def spacetime(*args, **kwargs):
     return run_cmd(SPACETIME_BIN, *args, cmd_name="spacetime", **kwargs)
 
 def new_identity(config_path):
-    identity_response = run_cmd("curl", "-X", "POST", "--no-progress-meter", "http://127.0.0.1:3000/identity", full_output=False)
-    identity_response = json.loads(identity_response)
-    # TODO: We should replace the rest of this function with this line:
-    #     spacetime("login", "--token", token)
-    # ...but for some reason it's not working. It's likely using the wrong config file, and we're in a hurry right now.
-    token = identity_response['token']
-    with open(config_path, 'r') as file:
-        lines = file.readlines()
-        pattern = r'^spacetimedb_token *= *".*"$'
-        replacement = 'spacetimedb_token = "%s"' % token
-        config_lines = [ re.sub(pattern, replacement, l) for l in lines ]
-    with open(config_path, 'w') as file:
-        file.writelines(config_lines)
+    env = os.environ.copy()
+    env["SPACETIME_CONFIG_FILE"] = str(config_path)
+    spacetime("login", "--clear-cache", "--direct", "localhost", full_output=False, env=env)
 
 class Smoketest(unittest.TestCase):
     MODULE_CODE = TEMPLATE_LIB_RS
