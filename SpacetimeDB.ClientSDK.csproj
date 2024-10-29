@@ -16,15 +16,15 @@
     <PackageIcon>logo.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk</RepositoryUrl>
-    <AssemblyVersion>0.12.0</AssemblyVersion>
-    <Version>$(AssemblyVersion)</Version>
+    <AssemblyVersion>1.0.0</AssemblyVersion>
+    <Version>1.0.0-rc1</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
     <!-- We want to save DLLs for Unity which doesn't support NuGet. -->
     <RestorePackagesPath>packages</RestorePackagesPath>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="0.12.*" />
+    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="1.0.0-rc1" />
 
     <InternalsVisibleTo Include="SpacetimeDB.Tests" />
   </ItemGroup>
