@@ -165,6 +165,8 @@ mod utils;
 #[doc(hidden)]
 pub use serde as __serde;
 
+/// Implemented for path types. Use `from_path_unchecked()` to construct a strongly-typed
+/// path directly from a `PathBuf`.
 pub trait FromPathUnchecked {
     /// The responsibility is on the caller to verify that the path is valid
     /// for this directory structure node.

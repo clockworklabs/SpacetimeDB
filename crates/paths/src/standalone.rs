@@ -1,11 +1,7 @@
 use crate::server::ServerDataDir;
 use crate::utils::path_type;
 
-mod sealed {
-    pub trait Sealed: AsRef<std::path::Path> {}
-}
-
-pub trait StandaloneDataDirExt: sealed::Sealed {
+pub trait StandaloneDataDirExt: AsRef<std::path::Path> {
     fn program_bytes(&self) -> ProgramBytesDir {
         ProgramBytesDir(self.as_ref().join("program-bytes"))
     }
@@ -14,7 +10,6 @@ pub trait StandaloneDataDirExt: sealed::Sealed {
     }
 }
 
-impl sealed::Sealed for ServerDataDir {}
 impl StandaloneDataDirExt for ServerDataDir {}
 
 path_type!(ProgramBytesDir: dir);

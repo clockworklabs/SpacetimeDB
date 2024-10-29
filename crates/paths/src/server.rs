@@ -4,7 +4,10 @@ use std::{fs, io};
 use crate::utils::{path_type, PathBufExt};
 use chrono::NaiveDate;
 
-path_type!(ServerDataDir: dir);
+path_type! {
+    /// The data-dir, where all database data is stored for a spacetime server process.
+    ServerDataDir: dir
+}
 
 impl ServerDataDir {
     pub fn config_toml(&self) -> ConfigToml {
@@ -46,6 +49,7 @@ impl ServerDataDir {
         let mut pidfile = PidFile { file, path };
         pidfile.file.set_len(0)?;
         write!(pidfile.file, "{}", std::process::id())?;
+        pidfile.file.flush()?;
         Ok(pidfile)
     }
 
@@ -54,7 +58,11 @@ impl ServerDataDir {
     }
 }
 
-path_type!(ConfigToml: file);
+path_type! {
+    /// The `config.toml` file, where server configuration is stored.
+    ConfigToml: file
+}
+
 path_type! {
     /// The directory in which server logs are to be stored.
     ///
@@ -79,9 +87,16 @@ impl LogsDir {
     }
 }
 
-path_type!(WasmtimeCacheDir: dir);
+path_type! {
+    /// The directory we give to wasmtime to cache its compiled artifacts in.
+    WasmtimeCacheDir: dir
+}
 
-path_type!(MetadataTomlPath: file);
+path_type! {
+    /// The `metadata.toml` file, where metadata about the server that owns this data-dir
+    /// is stored. Machine-writable only.
+    MetadataTomlPath: file
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum PidFileError {
@@ -103,13 +118,17 @@ impl Drop for PidFile {
     }
 }
 
-path_type!(ReplicaDir: dir);
+path_type! {
+    /// A replica directory, where all the data for a module's database is stored.
+    /// `{data-dir}/replicas/$replica_id/`
+    ReplicaDir: dir
+}
 
 impl ReplicaDir {
     /// `date` should be in UTC.
     pub fn module_log(self, date: NaiveDate) -> ModuleLogPath {
         let mut path = self.0.joined("module_logs/");
-        write!(path.as_mut_os_string(), "{date}.date").unwrap();
+        write!(path.as_mut_os_string(), "{date}.log").unwrap();
         ModuleLogPath(path)
     }
 
@@ -122,9 +141,15 @@ impl ReplicaDir {
     }
 }
 
-path_type!(ModuleLogPath: file);
+path_type! {
+    /// A module log from a specific date.
+    ModuleLogPath: file
+}
 
-path_type!(SnapshotsPath: dir);
+path_type! {
+    /// The snapshots directory. `{data-dir}/replica/$replica_id/snapshots`
+    SnapshotsPath: dir
+}
 
 impl SnapshotsPath {
     pub fn snapshot_dir(&self, tx_offset: u64) -> SnapshotDirPath {
@@ -133,7 +158,10 @@ impl SnapshotsPath {
     }
 }
 
-path_type!(SnapshotDirPath: dir);
+path_type! {
+    /// A snapshot directory. `{data-dir}/replica/$replica_id/snapshots/$tx_offset.snapshot_dir`
+    SnapshotDirPath: dir
+}
 
 impl SnapshotDirPath {
     pub fn snapshot_file(&self, tx_offset: u64) -> SnapshotFilePath {
@@ -151,10 +179,21 @@ impl SnapshotDirPath {
     }
 }
 
-path_type!(SnapshotFilePath: file);
-path_type!(SnapshotObjectsPath: dir);
+path_type! {
+    /// A snapshot file.
+    /// `{data-dir}/replica/$replica_id/snapshots/$tx_offset.snapshot_dir/$tx_offset.snapshot_bsatn`
+    SnapshotFilePath: file
+}
+path_type! {
+    /// The objects directory for a snapshot.
+    /// `{data-dir}/replica/$replica_id/snapshots/$tx_offset.snapshot_dir/objects`
+    SnapshotObjectsPath: dir
+}
 
-path_type!(CommitLogDir: dir);
+path_type! {
+    /// The commit log directory. `{data-dir}/replica/$replica_id/clog`
+    CommitLogDir: dir
+}
 
 impl CommitLogDir {
     /// By convention, the file name of a segment consists of the minimum

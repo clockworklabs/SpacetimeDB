@@ -10,6 +10,8 @@ use crate::invoke_cli;
 use crate::modules::{CompilationMode, CompiledModule};
 use tempfile::TempDir;
 
+/// Ensure that the server thread we're testing against is still running, starting
+/// it if it hasn't been started yet.
 pub fn ensure_standalone_process() -> &'static SpacetimePaths {
     static PATHS: OnceLock<SpacetimePaths> = OnceLock::new();
     static JOIN_HANDLE: OnceLock<Mutex<Option<JoinHandle<()>>>> = OnceLock::new();
@@ -31,7 +33,7 @@ pub fn ensure_standalone_process() -> &'static SpacetimePaths {
         })))
     });
 
-    let mut join_handle = join_handle.lock().unwrap();
+    let mut join_handle = join_handle.lock().unwrap_or_else(|e| e.into_inner());
 
     if join_handle
         .as_ref()
