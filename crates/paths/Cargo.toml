@@ -19,3 +19,6 @@ dirs.workspace = true
 
 [target.'cfg(not(windows))'.dependencies]
 xdg.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

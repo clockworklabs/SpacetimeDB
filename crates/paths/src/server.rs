@@ -174,3 +174,47 @@ impl CommitLogDir {
 
 path_type!(SegmentFile: file);
 path_type!(OffsetIndexFile: file);
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+    use tempfile::TempDir;
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_pid_file_is_written() -> Result<()> {
+        let tempdir = TempDir::new()?;
+        let sdd = ServerDataDir(tempdir.path().to_path_buf());
+
+        let lock = sdd.pid_file()?;
+
+        // Make sure we wrote the pid file.
+        let pidstring = fs::read_to_string(lock.path.clone())?;
+        let _pid = pidstring.trim().parse::<u32>()?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pid_is_exclusive() -> Result<()> {
+        let tempdir = TempDir::new()?;
+        let sdd = ServerDataDir(tempdir.path().to_path_buf());
+
+        let lock = sdd.pid_file()?;
+
+        // Make sure we wrote the pid file.
+        let pidstring = fs::read_to_string(lock.path.clone())?;
+        let _pid = pidstring.trim().parse::<u32>()?;
+
+
+        let attempt = sdd.pid_file();
+        assert!(attempt.is_err());
+
+        drop(lock);
+        // Make sure it can be acquired now.
+        sdd.pid_file()?;
+        Ok(())
+    }
+
+}
