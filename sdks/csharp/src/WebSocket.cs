@@ -50,9 +50,14 @@ namespace SpacetimeDB
 
         public bool IsConnected { get { return Ws != null && Ws.State == WebSocketState.Open; } }
 
-        public async Task Connect(string? auth, string host, string nameOrAddress, Address clientAddress)
+        public async Task Connect(string? auth, string host, string nameOrAddress, Address clientAddress, Compression compression, bool light)
         {
-            var url = new Uri($"{host}/database/subscribe/{nameOrAddress}?client_address={clientAddress}");
+            var uri = $"{host}/database/subscribe/{nameOrAddress}?client_address={clientAddress}&compression={nameof(compression)}";
+            if (light)
+            {
+                uri += "&light=true";
+            }
+            var url = new Uri(uri);
             Ws.Options.AddSubProtocol(_options.Protocol);
 
             var source = new CancellationTokenSource(10000);
