@@ -137,9 +137,13 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
         output.check_returncode()
     return output if full_output else output.stdout
 
-
 def spacetime(*args, **kwargs):
     return run_cmd(SPACETIME_BIN, *args, cmd_name="spacetime", **kwargs)
+
+def new_identity(config_path):
+    env = os.environ.copy()
+    env["SPACETIME_CONFIG_FILE"] = str(config_path)
+    spacetime("login", "--refresh-cache", "--server-issued-login", "localhost", full_output=False, env=env)
 
 class Smoketest(unittest.TestCase):
     MODULE_CODE = TEMPLATE_LIB_RS
@@ -194,20 +198,8 @@ class Smoketest(unittest.TestCase):
         # Fetch the server's fingerprint; required for `identity list`.
         self.spacetime("server", "fingerprint", "localhost", "-y")
 
-    def new_identity(self, *, default=False):
-        output = self.spacetime("identity", "new")
-        identity = extract_field(output, "IDENTITY")
-        if default:
-            self.spacetime("identity", "set-default", "--identity", identity)
-        return identity
-
-    def token(self, identity):
-        return self.spacetime("identity", "token", "--identity", identity).strip()
-
-    def import_identity(self, identity, token, *, default=False):
-        self.spacetime("identity", "import", "--identity", identity, token)
-        if default:
-            self.spacetime("identity", "set-default", "--identity", identity)
+    def new_identity(self):
+        new_identity(self.__class__.config_path)
 
     def subscribe(self, *queries, n):
         self._check_published()

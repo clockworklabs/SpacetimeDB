@@ -252,6 +252,7 @@ urlencoding = "2.1.2"
 uuid = { version = "1.2.1", features = ["v4"] }
 walkdir = "2.2.5"
 wasmbin = "0.6"
+webbrowser = "1.0.2"
 
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.
