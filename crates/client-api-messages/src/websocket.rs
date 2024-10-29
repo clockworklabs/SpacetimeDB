@@ -559,20 +559,9 @@ pub fn decide_compression(len: usize, compression: Compression) -> Compression {
 pub fn brotli_compress(bytes: &[u8], out: &mut Vec<u8>) {
     let reader = &mut &bytes[..];
 
-    // TODO(perf): Compression should depend on message size and type.
-    //
-    // SubscriptionUpdate messages will typically be quite large,
-    // while TransactionUpdate messages will typically be quite small.
-    //
-    // If we are optimizing for SubscriptionUpdates,
-    // we want a large buffer.
-    // But if we are optimizing for TransactionUpdates,
-    // we probably want to skip compression altogether.
-    //
-    // For now we choose a reasonable middle ground,
-    // which is to compress everything using a 32KB buffer.
-    const BUFFER_SIZE: usize = 32 * 1024;
-    // Again we are optimizing for compression speed,
+    // The default Brotli buffer size.
+    const BUFFER_SIZE: usize = 4096;
+    // We are optimizing for compression speed,
     // so we choose the lowest (fastest) level of compression.
     // Experiments on internal workloads have shown compression ratios between 7:1 and 10:1
     // for large `SubscriptionUpdate` messages at this level.
