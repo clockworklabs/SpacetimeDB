@@ -676,22 +676,22 @@ namespace SpacetimeDB
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (PkMultiIdentity)row;
-				Id.__Cache[value.Id] = value;
-				Other.__Cache[value.Other] = value;
+				Id.Cache[value.Id] = value;
+				Other.Cache[value.Other] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				Id.__Cache.Remove(((PkMultiIdentity)row).Id);
-				Other.__Cache.Remove(((PkMultiIdentity)row).Other);
+				Id.Cache.Remove(((PkMultiIdentity)row).Id);
+				Other.Cache.Remove(((PkMultiIdentity)row).Other);
 			}
 
 			public class IdUniqueIndex
 			{
-				internal readonly Dictionary<uint, PkMultiIdentity> __Cache = new(16);
+				internal readonly Dictionary<uint, PkMultiIdentity> Cache = new(16);
 				public PkMultiIdentity? Find(uint value)
 				{
-					__Cache.TryGetValue(value, out var r);
+					Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
@@ -701,10 +701,10 @@ namespace SpacetimeDB
 
 			public class OtherUniqueIndex
 			{
-				internal readonly Dictionary<uint, PkMultiIdentity> __Cache = new(16);
+				internal readonly Dictionary<uint, PkMultiIdentity> Cache = new(16);
 				public PkMultiIdentity? Find(uint value)
 				{
-					__Cache.TryGetValue(value, out var r);
+					Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
@@ -758,20 +758,20 @@ namespace SpacetimeDB
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (RepeatingTestArg)row;
-				ScheduledId.__Cache[value.ScheduledId] = value;
+				ScheduledId.Cache[value.ScheduledId] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				ScheduledId.__Cache.Remove(((RepeatingTestArg)row).ScheduledId);
+				ScheduledId.Cache.Remove(((RepeatingTestArg)row).ScheduledId);
 			}
 
 			public class ScheduledIdUniqueIndex
 			{
-				internal readonly Dictionary<ulong, RepeatingTestArg> __Cache = new(16);
+				internal readonly Dictionary<ulong, RepeatingTestArg> Cache = new(16);
 				public RepeatingTestArg? Find(ulong value)
 				{
-					__Cache.TryGetValue(value, out var r);
+					Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
@@ -825,20 +825,20 @@ namespace SpacetimeDB
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (TestE)row;
-				Id.__Cache[value.Id] = value;
+				Id.Cache[value.Id] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				Id.__Cache.Remove(((TestE)row).Id);
+				Id.Cache.Remove(((TestE)row).Id);
 			}
 
 			public class IdUniqueIndex
 			{
-				internal readonly Dictionary<ulong, TestE> __Cache = new(16);
+				internal readonly Dictionary<ulong, TestE> Cache = new(16);
 				public TestE? Find(ulong value)
 				{
-					__Cache.TryGetValue(value, out var r);
+					Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
