@@ -2,7 +2,6 @@ use super::execution_unit::{ExecutionUnit, QueryHash};
 use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
 use crate::db::relational_db::{RelationalDB, Tx};
-use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use arrayvec::ArrayVec;
@@ -119,7 +118,6 @@ impl SubscriptionManager {
     #[tracing::instrument(skip_all)]
     pub fn eval_updates(
         &self,
-        ctx: &ExecutionContext,
         db: &RelationalDB,
         tx: &Tx,
         event: Arc<ModuleEvent>,
@@ -150,7 +148,7 @@ impl SubscriptionManager {
                 .par_iter()
                 .filter_map(|(&hash, tables)| {
                     let unit = self.queries.get(hash)?;
-                    unit.eval_incr(ctx, db, tx, &unit.sql, tables.iter().copied(), slow_query_threshold)
+                    unit.eval_incr(db, tx, &unit.sql, tables.iter().copied(), slow_query_threshold)
                         .map(|table| (hash, table))
                 })
                 // If N clients are subscribed to a query,
@@ -275,11 +273,12 @@ mod tests {
     use spacetimedb_primitives::TableId;
     use spacetimedb_vm::expr::CrudExpr;
 
+    use super::SubscriptionManager;
+    use crate::execution_context::Workload;
     use crate::{
         client::{ClientActorId, ClientConnectionSender, ClientName, Protocol},
         db::relational_db::{tests_utils::TestDB, RelationalDB},
         energy::EnergyQuanta,
-        execution_context::ExecutionContext,
         host::{
             module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall},
             ArgsTuple,
@@ -291,14 +290,12 @@ mod tests {
         },
     };
 
-    use super::SubscriptionManager;
-
     fn create_table(db: &RelationalDB, name: &str) -> ResultTest<TableId> {
         Ok(db.create_table_for_test(name, &[("a", AlgebraicType::U8)], &[])?)
     }
 
     fn compile_plan(db: &RelationalDB, sql: &str) -> ResultTest<Arc<ExecutionUnit>> {
-        db.with_read_only(&ExecutionContext::default(), |tx| {
+        db.with_read_only(Workload::ForTests, |tx| {
             let mut exprs = compile_sql(db, &AuthCtx::for_testing(), tx, sql)?;
             assert_eq!(1, exprs.len());
             assert!(matches!(exprs[0], CrudExpr::Query(_)));
@@ -531,9 +528,8 @@ mod tests {
             timer: None,
         });
 
-        let ctx = ExecutionContext::incremental_update(db.database_identity());
-        db.with_read_only(&ctx, |tx| {
-            subscriptions.eval_updates(&ctx, &db, tx, event, Some(&client0), None)
+        db.with_read_only(Workload::Update, |tx| {
+            subscriptions.eval_updates(&db, tx, event, Some(&client0), None)
         });
 
         tokio::runtime::Builder::new_current_thread()
