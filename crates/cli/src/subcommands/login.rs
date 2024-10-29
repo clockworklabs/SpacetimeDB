@@ -14,7 +14,7 @@ pub fn cli() -> Command {
         )
         .arg(
             Arg::new("server")
-                .long("direct")
+                .long("server-issued-login")
                 .conflicts_with("auth-host")
                 .help("Log in to a SpacetimeDB server directly, without going through a global auth server"),
         )
@@ -37,7 +37,8 @@ pub fn cli() -> Command {
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let spacetimedb_token: Option<&String> = args.get_one("spacetimedb-token");
     let host: &String = args.get_one("auth-host").unwrap();
-    let direct_login: Option<&String> = args.get_one("server");
+    let host = Url::parse(host)?;
+    let server_issued_login: Option<&String> = args.get_one("server");
     // TODO: This `--refresh-cache` does not (and can not) clear any of the browser's cookies, so it will refresh the tokens stored in config,
     // but if you're already logged in with the browser, it will not let you e.g. choose a different account.
     let clear_cache = args.get_flag("refresh-cache");
@@ -48,11 +49,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         return Ok(());
     }
 
-    if let Some(server) = direct_login {
-        let host = config.get_host_url(Some(server))?;
+    if let Some(server) = server_issued_login {
+        let host = Url::parse(&config.get_host_url(Some(server))?)?;
         spacetimedb_token_cached(&mut config, &host, true, clear_cache).await?;
     } else {
-        spacetimedb_token_cached(&mut config, host, false, clear_cache).await?;
+        spacetimedb_token_cached(&mut config, &host, false, clear_cache).await?;
     }
 
     Ok(())
@@ -60,7 +61,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
 async fn spacetimedb_token_cached(
     config: &mut Config,
-    host: &str,
+    host: &Url,
     direct_login: bool,
     clear_cache: bool,
 ) -> anyhow::Result<String> {
@@ -82,7 +83,7 @@ async fn spacetimedb_token_cached(
     }
 }
 
-async fn web_login_cached(config: &mut Config, host: &str, clear_cache: bool) -> anyhow::Result<String> {
+async fn web_login_cached(config: &mut Config, host: &Url, clear_cache: bool) -> anyhow::Result<String> {
     let session_id = config.web_session_id().filter(|_| !clear_cache);
     if let Some(session_id) = session_id {
         // Currently, these session IDs do not expire. At some point in the future, we may also need to check this session ID for validity.
@@ -123,23 +124,21 @@ impl WebLoginSessionResponse {
     }
 }
 
-async fn web_login(remote: &str) -> Result<String, anyhow::Error> {
-    // Users like to provide URLs with trailing slashes, which can cause issues due to double-slashes in the routes below.
-    let remote = remote.trim_end_matches('/');
-
-    let route = |path| format!("{}{}", remote, path);
-
+async fn web_login(remote: &Url) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
 
     let response: WebLoginTokenResponse = client
-        .get(route("/api/auth/cli/request-login-token"))
+        .get(remote.join("api/auth/cli/request-login-token")?)
         .send()
         .await?
         .json()
         .await?;
     let web_login_request_token = response.token.as_str();
 
-    let browser_url = Url::parse_with_params(route("/login/cli").as_str(), vec![("token", web_login_request_token)])?;
+    let mut browser_url = remote.join("login/cli")?;
+    browser_url
+        .query_pairs_mut()
+        .append_pair("token", web_login_request_token);
     println!("Opening {} in your browser.", browser_url);
     if webbrowser::open(browser_url.as_str()).is_err() {
         println!("Unable to open your browser! Please open the URL above manually.");
@@ -149,15 +148,11 @@ async fn web_login(remote: &str) -> Result<String, anyhow::Error> {
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-        let response: WebLoginSessionResponse = client
-            .get(Url::parse_with_params(
-                route("/api/auth/cli/status").as_str(),
-                vec![("token", web_login_request_token)],
-            )?)
-            .send()
-            .await?
-            .json()
-            .await?;
+        let mut status_url = remote.join("api/auth/cli/status")?;
+        status_url
+            .query_pairs_mut()
+            .append_pair("token", web_login_request_token);
+        let response: WebLoginSessionResponse = client.get(status_url).send().await?.json().await?;
         if let Some(approved) = response.approved() {
             println!("Login successful!");
             return Ok(approved.session_id.clone());
@@ -170,14 +165,11 @@ struct SpacetimeDBTokenResponse {
     token: String,
 }
 
-async fn spacetimedb_login(remote: &str, web_session_id: &String) -> Result<String, anyhow::Error> {
-    // Users like to provide URLs with trailing slashes, which can cause issues due to double-slashes in the routes below.
-    let remote = remote.trim_end_matches('/');
-    let route = |path| format!("{}{}", remote, path);
+async fn spacetimedb_login(remote: &Url, web_session_id: &String) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
 
     let response: SpacetimeDBTokenResponse = client
-        .get(route("/api/spacetimedb-token"))
+        .get(remote.join("api/spacetimedb-token")?)
         .header("Authorization", format!("Bearer {}", web_session_id))
         .send()
         .await?
@@ -192,13 +184,8 @@ struct LocalLoginResponse {
     pub token: String,
 }
 
-async fn spacetimedb_direct_login(host: &str) -> Result<String, anyhow::Error> {
-    // Users like to provide URLs with trailing slashes, which can cause issues due to double-slashes in the routes below.
-    let host = host.trim_end_matches('/');
-    let route = |path| format!("{}{}", host, path);
+async fn spacetimedb_direct_login(host: &Url) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
-
-    let response: LocalLoginResponse = client.post(route("/identity")).send().await?.json().await?;
-
+    let response: LocalLoginResponse = client.post(host.join("identity")?).send().await?.json().await?;
     Ok(response.token)
 }
