@@ -143,7 +143,7 @@ def spacetime(*args, **kwargs):
 def new_identity(config_path):
     env = os.environ.copy()
     env["SPACETIME_CONFIG_FILE"] = str(config_path)
-    spacetime("login", "--clear-cache", "--direct", "localhost", full_output=False, env=env)
+    spacetime("login", "--refresh-cache", "--server-issued-login", "localhost", full_output=False, env=env)
 
 class Smoketest(unittest.TestCase):
     MODULE_CODE = TEMPLATE_LIB_RS
