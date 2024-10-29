@@ -33,17 +33,14 @@ pub fn cli() -> Command {
 }
 
 fn get_subcommands() -> Vec<Command> {
-    vec![
-        Command::new("show")
-            .arg(
-                Arg::new("token")
-                    .long("token")
-                    .action(ArgAction::SetTrue)
-                    .help("Also show the auth token"),
-            )
-            .about("Show the current login info"),
-        Command::new("clear").about("Clear the current login"),
-    ]
+    vec![Command::new("show")
+        .arg(
+            Arg::new("token")
+                .long("token")
+                .action(ArgAction::SetTrue)
+                .help("Also show the auth token"),
+        )
+        .about("Show the current login info")]
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
@@ -75,7 +72,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
         "show" => exec_show(config, args).await,
-        "clear" => exec_clear(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
@@ -93,12 +89,6 @@ async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
         println!("Your auth token (don't share this!) is {}", token);
     }
 
-    Ok(())
-}
-
-async fn exec_clear(mut config: Config, _args: &ArgMatches) -> Result<(), anyhow::Error> {
-    config.clear_login_tokens();
-    config.save();
     Ok(())
 }
 
