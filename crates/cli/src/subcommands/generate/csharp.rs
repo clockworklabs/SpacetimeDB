@@ -411,7 +411,7 @@ fn autogen_csharp_access_funcs_for_struct(
         indented_block(output, |output| {
             write!(
                 output,
-                "internal readonly Dictionary<{csharp_field_type}, {csharp_table_name}> __Cache = new(16);"
+                "internal readonly Dictionary<{csharp_field_type}, {csharp_table_name}> Cache = new(16);"
             );
             writeln!(output);
 
@@ -420,7 +420,7 @@ fn autogen_csharp_access_funcs_for_struct(
                 "public {struct_name_pascal_case}? Find({csharp_field_type} value)"
             );
             indented_block(output, |output| {
-                writeln!(output, "__Cache.TryGetValue(value, out var r);");
+                writeln!(output, "Cache.TryGetValue(value, out var r);");
                 writeln!(output, "return r;");
             });
             writeln!(output);
@@ -605,7 +605,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                             if !constraints[&ColList::new(col.col_pos)].has_unique() {
                                 continue;
                             }
-                            writeln!(output, "{field_name}.__Cache[value.{field_name}] = value;");
+                            writeln!(output, "{field_name}.Cache[value.{field_name}] = value;");
                         }
                     });
                     writeln!(output);
@@ -620,7 +620,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                             if !constraints[&ColList::new(col.col_pos)].has_unique() {
                                 continue;
                             }
-                            writeln!(output, "{field_name}.__Cache.Remove((({table_type})row).{field_name});");
+                            writeln!(output, "{field_name}.Cache.Remove((({table_type})row).{field_name});");
                         }
                     });
                     writeln!(output);
