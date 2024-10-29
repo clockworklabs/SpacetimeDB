@@ -97,14 +97,6 @@ pub fn cli(mode: ProgramMode) -> clap::Command {
 
     clap::Command::new("start")
         .about("Starts a standalone SpacetimeDB instance")
-        // .long_about("Starts a standalone SpacetimeDB instance. This command recognizes the following environment variables: \
-        //         \n\tSPACETIMEDB_LOG_CONFIG: The path to the log configuration file. \
-        //         \n\tSPACETIMEDB_LOGS_PATH: The path to the directory that should contain logs for SpacetimeDB. \
-        //         \n\tSTDB_PATH: The path to the directory that should contain the database files for SpacetimeDB. \
-        //         \n\tSPACETIMEDB_JWT_PUB_KEY: The path to the public jwt key for verifying identities. \
-        //         \n\tSPACETIMEDB_JWT_PRIV_KEY: The path to the private jwt key for issuing identities. \
-        //         \n\tSPACETIMEDB_TRACY: Set to 1 to enable Tracy profiling.\
-        //         \n\nWarning: If you set a value on the command line, it will override the value set in the environment variable.")
         .arg(
             Arg::new("listen_addr")
                 .long("listen-addr")
@@ -153,11 +145,6 @@ pub async fn exec(paths: Option<&SpacetimePaths>, args: &ArgMatches) -> anyhow::
     let exe_name = exe_name.file_name().unwrap().to_str().unwrap();
     println!("{} version: {}", exe_name, env!("CARGO_PKG_VERSION"));
     println!("{} path: {}", exe_name, std::env::current_exe()?.display());
-
-    // if let Some(log_conf_path) = log_conf_path {
-    //     create_file_with_contents(log_conf_path, include_str!("../../log.conf"))?;
-    //     set_env_with_warning("SPACETIMEDB_LOG_CONFIG", log_conf_path);
-    // }
 
     let config_path = data_dir.config_toml();
     let config = match ConfigFile::read(&data_dir.config_toml())? {

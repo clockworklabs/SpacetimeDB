@@ -16,6 +16,17 @@ impl PathBufExt for PathBuf {
     }
 }
 
+/// Declares a new strongly-typed path newtype.
+///
+/// ```
+/// # use spacetimedb_paths::path_type;
+/// path_type! {
+///     /// optional docs
+///     // optional. if false, makes the type's constructor public.
+///     #[non_exhaustive(FALSE)]
+///     FooPath: dir // or file. adds extra utility methods for manipulating the file/dir
+/// }
+/// ```
 #[macro_export]
 macro_rules! path_type {
     ($(#[doc = $doc:literal])* $(#[non_exhaustive($non_exhaustive:tt)])? $name:ident) => {
