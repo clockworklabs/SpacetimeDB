@@ -592,7 +592,8 @@ impl ModuleHost {
         let db = self.db();
         let workload = || {
             Workload::Reducer(ReducerContext {
-                name: reducer_name.to_owned(),
+                // TODO(perf, centril): consider allowing `&'static str | Arc<str>`, perhaps flexstr.
+                name: reducer_name.into(),
                 caller_identity,
                 caller_address,
                 timestamp: Timestamp::now(),
@@ -794,7 +795,7 @@ impl ModuleHost {
                     tx.ctx = ExecutionContext::with_workload(
                         tx.ctx.database_identity(),
                         Workload::Reducer(ReducerContext {
-                            name: reducer.into(),
+                            name: reducer,
                             caller_identity: params.caller_identity,
                             caller_address: params.caller_address,
                             timestamp: Timestamp::now(),
@@ -932,9 +933,7 @@ impl ModuleHost {
         let db = self.db();
         let auth = self.auth_ctx_for(identity);
         let (table_names, table_ids): (Vec<_>, Vec<_>) = db
-            .with_read_only(&ExecutionContext::internal(db.database_identity()), |tx| {
-                db.get_all_tables(tx)
-            })
+            .with_read_only(Workload::Internal, |tx| db.get_all_tables(tx))
             .expect("ids_to_name: database in a broken state?")
             .iter()
             .filter(|schema| is_table_visible(schema, &auth))
