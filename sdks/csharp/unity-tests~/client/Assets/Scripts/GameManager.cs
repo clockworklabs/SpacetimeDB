@@ -41,7 +41,7 @@ public class GameManager : MonoBehaviour
     public static Dictionary<uint, PlayerController> playerIdToPlayerController =
         new Dictionary<uint, PlayerController>();
 
-    public static Identity? localIdentity;
+    public static Identity localIdentity = default;
     public static DbConnection conn;
 
     private void Start()

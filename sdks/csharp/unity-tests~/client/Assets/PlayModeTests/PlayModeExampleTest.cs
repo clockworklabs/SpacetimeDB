@@ -36,12 +36,12 @@ public class PlayModeExampleTest
             yield return null;
         }
     }
-    
+
     UnityEngine.Vector2 ToVector2(Vector2 v)
     {
         return new UnityEngine.Vector2(v.X, v.Y);
     }
-    
+
     [UnityTest]
     public IEnumerator CreatePlayerAndTestDecay()
     {
@@ -51,32 +51,32 @@ public class PlayModeExampleTest
             Debug.Log("Connected");
             connected = true;
         };
-        
+
         PlayerPrefs.DeleteAll();
         SceneManager.LoadScene("Scenes/SampleScene");
         while(UIUsernameChooser.instance == null)
             yield return null;
         var playerCreated = false;
-        
+
         GameManager.OnConnect += () =>
         {
             Debug.Log("Connected");
             connected = true;
         };
-        
+
         while (!connected) yield return null;
-        
+
         GameManager.conn.Reducers.OnCreatePlayer += (_, _) =>
         {
             Debug.Log("Player created");
             playerCreated = true;
         };
-        
+
         UIUsernameChooser.instance.usernameInputField.text = "Test " + Random.Range(100000, 999999);
         UIUsernameChooser.instance.PlayPressed();
         while (!playerCreated) yield return null;
-        
-        Debug.Assert(GameManager.localIdentity != null, "GameManager.localIdentity != null");
+
+        Debug.Assert(GameManager.localIdentity != default, "GameManager.localIdentity != default");
         var player = GameManager.conn.Db.Player.Identity.Find(GameManager.localIdentity);
         Debug.Assert(player != null, nameof(player) + " != null");
         var circle = GameManager.conn.Db.Circle.Iter().FirstOrDefault(a => a.PlayerId == player.PlayerId);
@@ -87,7 +87,7 @@ public class PlayModeExampleTest
             foodEaten++;
             Debug.Log("Food eaten!");
         };
-        
+
         // Standing still should decay a bit
         PlayerController.Local.EnableTestInput();
         while(foodEaten < 200)
@@ -114,7 +114,7 @@ public class PlayModeExampleTest
                     toChosenFood = toThisFood;
                 }
             }
-            
+
             if (GameManager.conn.Db.Entity.Id.Find(chosenFoodId) != null)
             {
                 var ourNewEntity = GameManager.conn.Db.Entity.Id.Find(circle.EntityId);
@@ -123,13 +123,13 @@ public class PlayModeExampleTest
                 Debug.Assert(ourNewEntity != null, nameof(ourNewEntity) + " != null");
                 var toThisFood = ToVector2(foodEntity.Position) - ToVector2(ourNewEntity.Position);
                 PlayerController.Local.SetTestInput(toThisFood);
-                
+
             }
-            
+
             yield return null;
         }
-        
-        
+
+
         PlayerController.Local.SetTestInput(UnityEngine.Vector2.zero);
         Debug.Assert(circle != null, nameof(circle) + " != null");
         var massStart = GameManager.conn.Db.Entity.Id.Find(circle.EntityId)!.Mass;
@@ -226,7 +226,7 @@ public class PlayModeExampleTest
         Debug.Assert(players[0].Name == name, "Username should match");
         Debug.Log($"id: {players[0].PlayerId} Username: {players[0].Name}");
     }
-    
+
     //[UnityTest]
     public IEnumerator ReconnectionViaReloadingScene()
     {
@@ -241,28 +241,28 @@ public class PlayModeExampleTest
         {
             subscribed = true;
         };
-        
+
         Debug.Log("Initial scene load!");
         PlayerPrefs.DeleteAll();
         SceneManager.LoadScene("Scenes/SampleScene");
         while(UIUsernameChooser.instance == null)
             yield return null;
         var playerCreated = false;
-        
+
         while (!connected) yield return null;
-        
+
         GameManager.conn.Reducers.OnCreatePlayer += (_, _) =>
         {
             Debug.Log("Player created");
             playerCreated = true;
         };
-        
+
         var username = "Test " + Random.Range(100000, 999999);
         UIUsernameChooser.instance.usernameInputField.text = username;
         UIUsernameChooser.instance.PlayPressed();
         while (!playerCreated) yield return null;
-        
-        Debug.Assert(GameManager.localIdentity != null, "GameManager.localIdentity != null");
+
+        Debug.Assert(GameManager.localIdentity != default, "GameManager.localIdentity != default");
         var player = GameManager.conn.Db.Player.Identity.Find(GameManager.localIdentity);
         Debug.Assert(player != null, nameof(player) + " != null");
         var circle = GameManager.conn.Db.Circle.Iter().FirstOrDefault(a => a.PlayerId == player.PlayerId);
@@ -270,11 +270,11 @@ public class PlayModeExampleTest
         connected = false;
         subscribed = false;
         GameManager.instance.Disconnect();
-        
+
         Debug.Log("Second scene load!");
         // Reload
         SceneManager.LoadScene("Scenes/SampleScene");
-        
+
         while(!connected || !subscribed) yield return null;
         var newPlayer = GameManager.conn.Db.Player.Identity.Find(GameManager.localIdentity);
         Debug.Assert(player.PlayerId == newPlayer.PlayerId, "PlayerIds should match!");
