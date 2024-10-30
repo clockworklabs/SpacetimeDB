@@ -61,6 +61,7 @@ itertools.workspace = true
 jsonwebtoken.workspace = true
 lazy_static.workspace = true
 log.workspace = true
+memchr.workspace = true
 once_cell.workspace = true
 openssl.workspace = true
 parking_lot.workspace = true

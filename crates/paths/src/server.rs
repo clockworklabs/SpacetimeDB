@@ -1,4 +1,3 @@
-use std::fmt::Write;
 use std::{fs, io};
 
 use crate::utils::{path_type, PathBufExt};
@@ -125,11 +124,8 @@ path_type! {
 }
 
 impl ReplicaDir {
-    /// `date` should be in UTC.
-    pub fn module_log(self, date: NaiveDate) -> ModuleLogPath {
-        let mut path = self.0.joined("module_logs/");
-        write!(path.as_mut_os_string(), "{date}.log").unwrap();
-        ModuleLogPath(path)
+    pub fn module_logs(self) -> ModuleLogsDir {
+        ModuleLogsDir(self.0.joined("module_logs"))
     }
 
     pub fn snapshots(&self) -> SnapshotsPath {
@@ -142,8 +138,55 @@ impl ReplicaDir {
 }
 
 path_type! {
+    /// The directory where module logs are stored
+    ModuleLogsDir: dir
+}
+
+impl ModuleLogsDir {
+    /// `date` should be in UTC.
+    pub fn logfile(self, date: NaiveDate) -> ModuleLogPath {
+        ModuleLogPath(self.0.joined(format!("{date}.log")))
+    }
+
+    pub fn today(self) -> ModuleLogPath {
+        self.logfile(chrono::Utc::now().date_naive())
+    }
+
+    pub fn most_recent(self) -> io::Result<Option<ModuleLogPath>> {
+        let mut max_file_name = None;
+        for entry in std::fs::read_dir(&self)? {
+            let file_name = entry?.file_name();
+            max_file_name = std::cmp::max(max_file_name, Some(file_name));
+        }
+        Ok(max_file_name.map(|file_name| ModuleLogPath(self.0.joined(file_name))))
+    }
+}
+
+path_type! {
     /// A module log from a specific date.
     ModuleLogPath: file
+}
+
+impl ModuleLogPath {
+    pub fn date(&self) -> NaiveDate {
+        self.0
+            .file_stem()
+            .and_then(|s| s.to_str()?.parse().ok())
+            .expect("ModuleLogPath should always have a filename of the form `{date}.log`")
+    }
+
+    pub fn with_date(&self, date: NaiveDate) -> Self {
+        Self(self.0.with_file_name(format!("{date}.log")))
+    }
+
+    pub fn yesterday(&self) -> Self {
+        self.with_date(self.date().pred_opt().unwrap())
+    }
+
+    pub fn popped(mut self) -> ModuleLogsDir {
+        self.0.pop();
+        ModuleLogsDir(self.0)
+    }
 }
 
 path_type! {

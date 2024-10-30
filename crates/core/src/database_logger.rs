@@ -1,12 +1,20 @@
+use chrono::{NaiveDate, Utc};
+use parking_lot::Mutex;
 use std::fs::File;
-use std::io::{self, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, Write};
 use tokio::sync::broadcast;
 
-use spacetimedb_paths::server::{ModuleLogPath, ReplicaDir};
+use spacetimedb_paths::server::{ModuleLogPath, ModuleLogsDir};
 
 pub struct DatabaseLogger {
-    file: File,
+    inner: Mutex<DatabaseLoggerInner>,
     pub tx: broadcast::Sender<bytes::Bytes>,
+}
+
+struct DatabaseLoggerInner {
+    file: File,
+    date: NaiveDate,
+    path: ModuleLogPath,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Deserialize)]
@@ -38,7 +46,7 @@ impl From<u8> for LogLevel {
 #[derive(serde::Serialize, Copy, Clone)]
 pub struct Record<'a> {
     #[serde_as(as = "serde_with::TimestampMicroSeconds")]
-    pub ts: chrono::DateTime<chrono::Utc>,
+    pub ts: chrono::DateTime<Utc>,
     pub target: Option<&'a str>,
     pub filename: Option<&'a str>,
     pub line_number: Option<u32>,
@@ -105,47 +113,28 @@ enum LogEvent<'a> {
     },
 }
 
+impl DatabaseLoggerInner {
+    fn open(path: ModuleLogPath) -> io::Result<Self> {
+        let date = path.date();
+        let file = path.open_file(File::options().create(true).append(true))?;
+        Ok(Self { file, date, path })
+    }
+}
+
 impl DatabaseLogger {
-    // fn log_dir_from(identity: Identity, _name: &str) -> PathBuf {
-    //     let mut path = PathBuf::from(ROOT);
-    //     path.push(Self::path_from_hash(identity));
-    //     path
-    // }
-
-    // fn log_path_from(identity: Identity, name: &str) -> PathBuf {
-    //     let mut path = Self::log_dir_from(identity, name);
-    //     path.push(PathBuf::from_str(&format!("{}.log", name)).unwrap());
-    //     path
-    // }
-
-    // fn path_from_hash(hash: Hash) -> PathBuf {
-    //     let hex_address = hash.to_hex();
-    //     let path = format!("{}/{}", &hex_address[0..2], &hex_address[2..]);
-    //     PathBuf::from(path)
-    // }
-
-    pub fn filepath(replica_dir: ReplicaDir) -> ModuleLogPath {
-        replica_dir.module_log(chrono::Utc::now().date_naive())
+    pub fn open_today(logs_dir: ModuleLogsDir) -> Self {
+        Self::open(logs_dir.today())
     }
 
-    pub fn open(replica_dir: ReplicaDir) -> Self {
-        Self::open_from_path(&Self::filepath(replica_dir))
-    }
-
-    pub fn open_from_path(path: &ModuleLogPath) -> Self {
-        let file = path.open_file(File::options().create(true).append(true)).unwrap();
+    pub fn open(path: ModuleLogPath) -> Self {
+        let inner = Mutex::new(DatabaseLoggerInner::open(path).unwrap());
         let (tx, _) = broadcast::channel(64);
-        Self { file, tx }
+        Self { inner, tx }
     }
 
     #[tracing::instrument(name = "DatabaseLogger::size", skip(self), err)]
     pub fn size(&self) -> io::Result<u64> {
-        Ok(self.file.metadata()?.len())
-    }
-
-    pub fn _delete(&mut self) {
-        self.file.set_len(0).unwrap();
-        self.file.seek(SeekFrom::End(0)).unwrap();
+        Ok(self.inner.lock().file.metadata()?.len())
     }
 
     pub fn write(&self, level: LogLevel, &record: &Record<'_>, bt: &dyn BacktraceProvider) {
@@ -164,33 +153,106 @@ impl DatabaseLogger {
         };
         let mut buf = serde_json::to_string(&event).unwrap();
         buf.push('\n');
-        (&self.file).write_all(buf.as_bytes()).unwrap();
+        let mut inner = self.inner.lock();
+        let record_date = record.ts.date_naive();
+        if record_date > inner.date {
+            let new_path = inner.path.with_date(record_date);
+            *inner = DatabaseLoggerInner::open(new_path).unwrap();
+        }
+        inner.file.write_all(buf.as_bytes()).unwrap();
         let _ = self.tx.send(buf.into());
     }
 
-    pub async fn _read_all(filepath: &ModuleLogPath) -> String {
-        tokio::fs::read_to_string(filepath).await.unwrap()
-    }
+    pub async fn read_latest(logs_dir: ModuleLogsDir, num_lines: Option<u32>) -> String {
+        // TODO: do we want to logs from across multiple files?
 
-    pub async fn read_latest(filepath: &ModuleLogPath, num_lines: Option<u32>) -> String {
-        // TODO: Read backwards from the end of the file to only read in the latest lines
-        let text = tokio::fs::read_to_string(filepath).await.expect("reading log file");
+        let Some(num_lines) = num_lines else {
+            let path = logs_dir.today();
+            // look for the most recent logfile.
+            match tokio::fs::read_to_string(&path).await {
+                Ok(contents) => return contents,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => panic!("couldn't read log file: {e}"),
+            }
+            // if there's none for today, read the directory and
+            let logs_dir = path.popped();
+            return tokio::task::spawn_blocking(move || match logs_dir.most_recent()? {
+                Some(newest_log_file) => std::fs::read_to_string(newest_log_file),
+                None => Ok(String::new()),
+            })
+            .await
+            .unwrap()
+            .expect("couldn't read log file");
+        };
 
-        let Some(num_lines) = num_lines else { return text };
+        if num_lines == 0 {
+            return String::new();
+        }
 
-        let off_from_end = text
-            .split_inclusive('\n')
-            .rev()
-            .take(num_lines as usize)
-            .map(|line| line.len())
-            .sum::<usize>();
-
-        text[text.len() - off_from_end..].to_owned()
+        tokio::task::spawn_blocking(move || read_latest_lines(logs_dir, num_lines))
+            .await
+            .unwrap()
+            .expect("couldn't read log file")
     }
 
     pub fn system_logger(&self) -> &SystemLogger {
         // SAFETY: SystemLogger is repr(transparent) over DatabaseLogger
         unsafe { &*(self as *const DatabaseLogger as *const SystemLogger) }
+    }
+}
+
+fn read_latest_lines(logs_dir: ModuleLogsDir, num_lines: u32) -> io::Result<String> {
+    use std::fs::File;
+    let path = logs_dir.today();
+    let mut file = match File::open(&path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            let Some(path) = path.popped().most_recent()? else {
+                return Ok(String::new());
+            };
+            File::open(path)?
+        }
+        Err(e) => return Err(e),
+    };
+    let mut lines_read: u32 = 0;
+    // rough guess of an appropriate size for a chunk that could get all the lines in one,
+    // assuming a line is roughly 150 bytes long, but capping our buffer size at 64KiB
+    let chunk_size = std::cmp::min((num_lines as u64 * 150).next_power_of_two(), 0x10_000);
+    let mut buf = vec![0; chunk_size as usize];
+    // the file should end in a newline, so we skip that one character
+    let mut pos = file.seek(io::SeekFrom::End(0))?.saturating_sub(1) as usize;
+    'outer: while pos > 0 {
+        let (new_pos, buf) = match pos.checked_sub(buf.len()) {
+            Some(pos) => (pos, &mut buf[..]),
+            None => (0, &mut buf[..pos]),
+        };
+        pos = new_pos;
+        read_exact_at(&file, buf, pos as u64)?;
+        for lf_pos in memchr::Memchr::new(b'\n', buf).rev() {
+            lines_read += 1;
+            if lines_read >= num_lines {
+                pos += lf_pos + 1;
+                break 'outer;
+            }
+        }
+    }
+    file.seek(io::SeekFrom::Start(pos as u64))?;
+    buf.clear();
+    let mut buf = String::from_utf8(buf).unwrap();
+    file.read_to_string(&mut buf)?;
+    Ok(buf)
+}
+
+fn read_exact_at(file: &std::fs::File, buf: &mut [u8], offset: u64) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileExt;
+        file.read_exact_at(buf, offset)
+    }
+    #[cfg(not(unix))]
+    {
+        (&*file).seek(io::SeekFrom::Start(offset))?;
+        (&*file).read_exact(buf)
     }
 }
 
@@ -216,7 +278,7 @@ impl SystemLogger {
 
     fn record(message: &str) -> Record {
         Record {
-            ts: chrono::Utc::now(),
+            ts: Utc::now(),
             target: None,
             filename: Some("spacetimedb"),
             line_number: None,
