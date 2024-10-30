@@ -82,7 +82,7 @@ public class GameManager : MonoBehaviour
             Debug.Log("Disconnected.");
         }).WithUri("http://127.0.0.1:3000")
             .WithModuleName("untitled-circle-game")
-            .WithCredentials((null, PlayerPrefs.GetString(AuthToken.GetTokenKey())))
+            .WithCredentials((localIdentity, PlayerPrefs.GetString(AuthToken.GetTokenKey())))
             .Build();
 
 #pragma warning disable CS0612 // Type or member is obsolete
