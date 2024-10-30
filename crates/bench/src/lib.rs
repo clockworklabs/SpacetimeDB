@@ -7,15 +7,16 @@ pub mod sqlite;
 pub type ResultBench<T> = Result<T, anyhow::Error>;
 
 #[cfg(test)]
-mod tests {
+mod test_basic_invariants {
     use crate::{
         database::BenchDatabase,
         schemas::{create_sequential, u32_u64_str, u32_u64_u64, BenchTable, IndexStrategy, RandomTable},
-        spacetime_module::SpacetimeModule,
+        spacetime_module::{BenchModule, CSharp, Rust, SpacetimeModule},
         spacetime_raw::SpacetimeRaw,
         sqlite::SQLite,
         ResultBench,
     };
+    use serial_test::serial;
     use std::{io, path::Path, sync::Once};
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -117,14 +118,25 @@ mod tests {
         basic_invariants::<SpacetimeRaw, u32_u64_u64>(IndexStrategy::BTreeEachColumn, true).unwrap();
     }
 
-    #[test]
-    fn test_basic_invariants_spacetime_module() {
+    fn test_basic_invariants_spacetime_module<M: BenchModule>() {
         // note: there can only be one #[test] invoking spacetime module stuff.
         // #[test]s run concurrently and they fight over lockfiles.
         // so, run the sub-tests here in sequence.
-        basic_invariants::<SpacetimeModule, u32_u64_str>(IndexStrategy::Unique0, true).unwrap();
-        basic_invariants::<SpacetimeModule, u32_u64_u64>(IndexStrategy::Unique0, true).unwrap();
-        basic_invariants::<SpacetimeModule, u32_u64_str>(IndexStrategy::BTreeEachColumn, true).unwrap();
-        basic_invariants::<SpacetimeModule, u32_u64_u64>(IndexStrategy::BTreeEachColumn, true).unwrap();
+        basic_invariants::<SpacetimeModule<M>, u32_u64_str>(IndexStrategy::Unique0, true).unwrap();
+        basic_invariants::<SpacetimeModule<M>, u32_u64_u64>(IndexStrategy::Unique0, true).unwrap();
+        basic_invariants::<SpacetimeModule<M>, u32_u64_str>(IndexStrategy::BTreeEachColumn, true).unwrap();
+        basic_invariants::<SpacetimeModule<M>, u32_u64_u64>(IndexStrategy::BTreeEachColumn, true).unwrap();
+    }
+
+    #[test]
+    #[serial]
+    fn test_basic_invariants_spacetime_module_rust() {
+        test_basic_invariants_spacetime_module::<Rust>();
+    }
+
+    #[test]
+    #[serial]
+    fn test_basic_invariants_spacetime_module_csharp() {
+        test_basic_invariants_spacetime_module::<CSharp>();
     }
 }

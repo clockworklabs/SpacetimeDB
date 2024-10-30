@@ -8,7 +8,8 @@ use mimalloc::MiMalloc;
 use spacetimedb_bench::{
     database::BenchDatabase,
     schemas::{create_sequential, u32_u64_str, u32_u64_u64, BenchTable, IndexStrategy, RandomTable},
-    spacetime_module, spacetime_raw, sqlite, ResultBench,
+    spacetime_module::{self, CSharp, Rust},
+    spacetime_raw, sqlite, ResultBench,
 };
 use spacetimedb_lib::sats::AlgebraicType;
 use spacetimedb_primitives::ColId;
@@ -23,11 +24,13 @@ lazy_static! {
 fn criterion_benchmark(c: &mut Criterion) {
     bench_suite::<sqlite::SQLite>(c, true).unwrap();
     bench_suite::<spacetime_raw::SpacetimeRaw>(c, true).unwrap();
-    bench_suite::<spacetime_module::SpacetimeModule>(c, true).unwrap();
+    bench_suite::<spacetime_module::SpacetimeModule<Rust>>(c, true).unwrap();
+    bench_suite::<spacetime_module::SpacetimeModule<CSharp>>(c, true).unwrap();
 
     bench_suite::<sqlite::SQLite>(c, false).unwrap();
     bench_suite::<spacetime_raw::SpacetimeRaw>(c, false).unwrap();
-    bench_suite::<spacetime_module::SpacetimeModule>(c, false).unwrap();
+    bench_suite::<spacetime_module::SpacetimeModule<Rust>>(c, false).unwrap();
+    bench_suite::<spacetime_module::SpacetimeModule<CSharp>>(c, false).unwrap();
 }
 
 #[inline(never)]

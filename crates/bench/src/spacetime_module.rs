@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{marker::PhantomData, path::Path, sync::OnceLock};
 
 use spacetimedb::db::{Config, Storage};
 use spacetimedb_lib::{
@@ -15,52 +15,48 @@ use crate::{
     ResultBench,
 };
 
-lazy_static::lazy_static! {
-    pub static ref BENCHMARKS_MODULE: CompiledModule = {
-        if std::env::var_os("STDB_BENCH_CS").is_some() {
-            CompiledModule::compile("benchmarks-cs", CompilationMode::Release)
-        } else {
-            // Temporarily add CARGO_TARGET_DIR override to avoid conflicts with main target dir.
-            // Otherwise for some reason Cargo will mark all dependencies with build scripts as
-            // fresh - but only if running benchmarks (if modules are built in release mode).
-            // See https://github.com/clockworklabs/SpacetimeDB/issues/401.
-            std::env::set_var("CARGO_TARGET_DIR", concat!(env!("CARGO_MANIFEST_DIR"), "/target"));
-            let module = CompiledModule::compile("benchmarks", CompilationMode::Release);
-            std::env::remove_var("CARGO_TARGET_DIR");
-            module
-        }
-    };
+pub trait BenchModule {
+    const BENCH_NAME: &'static str;
+    const MODULE_NAME: &'static str;
+
+    fn get_compiled() -> &'static CompiledModule {
+        static ONCE: OnceLock<CompiledModule> = OnceLock::new();
+        ONCE.get_or_init(|| CompiledModule::compile(Self::MODULE_NAME, CompilationMode::Release))
+    }
 }
 
-/// A benchmark backend that invokes a spacetime module.
-///
-/// This is tightly tied to the file `modules/benchmarks/src/lib.rs`;
-/// all of the implementations of `BenchDatabase` methods just invoke reducers
+pub struct CSharp;
+
+impl BenchModule for CSharp {
+    const BENCH_NAME: &'static str = "stdb_module/csharp";
+    const MODULE_NAME: &'static str = "benchmarks-cs";
+}
+
+pub struct Rust;
+
+impl BenchModule for Rust {
+    const BENCH_NAME: &'static str = "stdb_module/rust";
+    const MODULE_NAME: &'static str = "benchmarks";
+}
+
 /// in that module.
 ///
 /// See the doc comment there for information on the formatting expected for
 /// table and reducer names.
-pub struct SpacetimeModule {
-    runtime: Runtime,
-    /// This is here due to Drop shenanigans.
-    /// It should always be Some when the module is not being dropped.
-    module: Option<ModuleHandle>,
-}
-
-impl Drop for SpacetimeModule {
-    fn drop(&mut self) {
-        // Module must be dropped BEFORE runtime,
-        // otherwise there is a deadlock!
-        drop(self.module.take());
-    }
+pub struct SpacetimeModule<M> {
+    // Module must be dropped BEFORE runtime, otherwise there is a deadlock!
+    // Fields are dropped in the order they are declared.
+    pub module: ModuleHandle,
+    pub runtime: Runtime,
+    _marker: PhantomData<M>,
 }
 
 // Note: we use block_on for the methods here. It adds about 70ns of overhead.
 // This isn't currently a problem. Overhead to call an empty reducer is currently 20_000 ns.
 // It's easier to do it this way because async traits are a mess.
-impl BenchDatabase for SpacetimeModule {
+impl<M: BenchModule> BenchDatabase for SpacetimeModule<M> {
     fn name() -> &'static str {
-        "stdb_module"
+        M::BENCH_NAME
     }
 
     type TableId = TableId;
@@ -77,7 +73,7 @@ impl BenchDatabase for SpacetimeModule {
         let module = runtime.block_on(async {
             // We keep a saved database at "crates/bench/.spacetime".
             // This is mainly used for caching wasmtime native artifacts.
-            BENCHMARKS_MODULE
+            M::get_compiled()
                 .load_module(config, Some(Path::new(env!("CARGO_MANIFEST_DIR"))))
                 .await
         });
@@ -89,8 +85,9 @@ impl BenchDatabase for SpacetimeModule {
             log::trace!("SPACETIME_MODULE: LOADED REDUCER: {:?}", reducer);
         }
         Ok(SpacetimeModule {
+            module,
             runtime,
-            module: Some(module),
+            _marker: PhantomData,
         })
     }
 
@@ -106,8 +103,11 @@ impl BenchDatabase for SpacetimeModule {
     }
 
     fn clear_table(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
-        let SpacetimeModule { runtime, module } = self;
-        let module = module.as_mut().unwrap();
+        let Self {
+            runtime,
+            module,
+            _marker: _,
+        } = self;
         runtime.block_on(async move {
             // FIXME: this doesn't work. delete is unimplemented!!
             /*
@@ -124,8 +124,11 @@ impl BenchDatabase for SpacetimeModule {
     // message in the log.
     // This implementation will not work if other people are concurrently interacting with our module.
     fn count_table(&mut self, table_id: &Self::TableId) -> ResultBench<u32> {
-        let SpacetimeModule { runtime, module } = self;
-        let module = module.as_mut().unwrap();
+        let Self {
+            runtime,
+            module,
+            _marker: _,
+        } = self;
 
         let count = runtime.block_on(async move {
             let name = format!("count_{}", table_id.snake_case);
@@ -143,8 +146,11 @@ impl BenchDatabase for SpacetimeModule {
     }
 
     fn empty_transaction(&mut self) -> ResultBench<()> {
-        let SpacetimeModule { runtime, module } = self;
-        let module = module.as_mut().unwrap();
+        let Self {
+            runtime,
+            module,
+            _marker: _,
+        } = self;
 
         runtime.block_on(async move {
             module.call_reducer_binary("empty", [].into()).await?;
@@ -155,8 +161,11 @@ impl BenchDatabase for SpacetimeModule {
     fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()> {
         let rows = rows.into_iter().map(|row| row.into_product_value()).collect();
         let args = product![ArrayValue::Product(rows)];
-        let SpacetimeModule { runtime, module } = self;
-        let module = module.as_mut().unwrap();
+        let Self {
+            runtime,
+            module,
+            _marker: _,
+        } = self;
         let reducer_name = format!("insert_bulk_{}", table_id.snake_case);
 
         runtime.block_on(async move {
@@ -167,8 +176,11 @@ impl BenchDatabase for SpacetimeModule {
 
     fn update_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, row_count: u32) -> ResultBench<()> {
         let args = product![row_count];
-        let SpacetimeModule { runtime, module } = self;
-        let module = module.as_mut().unwrap();
+        let Self {
+            runtime,
+            module,
+            _marker: _,
+        } = self;
         let reducer_name = format!("update_bulk_{}", table_id.snake_case);
 
         runtime.block_on(async move {
@@ -178,8 +190,11 @@ impl BenchDatabase for SpacetimeModule {
     }
 
     fn iterate(&mut self, table_id: &Self::TableId) -> ResultBench<()> {
-        let SpacetimeModule { runtime, module } = self;
-        let module = module.as_mut().unwrap();
+        let Self {
+            runtime,
+            module,
+            _marker: _,
+        } = self;
         let reducer_name = format!("iterate_{}", table_id.snake_case);
 
         runtime.block_on(async move {
@@ -194,8 +209,11 @@ impl BenchDatabase for SpacetimeModule {
         col_id: impl Into<ColId>,
         value: AlgebraicValue,
     ) -> ResultBench<()> {
-        let SpacetimeModule { runtime, module } = self;
-        let module = module.as_mut().unwrap();
+        let Self {
+            runtime,
+            module,
+            _marker: _,
+        } = self;
 
         let product_type = T::product_type();
         let column_name = product_type.elements[col_id.into().idx()].name.as_ref().unwrap();
