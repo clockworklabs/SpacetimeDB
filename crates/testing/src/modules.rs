@@ -80,9 +80,8 @@ impl ModuleHandle {
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
-        let replica_dir = self._env.data_dir().replica(self.client.replica_id);
-        let filepath = DatabaseLogger::filepath(replica_dir);
-        DatabaseLogger::read_latest(&filepath, size).await
+        let logs_dir = self._env.data_dir().replica(self.client.replica_id).module_logs();
+        DatabaseLogger::read_latest(logs_dir, size).await
     }
 }
 

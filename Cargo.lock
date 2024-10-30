@@ -5053,6 +5053,7 @@ dependencies = [
  "jsonwebkey",
  "lazy_static",
  "log",
+ "memchr",
  "once_cell",
  "openssl",
  "parking_lot 0.12.3",

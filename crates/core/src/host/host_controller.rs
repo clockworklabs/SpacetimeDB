@@ -520,7 +520,7 @@ async fn make_replica_ctx(
     replica_id: u64,
     relational_db: Arc<RelationalDB>,
 ) -> anyhow::Result<ReplicaContext> {
-    let logger = tokio::task::block_in_place(move || Arc::new(DatabaseLogger::open(path)));
+    let logger = tokio::task::block_in_place(move || Arc::new(DatabaseLogger::open_today(path.module_logs())));
     let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.owner_identity);
 
     Ok(ReplicaContext {

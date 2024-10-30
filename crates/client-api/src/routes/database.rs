@@ -451,8 +451,8 @@ where
 
     let host = worker_ctx.host_controller();
 
-    let filepath = DatabaseLogger::filepath(host.data_dir.replica(replica_id));
-    let lines = DatabaseLogger::read_latest(&filepath, num_lines).await;
+    let logs_dir = host.data_dir.replica(replica_id).module_logs();
+    let lines = DatabaseLogger::read_latest(logs_dir, num_lines).await;
 
     let body = if follow {
         let module = host
