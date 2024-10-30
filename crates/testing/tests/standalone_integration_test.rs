@@ -308,7 +308,7 @@ fn test_calling_bench_db_ia_loop() {
                 ("update_position_all", 20_000, "UPDATE POSITION ALL: 20000, processed: 20000"),
                 ("update_position_with_velocity", 10_000, "UPDATE POSITION BY VELOCITY: 10000, processed: 10000"),
                 ("insert_world", 5_000, "INSERT WORLD PLAYERS: 5000"),
-                ("game_loop_enemy_ia", 5_000, "ENEMY IA LOOP PLAYERS: 5000, processed: 2500"),
+                ("game_loop_enemy_ia", 5_000, "ENEMY IA LOOP PLAYERS: 5000, processed: 5000"),
             ];
 
             _run_bench_db(module, &benches).await

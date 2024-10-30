@@ -9,7 +9,8 @@ use spacetimedb_bench::{
 use spacetimedb_lib::{bsatn::ToBsatn as _, sats, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_testing::modules::start_runtime;
-use std::time::{Duration, Instant};
+use std::sync::OnceLock;
+use std::time::Instant;
 use std::{hint::black_box, sync::Arc};
 
 #[global_allocator]
@@ -62,20 +63,23 @@ fn custom_db_benchmarks(c: &mut Criterion) {
     let module = runtime.block_on(async { BENCHMARKS_MODULE.load_module(config, None).await });
     let mut group = c.benchmark_group("special");
     // This bench take long, so adjust for it
-    group.measurement_time(Duration::from_secs(60 * 2));
     group.sample_size(10);
 
+    let init_db: OnceLock<()> = OnceLock::new();
     for n in [10, 100] {
         let args = sats::product![n];
         group.bench_function(&format!("db_game/circles/load={n}"), |b| {
-            b.iter_custom(|iters| {
+            // Initialize outside the benchmark so the db is seed once, to avoid to enlarge the db
+            init_db.get_or_init(|| {
                 runtime.block_on(async {
                     module
-                        .call_reducer_binary("init_game_circles", args.clone())
+                        .call_reducer_binary("init_game_circles", sats::product![100])
                         .await
                         .unwrap()
                 });
+            });
 
+            b.iter_custom(|iters| {
                 let start = Instant::now();
 
                 for _ in 0..iters {
@@ -91,17 +95,21 @@ fn custom_db_benchmarks(c: &mut Criterion) {
         });
     }
 
-    for n in [10, 100] {
+    let init_db: OnceLock<()> = OnceLock::new();
+    for n in [500, 5_000] {
         let args = sats::product![n];
         group.bench_function(&format!("db_game/ia_loop/load={n}"), |b| {
-            b.iter_custom(|_iters| {
+            // Initialize outside the benchmark so the db is seed once, to avoid `unique` constraints violations
+            init_db.get_or_init(|| {
                 runtime.block_on(async {
                     module
-                        .call_reducer_binary("init_game_ia_loop", args.clone())
+                        .call_reducer_binary("init_game_ia_loop", sats::product![5_000])
                         .await
-                        .unwrap()
-                });
+                        .unwrap();
+                })
+            });
 
+            b.iter_custom(|_iters| {
                 let start = Instant::now();
 
                 black_box(
