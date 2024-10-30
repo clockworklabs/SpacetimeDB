@@ -96,25 +96,25 @@ async fn web_login_cached(config: &mut Config, host: &Url, clear_cache: bool) ->
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct WebLoginTokenData {
     token: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct WebLoginTokenResponse {
     success: bool,
     data: WebLoginTokenData,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct WebLoginSessionResponse {
     success: bool,
     error: Option<String>,
     data: Option<WebLoginSessionData>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct WebLoginSessionData {
     approved: bool,
 
@@ -122,38 +122,32 @@ struct WebLoginSessionData {
     session_token: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct WebLoginSessionResponseApproved {
     session_token: String,
 }
 
 impl WebLoginSessionResponse {
-    fn approved(&self) -> Result<Option<WebLoginSessionResponseApproved>, String> {
+    fn approved(self) -> anyhow::Result<Option<WebLoginSessionResponseApproved>> {
         if !self.success {
-            // If success is false, return the error message if available
-            return Err(self.error.clone().unwrap_or("Unknown error".to_string()));
+            return Err(anyhow::anyhow!(self
+                .error
+                .clone()
+                .unwrap_or("Unknown error".to_string())));
         }
 
-        // If success is true, check for the approved status and session_token
-        if let Some(data) = &self.data {
-            if !data.approved {
-                // Approved is false, no session token expected
-                return Ok(None);
-            }
-
-            // Approved is true, create the approved response with session_token
-            if let Some(session_token) = &data.session_token {
-                return Ok(Some(WebLoginSessionResponseApproved {
-                    session_token: session_token.clone(),
-                }));
-            }
-
-            // If approved is true but session_token is missing, return an error
-            return Err("Session token is missing in response.".to_string());
+        let data = self.data.ok_or(anyhow::anyhow!("Response data is missing."))?;
+        if !data.approved {
+            // Approved is false, no session token expected
+            return Ok(None);
         }
 
-        // If data is missing, return an error
-        Err("Response data is missing.".to_string())
+        let session_token = data
+            .session_token
+            .ok_or(anyhow::anyhow!("Session token is missing in response.".to_string()))?;
+        Ok(Some(WebLoginSessionResponseApproved {
+            session_token: session_token.clone(),
+        }))
     }
 }
 
@@ -191,7 +185,7 @@ async fn web_login(remote: &Url) -> Result<String, anyhow::Error> {
             .query_pairs_mut()
             .append_pair("token", web_login_request_token);
         let response: WebLoginSessionResponse = client.get(status_url).send().await?.json().await?;
-        if let Ok(Some(approved)) = response.approved() {
+        if let Some(approved) = response.approved()? {
             println!("Login successful!");
             return Ok(approved.session_token.clone());
         }
