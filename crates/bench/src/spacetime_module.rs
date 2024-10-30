@@ -19,9 +19,12 @@ pub trait BenchModule {
     const BENCH_NAME: &'static str;
     const MODULE_NAME: &'static str;
 
+    // Each implementor must provide a reference to its own static cache
+    // as Rust doesn't have generic statics.
+    fn compiled_cache() -> &'static OnceLock<CompiledModule>;
+
     fn get_compiled() -> &'static CompiledModule {
-        static ONCE: OnceLock<CompiledModule> = OnceLock::new();
-        ONCE.get_or_init(|| CompiledModule::compile(Self::MODULE_NAME, CompilationMode::Release))
+        Self::compiled_cache().get_or_init(|| CompiledModule::compile(Self::MODULE_NAME, CompilationMode::Release))
     }
 }
 
@@ -30,6 +33,11 @@ pub struct CSharp;
 impl BenchModule for CSharp {
     const BENCH_NAME: &'static str = "stdb_module/csharp";
     const MODULE_NAME: &'static str = "benchmarks-cs";
+
+    fn compiled_cache() -> &'static OnceLock<CompiledModule> {
+        static COMPILED: OnceLock<CompiledModule> = OnceLock::new();
+        &COMPILED
+    }
 }
 
 pub struct Rust;
@@ -37,6 +45,11 @@ pub struct Rust;
 impl BenchModule for Rust {
     const BENCH_NAME: &'static str = "stdb_module/rust";
     const MODULE_NAME: &'static str = "benchmarks";
+
+    fn compiled_cache() -> &'static OnceLock<CompiledModule> {
+        static COMPILED: OnceLock<CompiledModule> = OnceLock::new();
+        &COMPILED
+    }
 }
 
 /// in that module.
