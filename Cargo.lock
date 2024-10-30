@@ -5251,6 +5251,7 @@ dependencies = [
  "fs2",
  "itoa",
  "serde",
+ "tempfile",
  "thiserror",
  "xdg",
 ]

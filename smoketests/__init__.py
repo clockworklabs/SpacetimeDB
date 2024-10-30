@@ -141,10 +141,8 @@ def spacetime(*args, **kwargs):
     return run_cmd(SPACETIME_BIN, *args, cmd_name="spacetime", **kwargs)
 
 def new_identity(config_path):
-    env = os.environ.copy()
-    env["SPACETIME_CONFIG_FILE"] = str(config_path)
-    spacetime("logout", env=env)
-    spacetime("login", "--server-issued-login", "localhost", full_output=False, env=env)
+    spacetime("--config-path", str(config_path), "logout")
+    spacetime("--config-path", str(config_path), "login", "--server-issued-login", "localhost", full_output=False)
 
 class Smoketest(unittest.TestCase):
     MODULE_CODE = TEMPLATE_LIB_RS

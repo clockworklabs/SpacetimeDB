@@ -420,22 +420,23 @@ pub fn get_subcommands() -> Vec<Command> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use anyhow::Result;
     use spacetimedb::db::Storage;
-    use spacetimedb_paths::cli::*;
-    use tempfile::TempDir;
-    use super::*;
+    use spacetimedb_paths::{cli::*, FromPathUnchecked};
     use std::fs;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn ensure_init_grabs_lock() -> Result<()> {
         let tempdir = TempDir::new()?;
         // Use one subdir for keys and another for the data dir.
         let keys = tempdir.path().join("keys");
-        let root = tempdir.path().join("root");
+        let root = tempdir.path().join("data");
+        let data_dir = Arc::new(ServerDataDir::from_path_unchecked(root));
 
         fs::create_dir(&keys)?;
-        fs::create_dir(&root)?;
+        data_dir.create()?;
 
         let pub_key = PubKeyPath(keys.join("public"));
         let priv_key = PrivKeyPath(keys.join("private"));
@@ -449,12 +450,11 @@ mod tests {
         let config = Config {
             storage: Storage::Memory,
         };
-        
-        let _env = StandaloneEnv::init(config, &ca, Arc::new(ServerDataDir(root.clone()))).await?;
+
+        let _env = StandaloneEnv::init(config, &ca, data_dir.clone()).await?;
         // Ensure that we have a lock.
-        assert!(StandaloneEnv::init(config, &ca, Arc::new(ServerDataDir(root))).await.is_err());
+        assert!(StandaloneEnv::init(config, &ca, data_dir.clone()).await.is_err());
 
         Ok(())
-
     }
 }
