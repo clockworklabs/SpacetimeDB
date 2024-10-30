@@ -2,4 +2,4 @@
 
 set -euo pipefail
 
-spacetime publish -s local untitled-circle-game
+spacetime publish --anonymous -s local untitled-circle-game
