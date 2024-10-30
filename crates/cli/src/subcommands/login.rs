@@ -74,8 +74,8 @@ async fn spacetimedb_token_cached(
         let token = if direct_login {
             spacetimedb_direct_login(host).await?
         } else {
-            let session_id = web_login_cached(config, host, clear_cache).await?;
-            spacetimedb_login(host, &session_id).await?
+            let session_token = web_login_cached(config, host, clear_cache).await?;
+            spacetimedb_login(host, &session_token).await?
         };
         config.set_spacetimedb_token(token.clone());
         config.save();
@@ -84,43 +84,76 @@ async fn spacetimedb_token_cached(
 }
 
 async fn web_login_cached(config: &mut Config, host: &Url, clear_cache: bool) -> anyhow::Result<String> {
-    let session_id = config.web_session_id().filter(|_| !clear_cache);
-    if let Some(session_id) = session_id {
+    let session_token = config.web_session_token().filter(|_| !clear_cache);
+    if let Some(session_token) = session_token {
         // Currently, these session IDs do not expire. At some point in the future, we may also need to check this session ID for validity.
-        Ok(session_id.clone())
+        Ok(session_token.clone())
     } else {
-        let session_id = web_login(host).await?;
-        config.set_web_session_id(session_id.clone());
+        let session_token = web_login(host).await?;
+        config.set_web_session_token(session_token.clone());
         config.save();
-        Ok(session_id)
+        Ok(session_token)
     }
 }
 
 #[derive(Deserialize)]
-struct WebLoginTokenResponse {
+struct WebLoginTokenData {
     token: String,
 }
 
 #[derive(Deserialize)]
+struct WebLoginTokenResponse {
+    success: bool,
+    data: WebLoginTokenData,
+}
+
+#[derive(Deserialize)]
 struct WebLoginSessionResponse {
+    success: bool,
+    error: Option<String>,
+    data: Option<WebLoginSessionData>,
+}
+
+#[derive(Deserialize)]
+struct WebLoginSessionData {
     approved: bool,
-    session: Option<String>,
+
+    #[serde(rename = "sessionToken")]
+    session_token: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct WebLoginSessionResponseApproved {
-    session_id: String,
+    session_token: String,
 }
 
 impl WebLoginSessionResponse {
-    fn approved(&self) -> Option<WebLoginSessionResponseApproved> {
-        if self.approved {
-            Some(WebLoginSessionResponseApproved {
-                session_id: self.session.clone().unwrap(),
-            })
-        } else {
-            None
+    fn approved(&self) -> Result<Option<WebLoginSessionResponseApproved>, String> {
+        if !self.success {
+            // If success is false, return the error message if available
+            return Err(self.error.clone().unwrap_or("Unknown error".to_string()));
         }
+
+        // If success is true, check for the approved status and session_token
+        if let Some(data) = &self.data {
+            if !data.approved {
+                // Approved is false, no session token expected
+                return Ok(None);
+            }
+
+            // Approved is true, create the approved response with session_token
+            if let Some(session_token) = &data.session_token {
+                return Ok(Some(WebLoginSessionResponseApproved {
+                    session_token: session_token.clone(),
+                }));
+            }
+
+            // If approved is true but session_token is missing, return an error
+            return Err("Session token is missing in response.".to_string());
+        }
+
+        // If data is missing, return an error
+        Err("Response data is missing.".to_string())
     }
 }
 
@@ -128,12 +161,17 @@ async fn web_login(remote: &Url) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
 
     let response: WebLoginTokenResponse = client
-        .get(remote.join("api/auth/cli/request-login-token")?)
+        .post(remote.join("/api/auth/cli/login/request-token")?)
         .send()
         .await?
         .json()
         .await?;
-    let web_login_request_token = response.token.as_str();
+
+    if !response.success {
+        return Err(anyhow::anyhow!("Failed to request token"));
+    }
+
+    let web_login_request_token = response.data.token.as_str();
 
     let mut browser_url = remote.join("login/cli")?;
     browser_url
@@ -153,30 +191,43 @@ async fn web_login(remote: &Url) -> Result<String, anyhow::Error> {
             .query_pairs_mut()
             .append_pair("token", web_login_request_token);
         let response: WebLoginSessionResponse = client.get(status_url).send().await?.json().await?;
-        if let Some(approved) = response.approved() {
+        if let Ok(Some(approved)) = response.approved() {
             println!("Login successful!");
-            return Ok(approved.session_id.clone());
+            return Ok(approved.session_token.clone());
         }
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct SpacetimeDBTokenResponse {
+    success: bool,
+    error: Option<String>,
+    data: Option<SpacetimeDBTokenData>,
+}
+
+#[derive(Deserialize, Debug)]
+struct SpacetimeDBTokenData {
     token: String,
 }
 
-async fn spacetimedb_login(remote: &Url, web_session_id: &String) -> Result<String, anyhow::Error> {
+async fn spacetimedb_login(remote: &Url, web_session_token: &String) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
 
     let response: SpacetimeDBTokenResponse = client
-        .get(remote.join("api/spacetimedb-token")?)
-        .header("Authorization", format!("Bearer {}", web_session_id))
+        .post(remote.join("api/spacetimedb-token")?)
+        .header("Authorization", format!("Bearer {}", web_session_token))
         .send()
         .await?
         .json()
         .await?;
 
-    Ok(response.token.clone())
+    if !response.success {
+        return Err(anyhow::anyhow!(
+            "Failed to get token: {}",
+            response.error.unwrap_or("Unknown error".to_string())
+        ));
+    }
+    Ok(response.data.unwrap().token.clone())
 }
 
 #[derive(Debug, Clone, Deserialize)]
