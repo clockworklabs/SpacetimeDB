@@ -408,7 +408,10 @@ namespace SpacetimeDB
                 {
                     if (!subscriptionInserts.TryGetValue(table.ClientTableType, out var hashSet))
                     {
-                        continue;
+                        // We still need to process tables that weren't included in subscription.
+                        // Otherwise we won't delete no-longer-available values
+                        hashSet = new HashSet<byte[]>();
+                        subscriptionInserts.Add(table.ClientTableType, hashSet);
                     }
 
                     foreach (var (rowBytes, oldValue) in table.Where(kv => !hashSet.Contains(kv.Key)))
