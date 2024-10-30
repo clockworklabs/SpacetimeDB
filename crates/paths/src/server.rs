@@ -216,10 +216,10 @@ path_type!(OffsetIndexFile: file);
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
-    use tempfile::TempDir;
     use super::*;
+    use anyhow::Result;
     use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_pid_file_is_written() -> Result<()> {
@@ -246,7 +246,6 @@ mod tests {
         let pidstring = fs::read_to_string(lock.path.clone())?;
         let _pid = pidstring.trim().parse::<u32>()?;
 
-
         let attempt = sdd.pid_file();
         assert!(attempt.is_err());
 
@@ -255,5 +254,4 @@ mod tests {
         sdd.pid_file()?;
         Ok(())
     }
-
 }
