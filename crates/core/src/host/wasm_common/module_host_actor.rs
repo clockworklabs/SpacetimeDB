@@ -429,7 +429,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let op = ReducerOp {
             id: reducer_id,
-            name: reducer_name,
+            name: reducer_name_arc.clone(),
             caller_identity: &caller_identity,
             caller_address: &caller_address,
             timestamp,
@@ -444,7 +444,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         });
         let _guard = WORKER_METRICS
             .reducer_plus_query_duration
-            .with_label_values(&address, op.name)
+            .with_label_values(&address, reducer_name)
             .with_timer(tx.timer);
 
         let mut tx_slot = self.instance.instance_env().tx.clone();
@@ -576,7 +576,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 #[derive(Clone, Debug)]
 pub struct ReducerOp<'a> {
     pub id: ReducerId,
-    pub name: &'a str,
+    pub name: Arc<str>,
     pub caller_identity: &'a Identity,
     pub caller_address: &'a Address,
     pub timestamp: Timestamp,
@@ -596,7 +596,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
         }: ReducerOp<'_>,
     ) -> Self {
         Self {
-            name: name.to_owned(),
+            name,
             caller_identity: *caller_identity,
             caller_address: *caller_address,
             timestamp,

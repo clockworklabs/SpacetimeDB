@@ -1,5 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
@@ -72,7 +73,7 @@ pub(super) struct WasmInstanceEnv {
     call_times: CallTimes,
 
     /// The last, including current, reducer to be executed by this environment.
-    reducer_name: String,
+    reducer_name: Arc<str>,
 }
 
 const CALL_REDUCER_ARGS_SOURCE: u32 = 1;
@@ -96,7 +97,7 @@ impl WasmInstanceEnv {
             timing_spans: Default::default(),
             reducer_start,
             call_times: CallTimes::new(),
-            reducer_name: String::from(""),
+            reducer_name: "".into(),
         }
     }
 
@@ -138,7 +139,7 @@ impl WasmInstanceEnv {
     ///
     /// Returns the handle used by reducers to read from `args`
     /// as well as the handle used to write the error message, if any.
-    pub fn start_reducer(&mut self, name: &str, args: bytes::Bytes) -> (u32, u32) {
+    pub fn start_reducer(&mut self, name: Arc<str>, args: bytes::Bytes) -> (u32, u32) {
         let errors = self.setup_standard_bytes_sink();
 
         // Pass an invalid source when the reducer args were empty.
@@ -151,7 +152,7 @@ impl WasmInstanceEnv {
         };
 
         self.reducer_start = Instant::now();
-        name.clone_into(&mut self.reducer_name);
+        self.reducer_name = name;
 
         (args, errors)
     }

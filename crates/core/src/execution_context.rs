@@ -26,7 +26,7 @@ pub struct ExecutionContext {
 #[derive(Clone)]
 pub struct ReducerContext {
     /// The name of the reducer.
-    pub name: String,
+    pub name: Arc<str>,
     /// The [`Identity`] of the caller.
     pub caller_identity: Identity,
     /// The [`Address`] of the caller.
@@ -81,7 +81,7 @@ impl TryFrom<&txdata::Inputs> for ReducerContext {
         let timestamp = bsatn::from_reader(args)?;
 
         Ok(Self {
-            name: inputs.reducer_name.to_string(),
+            name: inputs.reducer_name.as_str().into(),
             caller_identity,
             caller_address,
             timestamp,
@@ -200,7 +200,7 @@ impl ExecutionContext {
     /// If this is a reducer context, returns the name of the reducer.
     #[inline]
     pub fn reducer_name(&self) -> &str {
-        self.reducer.as_ref().map(|ctx| ctx.name.as_str()).unwrap_or_default()
+        self.reducer.as_ref().map(|ctx| &*ctx.name).unwrap_or_default()
     }
 
     /// If this is a reducer context, returns the full reducer metadata.
