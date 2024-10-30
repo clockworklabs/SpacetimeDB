@@ -19,7 +19,7 @@ public class GameManager : MonoBehaviour
 
     public static event CallbackDelegate OnConnect;
     public static event CallbackDelegate OnSubscriptionApplied;
-    
+
     public static Color[] colorPalette = new[]
     {
         (Color)new Color32(248, 72, 245, 255),
@@ -35,7 +35,7 @@ public class GameManager : MonoBehaviour
         (Color)new Color32(247, 26, 37, 255),
         (Color)new Color32(253, 121, 43, 255),
     };
-    
+
     public static GameManager instance;
     public static Camera localCamera;
     public static Dictionary<uint, PlayerController> playerIdToPlayerController =
@@ -43,13 +43,13 @@ public class GameManager : MonoBehaviour
 
     public static Identity? localIdentity;
     public static DbConnection conn;
-    
+
     private void Start()
     {
         instance = this;
         Application.targetFrameRate = 60;
         PlayerPrefs.DeleteAll();
-        
+
         // Now that we’ve registered all our callbacks, lets connect to spacetimedb
         conn = DbConnection.Builder().OnConnect((_conn, identity, token) => {
             // Called when we connect to SpacetimeDB and receive our client identity
@@ -63,14 +63,14 @@ public class GameManager : MonoBehaviour
             conn.Db.Food.OnInsert += FoodOnInsert;
             conn.Db.Player.OnInsert += PlayerOnInsert;
             conn.Db.Player.OnDelete += PlayerOnDelete;
-            
+
             // Request all tables
             conn.SubscriptionBuilder().OnApplied(ctx =>
             {
                 Debug.Log("Subscription applied!");
                 OnSubscriptionApplied?.Invoke();
             }).Subscribe("SELECT * FROM *");
-            
+
             OnConnect?.Invoke();
         }).OnConnectError((status, message) =>
         {
@@ -82,13 +82,13 @@ public class GameManager : MonoBehaviour
             Debug.Log("Disconnected.");
         }).WithUri("http://127.0.0.1:3000")
             .WithModuleName("untitled-circle-game")
-            .WithCredentials((null, PlayerPrefs.GetString(AuthToken.GetTokenKey())))
+            .WithCredentials((localIdentity!, PlayerPrefs.GetString(AuthToken.GetTokenKey())))
             .Build();
-        
+
 #pragma warning disable CS0612 // Type or member is obsolete
         conn.onUnhandledReducerError += InstanceOnUnhandledReducerError;
 #pragma warning restore CS0612 // Type or member is obsolete
-        
+
         localCamera = Camera.main;
     }
 
@@ -96,7 +96,7 @@ public class GameManager : MonoBehaviour
     {
         Debug.LogError("There was an error!");
     }
-    
+
     private void PlayerOnDelete(EventContext context, Player deletedvalue)
     {
         if (playerIdToPlayerController.TryGetValue(deletedvalue.PlayerId, out var playerController))
@@ -111,7 +111,7 @@ public class GameManager : MonoBehaviour
         {
             // We have a player, but no circle, let's respawn
             Respawn();
-        }    
+        }
     }
 
     private void EntityOnUpdate(EventContext context, Entity oldEntity, Entity newEntity)
@@ -121,7 +121,7 @@ public class GameManager : MonoBehaviour
         {
             return;
         }
-        
+
         var player = GetOrCreatePlayer(circle.PlayerId);
         player.CircleUpdate(oldEntity, newEntity);
     }
@@ -131,11 +131,11 @@ public class GameManager : MonoBehaviour
         var player = GetOrCreatePlayer(deletedCircle.PlayerId);
         player.DespawnCircle(deletedCircle);
     }
-    
+
     private void CircleOnInsert(EventContext context, Circle insertedValue)
     {
         var player = GetOrCreatePlayer(insertedValue.PlayerId);
-        // Spawn the new circle 
+        // Spawn the new circle
         player.SpawnCircle(insertedValue, circlePrefab);
     }
 
@@ -153,7 +153,7 @@ public class GameManager : MonoBehaviour
 
         return playerController;
     }
-    
+
     private void FoodOnInsert(EventContext context, Food insertedValue)
     {
         // Spawn the new food
