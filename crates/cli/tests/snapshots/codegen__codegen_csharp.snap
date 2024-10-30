@@ -373,14 +373,14 @@ namespace SpacetimeDB
 	public partial class RepeatingTestArg : IDatabaseRow
 	{
 		[DataMember(Name = "prev_time")]
-		public ulong PrevTime;
+		public SpacetimeDB.Timestamp PrevTime;
 		[DataMember(Name = "scheduled_id")]
 		public ulong ScheduledId;
 		[DataMember(Name = "scheduled_at")]
 		public SpacetimeDB.ScheduleAt ScheduledAt;
 
 		public RepeatingTestArg(
-			ulong PrevTime,
+			SpacetimeDB.Timestamp PrevTime,
 			ulong ScheduledId,
 			SpacetimeDB.ScheduleAt ScheduledAt
 		)
@@ -392,6 +392,7 @@ namespace SpacetimeDB
 
 		public RepeatingTestArg()
 		{
+			this.PrevTime = new();
 			this.ScheduledAt = null!;
 		}
 

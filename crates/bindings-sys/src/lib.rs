@@ -550,7 +550,7 @@ pub mod raw {
     mod module_exports {
         type Encoded<T> = Buffer;
         type Identity = Encoded<[u8; 32]>;
-        /// Nanos since the unix epoch
+        /// Microseconds since the unix epoch
         type Timestamp = u64;
         /// Buffer::INVALID => Ok(()); else errmsg => Err(errmsg)
         type Result = Buffer;

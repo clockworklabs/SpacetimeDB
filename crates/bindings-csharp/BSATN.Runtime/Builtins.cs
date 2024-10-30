@@ -14,10 +14,8 @@ internal static class Util
         BitConverter.ToString(MemoryMarshal.AsBytes([val]).ToArray()).Replace("-", "");
 
     // Similarly, we need some constants that are not available in .NET Standard.
-    public const long NanosecondsPerTick = 100;
-    public const long NanosecondsPerMicrosecond = 1000;
-    public const long NanosecondsPerSecond = 1_000_000_000;
-
+    public const long TicksPerMicrosecond = 10;
+    public const long MicrosecondsPerSecond = 1_000_000;
 }
 
 public readonly partial struct Unit
@@ -164,16 +162,16 @@ public readonly record struct Identity
 }
 
 [StructLayout(LayoutKind.Sequential)] // we should be able to use it in FFI
-public partial struct Timestamp(long nanosecondsSinceUnixEpoch) : SpacetimeDB.BSATN.IStructuralReadWrite
+public partial struct Timestamp(long microsecondsSinceUnixEpoch) : SpacetimeDB.BSATN.IStructuralReadWrite
 
 {
     // This has a slightly wonky name, so just use the name directly.
-    private long __timestamp_nanos_since_unix_epoch = nanosecondsSinceUnixEpoch;
+    private long __timestamp_micros_since_unix_epoch__ = microsecondsSinceUnixEpoch;
 
-    public readonly long NanosecondsSinceUnixEpoch => __timestamp_nanos_since_unix_epoch;
+    public readonly long MicrosecondsSinceUnixEpoch => __timestamp_micros_since_unix_epoch__;
 
-    public static implicit operator DateTimeOffset(Timestamp t) => DateTimeOffset.UnixEpoch.AddTicks(t.__timestamp_nanos_since_unix_epoch / Util.NanosecondsPerTick);
-    public static implicit operator Timestamp(DateTimeOffset offset) => new Timestamp(offset.Subtract(DateTimeOffset.UnixEpoch).Ticks * Util.NanosecondsPerTick);
+    public static implicit operator DateTimeOffset(Timestamp t) => DateTimeOffset.UnixEpoch.AddTicks(t.__timestamp_micros_since_unix_epoch__ * Util.TicksPerMicrosecond);
+    public static implicit operator Timestamp(DateTimeOffset offset) => new Timestamp(offset.Subtract(DateTimeOffset.UnixEpoch).Ticks / Util.TicksPerMicrosecond);
 
 
     // For backwards-compatibility.
@@ -182,27 +180,27 @@ public partial struct Timestamp(long nanosecondsSinceUnixEpoch) : SpacetimeDB.BS
     // Should be consistent with Rust implementation of Display.
     public override string ToString()
     {
-        var sign = NanosecondsSinceUnixEpoch < 0 ? "-" : "";
-        var pos = Math.Abs(NanosecondsSinceUnixEpoch);
-        var secs = pos / Util.NanosecondsPerSecond;
-        var nanosRemaining = pos % Util.NanosecondsPerSecond;
-        return $"{sign}{secs}.{nanosRemaining:D9}";
+        var sign = MicrosecondsSinceUnixEpoch < 0 ? "-" : "";
+        var pos = Math.Abs(MicrosecondsSinceUnixEpoch);
+        var secs = pos / Util.MicrosecondsPerSecond;
+        var microsRemaining = pos % Util.MicrosecondsPerSecond;
+        return $"{sign}{secs}.{microsRemaining:D6}";
     }
 
     // --- auto-generated ---
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        __timestamp_nanos_since_unix_epoch = BSATN.__timestamp_nanos_since_unix_epoch.Read(reader);
+        __timestamp_micros_since_unix_epoch__ = BSATN.__timestamp_micros_since_unix_epoch__.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.__timestamp_nanos_since_unix_epoch.Write(writer, __timestamp_nanos_since_unix_epoch);
+        BSATN.__timestamp_micros_since_unix_epoch__.Write(writer, __timestamp_micros_since_unix_epoch__);
     }
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<SpacetimeDB.Timestamp>
     {
-        internal static readonly SpacetimeDB.BSATN.I64 __timestamp_nanos_since_unix_epoch = new();
+        internal static readonly SpacetimeDB.BSATN.I64 __timestamp_micros_since_unix_epoch__ = new();
 
         public SpacetimeDB.Timestamp Read(System.IO.BinaryReader reader) => SpacetimeDB.BSATN.IStructuralReadWrite.Read<SpacetimeDB.Timestamp>(reader);
 
@@ -214,20 +212,20 @@ public partial struct Timestamp(long nanosecondsSinceUnixEpoch) : SpacetimeDB.BS
 
         // --- customized ---
         public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-            new AlgebraicType.Product([new("__timestamp_nanos_since_unix_epoch", new AlgebraicType.I64(default))]);
+            new AlgebraicType.Product([new("__timestamp_micros_since_unix_epoch__", new AlgebraicType.I64(default))]);
         // --- / customized ---
     }
 }
 
 [StructLayout(LayoutKind.Sequential)]
-public partial struct TimeDuration(long nanoseconds) : SpacetimeDB.BSATN.IStructuralReadWrite
+public partial struct TimeDuration(long microseconds) : SpacetimeDB.BSATN.IStructuralReadWrite
 {
-    private long __time_duration_nanos = nanoseconds;
+    private long __time_duration_micros__ = microseconds;
 
-    public readonly long Nanoseconds => __time_duration_nanos;
+    public readonly long Microseconds => __time_duration_micros__;
 
-    public static implicit operator TimeSpan(TimeDuration d) => new TimeSpan(d.__time_duration_nanos / Util.NanosecondsPerTick);
-    public static implicit operator TimeDuration(TimeSpan timeSpan) => new TimeDuration(timeSpan.Ticks * Util.NanosecondsPerTick);
+    public static implicit operator TimeSpan(TimeDuration d) => new TimeSpan(d.__time_duration_micros__ / Util.MicrosecondsPerTick);
+    public static implicit operator TimeDuration(TimeSpan timeSpan) => new TimeDuration(timeSpan.Ticks * Util.MicrosecondsPerTick);
 
     // For backwards-compatibility.
     public readonly TimeSpan ToStd() => this;
@@ -235,27 +233,27 @@ public partial struct TimeDuration(long nanoseconds) : SpacetimeDB.BSATN.IStruct
     // Should be consistent with Rust implementation of Display.
     public override string ToString()
     {
-        var sign = Nanoseconds < 0 ? "-" : "+";
-        var pos = Math.Abs(Nanoseconds);
-        var secs = pos / Util.NanosecondsPerSecond;
-        var nanosRemaining = pos % Util.NanosecondsPerSecond;
-        return $"{sign}{secs}.{nanosRemaining:D9}";
+        var sign = Microseconds < 0 ? "-" : "+";
+        var pos = Math.Abs(Microseconds);
+        var secs = pos / Util.MicrosecondsPerSecond;
+        var microsRemaining = pos % Util.MicrosecondsPerSecond;
+        return $"{sign}{secs}.{microsRemaining:D6}";
     }
     // --- auto-generated ---
 
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        __time_duration_nanos = BSATN.__time_duration_nanos.Read(reader);
+        __time_duration_micros__ = BSATN.__time_duration_micros__.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.__time_duration_nanos.Write(writer, __time_duration_nanos);
+        BSATN.__time_duration_micros__.Write(writer, __time_duration_micros__);
     }
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<SpacetimeDB.TimeDuration>
     {
-        internal static readonly SpacetimeDB.BSATN.I64 __time_duration_nanos = new();
+        internal static readonly SpacetimeDB.BSATN.I64 __time_duration_micros__ = new();
 
         public SpacetimeDB.TimeDuration Read(System.IO.BinaryReader reader) => SpacetimeDB.BSATN.IStructuralReadWrite.Read<SpacetimeDB.TimeDuration>(reader);
 
@@ -268,7 +266,7 @@ public partial struct TimeDuration(long nanoseconds) : SpacetimeDB.BSATN.IStruct
 
         // --- customized ---
         public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-            new AlgebraicType.Product([new("__time_duration_nanos", new AlgebraicType.I64(default))]);
+            new AlgebraicType.Product([new("__time_duration_micros__", new AlgebraicType.I64(default))]);
 
         // --- / customized ---
     }

@@ -608,6 +608,7 @@ fn insert_primitives_as_strings(ctx: &ReducerContext, s: EveryPrimitiveStruct) {
             s.q.to_string(),
             s.r.to_string(),
             s.s.to_string(),
+            s.t.to_string(),
         ],
     });
 }

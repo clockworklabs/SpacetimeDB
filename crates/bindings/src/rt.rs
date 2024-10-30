@@ -466,7 +466,7 @@ extern "C" fn __call_reducer__(
     let address = (address != Address::__DUMMY).then_some(address);
 
     // Assemble the `ReducerContext`.
-    let timestamp = Timestamp::from_nanos_since_unix_epoch(timestamp as i64);
+    let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
     let ctx = ReducerContext {
         db: crate::Local {},
         sender,

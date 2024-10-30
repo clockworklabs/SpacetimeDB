@@ -4,9 +4,9 @@ use std::time::{Duration, SystemTime};
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize, Debug)]
 #[sats(crate = crate)]
-/// A point in time, measured in nanoseconds since the Unix epoch.
+/// A point in time, measured in microseconds since the Unix epoch.
 pub struct Timestamp {
-    __timestamp_nanos_since_unix_epoch: i64,
+    __timestamp_micros_since_unix_epoch__: i64,
 }
 
 impl_st!([] Timestamp, AlgebraicType::timestamp());
@@ -24,79 +24,61 @@ impl Timestamp {
     }
 
     pub const UNIX_EPOCH: Self = Self {
-        __timestamp_nanos_since_unix_epoch: 0,
+        __timestamp_micros_since_unix_epoch__: 0,
     };
 
-    /// Get the number of nanoseconds `self` is offset from [`Self::UNIX_EPOCH`].
+    /// Get the number of microseconds `self` is offset from [`Self::UNIX_EPOCH`].
     ///
     /// A positive value means a time after the Unix epoch,
     /// and a negative value means a time before.
-    pub fn to_nanos_since_unix_epoch(self) -> i64 {
-        self.__timestamp_nanos_since_unix_epoch
+    pub fn to_micros_since_unix_epoch(self) -> i64 {
+        self.__timestamp_micros_since_unix_epoch__
     }
 
-    /// Construct a [`Timestamp`] which is `nanos` nanoseconds offset from [`Self::UNIX_EPOCH`].
+    /// Construct a [`Timestamp`] which is `micros` microseconds offset from [`Self::UNIX_EPOCH`].
     ///
     /// A positive value means a time after the Unix epoch,
     /// and a negative value means a time before.
-    pub fn from_nanos_since_unix_epoch(nanos: i64) -> Self {
+    pub fn from_micros_since_unix_epoch(micros: i64) -> Self {
         Self {
-            __timestamp_nanos_since_unix_epoch: nanos,
+            __timestamp_micros_since_unix_epoch__: micros,
         }
     }
 
-    /// Provided for backwards-compatibility, as earlier version of SpacetimeDB used timestamps
-    /// with microsecond precision and `u64` range starting from the Unix epoch.
-    ///
-    /// This method may truncate or underflow
-    /// if `micros` cannot be converted to an `i64` number of nanoseconds.
-    pub fn from_micros_since_epoch(micros: u64) -> Self {
-        Self::from_nanos_since_unix_epoch(micros as i64 * 1000)
-    }
-
-    /// Provided for backwards-compatibility, as earlier version of SpacetimeDB used timestamps
-    /// with microsecond precision and `u64` range starting from the Unix epoch.
-    ///
-    /// This method truncates values from nanosecond to microsecond precision,
-    /// and wraps values which predate the Unix epoch to values in the far future.
-    pub fn to_micros_since_epoch(self) -> u64 {
-        self.to_nanos_since_unix_epoch() as u64 / 1000
-    }
-
     pub fn from_time_duration_since_unix_epoch(time_duration: TimeDuration) -> Self {
-        Self::from_nanos_since_unix_epoch(time_duration.to_nanos())
+        Self::from_micros_since_unix_epoch(time_duration.to_micros())
     }
 
     pub fn to_time_duration_since_unix_epoch(self) -> TimeDuration {
-        TimeDuration::from_nanos(self.to_nanos_since_unix_epoch())
+        TimeDuration::from_micros(self.to_micros_since_unix_epoch())
     }
 
     /// Returns `Err(duration_before_unix_epoch)` if `self` is before `Self::UNIX_EPOCH`.
     pub fn to_duration_since_unix_epoch(self) -> Result<Duration, Duration> {
-        let nanos = self.to_nanos_since_unix_epoch();
-        if nanos >= 0 {
-            Ok(Duration::from_nanos(nanos as u64))
+        let micros = self.to_micros_since_unix_epoch();
+        if micros >= 0 {
+            Ok(Duration::from_micros(micros as u64))
         } else {
-            Err(Duration::from_nanos((-nanos) as u64))
+            Err(Duration::from_micros((-micros) as u64))
         }
     }
 
     /// Return a [`Timestamp`] which is [`Timestamp::UNIX_EPOCH`] plus `duration`.
     ///
-    /// Panics if `duration.as_nanos` overflows an `i64`
+    /// Panics if `duration.as_micros` overflows an `i64`
     pub fn from_duration_since_unix_epoch(duration: Duration) -> Self {
-        Self::from_nanos_since_unix_epoch(
+        Self::from_micros_since_unix_epoch(
             duration
-                .as_nanos()
+                .as_micros()
                 .try_into()
-                .expect("Duration since Unix epoch overflows i64 nanoseconds"),
+                .expect("Duration since Unix epoch overflows i64 microseconds"),
         )
     }
 
     /// Convert `self` into a [`SystemTime`] which refers to approximately the same point in time.
     ///
     /// This conversion may lose precision, as [`SystemTime`]'s prevision varies depending on platform.
-    /// E.g. Unix targets have nanosecond precision, but Windows only 100-nanosecond precision.
+    /// E.g. Unix targets have microsecond precision, but Windows only 100-microsecond precision.
     ///
     /// This conversion may panic if `self` is out of bounds for [`SystemTime`].
     /// We are not aware of any platforms for which [`SystemTime`] offers a smaller range than [`Timestamp`],
@@ -105,10 +87,10 @@ impl Timestamp {
         match self.to_duration_since_unix_epoch() {
             Ok(positive) => SystemTime::UNIX_EPOCH
                 .checked_add(positive)
-                .expect("Timestamp with i64 nanoseconds since Unix epoch overflows SystemTime"),
+                .expect("Timestamp with i64 microseconds since Unix epoch overflows SystemTime"),
             Err(negative) => SystemTime::UNIX_EPOCH
                 .checked_sub(negative)
-                .expect("Timestamp with i64 nanoseconds before Unix epoch overflows SystemTime"),
+                .expect("Timestamp with i64 microseconds before Unix epoch overflows SystemTime"),
         }
     }
 
@@ -137,26 +119,26 @@ impl Timestamp {
     ///
     /// The result may be negative if `earlier` is actually later than `self`.
     ///
-    /// Returns `None` if the subtraction overflows or underflows `i64` nanoseconds.
+    /// Returns `None` if the subtraction overflows or underflows `i64` microseconds.
     pub fn time_duration_since(self, earlier: Timestamp) -> Option<TimeDuration> {
         let delta = self
-            .to_nanos_since_unix_epoch()
-            .checked_sub(earlier.to_nanos_since_unix_epoch())?;
-        Some(TimeDuration::from_nanos(delta))
+            .to_micros_since_unix_epoch()
+            .checked_sub(earlier.to_micros_since_unix_epoch())?;
+        Some(TimeDuration::from_micros(delta))
     }
 }
 
-pub(crate) const NANOSECONDS_PER_SECOND: i64 = 1_000_000_000;
+pub(crate) const MICROSECONDS_PER_SECOND: i64 = 1_000_000;
 
 impl std::fmt::Display for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let nanos = self.to_nanos_since_unix_epoch();
-        let sign = if nanos < 0 { "-" } else { "" };
-        let pos = nanos.abs();
-        let secs = pos / NANOSECONDS_PER_SECOND;
-        let nanos_remaining = pos % NANOSECONDS_PER_SECOND;
+        let micros = self.to_micros_since_unix_epoch();
+        let sign = if micros < 0 { "-" } else { "" };
+        let pos = micros.abs();
+        let secs = pos / MICROSECONDS_PER_SECOND;
+        let micros_remaining = pos % MICROSECONDS_PER_SECOND;
 
-        write!(f, "{sign}{secs}.{nanos_remaining:09}",)
+        write!(f, "{sign}{secs}.{micros_remaining:06}",)
     }
 }
 
@@ -178,6 +160,12 @@ mod test {
     use crate::GroundSpacetimeType;
     use proptest::prelude::*;
 
+    fn round_to_micros(st: SystemTime) -> SystemTime {
+        let duration = st.duration_since(SystemTime::UNIX_EPOCH).unwrap();
+        let micros = duration.as_micros();
+        SystemTime::UNIX_EPOCH + Duration::from_micros(micros as _)
+    }
+
     #[test]
     fn timestamp_type_matches() {
         assert_eq!(AlgebraicType::timestamp(), Timestamp::get_type());
@@ -187,7 +175,7 @@ mod test {
 
     #[test]
     fn round_trip_systemtime_through_timestamp() {
-        let now = SystemTime::now();
+        let now = round_to_micros(SystemTime::now());
         let timestamp = Timestamp::from(now);
         let now_prime = SystemTime::from(timestamp);
         assert_eq!(now, now_prime);
@@ -195,12 +183,12 @@ mod test {
 
     proptest! {
         #[test]
-        fn round_trip_timestamp_through_systemtime(nanos in any::<i64>().prop_map(|n| n.abs())) {
-            let timestamp = Timestamp::from_nanos_since_unix_epoch(nanos);
+        fn round_trip_timestamp_through_systemtime(micros in any::<i64>().prop_map(|n| n.abs())) {
+            let timestamp = Timestamp::from_micros_since_unix_epoch(micros);
             let system_time = SystemTime::from(timestamp);
             let timestamp_prime = Timestamp::from(system_time);
             prop_assert_eq!(timestamp_prime, timestamp);
-            prop_assert_eq!(timestamp_prime.to_nanos_since_unix_epoch(), nanos);
+            prop_assert_eq!(timestamp_prime.to_micros_since_unix_epoch(), micros);
         }
     }
 }

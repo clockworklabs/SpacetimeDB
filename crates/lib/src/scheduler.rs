@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn test_bsatn_roundtrip() {
-        let schedule_at = ScheduleAt::Interval(TimeDuration::from_nanos(10000));
+        let schedule_at = ScheduleAt::Interval(TimeDuration::from_micros(10000));
         let ser = bsatn::to_vec(&schedule_at).unwrap();
         let de = bsatn::from_slice(&ser).unwrap();
         assert_eq!(schedule_at, de);

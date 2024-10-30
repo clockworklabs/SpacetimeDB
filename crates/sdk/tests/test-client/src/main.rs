@@ -1041,8 +1041,8 @@ fn every_primitive_struct() -> EveryPrimitiveStruct {
         p: "string".to_string(),
         q: Identity::__dummy(),
         r: Address::default(),
-        s: Timestamp::from_nanos_since_unix_epoch(69_420_000_000_003),
-        t: TimeDuration::from_nanos(-67_419_000_000_003),
+        s: Timestamp::now(),
+        t: TimeDuration::from_micros(-67_419_000_000_003),
     }
 }
 

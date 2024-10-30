@@ -190,8 +190,7 @@ public static class Module
             var senderAddress = Address.From(
                 MemoryMarshal.AsBytes([address_0, address_1]).ToArray()
             );
-            var microsecondsSinceUnixEpoch = (int)timestamp.NanosecondsSinceUnixEpoch / 1000;
-            var random = new Random(microsecondsSinceUnixEpoch);
+            var random = new Random(timestamp.microsecondsSinceUnixEpoch);
             var time = timestamp.ToStd();
 
             var ctx = newContext!(senderIdentity, senderAddress, random, time);

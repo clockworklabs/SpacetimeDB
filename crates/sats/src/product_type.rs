@@ -12,9 +12,9 @@ pub const IDENTITY_TAG: &str = "__identity__";
 /// The tag used inside the special `Address` product type.
 pub const ADDRESS_TAG: &str = "__address__";
 /// The tag used inside the special `Timestamp` product type.
-pub const TIMESTAMP_TAG: &str = "__timestamp_nanos_since_unix_epoch";
+pub const TIMESTAMP_TAG: &str = "__timestamp_micros_since_unix_epoch__";
 /// The tag used inside the special `TimeDuration` product type.
-pub const TIME_DURATION_TAG: &str = "__time_duration_nanos";
+pub const TIME_DURATION_TAG: &str = "__time_duration_micros__";
 
 /// A structural product type  of the factors given by `elements`.
 ///
