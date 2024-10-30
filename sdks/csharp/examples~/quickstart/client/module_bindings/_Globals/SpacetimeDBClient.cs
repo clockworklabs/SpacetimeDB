@@ -25,30 +25,30 @@ namespace SpacetimeDB.Types
 
 		public class UserHandle : RemoteTableHandle<EventContext, User>
 		{
-			private static Dictionary<SpacetimeDB.Identity, User> Identity_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (User)row;
-				Identity_Index[value.Identity] = value;
+				Identity.__Cache[value.Identity] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				Identity_Index.Remove(((User)row).Identity);
+				Identity.__Cache.Remove(((User)row).Identity);
 			}
 
-			public readonly ref struct IdentityUniqueIndex
+			public class IdentityUniqueIndex
 			{
+				internal readonly Dictionary<SpacetimeDB.Identity, User> __Cache = new(16);
 				public User? Find(SpacetimeDB.Identity value)
 				{
-					Identity_Index.TryGetValue(value, out var r);
+					__Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public IdentityUniqueIndex Identity => new();
+			public IdentityUniqueIndex Identity = new();
 
 			internal UserHandle()
 			{
@@ -150,8 +150,7 @@ namespace SpacetimeDB.Types
 		protected override Reducer ToReducer(TransactionUpdate update)
 		{
 			var encodedArgs = update.ReducerCall.Args;
-			return update.ReducerCall.ReducerName switch
-			{
+			return update.ReducerCall.ReducerName switch {
 				"send_message" => new Reducer.SendMessage(BSATNHelpers.Decode<SendMessage>(encodedArgs)),
 				"set_name" => new Reducer.SetName(BSATNHelpers.Decode<SetName>(encodedArgs)),
 				"<none>" => new Reducer.StdbNone(default),
@@ -168,8 +167,7 @@ namespace SpacetimeDB.Types
 		protected override bool Dispatch(IEventContext context, Reducer reducer)
 		{
 			var eventContext = (EventContext)context;
-			return reducer switch
-			{
+			return reducer switch {
 				Reducer.SendMessage(var args) => Reducers.InvokeSendMessage(eventContext, args),
 				Reducer.SetName(var args) => Reducers.InvokeSetName(eventContext, args),
 				Reducer.StdbNone or
