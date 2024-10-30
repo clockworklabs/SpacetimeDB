@@ -144,12 +144,12 @@ void OnConnect(DbConnection conn, Identity identity, string authToken)
         .Subscribe("SELECT * FROM Message");
 }
 
-void OnConnectError(WebSocketError? error, string message)
+void OnConnectError(Exception e)
 {
 
 }
 
-void OnDisconnect(DbConnection conn, WebSocketCloseStatus? status, WebSocketError? error)
+void OnDisconnect(DbConnection conn, Exception? e)
 {
 
 }
