@@ -19,7 +19,12 @@ public class PlayerController : MonoBehaviour
     private float? previousCameraSize;
     private float? lastMovementSendUpdate;
     public static PlayerController Local;
+    private bool testInputEnabled;
+    private UnityEngine.Vector2 testInput;
 
+    public void SetTestInput(UnityEngine.Vector2 input) => testInput = input;
+    public void EnableTestInput() => testInputEnabled = true;
+    
     public void Spawn(Identity identity)
     {
         this.identity = identity;
@@ -36,7 +41,10 @@ public class PlayerController : MonoBehaviour
         var circles = circlesByEntityId.Values.ToList();
         foreach (var circle in circles)
         {
-            Destroy(circle.gameObject);
+            if (circle != null)
+            {
+                Destroy(circle.gameObject);
+            }
         }
         circlesByEntityId.Clear();
     }
@@ -99,7 +107,7 @@ public class PlayerController : MonoBehaviour
 
     private void OnGUI()
     {
-        if (!IsLocalPlayer())
+        if (!IsLocalPlayer() || !GameManager.IsConnected())
         {
             return;
         }
@@ -168,6 +176,7 @@ public class PlayerController : MonoBehaviour
             y = Screen.height / 2.0f,
         };
         var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
+        if (testInputEnabled) direction = testInput;
         var magnitude = Mathf.Clamp01(direction.magnitude);
         GameManager.conn.Reducers.UpdatePlayerInput(new Vector2
         {

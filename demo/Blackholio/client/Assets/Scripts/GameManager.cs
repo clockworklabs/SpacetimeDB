@@ -14,6 +14,11 @@ public class GameManager : MonoBehaviour
     public FoodController foodPrefab;
     public GameObject deathScreen;
     public PlayerController playerPrefab;
+
+    public delegate void CallbackDelegate();
+
+    public static event CallbackDelegate OnConnect;
+    public static event CallbackDelegate OnSubscriptionApplied;
     
     public static Color[] colorPalette = new[]
     {
@@ -43,6 +48,7 @@ public class GameManager : MonoBehaviour
     {
         instance = this;
         Application.targetFrameRate = 60;
+        PlayerPrefs.DeleteAll();
         
         // Now that we’ve registered all our callbacks, lets connect to spacetimedb
         conn = DbConnection.Builder().OnConnect((_conn, identity, token) => {
@@ -62,7 +68,10 @@ public class GameManager : MonoBehaviour
             conn.SubscriptionBuilder().OnApplied(ctx =>
             {
                 Debug.Log("Subscription applied!");
+                OnSubscriptionApplied?.Invoke();
             }).Subscribe("SELECT * FROM *");
+            
+            OnConnect?.Invoke();
         }).OnConnectError((status, message) =>
         {
             // Called when we have an error connecting to SpacetimeDB
@@ -71,8 +80,9 @@ public class GameManager : MonoBehaviour
         {
             // Called when we are disconnected from SpacetimeDB
             Debug.Log("Disconnected.");
-        }).WithUri("http://localhost:3000")
+        }).WithUri("http://127.0.0.1:3000")
             .WithModuleName("untitled-circle-game")
+            .WithCredentials((null, PlayerPrefs.GetString(AuthToken.GetTokenKey())))
             .Build();
         
 #pragma warning disable CS0612 // Type or member is obsolete
@@ -165,5 +175,16 @@ public class GameManager : MonoBehaviour
     {
         deathScreen.SetActive(false);
         conn.Reducers.Respawn();
+    }
+
+    public void Disconnect()
+    {
+        conn.Disconnect();
+        conn = null;
+    }
+
+    public static bool IsConnected()
+    {
+        return conn != null && conn.IsActive;
     }
 }
