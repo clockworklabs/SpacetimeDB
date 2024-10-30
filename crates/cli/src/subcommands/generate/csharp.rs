@@ -411,7 +411,7 @@ fn autogen_csharp_access_funcs_for_struct(
         indented_block(output, |output| {
             write!(
                 output,
-                "internal readonly Dictionary<{csharp_field_type}, {csharp_table_name}> Cache = new(16);"
+                "internal readonly Dictionary<{csharp_field_type}, {struct_name_pascal_case}> Cache = new(16);"
             );
             writeln!(output);
 
