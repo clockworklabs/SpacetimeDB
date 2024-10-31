@@ -16,7 +16,7 @@ using Vector2 = SpacetimeDB.Types.Vector2;
 
 public class PlayModeExampleTest
 {
-    // [UnityTest] - This won't work until we have reconnections
+    [UnityTest]
     public IEnumerator SimpleConnectionTest()
     {
         PlayerPrefs.DeleteAll();
@@ -138,7 +138,7 @@ public class PlayModeExampleTest
         Debug.Assert(massEnd < massStart, "Mass should have decayed");
     }
 
-    // [UnityTest] - This won't work until we have reconnections
+    [UnityTest]
     public IEnumerator OneOffTest1()
     {
         var connected = false;
@@ -183,7 +183,7 @@ public class PlayModeExampleTest
         Debug.Log($"id: {players[0].PlayerId} Username: {players[0].Name}");
     }
 
-    // [UnityTest] - This won't work until we have reconnections
+    [UnityTest]
     public IEnumerator OneOffTest2()
     {
         var connected = false;
@@ -227,7 +227,7 @@ public class PlayModeExampleTest
         Debug.Log($"id: {players[0].PlayerId} Username: {players[0].Name}");
     }
 
-    //[UnityTest]
+    [UnityTest]
     public IEnumerator ReconnectionViaReloadingScene()
     {
         var connected = false;
