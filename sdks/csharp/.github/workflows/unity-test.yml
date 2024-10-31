@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  unity-testsuite:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

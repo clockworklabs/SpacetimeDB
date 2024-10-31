@@ -75,3 +75,4 @@ obj~
 # This is used for local paths to SpacetimeDB packages.
 /nuget.config
 /nuget.config.meta
+.idea/

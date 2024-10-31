@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  check-testsuite-bindings:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -110,7 +110,7 @@ jobs:
 
       - name: Check for changes
         run: |
-          git diff --exit-code
+          git diff --exit-code unity-tests~/client/Assets/Scripts/autogen
         continue-on-error: true
 
       - name: Fail if there are changes
