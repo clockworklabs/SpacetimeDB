@@ -243,7 +243,7 @@ mod tests {
         let json3 = serde_json::to_string(SerializeWrapper::from_ref(&addr)).unwrap();
         assert!(
             json3.contains(decimal.as_str()),
-            "expected {json3} to contain {hex} but it didn't"
+            "expected {json3} to contain {decimal} but it didn't"
         );
     }
 
