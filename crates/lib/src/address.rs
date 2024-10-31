@@ -237,8 +237,11 @@ mod tests {
             "expected {json2} to contain {hex} but it didn't"
         );
 
-        // Serde made the slightly choice to serialize u128 as decimals in JSON.
+        // Serde made the slightly odd choice to serialize u128 as decimals in JSON.
         // So we have an incompatibility between our formats here :/
+        // The implementation of serialization for `sats` types via `SerializeWrapper` just calls
+        // the `serde` implementation to serialize primitives, so we can't fix this
+        // unless we make a custom implementation of `Serialize` and `Deserialize` for `Address`.
         let decimal = addr.to_u128().to_string();
         let json3 = serde_json::to_string(SerializeWrapper::from_ref(&addr)).unwrap();
         assert!(
