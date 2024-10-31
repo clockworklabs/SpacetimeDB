@@ -64,15 +64,15 @@ namespace SpacetimeDB
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnConnectError(Action<WebSocketError?, string> cb)
+        public DbConnectionBuilder<DbConnection, Reducer> OnConnectError(Action<Exception> cb)
         {
-            conn.webSocket.OnConnectError += (a, b) => cb.Invoke(a, b);
+            conn.webSocket.OnConnectError += (e) => cb.Invoke(e);
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnDisconnect(Action<DbConnection, WebSocketCloseStatus?, WebSocketError?> cb)
+        public DbConnectionBuilder<DbConnection, Reducer> OnDisconnect(Action<DbConnection, Exception?> cb)
         {
-            conn.webSocket.OnClose += (code, error) => cb.Invoke(conn, code, error);
+            conn.webSocket.OnClose += (e) => cb.Invoke(conn, e);
             return this;
         }
     }
@@ -156,7 +156,7 @@ namespace SpacetimeDB
             webSocket.OnMessage += OnMessageReceived;
             webSocket.OnSendError += a => onSendError?.Invoke(a);
 #if UNITY_5_3_OR_NEWER
-            webSocket.OnClose += (a, b) => SpacetimeDBNetworkManager.ActiveConnections.Remove(this);
+            webSocket.OnClose += (e) => SpacetimeDBNetworkManager.ActiveConnections.Remove(this);
 #endif
 
             networkMessageProcessThread = new Thread(PreProcessMessages);
