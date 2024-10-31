@@ -417,6 +417,11 @@ Fetch the server's fingerprint with:
     pub fn set_spacetimedb_token(&mut self, token: String) {
         self.spacetimedb_token = Some(token);
     }
+
+    pub fn clear_login_tokens(&mut self) {
+        self.web_session_token = None;
+        self.spacetimedb_token = None;
+    }
 }
 
 impl Config {
@@ -710,6 +715,10 @@ Update the server's fingerprint with:
 
     pub fn set_spacetimedb_token(&mut self, token: String) {
         self.home.set_spacetimedb_token(token);
+    }
+
+    pub fn clear_login_tokens(&mut self) {
+        self.home.clear_login_tokens();
     }
 
     pub fn web_session_token(&self) -> Option<&String> {
