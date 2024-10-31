@@ -419,7 +419,7 @@ Fetch the server's fingerprint with:
     }
 
     pub fn clear_login_tokens(&mut self) {
-        self.web_session_id = None;
+        self.web_session_token = None;
         self.spacetimedb_token = None;
     }
 }

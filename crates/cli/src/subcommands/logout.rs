@@ -15,11 +15,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let host: &String = args.get_one("auth-host").unwrap();
     let host = Url::parse(host)?;
 
-    if let Some(web_session_id) = config.web_session_id() {
+    if let Some(web_session_token) = config.web_session_token() {
         let client = reqwest::Client::new();
         client
             .post(host.join("auth/cli/logout")?)
-            .header("Authorization", format!("Bearer {}", web_session_id))
+            .header("Authorization", format!("Bearer {}", web_session_token))
             .send()
             .await?;
     }
