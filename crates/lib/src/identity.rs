@@ -100,7 +100,7 @@ impl Identity {
     }
 
     /// Returns an `Identity` defined as the given byte `slice`.
-    /// Slice is assumed to be in LITTLE-ENDIAN format.
+    /// The slice is assumed to be in big-endian format.
     pub fn from_slice(slice: &[u8]) -> Self {
         Self::from_be_byte_array(slice.try_into().unwrap())
     }
