@@ -49,7 +49,6 @@ public class GameManager : MonoBehaviour
     {
         instance = this;
         Application.targetFrameRate = 60;
-        PlayerPrefs.DeleteAll();
         
         // Now that we’ve registered all our callbacks, lets connect to spacetimedb
         conn = DbConnection.Builder().OnConnect((_conn, identity, token) => {
