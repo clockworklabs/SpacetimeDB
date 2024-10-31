@@ -10,7 +10,6 @@ use spacetimedb_lib::{bsatn::ToBsatn as _, sats, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_testing::modules::start_runtime;
 use std::sync::OnceLock;
-use std::time::Instant;
 use std::{hint::black_box, sync::Arc};
 
 #[global_allocator]
@@ -79,18 +78,10 @@ fn custom_db_benchmarks(c: &mut Criterion) {
                 });
             });
 
-            b.iter_custom(|iters| {
-                let start = Instant::now();
-
-                for _ in 0..iters {
-                    black_box(
-                        runtime.block_on(async {
-                            module.call_reducer_binary("run_game_circles", args.clone()).await.ok()
-                        }),
-                    );
-                }
-
-                start.elapsed()
+            b.iter(|| {
+                black_box(
+                    runtime.block_on(async { module.call_reducer_binary("run_game_circles", args.clone()).await.ok() }),
+                );
             })
         });
     }
@@ -109,14 +100,10 @@ fn custom_db_benchmarks(c: &mut Criterion) {
                 })
             });
 
-            b.iter_custom(|_iters| {
-                let start = Instant::now();
-
+            b.iter(|| {
                 black_box(
                     runtime.block_on(async { module.call_reducer_binary("run_game_ia_loop", args.clone()).await.ok() }),
                 );
-
-                start.elapsed()
             })
         });
     }
