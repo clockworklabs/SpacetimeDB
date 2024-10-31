@@ -83,7 +83,9 @@ impl ControlDb {
 
     pub fn spacetime_reverse_dns(&self, database_identity: &Identity) -> Result<Vec<DomainName>> {
         let tree = self.db.open_tree("reverse_dns")?;
-        let value = tree.get(database_identity.to_byte_array())?;
+        // TODO: everywhere in this file should use `to_be_byte_array`.
+        // We may want to implement some sort of trait to ensure that it is used consistently.
+        let value = tree.get(database_identity.to_be_byte_array())?;
         if let Some(value) = value {
             let vec: Vec<DomainName> = serde_json::from_slice(&value[..])?;
             return Ok(vec);
@@ -138,7 +140,7 @@ impl ControlDb {
             }
         }
 
-        let identity_bytes = database_identity.to_byte_array();
+        let identity_bytes = database_identity.to_be_byte_array();
         let tree = self.db.open_tree("dns")?;
         tree.insert(domain.to_lowercase().as_bytes(), &identity_bytes)?;
 
@@ -179,7 +181,7 @@ impl ControlDb {
                 }
             }
             None => {
-                tree.insert(key, &owner_identity.to_byte_array())?;
+                tree.insert(key, &owner_identity.to_be_byte_array())?;
                 Ok(RegisterTldResult::Success { domain: tld })
             }
         }
@@ -418,7 +420,7 @@ impl ControlDb {
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
     pub fn get_energy_balance(&self, identity: &Identity) -> Result<Option<energy::EnergyBalance>> {
         let tree = self.db.open_tree("energy_budget")?;
-        let value = tree.get(identity.to_byte_array())?;
+        let value = tree.get(identity.to_be_byte_array())?;
         if let Some(value) = value {
             let arr = <[u8; 16]>::try_from(value.as_ref()).map_err(|_| bsatn::DecodeError::BufferLength {
                 for_type: "Identity".into(),
@@ -437,7 +439,7 @@ impl ControlDb {
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
     pub fn set_energy_balance(&self, identity: Identity, energy_balance: energy::EnergyBalance) -> Result<()> {
         let tree = self.db.open_tree("energy_budget")?;
-        tree.insert(identity.to_byte_array(), &energy_balance.get().to_be_bytes())?;
+        tree.insert(identity.to_be_byte_array(), &energy_balance.get().to_be_bytes())?;
 
         Ok(())
     }
