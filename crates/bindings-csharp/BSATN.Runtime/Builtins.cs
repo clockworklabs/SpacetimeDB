@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using SpacetimeDB.BSATN;
+using SpacetimeDB.Internal;
 
 internal static class Util
 {
@@ -91,30 +92,6 @@ public readonly record struct Identity
 
     // This must be explicitly forwarded to base, otherwise record will generate a new implementation.
     public override string ToString() => Util.ToHex(value);
-}
-
-// We store time information in microseconds in internal usages.
-//
-// These utils allow to encode it as such in FFI and BSATN contexts
-// and convert to standard C# types.
-
-[StructLayout(LayoutKind.Sequential)] // we should be able to use it in FFI
-[SpacetimeDB.Type] // we should be able to encode it to BSATN too
-public partial struct DateTimeOffsetRepr(DateTimeOffset time)
-{
-    public ulong MicrosecondsSinceEpoch = (ulong)time.Ticks / 10;
-
-    public readonly DateTimeOffset ToStd() =>
-        DateTimeOffset.UnixEpoch.AddTicks(10 * (long)MicrosecondsSinceEpoch);
-}
-
-[StructLayout(LayoutKind.Sequential)] // we should be able to use it in FFI
-[SpacetimeDB.Type] // we should be able to encode it to BSATN too
-public partial struct TimeSpanRepr(TimeSpan duration)
-{
-    public ulong Microseconds = (ulong)duration.Ticks / 10;
-
-    public readonly TimeSpan ToStd() => TimeSpan.FromTicks(10 * (long)Microseconds);
 }
 
 // [SpacetimeDB.Type] - we have custom representation of time in microseconds, so implementing BSATN manually
