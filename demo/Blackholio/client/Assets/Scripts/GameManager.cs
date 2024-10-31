@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 using UnityEngine;
@@ -41,7 +42,7 @@ public class GameManager : MonoBehaviour
     public static Dictionary<uint, PlayerController> playerIdToPlayerController =
         new Dictionary<uint, PlayerController>();
 
-    public static Identity? localIdentity;
+    public static Identity localIdentity = default;
     public static DbConnection conn;
     
     private void Start()
@@ -56,7 +57,7 @@ public class GameManager : MonoBehaviour
             Debug.Log("Connected.");
             AuthToken.SaveToken(token);
             localIdentity = identity;
-
+            
             conn.Db.Circle.OnInsert += CircleOnInsert;
             conn.Db.Circle.OnDelete += CircleOnDelete;
             conn.Db.Entity.OnUpdate += EntityOnUpdate;
@@ -72,17 +73,21 @@ public class GameManager : MonoBehaviour
             }).Subscribe("SELECT * FROM *");
             
             OnConnect?.Invoke();
-        }).OnConnectError((status, message) =>
+        }).OnConnectError(ex =>
         {
             // Called when we have an error connecting to SpacetimeDB
-            Debug.LogError($"Connection error: {status} {message}");
-        }).OnDisconnect((_conn, closeStatus, error) =>
+            Debug.LogException(ex);
+        }).OnDisconnect((_conn, ex) =>
         {
             // Called when we are disconnected from SpacetimeDB
             Debug.Log("Disconnected.");
+            if (ex != null)
+            {
+                Debug.LogException(ex);
+            }
         }).WithUri("http://127.0.0.1:3000")
             .WithModuleName("untitled-circle-game")
-            .WithCredentials((null, PlayerPrefs.GetString(AuthToken.GetTokenKey())))
+            // .WithCredentials((localIdentity.Value, PlayerPrefs.GetString(AuthToken.GetTokenKey())))
             .Build();
         
 #pragma warning disable CS0612 // Type or member is obsolete

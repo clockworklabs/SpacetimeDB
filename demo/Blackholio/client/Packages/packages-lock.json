@@ -1,7 +1,7 @@
 {
   "dependencies": {
     "com.clockworklabs.spacetimedbsdk": {
-      "version": "file:../../../",
+      "version": "file:/Users/boppy/clockwork/com.clockworklabs.spacetimedbsdk",
       "depth": 0,
       "source": "local",
       "dependencies": {}
