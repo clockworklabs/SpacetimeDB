@@ -117,6 +117,11 @@ pub(crate) fn type_proj(
                     //
                     // This is because the expression here don't flatten the row, ie:
                     // `SELECT * FROM a JOIN b` = `Row{a:Row{...}, b:Row{...}}`
+                    //
+                    // Note, like all relational operators, project is polymorphic.
+                    // However it is polymorphic in the most general sense.
+                    // It is typed to operate on any relational expression,
+                    // not just those returning flattened rows.
                     Ok(RelExpr::project(
                         input,
                         Let {

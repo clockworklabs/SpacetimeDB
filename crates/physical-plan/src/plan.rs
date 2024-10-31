@@ -26,6 +26,7 @@ pub enum PhysicalPlan {
     Project(Project),
 }
 
+#[cfg(test)]
 impl PhysicalPlan {
     pub fn as_project(&self) -> Option<&Project> {
         if let PhysicalPlan::Project(p) = self {
