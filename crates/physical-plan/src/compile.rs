@@ -19,13 +19,16 @@ fn compile_expr(ctx: &LetCtx, expr: Expr) -> PhysicalExpr {
             let var = ctx.get_var(sym).cloned().unwrap();
             compile_expr(ctx, var)
         }
-        Expr::Row(row, ty) => PhysicalExpr::Tuple(
-            row.iter()
-                // The `sym` is inline in `expr`
-                .map(|(_sym, expr)| compile_expr(ctx, expr.clone()))
-                .collect(),
-            ty,
-        ),
+        Expr::Row(row, ty) => {
+            PhysicalExpr::Tuple(
+                row.into_vec()
+                    .into_iter()
+                    // The `sym` is inline in `expr`
+                    .map(|(_sym, expr)| compile_expr(ctx, expr))
+                    .collect(),
+                ty,
+            )
+        }
         Expr::Lit(value, ty) => PhysicalExpr::Value(value, ty),
         Expr::Field(expr, pos, ty) => {
             let expr = compile_expr(ctx, *expr);
@@ -68,10 +71,10 @@ fn compile_project(expr: Project) -> PhysicalPlan {
     PhysicalPlan::Project(proj)
 }
 
-fn compile_cross_joins(joins: &[RelExpr], ty: TyId) -> PhysicalPlan {
+fn compile_cross_joins(joins: Vec<RelExpr>, ty: TyId) -> PhysicalPlan {
     joins
-        .iter()
-        .map(|expr| compile_rel_expr(expr.clone()))
+        .into_iter()
+        .map(compile_rel_expr)
         .reduce(|lhs, rhs| {
             PhysicalPlan::CrossJoin(CrossJoin {
                 lhs: Box::new(lhs),
@@ -87,7 +90,7 @@ fn compile_rel_expr(ast: RelExpr) -> PhysicalPlan {
         RelExpr::RelVar(table, _ty) => PhysicalPlan::TableScan(table),
         RelExpr::Select(select) => compile_filter(*select),
         RelExpr::Proj(proj) => compile_project(*proj),
-        RelExpr::Join(joins, ty) => compile_cross_joins(&joins, ty),
+        RelExpr::Join(joins, ty) => compile_cross_joins(joins.into_vec(), ty),
         RelExpr::Union(_, _) | RelExpr::Minus(_, _) | RelExpr::Dedup(_) => {
             unreachable!("DISTINCT is not implemented")
         }
