@@ -13,6 +13,21 @@ use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType,
 ///
 /// This is a special type.
 ///
+/// An `Address` is a 128-bit unsigned integer. This can be serialized in various ways.
+/// - In JSON, an `Address` is represented as a BARE DECIMAL number. This requires some care when deserializing:
+///     see https://stackoverflow.com/questions/69644298/how-to-make-json-parse-to-treat-all-the-numbers-as-bigint
+/// - In BSATN, an `Address` is represented as a LITTLE-ENDIAN number 16 bytes long.
+/// - In memory, an `Address` is stored as a 128-bit number with the endianness of the host system.
+///
+/// If you are manually converting a hexadecimal string to a byte array like so:
+/// ```ignore
+/// "0xb0b1b2..."
+/// ->
+/// [0xb0, 0xb1, 0xb2, ...]
+/// ```
+/// Make sure you call `Address::from_be_byte_array` and NOT `Address::from_byte_array`.
+/// The standard way of writing hexadecimal numbers follows a big-endian convention, if you
+/// index the characters in written text in increasing order from left to right.
 // TODO: Evaluate other possible names: `DatabaseAddress`, `SPAddress`
 // TODO: Evaluate replacing this with a literal Ipv6Address
 //       which is assigned permanently to a database.
