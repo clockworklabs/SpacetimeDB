@@ -5170,6 +5170,7 @@ version = "1.0.0-rc1"
 dependencies = [
  "spacetimedb-expr",
  "spacetimedb-lib",
+ "spacetimedb-primitives",
  "spacetimedb-table",
 ]
 
