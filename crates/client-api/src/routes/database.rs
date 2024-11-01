@@ -12,8 +12,7 @@ use axum::Extension;
 use axum_extra::TypedHeader;
 use futures::StreamExt;
 use http::StatusCode;
-use serde::Deserialize;
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
 use spacetimedb::address::Address;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::ReducerCallError;
@@ -27,8 +26,8 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::sats::WithTypespace;
-use spacetimedb_lib::ser::serde::SerializeWrapper;
+use spacetimedb_lib::sats::{self, WithTypespace};
+use spacetimedb_lib::{ProductType, ProductTypeElement};
 use spacetimedb_schema::def::{ReducerDef, TableDef};
 
 use super::identity::IdentityForUrl;
@@ -176,7 +175,7 @@ impl<'a> EntityDef<'a> {
             EntityDef::Table(_) => DescribedEntityType::Table,
         }
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &'a str {
         match self {
             EntityDef::Reducer(r) => &r.name[..],
             EntityDef::Table(t) => &t.name[..],
@@ -184,8 +183,22 @@ impl<'a> EntityDef<'a> {
     }
 }
 
-fn entity_description_json(description: WithTypespace<EntityDef>) -> Option<Value> {
-    let typ = description.ty().described_entity_ty().as_str();
+#[derive(Serialize)]
+struct EntityDescription<'a> {
+    r#type: DescribedEntityType,
+    arity: usize,
+    schema: EntityDescriptionSchema<'a>,
+}
+
+#[derive(Serialize)]
+struct EntityDescriptionSchema<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<&'a str>,
+    elements: Box<[ProductTypeElement]>,
+}
+
+fn entity_description_json<'a>(description: WithTypespace<'_, EntityDef<'a>>) -> Option<EntityDescription<'a>> {
+    let typ = description.ty().described_entity_ty();
     let len = match description.ty() {
         EntityDef::Table(t) => description
             .resolve(t.product_type_ref)
@@ -198,22 +211,25 @@ fn entity_description_json(description: WithTypespace<EntityDef>) -> Option<Valu
     // TODO(noa): make this less hacky; needs coordination w/ spacetime-web
     let schema = match description.ty() {
         EntityDef::Table(table) => {
-            json!(description
+            let product_type = description
                 .with(&table.product_type_ref)
                 .resolve_refs()
                 .ok()?
-                .as_product()?)
+                .into_product()
+                .ok()?;
+            let ProductType { elements } = product_type;
+            EntityDescriptionSchema { name: None, elements }
         }
-        EntityDef::Reducer(r) => json!({
-            "name": &r.name[..],
-            "elements": r.params.elements,
-        }),
+        EntityDef::Reducer(r) => EntityDescriptionSchema {
+            name: Some(&r.name),
+            elements: r.params.elements.clone(),
+        },
     };
-    Some(json!({
-        "type": typ,
-        "arity": len,
-        "schema": schema
-    }))
+    Some(EntityDescription {
+        r#type: typ,
+        arity: len,
+        schema,
+    })
 }
 
 #[derive(Deserialize)]
@@ -258,13 +274,13 @@ where
         .ok_or_else(|| (StatusCode::NOT_FOUND, format!("{entity_type} {entity:?} not found")))?;
     let description = WithTypespace::new(module.info().module_def.typespace(), &description);
 
-    let response_json = json!({ entity: entity_description_json(description) });
+    let response_json: SchemaEntities = HashMap::from_iter([(&*entity, entity_description_json(description))]);
 
     Ok((
         StatusCode::OK,
         TypedHeader(SpacetimeIdentity(auth.identity)),
         TypedHeader(SpacetimeIdentityToken(auth.creds)),
-        axum::Json(response_json),
+        axum::Json(response_json).into_response(),
     ))
 }
 
@@ -292,6 +308,16 @@ pub struct CatalogQueryParams {
     #[serde(default)]
     module_def: bool,
 }
+
+type SchemaEntities<'a> = HashMap<&'a str, Option<EntityDescription<'a>>>;
+
+#[derive(Serialize)]
+struct CatalogResponse<'a> {
+    entities: SchemaEntities<'a>,
+    #[serde(with = "sats::serde")]
+    typespace: &'a sats::Typespace,
+}
+
 pub async fn catalog<S>(
     State(worker_ctx): State<S>,
     Path(CatalogParams { name_or_identity }): Path<CatalogParams>,
@@ -315,27 +341,20 @@ where
 
     let response_json = if module_def {
         let raw = RawModuleDefV9::from(module.info().module_def.clone());
-        serde_json::to_value(SerializeWrapper::from_ref(&raw)).map_err(log_and_500)?
+        axum::Json(sats::serde::SerdeWrapper(raw)).into_response()
     } else {
-        let response_catalog: HashMap<_, _> = get_catalog(&module)
-            .map(|entity| {
-                (
-                    entity.name().to_string().into_boxed_str(),
-                    entity_description_json(WithTypespace::new(module.info().module_def.typespace(), &entity)),
-                )
-            })
+        let typespace = module.info.module_def.typespace();
+        let entities: HashMap<_, _> = get_catalog(&module)
+            .map(|entity| (entity.name(), entity_description_json(typespace.with_type(&entity))))
             .collect();
-        json!({
-            "entities": response_catalog,
-            "typespace": SerializeWrapper::from_ref(module.info().module_def.typespace()),
-        })
+        axum::Json(CatalogResponse { entities, typespace }).into_response()
     };
 
     Ok((
         StatusCode::OK,
         TypedHeader(SpacetimeIdentity(auth.identity)),
         TypedHeader(SpacetimeIdentityToken(auth.creds)),
-        axum::Json(response_json),
+        response_json,
     ))
 }
 
@@ -343,6 +362,28 @@ where
 pub struct InfoParams {
     name_or_identity: NameOrIdentity,
 }
+
+#[derive(Serialize)]
+struct InfoResponse {
+    database_identity: Identity,
+    owner_identity: Identity,
+    host_type: &'static str,
+    initial_program: spacetimedb_lib::Hash,
+}
+
+impl From<Database> for InfoResponse {
+    fn from(database: Database) -> Self {
+        InfoResponse {
+            database_identity: database.database_identity,
+            owner_identity: database.owner_identity,
+            host_type: match database.host_type {
+                HostType::Wasm => "wasm",
+            },
+            initial_program: database.initial_program,
+        }
+    }
+}
+
 pub async fn info<S: ControlStateDelegate>(
     State(worker_ctx): State<S>,
     Path(InfoParams { name_or_identity }): Path<InfoParams>,
@@ -355,14 +396,8 @@ pub async fn info<S: ControlStateDelegate>(
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
     log::trace!("Fetched database from the worker db for address: {database_identity:?}");
 
-    let host_type: &str = database.host_type.as_ref();
-    let response_json = json!({
-        "database_identity": database.database_identity,
-        "owner_identity": database.owner_identity,
-        "host_type": host_type,
-        "initial_program": database.initial_program,
-    });
-    Ok((StatusCode::OK, axum::Json(response_json)))
+    let response = InfoResponse::from(database);
+    Ok((StatusCode::OK, axum::Json(response)))
 }
 
 #[derive(Deserialize)]
