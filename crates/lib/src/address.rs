@@ -225,6 +225,11 @@ mod tests {
         let addr = Address::from_be_byte_array([0xff, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
 
         let hex = addr.to_hex();
+        assert!(
+            hex.as_str().starts_with("ff01"),
+            "expected {hex:?} to start with \"ff01\""
+        );
+
         let json1 = serde_json::to_string(&addr).unwrap();
         let json2 = serde_json::to_string(&AddressForUrl::from(addr)).unwrap();
 

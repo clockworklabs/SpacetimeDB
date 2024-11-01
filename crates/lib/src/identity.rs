@@ -82,7 +82,6 @@ impl Identity {
     /// ->
     /// [0xb0, 0xb1, 0xb2, ...]
     /// ```
-    /// If you have created the byte array from a hexadecimal string, use `from_be_byte_array` instead!
     pub const fn from_be_byte_array(bytes: [u8; 32]) -> Self {
         // SAFETY: The transmute is an implementation of `u256::from_le_bytes`,
         // but works in a const context.
@@ -237,6 +236,11 @@ mod tests {
         ]);
 
         let hex = id.to_hex();
+        assert!(
+            hex.as_str().starts_with("ff01"),
+            "expected {hex:?} to start with \"ff01\""
+        );
+
         let json1 = serde_json::to_string(&id).unwrap();
         let json2 = serde_json::to_string(SerializeWrapper::from_ref(&id)).unwrap();
 
