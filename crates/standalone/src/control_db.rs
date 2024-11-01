@@ -399,7 +399,7 @@ impl ControlDb {
                 }
             };
             let arr = <[u8; 16]>::try_from(balance_entry.1.as_ref()).map_err(|_| bsatn::DecodeError::BufferLength {
-                for_type: "balance_entry".into(),
+                for_type: "balance_entry",
                 expected: 16,
                 given: balance_entry.1.len(),
             })?;
@@ -421,7 +421,7 @@ impl ControlDb {
         let value = tree.get(identity.to_byte_array())?;
         if let Some(value) = value {
             let arr = <[u8; 16]>::try_from(value.as_ref()).map_err(|_| bsatn::DecodeError::BufferLength {
-                for_type: "Identity".into(),
+                for_type: "Identity",
                 expected: 16,
                 given: value.as_ref().len(),
             })?;
