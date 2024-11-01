@@ -41,7 +41,7 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
             let file = file?;
             let printable_path = file.path().to_str().ok_or(anyhow::anyhow!("path not utf-8"))?;
             if file.file_type().is_file() && file.path().extension().map_or(false, |ext| ext == "rs") {
-                let file = fs::File::open(&file.path())?;
+                let file = fs::File::open(file.path())?;
                 for (idx, line) in io::BufReader::new(file).lines().enumerate() {
                     let line = line?;
                     let line_number = idx + 1;
