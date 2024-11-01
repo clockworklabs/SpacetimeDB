@@ -62,7 +62,7 @@ pub struct RawConfig {
     server_configs: Vec<ServerConfig>,
     // TODO: Consider how these tokens should look to be backwards-compatible with the future changes (e.g. we may want to allow users to `login` to switch between multiple accounts - what will we cache and where?)
     // TODO: Move these IDs/tokens out of config so we're no longer storing sensitive tokens in a human-edited file.
-    web_session_id: Option<String>,
+    web_session_token: Option<String>,
     spacetimedb_token: Option<String>,
 }
 
@@ -113,7 +113,7 @@ impl RawConfig {
         RawConfig {
             default_server: local.nickname.clone(),
             server_configs: vec![local, testnet],
-            web_session_id: None,
+            web_session_token: None,
             spacetimedb_token: None,
         }
     }
@@ -410,12 +410,17 @@ Fetch the server's fingerprint with:
         Ok(())
     }
 
-    pub fn set_web_session_id(&mut self, token: String) {
-        self.web_session_id = Some(token);
+    pub fn set_web_session_token(&mut self, token: String) {
+        self.web_session_token = Some(token);
     }
 
     pub fn set_spacetimedb_token(&mut self, token: String) {
         self.spacetimedb_token = Some(token);
+    }
+
+    pub fn clear_login_tokens(&mut self) {
+        self.web_session_token = None;
+        self.spacetimedb_token = None;
     }
 }
 
@@ -704,16 +709,20 @@ Update the server's fingerprint with:
         }
     }
 
-    pub fn set_web_session_id(&mut self, token: String) {
-        self.home.set_web_session_id(token);
+    pub fn set_web_session_token(&mut self, token: String) {
+        self.home.set_web_session_token(token);
     }
 
     pub fn set_spacetimedb_token(&mut self, token: String) {
         self.home.set_spacetimedb_token(token);
     }
 
-    pub fn web_session_id(&self) -> Option<&String> {
-        self.home.web_session_id.as_ref()
+    pub fn clear_login_tokens(&mut self) {
+        self.home.clear_login_tokens();
+    }
+
+    pub fn web_session_token(&self) -> Option<&String> {
+        self.home.web_session_token.as_ref()
     }
 
     pub fn spacetimedb_token(&self) -> Option<&String> {

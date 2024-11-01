@@ -407,20 +407,20 @@ fn autogen_csharp_access_funcs_for_struct(
             None => continue,
             Some(x) => x,
         };
-        writeln!(
-            output,
-            "public readonly ref struct {csharp_field_name_pascal}UniqueIndex"
-        );
+        writeln!(output, "public class {csharp_field_name_pascal}UniqueIndex");
         indented_block(output, |output| {
+            write!(
+                output,
+                "internal readonly Dictionary<{csharp_field_type}, {struct_name_pascal_case}> Cache = new(16);"
+            );
+            writeln!(output);
+
             writeln!(
                 output,
                 "public {struct_name_pascal_case}? Find({csharp_field_type} value)"
             );
             indented_block(output, |output| {
-                writeln!(
-                    output,
-                    "{csharp_field_name_pascal}_Index.TryGetValue(value, out var r);"
-                );
+                writeln!(output, "Cache.TryGetValue(value, out var r);");
                 writeln!(output, "return r;");
             });
             writeln!(output);
@@ -428,7 +428,7 @@ fn autogen_csharp_access_funcs_for_struct(
         writeln!(output);
         writeln!(
             output,
-            "public {csharp_field_name_pascal}UniqueIndex {csharp_field_name_pascal} => new();"
+            "public {csharp_field_name_pascal}UniqueIndex {csharp_field_name_pascal} = new();"
         );
         writeln!(output);
     }
@@ -589,11 +589,6 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                     if !constraints[&ColList::new(col.col_pos)].has_unique() {
                         continue;
                     }
-                    let type_name = ty_fmt(ctx, &col.col_type, namespace);
-                    writeln!(
-                        output,
-                        "private static Dictionary<{type_name}, {table_type}> {field_name}_Index = new(16);"
-                    );
                     unique_indexes.push(field_name);
                 }
                 if !unique_indexes.is_empty() {
@@ -610,7 +605,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                             if !constraints[&ColList::new(col.col_pos)].has_unique() {
                                 continue;
                             }
-                            writeln!(output, "{field_name}_Index[value.{field_name}] = value;");
+                            writeln!(output, "{field_name}.Cache[value.{field_name}] = value;");
                         }
                     });
                     writeln!(output);
@@ -625,7 +620,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                             if !constraints[&ColList::new(col.col_pos)].has_unique() {
                                 continue;
                             }
-                            writeln!(output, "{field_name}_Index.Remove((({table_type})row).{field_name});");
+                            writeln!(output, "{field_name}.Cache.Remove((({table_type})row).{field_name});");
                         }
                     });
                     writeln!(output);

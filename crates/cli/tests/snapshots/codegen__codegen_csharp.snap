@@ -672,45 +672,45 @@ namespace SpacetimeDB
 
 		public class PkMultiIdentityHandle : RemoteTableHandle<EventContext, PkMultiIdentity>
 		{
-			private static Dictionary<uint, PkMultiIdentity> Id_Index = new(16);
-			private static Dictionary<uint, PkMultiIdentity> Other_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (PkMultiIdentity)row;
-				Id_Index[value.Id] = value;
-				Other_Index[value.Other] = value;
+				Id.Cache[value.Id] = value;
+				Other.Cache[value.Other] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				Id_Index.Remove(((PkMultiIdentity)row).Id);
-				Other_Index.Remove(((PkMultiIdentity)row).Other);
+				Id.Cache.Remove(((PkMultiIdentity)row).Id);
+				Other.Cache.Remove(((PkMultiIdentity)row).Other);
 			}
 
-			public readonly ref struct IdUniqueIndex
+			public class IdUniqueIndex
 			{
+				internal readonly Dictionary<uint, PkMultiIdentity> Cache = new(16);
 				public PkMultiIdentity? Find(uint value)
 				{
-					Id_Index.TryGetValue(value, out var r);
+					Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public IdUniqueIndex Id => new();
+			public IdUniqueIndex Id = new();
 
-			public readonly ref struct OtherUniqueIndex
+			public class OtherUniqueIndex
 			{
+				internal readonly Dictionary<uint, PkMultiIdentity> Cache = new(16);
 				public PkMultiIdentity? Find(uint value)
 				{
-					Other_Index.TryGetValue(value, out var r);
+					Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public OtherUniqueIndex Other => new();
+			public OtherUniqueIndex Other = new();
 
 			internal PkMultiIdentityHandle()
 			{
@@ -754,30 +754,30 @@ namespace SpacetimeDB
 
 		public class RepeatingTestArgHandle : RemoteTableHandle<EventContext, RepeatingTestArg>
 		{
-			private static Dictionary<ulong, RepeatingTestArg> ScheduledId_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (RepeatingTestArg)row;
-				ScheduledId_Index[value.ScheduledId] = value;
+				ScheduledId.Cache[value.ScheduledId] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				ScheduledId_Index.Remove(((RepeatingTestArg)row).ScheduledId);
+				ScheduledId.Cache.Remove(((RepeatingTestArg)row).ScheduledId);
 			}
 
-			public readonly ref struct ScheduledIdUniqueIndex
+			public class ScheduledIdUniqueIndex
 			{
+				internal readonly Dictionary<ulong, RepeatingTestArg> Cache = new(16);
 				public RepeatingTestArg? Find(ulong value)
 				{
-					ScheduledId_Index.TryGetValue(value, out var r);
+					Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public ScheduledIdUniqueIndex ScheduledId => new();
+			public ScheduledIdUniqueIndex ScheduledId = new();
 
 			internal RepeatingTestArgHandle()
 			{
@@ -821,30 +821,30 @@ namespace SpacetimeDB
 
 		public class TestEHandle : RemoteTableHandle<EventContext, TestE>
 		{
-			private static Dictionary<ulong, TestE> Id_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (TestE)row;
-				Id_Index[value.Id] = value;
+				Id.Cache[value.Id] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				Id_Index.Remove(((TestE)row).Id);
+				Id.Cache.Remove(((TestE)row).Id);
 			}
 
-			public readonly ref struct IdUniqueIndex
+			public class IdUniqueIndex
 			{
+				internal readonly Dictionary<ulong, TestE> Cache = new(16);
 				public TestE? Find(ulong value)
 				{
-					Id_Index.TryGetValue(value, out var r);
+					Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public IdUniqueIndex Id => new();
+			public IdUniqueIndex Id = new();
 
 			public class NameIndex
 			{
