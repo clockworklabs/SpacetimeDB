@@ -52,19 +52,38 @@ pub trait delete_unique_string {
 
 impl delete_unique_string for super::RemoteReducers {
     fn delete_unique_string(&self, s: String) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_string", DeleteUniqueString { s })
+        self.imp.call_reducer(25, DeleteUniqueString { s })
     }
     fn on_delete_unique_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String) + Send + 'static,
     ) -> DeleteUniqueStringCallbackId {
         DeleteUniqueStringCallbackId(self.imp.on_reducer::<DeleteUniqueString>(
-            "delete_unique_string",
+            25,
             Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueString| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_delete_unique_string(&self, callback: DeleteUniqueStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueString>("delete_unique_string", callback.0)
+        self.imp.remove_on_reducer::<DeleteUniqueString>(25, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `delete_unique_string`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_delete_unique_string {
+    /// Set the call-reducer flags for the reducer `delete_unique_string` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn delete_unique_string(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_delete_unique_string for super::SetReducerFlags {
+    fn delete_unique_string(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(25, flags);
     }
 }

@@ -52,19 +52,38 @@ pub trait delete_unique_u_8 {
 
 impl delete_unique_u_8 for super::RemoteReducers {
     fn delete_unique_u_8(&self, n: u8) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_u8", DeleteUniqueU8 { n })
+        self.imp.call_reducer(31, DeleteUniqueU8 { n })
     }
     fn on_delete_unique_u_8(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u8) + Send + 'static,
     ) -> DeleteUniqueU8CallbackId {
         DeleteUniqueU8CallbackId(self.imp.on_reducer::<DeleteUniqueU8>(
-            "delete_unique_u8",
+            31,
             Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueU8| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_delete_unique_u_8(&self, callback: DeleteUniqueU8CallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueU8>("delete_unique_u8", callback.0)
+        self.imp.remove_on_reducer::<DeleteUniqueU8>(31, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `delete_unique_u8`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_delete_unique_u_8 {
+    /// Set the call-reducer flags for the reducer `delete_unique_u8` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn delete_unique_u_8(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_delete_unique_u_8 for super::SetReducerFlags {
+    fn delete_unique_u_8(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(31, flags);
     }
 }

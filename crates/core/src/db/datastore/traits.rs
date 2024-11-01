@@ -173,7 +173,7 @@ pub struct TxData {
     deletes: BTreeMap<TableId, Arc<[ProductValue]>>,
     /// Map of all `TableId`s in both `inserts` and `deletes` to their
     /// corresponding table name.
-    tables: IntMap<TableId, String>,
+    tables: IntMap<TableId, Arc<str>>,
     /// Tx offset of the transaction which performed these operations.
     ///
     /// `None` implies that `inserts` and `deletes` are both empty,
@@ -198,15 +198,15 @@ impl TxData {
     }
 
     /// Set `rows` as the inserted rows for `(table_id, table_name)`.
-    pub fn set_inserts_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
+    pub fn set_inserts_for_table(&mut self, table_id: TableId, table_name: &Arc<str>, rows: Arc<[ProductValue]>) {
         self.inserts.insert(table_id, rows);
-        self.tables.entry(table_id).or_insert_with(|| table_name.to_owned());
+        self.tables.entry(table_id).or_insert_with(|| table_name.clone());
     }
 
     /// Set `rows` as the deleted rows for `(table_id, table_name)`.
-    pub fn set_deletes_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
+    pub fn set_deletes_for_table(&mut self, table_id: TableId, table_name: &Arc<str>, rows: Arc<[ProductValue]>) {
         self.deletes.insert(table_id, rows);
-        self.tables.entry(table_id).or_insert_with(|| table_name.to_owned());
+        self.tables.entry(table_id).or_insert_with(|| table_name.clone());
     }
 
     /// Obtain an iterator over the inserted rows per table.
@@ -218,13 +218,13 @@ impl TxData {
     ///
     /// If you don't need access to the table name, [`Self::inserts`] is
     /// slightly more efficient.
-    pub fn inserts_with_table_name(&self) -> impl Iterator<Item = (&TableId, &str, &Arc<[ProductValue]>)> + '_ {
+    pub fn inserts_with_table_name(&self) -> impl Iterator<Item = (&TableId, &Arc<str>, &Arc<[ProductValue]>)> + '_ {
         self.inserts.iter().map(|(table_id, rows)| {
             let table_name = self
                 .tables
                 .get(table_id)
                 .expect("invalid `TxData`: partial table name mapping");
-            (table_id, table_name.as_str(), rows)
+            (table_id, table_name, rows)
         })
     }
 
@@ -237,13 +237,13 @@ impl TxData {
     ///
     /// If you don't need access to the table name, [`Self::deletes`] is
     /// slightly more efficient.
-    pub fn deletes_with_table_name(&self) -> impl Iterator<Item = (&TableId, &str, &Arc<[ProductValue]>)> + '_ {
+    pub fn deletes_with_table_name(&self) -> impl Iterator<Item = (&TableId, &Arc<str>, &Arc<[ProductValue]>)> + '_ {
         self.deletes.iter().map(|(table_id, rows)| {
             let table_name = self
                 .tables
                 .get(table_id)
                 .expect("invalid `TxData`: partial table name mapping");
-            (table_id, table_name.as_str(), rows)
+            (table_id, table_name, rows)
         })
     }
 

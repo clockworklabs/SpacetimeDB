@@ -35,7 +35,7 @@ pub trait UserTableAccess {
 impl UserTableAccess for super::RemoteTables {
     fn user(&self) -> UserTableHandle<'_> {
         UserTableHandle {
-            imp: self.imp.get_table::<User>("user"),
+            imp: self.imp.get_table::<User>(1),
             ctx: std::marker::PhantomData,
         }
     }

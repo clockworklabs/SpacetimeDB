@@ -100,29 +100,6 @@ impl Default for ArgsTuple {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default)]
-pub struct ReducerId(u32);
-impl std::fmt::Display for ReducerId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-impl From<usize> for ReducerId {
-    fn from(id: usize) -> Self {
-        Self(id as u32)
-    }
-}
-impl From<u32> for ReducerId {
-    fn from(id: u32) -> Self {
-        Self(id)
-    }
-}
-impl From<ReducerId> for u32 {
-    fn from(id: ReducerId) -> Self {
-        id.0
-    }
-}
-
 #[derive(thiserror::Error, Debug)]
 #[error("invalid arguments for reducer {reducer}: {err}")]
 pub struct InvalidReducerArguments {

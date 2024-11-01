@@ -50,19 +50,38 @@ pub trait identity_connected {
 
 impl identity_connected for super::RemoteReducers {
     fn identity_connected(&self) -> __anyhow::Result<()> {
-        self.imp.call_reducer("__identity_connected__", IdentityConnected {})
+        self.imp.call_reducer(0, IdentityConnected {})
     }
     fn on_identity_connected(
         &self,
         mut callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> IdentityConnectedCallbackId {
         IdentityConnectedCallbackId(self.imp.on_reducer::<IdentityConnected>(
-            "__identity_connected__",
+            0,
             Box::new(move |ctx: &super::EventContext, args: &IdentityConnected| callback(ctx)),
         ))
     }
     fn remove_on_identity_connected(&self, callback: IdentityConnectedCallbackId) {
-        self.imp
-            .remove_on_reducer::<IdentityConnected>("__identity_connected__", callback.0)
+        self.imp.remove_on_reducer::<IdentityConnected>(0, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `__identity_connected__`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_identity_connected {
+    /// Set the call-reducer flags for the reducer `__identity_connected__` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn identity_connected(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_identity_connected for super::SetReducerFlags {
+    fn identity_connected(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(0, flags);
     }
 }

@@ -52,20 +52,38 @@ pub trait insert_caller_unique_address {
 
 impl insert_caller_unique_address for super::RemoteReducers {
     fn insert_caller_unique_address(&self, data: i32) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_caller_unique_address", InsertCallerUniqueAddress { data })
+        self.imp.call_reducer(36, InsertCallerUniqueAddress { data })
     }
     fn on_insert_caller_unique_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i32) + Send + 'static,
     ) -> InsertCallerUniqueAddressCallbackId {
         InsertCallerUniqueAddressCallbackId(self.imp.on_reducer::<InsertCallerUniqueAddress>(
-            "insert_caller_unique_address",
+            36,
             Box::new(move |ctx: &super::EventContext, args: &InsertCallerUniqueAddress| callback(ctx, &args.data)),
         ))
     }
     fn remove_on_insert_caller_unique_address(&self, callback: InsertCallerUniqueAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertCallerUniqueAddress>("insert_caller_unique_address", callback.0)
+        self.imp.remove_on_reducer::<InsertCallerUniqueAddress>(36, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_caller_unique_address`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_caller_unique_address {
+    /// Set the call-reducer flags for the reducer `insert_caller_unique_address` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_caller_unique_address(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_caller_unique_address for super::SetReducerFlags {
+    fn insert_caller_unique_address(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(36, flags);
     }
 }

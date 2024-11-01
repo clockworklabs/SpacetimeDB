@@ -53,18 +53,38 @@ pub trait insert_pk_i_256 {
 
 impl insert_pk_i_256 for super::RemoteReducers {
     fn insert_pk_i_256(&self, n: __sats::i256, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_pk_i256", InsertPkI256 { n, data })
+        self.imp.call_reducer(75, InsertPkI256 { n, data })
     }
     fn on_insert_pk_i_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::i256, &i32) + Send + 'static,
     ) -> InsertPkI256CallbackId {
         InsertPkI256CallbackId(self.imp.on_reducer::<InsertPkI256>(
-            "insert_pk_i256",
+            75,
             Box::new(move |ctx: &super::EventContext, args: &InsertPkI256| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_insert_pk_i_256(&self, callback: InsertPkI256CallbackId) {
-        self.imp.remove_on_reducer::<InsertPkI256>("insert_pk_i256", callback.0)
+        self.imp.remove_on_reducer::<InsertPkI256>(75, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_pk_i256`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_pk_i_256 {
+    /// Set the call-reducer flags for the reducer `insert_pk_i256` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_pk_i_256(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_pk_i_256 for super::SetReducerFlags {
+    fn insert_pk_i_256(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(75, flags);
     }
 }

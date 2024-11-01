@@ -52,18 +52,38 @@ pub trait insert_vec_f_32 {
 
 impl insert_vec_f_32 for super::RemoteReducers {
     fn insert_vec_f_32(&self, f: Vec<f32>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_f32", InsertVecF32 { f })
+        self.imp.call_reducer(111, InsertVecF32 { f })
     }
     fn on_insert_vec_f_32(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<f32>) + Send + 'static,
     ) -> InsertVecF32CallbackId {
         InsertVecF32CallbackId(self.imp.on_reducer::<InsertVecF32>(
-            "insert_vec_f32",
+            111,
             Box::new(move |ctx: &super::EventContext, args: &InsertVecF32| callback(ctx, &args.f)),
         ))
     }
     fn remove_on_insert_vec_f_32(&self, callback: InsertVecF32CallbackId) {
-        self.imp.remove_on_reducer::<InsertVecF32>("insert_vec_f32", callback.0)
+        self.imp.remove_on_reducer::<InsertVecF32>(111, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_vec_f32`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_vec_f_32 {
+    /// Set the call-reducer flags for the reducer `insert_vec_f32` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_vec_f_32(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_vec_f_32 for super::SetReducerFlags {
+    fn insert_vec_f_32(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(111, flags);
     }
 }

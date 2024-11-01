@@ -35,7 +35,7 @@ pub trait UniqueU128TableAccess {
 impl UniqueU128TableAccess for super::RemoteTables {
     fn unique_u_128(&self) -> UniqueU128TableHandle<'_> {
         UniqueU128TableHandle {
-            imp: self.imp.get_table::<UniqueU128>("unique_u128"),
+            imp: self.imp.get_table::<UniqueU128>(58),
             ctx: std::marker::PhantomData,
         }
     }

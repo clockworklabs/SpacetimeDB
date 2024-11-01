@@ -52,18 +52,38 @@ pub trait insert_vec_f_64 {
 
 impl insert_vec_f_64 for super::RemoteReducers {
     fn insert_vec_f_64(&self, f: Vec<f64>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_f64", InsertVecF64 { f })
+        self.imp.call_reducer(112, InsertVecF64 { f })
     }
     fn on_insert_vec_f_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<f64>) + Send + 'static,
     ) -> InsertVecF64CallbackId {
         InsertVecF64CallbackId(self.imp.on_reducer::<InsertVecF64>(
-            "insert_vec_f64",
+            112,
             Box::new(move |ctx: &super::EventContext, args: &InsertVecF64| callback(ctx, &args.f)),
         ))
     }
     fn remove_on_insert_vec_f_64(&self, callback: InsertVecF64CallbackId) {
-        self.imp.remove_on_reducer::<InsertVecF64>("insert_vec_f64", callback.0)
+        self.imp.remove_on_reducer::<InsertVecF64>(112, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_vec_f64`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_vec_f_64 {
+    /// Set the call-reducer flags for the reducer `insert_vec_f64` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_vec_f_64(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_vec_f_64 for super::SetReducerFlags {
+    fn insert_vec_f_64(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(112, flags);
     }
 }

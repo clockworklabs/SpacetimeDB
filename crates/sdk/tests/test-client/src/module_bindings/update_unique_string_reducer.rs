@@ -53,20 +53,38 @@ pub trait update_unique_string {
 
 impl update_unique_string for super::RemoteReducers {
     fn update_unique_string(&self, s: String, data: i32) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("update_unique_string", UpdateUniqueString { s, data })
+        self.imp.call_reducer(155, UpdateUniqueString { s, data })
     }
     fn on_update_unique_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String, &i32) + Send + 'static,
     ) -> UpdateUniqueStringCallbackId {
         UpdateUniqueStringCallbackId(self.imp.on_reducer::<UpdateUniqueString>(
-            "update_unique_string",
+            155,
             Box::new(move |ctx: &super::EventContext, args: &UpdateUniqueString| callback(ctx, &args.s, &args.data)),
         ))
     }
     fn remove_on_update_unique_string(&self, callback: UpdateUniqueStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdateUniqueString>("update_unique_string", callback.0)
+        self.imp.remove_on_reducer::<UpdateUniqueString>(155, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `update_unique_string`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_update_unique_string {
+    /// Set the call-reducer flags for the reducer `update_unique_string` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn update_unique_string(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_update_unique_string for super::SetReducerFlags {
+    fn update_unique_string(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(155, flags);
     }
 }

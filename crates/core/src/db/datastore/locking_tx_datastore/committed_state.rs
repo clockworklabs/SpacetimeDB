@@ -510,9 +510,8 @@ impl CommittedState {
                     deletes.push(pv);
                 }
 
-                let table_name = &*table.get_schema().table_name;
-
                 if !deletes.is_empty() {
+                    let table_name = &table.get_schema().table_name;
                     tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
                 }
             } else if !row_ptrs.is_empty() {
@@ -551,9 +550,8 @@ impl CommittedState {
                 inserts.push(pv);
             }
 
-            let table_name = &*commit_table.get_schema().table_name;
-
             if !inserts.is_empty() {
+                let table_name = &commit_table.get_schema().table_name;
                 tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
             }
 

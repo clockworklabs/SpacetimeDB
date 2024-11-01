@@ -56,20 +56,38 @@ pub trait insert_table_holds_table {
 
 impl insert_table_holds_table for super::RemoteReducers {
     fn insert_table_holds_table(&self, a: OneU8, b: VecU8) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_table_holds_table", InsertTableHoldsTable { a, b })
+        self.imp.call_reducer(88, InsertTableHoldsTable { a, b })
     }
     fn on_insert_table_holds_table(
         &self,
         mut callback: impl FnMut(&super::EventContext, &OneU8, &VecU8) + Send + 'static,
     ) -> InsertTableHoldsTableCallbackId {
         InsertTableHoldsTableCallbackId(self.imp.on_reducer::<InsertTableHoldsTable>(
-            "insert_table_holds_table",
+            88,
             Box::new(move |ctx: &super::EventContext, args: &InsertTableHoldsTable| callback(ctx, &args.a, &args.b)),
         ))
     }
     fn remove_on_insert_table_holds_table(&self, callback: InsertTableHoldsTableCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertTableHoldsTable>("insert_table_holds_table", callback.0)
+        self.imp.remove_on_reducer::<InsertTableHoldsTable>(88, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_table_holds_table`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_table_holds_table {
+    /// Set the call-reducer flags for the reducer `insert_table_holds_table` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_table_holds_table(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_table_holds_table for super::SetReducerFlags {
+    fn insert_table_holds_table(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(88, flags);
     }
 }

@@ -53,18 +53,38 @@ pub trait update_pk_i_128 {
 
 impl update_pk_i_128 for super::RemoteReducers {
     fn update_pk_i_128(&self, n: i128, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_pk_i128", UpdatePkI128 { n, data })
+        self.imp.call_reducer(132, UpdatePkI128 { n, data })
     }
     fn on_update_pk_i_128(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i128, &i32) + Send + 'static,
     ) -> UpdatePkI128CallbackId {
         UpdatePkI128CallbackId(self.imp.on_reducer::<UpdatePkI128>(
-            "update_pk_i128",
+            132,
             Box::new(move |ctx: &super::EventContext, args: &UpdatePkI128| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_update_pk_i_128(&self, callback: UpdatePkI128CallbackId) {
-        self.imp.remove_on_reducer::<UpdatePkI128>("update_pk_i128", callback.0)
+        self.imp.remove_on_reducer::<UpdatePkI128>(132, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `update_pk_i128`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_update_pk_i_128 {
+    /// Set the call-reducer flags for the reducer `update_pk_i128` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn update_pk_i_128(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_update_pk_i_128 for super::SetReducerFlags {
+    fn update_pk_i_128(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(132, flags);
     }
 }

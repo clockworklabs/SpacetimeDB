@@ -54,20 +54,38 @@ pub trait insert_primitives_as_strings {
 
 impl insert_primitives_as_strings for super::RemoteReducers {
     fn insert_primitives_as_strings(&self, s: EveryPrimitiveStruct) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_primitives_as_strings", InsertPrimitivesAsStrings { s })
+        self.imp.call_reducer(87, InsertPrimitivesAsStrings { s })
     }
     fn on_insert_primitives_as_strings(
         &self,
         mut callback: impl FnMut(&super::EventContext, &EveryPrimitiveStruct) + Send + 'static,
     ) -> InsertPrimitivesAsStringsCallbackId {
         InsertPrimitivesAsStringsCallbackId(self.imp.on_reducer::<InsertPrimitivesAsStrings>(
-            "insert_primitives_as_strings",
+            87,
             Box::new(move |ctx: &super::EventContext, args: &InsertPrimitivesAsStrings| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_insert_primitives_as_strings(&self, callback: InsertPrimitivesAsStringsCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertPrimitivesAsStrings>("insert_primitives_as_strings", callback.0)
+        self.imp.remove_on_reducer::<InsertPrimitivesAsStrings>(87, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_primitives_as_strings`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_primitives_as_strings {
+    /// Set the call-reducer flags for the reducer `insert_primitives_as_strings` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_primitives_as_strings(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_primitives_as_strings for super::SetReducerFlags {
+    fn insert_primitives_as_strings(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(87, flags);
     }
 }

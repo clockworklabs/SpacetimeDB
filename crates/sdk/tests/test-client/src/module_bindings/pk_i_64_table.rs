@@ -35,7 +35,7 @@ pub trait PkI64TableAccess {
 impl PkI64TableAccess for super::RemoteTables {
     fn pk_i_64(&self) -> PkI64TableHandle<'_> {
         PkI64TableHandle {
-            imp: self.imp.get_table::<PkI64>("pk_i64"),
+            imp: self.imp.get_table::<PkI64>(37),
             ctx: std::marker::PhantomData,
         }
     }

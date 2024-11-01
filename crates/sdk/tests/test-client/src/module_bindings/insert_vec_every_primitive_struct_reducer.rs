@@ -54,20 +54,39 @@ pub trait insert_vec_every_primitive_struct {
 
 impl insert_vec_every_primitive_struct for super::RemoteReducers {
     fn insert_vec_every_primitive_struct(&self, s: Vec<EveryPrimitiveStruct>) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_vec_every_primitive_struct", InsertVecEveryPrimitiveStruct { s })
+        self.imp.call_reducer(109, InsertVecEveryPrimitiveStruct { s })
     }
     fn on_insert_vec_every_primitive_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<EveryPrimitiveStruct>) + Send + 'static,
     ) -> InsertVecEveryPrimitiveStructCallbackId {
         InsertVecEveryPrimitiveStructCallbackId(self.imp.on_reducer::<InsertVecEveryPrimitiveStruct>(
-            "insert_vec_every_primitive_struct",
+            109,
             Box::new(move |ctx: &super::EventContext, args: &InsertVecEveryPrimitiveStruct| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_insert_vec_every_primitive_struct(&self, callback: InsertVecEveryPrimitiveStructCallbackId) {
         self.imp
-            .remove_on_reducer::<InsertVecEveryPrimitiveStruct>("insert_vec_every_primitive_struct", callback.0)
+            .remove_on_reducer::<InsertVecEveryPrimitiveStruct>(109, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_vec_every_primitive_struct`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_vec_every_primitive_struct {
+    /// Set the call-reducer flags for the reducer `insert_vec_every_primitive_struct` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_vec_every_primitive_struct(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_vec_every_primitive_struct for super::SetReducerFlags {
+    fn insert_vec_every_primitive_struct(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(109, flags);
     }
 }

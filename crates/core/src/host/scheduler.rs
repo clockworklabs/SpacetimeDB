@@ -63,7 +63,6 @@ pub struct ScheduledReducer {
 #[derive(Clone)]
 pub struct Scheduler {
     tx: mpsc::UnboundedSender<MsgOrExit<SchedulerMessage>>,
-    db: Arc<RelationalDB>,
 }
 
 pub struct SchedulerStarter {
@@ -74,11 +73,7 @@ pub struct SchedulerStarter {
 impl Scheduler {
     pub fn open(db: Arc<RelationalDB>) -> (Self, SchedulerStarter) {
         let (tx, rx) = mpsc::unbounded_channel();
-        (Scheduler { tx, db: db.clone() }, SchedulerStarter { rx, db })
-    }
-
-    pub fn new_with_same_db(&self) -> (Self, SchedulerStarter) {
-        Self::open(self.db.clone())
+        (Scheduler { tx }, SchedulerStarter { rx, db })
     }
 }
 
@@ -301,7 +296,7 @@ impl SchedulerActor {
         let Some(module_host) = self.module_host.upgrade() else {
             return;
         };
-        let db = module_host.replica_ctx().relational_db.clone();
+        let db = module_host.db().clone();
         let caller_identity = module_host.info().database_identity;
         let module_info = module_host.info.clone();
 
@@ -357,7 +352,7 @@ impl SchedulerActor {
             }))
         };
 
-        let db = module_host.replica_ctx().relational_db.clone();
+        let db = module_host.db().clone();
         let module_host_clone = module_host.clone();
 
         let res = tokio::spawn(async move { module_host.call_scheduled_reducer(call_reducer_params).await }).await;

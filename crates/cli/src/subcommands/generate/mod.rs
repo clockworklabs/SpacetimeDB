@@ -21,6 +21,7 @@ use spacetimedb_schema::schema::{Schema, TableSchema};
 use std::fs;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use util::{iter_reducers, iter_tables};
 use wasmtime::{Caller, StoreContextMut};
 
 use crate::util::y_or_n;
@@ -266,15 +267,14 @@ pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow
             let items = itertools::chain!(
                 types,
                 tables.into_iter().map(GenItem::Table),
-                reducers
-                    .filter(|r| !(r.name.starts_with("__") && r.name.ends_with("__")))
-                    .map(GenItem::Reducer),
+                reducers.map(GenItem::Reducer),
             );
 
             let items: Vec<GenItem> = items.collect();
+            let reducer_idx = &mut 0;
             let mut files: Vec<(String, String)> = items
                 .iter()
-                .filter_map(|item| item.generate(&ctx, lang, namespace))
+                .filter_map(|item| item.generate(&ctx, reducer_idx, lang, namespace))
                 .collect();
             files.extend(generate_globals(&ctx, lang, namespace, &items));
             files
@@ -284,10 +284,10 @@ pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow
 
 fn generate_lang(module: &ModuleDef, lang: impl Lang, namespace: &str) -> Vec<(String, String)> {
     itertools::chain!(
-        module.tables().map(|tbl| {
+        iter_tables(module).enumerate().map(|(idx, tbl)| {
             (
                 lang.table_filename(module, tbl),
-                lang.generate_table(module, namespace, tbl),
+                lang.generate_table(idx as u32, module, namespace, tbl),
             )
         }),
         module.types().map(|typ| {
@@ -296,10 +296,10 @@ fn generate_lang(module: &ModuleDef, lang: impl Lang, namespace: &str) -> Vec<(S
                 lang.generate_type(module, namespace, typ),
             )
         }),
-        module.reducers().map(|reducer| {
+        iter_reducers(module).enumerate().map(|(idx, reducer)| {
             (
                 lang.reducer_filename(&reducer.name),
-                lang.generate_reducer(module, namespace, reducer),
+                lang.generate_reducer(idx as u32, module, namespace, reducer),
             )
         }),
         lang.generate_globals(module, namespace),
@@ -312,9 +312,9 @@ trait Lang {
     fn type_filename(&self, type_name: &ScopedTypeName) -> String;
     fn reducer_filename(&self, reducer_name: &Identifier) -> String;
 
-    fn generate_table(&self, module: &ModuleDef, namespace: &str, tbl: &TableDef) -> String;
+    fn generate_table(&self, idx: u32, module: &ModuleDef, namespace: &str, tbl: &TableDef) -> String;
     fn generate_type(&self, module: &ModuleDef, namespace: &str, typ: &TypeDef) -> String;
-    fn generate_reducer(&self, module: &ModuleDef, namespace: &str, reducer: &ReducerDef) -> String;
+    fn generate_reducer(&self, idx: u32, module: &ModuleDef, namespace: &str, reducer: &ReducerDef) -> String;
     fn generate_globals(&self, module: &ModuleDef, namespace: &str) -> Vec<(String, String)>;
 }
 
@@ -339,15 +339,21 @@ fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenI
 }
 
 impl GenItem {
-    fn generate(&self, ctx: &GenCtx, lang: Language, namespace: &str) -> Option<(String, String)> {
+    fn generate(
+        &self,
+        ctx: &GenCtx,
+        reducer_idx: &mut usize,
+        lang: Language,
+        namespace: &str,
+    ) -> Option<(String, String)> {
         match lang {
-            Language::Csharp => self.generate_csharp(ctx, namespace),
+            Language::Csharp => self.generate_csharp(ctx, reducer_idx, namespace),
             Language::TypeScript => unreachable!(),
             Language::Rust => unreachable!(),
         }
     }
 
-    fn generate_csharp(&self, ctx: &GenCtx, namespace: &str) -> Option<(String, String)> {
+    fn generate_csharp(&self, ctx: &GenCtx, reducer_idx: &mut usize, namespace: &str) -> Option<(String, String)> {
         match self {
             GenItem::Table(table) => {
                 let code = csharp::autogen_csharp_table(ctx, table, namespace);
@@ -366,7 +372,8 @@ impl GenItem {
                 _ => todo!(),
             },
             GenItem::Reducer(reducer) => {
-                let code = csharp::autogen_csharp_reducer(ctx, reducer, namespace);
+                let code = csharp::autogen_csharp_reducer(ctx, *reducer_idx, reducer, namespace);
+                *reducer_idx += 1;
                 let pascalcase = reducer.name.deref().to_case(Case::Pascal);
                 Some((pascalcase + "Reducer.cs", code))
             }

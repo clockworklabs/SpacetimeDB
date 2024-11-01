@@ -16,6 +16,7 @@ members = [
   "crates/fs-utils",
   "crates/lib",
   "crates/metrics",
+  "crates/paths",
   "crates/physical-plan",
   "crates/primitives",
   "crates/sats",
@@ -102,6 +103,7 @@ spacetimedb-execution = { path = "crates/execution", version = "1.0.0-rc1" }
 spacetimedb-expr = { path = "crates/expr", version = "1.0.0-rc1" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "1.0.0-rc1" }
 spacetimedb-metrics = { path = "crates/metrics", version = "1.0.0-rc1" }
+spacetimedb-paths = { path = "crates/paths", version = "1.0.0-rc1" }
 spacetimedb-physical-plan = { path = "crates/physical-plan", version = "1.0.0-rc1" }
 spacetimedb-primitives = { path = "crates/primitives", version = "1.0.0-rc1" }
 spacetimedb-sats = { path = "crates/sats", version = "1.0.0-rc1" }
@@ -173,9 +175,11 @@ indicatif = "0.16"
 insta = { version = "1.21.0", features = ["toml"] }
 is-terminal = "0.4"
 itertools = "0.12"
+itoa = "1"
 jsonwebtoken = { git = "https://github.com/jsdt/jsonwebtoken.git", rev = "7f0cef63c74f58dfa912e88da844932ba4c71562"}
 lazy_static = "1.4.0"
 log = "0.4.17"
+memchr = "2"
 mimalloc = "0.1.39"
 nohash-hasher = "0.2"
 once_cell = "1.16"
@@ -205,6 +209,7 @@ rustyline = { version = "12.0.0", features = [] }
 scoped-tls = "1.0.1"
 scopeguard = "1.1.0"
 second-stack = "0.3"
+semver = "1"
 serde = { version = "1.0.136", features = ["derive"] }
 serde_json = { version = "1.0.128", features = ["raw_value", "arbitrary_precision"] }
 serde_path_to_error = "0.1.9"
@@ -253,6 +258,7 @@ uuid = { version = "1.2.1", features = ["v4"] }
 walkdir = "2.2.5"
 wasmbin = "0.6"
 webbrowser = "1.0.2"
+xdg = "2.5"
 
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.

@@ -18,6 +18,7 @@ use spacetimedb_vm::expr::{AuthAccess, NoInMemUsed, Query, QueryExpr, SourceExpr
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::RelValue;
 use std::hash::Hash;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// A hash for uniquely identifying query execution units,
@@ -167,8 +168,8 @@ impl ExecutionUnit {
         self.return_db_table().table_id
     }
 
-    pub fn return_name(&self) -> Box<str> {
-        self.return_db_table().head.table_name.clone()
+    pub fn return_name(&self) -> &Arc<str> {
+        &self.return_db_table().head.table_name
     }
 
     /// The table on which this query filters rows.
@@ -242,7 +243,7 @@ impl ExecutionUnit {
 
         updates.has_updates().then(|| DatabaseTableUpdateRelValue {
             table_id: self.return_table(),
-            table_name: self.return_name(),
+            table_name: self.return_name().clone(),
             updates,
         })
     }

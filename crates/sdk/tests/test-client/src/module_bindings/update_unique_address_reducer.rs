@@ -53,20 +53,38 @@ pub trait update_unique_address {
 
 impl update_unique_address for super::RemoteReducers {
     fn update_unique_address(&self, a: __sdk::Address, data: i32) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("update_unique_address", UpdateUniqueAddress { a, data })
+        self.imp.call_reducer(146, UpdateUniqueAddress { a, data })
     }
     fn on_update_unique_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Address, &i32) + Send + 'static,
     ) -> UpdateUniqueAddressCallbackId {
         UpdateUniqueAddressCallbackId(self.imp.on_reducer::<UpdateUniqueAddress>(
-            "update_unique_address",
+            146,
             Box::new(move |ctx: &super::EventContext, args: &UpdateUniqueAddress| callback(ctx, &args.a, &args.data)),
         ))
     }
     fn remove_on_update_unique_address(&self, callback: UpdateUniqueAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdateUniqueAddress>("update_unique_address", callback.0)
+        self.imp.remove_on_reducer::<UpdateUniqueAddress>(146, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `update_unique_address`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_update_unique_address {
+    /// Set the call-reducer flags for the reducer `update_unique_address` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn update_unique_address(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_update_unique_address for super::SetReducerFlags {
+    fn update_unique_address(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(146, flags);
     }
 }

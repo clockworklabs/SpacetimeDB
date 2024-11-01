@@ -53,18 +53,38 @@ pub trait insert_pk_i_32 {
 
 impl insert_pk_i_32 for super::RemoteReducers {
     fn insert_pk_i_32(&self, n: i32, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_pk_i32", InsertPkI32 { n, data })
+        self.imp.call_reducer(76, InsertPkI32 { n, data })
     }
     fn on_insert_pk_i_32(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i32, &i32) + Send + 'static,
     ) -> InsertPkI32CallbackId {
         InsertPkI32CallbackId(self.imp.on_reducer::<InsertPkI32>(
-            "insert_pk_i32",
+            76,
             Box::new(move |ctx: &super::EventContext, args: &InsertPkI32| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_insert_pk_i_32(&self, callback: InsertPkI32CallbackId) {
-        self.imp.remove_on_reducer::<InsertPkI32>("insert_pk_i32", callback.0)
+        self.imp.remove_on_reducer::<InsertPkI32>(76, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_pk_i32`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_pk_i_32 {
+    /// Set the call-reducer flags for the reducer `insert_pk_i32` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_pk_i_32(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_pk_i_32 for super::SetReducerFlags {
+    fn insert_pk_i_32(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(76, flags);
     }
 }

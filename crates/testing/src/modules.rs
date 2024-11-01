@@ -1,18 +1,20 @@
+use std::env;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use spacetimedb::config::CertificateAuthority;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
 use spacetimedb_client_api::routes::subscribe::generate_random_address;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
+use spacetimedb_paths::{RootDir, SpacetimePaths};
 use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
-use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::messages::websocket as ws;
@@ -50,23 +52,33 @@ pub struct ModuleHandle {
 }
 
 impl ModuleHandle {
-    pub async fn call_reducer_json(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
-        let args = serde_json::to_string(&args).unwrap();
-        let message = ws::ClientMessage::CallReducer(ws::CallReducer {
-            reducer: reducer.into(),
+    fn call_reducer_msg<Args>(&self, reducer: &str, args: Args) -> ws::ClientMessage<Args> {
+        let reducer_id = self
+            .client
+            .module
+            .info()
+            .reducers_map
+            .lookup_id(reducer)
+            .expect("reducer does not exist");
+
+        ws::ClientMessage::CallReducer(ws::CallReducer {
+            reducer_id,
             args,
             request_id: 0,
-        });
+            flags: ws::CallReducerFlags::FullUpdate,
+        })
+    }
+
+    pub async fn call_reducer_json(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
+        let args = serde_json::to_string(&args).unwrap();
+        let message = self.call_reducer_msg(reducer, args);
         self.send(serde_json::to_string(&SerializeWrapper::new(message)).unwrap())
             .await
     }
 
     pub async fn call_reducer_binary(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
-        let message = ws::ClientMessage::CallReducer(ws::CallReducer {
-            reducer: reducer.into(),
-            args: bsatn::to_vec(&args).unwrap(),
-            request_id: 0,
-        });
+        let args = bsatn::to_vec(&args).unwrap();
+        let message = self.call_reducer_msg(reducer, args);
         self.send(bsatn::to_vec(&message).unwrap()).await
     }
 
@@ -76,8 +88,8 @@ impl ModuleHandle {
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
-        let filepath = DatabaseLogger::filepath(&self.db_identity, self.client.replica_id);
-        DatabaseLogger::read_latest(&filepath, size).await
+        let logs_dir = self._env.data_dir().replica(self.client.replica_id).module_logs();
+        DatabaseLogger::read_latest(logs_dir, size).await
     }
 }
 
@@ -136,21 +148,24 @@ impl CompiledModule {
     /// If "reuse_db_path" is set, the module will be loaded in the given path,
     /// without resetting the database.
     /// This is used to speed up benchmarks running under callgrind (it allows them to reuse native-compiled wasm modules).
-    pub async fn load_module(&self, config: Config, reuse_db_path: Option<&Path>) -> ModuleHandle {
+    pub async fn load_module(&self, config: Config, reuse_db_path: Option<&RootDir>) -> ModuleHandle {
         let paths = match reuse_db_path {
-            Some(path) => FilesLocal::hidden(path),
+            Some(path) => SpacetimePaths::from_root_dir(path),
             None => {
-                let paths = FilesLocal::temp(&self.name);
+                let root_dir = RootDir(env::temp_dir().join("stdb").join(&self.name));
 
                 // The database created in the `temp` folder can't be randomized,
                 // so it persists after running the test.
-                std::fs::remove_dir(paths.db_path()).ok();
-                paths
+                std::fs::remove_dir(&root_dir).ok();
+
+                SpacetimePaths::from_root_dir(&root_dir)
             }
         };
 
-        crate::set_key_env_vars(&paths);
-        let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
+        let certs = CertificateAuthority::in_cli_config_dir(&paths.cli_config_dir);
+        let env = spacetimedb_standalone::StandaloneEnv::init(config, &certs, paths.data_dir.into())
+            .await
+            .unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
         let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().identity;
@@ -195,7 +210,7 @@ impl CompiledModule {
         // for stuff like "get logs" or "get message log"
         ModuleHandle {
             _env: env,
-            client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module_rx),
+            client: ClientConnection::dummy(client_id, ClientConfig::for_test(), instance.id, module_rx),
             db_identity,
         }
     }

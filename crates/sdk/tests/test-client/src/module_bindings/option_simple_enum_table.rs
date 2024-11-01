@@ -36,7 +36,7 @@ pub trait OptionSimpleEnumTableAccess {
 impl OptionSimpleEnumTableAccess for super::RemoteTables {
     fn option_simple_enum(&self) -> OptionSimpleEnumTableHandle<'_> {
         OptionSimpleEnumTableHandle {
-            imp: self.imp.get_table::<OptionSimpleEnum>("option_simple_enum"),
+            imp: self.imp.get_table::<OptionSimpleEnum>(28),
             ctx: std::marker::PhantomData,
         }
     }

@@ -36,7 +36,7 @@ pub trait VecSimpleEnumTableAccess {
 impl VecSimpleEnumTableAccess for super::RemoteTables {
     fn vec_simple_enum(&self) -> VecSimpleEnumTableHandle<'_> {
         VecSimpleEnumTableHandle {
-            imp: self.imp.get_table::<VecSimpleEnum>("vec_simple_enum"),
+            imp: self.imp.get_table::<VecSimpleEnum>(79),
             ctx: std::marker::PhantomData,
         }
     }

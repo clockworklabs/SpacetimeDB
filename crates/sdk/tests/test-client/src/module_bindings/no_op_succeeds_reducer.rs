@@ -47,18 +47,38 @@ pub trait no_op_succeeds {
 
 impl no_op_succeeds for super::RemoteReducers {
     fn no_op_succeeds(&self) -> __anyhow::Result<()> {
-        self.imp.call_reducer("no_op_succeeds", NoOpSucceeds {})
+        self.imp.call_reducer(129, NoOpSucceeds {})
     }
     fn on_no_op_succeeds(
         &self,
         mut callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> NoOpSucceedsCallbackId {
         NoOpSucceedsCallbackId(self.imp.on_reducer::<NoOpSucceeds>(
-            "no_op_succeeds",
+            129,
             Box::new(move |ctx: &super::EventContext, args: &NoOpSucceeds| callback(ctx)),
         ))
     }
     fn remove_on_no_op_succeeds(&self, callback: NoOpSucceedsCallbackId) {
-        self.imp.remove_on_reducer::<NoOpSucceeds>("no_op_succeeds", callback.0)
+        self.imp.remove_on_reducer::<NoOpSucceeds>(129, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `no_op_succeeds`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_no_op_succeeds {
+    /// Set the call-reducer flags for the reducer `no_op_succeeds` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn no_op_succeeds(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_no_op_succeeds for super::SetReducerFlags {
+    fn no_op_succeeds(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(129, flags);
     }
 }

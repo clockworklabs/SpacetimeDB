@@ -53,19 +53,38 @@ pub trait update_unique_i_64 {
 
 impl update_unique_i_64 for super::RemoteReducers {
     fn update_unique_i_64(&self, n: i64, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_unique_i64", UpdateUniqueI64 { n, data })
+        self.imp.call_reducer(152, UpdateUniqueI64 { n, data })
     }
     fn on_update_unique_i_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i64, &i32) + Send + 'static,
     ) -> UpdateUniqueI64CallbackId {
         UpdateUniqueI64CallbackId(self.imp.on_reducer::<UpdateUniqueI64>(
-            "update_unique_i64",
+            152,
             Box::new(move |ctx: &super::EventContext, args: &UpdateUniqueI64| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_update_unique_i_64(&self, callback: UpdateUniqueI64CallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdateUniqueI64>("update_unique_i64", callback.0)
+        self.imp.remove_on_reducer::<UpdateUniqueI64>(152, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `update_unique_i64`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_update_unique_i_64 {
+    /// Set the call-reducer flags for the reducer `update_unique_i64` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn update_unique_i_64(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_update_unique_i_64 for super::SetReducerFlags {
+    fn update_unique_i_64(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(152, flags);
     }
 }

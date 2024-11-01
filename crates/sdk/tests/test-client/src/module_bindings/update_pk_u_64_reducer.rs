@@ -53,18 +53,38 @@ pub trait update_pk_u_64 {
 
 impl update_pk_u_64 for super::RemoteReducers {
     fn update_pk_u_64(&self, n: u64, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_pk_u64", UpdatePkU64 { n, data })
+        self.imp.call_reducer(144, UpdatePkU64 { n, data })
     }
     fn on_update_pk_u_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u64, &i32) + Send + 'static,
     ) -> UpdatePkU64CallbackId {
         UpdatePkU64CallbackId(self.imp.on_reducer::<UpdatePkU64>(
-            "update_pk_u64",
+            144,
             Box::new(move |ctx: &super::EventContext, args: &UpdatePkU64| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_update_pk_u_64(&self, callback: UpdatePkU64CallbackId) {
-        self.imp.remove_on_reducer::<UpdatePkU64>("update_pk_u64", callback.0)
+        self.imp.remove_on_reducer::<UpdatePkU64>(144, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `update_pk_u64`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_update_pk_u_64 {
+    /// Set the call-reducer flags for the reducer `update_pk_u64` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn update_pk_u_64(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_update_pk_u_64 for super::SetReducerFlags {
+    fn update_pk_u_64(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(144, flags);
     }
 }

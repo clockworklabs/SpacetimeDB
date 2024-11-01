@@ -1,7 +1,7 @@
 use anyhow::Context;
 use bytes::Bytes;
 use spacetimedb_client_api_messages::timestamp::Timestamp;
-use spacetimedb_primitives::TableId;
+use spacetimedb_primitives::{ReducerId, TableId};
 use spacetimedb_schema::auto_migrate::ponder_migrate;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::{Schema, TableSchema};
@@ -19,7 +19,7 @@ use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo, ModuleInstance,
 };
-use crate::host::{ArgsTuple, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult};
+use crate::host::{ArgsTuple, ReducerCallResult, ReducerOutcome, Scheduler, UpdateDatabaseResult};
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
@@ -306,14 +306,13 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             Some(reducer_id) => {
                 self.system_logger().info("Invoking `init` reducer");
                 let caller_identity = self.replica_context().database.owner_identity;
-                let client = None;
                 Some(self.call_reducer_with_tx(
                     Some(tx),
                     CallReducerParams {
                         timestamp,
                         caller_identity,
                         caller_address: Address::__DUMMY,
-                        client,
+                        client: None,
                         request_id: None,
                         timer: None,
                         reducer_id,
@@ -406,11 +405,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let replica_ctx = self.replica_context();
         let stdb = &*replica_ctx.relational_db.clone();
         let address = replica_ctx.database_identity;
-        let reducer_name = self
+        let reducer_name_arc = self
             .info
             .reducers_map
             .lookup_name(reducer_id)
             .expect("reducer not found");
+        let reducer_name = &*reducer_name_arc;
 
         let _outer_span = tracing::trace_span!("call_reducer",
             reducer_name,
@@ -429,7 +429,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let op = ReducerOp {
             id: reducer_id,
-            name: reducer_name,
+            name: reducer_name_arc.clone(),
             caller_identity: &caller_identity,
             caller_address: &caller_address,
             timestamp,
@@ -444,7 +444,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         });
         let _guard = WORKER_METRICS
             .reducer_plus_query_duration
-            .with_label_values(&address, op.name)
+            .with_label_values(&address, reducer_name)
             .with_timer(tx.timer);
 
         let mut tx_slot = self.instance.instance_env().tx.clone();
@@ -529,7 +529,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             caller_identity,
             caller_address: caller_address_opt,
             function_call: ModuleFunctionCall {
-                reducer: reducer_name.to_owned(),
+                reducer: reducer_name_arc,
                 reducer_id,
                 args,
             },
@@ -576,7 +576,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 #[derive(Clone, Debug)]
 pub struct ReducerOp<'a> {
     pub id: ReducerId,
-    pub name: &'a str,
+    pub name: Arc<str>,
     pub caller_identity: &'a Identity,
     pub caller_address: &'a Address,
     pub timestamp: Timestamp,
@@ -596,7 +596,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
         }: ReducerOp<'_>,
     ) -> Self {
         Self {
-            name: name.to_owned(),
+            name,
             caller_identity: *caller_identity,
             caller_address: *caller_address,
             timestamp,

@@ -52,19 +52,38 @@ pub trait insert_one_string {
 
 impl insert_one_string for super::RemoteReducers {
     fn insert_one_string(&self, s: String) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_string", InsertOneString { s })
+        self.imp.call_reducer(57, InsertOneString { s })
     }
     fn on_insert_one_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String) + Send + 'static,
     ) -> InsertOneStringCallbackId {
         InsertOneStringCallbackId(self.imp.on_reducer::<InsertOneString>(
-            "insert_one_string",
+            57,
             Box::new(move |ctx: &super::EventContext, args: &InsertOneString| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_insert_one_string(&self, callback: InsertOneStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneString>("insert_one_string", callback.0)
+        self.imp.remove_on_reducer::<InsertOneString>(57, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_one_string`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_one_string {
+    /// Set the call-reducer flags for the reducer `insert_one_string` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_one_string(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_one_string for super::SetReducerFlags {
+    fn insert_one_string(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(57, flags);
     }
 }

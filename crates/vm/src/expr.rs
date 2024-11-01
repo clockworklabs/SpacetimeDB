@@ -567,7 +567,7 @@ impl SourceExpr {
         }
     }
 
-    pub fn table_name(&self) -> &str {
+    pub fn table_name(&self) -> &Arc<str> {
         &self.head().table_name
     }
 
@@ -2024,7 +2024,7 @@ impl AuthAccess for SourceExpr {
         }
 
         Err(AuthError::TablePrivate {
-            named: self.table_name().to_string(),
+            named: self.table_name().clone(),
         })
     }
 }
@@ -2056,7 +2056,7 @@ impl AuthAccess for CrudExpr {
 #[derive(Debug, PartialEq)]
 pub struct Update {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: Arc<str>,
     pub inserts: Vec<ProductValue>,
     pub deletes: Vec<ProductValue>,
 }
@@ -2172,7 +2172,7 @@ mod tests {
                 index_side: SourceExpr::DbTable(DbTable {
                     head: Arc::new(Header {
                         table_id: db_table.head().table_id,
-                        table_name: db_table.table_name().into(),
+                        table_name: db_table.table_name().clone(),
                         fields: vec![],
                         constraints: Default::default(),
                     }),

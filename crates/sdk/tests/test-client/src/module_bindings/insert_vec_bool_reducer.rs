@@ -52,19 +52,38 @@ pub trait insert_vec_bool {
 
 impl insert_vec_bool for super::RemoteReducers {
     fn insert_vec_bool(&self, b: Vec<bool>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_bool", InsertVecBool { b })
+        self.imp.call_reducer(106, InsertVecBool { b })
     }
     fn on_insert_vec_bool(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<bool>) + Send + 'static,
     ) -> InsertVecBoolCallbackId {
         InsertVecBoolCallbackId(self.imp.on_reducer::<InsertVecBool>(
-            "insert_vec_bool",
+            106,
             Box::new(move |ctx: &super::EventContext, args: &InsertVecBool| callback(ctx, &args.b)),
         ))
     }
     fn remove_on_insert_vec_bool(&self, callback: InsertVecBoolCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecBool>("insert_vec_bool", callback.0)
+        self.imp.remove_on_reducer::<InsertVecBool>(106, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_vec_bool`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_vec_bool {
+    /// Set the call-reducer flags for the reducer `insert_vec_bool` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_vec_bool(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_vec_bool for super::SetReducerFlags {
+    fn insert_vec_bool(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(106, flags);
     }
 }

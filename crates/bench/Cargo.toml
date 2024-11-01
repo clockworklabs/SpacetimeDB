@@ -28,16 +28,17 @@ name = "summarize"
 bench = false
 
 [dependencies]
+spacetimedb-client-api = { path = "../client-api" }
+spacetimedb-core = { path = "../core", features = ["test"] }
 spacetimedb-data-structures.workspace = true
 spacetimedb-lib = { path = "../lib" }
-spacetimedb-core = { path = "../core", features = ["test"] }
-spacetimedb-sats = { path = "../sats" }
-spacetimedb-standalone = { path = "../standalone" }
-spacetimedb-client-api = { path = "../client-api" }
-spacetimedb-testing = { path = "../testing" }
+spacetimedb-paths.workspace = true
 spacetimedb-primitives = { path = "../primitives" }
-spacetimedb-table = { path = "../table" }
+spacetimedb-sats = { path = "../sats" }
 spacetimedb-schema = { workspace = true, features = ["test"] }
+spacetimedb-standalone = { path = "../standalone" }
+spacetimedb-table = { path = "../table" }
+spacetimedb-testing = { path = "../testing" }
 
 anyhow.workspace = true
 anymap.workspace = true

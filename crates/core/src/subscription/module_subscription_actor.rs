@@ -122,18 +122,18 @@ impl ModuleSubscriptions {
         )?;
 
         let slow_query_threshold = StVarTable::sub_limit(&self.relational_db, &tx)?.map(Duration::from_millis);
-        let database_update = match sender.protocol {
+        let database_update = match sender.config.protocol {
             Protocol::Text => FormatSwitch::Json(execution_set.eval(
                 &self.relational_db,
                 &tx,
                 slow_query_threshold,
-                sender.compression,
+                sender.config.compression,
             )),
             Protocol::Binary => FormatSwitch::Bsatn(execution_set.eval(
                 &self.relational_db,
                 &tx,
                 slow_query_threshold,
-                sender.compression,
+                sender.config.compression,
             )),
         };
 
@@ -179,7 +179,7 @@ impl ModuleSubscriptions {
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
     pub fn commit_and_broadcast_event(
         &self,
-        client: Option<&ClientConnectionSender>,
+        caller: Option<&ClientConnectionSender>,
         mut event: ModuleEvent,
         tx: MutTx,
     ) -> Result<Result<Arc<ModuleEvent>, WriteConflict>, DBError> {
@@ -211,13 +211,13 @@ impl ModuleSubscriptions {
         match &event.status {
             EventStatus::Committed(_) => {
                 let slow_query_threshold = StVarTable::incr_limit(stdb, &read_tx)?.map(Duration::from_millis);
-                subscriptions.eval_updates(stdb, &read_tx, event.clone(), client, slow_query_threshold)
+                subscriptions.eval_updates(stdb, &read_tx, event.clone(), caller, slow_query_threshold)
             }
             EventStatus::Failed(_) => {
-                if let Some(client) = client {
+                if let Some(client) = caller {
                     let message = TransactionUpdateMessage {
-                        event: event.clone(),
-                        database_update: SubscriptionUpdateMessage::default_for_protocol(client.protocol, None),
+                        event: Some(event.clone()),
+                        database_update: SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, None),
                     };
                     let _ = client.send_message(message);
                 } else {
@@ -236,7 +236,7 @@ pub struct WriteConflict;
 #[cfg(test)]
 mod tests {
     use super::{AssertTxFn, ModuleSubscriptions};
-    use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
+    use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender};
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
@@ -253,7 +253,8 @@ mod tests {
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         let owner = Identity::from_byte_array([1; 32]);
         let client = ClientActorId::for_test(Identity::ZERO);
-        let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let config = ClientConfig::for_test();
+        let sender = Arc::new(ClientConnectionSender::dummy(client, config));
         let module_subscriptions = ModuleSubscriptions::new(db.clone(), owner);
 
         let subscribe = Subscribe {

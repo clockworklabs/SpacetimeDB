@@ -53,20 +53,38 @@ pub trait insert_unique_identity {
 
 impl insert_unique_identity for super::RemoteReducers {
     fn insert_unique_identity(&self, i: __sdk::Identity, data: i32) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_unique_identity", InsertUniqueIdentity { i, data })
+        self.imp.call_reducer(97, InsertUniqueIdentity { i, data })
     }
     fn on_insert_unique_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Identity, &i32) + Send + 'static,
     ) -> InsertUniqueIdentityCallbackId {
         InsertUniqueIdentityCallbackId(self.imp.on_reducer::<InsertUniqueIdentity>(
-            "insert_unique_identity",
+            97,
             Box::new(move |ctx: &super::EventContext, args: &InsertUniqueIdentity| callback(ctx, &args.i, &args.data)),
         ))
     }
     fn remove_on_insert_unique_identity(&self, callback: InsertUniqueIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueIdentity>("insert_unique_identity", callback.0)
+        self.imp.remove_on_reducer::<InsertUniqueIdentity>(97, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_unique_identity`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_unique_identity {
+    /// Set the call-reducer flags for the reducer `insert_unique_identity` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_unique_identity(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_unique_identity for super::SetReducerFlags {
+    fn insert_unique_identity(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(97, flags);
     }
 }

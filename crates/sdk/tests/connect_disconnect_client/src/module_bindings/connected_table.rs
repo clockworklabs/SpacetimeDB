@@ -35,7 +35,7 @@ pub trait ConnectedTableAccess {
 impl ConnectedTableAccess for super::RemoteTables {
     fn connected(&self) -> ConnectedTableHandle<'_> {
         ConnectedTableHandle {
-            imp: self.imp.get_table::<Connected>("connected"),
+            imp: self.imp.get_table::<Connected>(0),
             ctx: std::marker::PhantomData,
         }
     }

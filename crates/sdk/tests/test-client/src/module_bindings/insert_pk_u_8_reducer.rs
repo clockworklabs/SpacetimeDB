@@ -53,18 +53,38 @@ pub trait insert_pk_u_8 {
 
 impl insert_pk_u_8 for super::RemoteReducers {
     fn insert_pk_u_8(&self, n: u8, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_pk_u8", InsertPkU8 { n, data })
+        self.imp.call_reducer(86, InsertPkU8 { n, data })
     }
     fn on_insert_pk_u_8(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u8, &i32) + Send + 'static,
     ) -> InsertPkU8CallbackId {
         InsertPkU8CallbackId(self.imp.on_reducer::<InsertPkU8>(
-            "insert_pk_u8",
+            86,
             Box::new(move |ctx: &super::EventContext, args: &InsertPkU8| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_insert_pk_u_8(&self, callback: InsertPkU8CallbackId) {
-        self.imp.remove_on_reducer::<InsertPkU8>("insert_pk_u8", callback.0)
+        self.imp.remove_on_reducer::<InsertPkU8>(86, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_pk_u8`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_pk_u_8 {
+    /// Set the call-reducer flags for the reducer `insert_pk_u8` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_pk_u_8(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_pk_u_8 for super::SetReducerFlags {
+    fn insert_pk_u_8(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(86, flags);
     }
 }

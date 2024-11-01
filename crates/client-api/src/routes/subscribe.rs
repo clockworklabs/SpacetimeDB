@@ -12,12 +12,12 @@ use futures::{Future, FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
-use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage};
-use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol};
+use spacetimedb::client::messages::{serialize, SerializableMessage};
+use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageHandleError, Protocol};
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::also_poll;
 use spacetimedb::worker_metrics::WORKER_METRICS;
-use spacetimedb_client_api_messages::websocket::Compression;
+use spacetimedb_client_api_messages::websocket::{AfterConnecting, Compression, IdentityToken};
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::Address;
 use std::time::Instant;
@@ -43,7 +43,12 @@ pub struct SubscribeParams {
 #[derive(Deserialize)]
 pub struct SubscribeQueryParams {
     pub client_address: Option<AddressForUrl>,
-    pub compression: Option<Compression>,
+    #[serde(default)]
+    pub compression: Compression,
+    /// Whether we want "light" responses, tailored to network bandwidth constrained clients.
+    /// This knob works by setting other, more specifc, knobs to the value.
+    #[serde(default)]
+    pub light: bool,
 }
 
 // TODO: is this a reasonable way to generate client addresses?
@@ -60,6 +65,7 @@ pub async fn handle_websocket<S>(
     Query(SubscribeQueryParams {
         client_address,
         compression,
+        light,
     }): Query<SubscribeQueryParams>,
     forwarded_for: Option<TypedHeader<XForwardedFor>>,
     Extension(auth): Extension<SpacetimeAuth>,
@@ -85,7 +91,11 @@ where
         ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
 
     let protocol = protocol.ok_or((StatusCode::BAD_REQUEST, "no valid protocol selected"))?;
-    let compression = compression.unwrap_or_default();
+    let client_config = ClientConfig {
+        protocol,
+        compression,
+        tx_update_full: !light,
+    };
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
     // to connect to multiple modules
@@ -137,8 +147,7 @@ where
         }
 
         let actor = |client, sendrx| ws_client_actor(client, ws, sendrx);
-        let client = match ClientConnection::spawn(client_id, protocol, compression, replica_id, module_rx, actor).await
-        {
+        let client = match ClientConnection::spawn(client_id, client_config, replica_id, module_rx, actor).await {
             Ok(s) => s,
             Err(e) => {
                 log::warn!("ModuleHost died while we were connecting: {e:#}");
@@ -146,22 +155,35 @@ where
             }
         };
 
-        // Send the client their identity token message as the first message
-        // NOTE: We're adding this to the protocol because some client libraries are
-        // unable to access the http response headers.
-        // Clients that receive the token from the response headers should ignore this
-        // message.
-        let message = IdentityTokenMessage {
-            identity: auth.identity,
-            token: identity_token,
-            address: client_address,
-        };
-        if let Err(e) = client.send_message(message) {
-            log::warn!("{e}, before identity token was sent")
-        }
+        send_after_connecting_message(auth, identity_token, client_address, client);
     });
 
     Ok(res)
+}
+
+/// Send the client a first message after connecting.
+/// This will include:
+///
+/// 1. their identity token.
+///    NOTE: We're adding this to the protocol because some client libraries are
+///    unable to access the http response headers.
+///    Clients that receive the token from the response headers should ignore this value.
+///
+/// 2. mappings from/to ids and names for reducers and tables.
+///    Clients must use these mappings
+///    if they do not wish to rely on the ids but rather rely on names instead.
+fn send_after_connecting_message(auth: SpacetimeAuth, token: Box<str>, address: Address, client: ClientConnection) {
+    let message = AfterConnecting {
+        ids_to_names: client.module.ids_to_names(auth.identity),
+        identity_token: IdentityToken {
+            identity: auth.identity,
+            token,
+            address,
+        },
+    };
+    if let Err(e) = client.send_message(message) {
+        log::warn!("{e}, before identity token was sent")
+    }
 }
 
 const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
@@ -266,7 +288,7 @@ async fn ws_client_actor_inner(
                             let workload = msg.workload();
                             let num_rows = msg.num_rows();
 
-                            let msg = datamsg_to_wsmsg(serialize(msg, client.protocol, client.compression));
+                            let msg = datamsg_to_wsmsg(serialize(msg, client.config));
 
                             // These metrics should be updated together,
                             // or not at all.
@@ -354,7 +376,7 @@ async fn ws_client_actor_inner(
                 if let Err(e) = res {
                     if let MessageHandleError::Execution(err) = e {
                         log::error!("{err:#}");
-                        let msg = serialize(err, client.protocol, client.compression);
+                        let msg = serialize(err, client.config);
                         if let Err(error) = ws.send(datamsg_to_wsmsg(msg)).await {
                             log::warn!("Websocket send error: {error}")
                         }

@@ -1,0 +1,21 @@
+# [certificate-authority]
+# jwt-priv-key-path = "~/.config/spacetime/id_ecdsas"
+# jwt-pub-key-path = "~/.config/spacetime/id_ecdsa.pub"
+
+[logs]
+# The default level filter for logging
+# level = "ERROR"
+
+# directives for logging, see link for syntax:
+# https://docs.rs/tracing-subscriber/latest/tracing_subscriber/struct.EnvFilter.html#directives
+directives = [
+    "spacetimedb=debug",
+    "spacetimedb_client_api=debug",
+    "spacetimedb_lib=debug",
+    "spacetimedb_standalone=debug",
+    "spacetimedb_commitlog=info",
+    "spacetimedb_durability=info",
+    "axum::rejection=trace",
+]
+
+# vim: set nowritebackup: << otherwise triggers cargo-watch

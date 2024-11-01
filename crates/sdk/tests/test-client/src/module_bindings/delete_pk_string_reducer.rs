@@ -52,19 +52,38 @@ pub trait delete_pk_string {
 
 impl delete_pk_string for super::RemoteReducers {
     fn delete_pk_string(&self, s: String) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_string", DeletePkString { s })
+        self.imp.call_reducer(9, DeletePkString { s })
     }
     fn on_delete_pk_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String) + Send + 'static,
     ) -> DeletePkStringCallbackId {
         DeletePkStringCallbackId(self.imp.on_reducer::<DeletePkString>(
-            "delete_pk_string",
+            9,
             Box::new(move |ctx: &super::EventContext, args: &DeletePkString| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_delete_pk_string(&self, callback: DeletePkStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<DeletePkString>("delete_pk_string", callback.0)
+        self.imp.remove_on_reducer::<DeletePkString>(9, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `delete_pk_string`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_delete_pk_string {
+    /// Set the call-reducer flags for the reducer `delete_pk_string` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn delete_pk_string(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_delete_pk_string for super::SetReducerFlags {
+    fn delete_pk_string(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(9, flags);
     }
 }

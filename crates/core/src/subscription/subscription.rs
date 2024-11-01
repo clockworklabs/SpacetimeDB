@@ -39,6 +39,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::DbTable;
 use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
+use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_vm::expr::{self, AuthAccess, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
@@ -77,8 +78,8 @@ impl SupportedQuery {
         self.expr.source.get_db_table().unwrap().table_id
     }
 
-    pub fn return_name(&self) -> String {
-        self.expr.source.table_name().to_owned()
+    pub fn return_name(&self) -> &Arc<str> {
+        self.expr.source.table_name()
     }
 
     /// This is the same as the return table unless this is a join.
@@ -607,15 +608,17 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
         .get_all_tables(tx)?
         .iter()
         .map(Deref::deref)
-        .filter(|t| {
-            t.table_type == StTableType::User && (auth.owner == auth.caller || t.table_access == StAccess::Public)
-        })
+        .filter(|table| is_table_visible(table, auth))
         .map(|src| SupportedQuery {
             kind: query::Supported::Select,
             expr: QueryExpr::new(src),
             sql: format!("SELECT * FROM {}", src.table_name),
         })
         .collect())
+}
+
+pub(crate) fn is_table_visible(table: &TableSchema, auth: &AuthCtx) -> bool {
+    table.table_type == StTableType::User && (auth.owner == auth.caller || table.table_access == StAccess::Public)
 }
 
 #[cfg(test)]
@@ -659,7 +662,7 @@ mod tests {
             panic!("unexpected result from compilation: {:#?}", exp);
         };
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let join = expr.query.pop().unwrap();
@@ -674,7 +677,7 @@ mod tests {
         let (expr, _sources) = with_delta_table(join, Some(delta), None);
         let expr: QueryExpr = expr.into();
         let mut expr = expr.optimize(&|_, _| i64::MAX);
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let join = expr.query.pop().unwrap();
@@ -739,7 +742,7 @@ mod tests {
             panic!("unexpected result from compilation: {:#?}", exp);
         };
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let join = expr.query.pop().unwrap();
@@ -755,7 +758,7 @@ mod tests {
         let expr = QueryExpr::from(expr);
         let mut expr = expr.optimize(&|_, _| i64::MAX);
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
         assert!(expr.source.is_db_table());
 
@@ -826,7 +829,7 @@ mod tests {
             panic!("unexpected result from compilation: {:#?}", exp);
         };
 
-        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(&**expr.source.table_name(), "lhs");
         assert_eq!(expr.query.len(), 1);
 
         let src_join = &expr.query[0];

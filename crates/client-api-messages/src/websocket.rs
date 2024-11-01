@@ -25,17 +25,19 @@ use core::{
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_lib::{Address, Identity};
-use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
-    de::Deserialize,
+    de::{Deserialize, Error},
+    impl_deserialize, impl_serialize, impl_st,
     ser::{serde::SerializeWrapper, Serialize},
-    SpacetimeType,
+    AlgebraicType, SpacetimeType,
 };
 use std::{
     io::{self, Read as _, Write as _},
     sync::Arc,
 };
+
+pub use spacetimedb_primitives::{ReducerId, TableId};
 
 pub trait RowListLen {
     /// Returns the length of the list.
@@ -75,6 +77,10 @@ pub trait WebsocketFormat: Sized {
     /// Convert a `QueryUpdate` into `Self::QueryUpdate`.
     /// This allows some formats to e.g., compress the update.
     fn into_query_update(qu: QueryUpdate<Self>, compression: Compression) -> Self::QueryUpdate;
+
+    type OptionalName: SpacetimeType + for<'de> Deserialize<'de> + Serialize + Debug + Clone + Send;
+
+    fn into_optional_name(name: &Arc<str>) -> Self::OptionalName;
 }
 
 /// Messages sent from the client to the server.
@@ -95,13 +101,15 @@ impl<Args> ClientMessage<Args> {
     pub fn map_args<Args2>(self, f: impl FnOnce(Args) -> Args2) -> ClientMessage<Args2> {
         match self {
             ClientMessage::CallReducer(CallReducer {
-                reducer,
+                reducer_id,
                 args,
                 request_id,
+                flags,
             }) => ClientMessage::CallReducer(CallReducer {
-                reducer,
+                reducer_id,
                 args: f(args),
                 request_id,
+                flags,
             }),
             ClientMessage::Subscribe(x) => ClientMessage::Subscribe(x),
             ClientMessage::OneOffQuery(x) => ClientMessage::OneOffQuery(x),
@@ -115,8 +123,11 @@ impl<Args> ClientMessage<Args> {
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct CallReducer<Args> {
-    /// The name of the reducer to call.
-    pub reducer: Box<str>,
+    /// The id of the reducer to call.
+    ///
+    /// The ID was previously sent to the client in [`IdsToNames`].
+    /// This id is valid for the websocket session and cannot be assumed valid beyond that.
+    pub reducer_id: ReducerId,
     /// The arguments to the reducer.
     ///
     /// In the wire format, this will be a [`Bytes`], BSATN or JSON encoded according to the reducer's argument schema
@@ -126,7 +137,38 @@ pub struct CallReducer<Args> {
     ///
     /// The server will include the same ID in the response [`TransactionUpdate`].
     pub request_id: u32,
+    /// Assorted flags that can be passed when calling a reducer.
+    ///
+    /// Currently accepts 0 or 1 where the latter means
+    /// that the caller does not want to be notified about the reducer
+    /// without being subscribed to any relevant queries.
+    pub flags: CallReducerFlags,
 }
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum CallReducerFlags {
+    /// The reducer's caller does want to be notified about the reducer completing successfully
+    /// regardless of whether the caller had subscribed to a relevant query.
+    ///
+    /// Note that updates to a reducer's caller are always sent as full updates
+    /// whether subscribed to a relevant query or not.
+    /// That is, the light tx mode setting does not apply to the reducer's caller.
+    ///
+    /// This is the default flag.
+    #[default]
+    FullUpdate,
+    /// The reducer's caller does not want to be notified about the reducer completing successfully
+    /// without having subscribed to any of the relevant queries.
+    NoSuccessNotify,
+}
+
+impl_st!([] CallReducerFlags, AlgebraicType::U8);
+impl_serialize!([] CallReducerFlags, (self, ser) => ser.serialize_u8(*self as u8));
+impl_deserialize!([] CallReducerFlags, de => match de.deserialize_u8()? {
+    0 => Ok(Self::FullUpdate),
+    1 => Ok(Self::NoSuccessNotify),
+    x => Err(D::Error::custom(format_args!("invalid call reducer flag {x}"))),
+});
 
 /// Sent by client to database to register a set of queries, about which the client will
 /// receive `TransactionUpdate`s.
@@ -146,6 +188,8 @@ pub struct CallReducer<Args> {
 #[sats(crate = spacetimedb_lib)]
 pub struct Subscribe {
     /// A sequence of SQL queries.
+    // TODO(centril, perf, 2.0): consider making this a BSATN encoding
+    // of a SQL-like structure which uses ids directly rather than names.
     pub query_strings: Box<[Box<str>]>,
     pub request_id: u32,
 }
@@ -182,8 +226,10 @@ pub enum ServerMessage<F: WebsocketFormat> {
     InitialSubscription(InitialSubscription<F>),
     /// Upon reducer run.
     TransactionUpdate(TransactionUpdate<F>),
+    /// Upon reducer run, but limited to just the table updates.
+    TransactionUpdateLight(TransactionUpdateLight<F>),
     /// After connecting, to inform client of its identity.
-    IdentityToken(IdentityToken),
+    AfterConnecting(AfterConnecting),
     /// Return results to a one off SQL query.
     OneOffQueryResponse(OneOffQueryResponse<F>),
 }
@@ -201,7 +247,39 @@ pub struct InitialSubscription<F: WebsocketFormat> {
     pub total_host_execution_duration_micros: u64,
 }
 
-/// Received by database from client to inform of user's identity, token and client address.
+/// The first reply the client sends immediately after establishing the websocket connection.
+/// This should be used to establish identity and credentials,
+/// as well as establishing id-to-name mappings to understand the ids the host will send later on.
+#[derive(SpacetimeType, Debug)]
+#[sats(crate = spacetimedb_lib)]
+pub struct AfterConnecting {
+    pub identity_token: IdentityToken,
+    pub ids_to_names: IdsToNames,
+}
+
+/// The id <-> name mappings for reducers and tables.
+///
+/// This will contain all mappings in the module that the client is authorized to see,
+#[derive(SpacetimeType, Debug)]
+#[sats(crate = spacetimedb_lib)]
+pub struct IdsToNames {
+    /// A list of ids of all the reducers defined in the module.
+    /// Each entry in the list corresponds to one, for the same index, in `self.reducer_names`.
+    pub reducer_ids: Box<[ReducerId]>,
+    /// A list of names of all the reducers defined in the module.
+    /// Each entry in the list corresponds to one, for the same index, in `self.reducer_ids`.
+    /// This list is always lexicographically sorted.
+    pub reducer_names: Box<[Arc<str>]>,
+    /// A list of ids of all the tables defined in the module.
+    /// Each entry in the list corresponds to one, for the same index, in `self.table_names`.
+    pub table_ids: Box<[TableId]>,
+    /// A list of names of all the tables defined in the module.
+    /// Each entry in the list corresponds to one, for the same index, in `self.table_ids`.
+    /// This list is always lexicographically sorted.
+    pub table_names: Box<[Arc<str>]>,
+}
+
+/// Received by client from the host to inform of user's identity, token and client address.
 ///
 /// The database will always send an `IdentityToken` message
 /// as the first message for a new WebSocket connection.
@@ -252,20 +330,33 @@ pub struct TransactionUpdate<F: WebsocketFormat> {
     pub host_execution_duration_micros: u64,
 }
 
+/// Received by client from database upon a reducer run.
+///
+/// Clients receive `TransactionUpdateLight`s only for reducers
+/// which update at least one of their subscribed rows.
+/// Failed reducers result in full [`TransactionUpdate`]s
+#[derive(SpacetimeType, Debug)]
+#[sats(crate = spacetimedb_lib)]
+pub struct TransactionUpdateLight<F: WebsocketFormat> {
+    /// An identifier for a client request
+    pub request_id: u32,
+
+    /// The reducer ran successfully and its changes were committed to the database.
+    /// The rows altered in the database/ are recorded in this `DatabaseUpdate`.
+    pub update: DatabaseUpdate<F>,
+}
+
 /// Contained in a [`TransactionUpdate`], metadata about a reducer invocation.
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct ReducerCallInfo<F: WebsocketFormat> {
-    /// The name of the reducer that was called.
-    ///
-    /// NOTE(centril, 1.0): For bandwidth resource constrained clients
-    /// this can encourage them to have poor naming of reducers like `a`.
-    /// We should consider not sending this at all and instead
-    /// having a startup message where the name <-> id bindings
-    /// are established between the host and the client.
-    pub reducer_name: Box<str>,
     /// The numerical id of the reducer that was called.
-    pub reducer_id: u32,
+    ///
+    /// The ID was previously sent to the client in [`IdsToNames`].
+    /// This id is valid for the websocket session and cannot be assumed valid beyond that.
+    pub reducer_id: ReducerId,
+    /// The name of the reducer, optionally available for the format.
+    pub reducer_name: F::OptionalName,
     /// The arguments to the reducer, encoded as BSATN or JSON according to the reducer's argument schema
     /// and the client's requested protocol.
     pub args: F::Single,
@@ -320,15 +411,14 @@ impl<F: WebsocketFormat> FromIterator<TableUpdate<F>> for DatabaseUpdate<F> {
 /// We might want to consider `v1.spacetimedb.bsatn.lightweight`
 #[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
-pub struct TableUpdate<F: WebsocketFormat> {
-    /// The id of the table. Clients should prefer `table_name`, as it is a stable part of a module's API,
-    /// whereas `table_id` may change between runs.
-    pub table_id: TableId,
-    /// The name of the table.
+pub struct TableUpdate<F: WebsocketFormat = BsatnFormat> {
+    /// The id of the table.
     ///
-    /// NOTE(centril, 1.0): we might want to remove this and instead
-    /// tell clients about changes to table_name <-> table_id mappings.
-    pub table_name: Box<str>,
+    /// The ID was previously sent to the client in [`IdsToNames`].
+    /// This id is valid for the websocket session and cannot be assumed valid beyond that.
+    pub table_id: TableId,
+    /// The name of the table, optionally available for the format.
+    pub table_name: F::OptionalName,
     /// The sum total of rows in `self.updates`,
     pub num_rows: u64,
     /// The actual insert and delete updates for this table.
@@ -336,10 +426,10 @@ pub struct TableUpdate<F: WebsocketFormat> {
 }
 
 impl<F: WebsocketFormat> TableUpdate<F> {
-    pub fn new(table_id: TableId, table_name: Box<str>, (update, num_rows): (F::QueryUpdate, u64)) -> Self {
+    pub fn new(table_id: TableId, table_name: &Arc<str>, (update, num_rows): (F::QueryUpdate, u64)) -> Self {
         Self {
             table_id,
-            table_name,
+            table_name: F::into_optional_name(table_name),
             num_rows,
             updates: [update].into(),
         }
@@ -420,8 +510,11 @@ pub struct OneOffQueryResponse<F: WebsocketFormat> {
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct OneOffTable<F: WebsocketFormat> {
-    /// The name of the table.
-    pub table_name: Box<str>,
+    /// The id of the table.
+    ///
+    /// The ID was previously sent to the client in [`IdsToNames`].
+    /// This id is valid for the websocket session and cannot be assumed valid beyond that.
+    pub table_id: TableId,
     /// The set of rows which matched the query, encoded as BSATN or JSON according to the table's schema
     /// and the client's requested protocol.
     ///
@@ -469,6 +562,12 @@ impl WebsocketFormat for JsonFormat {
 
     fn into_query_update(qu: QueryUpdate<Self>, _: Compression) -> Self::QueryUpdate {
         qu
+    }
+
+    type OptionalName = Arc<str>;
+
+    fn into_optional_name(name: &Arc<str>) -> Self::OptionalName {
+        name.clone()
     }
 }
 
@@ -529,6 +628,10 @@ impl WebsocketFormat for BsatnFormat {
             }
         }
     }
+
+    type OptionalName = ();
+
+    fn into_optional_name(_: &Arc<str>) -> Self::OptionalName {}
 }
 
 /// A specification of either a desired or decided compression algorithm.

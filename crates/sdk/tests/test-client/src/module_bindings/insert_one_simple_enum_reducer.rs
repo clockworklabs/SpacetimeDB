@@ -54,20 +54,38 @@ pub trait insert_one_simple_enum {
 
 impl insert_one_simple_enum for super::RemoteReducers {
     fn insert_one_simple_enum(&self, e: SimpleEnum) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_one_simple_enum", InsertOneSimpleEnum { e })
+        self.imp.call_reducer(56, InsertOneSimpleEnum { e })
     }
     fn on_insert_one_simple_enum(
         &self,
         mut callback: impl FnMut(&super::EventContext, &SimpleEnum) + Send + 'static,
     ) -> InsertOneSimpleEnumCallbackId {
         InsertOneSimpleEnumCallbackId(self.imp.on_reducer::<InsertOneSimpleEnum>(
-            "insert_one_simple_enum",
+            56,
             Box::new(move |ctx: &super::EventContext, args: &InsertOneSimpleEnum| callback(ctx, &args.e)),
         ))
     }
     fn remove_on_insert_one_simple_enum(&self, callback: InsertOneSimpleEnumCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneSimpleEnum>("insert_one_simple_enum", callback.0)
+        self.imp.remove_on_reducer::<InsertOneSimpleEnum>(56, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_one_simple_enum`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_one_simple_enum {
+    /// Set the call-reducer flags for the reducer `insert_one_simple_enum` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_one_simple_enum(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_one_simple_enum for super::SetReducerFlags {
+    fn insert_one_simple_enum(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(56, flags);
     }
 }

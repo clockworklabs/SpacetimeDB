@@ -50,20 +50,38 @@ pub trait insert_caller_vec_identity {
 
 impl insert_caller_vec_identity for super::RemoteReducers {
     fn insert_caller_vec_identity(&self) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_caller_vec_identity", InsertCallerVecIdentity {})
+        self.imp.call_reducer(39, InsertCallerVecIdentity {})
     }
     fn on_insert_caller_vec_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> InsertCallerVecIdentityCallbackId {
         InsertCallerVecIdentityCallbackId(self.imp.on_reducer::<InsertCallerVecIdentity>(
-            "insert_caller_vec_identity",
+            39,
             Box::new(move |ctx: &super::EventContext, args: &InsertCallerVecIdentity| callback(ctx)),
         ))
     }
     fn remove_on_insert_caller_vec_identity(&self, callback: InsertCallerVecIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertCallerVecIdentity>("insert_caller_vec_identity", callback.0)
+        self.imp.remove_on_reducer::<InsertCallerVecIdentity>(39, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_caller_vec_identity`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_caller_vec_identity {
+    /// Set the call-reducer flags for the reducer `insert_caller_vec_identity` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_caller_vec_identity(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_caller_vec_identity for super::SetReducerFlags {
+    fn insert_caller_vec_identity(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(39, flags);
     }
 }

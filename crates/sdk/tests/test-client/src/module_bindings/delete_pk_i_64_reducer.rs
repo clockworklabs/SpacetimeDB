@@ -52,18 +52,38 @@ pub trait delete_pk_i_64 {
 
 impl delete_pk_i_64 for super::RemoteReducers {
     fn delete_pk_i_64(&self, n: i64) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_i64", DeletePkI64 { n })
+        self.imp.call_reducer(6, DeletePkI64 { n })
     }
     fn on_delete_pk_i_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i64) + Send + 'static,
     ) -> DeletePkI64CallbackId {
         DeletePkI64CallbackId(self.imp.on_reducer::<DeletePkI64>(
-            "delete_pk_i64",
+            6,
             Box::new(move |ctx: &super::EventContext, args: &DeletePkI64| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_delete_pk_i_64(&self, callback: DeletePkI64CallbackId) {
-        self.imp.remove_on_reducer::<DeletePkI64>("delete_pk_i64", callback.0)
+        self.imp.remove_on_reducer::<DeletePkI64>(6, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `delete_pk_i64`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_delete_pk_i_64 {
+    /// Set the call-reducer flags for the reducer `delete_pk_i64` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn delete_pk_i_64(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_delete_pk_i_64 for super::SetReducerFlags {
+    fn delete_pk_i_64(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(6, flags);
     }
 }

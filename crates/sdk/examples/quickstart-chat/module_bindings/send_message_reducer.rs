@@ -52,18 +52,38 @@ pub trait send_message {
 
 impl send_message for super::RemoteReducers {
     fn send_message(&self, text: String) -> __anyhow::Result<()> {
-        self.imp.call_reducer("send_message", SendMessage { text })
+        self.imp.call_reducer(3, SendMessage { text })
     }
     fn on_send_message(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String) + Send + 'static,
     ) -> SendMessageCallbackId {
         SendMessageCallbackId(self.imp.on_reducer::<SendMessage>(
-            "send_message",
+            3,
             Box::new(move |ctx: &super::EventContext, args: &SendMessage| callback(ctx, &args.text)),
         ))
     }
     fn remove_on_send_message(&self, callback: SendMessageCallbackId) {
-        self.imp.remove_on_reducer::<SendMessage>("send_message", callback.0)
+        self.imp.remove_on_reducer::<SendMessage>(3, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `send_message`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_send_message {
+    /// Set the call-reducer flags for the reducer `send_message` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn send_message(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_send_message for super::SetReducerFlags {
+    fn send_message(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(3, flags);
     }
 }

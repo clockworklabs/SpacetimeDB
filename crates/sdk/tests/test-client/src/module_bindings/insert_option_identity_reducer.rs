@@ -52,20 +52,38 @@ pub trait insert_option_identity {
 
 impl insert_option_identity for super::RemoteReducers {
     fn insert_option_identity(&self, i: Option<__sdk::Identity>) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_option_identity", InsertOptionIdentity { i })
+        self.imp.call_reducer(67, InsertOptionIdentity { i })
     }
     fn on_insert_option_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Option<__sdk::Identity>) + Send + 'static,
     ) -> InsertOptionIdentityCallbackId {
         InsertOptionIdentityCallbackId(self.imp.on_reducer::<InsertOptionIdentity>(
-            "insert_option_identity",
+            67,
             Box::new(move |ctx: &super::EventContext, args: &InsertOptionIdentity| callback(ctx, &args.i)),
         ))
     }
     fn remove_on_insert_option_identity(&self, callback: InsertOptionIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOptionIdentity>("insert_option_identity", callback.0)
+        self.imp.remove_on_reducer::<InsertOptionIdentity>(67, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_option_identity`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_option_identity {
+    /// Set the call-reducer flags for the reducer `insert_option_identity` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_option_identity(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_option_identity for super::SetReducerFlags {
+    fn insert_option_identity(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(67, flags);
     }
 }

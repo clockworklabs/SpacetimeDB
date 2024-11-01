@@ -54,20 +54,38 @@ pub trait insert_vec_byte_struct {
 
 impl insert_vec_byte_struct for super::RemoteReducers {
     fn insert_vec_byte_struct(&self, s: Vec<ByteStruct>) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_vec_byte_struct", InsertVecByteStruct { s })
+        self.imp.call_reducer(107, InsertVecByteStruct { s })
     }
     fn on_insert_vec_byte_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<ByteStruct>) + Send + 'static,
     ) -> InsertVecByteStructCallbackId {
         InsertVecByteStructCallbackId(self.imp.on_reducer::<InsertVecByteStruct>(
-            "insert_vec_byte_struct",
+            107,
             Box::new(move |ctx: &super::EventContext, args: &InsertVecByteStruct| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_insert_vec_byte_struct(&self, callback: InsertVecByteStructCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecByteStruct>("insert_vec_byte_struct", callback.0)
+        self.imp.remove_on_reducer::<InsertVecByteStruct>(107, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_vec_byte_struct`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_vec_byte_struct {
+    /// Set the call-reducer flags for the reducer `insert_vec_byte_struct` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_vec_byte_struct(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_vec_byte_struct for super::SetReducerFlags {
+    fn insert_vec_byte_struct(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(107, flags);
     }
 }

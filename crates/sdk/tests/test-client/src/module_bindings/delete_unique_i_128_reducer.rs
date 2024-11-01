@@ -52,19 +52,38 @@ pub trait delete_unique_i_128 {
 
 impl delete_unique_i_128 for super::RemoteReducers {
     fn delete_unique_i_128(&self, n: i128) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_i128", DeleteUniqueI128 { n })
+        self.imp.call_reducer(18, DeleteUniqueI128 { n })
     }
     fn on_delete_unique_i_128(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i128) + Send + 'static,
     ) -> DeleteUniqueI128CallbackId {
         DeleteUniqueI128CallbackId(self.imp.on_reducer::<DeleteUniqueI128>(
-            "delete_unique_i128",
+            18,
             Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueI128| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_delete_unique_i_128(&self, callback: DeleteUniqueI128CallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueI128>("delete_unique_i128", callback.0)
+        self.imp.remove_on_reducer::<DeleteUniqueI128>(18, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `delete_unique_i128`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_delete_unique_i_128 {
+    /// Set the call-reducer flags for the reducer `delete_unique_i128` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn delete_unique_i_128(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_delete_unique_i_128 for super::SetReducerFlags {
+    fn delete_unique_i_128(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(18, flags);
     }
 }

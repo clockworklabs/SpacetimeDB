@@ -1,6 +1,5 @@
 use crate::{de, impl_deserialize, impl_serialize, impl_st, AlgebraicType};
-pub use spacetimedb_primitives::ColumnAttribute;
-pub use spacetimedb_primitives::Constraints;
+pub use spacetimedb_primitives::{ColumnAttribute, Constraints};
 
 impl_deserialize!([] ColumnAttribute, de =>
     Self::from_bits(de.deserialize_u8()?)

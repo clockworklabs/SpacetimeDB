@@ -1041,7 +1041,7 @@ impl IndexScanIter<'_> {
 #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
 pub struct UniqueConstraintViolation {
     pub constraint_name: Box<str>,
-    pub table_name: Box<str>,
+    pub table_name: Arc<str>,
     pub cols: Vec<Box<str>>,
     pub value: AlgebraicValue,
 }

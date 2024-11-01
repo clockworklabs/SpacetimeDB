@@ -1,10 +1,11 @@
 use super::wasm_common::{CLIENT_CONNECTED_DUNDER, CLIENT_DISCONNECTED_DUNDER};
-use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId};
+use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientFields, StClientRow, ST_CLIENT_ID};
 use crate::db::datastore::traits::{IsolationLevel, Program, TxData};
+use crate::db::relational_db::RelationalDB;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::execution_context::{ExecutionContext, ReducerContext, Workload};
@@ -14,6 +15,7 @@ use crate::messages::control_db::Database;
 use crate::replica_context::ReplicaContext;
 use crate::sql;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use crate::subscription::subscription::is_table_visible;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
@@ -24,12 +26,12 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_client_api_messages::timestamp::Timestamp;
-use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{Compression, IdsToNames, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::Address;
-use spacetimedb_primitives::{col_list, TableId};
+use spacetimedb_primitives::{col_list, ReducerId, TableId};
 use spacetimedb_sats::{algebraic_value, ProductValue};
 use spacetimedb_schema::auto_migrate::AutoMigrateError;
 use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
@@ -61,23 +63,25 @@ impl DatabaseUpdate {
     }
 
     pub fn from_writes(tx_data: &TxData) -> Self {
-        let mut map: IntMap<TableId, DatabaseTableUpdate> = IntMap::new();
-        let new_update = |table_id, table_name: &str| DatabaseTableUpdate {
-            table_id,
-            table_name: table_name.into(),
-            inserts: [].into(),
-            deletes: [].into(),
-        };
-        for (table_id, table_name, rows) in tx_data.inserts_with_table_name() {
-            map.entry(*table_id)
-                .or_insert_with(|| new_update(*table_id, table_name))
-                .inserts = rows.clone();
+        type Map = IntMap<TableId, DatabaseTableUpdate>;
+        fn extend_map<'a>(
+            map: &mut Map,
+            with: impl Iterator<Item = (&'a TableId, &'a Arc<str>, &'a Arc<[ProductValue]>)>,
+            proj: impl Fn(&mut DatabaseTableUpdate) -> &mut Arc<[ProductValue]>,
+        ) {
+            for (table_id, table_name, rows) in with {
+                *proj(map.entry(*table_id).or_insert_with(|| DatabaseTableUpdate {
+                    table_id: *table_id,
+                    table_name: table_name.clone(),
+                    inserts: [].into(),
+                    deletes: [].into(),
+                })) = rows.clone();
+            }
         }
-        for (table_id, table_name, rows) in tx_data.deletes_with_table_name() {
-            map.entry(*table_id)
-                .or_insert_with(|| new_update(*table_id, table_name))
-                .deletes = rows.clone();
-        }
+
+        let mut map: Map = Map::new();
+        extend_map(&mut map, tx_data.inserts_with_table_name(), |u| &mut u.inserts);
+        extend_map(&mut map, tx_data.deletes_with_table_name(), |u| &mut u.deletes);
         DatabaseUpdate {
             tables: map.into_values().collect(),
         }
@@ -92,7 +96,7 @@ impl DatabaseUpdate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseTableUpdate {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: Arc<str>,
     // Note: `Arc<[ProductValue]>` allows to cheaply
     // use the values from `TxData` without cloning the
     // contained `ProductValue`s.
@@ -108,7 +112,7 @@ pub struct DatabaseUpdateRelValue<'a> {
 #[derive(PartialEq, Debug)]
 pub struct DatabaseTableUpdateRelValue<'a> {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: Arc<str>,
     pub updates: UpdatesRelValue<'a>,
 }
 
@@ -150,11 +154,21 @@ impl EventStatus {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ModuleFunctionCall {
-    pub reducer: String,
+    pub reducer: Arc<str>,
     pub reducer_id: ReducerId,
     pub args: ArgsTuple,
+}
+
+impl Default for ModuleFunctionCall {
+    fn default() -> Self {
+        Self {
+            reducer: "".into(),
+            reducer_id: <_>::default(),
+            args: <_>::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -231,7 +245,7 @@ impl ModuleInfo {
         let name = self.reducers_map.lookup_name(reducer_id)?;
         Some(
             self.module_def
-                .reducer(name)
+                .reducer(&*name)
                 .expect("id was present, so reducer should be present!"),
         )
     }
@@ -239,7 +253,7 @@ impl ModuleInfo {
 
 /// A bidirectional map between `Identifiers` (reducer names) and `ReducerId`s.
 /// Invariant: the reducer names are in alphabetical order.
-pub struct ReducersMap(IndexSet<Box<str>>);
+pub struct ReducersMap(IndexSet<Arc<str>>);
 
 impl<'a> FromIterator<&'a str> for ReducersMap {
     fn from_iter<T: IntoIterator<Item = &'a str>>(iter: T) -> Self {
@@ -262,9 +276,18 @@ impl ReducersMap {
     }
 
     /// Lookup the name for a reducer ID.
-    pub fn lookup_name(&self, reducer_id: ReducerId) -> Option<&str> {
-        let result = self.0.get_index(reducer_id.0 as _)?;
-        Some(&**result)
+    pub fn lookup_name(&self, reducer_id: ReducerId) -> Option<Arc<str>> {
+        self.0.get_index(reducer_id.0 as _).cloned()
+    }
+
+    /// Returns an iterator over all the [`ReducerId`]s in the module.
+    pub fn iter_ids(&self) -> impl Iterator<Item = ReducerId> {
+        (0..self.0.len()).map(ReducerId::from)
+    }
+
+    /// Returns all the reducer names in the module.
+    pub fn iter_idents(&self) -> impl '_ + Iterator<Item = Arc<str>> {
+        self.0.iter().cloned()
     }
 }
 
@@ -566,10 +589,11 @@ impl ModuleHost {
             CLIENT_DISCONNECTED_DUNDER
         };
 
-        let db = &self.inner.replica_ctx().relational_db;
+        let db = self.db();
         let workload = || {
             Workload::Reducer(ReducerContext {
-                name: reducer_name.to_owned(),
+                // TODO(perf, centril): consider allowing `&'static str | Arc<str>`, perhaps flexstr.
+                name: reducer_name.into(),
                 caller_identity,
                 caller_address,
                 timestamp: Timestamp::now(),
@@ -634,7 +658,7 @@ impl ModuleHost {
         caller_address: Address,
         connected: bool,
     ) -> Result<(), DBError> {
-        let db = &*self.inner.replica_ctx().relational_db;
+        let db = self.db();
 
         let row = &StClientRow {
             identity: caller_identity.into(),
@@ -753,7 +777,7 @@ impl ModuleHost {
         &self,
         call_reducer_params: impl FnOnce(&MutTxId) -> anyhow::Result<Option<CallReducerParams>> + Send + 'static,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let db = self.inner.replica_ctx().relational_db.clone();
+        let db = self.db().clone();
         // scheduled reducer name not fetched yet, anyway this is only for logging purpose
         const REDUCER: &str = "scheduled_reducer";
         let module = self.info.clone();
@@ -771,7 +795,7 @@ impl ModuleHost {
                     tx.ctx = ExecutionContext::with_workload(
                         tx.ctx.database_identity(),
                         Workload::Reducer(ReducerContext {
-                            name: reducer.into(),
+                            name: reducer,
                             caller_identity: params.caller_identity,
                             caller_address: params.caller_address,
                             timestamp: Timestamp::now(),
@@ -839,9 +863,8 @@ impl ModuleHost {
 
     #[tracing::instrument(skip_all)]
     pub fn one_off_query(&self, caller_identity: Identity, query: String) -> Result<Vec<MemTable>, anyhow::Error> {
-        let replica_ctx = self.replica_ctx();
-        let db = &replica_ctx.relational_db;
-        let auth = AuthCtx::new(replica_ctx.owner_identity, caller_identity);
+        let db = self.db();
+        let auth = self.auth_ctx_for(caller_identity);
         log::debug!("One-off query: {query}");
 
         db.with_read_only(Workload::Sql, |tx| {
@@ -855,8 +878,7 @@ impl ModuleHost {
     /// for tables without primary keys. It is only used in the benchmarks.
     /// Note: this doesn't drop the table, it just clears it!
     pub fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
-        let db = &*self.replica_ctx().relational_db;
-
+        let db = self.db();
         db.with_auto_commit(Workload::Internal, |tx| {
             let tables = db.get_all_tables_mut(tx)?;
             // We currently have unique table names,
@@ -883,8 +905,50 @@ impl ModuleHost {
         &self.replica_ctx().database
     }
 
-    pub(crate) fn replica_ctx(&self) -> &ReplicaContext {
+    fn replica_ctx(&self) -> &ReplicaContext {
         self.inner.replica_ctx()
+    }
+
+    pub fn db(&self) -> &Arc<RelationalDB> {
+        &self.replica_ctx().relational_db
+    }
+
+    fn auth_ctx_for(&self, caller_identity: Identity) -> AuthCtx {
+        AuthCtx::new(self.replica_ctx().owner_identity, caller_identity)
+    }
+
+    pub fn ids_to_names(&self, identity: Identity) -> IdsToNames {
+        // Compute the ids and names of reducers.
+        // Although we (the host) know that ids are just the index
+        // into the lexicographically sorted map of reducers,
+        // this is an implementation detail that we avoid exposing to the user as a guarantee.
+        // We do however guarantee clients that `reducer_names` is lexicographically sorted.
+        let reducers_map = &self.info().reducers_map;
+        let reducer_ids = reducers_map.iter_ids().collect();
+        let reducer_names = reducers_map.iter_idents().collect();
+
+        // Compute the ids and names of tables.
+        // Ensure that the returned `table_names` are lexicographically sorted
+        // for the perf benefit of clients.
+        let db = self.db();
+        let auth = self.auth_ctx_for(identity);
+        let (table_names, table_ids): (Vec<_>, Vec<_>) = db
+            .with_read_only(Workload::Internal, |tx| db.get_all_tables(tx))
+            .expect("ids_to_name: database in a broken state?")
+            .iter()
+            .filter(|schema| is_table_visible(schema, &auth))
+            .map(|schema| (&schema.table_name, schema.table_id))
+            // TODO(perf, centril): is this already sorted by name?
+            .sorted_unstable_by_key(|(name, _)| *name)
+            .map(|(name, id)| (name.clone(), id))
+            .unzip();
+
+        IdsToNames {
+            reducer_ids,
+            reducer_names,
+            table_ids: table_ids.into(),
+            table_names: table_names.into(),
+        }
     }
 }
 

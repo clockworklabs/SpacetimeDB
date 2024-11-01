@@ -47,15 +47,35 @@ pub trait init {
 
 impl init for super::RemoteReducers {
     fn init(&self) -> __anyhow::Result<()> {
-        self.imp.call_reducer("__init__", Init {})
+        self.imp.call_reducer(2, Init {})
     }
     fn on_init(&self, mut callback: impl FnMut(&super::EventContext) + Send + 'static) -> InitCallbackId {
-        InitCallbackId(self.imp.on_reducer::<Init>(
-            "__init__",
-            Box::new(move |ctx: &super::EventContext, args: &Init| callback(ctx)),
-        ))
+        InitCallbackId(
+            self.imp
+                .on_reducer::<Init>(2, Box::new(move |ctx: &super::EventContext, args: &Init| callback(ctx))),
+        )
     }
     fn remove_on_init(&self, callback: InitCallbackId) {
-        self.imp.remove_on_reducer::<Init>("__init__", callback.0)
+        self.imp.remove_on_reducer::<Init>(2, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `__init__`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_init {
+    /// Set the call-reducer flags for the reducer `__init__` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn init(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_init for super::SetReducerFlags {
+    fn init(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(2, flags);
     }
 }

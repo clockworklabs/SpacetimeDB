@@ -52,19 +52,38 @@ pub trait delete_unique_u_32 {
 
 impl delete_unique_u_32 for super::RemoteReducers {
     fn delete_unique_u_32(&self, n: u32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_u32", DeleteUniqueU32 { n })
+        self.imp.call_reducer(29, DeleteUniqueU32 { n })
     }
     fn on_delete_unique_u_32(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u32) + Send + 'static,
     ) -> DeleteUniqueU32CallbackId {
         DeleteUniqueU32CallbackId(self.imp.on_reducer::<DeleteUniqueU32>(
-            "delete_unique_u32",
+            29,
             Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueU32| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_delete_unique_u_32(&self, callback: DeleteUniqueU32CallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueU32>("delete_unique_u32", callback.0)
+        self.imp.remove_on_reducer::<DeleteUniqueU32>(29, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `delete_unique_u32`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_delete_unique_u_32 {
+    /// Set the call-reducer flags for the reducer `delete_unique_u32` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn delete_unique_u_32(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_delete_unique_u_32 for super::SetReducerFlags {
+    fn delete_unique_u_32(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(29, flags);
     }
 }

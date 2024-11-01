@@ -53,20 +53,38 @@ pub trait insert_pk_identity {
 
 impl insert_pk_identity for super::RemoteReducers {
     fn insert_pk_identity(&self, i: __sdk::Identity, data: i32) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_pk_identity", InsertPkIdentity { i, data })
+        self.imp.call_reducer(79, InsertPkIdentity { i, data })
     }
     fn on_insert_pk_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Identity, &i32) + Send + 'static,
     ) -> InsertPkIdentityCallbackId {
         InsertPkIdentityCallbackId(self.imp.on_reducer::<InsertPkIdentity>(
-            "insert_pk_identity",
+            79,
             Box::new(move |ctx: &super::EventContext, args: &InsertPkIdentity| callback(ctx, &args.i, &args.data)),
         ))
     }
     fn remove_on_insert_pk_identity(&self, callback: InsertPkIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertPkIdentity>("insert_pk_identity", callback.0)
+        self.imp.remove_on_reducer::<InsertPkIdentity>(79, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_pk_identity`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_pk_identity {
+    /// Set the call-reducer flags for the reducer `insert_pk_identity` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_pk_identity(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_pk_identity for super::SetReducerFlags {
+    fn insert_pk_identity(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(79, flags);
     }
 }

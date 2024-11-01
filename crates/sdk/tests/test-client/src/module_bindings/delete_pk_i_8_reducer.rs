@@ -52,18 +52,38 @@ pub trait delete_pk_i_8 {
 
 impl delete_pk_i_8 for super::RemoteReducers {
     fn delete_pk_i_8(&self, n: i8) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_i8", DeletePkI8 { n })
+        self.imp.call_reducer(7, DeletePkI8 { n })
     }
     fn on_delete_pk_i_8(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i8) + Send + 'static,
     ) -> DeletePkI8CallbackId {
         DeletePkI8CallbackId(self.imp.on_reducer::<DeletePkI8>(
-            "delete_pk_i8",
+            7,
             Box::new(move |ctx: &super::EventContext, args: &DeletePkI8| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_delete_pk_i_8(&self, callback: DeletePkI8CallbackId) {
-        self.imp.remove_on_reducer::<DeletePkI8>("delete_pk_i8", callback.0)
+        self.imp.remove_on_reducer::<DeletePkI8>(7, callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `delete_pk_i8`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_delete_pk_i_8 {
+    /// Set the call-reducer flags for the reducer `delete_pk_i8` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn delete_pk_i_8(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_delete_pk_i_8 for super::SetReducerFlags {
+    fn delete_pk_i_8(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags(7, flags);
     }
 }

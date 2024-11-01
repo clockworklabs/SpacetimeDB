@@ -5,6 +5,7 @@ use std::fmt::{self, Write};
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
+use itertools::Itertools;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, SumType};
 use spacetimedb_lib::ReducerDef;
 use spacetimedb_primitives::ColList;
@@ -94,7 +95,7 @@ fn default_init(ctx: &GenCtx, ty: &AlgebraicType) -> Option<&'static str> {
         AlgebraicType::Sum(sum_type) if sum_type.is_option() || sum_type.is_simple_enum() => None,
         // TODO: generate some proper default here (what would it be for tagged enums?).
         AlgebraicType::Sum(_) => Some("null!"),
-        // For product types, arrays, and maps, we can use the default constructor.
+        // For product types and arrays, we can use the default constructor.
         AlgebraicType::Product(_) | AlgebraicType::Array(_) => Some("new()"),
         // Strings must have explicit default value of "".
         AlgebraicType::String => Some(r#""""#),
@@ -505,7 +506,7 @@ fn autogen_csharp_access_funcs_for_struct(
     }
 }
 
-pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &str) -> String {
+pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer_idx: usize, reducer: &ReducerDef, namespace: &str) -> String {
     let func_name = &*reducer.name;
     let func_name_pascal_case = func_name.to_case(Case::Pascal);
 
@@ -515,7 +516,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     writeln!(output, "[SpacetimeDB.Type]");
     writeln!(output, "public partial class {func_name_pascal_case} : IReducerArgs");
     indented_block(&mut output, |output| {
-        writeln!(output, "string IReducerArgs.ReducerName => \"{func_name}\";");
+        writeln!(output, "uint IReducerArgs.ReducerIndex => {reducer_idx};");
         if !reducer.args.is_empty() {
             writeln!(output);
         }
@@ -542,13 +543,17 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) -> Vec<(String, String)> {
     let mut results = Vec::new();
 
-    let tables = items.iter().filter_map(|i| {
-        if let GenItem::Table(table) = i {
-            Some(table)
-        } else {
-            None
-        }
-    });
+    let tables: Vec<_> = items
+        .iter()
+        .filter_map(|i| {
+            if let GenItem::Table(table) = i {
+                Some(table)
+            } else {
+                None
+            }
+        })
+        .sorted_by_key(|t| &t.schema.table_name)
+        .collect();
 
     let reducers: Vec<&ReducerDef> = items
         .iter()
@@ -559,6 +564,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                 None
             }
         })
+        .sorted_by_key(|i| &i.name)
         .collect();
     let reducer_names: Vec<String> = reducers
         .iter()
@@ -569,7 +575,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
 
     writeln!(output, "public sealed class RemoteTables");
     indented_block(&mut output, |output| {
-        for table in tables {
+        for &table in &tables {
             let schema = &table.schema;
             let name = &schema.table_name;
             let csharp_name = name.as_ref().to_case(Case::Pascal);
@@ -641,7 +647,11 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
 
     writeln!(output, "public sealed class RemoteReducers : RemoteBase<DbConnection>");
     indented_block(&mut output, |output| {
-        writeln!(output, "internal RemoteReducers(DbConnection conn) : base(conn) {{}}");
+        writeln!(
+            output,
+            "internal RemoteReducers(DbConnection conn, SetReducerFlags SetReducerFlags) : base(conn) {{ this.SetCallReducerFlags = SetReducerFlags; }}"
+        );
+        writeln!(output, "internal readonly SetReducerFlags SetCallReducerFlags;");
 
         for reducer in &reducers {
             let func_name = &*reducer.name;
@@ -683,7 +693,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
             indented_block(output, |output| {
                 writeln!(
                     output,
-                    "conn.InternalCallReducer(new {func_name_pascal_case} {{ {field_inits} }});"
+                    "conn.InternalCallReducer(new {func_name_pascal_case} {{ {field_inits} }}, this.SetCallReducerFlags.{func_name_pascal_case}Flags);"
                 );
             });
             writeln!(output);
@@ -716,12 +726,25 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
     });
     writeln!(output);
 
+    writeln!(output, "public sealed class SetReducerFlags");
+    indented_block(&mut output, |output| {
+        writeln!(output, "internal SetReducerFlags() {{ }}");
+        for reducer in &reducers {
+            let func_name = &*reducer.name;
+            let func_name_pascal_case = func_name.to_case(Case::Pascal);
+            writeln!(output, "internal CallReducerFlags {func_name_pascal_case}Flags;");
+            writeln!(output, "public void {func_name_pascal_case}(CallReducerFlags flags) {{ this.{func_name_pascal_case}Flags = flags; }}");
+        }
+    });
+    writeln!(output);
+
     writeln!(
         output,
         "public partial record EventContext : DbContext<RemoteTables>, IEventContext"
     );
     indented_block(&mut output, |output| {
         writeln!(output, "public readonly RemoteReducers Reducers;");
+        writeln!(output, "public readonly SetReducerFlags SetReducerFlags;");
         writeln!(output, "public readonly Event<Reducer> Event;");
         writeln!(output);
         writeln!(
@@ -730,6 +753,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
         );
         indented_block(output, |output| {
             writeln!(output, "Reducers = conn.Reducers;");
+            writeln!(output, "SetReducerFlags = conn.SetReducerFlags;");
             writeln!(output, "Event = reducerEvent;");
         });
     });
@@ -742,9 +766,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
         for reducer_name in &reducer_names {
             writeln!(output, "{reducer_name} {reducer_name},");
         }
-        writeln!(output, "Unit StdbNone,");
-        writeln!(output, "Unit StdbIdentityConnected,");
-        writeln!(output, "Unit StdbIdentityDisconnected");
+        writeln!(output, "Unit StdbNone");
     }
     writeln!(output, ")>;");
 
@@ -755,50 +777,42 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
     indented_block(&mut output, |output| {
         writeln!(output, "public readonly RemoteTables Db = new();");
         writeln!(output, "public readonly RemoteReducers Reducers;");
+        writeln!(output, "public readonly SetReducerFlags SetReducerFlags;");
         writeln!(output);
 
         writeln!(output, "public DbConnection()");
         indented_block(output, |output| {
-            writeln!(output, "Reducers = new(this);");
+            writeln!(output, "SetReducerFlags = new();");
+            writeln!(output, "Reducers = new(this, this.SetReducerFlags);");
             writeln!(output);
 
-            for item in items {
-                if let GenItem::Table(table) = item {
-                    writeln!(
-                        output,
-                        "clientDB.AddTable<{table_type}>(\"{table_name}\", Db.{csharp_table_name});",
-                        table_type = csharp_typename(ctx, table.data),
-                        table_name = table.schema.table_name,
-                        csharp_table_name = table.schema.table_name.as_ref().to_case(Case::Pascal)
-                    );
-                }
+            for (table_idx, &table) in tables.iter().enumerate() {
+                writeln!(
+                    output,
+                    "clientDB.AddTable<{table_type}>({table_idx}, Db.{csharp_table_name});",
+                    table_type = csharp_typename(ctx, table.data),
+                    csharp_table_name = table.schema.table_name.as_ref().to_case(Case::Pascal)
+                );
             }
         });
         writeln!(output);
 
-        writeln!(output, "protected override Reducer ToReducer(TransactionUpdate update)");
+        writeln!(
+            output,
+            "protected override Reducer ToReducer(uint reducerIdx, TransactionUpdate update)"
+        );
         indented_block(output, |output| {
             writeln!(output, "var encodedArgs = update.ReducerCall.Args;");
-            writeln!(output, "return update.ReducerCall.ReducerName switch {{");
+            writeln!(output, "return reducerIdx switch {{");
             {
                 indent_scope!(output);
-                for (reducer, reducer_name) in std::iter::zip(&reducers, &reducer_names) {
-                    let reducer_str_name = &reducer.name;
+                for (reducer_idx, reducer_name) in reducer_names.iter().enumerate() {
                     writeln!(
                         output,
-                        "\"{reducer_str_name}\" => new Reducer.{reducer_name}(BSATNHelpers.Decode<{reducer_name}>(encodedArgs)),"
+                        "{reducer_idx} => new Reducer.{reducer_name}(BSATNHelpers.Decode<{reducer_name}>(encodedArgs)),"
                     );
                 }
-                writeln!(output, "\"<none>\" => new Reducer.StdbNone(default),");
-                writeln!(
-                    output,
-                    "\"__identity_connected__\" => new Reducer.StdbIdentityConnected(default),"
-                );
-                writeln!(
-                    output,
-                    "\"__identity_disconnected__\" => new Reducer.StdbIdentityDisconnected(default),"
-                );
-                writeln!(output, "\"\" => new Reducer.StdbNone(default),"); //Transaction from CLI command
+                writeln!(output, "4294967295 => new Reducer.StdbNone(default),");
                 writeln!(
                     output,
                     r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
@@ -830,9 +844,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                         "Reducer.{reducer_name}(var args) => Reducers.Invoke{reducer_name}(eventContext, args),"
                     );
                 }
-                writeln!(output, "Reducer.StdbNone or");
-                writeln!(output, "Reducer.StdbIdentityConnected or");
-                writeln!(output, "Reducer.StdbIdentityDisconnected => true,");
+                writeln!(output, "Reducer.StdbNone => true,");
                 writeln!(
                     output,
                     r#"_ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
