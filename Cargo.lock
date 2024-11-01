@@ -4818,6 +4818,7 @@ dependencies = [
  "scopeguard",
  "serde",
  "serde_json",
+ "serde_with",
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-data-structures",
