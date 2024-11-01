@@ -137,11 +137,7 @@ void OnConnect(DbConnection conn, Identity identity, string authToken)
 
     conn.SubscriptionBuilder()
         .OnApplied(OnSubscriptionApplied)
-        .Subscribe("SELECT * FROM User");
-
-    conn.SubscriptionBuilder()
-        .OnApplied(OnSubscriptionApplied)
-        .Subscribe("SELECT * FROM Message");
+        .Subscribe("SELECT * FROM user", "SELECT * FROM message");
 }
 
 void OnConnectError(Exception e)
