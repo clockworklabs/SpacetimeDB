@@ -52,12 +52,10 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
         }
         if err_count > 0 {
             anyhow::bail!(
-                "Found {} disallowed print statement(s).\n\
-            These will not be printed from SpacetimeDB modules.\n\
-            If you need to print something, use the `log` crate\n\
-            and the `log::info!` macro instead.
-        ",
-                err_count
+                "Found {err_count} disallowed print statement(s).\n\
+                These will not be printed from SpacetimeDB modules.\n\
+                If you need to print something, use the `log` crate\n\
+                and the `log::info!` macro instead."
             );
         }
     }
