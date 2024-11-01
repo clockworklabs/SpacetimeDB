@@ -31,7 +31,8 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
 
     if !skip_clippy {
         let mut err_count: u32 = 0;
-        for file in walkdir::WalkDir::new(project_path).into_iter().filter_map(Result::ok) {
+        for file in walkdir::WalkDir::new(project_path).into_iter() {
+            let file = file?;
             let printable_path = file.path().to_str().ok_or(anyhow::anyhow!("path not utf-8"))?;
             if file.file_type().is_file() && file.path().extension().map_or(false, |ext| ext == "rs") {
                 let file = fs::File::open(&file.path())?;
