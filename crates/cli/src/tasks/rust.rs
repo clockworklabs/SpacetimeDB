@@ -29,7 +29,13 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
         );
     }
 
-    if !skip_clippy {
+    if skip_clippy {
+        println!(
+            "Warning: Skipping checks for nonfunctional print statements.\n\
+            If you have used builtin macros for printing, such as println!,\n\
+            your logs will not show up."
+        );
+    } else {
         let mut err_count: u32 = 0;
         for file in walkdir::WalkDir::new(project_path).into_iter() {
             let file = file?;
