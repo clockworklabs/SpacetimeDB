@@ -13,6 +13,7 @@ namespace SpacetimeDB.ClientApi
 	public partial record ServerMessage : SpacetimeDB.TaggedEnum<(
 		SpacetimeDB.ClientApi.InitialSubscription InitialSubscription,
 		SpacetimeDB.ClientApi.TransactionUpdate TransactionUpdate,
+		SpacetimeDB.ClientApi.TransactionUpdateLight TransactionUpdateLight,
 		SpacetimeDB.ClientApi.IdentityToken IdentityToken,
 		SpacetimeDB.ClientApi.OneOffQueryResponse OneOffQueryResponse
 	)>;

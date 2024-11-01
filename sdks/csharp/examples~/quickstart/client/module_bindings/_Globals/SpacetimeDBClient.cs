@@ -63,13 +63,14 @@ namespace SpacetimeDB.Types
 
 	public sealed class RemoteReducers : RemoteBase<DbConnection>
 	{
-		internal RemoteReducers(DbConnection conn) : base(conn) {}
+		internal RemoteReducers(DbConnection conn, SetReducerFlags SetReducerFlags) : base(conn) { this.SetCallReducerFlags = SetReducerFlags; }
+		internal readonly SetReducerFlags SetCallReducerFlags;
 		public delegate void SendMessageHandler(EventContext ctx, string text);
 		public event SendMessageHandler? OnSendMessage;
 
 		public void SendMessage(string text)
 		{
-			conn.InternalCallReducer(new SendMessage { Text = text });
+			conn.InternalCallReducer(new SendMessage { Text = text }, this.SetCallReducerFlags.SendMessageFlags);
 		}
 
 		public bool InvokeSendMessage(EventContext ctx, SendMessage args)
@@ -86,7 +87,7 @@ namespace SpacetimeDB.Types
 
 		public void SetName(string name)
 		{
-			conn.InternalCallReducer(new SetName { Name = name });
+			conn.InternalCallReducer(new SetName { Name = name }, this.SetCallReducerFlags.SetNameFlags);
 		}
 
 		public bool InvokeSetName(EventContext ctx, SetName args)
@@ -100,14 +101,25 @@ namespace SpacetimeDB.Types
 		}
 	}
 
+	public sealed class SetReducerFlags
+	{
+		internal SetReducerFlags() { }
+		internal CallReducerFlags SendMessageFlags;
+		public void SendMessage(CallReducerFlags flags) { this.SendMessageFlags = flags; }
+		internal CallReducerFlags SetNameFlags;
+		public void SetName(CallReducerFlags flags) { this.SetNameFlags = flags; }
+	}
+
 	public partial record EventContext : DbContext<RemoteTables>, IEventContext
 	{
 		public readonly RemoteReducers Reducers;
+		public readonly SetReducerFlags SetReducerFlags;
 		public readonly Event<Reducer> Event;
 
 		internal EventContext(DbConnection conn, Event<Reducer> reducerEvent) : base(conn.Db)
 		{
 			Reducers = conn.Reducers;
+			SetReducerFlags = conn.SetReducerFlags;
 			Event = reducerEvent;
 		}
 	}
@@ -124,10 +136,12 @@ namespace SpacetimeDB.Types
 	{
 		public readonly RemoteTables Db = new();
 		public readonly RemoteReducers Reducers;
+		public readonly SetReducerFlags SetReducerFlags;
 
 		public DbConnection()
 		{
-			Reducers = new(this);
+			SetReducerFlags = new();
+			Reducers = new(this, this.SetReducerFlags);
 
 			clientDB.AddTable<Message>("message", Db.Message);
 			clientDB.AddTable<User>("user", Db.User);
@@ -136,7 +150,8 @@ namespace SpacetimeDB.Types
 		protected override Reducer ToReducer(TransactionUpdate update)
 		{
 			var encodedArgs = update.ReducerCall.Args;
-			return update.ReducerCall.ReducerName switch {
+			return update.ReducerCall.ReducerName switch
+			{
 				"send_message" => new Reducer.SendMessage(BSATNHelpers.Decode<SendMessage>(encodedArgs)),
 				"set_name" => new Reducer.SetName(BSATNHelpers.Decode<SetName>(encodedArgs)),
 				"<none>" => new Reducer.StdbNone(default),
@@ -153,7 +168,8 @@ namespace SpacetimeDB.Types
 		protected override bool Dispatch(IEventContext context, Reducer reducer)
 		{
 			var eventContext = (EventContext)context;
-			return reducer switch {
+			return reducer switch
+			{
 				Reducer.SendMessage(var args) => Reducers.InvokeSendMessage(eventContext, args),
 				Reducer.SetName(var args) => Reducers.InvokeSetName(eventContext, args),
 				Reducer.StdbNone or
