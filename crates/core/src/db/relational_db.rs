@@ -29,6 +29,7 @@ use spacetimedb_lib::address::Address;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::Identity;
+use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef};
@@ -40,7 +41,7 @@ use spacetimedb_table::MemoryUsage;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io;
 use std::ops::RangeBounds;
 use std::path::Path;
@@ -96,6 +97,7 @@ pub struct RelationalDB {
     // DO NOT ADD FIELDS AFTER THIS.
     // By default, fields are dropped in declaration order.
     // We want to release the file lock last.
+    // TODO(noa): is this lockfile still necessary now that we have data-dir?
     _lock: LockFile,
 }
 
@@ -196,7 +198,6 @@ impl RelationalDB {
 
             row_count_fn: default_row_count_fn(database_identity),
             disk_size_fn,
-
             _lock: lock,
         }
     }
@@ -281,7 +282,7 @@ impl RelationalDB {
     ///
     /// [ModuleHost]: crate::host::module_host::ModuleHost
     pub fn open(
-        root: &Path,
+        root: &ReplicaDir,
         database_identity: Identity,
         owner_identity: Identity,
         history: impl durability::History<TxData = Txdata>,
@@ -1191,8 +1192,8 @@ struct LockFile {
 }
 
 impl LockFile {
-    pub fn lock(root: impl AsRef<Path>) -> Result<Self, DBError> {
-        fs::create_dir_all(&root)?;
+    pub fn lock(root: &ReplicaDir) -> Result<Self, DBError> {
+        root.create()?;
         let path = root.as_ref().join("db.lock");
         let lock = File::create(&path)?;
         lock.try_lock_exclusive()
@@ -1262,8 +1263,9 @@ where
 ///
 /// Note that this operation can be expensive, as it needs to traverse a suffix
 /// of the commitlog.
-pub async fn local_durability(db_path: &Path) -> io::Result<(Arc<durability::Local<ProductValue>>, DiskSizeFn)> {
-    let commitlog_dir = db_path.join("clog");
+pub async fn local_durability(
+    commitlog_dir: CommitLogDir,
+) -> io::Result<(Arc<durability::Local<ProductValue>>, DiskSizeFn)> {
     tokio::fs::create_dir_all(&commitlog_dir).await?;
     let rt = tokio::runtime::Handle::current();
     // TODO: Should this better be spawn_blocking?
@@ -1293,13 +1295,12 @@ pub async fn local_durability(db_path: &Path) -> io::Result<(Arc<durability::Loc
 /// Open a [`SnapshotRepository`] at `db_path/snapshots`,
 /// configured to store snapshots of the database `database_address`/`replica_id`.
 pub fn open_snapshot_repo(
-    db_path: &Path,
+    path: SnapshotsPath,
     database_identity: Identity,
     replica_id: u64,
 ) -> Result<Arc<SnapshotRepository>, Box<SnapshotError>> {
-    let snapshot_dir = db_path.join("snapshots");
-    std::fs::create_dir_all(&snapshot_dir).map_err(|e| Box::new(SnapshotError::from(e)))?;
-    SnapshotRepository::open(snapshot_dir, database_identity, replica_id)
+    path.create().map_err(SnapshotError::from)?;
+    SnapshotRepository::open(path, database_identity, replica_id)
         .map(Arc::new)
         .map_err(Box::new)
 }
@@ -1318,6 +1319,7 @@ pub mod tests_utils {
     use super::*;
     use core::ops::Deref;
     use durability::EmptyHistory;
+    use spacetimedb_paths::FromPathUnchecked;
     use tempfile::TempDir;
 
     /// A [`RelationalDB`] in a temporary directory.
@@ -1338,7 +1340,26 @@ pub mod tests_utils {
 
         // nb: drop order is declaration order
         durable: Option<DurableState>,
-        tmp_dir: TempDir,
+        tmp_dir: TempReplicaDir,
+    }
+
+    pub struct TempReplicaDir(ReplicaDir);
+    impl TempReplicaDir {
+        fn new() -> io::Result<Self> {
+            let dir = TempDir::with_prefix("stdb_test")?;
+            Ok(Self(ReplicaDir::from_path_unchecked(dir.into_path())))
+        }
+    }
+    impl Deref for TempReplicaDir {
+        type Target = ReplicaDir;
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+    impl Drop for TempReplicaDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     struct DurableState {
@@ -1353,8 +1374,8 @@ pub mod tests_utils {
 
         /// Create a [`TestDB`] which does not store data on disk.
         pub fn in_memory() -> Result<Self, DBError> {
-            let dir = TempDir::with_prefix("stdb_test")?;
-            let db = Self::in_memory_internal(dir.path())?;
+            let dir = TempReplicaDir::new()?;
+            let db = Self::in_memory_internal(&dir)?;
             Ok(Self {
                 db,
 
@@ -1369,11 +1390,11 @@ pub mod tests_utils {
         /// ensures all data has been flushed to disk before re-opening the
         /// database.
         pub fn durable() -> Result<Self, DBError> {
-            let dir = TempDir::with_prefix("stdb_test")?;
+            let dir = TempReplicaDir::new()?;
             let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
             // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
             let _rt = rt.enter();
-            let (db, handle) = Self::durable_internal(dir.path(), rt.handle().clone())?;
+            let (db, handle) = Self::durable_internal(&dir, rt.handle().clone())?;
             let durable = DurableState { handle, rt };
 
             Ok(Self {
@@ -1396,7 +1417,7 @@ pub mod tests_utils {
 
                 // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
                 let _rt = rt.enter();
-                let (db, handle) = Self::durable_internal(self.tmp_dir.path(), rt.handle().clone())?;
+                let (db, handle) = Self::durable_internal(&self.tmp_dir, rt.handle().clone())?;
                 let durable = DurableState { handle, rt };
 
                 Ok(Self {
@@ -1405,7 +1426,7 @@ pub mod tests_utils {
                     ..self
                 })
             } else {
-                let db = Self::in_memory_internal(self.tmp_dir.path())?;
+                let db = Self::in_memory_internal(&self.tmp_dir)?;
                 Ok(Self { db, ..self })
             }
         }
@@ -1436,8 +1457,8 @@ pub mod tests_utils {
         }
 
         /// The root path of the (temporary) database directory.
-        pub fn path(&self) -> &Path {
-            self.tmp_dir.path()
+        pub fn path(&self) -> &ReplicaDir {
+            &self.tmp_dir
         }
 
         /// Handle to the tokio runtime, available if [`Self::durable`] was used
@@ -1454,7 +1475,7 @@ pub mod tests_utils {
             RelationalDB,
             Option<Arc<durability::Local<ProductValue>>>,
             Option<tokio::runtime::Runtime>,
-            TempDir,
+            TempReplicaDir,
         ) {
             let Self { db, durable, tmp_dir } = self;
             let (durability, rt) = durable
@@ -1463,25 +1484,25 @@ pub mod tests_utils {
             (db, durability, rt, tmp_dir)
         }
 
-        fn in_memory_internal(root: &Path) -> Result<RelationalDB, DBError> {
+        fn in_memory_internal(root: &ReplicaDir) -> Result<RelationalDB, DBError> {
             Self::open_db(root, EmptyHistory::new(), None, None)
         }
 
         fn durable_internal(
-            root: &Path,
+            root: &ReplicaDir,
             rt: tokio::runtime::Handle,
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
-            let (local, disk_size_fn) = rt.block_on(local_durability(root))?;
+            let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log()))?;
             let history = local.clone();
             let durability = local.clone() as Arc<dyn Durability<TxData = Txdata>>;
-            let snapshot_repo = open_snapshot_repo(root, Identity::ZERO, 0)?;
+            let snapshot_repo = open_snapshot_repo(root.snapshots(), Identity::ZERO, 0)?;
             let db = Self::open_db(root, history, Some((durability, disk_size_fn)), Some(snapshot_repo))?;
 
             Ok((db, local))
         }
 
         fn open_db(
-            root: &Path,
+            root: &ReplicaDir,
             history: impl durability::History<TxData = Txdata>,
             durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
             snapshot_repo: Option<Arc<SnapshotRepository>>,
@@ -2393,8 +2414,7 @@ mod tests {
             row_ty,
         }));
         {
-            let clog =
-                Commitlog::<()>::open(dir.path().join("clog"), Default::default()).expect("failed to open commitlog");
+            let clog = Commitlog::<()>::open(dir.commit_log(), Default::default()).expect("failed to open commitlog");
             let decoder = Decoder(Rc::clone(&inputs));
             clog.fold_transactions(decoder).unwrap();
         }
