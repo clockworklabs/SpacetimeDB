@@ -1028,7 +1028,7 @@ impl MutTxId {
         // Record metrics for the transaction at the very end,
         // right before we drop and release the lock.
         record_metrics(
-            self.ctx,
+            &self.ctx,
             self.timer,
             self.lock_wait_time,
             true,
@@ -1038,29 +1038,30 @@ impl MutTxId {
         tx_data
     }
 
-    pub fn commit_downgrade(self, workload: Workload) -> (TxData, TxId) {
+    pub fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxId) {
         let Self {
             mut committed_state_write_lock,
             tx_state,
             ..
         } = self;
         let tx_data = committed_state_write_lock.merge(tx_state, &self.ctx);
-        let database_identity = self.ctx.database_identity();
         // Record metrics for the transaction at the very end,
         // right before we drop and release the lock.
         record_metrics(
-            self.ctx,
+            &self.ctx,
             self.timer,
             self.lock_wait_time,
             true,
             Some(&tx_data),
             Some(&committed_state_write_lock),
         );
+        // Update the workload type of the execution context
+        self.ctx.workload = workload.into();
         let tx = TxId {
             committed_state_shared_lock: SharedWriteGuard::downgrade(committed_state_write_lock),
             lock_wait_time: Duration::ZERO,
             timer: Instant::now(),
-            ctx: ExecutionContext::with_workload(database_identity, workload),
+            ctx: self.ctx,
         };
         (tx_data, tx)
     }
@@ -1068,19 +1069,20 @@ impl MutTxId {
     pub fn rollback(self) {
         // Record metrics for the transaction at the very end,
         // right before we drop and release the lock.
-        record_metrics(self.ctx, self.timer, self.lock_wait_time, false, None, None);
+        record_metrics(&self.ctx, self.timer, self.lock_wait_time, false, None, None);
     }
 
-    pub fn rollback_downgrade(self, workload: Workload) -> TxId {
+    pub fn rollback_downgrade(mut self, workload: Workload) -> TxId {
         // Record metrics for the transaction at the very end,
         // right before we drop and release the lock.
-        let database_identity = self.ctx.database_identity();
-        record_metrics(self.ctx, self.timer, self.lock_wait_time, false, None, None);
+        record_metrics(&self.ctx, self.timer, self.lock_wait_time, false, None, None);
+        // Update the workload type of the execution context
+        self.ctx.workload = workload.into();
         TxId {
             committed_state_shared_lock: SharedWriteGuard::downgrade(self.committed_state_write_lock),
             lock_wait_time: Duration::ZERO,
             timer: Instant::now(),
-            ctx: ExecutionContext::with_workload(database_identity, workload),
+            ctx: self.ctx,
         }
     }
 }

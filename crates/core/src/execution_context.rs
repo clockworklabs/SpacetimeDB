@@ -13,11 +13,11 @@ use spacetimedb_sats::bsatn;
 #[derive(Default, Clone)]
 pub struct ExecutionContext {
     /// The identity of the database on which a transaction is being executed.
-    database_identity: Identity,
+    pub database_identity: Identity,
     /// The reducer from which the current transaction originated.
-    reducer: Option<ReducerContext>,
+    pub reducer: Option<ReducerContext>,
     /// The type of workload that is being executed.
-    workload: WorkloadType,
+    pub workload: WorkloadType,
 }
 
 /// If an [`ExecutionContext`] is a reducer context, describes the reducer.
@@ -115,6 +115,20 @@ pub enum WorkloadType {
     Subscribe,
     Update,
     Internal,
+}
+
+impl From<Workload> for WorkloadType {
+    fn from(value: Workload) -> Self {
+        match value {
+            #[cfg(test)]
+            Workload::ForTests => Self::Internal,
+            Workload::Reducer(_) => Self::Reducer,
+            Workload::Sql => Self::Sql,
+            Workload::Subscribe => Self::Subscribe,
+            Workload::Update => Self::Update,
+            Workload::Internal => Self::Internal,
+        }
+    }
 }
 
 impl Default for WorkloadType {
