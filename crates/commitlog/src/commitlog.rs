@@ -55,11 +55,11 @@ impl<R: Repo, T> Generic<R, T> {
             debug!("resuming last segment: {last}");
             repo::resume_segment_writer(&repo, opts, last)?.or_else(|meta| {
                 tail.push(meta.tx_range.start);
-                repo::create_segment_writer(&repo, opts, meta.tx_range.end)
+                repo::create_segment_writer(&repo, opts, meta.max_epoch, meta.tx_range.end)
             })?
         } else {
             debug!("starting fresh log");
-            repo::create_segment_writer(&repo, opts, 0)?
+            repo::create_segment_writer(&repo, opts, Commit::DEFAULT_EPOCH, 0)?
         };
 
         Ok(Self {
@@ -70,6 +70,43 @@ impl<R: Repo, T> Generic<R, T> {
             _record: PhantomData,
             panicked: false,
         })
+    }
+
+    /// Get the current epoch.
+    ///
+    /// See also: [`Commit::epoch`].
+    pub fn epoch(&self) -> u64 {
+        self.head.commit.epoch
+    }
+
+    /// Update the current epoch.
+    ///
+    /// Calls [`Self::commit`] to flush all data of the previous epoch, and
+    /// returns the result.
+    ///
+    /// Does nothing if the given `epoch` is equal to the current epoch.
+    ///
+    /// # Errors
+    ///
+    /// If `epoch` is smaller than the current epoch, an error of kind
+    /// [`io::ErrorKind::InvalidInput`] is returned.
+    ///
+    /// Also see [`Self::commit`].
+    pub fn set_epoch(&mut self, epoch: u64) -> io::Result<Option<Committed>> {
+        use std::cmp::Ordering::*;
+
+        match self.head.epoch().cmp(&epoch) {
+            Less => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "new epoch is smaller than current epoch",
+            )),
+            Equal => Ok(None),
+            Greater => {
+                let res = self.commit()?;
+                self.head.set_epoch(epoch);
+                Ok(res)
+            }
+        }
     }
 
     /// Write the currently buffered data to storage and rotate segments as
@@ -254,7 +291,7 @@ impl<R: Repo, T> Generic<R, T> {
             self.head.next_tx_offset(),
             self.head.min_tx_offset()
         );
-        let new = repo::create_segment_writer(&self.repo, self.opts, self.head.next_tx_offset())?;
+        let new = repo::create_segment_writer(&self.repo, self.opts, self.head.epoch(), self.head.next_tx_offset())?;
         let old = mem::replace(&mut self.head, new);
         self.tail.push(old.min_tx_offset());
         self.head.commit = old.commit;
@@ -821,6 +858,7 @@ mod tests {
             min_tx_offset: 0,
             n: 1,
             records: [43; 32].to_vec(),
+            epoch: 0,
         };
         log.commit().unwrap();
 
