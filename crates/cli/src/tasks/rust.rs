@@ -1,3 +1,4 @@
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
@@ -19,7 +20,7 @@ fn cargo_cmd(subcommand: &str, build_debug: bool, args: &[&str]) -> duct::Expres
     )
 }
 
-pub(crate) fn build_rust(project_path: &Path, build_debug: bool) -> anyhow::Result<PathBuf> {
+pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
     // Make sure that we have the wasm target installed (ok to run if its already installed)
     if let Err(err) = cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run() {
         println!(
@@ -28,20 +29,36 @@ pub(crate) fn build_rust(project_path: &Path, build_debug: bool) -> anyhow::Resu
         );
     }
 
-    // Browse all the rust files in the project and look for the string `println!`
-    for file in walkdir::WalkDir::new(project_path) {
-        let file = file?;
-        if file.file_type().is_file() && file.path().extension().map_or(false, |ext| ext == "rs") {
-            let content = fs::read_to_string(file.path())?;
-            if content.contains("println!") {
-                anyhow::bail!(
-                    "println! detected.\n\
-                     \n\
-                     It seems like you're using `println!` in your code. This is not allowed in\n\
-                     SpacetimeDB modules. If you need to print something, use the `log` crate\n\
-                     and the `log::info!` macro instead."
-                )
+    if !skip_clippy {
+        let mut err_count: u32 = 0;
+        for file in walkdir::WalkDir::new(project_path).into_iter().filter_map(Result::ok) {
+            let printable_path = file.path().to_str().ok_or(anyhow::anyhow!("path not utf-8"))?;
+            if file.file_type().is_file() && file.path().extension().map_or(false, |ext| ext == "rs") {
+                let file = fs::File::open(&file.path())?;
+                for (idx, line) in io::BufReader::new(file).lines().enumerate() {
+                    let line = line?;
+                    let line_number = idx + 1;
+                    for disallowed in &["println!", "print!", "eprintln!", "eprint!", "dbg!"] {
+                        if line.contains(disallowed) {
+                            if err_count == 0 {
+                                eprintln!("\nDetected nonfunctional print statements:");
+                            }
+                            eprintln!("\n{printable_path}:{line_number}: {line}\n");
+                            err_count += 1;
+                        }
+                    }
+                }
             }
+        }
+        if err_count > 0 {
+            anyhow::bail!(
+                "Found {} disallowed print statement(s).\n\
+            These will not be printed from SpacetimeDB modules.\n\
+            If you need to print something, use the `log` crate\n\
+            and the `log::info!` macro instead.
+        ",
+                err_count
+            );
         }
     }
 
