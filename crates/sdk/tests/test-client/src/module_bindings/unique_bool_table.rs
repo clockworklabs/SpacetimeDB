@@ -35,7 +35,7 @@ pub trait UniqueBoolTableAccess {
 impl UniqueBoolTableAccess for super::RemoteTables {
     fn unique_bool(&self) -> UniqueBoolTableHandle<'_> {
         UniqueBoolTableHandle {
-            imp: self.imp.get_table::<UniqueBool>("unique_bool"),
+            imp: self.imp.get_table::<UniqueBool>(49),
             ctx: std::marker::PhantomData,
         }
     }

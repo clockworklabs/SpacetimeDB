@@ -35,7 +35,7 @@ pub trait VecIdentityTableAccess {
 impl VecIdentityTableAccess for super::RemoteTables {
     fn vec_identity(&self) -> VecIdentityTableHandle<'_> {
         VecIdentityTableHandle {
-            imp: self.imp.get_table::<VecIdentity>("vec_identity"),
+            imp: self.imp.get_table::<VecIdentity>(78),
             ctx: std::marker::PhantomData,
         }
     }

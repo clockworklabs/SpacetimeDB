@@ -35,7 +35,7 @@ pub trait OptionVecOptionI32TableAccess {
 impl OptionVecOptionI32TableAccess for super::RemoteTables {
     fn option_vec_option_i_32(&self) -> OptionVecOptionI32TableHandle<'_> {
         OptionVecOptionI32TableHandle {
-            imp: self.imp.get_table::<OptionVecOptionI32>("option_vec_option_i32"),
+            imp: self.imp.get_table::<OptionVecOptionI32>(30),
             ctx: std::marker::PhantomData,
         }
     }

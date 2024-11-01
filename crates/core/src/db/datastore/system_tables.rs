@@ -38,6 +38,7 @@ use spacetimedb_vm::errors::{ErrorType, ErrorVm};
 use spacetimedb_vm::ops::parse;
 use std::cell::RefCell;
 use std::str::FromStr;
+use std::sync::Arc;
 use strum::Display;
 use v9::{RawModuleDefV9Builder, TableType};
 
@@ -483,7 +484,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
 #[sats(crate = spacetimedb_lib)]
 pub struct StTableRow {
     pub(crate) table_id: TableId,
-    pub(crate) table_name: Box<str>,
+    pub(crate) table_name: Arc<str>,
     pub(crate) table_type: StTableType,
     pub(crate) table_access: StAccess,
     /// The primary key of the table.

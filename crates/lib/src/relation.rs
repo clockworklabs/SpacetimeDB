@@ -92,7 +92,7 @@ impl Column {
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Header {
     pub table_id: TableId,
-    pub table_name: Box<str>,
+    pub table_name: Arc<str>,
     pub fields: Vec<Column>,
     pub constraints: BTreeMap<ColList, Constraints>,
 }
@@ -103,7 +103,7 @@ impl Header {
     /// `uncombined_constraints` will be normalized using [`combine_constraints`].
     pub fn new(
         table_id: TableId,
-        table_name: Box<str>,
+        table_name: Arc<str>,
         fields: Vec<Column>,
         uncombined_constraints: impl IntoIterator<Item = (ColList, Constraints)>,
     ) -> Self {

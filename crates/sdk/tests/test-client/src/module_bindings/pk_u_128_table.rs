@@ -35,7 +35,7 @@ pub trait PkU128TableAccess {
 impl PkU128TableAccess for super::RemoteTables {
     fn pk_u_128(&self) -> PkU128TableHandle<'_> {
         PkU128TableHandle {
-            imp: self.imp.get_table::<PkU128>("pk_u128"),
+            imp: self.imp.get_table::<PkU128>(41),
             ctx: std::marker::PhantomData,
         }
     }

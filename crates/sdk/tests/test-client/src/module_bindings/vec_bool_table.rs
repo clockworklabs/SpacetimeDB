@@ -35,7 +35,7 @@ pub trait VecBoolTableAccess {
 impl VecBoolTableAccess for super::RemoteTables {
     fn vec_bool(&self) -> VecBoolTableHandle<'_> {
         VecBoolTableHandle {
-            imp: self.imp.get_table::<VecBool>("vec_bool"),
+            imp: self.imp.get_table::<VecBool>(65),
             ctx: std::marker::PhantomData,
         }
     }

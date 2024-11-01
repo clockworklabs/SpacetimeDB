@@ -35,7 +35,7 @@ pub trait UniqueU64TableAccess {
 impl UniqueU64TableAccess for super::RemoteTables {
     fn unique_u_64(&self) -> UniqueU64TableHandle<'_> {
         UniqueU64TableHandle {
-            imp: self.imp.get_table::<UniqueU64>("unique_u64"),
+            imp: self.imp.get_table::<UniqueU64>(62),
             ctx: std::marker::PhantomData,
         }
     }

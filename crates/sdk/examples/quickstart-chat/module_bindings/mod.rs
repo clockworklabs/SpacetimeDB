@@ -49,13 +49,13 @@ impl __sdk::spacetime_module::InModule for Reducer {
 }
 
 impl __sdk::spacetime_module::Reducer for Reducer {
-    fn reducer_name(&self) -> &'static str {
+    fn reducer_index(&self) -> u32 {
         match self {
-            Reducer::IdentityConnected(_) => "__identity_connected__",
-            Reducer::IdentityDisconnected(_) => "__identity_disconnected__",
-            Reducer::Init(_) => "__init__",
-            Reducer::SendMessage(_) => "send_message",
-            Reducer::SetName(_) => "set_name",
+            Reducer::IdentityConnected(_) => 0,
+            Reducer::IdentityDisconnected(_) => 1,
+            Reducer::Init(_) => 2,
+            Reducer::SendMessage(_) => 3,
+            Reducer::SetName(_) => 4,
         }
     }
     fn reducer_args(&self) -> &dyn std::any::Any {
@@ -67,32 +67,30 @@ impl __sdk::spacetime_module::Reducer for Reducer {
             Reducer::SetName(args) => args,
         }
     }
-}
-impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
-    type Error = __anyhow::Error;
-    fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {
-        match &value.reducer_name[..] {
-            "__identity_connected__" => Ok(Reducer::IdentityConnected(__sdk::spacetime_module::parse_reducer_args(
-                "__identity_connected__",
-                &value.args,
-            )?)),
-            "__identity_disconnected__" => Ok(Reducer::IdentityDisconnected(
-                __sdk::spacetime_module::parse_reducer_args("__identity_disconnected__", &value.args)?,
-            )),
-            "__init__" => Ok(Reducer::Init(__sdk::spacetime_module::parse_reducer_args(
-                "__init__",
-                &value.args,
-            )?)),
-            "send_message" => Ok(Reducer::SendMessage(__sdk::spacetime_module::parse_reducer_args(
-                "send_message",
-                &value.args,
-            )?)),
-            "set_name" => Ok(Reducer::SetName(__sdk::spacetime_module::parse_reducer_args(
-                "set_name",
-                &value.args,
-            )?)),
-            _ => Err(__anyhow::anyhow!("Unknown reducer {:?}", value.reducer_name)),
+    fn parse_call_info(
+        reducer_id_to_idx: &impl Fn(__ws::ReducerId) -> anyhow::Result<u32>,
+        raw: __ws::ReducerCallInfo<__ws::BsatnFormat>,
+    ) -> anyhow::Result<Self> {
+        use __sdk::spacetime_module::parse_reducer_args;
+        let reducer_idx = reducer_id_to_idx(raw.reducer_id)?;
+        let name = Self::reducer_names()[reducer_idx as usize];
+        match reducer_id_to_idx(raw.reducer_id)? {
+            0 => Ok(Reducer::IdentityConnected(parse_reducer_args(name, &raw.args)?)),
+            1 => Ok(Reducer::IdentityDisconnected(parse_reducer_args(name, &raw.args)?)),
+            2 => Ok(Reducer::Init(parse_reducer_args(name, &raw.args)?)),
+            3 => Ok(Reducer::SendMessage(parse_reducer_args(name, &raw.args)?)),
+            4 => Ok(Reducer::SetName(parse_reducer_args(name, &raw.args)?)),
+            _ => unreachable!(),
         }
+    }
+    fn reducer_names() -> &'static [&'static str] {
+        &[
+            "__identity_connected__",
+            "__identity_disconnected__",
+            "__init__",
+            "send_message",
+            "set_name",
+        ]
     }
 }
 
@@ -104,34 +102,36 @@ pub struct DbUpdate {
     user: __sdk::spacetime_module::TableUpdate<User>,
 }
 
-impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
-    type Error = __anyhow::Error;
-    fn try_from(raw: __ws::DatabaseUpdate<__ws::BsatnFormat>) -> Result<Self, Self::Error> {
-        let mut db_update = DbUpdate::default();
-        for table_update in raw.tables {
-            match &table_update.table_name[..] {
-                "message" => db_update.message = message_table::parse_table_update(table_update)?,
-                "user" => db_update.user = user_table::parse_table_update(table_update)?,
-
-                unknown => __anyhow::bail!("Unknown table {unknown:?} in DatabaseUpdate"),
-            }
-        }
-        Ok(db_update)
-    }
-}
-
 impl __sdk::spacetime_module::InModule for DbUpdate {
     type Module = RemoteModule;
 }
 
 impl __sdk::spacetime_module::DbUpdate for DbUpdate {
     fn apply_to_client_cache(&self, cache: &mut __sdk::client_cache::ClientCache<RemoteModule>) {
-        cache.apply_diff_to_table::<Message>("message", &self.message);
-        cache.apply_diff_to_table::<User>("user", &self.user);
+        cache.apply_diff_to_table::<Message>(0, &self.message);
+        cache.apply_diff_to_table::<User>(1, &self.user);
     }
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::callbacks::DbCallbacks<RemoteModule>) {
-        callbacks.invoke_table_row_callbacks::<Message>("message", &self.message, event);
-        callbacks.invoke_table_row_callbacks::<User>("user", &self.user, event);
+        callbacks.invoke_table_row_callbacks::<Message>(0, &self.message, event);
+        callbacks.invoke_table_row_callbacks::<User>(1, &self.user, event);
+    }
+    fn parse_update(
+        table_id_to_idx: &impl Fn(__ws::TableId) -> anyhow::Result<u32>,
+        raw: __ws::DatabaseUpdate<__ws::BsatnFormat>,
+    ) -> anyhow::Result<Self> {
+        let mut db_update = DbUpdate::default();
+        for table_update in raw.tables {
+            match table_id_to_idx(table_update.table_id)? {
+                0 => db_update.message = message_table::parse_table_update(table_update)?,
+                1 => db_update.user = user_table::parse_table_update(table_update)?,
+
+                _ => unreachable!(),
+            }
+        }
+        Ok(db_update)
+    }
+    fn table_names() -> &'static [&'static str] {
+        &["message", "user"]
     }
 }
 

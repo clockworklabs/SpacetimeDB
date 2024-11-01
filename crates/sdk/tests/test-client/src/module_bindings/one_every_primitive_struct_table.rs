@@ -36,9 +36,7 @@ pub trait OneEveryPrimitiveStructTableAccess {
 impl OneEveryPrimitiveStructTableAccess for super::RemoteTables {
     fn one_every_primitive_struct(&self) -> OneEveryPrimitiveStructTableHandle<'_> {
         OneEveryPrimitiveStructTableHandle {
-            imp: self
-                .imp
-                .get_table::<OneEveryPrimitiveStruct>("one_every_primitive_struct"),
+            imp: self.imp.get_table::<OneEveryPrimitiveStruct>(5),
             ctx: std::marker::PhantomData,
         }
     }

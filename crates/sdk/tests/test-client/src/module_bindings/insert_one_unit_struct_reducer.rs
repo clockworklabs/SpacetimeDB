@@ -54,21 +54,19 @@ pub trait insert_one_unit_struct {
 
 impl insert_one_unit_struct for super::RemoteReducers {
     fn insert_one_unit_struct(&self, s: UnitStruct) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_one_unit_struct", InsertOneUnitStruct { s })
+        self.imp.call_reducer(64, InsertOneUnitStruct { s })
     }
     fn on_insert_one_unit_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &UnitStruct) + Send + 'static,
     ) -> InsertOneUnitStructCallbackId {
         InsertOneUnitStructCallbackId(self.imp.on_reducer::<InsertOneUnitStruct>(
-            "insert_one_unit_struct",
+            64,
             Box::new(move |ctx: &super::EventContext, args: &InsertOneUnitStruct| callback(ctx, &args.s)),
         ))
     }
     fn remove_on_insert_one_unit_struct(&self, callback: InsertOneUnitStructCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneUnitStruct>("insert_one_unit_struct", callback.0)
+        self.imp.remove_on_reducer::<InsertOneUnitStruct>(64, callback.0)
     }
 }
 
@@ -88,6 +86,6 @@ pub trait set_flags_for_insert_one_unit_struct {
 
 impl set_flags_for_insert_one_unit_struct for super::SetReducerFlags {
     fn insert_one_unit_struct(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_one_unit_struct", flags);
+        self.imp.set_call_reducer_flags(64, flags);
     }
 }

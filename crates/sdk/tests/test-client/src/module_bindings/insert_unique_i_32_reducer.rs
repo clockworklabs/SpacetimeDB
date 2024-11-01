@@ -53,20 +53,19 @@ pub trait insert_unique_i_32 {
 
 impl insert_unique_i_32 for super::RemoteReducers {
     fn insert_unique_i_32(&self, n: i32, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_unique_i32", InsertUniqueI32 { n, data })
+        self.imp.call_reducer(94, InsertUniqueI32 { n, data })
     }
     fn on_insert_unique_i_32(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i32, &i32) + Send + 'static,
     ) -> InsertUniqueI32CallbackId {
         InsertUniqueI32CallbackId(self.imp.on_reducer::<InsertUniqueI32>(
-            "insert_unique_i32",
+            94,
             Box::new(move |ctx: &super::EventContext, args: &InsertUniqueI32| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_insert_unique_i_32(&self, callback: InsertUniqueI32CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueI32>("insert_unique_i32", callback.0)
+        self.imp.remove_on_reducer::<InsertUniqueI32>(94, callback.0)
     }
 }
 
@@ -86,6 +85,6 @@ pub trait set_flags_for_insert_unique_i_32 {
 
 impl set_flags_for_insert_unique_i_32 for super::SetReducerFlags {
     fn insert_unique_i_32(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_unique_i32", flags);
+        self.imp.set_call_reducer_flags(94, flags);
     }
 }

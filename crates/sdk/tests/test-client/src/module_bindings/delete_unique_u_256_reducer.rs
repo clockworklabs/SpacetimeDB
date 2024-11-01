@@ -52,20 +52,19 @@ pub trait delete_unique_u_256 {
 
 impl delete_unique_u_256 for super::RemoteReducers {
     fn delete_unique_u_256(&self, n: __sats::u256) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_u256", DeleteUniqueU256 { n })
+        self.imp.call_reducer(28, DeleteUniqueU256 { n })
     }
     fn on_delete_unique_u_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::u256) + Send + 'static,
     ) -> DeleteUniqueU256CallbackId {
         DeleteUniqueU256CallbackId(self.imp.on_reducer::<DeleteUniqueU256>(
-            "delete_unique_u256",
+            28,
             Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueU256| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_delete_unique_u_256(&self, callback: DeleteUniqueU256CallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueU256>("delete_unique_u256", callback.0)
+        self.imp.remove_on_reducer::<DeleteUniqueU256>(28, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_delete_unique_u_256 {
 
 impl set_flags_for_delete_unique_u_256 for super::SetReducerFlags {
     fn delete_unique_u_256(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_unique_u256", flags);
+        self.imp.set_call_reducer_flags(28, flags);
     }
 }

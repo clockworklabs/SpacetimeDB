@@ -35,7 +35,7 @@ pub trait OneI256TableAccess {
 impl OneI256TableAccess for super::RemoteTables {
     fn one_i_256(&self) -> OneI256TableHandle<'_> {
         OneI256TableHandle {
-            imp: self.imp.get_table::<OneI256>("one_i256"),
+            imp: self.imp.get_table::<OneI256>(11),
             ctx: std::marker::PhantomData,
         }
     }

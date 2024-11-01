@@ -64,7 +64,7 @@ pub fn serialize(msg: impl ToProtocol<Encoded = SwitchedServerMessage>, config: 
 #[derive(Debug, From)]
 pub enum SerializableMessage {
     Query(OneOffQueryResponseMessage),
-    Identity(IdentityTokenMessage),
+    AfterConnecting(AfterConnectingMessage),
     Subscribe(SubscriptionUpdateMessage),
     TxUpdate(TransactionUpdateMessage),
 }
@@ -75,7 +75,7 @@ impl SerializableMessage {
             Self::Query(msg) => Some(msg.num_rows()),
             Self::Subscribe(msg) => Some(msg.num_rows()),
             Self::TxUpdate(msg) => Some(msg.num_rows()),
-            Self::Identity(_) => None,
+            Self::AfterConnecting(_) => None,
         }
     }
 
@@ -84,7 +84,7 @@ impl SerializableMessage {
             Self::Query(_) => Some(WorkloadType::Sql),
             Self::Subscribe(_) => Some(WorkloadType::Subscribe),
             Self::TxUpdate(_) => Some(WorkloadType::Update),
-            Self::Identity(_) => None,
+            Self::AfterConnecting(_) => None,
         }
     }
 }
@@ -94,21 +94,21 @@ impl ToProtocol for SerializableMessage {
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
         match self {
             SerializableMessage::Query(msg) => msg.to_protocol(protocol),
-            SerializableMessage::Identity(msg) => msg.to_protocol(protocol),
+            SerializableMessage::AfterConnecting(msg) => msg.to_protocol(protocol),
             SerializableMessage::Subscribe(msg) => msg.to_protocol(protocol),
             SerializableMessage::TxUpdate(msg) => msg.to_protocol(protocol),
         }
     }
 }
 
-pub type IdentityTokenMessage = ws::IdentityToken;
+pub type AfterConnectingMessage = ws::AfterConnecting;
 
-impl ToProtocol for IdentityTokenMessage {
+impl ToProtocol for AfterConnectingMessage {
     type Encoded = SwitchedServerMessage;
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
         match protocol {
-            Protocol::Text => FormatSwitch::Json(ws::ServerMessage::IdentityToken(self)),
-            Protocol::Binary => FormatSwitch::Bsatn(ws::ServerMessage::IdentityToken(self)),
+            Protocol::Text => FormatSwitch::Json(ws::ServerMessage::AfterConnecting(self)),
+            Protocol::Binary => FormatSwitch::Bsatn(ws::ServerMessage::AfterConnecting(self)),
         }
     }
 }
@@ -153,8 +153,8 @@ impl ToProtocol for TransactionUpdateMessage {
                 status,
                 caller_identity: event.caller_identity,
                 reducer_call: ws::ReducerCallInfo {
-                    reducer_name: event.function_call.reducer.to_owned().into(),
-                    reducer_id: event.function_call.reducer_id.into(),
+                    reducer_id: event.function_call.reducer_id,
+                    reducer_name: F::into_optional_name(&event.function_call.reducer),
                     args,
                     request_id,
                 },
@@ -264,7 +264,7 @@ impl ToProtocol for OneOffQueryResponseMessage {
                 .results
                 .into_iter()
                 .map(|table| ws::OneOffTable {
-                    table_name: table.head.table_name.clone(),
+                    table_id: table.head.table_id,
                     rows: F::encode_list(table.data.into_iter()).0,
                 })
                 .collect();

@@ -526,6 +526,7 @@ impl RelationalDB {
         self.inner.get_all_tables_mut_tx(tx)
     }
 
+    // TODO(perf, centril): this might not be perf sensitive, but the forced allocation here is unfortunate.
     pub fn get_all_tables(&self, tx: &Tx) -> Result<Vec<Arc<TableSchema>>, DBError> {
         self.inner.get_all_tables_tx(tx)
     }
@@ -2423,9 +2424,9 @@ mod tests {
                 arg_bsatn,
             } = ReducerContext::try_from(&input).unwrap();
             if i == 0 {
-                assert_eq!(reducer_name, "__identity_connected__");
+                assert_eq!(&*reducer_name, "__identity_connected__");
             } else {
-                assert_eq!(reducer_name, "abstract_concrete_proxy_factory_impl");
+                assert_eq!(&*reducer_name, "abstract_concrete_proxy_factory_impl");
             }
             assert!(
                 arg_bsatn.is_empty(),

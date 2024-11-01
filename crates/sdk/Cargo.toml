@@ -12,6 +12,7 @@ spacetimedb-data-structures.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde"]}
 spacetimedb-client-api-messages.workspace = true
+spacetimedb-primitives.workspace = true
 
 anyhow = { workspace = true, features = ["backtrace"] }
 anymap.workspace = true

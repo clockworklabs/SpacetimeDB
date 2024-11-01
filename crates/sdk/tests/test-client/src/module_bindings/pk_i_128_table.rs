@@ -35,7 +35,7 @@ pub trait PkI128TableAccess {
 impl PkI128TableAccess for super::RemoteTables {
     fn pk_i_128(&self) -> PkI128TableHandle<'_> {
         PkI128TableHandle {
-            imp: self.imp.get_table::<PkI128>("pk_i128"),
+            imp: self.imp.get_table::<PkI128>(33),
             ctx: std::marker::PhantomData,
         }
     }
