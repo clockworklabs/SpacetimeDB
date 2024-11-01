@@ -4942,6 +4942,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "toml 0.8.19",
+ "walkdir",
  "wasmbin",
  "wasmtime",
  "webbrowser",
