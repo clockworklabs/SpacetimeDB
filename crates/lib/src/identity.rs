@@ -99,9 +99,24 @@ impl Identity {
     }
 
     /// Returns an `Identity` defined as the given byte `slice`.
-    /// The slice is assumed to be in big-endian format.
-    pub fn from_slice(slice: &[u8]) -> Self {
+    /// The slice is assumed to be in BIG-ENDIAN format.
+    ///
+    /// This method is the correct choice if you have converted the bytes of a hexadecimal-formatted `Identity`
+    /// to a byte array in the following way:
+    /// ```ignore
+    /// "0xb0b1b2..."
+    /// ->
+    /// [0xb0, 0xb1, 0xb2, ...]
+    /// ```
+    pub fn from_be_slice(slice: &[u8]) -> Self {
         Self::from_be_byte_array(slice.try_into().unwrap())
+    }
+
+    /// Returns an `Identity` defined as the given byte `slice`.
+    /// The slice is assumed to be in LITTLE-ENDIAN format.
+    /// If you are parsing an `Identity` from a string, you probably want `from_be_slice` instead.
+    pub fn from_slice(slice: &[u8]) -> Self {
+        Self::from_byte_array(slice.try_into().unwrap())
     }
 
     #[doc(hidden)]

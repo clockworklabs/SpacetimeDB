@@ -13,7 +13,7 @@ mod tests;
 /// A control database when SpacetimeDB is running standalone.
 ///
 /// Important note: The `Addresses` and `Identities` stored in this database
-/// are stored as *little-endian* byte arrays. This means that printing such an array
+/// are stored as *LITTLE-ENDIAN* byte arrays. This means that printing such an array
 /// in hexadecimal will result in the REVERSE of the standard way to print `Addresses` and `Identities`.
 #[derive(Clone)]
 pub struct ControlDb {
@@ -145,7 +145,7 @@ impl ControlDb {
 
         let identity_bytes = database_identity.to_byte_array();
         let tree = self.db.open_tree("dns")?;
-        tree.insert(domain.to_lowercase().as_bytes(), &identity_bytes)?;
+        tree.insert(domain.to_lowercase(), &identity_bytes)?;
 
         let tree = self.db.open_tree("reverse_dns")?;
         match tree.get(identity_bytes)? {
@@ -225,8 +225,8 @@ impl ControlDb {
 
     pub fn get_database_by_identity(&self, identity: &Identity) -> Result<Option<Database>> {
         let tree = self.db.open_tree("database_by_identity")?;
-        let key = identity.to_hex();
-        let value = tree.get(key.as_bytes())?;
+        let key = identity.to_be_byte_array();
+        let value = tree.get(&key[..])?;
         if let Some(value) = value {
             let database = compat::Database::from_slice(&value[..]).unwrap().into();
             return Ok(Some(database));
@@ -238,7 +238,7 @@ impl ControlDb {
         let id = self.db.generate_id()?;
         let tree = self.db.open_tree("database_by_identity")?;
 
-        let key = database.database_identity.to_hex();
+        let key = database.database_identity.to_be_byte_array();
         if tree.contains_key(key)? {
             return Err(Error::DatabaseAlreadyExists(database.database_identity));
         }
@@ -261,9 +261,9 @@ impl ControlDb {
 
         if let Some(old_value) = tree.get(id.to_be_bytes())? {
             let database = compat::Database::from_slice(&old_value[..])?;
-            let key = database.database_identity().to_hex();
+            let key = database.database_identity().to_be_byte_array();
 
-            tree_by_identity.remove(key.as_bytes())?;
+            tree_by_identity.remove(&key[..])?;
             tree.remove(id.to_be_bytes())?;
             return Ok(Some(id));
         }
