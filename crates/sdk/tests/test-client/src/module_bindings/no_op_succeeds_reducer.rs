@@ -62,3 +62,23 @@ impl no_op_succeeds for super::RemoteReducers {
         self.imp.remove_on_reducer::<NoOpSucceeds>("no_op_succeeds", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `no_op_succeeds`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_no_op_succeeds {
+    /// Set the call-reducer flags for the reducer `no_op_succeeds` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn no_op_succeeds(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_no_op_succeeds for super::SetReducerFlags {
+    fn no_op_succeeds(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("no_op_succeeds", flags);
+    }
+}

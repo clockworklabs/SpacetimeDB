@@ -71,3 +71,23 @@ impl insert_vec_unit_struct for super::RemoteReducers {
             .remove_on_reducer::<InsertVecUnitStruct>("insert_vec_unit_struct", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_vec_unit_struct`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_vec_unit_struct {
+    /// Set the call-reducer flags for the reducer `insert_vec_unit_struct` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_vec_unit_struct(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_vec_unit_struct for super::SetReducerFlags {
+    fn insert_vec_unit_struct(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_vec_unit_struct", flags);
+    }
+}
