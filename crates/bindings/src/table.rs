@@ -262,25 +262,14 @@ impl MaybeError for AutoIncOverflow {
     }
 }
 
-/// A trait for types exposing an operation to access their `N`th field.
-///
-/// In other words, a type implementing `FieldAccess<N>` allows
-/// shared projection from `self` to its `N`th field.
-#[doc(hidden)]
-pub trait FieldAccess<const N: u16> {
-    /// The type of the field at the `N`th position.
-    type Field;
-
-    /// Project to the value of the field at position `N`.
-    fn get_field(&self) -> &Self::Field;
-}
-
 pub trait Column {
     type Row;
     type ColType;
     const COLUMN_NAME: &'static str;
     fn get_field(row: &Self::Row) -> &Self::ColType;
 }
+
+pub trait PrimaryKey {}
 
 pub struct UniqueColumn<Tbl: Table, ColType, Col>
 where
@@ -369,11 +358,20 @@ where
     ///
     /// Returns the new row as actually inserted, with any auto-inc placeholders substituted for computed values.
     ///
+    /// This method can only be called on primary keys, not any unique column. This is to reduce
+    /// confusion regarding what constitutes a row update vs just deleting one row and adding
+    /// another. To perform this same operation for a non-primary unique column `foo`, simply call
+    /// `.foo().delete(&row.foo)` followed by `.insert(row)`, but note that clients will not
+    /// consider that as an update unless the primary key of that row stays the same.
+    ///
     /// # Panics
     /// Panics if no row was previously present with the matching value in the unique column,
     /// or if either the delete or the insertion would violate a constraint.
     #[track_caller]
-    pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row {
+    pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row
+    where
+        Col: PrimaryKey,
+    {
         let (deleted, buf) = self._delete(Col::get_field(&new_row));
         if !deleted {
             update_row_didnt_exist(Tbl::TABLE_NAME, Col::COLUMN_NAME)
