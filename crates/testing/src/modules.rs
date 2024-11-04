@@ -11,7 +11,7 @@ use spacetimedb_client_api::routes::subscribe::generate_random_address;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use tokio::runtime::{Builder, Runtime};
 
-use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
+use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
@@ -50,23 +50,25 @@ pub struct ModuleHandle {
 }
 
 impl ModuleHandle {
-    pub async fn call_reducer_json(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
-        let args = serde_json::to_string(&args).unwrap();
-        let message = ws::ClientMessage::CallReducer(ws::CallReducer {
+    fn call_reducer_msg<Args>(reducer: &str, args: Args) -> ws::ClientMessage<Args> {
+        ws::ClientMessage::CallReducer(ws::CallReducer {
             reducer: reducer.into(),
             args,
             request_id: 0,
-        });
+            flags: ws::CallReducerFlags::FullUpdate,
+        })
+    }
+
+    pub async fn call_reducer_json(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
+        let args = serde_json::to_string(&args).unwrap();
+        let message = Self::call_reducer_msg(reducer, args);
         self.send(serde_json::to_string(&SerializeWrapper::new(message)).unwrap())
             .await
     }
 
     pub async fn call_reducer_binary(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
-        let message = ws::ClientMessage::CallReducer(ws::CallReducer {
-            reducer: reducer.into(),
-            args: bsatn::to_vec(&args).unwrap(),
-            request_id: 0,
-        });
+        let args = bsatn::to_vec(&args).unwrap();
+        let message = Self::call_reducer_msg(reducer, args);
         self.send(bsatn::to_vec(&message).unwrap()).await
     }
 
@@ -195,7 +197,7 @@ impl CompiledModule {
         // for stuff like "get logs" or "get message log"
         ModuleHandle {
             _env: env,
-            client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module_rx),
+            client: ClientConnection::dummy(client_id, ClientConfig::for_test(), instance.id, module_rx),
             db_identity,
         }
     }

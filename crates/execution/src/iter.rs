@@ -1,6 +1,7 @@
-use std::borrow::Cow;
+use std::ops::{Bound, RangeBounds};
 
 use spacetimedb_lib::{AlgebraicValue, ProductValue};
+use spacetimedb_primitives::{IndexId, TableId};
 use spacetimedb_table::{
     blob_store::BlobStore,
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
@@ -64,7 +65,160 @@ impl Tuple<'_> {
     }
 }
 
-/// A tuple at a time query iterator.
+/// An execution plan for a tuple-at-a-time iterator.
+/// As the name suggests it is meant to be cached.
+/// Building the iterator should incur minimal overhead.
+pub struct CachedIterPlan {
+    /// The relational ops
+    iter_ops: Box<[IterOp]>,
+    /// The expression ops
+    expr_ops: Box<[OpCode]>,
+    /// The constants referenced by the plan
+    constants: Box<[AlgebraicValue]>,
+}
+
+static_assert_size!(CachedIterPlan, 48);
+
+impl CachedIterPlan {
+    /// Returns an interator over the query ops
+    fn ops(&self) -> impl Iterator<Item = IterOp> + '_ {
+        self.iter_ops.iter().copied()
+    }
+
+    /// Lookup a constant in the plan
+    fn constant(&self, i: u16) -> &AlgebraicValue {
+        &self.constants[i as usize]
+    }
+}
+
+/// An opcode for a tuple-at-a-time execution plan
+#[derive(Clone, Copy)]
+pub enum IterOp {
+    /// A table scan opcode takes 1 arg: A [TableId]
+    TableScan(TableId),
+    /// A delta scan opcode takes 1 arg: A [TableId]
+    DeltaScan(TableId),
+    /// An index scan opcode takes 2 args:
+    /// 1. An [IndexId]
+    /// 2. A ptr to an [AlgebraicValue]
+    IxScanEq(IndexId, u16),
+    /// An index range scan opcode takes 3 args:
+    /// 1. An [IndexId]
+    /// 2. A ptr to the lower bound
+    /// 3. A ptr to the upper bound
+    IxScanRange(IndexId, Bound<u16>, Bound<u16>),
+    /// Pops its 2 args from the stack
+    NLJoin,
+    /// An index join opcode takes 2 args:
+    /// 1. An [IndexId]
+    /// 2. An instruction ptr
+    /// 3. A length
+    IxJoin(IndexId, usize, u16),
+    /// An index join opcode takes 2 args:
+    /// 1. An [IndexId]
+    /// 2. An instruction ptr
+    /// 3. A length
+    UniqueIxJoin(IndexId, usize, u16),
+    /// A filter opcode takes 2 args:
+    /// 1. An instruction ptr
+    /// 2. A length
+    Filter(usize, u32),
+}
+
+static_assert_size!(IterOp, 16);
+
+pub trait Datastore {
+    fn delta_scan_iter(&self, table_id: TableId) -> DeltaScanIter;
+    fn table_scan_iter(&self, table_id: TableId) -> TableScanIter;
+    fn index_scan_iter(&self, index_id: IndexId, range: &impl RangeBounds<AlgebraicValue>) -> IndexScanIter;
+    fn get_table_for_index(&self, index_id: &IndexId) -> &Table;
+    fn get_index(&self, index_id: &IndexId) -> &BTreeIndex;
+    fn get_blob_store(&self) -> &dyn BlobStore;
+}
+
+/// An iterator for a delta table
+pub struct DeltaScanIter<'a> {
+    iter: std::slice::Iter<'a, ProductValue>,
+}
+
+impl<'a> Iterator for DeltaScanIter<'a> {
+    type Item = &'a ProductValue;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+impl CachedIterPlan {
+    pub fn iter<'a>(&'a self, tx: &'a impl Datastore) -> Iter<'a> {
+        let mut stack = vec![];
+        for op in self.ops() {
+            match op {
+                IterOp::TableScan(table_id) => {
+                    // Push table scan
+                    stack.push(Iter::TableScan(tx.table_scan_iter(table_id)));
+                }
+                IterOp::DeltaScan(table_id) => {
+                    // Push delta scan
+                    stack.push(Iter::DeltaScan(tx.delta_scan_iter(table_id)));
+                }
+                IterOp::IxScanEq(index_id, ptr) => {
+                    // Push index scan
+                    stack.push(Iter::IndexScan(tx.index_scan_iter(index_id, &self.constant(ptr))));
+                }
+                IterOp::IxScanRange(index_id, lower, upper) => {
+                    // Push range scan
+                    let lower = lower.map(|ptr| self.constant(ptr));
+                    let upper = upper.map(|ptr| self.constant(ptr));
+                    stack.push(Iter::IndexScan(tx.index_scan_iter(index_id, &(lower, upper))));
+                }
+                IterOp::NLJoin => {
+                    // Pop args and push nested loop join
+                    let rhs = stack.pop().unwrap();
+                    let lhs = stack.pop().unwrap();
+                    stack.push(Iter::NLJoin(NestedLoopJoin::new(lhs, rhs)));
+                }
+                IterOp::IxJoin(index_id, i, n) => {
+                    // Pop arg and push index join
+                    let input = stack.pop().unwrap();
+                    let index = tx.get_index(&index_id);
+                    let table = tx.get_table_for_index(&index_id);
+                    let blob_store = tx.get_blob_store();
+                    let ops = &self.expr_ops[i..i + n as usize];
+                    let program = ExprProgram::new(ops, &self.constants);
+                    let projection = ProgramEvaluator::from(program);
+                    stack.push(Iter::IxJoin(LeftDeepJoin::Eq(IndexJoin::new(
+                        input, index, table, blob_store, projection,
+                    ))));
+                }
+                IterOp::UniqueIxJoin(index_id, i, n) => {
+                    // Pop arg and push index join
+                    let input = stack.pop().unwrap();
+                    let index = tx.get_index(&index_id);
+                    let table = tx.get_table_for_index(&index_id);
+                    let blob_store = tx.get_blob_store();
+                    let ops = &self.expr_ops[i..i + n as usize];
+                    let program = ExprProgram::new(ops, &self.constants);
+                    let projection = ProgramEvaluator::from(program);
+                    stack.push(Iter::UniqueIxJoin(LeftDeepJoin::Eq(UniqueIndexJoin::new(
+                        input, index, table, blob_store, projection,
+                    ))));
+                }
+                IterOp::Filter(i, n) => {
+                    // Pop arg and push filter
+                    let input = Box::new(stack.pop().unwrap());
+                    let ops = &self.expr_ops[i..i + n as usize];
+                    let program = ExprProgram::new(ops, &self.constants);
+                    let program = ProgramEvaluator::from(program);
+                    stack.push(Iter::Filter(Filter { input, program }));
+                }
+            }
+        }
+        stack.pop().unwrap()
+    }
+}
+
+/// A tuple-at-a-time query iterator.
 /// Notice there is no explicit projection operation.
 /// This is because for applicable plans,
 /// the optimizer can remove intermediate projections,
@@ -72,15 +226,17 @@ impl Tuple<'_> {
 pub enum Iter<'a> {
     /// A [RowRef] table iterator
     TableScan(TableScanIter<'a>),
+    /// A [ProductValue] ref iterator
+    DeltaScan(DeltaScanIter<'a>),
     /// A [RowRef] index iterator
     IndexScan(IndexScanIter<'a>),
-    /// A cross product iterator
-    CrossJoin(CrossJoinIter<'a>),
+    /// A nested loop join iterator
+    NLJoin(NestedLoopJoin<'a>),
     /// A non-unique (constraint) index join iterator
-    IxJoin(IxJoin<IndexJoin<'a, Project>, IndexJoin<'a, Concat<'a>>>),
+    IxJoin(LeftDeepJoin<IndexJoin<'a>>),
     /// A unique (constraint) index join iterator
-    UniqueIxJoin(IxJoin<UniqueIndexJoin<'a, Project>, UniqueIndexJoin<'a, Concat<'a>>>),
-    /// A tuple at a time filter iterator
+    UniqueIxJoin(LeftDeepJoin<UniqueIndexJoin<'a>>),
+    /// A tuple-at-a-time filter iterator
     Filter(Filter<'a>),
 }
 
@@ -92,6 +248,10 @@ impl<'a> Iterator for Iter<'a> {
             Self::TableScan(iter) => {
                 // Returns row ids
                 iter.next().map(Row::Ptr).map(Tuple::Row)
+            }
+            Self::DeltaScan(iter) => {
+                // Returns product refs
+                iter.next().map(Row::Ref).map(Tuple::Row)
             }
             Self::IndexScan(iter) => {
                 // Returns row ids
@@ -109,7 +269,7 @@ impl<'a> Iterator for Iter<'a> {
                 // Filter is a passthru
                 iter.next()
             }
-            Self::CrossJoin(iter) => {
+            Self::NLJoin(iter) => {
                 iter.next().map(|t| {
                     match t {
                         // A leaf join
@@ -127,8 +287,7 @@ impl<'a> Iterator for Iter<'a> {
                         //    / \
                         //   b   c
                         (Tuple::Row(r), Tuple::Join(mut rows)) => {
-                            // Returns (n+1)-tuples,
-                            // if the rhs returns n-tuples.
+                            // Returns an (n+1)-tuple
                             let mut pointers = vec![r];
                             pointers.append(&mut rows);
                             Tuple::Join(pointers)
@@ -140,21 +299,19 @@ impl<'a> Iterator for Iter<'a> {
                         //  / \
                         // a   b
                         (Tuple::Join(mut rows), Tuple::Row(r)) => {
-                            // Returns (n+1)-tuples,
-                            // if the lhs returns n-tuples.
+                            // Returns an (n+1)-tuple
                             rows.push(r);
                             Tuple::Join(rows)
                         }
                         // A bushy join
                         //      x
+                        //     / \
                         //    /   \
                         //   x     x
                         //  / \   / \
                         // a   b c   d
                         (Tuple::Join(mut lhs), Tuple::Join(mut rhs)) => {
-                            // Returns (n+m)-tuples,
-                            // if the lhs returns n-tuples,
-                            // if the rhs returns m-tuples.
+                            // Returns an (n+m)-tuple
                             lhs.append(&mut rhs);
                             Tuple::Join(lhs)
                         }
@@ -165,96 +322,63 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
-/// An iterator for a unique (constraint) index join
-pub enum IxJoin<SingleCol, MultiCol> {
-    /// A single column left semijoin.
-    /// Returns tuples from the lhs.
-    SemiLhs(SingleCol),
-    /// A single column right semijoin.
-    /// Returns rows from the index side.
-    SemiRhs(SingleCol),
-    /// A multi-column left semijoin.
-    /// Returns tuples from the lhs.
-    MultiColSemiLhs(MultiCol),
-    /// A multi-column right semijoin.
-    /// Returns rows from the index side.
-    MultiColSemiRhs(MultiCol),
-    /// A multi-column index join.
-    /// If the lhs returns n-tuples,
-    /// this returns (n+1)-tuples.
-    MultiCol(MultiCol),
-    /// A single column index join.
-    /// If the lhs returns n-tuples,
-    /// this returns (n+1)-tuples.
-    Eq(SingleCol),
+/// An iterator for a left deep join tree
+pub enum LeftDeepJoin<Iter> {
+    /// A standard join
+    Eq(Iter),
+    /// A semijoin that returns the lhs
+    SemiLhs(Iter),
+    /// A semijion that returns the rhs
+    SemiRhs(Iter),
 }
 
-impl<'a, P, Q> Iterator for IxJoin<P, Q>
+impl<'a, Iter> Iterator for LeftDeepJoin<Iter>
 where
-    P: Iterator<Item = (Tuple<'a>, RowRef<'a>)>,
-    Q: Iterator<Item = (Tuple<'a>, RowRef<'a>)>,
+    Iter: Iterator<Item = (Tuple<'a>, RowRef<'a>)>,
 {
     type Item = Tuple<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let proj_left_deep_join = |(tuple, ptr)| {
-            match (tuple, ptr) {
-                // A leaf join
-                //   x
-                //  / \
-                // a   b
-                (Tuple::Row(u), ptr) => {
-                    // Returns a 2-tuple
-                    Tuple::Join(vec![u, Row::Ptr(ptr)])
-                }
-                // A left deep join
-                //     x
-                //    / \
-                //   x   c
-                //  / \
-                // a   b
-                (Tuple::Join(mut rows), ptr) => {
-                    // Returns an n+1 tuple
-                    rows.push(Row::Ptr(ptr));
-                    Tuple::Join(rows)
-                }
-            }
-        };
         match self {
             Self::SemiLhs(iter) => {
-                // A left semijoin
+                // Return the lhs tuple
                 iter.next().map(|(t, _)| t)
             }
             Self::SemiRhs(iter) => {
-                // A right semijoin
+                // Return the rhs row
                 iter.next().map(|(_, ptr)| ptr).map(Row::Ptr).map(Tuple::Row)
-            }
-            Self::MultiColSemiLhs(iter) => {
-                // A left semijoin
-                iter.next().map(|(t, _)| t)
-            }
-            Self::MultiColSemiRhs(iter) => {
-                // A right semijoin
-                iter.next().map(|(_, ptr)| ptr).map(Row::Ptr).map(Tuple::Row)
-            }
-            Self::MultiCol(iter) => {
-                // Appends the rhs to the lhs
-                iter.next().map(proj_left_deep_join)
             }
             Self::Eq(iter) => {
-                // Appends the rhs to the lhs
-                iter.next().map(proj_left_deep_join)
+                iter.next().map(|(tuple, ptr)| {
+                    match (tuple, ptr) {
+                        // A leaf join
+                        //   x
+                        //  / \
+                        // a   b
+                        (Tuple::Row(u), ptr) => {
+                            // Returns a 2-tuple
+                            Tuple::Join(vec![u, Row::Ptr(ptr)])
+                        }
+                        // A left deep join
+                        //     x
+                        //    / \
+                        //   x   c
+                        //  / \
+                        // a   b
+                        (Tuple::Join(mut rows), ptr) => {
+                            // Returns an (n+1)-tuple
+                            rows.push(Row::Ptr(ptr));
+                            Tuple::Join(rows)
+                        }
+                    }
+                })
             }
         }
     }
 }
 
-pub trait FieldProject {
-    fn eval<'a>(&self, tuple: &'a Tuple) -> Cow<'a, AlgebraicValue>;
-}
-
 /// A unique (constraint) index join iterator
-pub struct UniqueIndexJoin<'a, FieldProject> {
+pub struct UniqueIndexJoin<'a> {
     /// The lhs of the join
     input: Box<Iter<'a>>,
     /// The rhs index
@@ -264,19 +388,34 @@ pub struct UniqueIndexJoin<'a, FieldProject> {
     /// A handle to the blobstore
     blob_store: &'a dyn BlobStore,
     /// The lhs index key projection
-    projection: FieldProject,
+    projection: ProgramEvaluator<'a>,
 }
 
-impl<'a, P> Iterator for UniqueIndexJoin<'a, P>
-where
-    P: FieldProject,
-{
+impl<'a> UniqueIndexJoin<'a> {
+    fn new(
+        input: Iter<'a>,
+        index: &'a BTreeIndex,
+        table: &'a Table,
+        blob_store: &'a dyn BlobStore,
+        projection: ProgramEvaluator<'a>,
+    ) -> Self {
+        Self {
+            input: Box::new(input),
+            index,
+            table,
+            blob_store,
+            projection,
+        }
+    }
+}
+
+impl<'a> Iterator for UniqueIndexJoin<'a> {
     type Item = (Tuple<'a>, RowRef<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.input.find_map(|tuple| {
             self.index
-                .seek(self.projection.eval(&tuple).as_ref())
+                .seek(&self.projection.eval(&tuple))
                 .next()
                 .and_then(|ptr| self.table.get_row_ref(self.blob_store, ptr))
                 .map(|ptr| (tuple, ptr))
@@ -285,7 +424,7 @@ where
 }
 
 /// A non-unique (constraint) index join iterator
-pub struct IndexJoin<'a, FieldProject> {
+pub struct IndexJoin<'a> {
     /// The lhs of the join
     input: Box<Iter<'a>>,
     /// The current tuple from the lhs
@@ -299,13 +438,30 @@ pub struct IndexJoin<'a, FieldProject> {
     /// A handle to the blobstore
     blob_store: &'a dyn BlobStore,
     /// The lhs index key projection
-    projection: FieldProject,
+    projection: ProgramEvaluator<'a>,
 }
 
-impl<'a, P> Iterator for IndexJoin<'a, P>
-where
-    P: FieldProject,
-{
+impl<'a> IndexJoin<'a> {
+    fn new(
+        input: Iter<'a>,
+        index: &'a BTreeIndex,
+        table: &'a Table,
+        blob_store: &'a dyn BlobStore,
+        projection: ProgramEvaluator<'a>,
+    ) -> Self {
+        Self {
+            input: Box::new(input),
+            tuple: None,
+            index,
+            index_cursor: None,
+            table,
+            blob_store,
+            projection,
+        }
+    }
+}
+
+impl<'a> Iterator for IndexJoin<'a> {
     type Item = (Tuple<'a>, RowRef<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -322,7 +478,7 @@ where
             })
             .or_else(|| {
                 self.input.find_map(|tuple| {
-                    Some(self.index.seek(self.projection.eval(&tuple).as_ref())).and_then(|mut cursor| {
+                    Some(self.index.seek(&self.projection.eval(&tuple))).and_then(|mut cursor| {
                         cursor.next().and_then(|ptr| {
                             self.table.get_row_ref(self.blob_store, ptr).map(|ptr| {
                                 self.tuple = Some(tuple.clone());
@@ -336,9 +492,8 @@ where
     }
 }
 
-/// A cross join returns the cross product of its two inputs.
-/// It materializes the rhs and streams the lhs.
-pub struct CrossJoinIter<'a> {
+/// A nested loop join returns the cross product of its inputs
+pub struct NestedLoopJoin<'a> {
     /// The lhs input
     lhs: Box<Iter<'a>>,
     /// The rhs input
@@ -351,128 +506,59 @@ pub struct CrossJoinIter<'a> {
     rhs_ptr: usize,
 }
 
-impl<'a> Iterator for CrossJoinIter<'a> {
-    type Item = (Tuple<'a>, Tuple<'a>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // Materialize the rhs on the first call
-        if self.build.is_empty() {
-            self.build = self.rhs.as_mut().collect();
-            self.lhs_row = self.lhs.next();
-            self.rhs_ptr = 0;
+impl<'a> NestedLoopJoin<'a> {
+    fn new(lhs: Iter<'a>, rhs: Iter<'a>) -> Self {
+        Self {
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+            build: vec![],
+            lhs_row: None,
+            rhs_ptr: 0,
         }
-        // Reset the rhs pointer
-        if self.rhs_ptr == self.build.len() {
-            self.lhs_row = self.lhs.next();
-            self.rhs_ptr = 0;
-        }
-        self.lhs_row.as_ref().map(|lhs_tuple| {
-            self.rhs_ptr += 1;
-            (lhs_tuple.clone(), self.build[self.rhs_ptr - 1].clone())
-        })
     }
 }
 
-/// A tuple at a time filter iterator
+impl<'a> Iterator for NestedLoopJoin<'a> {
+    type Item = (Tuple<'a>, Tuple<'a>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for t in self.rhs.as_mut() {
+            self.build.push(t);
+        }
+        match self.build.get(self.rhs_ptr) {
+            Some(v) => {
+                self.rhs_ptr += 1;
+                self.lhs_row.as_ref().map(|u| (u.clone(), v.clone()))
+            }
+            None => {
+                self.rhs_ptr = 1;
+                self.lhs_row = self.lhs.next();
+                self.lhs_row
+                    .as_ref()
+                    .zip(self.build.first())
+                    .map(|(u, v)| (u.clone(), v.clone()))
+            }
+        }
+    }
+}
+
+/// A tuple-at-a-time filter iterator
 pub struct Filter<'a> {
     input: Box<Iter<'a>>,
-    predicate: ExprProgram<'a>,
+    program: ProgramEvaluator<'a>,
 }
 
 impl<'a> Iterator for Filter<'a> {
     type Item = Tuple<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.input.find(|tuple| {
-            ExprEvaluator {
-                val_stack: vec![],
-                row_stack: vec![],
-            }
-            .eval(&self.predicate, tuple)
-            .as_bool()
-            .copied()
-            .unwrap_or(false)
-        })
-    }
-}
-
-/// An opcode for a tuple projection operation
-#[derive(Clone, Copy)]
-pub enum ProjOpCode {
-    /// r.0 applied to a [Row::Ptr]
-    Ptr(u16),
-    /// r.0 applied to a [Row::Ref]
-    Ref(u16),
-    /// r.0.1 applied to a [Tuple::Join] -> [Row::Ptr]
-    TupToPtr(u8, u16),
-    /// r.0.1 applied to a [Tuple::Join] -> [Row::Ref]
-    TupToRef(u8, u16),
-}
-
-static_assert_size!(ProjOpCode, 4);
-
-/// A single field/column projection evaluator
-pub struct Project {
-    op: ProjOpCode,
-}
-
-impl FieldProject for Project {
-    fn eval<'a>(&self, tuple: &'a Tuple) -> Cow<'a, AlgebraicValue> {
-        match self.op {
-            ProjOpCode::Ptr(i) => tuple
-                .expect_row()
-                .expect_ptr()
-                .read_col(i as usize)
-                .map(Cow::Owned)
-                .unwrap(),
-            ProjOpCode::Ref(i) => tuple
-                .expect_row()
-                .expect_ref()
-                .elements
-                .get(i as usize)
-                .map(Cow::Borrowed)
-                .unwrap(),
-            ProjOpCode::TupToPtr(i, j) => tuple
-                .expect_join()
-                .get(i as usize)
-                .unwrap()
-                .expect_ptr()
-                .read_col(j as usize)
-                .map(Cow::Owned)
-                .unwrap(),
-            ProjOpCode::TupToRef(i, j) => tuple
-                .expect_join()
-                .get(i as usize)
-                .unwrap()
-                .expect_ref()
-                .elements
-                .get(j as usize)
-                .map(Cow::Borrowed)
-                .unwrap(),
-        }
-    }
-}
-
-/// A multi-column projection evaluator.
-/// It concatenates a sequence of field projections.
-pub struct Concat<'a> {
-    ops: &'a [ProjOpCode],
-}
-
-impl FieldProject for Concat<'_> {
-    fn eval<'a>(&self, tuple: &'a Tuple) -> Cow<'a, AlgebraicValue> {
-        Cow::Owned(AlgebraicValue::Product(ProductValue::from_iter(
-            self.ops
-                .iter()
-                .copied()
-                .map(|op| Project { op })
-                .map(|evaluator| evaluator.eval(tuple))
-                .map(|v| v.into_owned()),
-        )))
+        self.input
+            .find(|tuple| self.program.eval(tuple).as_bool().is_some_and(|ok| *ok))
     }
 }
 
 /// An opcode for a stack-based expression evaluator
+#[derive(Clone, Copy)]
 pub enum OpCode {
     /// ==
     Eq,
@@ -492,12 +578,16 @@ pub enum OpCode {
     Or,
     /// 5
     Const(u16),
+    /// ||
+    Concat(u16),
     /// r.0 : [Row::Ptr]
     PtrProj(u16),
     /// r.0 : [Row::Ref]
     RefProj(u16),
-    /// r.0 : [Tuple::Join]
-    TupProj(u16),
+    /// r.0.1 : [Row::Ptr]
+    TupPtrProj(u16),
+    /// r.0.1 : [Row::Ref]
+    TupRefProj(u16),
 }
 
 static_assert_size!(OpCode, 4);
@@ -510,89 +600,148 @@ pub struct ExprProgram<'a> {
     constants: &'a [AlgebraicValue],
 }
 
-/// An evaluator for an [ExprProgram]
-pub struct ExprEvaluator<'a> {
-    val_stack: Vec<Cow<'a, AlgebraicValue>>,
-    row_stack: Vec<&'a Row<'a>>,
+impl<'a> ExprProgram<'a> {
+    fn new(ops: &'a [OpCode], constants: &'a [AlgebraicValue]) -> Self {
+        Self { ops, constants }
+    }
+
+    /// Returns an interator over the opcodes
+    fn ops(&self) -> impl Iterator<Item = OpCode> + '_ {
+        self.ops.iter().copied()
+    }
+
+    /// Lookup a constant in the plan
+    fn constant(&self, i: u16) -> AlgebraicValue {
+        self.constants[i as usize].clone()
+    }
 }
 
-impl<'a> ExprEvaluator<'a> {
-    pub fn eval(&mut self, program: &'a ExprProgram, tuple: &'a Tuple) -> Cow<'a, AlgebraicValue> {
-        for op in program.ops.iter() {
+/// An evaluator for an [ExprProgram]
+pub struct ProgramEvaluator<'a> {
+    program: ExprProgram<'a>,
+    stack: Vec<AlgebraicValue>,
+}
+
+impl<'a> From<ExprProgram<'a>> for ProgramEvaluator<'a> {
+    fn from(program: ExprProgram<'a>) -> Self {
+        Self { program, stack: vec![] }
+    }
+}
+
+impl ProgramEvaluator<'_> {
+    pub fn eval(&mut self, tuple: &Tuple) -> AlgebraicValue {
+        for op in self.program.ops() {
             match op {
                 OpCode::Const(i) => {
-                    self.val_stack.push(Cow::Borrowed(&program.constants[*i as usize]));
+                    self.stack.push(self.program.constant(i));
                 }
                 OpCode::Eq => {
-                    let r = self.val_stack.pop().unwrap();
-                    let l = self.val_stack.pop().unwrap();
-                    self.val_stack.push(Cow::Owned(AlgebraicValue::Bool(l == r)));
+                    let r = self.stack.pop().unwrap();
+                    let l = self.stack.pop().unwrap();
+                    self.stack.push(AlgebraicValue::Bool(l == r));
                 }
                 OpCode::Ne => {
-                    let r = self.val_stack.pop().unwrap();
-                    let l = self.val_stack.pop().unwrap();
-                    self.val_stack.push(Cow::Owned(AlgebraicValue::Bool(l != r)));
+                    let r = self.stack.pop().unwrap();
+                    let l = self.stack.pop().unwrap();
+                    self.stack.push(AlgebraicValue::Bool(l != r));
                 }
                 OpCode::Lt => {
-                    let r = self.val_stack.pop().unwrap();
-                    let l = self.val_stack.pop().unwrap();
-                    self.val_stack.push(Cow::Owned(AlgebraicValue::Bool(l < r)));
+                    let r = self.stack.pop().unwrap();
+                    let l = self.stack.pop().unwrap();
+                    self.stack.push(AlgebraicValue::Bool(l < r));
                 }
                 OpCode::Gt => {
-                    let r = self.val_stack.pop().unwrap();
-                    let l = self.val_stack.pop().unwrap();
-                    self.val_stack.push(Cow::Owned(AlgebraicValue::Bool(l > r)));
+                    let r = self.stack.pop().unwrap();
+                    let l = self.stack.pop().unwrap();
+                    self.stack.push(AlgebraicValue::Bool(l > r));
                 }
                 OpCode::Lte => {
-                    let r = self.val_stack.pop().unwrap();
-                    let l = self.val_stack.pop().unwrap();
-                    self.val_stack.push(Cow::Owned(AlgebraicValue::Bool(l <= r)));
+                    let r = self.stack.pop().unwrap();
+                    let l = self.stack.pop().unwrap();
+                    self.stack.push(AlgebraicValue::Bool(l <= r));
                 }
                 OpCode::Gte => {
-                    let r = self.val_stack.pop().unwrap();
-                    let l = self.val_stack.pop().unwrap();
-                    self.val_stack.push(Cow::Owned(AlgebraicValue::Bool(l >= r)));
+                    let r = self.stack.pop().unwrap();
+                    let l = self.stack.pop().unwrap();
+                    self.stack.push(AlgebraicValue::Bool(l >= r));
                 }
                 OpCode::And => {
-                    let r = self.val_stack.pop().unwrap();
-                    let l = self.val_stack.pop().unwrap();
-                    self.val_stack.push(Cow::Owned(AlgebraicValue::Bool(
-                        *l.as_bool().unwrap() && *r.as_bool().unwrap(),
-                    )));
+                    let r = *self.stack.pop().unwrap().as_bool().unwrap();
+                    let l = *self.stack.pop().unwrap().as_bool().unwrap();
+                    self.stack.push(AlgebraicValue::Bool(l && r));
                 }
                 OpCode::Or => {
-                    let r = self.val_stack.pop().unwrap();
-                    let l = self.val_stack.pop().unwrap();
-                    self.val_stack.push(Cow::Owned(AlgebraicValue::Bool(
-                        *l.as_bool().unwrap() || *r.as_bool().unwrap(),
+                    let r = *self.stack.pop().unwrap().as_bool().unwrap();
+                    let l = *self.stack.pop().unwrap().as_bool().unwrap();
+                    self.stack.push(AlgebraicValue::Bool(l || r));
+                }
+                OpCode::Concat(n) => {
+                    let mut elems = Vec::with_capacity(n as usize);
+                    // Pop args off stack
+                    for _ in 0..n {
+                        elems.push(self.stack.pop().unwrap());
+                    }
+                    // Concat and push on stack
+                    self.stack.push(AlgebraicValue::Product(ProductValue::from_iter(
+                        elems.into_iter().rev(),
                     )));
                 }
                 OpCode::PtrProj(i) => {
-                    self.val_stack.push(Cow::Owned(
-                        self.row_stack
-                            .pop()
-                            .unwrap()
+                    self.stack.push(
+                        tuple
+                            // Read field from row ref
+                            .expect_row()
                             .expect_ptr()
-                            .read_col(*i as usize)
+                            .read_col(i as usize)
                             .unwrap(),
-                    ));
+                    );
                 }
                 OpCode::RefProj(i) => {
-                    self.val_stack.push(Cow::Borrowed(
-                        self.row_stack
-                            .pop()
-                            .unwrap()
+                    self.stack.push(
+                        tuple
+                            // Read field from product ref
+                            .expect_row()
                             .expect_ref()
-                            .elements
-                            .get(*i as usize)
-                            .unwrap(),
-                    ));
+                            .elements[i as usize]
+                            .clone(),
+                    );
                 }
-                OpCode::TupProj(i) => {
-                    self.row_stack.push(&tuple.expect_join()[*i as usize]);
+                OpCode::TupPtrProj(i) => {
+                    let idx = *self
+                        // Pop index off stack
+                        .stack
+                        .pop()
+                        .unwrap()
+                        .as_u16()
+                        .unwrap();
+                    self.stack.push(
+                        tuple
+                            // Read field from row ref
+                            .expect_join()[idx as usize]
+                            .expect_ptr()
+                            .read_col(i as usize)
+                            .unwrap(),
+                    );
+                }
+                OpCode::TupRefProj(i) => {
+                    let idx = *self
+                        // Pop index off stack
+                        .stack
+                        .pop()
+                        .unwrap()
+                        .as_u16()
+                        .unwrap();
+                    self.stack.push(
+                        tuple
+                            // Read field from product ref
+                            .expect_join()[idx as usize]
+                            .expect_ptr()
+                            .read_col(i as usize)
+                            .unwrap(),
+                    );
                 }
             }
         }
-        self.val_stack.pop().unwrap()
+        self.stack.pop().unwrap()
     }
 }

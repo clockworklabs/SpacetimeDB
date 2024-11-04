@@ -9,4 +9,5 @@ description = "The SpacetimeDB query engine"
 [dependencies]
 spacetimedb-expr.workspace = true
 spacetimedb-lib.workspace = true
+spacetimedb-primitives.workspace = true
 spacetimedb-table.workspace = true
