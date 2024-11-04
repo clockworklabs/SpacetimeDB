@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use axum::response::ErrorResponse;
 use http::StatusCode;
 
-use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{HostController, UpdateDatabaseResult};
@@ -26,19 +25,8 @@ pub trait NodeDelegate: Send + Sync {
     fn host_controller(&self) -> &HostController;
     fn client_actor_index(&self) -> &ClientActorIndex;
 
-    /// Return a JWT decoding key for verifying credentials.
-    fn public_key(&self) -> &DecodingKey;
-
-    // The issuer to use when signing JWTs.
-    fn local_issuer(&self) -> String;
-
-    /// Return the public key used to verify JWTs, as the bytes of a PEM public key file.
-    ///
-    /// The `/identity/public-key` route calls this method to return the public key to callers.
-    fn public_key_bytes(&self) -> &[u8];
-
-    /// Return a JWT encoding key for signing credentials.
-    fn private_key(&self) -> &EncodingKey;
+    type JwtAuthProviderT: auth::JwtAuthProvider;
+    fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT;
 }
 
 /// Parameters for publishing a database.
@@ -222,12 +210,9 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
 }
 
 impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
+    type JwtAuthProviderT = T::JwtAuthProviderT;
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         (**self).gather_metrics()
-    }
-
-    fn local_issuer(&self) -> String {
-        (**self).local_issuer()
     }
 
     fn host_controller(&self) -> &HostController {
@@ -238,16 +223,8 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
         (**self).client_actor_index()
     }
 
-    fn public_key(&self) -> &DecodingKey {
-        (**self).public_key()
-    }
-
-    fn public_key_bytes(&self) -> &[u8] {
-        (**self).public_key_bytes()
-    }
-
-    fn private_key(&self) -> &EncodingKey {
-        (**self).private_key()
+    fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT {
+        (**self).jwt_auth_provider()
     }
 }
 
