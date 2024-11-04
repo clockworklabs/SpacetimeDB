@@ -1,22 +1,24 @@
+import { hexStringToU128, u128ToHexString, u128ToUint8Array } from './utils';
+
 /**
  * A unique identifier for a client connected to a database.
  */
 export class Address {
-  data: Uint8Array;
+  data: bigint;
 
-  get __address_bytes(): Uint8Array {
-    return this.toUint8Array();
+  get __address__(): bigint {
+    return this.data;
   }
 
   /**
    * Creates a new `Address`.
    */
-  constructor(data: Uint8Array) {
+  constructor(data: bigint) {
     this.data = data;
   }
 
   isZero(): boolean {
-    return this.data.every(b => b == 0);
+    return this.data === BigInt(0);
   }
 
   static nullIfZero(addr: Address): Address | null {
@@ -28,53 +30,42 @@ export class Address {
   }
 
   static random(): Address {
-    function randomByte(): number {
-      return Math.floor(Math.random() * 255);
+    function randomU8(): number {
+      return Math.floor(Math.random() * 0xff);
     }
-    let data = new Uint8Array(16);
+    let result = BigInt(0);
     for (let i = 0; i < 16; i++) {
-      data[i] = randomByte();
+      result = (result << BigInt(8)) | BigInt(randomU8());
     }
-    return new Address(data);
+    return new Address(result);
   }
 
   /**
    * Compare two addresses for equality.
    */
   isEqual(other: Address): boolean {
-    if (this.data.length !== other.data.length) {
-      return false;
-    }
-    for (let i = 0; i < this.data.length; i++) {
-      if (this.data[i] !== other.data[i]) {
-        return false;
-      }
-    }
-    return true;
+    return this.data == other.data;
   }
 
   /**
    * Print the address as a hexadecimal string.
    */
   toHexString(): string {
-    return Array.prototype.map
-      .call(this.data, x => ('00' + x.toString(16)).slice(-2))
-      .join('');
+    return u128ToHexString(this.data);
   }
 
+  /**
+   * Convert the address to a Uint8Array.
+   */
   toUint8Array(): Uint8Array {
-    return this.data;
+    return u128ToUint8Array(this.data);
   }
 
   /**
    * Parse an Address from a hexadecimal string.
    */
   static fromString(str: string): Address {
-    let matches = str.match(/.{1,2}/g) || [];
-    let data = Uint8Array.from(
-      matches.map((byte: string) => parseInt(byte, 16))
-    );
-    return new Address(data);
+    return new Address(hexStringToU128(str));
   }
 
   static fromStringOrNull(str: string): Address | null {

@@ -15,6 +15,16 @@ import { ReducerEvent } from '../src/db_connection_impl';
 import { Identity } from '../src/identity';
 import WebsocketTestAdapter from '../src/websocket_test_adapter';
 
+const anIdentity = Identity.fromString(
+  '0000000000000000000000000000000000000000000000000000000000000069'
+);
+const bobIdentity = Identity.fromString(
+  '0000000000000000000000000000000000000000000000000000000000000b0b'
+);
+const sallyIdentity = Identity.fromString(
+  '000000000000000000000000000000000000000000000000000000000006a111'
+);
+
 class Deferred<T> {
   #isResolved: boolean = false;
   #isRejected: boolean = false;
@@ -138,7 +148,7 @@ describe('SpacetimeDBClient', () => {
     wsAdapter.acceptConnection();
 
     const tokenMessage = ws.ServerMessage.IdentityToken({
-      identity: new Identity('an-identity'),
+      identity: anIdentity,
       token: 'a-token',
       address: Address.random(),
     });
@@ -165,7 +175,7 @@ describe('SpacetimeDBClient', () => {
     wsAdapter.acceptConnection();
 
     const tokenMessage = ws.ServerMessage.IdentityToken({
-      identity: new Identity('an-identity'),
+      identity: anIdentity,
       token: 'a-token',
       address: Address.random(),
     });
@@ -275,7 +285,7 @@ describe('SpacetimeDBClient', () => {
         ],
       }),
       timestamp: { microseconds: BigInt(1681391805281203) },
-      callerIdentity: new Identity('00ff01'),
+      callerIdentity: anIdentity,
       callerAddress: Address.random(),
       reducerCall: {
         reducerName: 'create_player',
@@ -294,9 +304,7 @@ describe('SpacetimeDBClient', () => {
     expect(inserts[1].player.ownerId).toBe('player-2');
     expect(inserts[1].reducerEvent?.reducer.name).toBe('create_player');
     expect(inserts[1].reducerEvent?.status.tag).toBe('Committed');
-    expect(inserts[1].reducerEvent?.callerIdentity).toEqual(
-      Identity.fromString('00ff01')
-    );
+    expect(inserts[1].reducerEvent?.callerIdentity).toEqual(anIdentity);
     expect(inserts[1].reducerEvent?.reducer.args).toEqual({
       name: 'A Player',
       location: { x: 2, y: 3 },
@@ -305,7 +313,7 @@ describe('SpacetimeDBClient', () => {
     expect(reducerCallbackLog).toHaveLength(1);
 
     expect(reducerCallbackLog[0].reducerEvent.callerIdentity).toEqual(
-      Identity.fromString('00ff01')
+      anIdentity
     );
   });
 
@@ -325,7 +333,7 @@ describe('SpacetimeDBClient', () => {
     wsAdapter.acceptConnection();
 
     const tokenMessage = ws.ServerMessage.IdentityToken({
-      identity: new Identity('an-identity'),
+      identity: anIdentity,
       token: 'a-token',
       address: Address.random(),
     });
@@ -425,7 +433,7 @@ describe('SpacetimeDBClient', () => {
         ],
       }),
       timestamp: { microseconds: BigInt(1681391805281203) },
-      callerIdentity: new Identity('00ff01'),
+      callerIdentity: anIdentity,
       callerAddress: Address.random(),
       reducerCall: {
         reducerName: 'create_player',
@@ -507,7 +515,7 @@ describe('SpacetimeDBClient', () => {
         ],
       }),
       timestamp: { microseconds: BigInt(1681391805281203) },
-      callerIdentity: new Identity('00ff01'),
+      callerIdentity: anIdentity,
       callerAddress: Address.random(),
       reducerCall: {
         reducerName: 'create_player',
@@ -541,7 +549,9 @@ describe('SpacetimeDBClient', () => {
     wsAdapter.acceptConnection();
 
     const tokenMessage = ws.ServerMessage.IdentityToken({
-      identity: new Identity('an-identity'),
+      identity: Identity.fromString(
+        '0000000000000000000000000000000000000000000000000000000000000069'
+      ),
       token: 'a-token',
       address: Address.random(),
     });
@@ -652,7 +662,7 @@ describe('SpacetimeDBClient', () => {
         ],
       }),
       timestamp: { microseconds: BigInt(1681391805281203) },
-      callerIdentity: new Identity('00ff01'),
+      callerIdentity: anIdentity,
       callerAddress: Address.random(),
       reducerCall: {
         reducerName: 'create_player',
@@ -682,18 +692,16 @@ describe('SpacetimeDBClient', () => {
       .build();
     await client.wsPromise;
     const db = client.db;
-    const user1 = { identity: new Identity('bobs-idenitty'), username: 'bob' };
+    const user1 = { identity: bobIdentity, username: 'bob' };
     const user2 = {
-      identity: new Identity('sallys-identity'),
+      identity: sallyIdentity,
       username: 'sally',
     };
     const users: Map<string, User> = (db.user.tableCache as any).rows;
     users.set('abc123', user1);
     users.set('def456', user2);
 
-    const filteredUser = client.db.user.identity.find(
-      new Identity('sallys-identity')
-    );
+    const filteredUser = client.db.user.identity.find(sallyIdentity);
     expect(filteredUser).not.toBeUndefined;
     expect(filteredUser!.username).toBe('sally');
   });
