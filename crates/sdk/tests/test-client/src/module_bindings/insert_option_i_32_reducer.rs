@@ -67,3 +67,23 @@ impl insert_option_i_32 for super::RemoteReducers {
             .remove_on_reducer::<InsertOptionI32>("insert_option_i32", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_option_i32`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_option_i_32 {
+    /// Set the call-reducer flags for the reducer `insert_option_i32` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_option_i_32(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_option_i_32 for super::SetReducerFlags {
+    fn insert_option_i_32(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_option_i32", flags);
+    }
+}

@@ -137,9 +137,14 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
         output.check_returncode()
     return output if full_output else output.stdout
 
-
 def spacetime(*args, **kwargs):
     return run_cmd(SPACETIME_BIN, *args, cmd_name="spacetime", **kwargs)
+
+def new_identity(config_path):
+    env = os.environ.copy()
+    env["SPACETIME_CONFIG_FILE"] = str(config_path)
+    spacetime("logout", env=env)
+    spacetime("login", "--server-issued-login", "localhost", full_output=False, env=env)
 
 class Smoketest(unittest.TestCase):
     MODULE_CODE = TEMPLATE_LIB_RS
@@ -159,20 +164,20 @@ class Smoketest(unittest.TestCase):
         return spacetime(*args, **kwargs)
 
     def _check_published(self):
-        if not hasattr(self, "address"):
+        if not hasattr(self, "database_identity"):
             raise Exception("Cannot use this function without publishing a module")
 
     def call(self, reducer, *args, anon=False):
         self._check_published()
         anon = ["--anonymous"] if anon else []
-        self.spacetime("call", *anon, "--", self.address, reducer, *map(json.dumps, args))
+        self.spacetime("call", *anon, "--", self.database_identity, reducer, *map(json.dumps, args))
 
     def logs(self, n):
         return [log["message"] for log in self.log_records(n)]
 
     def log_records(self, n):
         self._check_published()
-        logs = self.spacetime("logs", "--format=json", "-n", str(n), "--", self.address)
+        logs = self.spacetime("logs", "--format=json", "-n", str(n), "--", self.database_identity)
         return list(map(json.loads, logs.splitlines()))
 
     def publish_module(self, domain=None, *, clear=True, capture_stderr=True):
@@ -184,7 +189,7 @@ class Smoketest(unittest.TestCase):
             capture_stderr=capture_stderr,
         )
         self.resolved_identity = re.search(r"identity: ([0-9a-fA-F]+)", publish_output)[1]
-        self.address = domain if domain is not None else self.resolved_identity
+        self.database_identity = domain if domain is not None else self.resolved_identity
 
     @classmethod
     def reset_config(cls):
@@ -194,20 +199,8 @@ class Smoketest(unittest.TestCase):
         # Fetch the server's fingerprint; required for `identity list`.
         self.spacetime("server", "fingerprint", "localhost", "-y")
 
-    def new_identity(self, *, default=False):
-        output = self.spacetime("identity", "new")
-        identity = extract_field(output, "IDENTITY")
-        if default:
-            self.spacetime("identity", "set-default", "--identity", identity)
-        return identity
-
-    def token(self, identity):
-        return self.spacetime("identity", "token", "--identity", identity).strip()
-
-    def import_identity(self, identity, token, *, default=False):
-        self.spacetime("identity", "import", "--identity", identity, token)
-        if default:
-            self.spacetime("identity", "set-default", "--identity", identity)
+    def new_identity(self):
+        new_identity(self.__class__.config_path)
 
     def subscribe(self, *queries, n):
         self._check_published()
@@ -215,7 +208,7 @@ class Smoketest(unittest.TestCase):
 
         env = os.environ.copy()
         env["SPACETIME_CONFIG_FILE"] = str(self.config_path)
-        args = [SPACETIME_BIN, "subscribe", self.address, "-t", "60", "-n", str(n), "--print-initial-update", "--", *queries]
+        args = [SPACETIME_BIN, "subscribe", self.database_identity, "-t", "60", "-n", str(n), "--print-initial-update", "--", *queries]
         fake_args = ["spacetime", *args[1:]]
         log_cmd(fake_args)
 
@@ -273,19 +266,19 @@ class Smoketest(unittest.TestCase):
 
     def tearDown(self):
         # if this single test method published a database, clean it up now
-        if "address" in self.__dict__:
+        if "database_identity" in self.__dict__:
             try:
                 # TODO: save the credentials in publish_module()
-                self.spacetime("delete", self.address)
+                self.spacetime("delete", self.database_identity)
             except Exception:
                 pass
 
     @classmethod
     def tearDownClass(cls):
-        if hasattr(cls, "address"):
+        if hasattr(cls, "database_identity"):
             try:
                 # TODO: save the credentials in publish_module()
-                cls.spacetime("delete", cls.address)
+                cls.spacetime("delete", cls.database_identity)
             except Exception:
                 pass
 

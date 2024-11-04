@@ -38,7 +38,13 @@ fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme> {
     })
 }
 
-fn make_uri<Host>(host: Host, db_name: &str, client_address: Address, compression: Compression) -> Result<Uri>
+#[derive(Clone, Copy, Default)]
+pub(crate) struct WsParams {
+    pub compression: Compression,
+    pub light: bool,
+}
+
+fn make_uri<Host>(host: Host, db_name: &str, client_address: Address, params: WsParams) -> Result<Uri>
 where
     Host: TryInto<Uri>,
     <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
@@ -56,18 +62,32 @@ where
         "/".to_string()
     };
 
+    // Normalize the path, ensuring it ends with `/`.
     if !path.ends_with('/') {
         path.push('/');
     }
+
     path.push_str("database/subscribe/");
     path.push_str(db_name);
+
+    // Provide the client address.
     path.push_str("?client_address=");
     path.push_str(&client_address.to_hex());
-    match compression {
+
+    // Specify the desired compression for host->client replies.
+    match params.compression {
         Compression::None => path.push_str("&compression=None"),
         Compression::Gzip => path.push_str("&compression=Gzip"),
+        // The host uses the same default as the sdk,
+        // but in case this changes, we prefer to be explicit now.
         Compression::Brotli => path.push_str("&compression=Brotli"),
     };
+
+    // Specify the `light` mode if requested.
+    if params.light {
+        path.push_str("&light=true");
+    }
+
     parts.path_and_query = Some(path.parse()?);
     Ok(Uri::from_parts(parts)?)
 }
@@ -86,13 +106,13 @@ fn make_request<Host>(
     db_name: &str,
     credentials: Option<&(Identity, String)>,
     client_address: Address,
-    compression: Compression,
+    params: WsParams,
 ) -> Result<http::Request<()>>
 where
     Host: TryInto<Uri>,
     <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
 {
-    let uri = make_uri(host, db_name, client_address, compression)?;
+    let uri = make_uri(host, db_name, client_address, params)?;
     let mut req = IntoClientRequest::into_client_request(uri)?;
     request_insert_protocol_header(&mut req);
     request_insert_auth_header(&mut req, credentials);
@@ -141,13 +161,13 @@ impl WsConnection {
         db_name: &str,
         credentials: Option<&(Identity, String)>,
         client_address: Address,
-        compression: Compression,
+        params: WsParams,
     ) -> Result<Self>
     where
         Host: TryInto<Uri>,
         <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
     {
-        let req = make_request(host, db_name, credentials, client_address, compression)?;
+        let req = make_request(host, db_name, credentials, client_address, params)?;
         let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = connect_async_with_config(
             req,
             // TODO(kim): In order to be able to replicate module WASM blobs,

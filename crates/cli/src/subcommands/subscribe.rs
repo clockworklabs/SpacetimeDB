@@ -63,15 +63,6 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("Print the initial update for the queries."),
         )
-        .arg(
-            common_args::identity()
-                .conflicts_with("anon_identity")
-                .help("The identity to use for querying the database")
-                .long_help(
-                    "The identity to use for querying the database. \
-                     If no identity is provided, the default one will be used.",
-                ),
-        )
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
 }
@@ -205,6 +196,8 @@ where
     S: TryStream<Ok = WsMessage> + Unpin,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
+    const RECV_TX_UPDATE: &str = "protocol error: received transaction update before initial subscription update";
+
     while let Some(msg) = ws.try_next().await? {
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
@@ -216,12 +209,12 @@ where
                 }
                 break;
             }
-            ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate { status, .. }) => {
-                let message = match status {
-                    ws::UpdateStatus::Failed(msg) => msg,
-                    _ => "protocol error: received transaction update before initial subscription update".into(),
-                };
-                anyhow::bail!(message)
+            ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate { status, .. }) => anyhow::bail!(match status {
+                ws::UpdateStatus::Failed(msg) => msg,
+                _ => RECV_TX_UPDATE.into(),
+            }),
+            ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { .. }) => {
+                anyhow::bail!(RECV_TX_UPDATE)
             }
             _ => continue,
         }
@@ -257,7 +250,8 @@ where
             ws::ServerMessage::InitialSubscription(_) => {
                 anyhow::bail!("protocol error: received a second initial subscription update")
             }
-            ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate {
+            ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { update, .. })
+            | ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate {
                 status: ws::UpdateStatus::Committed(update),
                 ..
             }) => {

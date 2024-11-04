@@ -4,7 +4,6 @@ use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
-use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue, UpdatesRelValue};
 use crate::messages::websocket::TableUpdate;
 use crate::util::slow::SlowQueryLogger;
@@ -204,18 +203,17 @@ impl ExecutionUnit {
     #[tracing::instrument(skip_all)]
     pub fn eval<F: WebsocketFormat>(
         &self,
-        ctx: &ExecutionContext,
         db: &RelationalDB,
         tx: &Tx,
         sql: &str,
         slow_query_threshold: Option<Duration>,
         compression: Compression,
     ) -> Option<TableUpdate<F>> {
-        let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, ctx.workload()).log_guard();
+        let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, tx.ctx.workload()).log_guard();
 
         // Build & execute the query and then encode it to a row list.
         let tx = &tx.into();
-        let mut inserts = build_query(ctx, db, tx, &self.eval_plan, &mut NoInMemUsed);
+        let mut inserts = build_query(db, tx, &self.eval_plan, &mut NoInMemUsed);
         let inserts = inserts.iter();
         let (inserts, num_rows) = F::encode_list(inserts);
 
@@ -230,17 +228,16 @@ impl ExecutionUnit {
     /// Evaluate this execution unit against the given delta tables.
     pub fn eval_incr<'a>(
         &'a self,
-        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         sql: &'a str,
         tables: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
         slow_query_threshold: Option<Duration>,
     ) -> Option<DatabaseTableUpdateRelValue<'a>> {
-        let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, ctx.workload()).log_guard();
+        let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, tx.ctx().workload()).log_guard();
         let updates = match &self.eval_incr_plan {
-            EvalIncrPlan::Select(plan) => Self::eval_incr_query_expr(ctx, db, tx, tables, plan, self.return_table()),
-            EvalIncrPlan::Semijoin(plan) => plan.eval(ctx, db, tx, tables),
+            EvalIncrPlan::Select(plan) => Self::eval_incr_query_expr(db, tx, tables, plan, self.return_table()),
+            EvalIncrPlan::Semijoin(plan) => plan.eval(db, tx, tables),
         };
 
         updates.has_updates().then(|| DatabaseTableUpdateRelValue {
@@ -251,7 +248,6 @@ impl ExecutionUnit {
     }
 
     fn eval_query_expr_against_memtable<'a>(
-        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode,
         mem_table: &'a [ProductValue],
@@ -261,11 +257,10 @@ impl ExecutionUnit {
         let sources = &mut Some(mem_table.iter().map(RelValue::ProjRef));
         // Evaluate the saved plan against the new updates,
         // returning an iterator over the selected rows.
-        build_query(ctx, db, tx, eval_incr_plan, sources)
+        build_query(db, tx, eval_incr_plan, sources)
     }
 
     fn eval_incr_query_expr<'a>(
-        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
@@ -285,12 +280,10 @@ impl ExecutionUnit {
             // without forgetting which are inserts and which are deletes.
             // Previously, we used to add such a column `"__op_type: AlgebraicType::U8"`.
             if !table.inserts.is_empty() {
-                inserts
-                    .extend(Self::eval_query_expr_against_memtable(ctx, db, tx, &table.inserts, eval_incr_plan).iter());
+                inserts.extend(Self::eval_query_expr_against_memtable(db, tx, &table.inserts, eval_incr_plan).iter());
             }
             if !table.deletes.is_empty() {
-                deletes
-                    .extend(Self::eval_query_expr_against_memtable(ctx, db, tx, &table.deletes, eval_incr_plan).iter());
+                deletes.extend(Self::eval_query_expr_against_memtable(db, tx, &table.deletes, eval_incr_plan).iter());
             }
         }
 

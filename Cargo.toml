@@ -11,10 +11,12 @@ members = [
   "crates/core",
   "crates/data-structures",
   "crates/durability",
+  "crates/execution",
   "crates/expr",
   "crates/fs-utils",
   "crates/lib",
   "crates/metrics",
+  "crates/physical-plan",
   "crates/primitives",
   "crates/sats",
   "crates/schema",
@@ -96,9 +98,11 @@ spacetimedb-commitlog = { path = "crates/commitlog", version = "1.0.0-rc1" }
 spacetimedb-core = { path = "crates/core", version = "1.0.0-rc1" }
 spacetimedb-data-structures = { path = "crates/data-structures", version = "1.0.0-rc1" }
 spacetimedb-durability = { path = "crates/durability", version = "1.0.0-rc1" }
+spacetimedb-execution = { path = "crates/execution", version = "1.0.0-rc1" }
 spacetimedb-expr = { path = "crates/expr", version = "1.0.0-rc1" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "1.0.0-rc1" }
 spacetimedb-metrics = { path = "crates/metrics", version = "1.0.0-rc1" }
+spacetimedb-physical-plan = { path = "crates/physical-plan", version = "1.0.0-rc1" }
 spacetimedb-primitives = { path = "crates/primitives", version = "1.0.0-rc1" }
 spacetimedb-sats = { path = "crates/sats", version = "1.0.0-rc1" }
 spacetimedb-schema = { path = "crates/schema", version = "1.0.0-rc1" }
@@ -247,6 +251,7 @@ urlencoding = "2.1.2"
 uuid = { version = "1.2.1", features = ["v4"] }
 walkdir = "2.2.5"
 wasmbin = "0.6"
+webbrowser = "1.0.2"
 
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.

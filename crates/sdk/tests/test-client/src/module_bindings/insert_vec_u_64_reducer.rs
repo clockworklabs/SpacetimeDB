@@ -66,3 +66,23 @@ impl insert_vec_u_64 for super::RemoteReducers {
         self.imp.remove_on_reducer::<InsertVecU64>("insert_vec_u64", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_vec_u64`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_vec_u_64 {
+    /// Set the call-reducer flags for the reducer `insert_vec_u64` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_vec_u_64(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_vec_u_64 for super::SetReducerFlags {
+    fn insert_vec_u_64(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_vec_u64", flags);
+    }
+}

@@ -56,7 +56,7 @@
             SourceUrl="$(WasiSdkUrl)"
             DestinationFolder="$(IntermediateOutputPath)"
             DestinationFileName="$([System.IO.Path]::GetFileName('$(WasiSdkDownloadTempFile)'))"
-            Condition="!Exists('$(WasiSdkDownloadTempFile)')" />
+            Condition="!Exists('$(WasiClang)')" />
 
     <Message Importance="high" Text="Extracting $(WasiSdkDownloadTempFile) to $(WasiSdkRoot)..." Condition="!Exists('$(WasiClang)')" />
     <MakeDir Directories="$(WasiSdkRoot)" />

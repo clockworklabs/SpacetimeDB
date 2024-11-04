@@ -66,11 +66,11 @@ fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use crate::execution_context::Workload;
     use crate::{
         db::relational_db::{tests_utils::TestDB, RelationalDB},
         error::DBError,
         estimation::num_rows,
-        execution_context::ExecutionContext,
         sql::compiler::compile_sql,
     };
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType};
@@ -82,7 +82,7 @@ mod tests {
     }
 
     fn num_rows_for(db: &RelationalDB, sql: &str) -> u64 {
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         match &*compile_sql(db, &AuthCtx::for_testing(), &tx, sql).expect("Failed to compile sql") {
             [CrudExpr::Query(expr)] => num_rows(&tx, expr),
             exprs => panic!("unexpected result from compilation: {:#?}", exprs),
@@ -101,7 +101,7 @@ mod tests {
             .create_table_for_test("T", &["a", "b"].map(|n| (n, AlgebraicType::U64)), indexes)
             .expect("Failed to create table");
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+        db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
             for i in 0..NUM_T_ROWS {
                 db.insert(tx, table_id, product![i % NDV_T, i])
                     .expect("failed to insert into table");
@@ -118,7 +118,7 @@ mod tests {
             .create_table_for_test("S", &["a", "c"].map(|n| (n, AlgebraicType::U64)), indexes)
             .expect("Failed to create table");
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+        db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
             for i in 0..NUM_S_ROWS {
                 db.insert(tx, rhs, product![i, i]).expect("failed to insert into table");
             }

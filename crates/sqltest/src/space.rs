@@ -2,7 +2,7 @@ use crate::db::DBRunner;
 use async_trait::async_trait;
 use spacetimedb::db::relational_db::tests_utils::TestDB;
 use spacetimedb::error::DBError;
-use spacetimedb::execution_context::ExecutionContext;
+use spacetimedb::execution_context::Workload;
 use spacetimedb::sql::compiler::compile_sql;
 use spacetimedb::sql::execute::execute_sql;
 use spacetimedb::subscription::module_subscription_actor::ModuleSubscriptions;
@@ -69,7 +69,7 @@ impl SpaceDb {
     }
 
     pub(crate) fn run_sql(&self, sql: &str) -> anyhow::Result<Vec<MemTable>> {
-        self.conn.with_read_only(&ExecutionContext::default(), |tx| {
+        self.conn.with_read_only(Workload::Sql, |tx| {
             let ast = compile_sql(&self.conn, &AuthCtx::for_testing(), tx, sql)?;
             let subs = ModuleSubscriptions::new(Arc::new(self.conn.db.clone()), Identity::ZERO);
             let result = execute_sql(&self.conn, sql, ast, self.auth, Some(&subs))?;

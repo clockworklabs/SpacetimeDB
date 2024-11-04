@@ -67,3 +67,23 @@ impl delete_unique_string for super::RemoteReducers {
             .remove_on_reducer::<DeleteUniqueString>("delete_unique_string", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `delete_unique_string`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_delete_unique_string {
+    /// Set the call-reducer flags for the reducer `delete_unique_string` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn delete_unique_string(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_delete_unique_string for super::SetReducerFlags {
+    fn delete_unique_string(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("delete_unique_string", flags);
+    }
+}

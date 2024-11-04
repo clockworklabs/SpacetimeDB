@@ -67,3 +67,23 @@ impl delete_unique_i_256 for super::RemoteReducers {
             .remove_on_reducer::<DeleteUniqueI256>("delete_unique_i256", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `delete_unique_i256`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_delete_unique_i_256 {
+    /// Set the call-reducer flags for the reducer `delete_unique_i256` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn delete_unique_i_256(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_delete_unique_i_256 for super::SetReducerFlags {
+    fn delete_unique_i_256(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("delete_unique_i256", flags);
+    }
+}
