@@ -219,7 +219,7 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
                     let unique_field_type = type_name(module, unique_field_type_use);
                     writeln!(
                         out,
-                        "_table.add_unique_constraint::<{unique_field_type}>({unique_field_name:?}, |row| &row.{unique_field_name})",
+                        "_table.add_unique_constraint::<{unique_field_type}>({unique_field_name:?}, |row| &row.{unique_field_name});",
                     );
                 }
             },
