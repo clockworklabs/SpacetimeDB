@@ -111,6 +111,34 @@ export default class BinaryWriter {
     this.#offset += 16;
   }
 
+  writeU256(value: bigint): void {
+    this.#expandBuffer(32);
+    const low_64_mask = BigInt('0xFFFFFFFFFFFFFFFF');
+    const p0 = value & low_64_mask;
+    const p1 = (value >> BigInt(64 * 1)) & low_64_mask;
+    const p2 = (value >> BigInt(64 * 2)) & low_64_mask;
+    const p3 = value >> BigInt(64 * 3);
+    this.#view.setBigUint64(this.#offset + 8 * 0, p0, true);
+    this.#view.setBigUint64(this.#offset + 8 * 1, p1, true);
+    this.#view.setBigUint64(this.#offset + 8 * 2, p2, true);
+    this.#view.setBigUint64(this.#offset + 8 * 3, p3, true);
+    this.#offset += 32;
+  }
+
+  writeI256(value: bigint): void {
+    this.#expandBuffer(32);
+    const low_64_mask = BigInt('0xFFFFFFFFFFFFFFFF');
+    const p0 = value & low_64_mask;
+    const p1 = (value >> BigInt(64 * 1)) & low_64_mask;
+    const p2 = (value >> BigInt(64 * 2)) & low_64_mask;
+    const p3 = value >> BigInt(64 * 3);
+    this.#view.setBigUint64(this.#offset + 8 * 0, p0, true);
+    this.#view.setBigUint64(this.#offset + 8 * 1, p1, true);
+    this.#view.setBigUint64(this.#offset + 8 * 2, p2, true);
+    this.#view.setBigInt64(this.#offset + 8 * 3, p3, true);
+    this.#offset += 32;
+  }
+
   writeF32(value: number): void {
     this.#expandBuffer(4);
     this.#view.setFloat32(this.#offset, value, true);

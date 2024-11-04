@@ -1,37 +1,26 @@
-// Helper function convert from string to Uint8Array
-function hexStringToUint8Array(str: string): Uint8Array {
-  let matches = str.match(/.{1,2}/g) || [];
-  let data = Uint8Array.from(matches.map((byte: string) => parseInt(byte, 16)));
-  return data;
-}
-
-// Helper function for converting Uint8Array to hex string
-function uint8ArrayToHexString(array: Uint8Array): string {
-  return Array.prototype.map
-    .call(array, x => ('00' + x.toString(16)).slice(-2))
-    .join('');
-}
+import BinaryReader from './binary_reader';
+import BinaryWriter from './binary_writer';
+import { hexStringToU256, u256ToHexString, u256ToUint8Array } from './utils';
 
 /**
  * A unique identifier for a user connected to a database.
  */
 export class Identity {
-  data: Uint8Array;
+  data: bigint;
 
-  get __identity_bytes(): Uint8Array {
-    return this.toUint8Array();
+  get __identity__(): bigint {
+    return this.data;
   }
 
   /**
    * Creates a new `Identity`.
+   *
+   * `data` can be a hexadecimal string or a `bigint`.
    */
-  constructor(data: string | Uint8Array) {
-    // we get a JSON with __identity_bytes when getting a token with a JSON API
-    // and an Uint8Array when using BSATN
-    this.data =
-      data.constructor === Uint8Array
-        ? data
-        : hexStringToUint8Array(data as string);
+  constructor(data: string | bigint) {
+    // we get a JSON with __identity__ when getting a token with a JSON API
+    // and an bigint when using BSATN
+    this.data = typeof data === 'string' ? hexStringToU256(data) : data;
   }
 
   /**
@@ -45,11 +34,14 @@ export class Identity {
    * Print the identity as a hexadecimal string.
    */
   toHexString(): string {
-    return uint8ArrayToHexString(this.data);
+    return u256ToHexString(this.data);
   }
 
+  /**
+   * Convert the address to a Uint8Array.
+   */
   toUint8Array(): Uint8Array {
-    return this.data;
+    return u256ToUint8Array(this.data);
   }
 
   /**

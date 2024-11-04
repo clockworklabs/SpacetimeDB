@@ -264,6 +264,9 @@ export class AlgebraicValue {
     }
   }
 
+  // TODO: all of the following methods should actually check the type of `self.value`
+  // and throw if it does not match.
+
   asProductValue(): ProductValue {
     return this.value as ProductValue;
   }
@@ -305,11 +308,11 @@ export class AlgebraicValue {
   }
 
   asIdentity(): Identity {
-    return new Identity(this.asField(0).asBytes());
+    return new Identity(this.asField(0).asBigInt());
   }
 
   asAddress(): Address {
-    return new Address(this.asField(0).asBytes());
+    return new Address(this.asField(0).asBigInt());
   }
 }
 

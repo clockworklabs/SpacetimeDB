@@ -63,3 +63,11 @@ Given a reducer called `CreatePlayer` you can call it using a call method:
 ```ts
 connection.reducers.createPlayer();
 ```
+
+### Developer notes
+
+To run the tests, do:
+
+```sh
+pnpm compile && pnpm test
+```

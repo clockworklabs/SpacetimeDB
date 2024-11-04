@@ -101,11 +101,41 @@ export default class BinaryReader {
   }
 
   readI128(): bigint {
-    const lowerPart = this.#buffer.getBigInt64(this.#offset, true);
+    const lowerPart = this.#buffer.getBigUint64(this.#offset, true);
     const upperPart = this.#buffer.getBigInt64(this.#offset + 8, true);
     this.#offset += 16;
 
     return (upperPart << BigInt(64)) + lowerPart;
+  }
+
+  readU256(): bigint {
+    const p0 = this.#buffer.getBigUint64(this.#offset, true);
+    const p1 = this.#buffer.getBigUint64(this.#offset + 8, true);
+    const p2 = this.#buffer.getBigUint64(this.#offset + 16, true);
+    const p3 = this.#buffer.getBigUint64(this.#offset + 24, true);
+    this.#offset += 32;
+
+    return (
+      (p3 << BigInt(3 * 64)) +
+      (p2 << BigInt(2 * 64)) +
+      (p1 << BigInt(1 * 64)) +
+      p0
+    );
+  }
+
+  readI256(): bigint {
+    const p0 = this.#buffer.getBigUint64(this.#offset, true);
+    const p1 = this.#buffer.getBigUint64(this.#offset + 8, true);
+    const p2 = this.#buffer.getBigUint64(this.#offset + 16, true);
+    const p3 = this.#buffer.getBigInt64(this.#offset + 24, true);
+    this.#offset += 32;
+
+    return (
+      (p3 << BigInt(3 * 64)) +
+      (p2 << BigInt(2 * 64)) +
+      (p1 << BigInt(1 * 64)) +
+      p0
+    );
   }
 
   readF32(): number {
