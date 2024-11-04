@@ -302,22 +302,22 @@ pub fn filter_btree_each_column_u32_u64_u64_by_x(ctx: &ReducerContext, x: u64) {
 }
 
 #[spacetimedb::reducer]
-pub fn filter_unique_0_u32_u64_u64_by_y(ctx: &ReducerContext, x: u64) {
-    for loc in ctx.db.unique_0_u32_u64_u64().iter().filter(|p| p.y == x) {
+pub fn filter_unique_0_u32_u64_u64_by_y(ctx: &ReducerContext, y: u64) {
+    for loc in ctx.db.unique_0_u32_u64_u64().iter().filter(|p| p.y == y) {
         black_box(loc);
     }
 }
 
 #[spacetimedb::reducer]
-pub fn filter_no_index_u32_u64_u64_by_y(ctx: &ReducerContext, x: u64) {
-    for loc in ctx.db.no_index_u32_u64_u64().iter().filter(|p| p.y == x) {
+pub fn filter_no_index_u32_u64_u64_by_y(ctx: &ReducerContext, y: u64) {
+    for loc in ctx.db.no_index_u32_u64_u64().iter().filter(|p| p.y == y) {
         black_box(loc);
     }
 }
 
 #[spacetimedb::reducer]
-pub fn filter_btree_each_column_u32_u64_u64_by_y(ctx: &ReducerContext, x: u64) {
-    for loc in ctx.db.btree_each_column_u32_u64_u64().y().filter(&x) {
+pub fn filter_btree_each_column_u32_u64_u64_by_y(ctx: &ReducerContext, y: u64) {
+    for loc in ctx.db.btree_each_column_u32_u64_u64().y().filter(&y) {
         black_box(loc);
     }
 }

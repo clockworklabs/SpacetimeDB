@@ -93,7 +93,7 @@ mod tests {
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::db::relational_db::MutTx;
-    use crate::execution_context::ExecutionContext;
+    use crate::execution_context::Workload;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
     use crate::sql::execute::collect_result;
     use crate::sql::execute::tests::run_for_testing;
@@ -120,7 +120,6 @@ mod tests {
 
     /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
     fn run_query<const N: usize>(
-        cx: &ExecutionContext,
         db: &RelationalDB,
         tx: &Tx,
         query: &QueryExpr,
@@ -128,7 +127,7 @@ mod tests {
         sources: SourceSet<Vec<ProductValue>, N>,
     ) -> Result<Vec<MemTable>, DBError> {
         let mut tx = tx.into();
-        let p = &mut DbProgram::new(cx, db, &mut tx, auth);
+        let p = &mut DbProgram::new(db, &mut tx, auth);
         let q = Expr::Crud(Box::new(CrudExpr::Query(query.clone())));
 
         let mut result = Vec::with_capacity(1);
@@ -240,14 +239,7 @@ mod tests {
         data: &DatabaseTableUpdate,
     ) -> ResultTest<()> {
         let (q, sources) = query_to_mem_table(q.clone(), data);
-        let result = run_query(
-            &ExecutionContext::default(),
-            db,
-            tx,
-            &q,
-            AuthCtx::for_testing(),
-            sources,
-        )?;
+        let result = run_query(db, tx, &q, AuthCtx::for_testing(), sources)?;
 
         assert_eq!(
             Some(mem_table_without_table_name(table)),
@@ -265,10 +257,9 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let ctx = &ExecutionContext::incremental_update(db.database_identity());
         let tx = &tx.into();
         let update = update.tables.iter().collect::<Vec<_>>();
-        let result = s.eval_incr_for_test(ctx, db, tx, &update, None);
+        let result = s.eval_incr_for_test(db, tx, &update, None);
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -295,14 +286,13 @@ mod tests {
     }
 
     fn check_query_eval(
-        ctx: &ExecutionContext,
         db: &RelationalDB,
         tx: &Tx,
         s: &ExecutionSet,
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval::<BsatnFormat>(ctx, db, tx, None, Compression::Brotli).tables;
+        let result = s.eval::<BsatnFormat>(db, tx, None, Compression::Brotli).tables;
         assert_eq!(
             result.len(),
             total_tables,
@@ -343,7 +333,7 @@ mod tests {
         let indexes = &[(1.into(), "b")];
         let table_id = db.create_table_for_test("test", schema, indexes)?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let mut deletes = Vec::new();
         for i in 0u64..9u64 {
             db.insert(&mut tx, table_id, product!(i, i))?;
@@ -359,8 +349,8 @@ mod tests {
             }],
         };
 
-        db.commit_tx(&ExecutionContext::default(), tx)?;
-        let tx = db.begin_tx();
+        db.commit_tx(tx)?;
+        let tx = db.begin_tx(Workload::ForTests);
 
         let sql = "select * from test where b = 3";
         let mut exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?;
@@ -371,10 +361,9 @@ mod tests {
 
         let query: ExecutionSet = singleton_execution_set(query, sql.into())?;
 
-        let ctx = &ExecutionContext::incremental_update(db.database_identity());
         let tx = (&tx).into();
         let update = update.tables.iter().collect::<Vec<_>>();
-        let result = query.eval_incr_for_test(ctx, &db, &tx, &update, None);
+        let result = query.eval_incr_for_test(&db, &tx, &update, None);
 
         assert_eq!(result.tables.len(), 1);
 
@@ -393,14 +382,14 @@ mod tests {
     fn test_subscribe() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
 
         let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Public)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        db.commit_tx(tx)?;
         assert_eq!(schema.table_type, StTableType::User);
         assert_eq!(schema.table_access, StAccess::Public);
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         let q_1 = q.clone();
         check_query(&db, &table, &tx, &q_1, &data)?;
 
@@ -416,15 +405,15 @@ mod tests {
     fn test_subscribe_private() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
 
         let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Private)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        db.commit_tx(tx)?;
         assert_eq!(schema.table_type, StTableType::User);
         assert_eq!(schema.table_access, StAccess::Private);
 
         let row = product!(1u64, "health");
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         check_query(&db, &table, &tx, &q, &data)?;
 
         // SELECT * FROM inventory WHERE inventory_id = 1
@@ -452,7 +441,6 @@ mod tests {
         let (q, sources) = query_to_mem_table(q, &data);
         //Try access the private table
         match run_query(
-            &ExecutionContext::default(),
             &db,
             &tx,
             &q,
@@ -521,12 +509,11 @@ mod tests {
         AND MobileEntityState.location_z > 96000 \
         AND MobileEntityState.location_z < 192000";
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         let qset = compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, sql_query)?;
 
         for q in qset {
             let result = run_query(
-                &ExecutionContext::default(),
                 &db,
                 &tx,
                 q.as_expr(),
@@ -543,17 +530,16 @@ mod tests {
     fn test_subscribe_all() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
 
         let (schema_1, _, _, _) = make_inv(&db, &mut tx, StAccess::Public)?;
         let (schema_2, _, _, _) = make_player(&db, &mut tx)?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        db.commit_tx(tx)?;
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::Subscribe);
         let s = get_all(&db, &tx, &AuthCtx::for_testing())?.into();
-        let ctx = ExecutionContext::subscribe(db.database_identity());
-        check_query_eval(&ctx, &db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
+        check_query_eval(&db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
         let data1 = DatabaseTableUpdate {
             table_id: schema_1.table_id,
@@ -598,7 +584,7 @@ mod tests {
         let indexes = &[(ColId(0), "id"), (ColId(1), "y")];
         db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
 
         // All single table queries are supported
         let scans = [
@@ -645,7 +631,7 @@ mod tests {
     fn create_lhs_table_for_eval_incr(db: &RelationalDB) -> ResultTest<TableId> {
         const I32: AlgebraicType = AlgebraicType::I32;
         let lhs_id = db.create_table_for_test("lhs", &[("id", I32), ("x", I32)], &[(0.into(), "id")])?;
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+        db.with_auto_commit(Workload::ForTests, |tx| {
             for i in 0..5 {
                 db.insert(tx, lhs_id, product!(i, i + 5))?;
             }
@@ -657,7 +643,7 @@ mod tests {
     fn create_rhs_table_for_eval_incr(db: &RelationalDB) -> ResultTest<TableId> {
         const I32: AlgebraicType = AlgebraicType::I32;
         let rhs_id = db.create_table_for_test("rhs", &[("rid", I32), ("id", I32), ("y", I32)], &[(1.into(), "id")])?;
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+        db.with_auto_commit(Workload::ForTests, |tx| {
             for i in 10..20 {
                 db.insert(tx, rhs_id, product!(i, i - 10, i - 8))?;
             }
@@ -666,7 +652,7 @@ mod tests {
     }
 
     fn compile_query(db: &RelationalDB) -> ResultTest<ExecutionSet> {
-        db.with_read_only(&ExecutionContext::default(), |tx| {
+        db.with_read_only(Workload::ForTests, |tx| {
             // Should be answered using an index semijion
             let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where rhs.y >= 2 and rhs.y <= 4";
             let mut exp = compile_sql(db, &AuthCtx::for_testing(), tx, sql)?;
@@ -728,12 +714,11 @@ mod tests {
         query: &ExecutionSet,
         tables: Vec<DatabaseTableUpdate>,
     ) -> ResultTest<DatabaseUpdate> {
-        let ctx = &ExecutionContext::default();
         let update = DatabaseUpdate { tables };
-        db.with_read_only(ctx, |tx| {
+        db.with_read_only(Workload::ForTests, |tx| {
             let tx = (&*tx).into();
             let update = update.tables.iter().collect::<Vec<_>>();
-            let result = query.eval_incr_for_test(ctx, db, &tx, &update, None);
+            let result = query.eval_incr_for_test(db, &tx, &update, None);
             let tables = result
                 .tables
                 .iter()
@@ -762,7 +747,7 @@ mod tests {
         let r1 = product!(10, 0, 2);
         let r2 = product!(10, 0, 3);
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+        db.with_auto_commit(Workload::ForTests, |tx| {
             delete_row(db, tx, rhs_id, r1.clone());
             insert_row(db, tx, rhs_id, r2.clone())
         })?;
@@ -792,7 +777,7 @@ mod tests {
         let r1 = product!(13, 3, 5);
         let r2 = product!(13, 3, 6);
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+        db.with_auto_commit(Workload::ForTests, |tx| {
             delete_row(db, tx, rhs_id, r1.clone());
             insert_row(db, tx, rhs_id, r2.clone())
         })?;
@@ -822,7 +807,7 @@ mod tests {
         let r1 = product!(10, 0, 2);
         let r2 = product!(10, 0, 5);
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+        db.with_auto_commit(Workload::ForTests, |tx| {
             delete_row(db, tx, rhs_id, r1.clone());
             insert_row(db, tx, rhs_id, r2.clone())
         })?;
@@ -853,7 +838,7 @@ mod tests {
         let r1 = product!(13, 3, 5);
         let r2 = product!(13, 3, 4);
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+        db.with_auto_commit(Workload::ForTests, |tx| {
             delete_row(db, tx, rhs_id, r1.clone());
             insert_row(db, tx, rhs_id, r2.clone())
         })?;
@@ -884,7 +869,7 @@ mod tests {
         let lhs_row = product!(5, 10);
         let rhs_row = product!(20, 5, 3);
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+        db.with_auto_commit(Workload::ForTests, |tx| {
             insert_row(db, tx, lhs_id, lhs_row.clone())?;
             insert_row(db, tx, rhs_id, rhs_row.clone())
         })?;
@@ -915,7 +900,7 @@ mod tests {
         let lhs_row = product!(5, 10);
         let rhs_row = product!(20, 5, 5);
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+        db.with_auto_commit(Workload::ForTests, |tx| {
             insert_row(db, tx, lhs_id, lhs_row.clone())?;
             insert_row(db, tx, rhs_id, rhs_row.clone())
         })?;
@@ -945,7 +930,7 @@ mod tests {
         let lhs_row = product!(0, 5);
         let rhs_row = product!(10, 0, 2);
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> ResultTest<_> {
+        db.with_auto_commit(Workload::ForTests, |tx| -> ResultTest<_> {
             delete_row(db, tx, lhs_id, lhs_row.clone());
             delete_row(db, tx, rhs_id, rhs_row.clone());
             Ok(())
@@ -977,7 +962,7 @@ mod tests {
         let lhs_row = product!(3, 8);
         let rhs_row = product!(13, 3, 5);
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> ResultTest<_> {
+        db.with_auto_commit(Workload::ForTests, |tx| -> ResultTest<_> {
             delete_row(db, tx, lhs_id, lhs_row.clone());
             delete_row(db, tx, rhs_id, rhs_row.clone());
             Ok(())
@@ -1010,7 +995,7 @@ mod tests {
         let rhs_old = product!(11, 1, 3);
         let rhs_new = product!(11, 1, 4);
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+        db.with_auto_commit(Workload::ForTests, |tx| {
             delete_row(db, tx, lhs_id, lhs_old.clone());
             delete_row(db, tx, rhs_id, rhs_old.clone());
             insert_row(db, tx, lhs_id, lhs_new.clone())?;

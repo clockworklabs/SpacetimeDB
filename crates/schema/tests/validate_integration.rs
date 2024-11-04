@@ -70,4 +70,5 @@ fn validate_cs_modules() {
     validate_module("sdk-test-cs");
     validate_module("sdk-test-connect-disconnect-cs");
     validate_module("spacetimedb-quickstart-cs");
+    validate_module("benchmarks-cs");
 }

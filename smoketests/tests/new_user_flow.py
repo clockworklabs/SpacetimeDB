@@ -43,7 +43,7 @@ pub fn say_hello(ctx: &ReducerContext) {
         self.assertEqual(self.logs(5).count("Hello, World!"), 2)
         self.assertEqual(self.logs(5).count("Hello, Tyler!"), 1)
 
-        out = self.spacetime("sql", self.address, "SELECT * FROM person")
+        out = self.spacetime("sql", self.database_identity, "SELECT * FROM person")
         # The spaces after the name are important
         self.assertMultiLineEqual(out, """\
  name    

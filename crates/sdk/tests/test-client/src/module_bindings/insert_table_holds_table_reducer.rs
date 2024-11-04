@@ -72,3 +72,23 @@ impl insert_table_holds_table for super::RemoteReducers {
             .remove_on_reducer::<InsertTableHoldsTable>("insert_table_holds_table", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_table_holds_table`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_table_holds_table {
+    /// Set the call-reducer flags for the reducer `insert_table_holds_table` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_table_holds_table(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_table_holds_table for super::SetReducerFlags {
+    fn insert_table_holds_table(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_table_holds_table", flags);
+    }
+}

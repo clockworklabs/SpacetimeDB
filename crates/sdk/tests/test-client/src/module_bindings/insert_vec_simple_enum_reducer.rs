@@ -70,3 +70,23 @@ impl insert_vec_simple_enum for super::RemoteReducers {
             .remove_on_reducer::<InsertVecSimpleEnum>("insert_vec_simple_enum", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_vec_simple_enum`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_vec_simple_enum {
+    /// Set the call-reducer flags for the reducer `insert_vec_simple_enum` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_vec_simple_enum(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_vec_simple_enum for super::SetReducerFlags {
+    fn insert_vec_simple_enum(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_vec_simple_enum", flags);
+    }
+}

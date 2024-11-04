@@ -6,6 +6,7 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
+use crate::execution_context::Workload;
 use crate::{
     db::{
         datastore::{
@@ -28,19 +29,23 @@ use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
+use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
-use spacetimedb_snapshot::ReconstructedSnapshot;
+use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
 use spacetimedb_table::{
     indexes::RowPointer,
     table::{RowRef, Table},
     MemoryUsage,
 };
-use std::time::{Duration, Instant};
 use std::{borrow::Cow, sync::Arc};
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, DBError>;
@@ -98,7 +103,6 @@ impl Locking {
         // This is intentional.
         let datastore = Self::new(database_identity);
         let mut commit_state = datastore.committed_state.write_arc();
-        let database_identity = datastore.database_identity;
         // TODO(cloutiertyler): One thing to consider in the future is, should
         // we persist the bootstrap transaction in the message log? My intuition
         // is no, because then if we change the schema of the system tables we
@@ -174,8 +178,6 @@ impl Locking {
         let mut committed_state = datastore.committed_state.write_arc();
         committed_state.blob_store = blob_store;
 
-        let ctx = ExecutionContext::internal(datastore.database_identity);
-
         // Note that `tables` is a `BTreeMap`, and so iterates in increasing order.
         // This means that we will instantiate and populate the system tables before any user tables.
         for (table_id, pages) in tables {
@@ -184,7 +186,7 @@ impl Locking {
                 // In this case, `schema_for_table` will never see a cached schema,
                 // as the committed state is newly constructed and we have not accessed this schema yet.
                 // As such, this call will compute and save the schema from `st_table` and friends.
-                None => committed_state.schema_for_table(&ctx, table_id)?,
+                None => committed_state.schema_for_table(table_id)?,
             };
             let (table, blob_store) = committed_state.get_table_and_blob_store_or_create(table_id, &schema);
             unsafe {
@@ -215,7 +217,7 @@ impl Locking {
         }
 
         // Fix up auto_inc IDs in the cached system table schemas.
-        committed_state.reset_system_table_schemas(database_identity)?;
+        committed_state.reset_system_table_schemas()?;
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
@@ -223,14 +225,56 @@ impl Locking {
         Ok(datastore)
     }
 
+    /// Take a snapshot of this [`Locking`] datastore's [`CommittedState`]
+    /// and store it in `repo`.
+    ///
+    /// On success, returns:
+    ///
+    /// - `None` if the committed state is empty
+    ///   (i.e. no transactions have been committed yet)
+    ///   and therefore no snapshot was created
+    ///
+    /// - or `Some` path to the newly created snapshot directory
+    ///
+    /// Returns an error if [`SnapshotRepository::create_snapshot`] returns an
+    /// error.
+    pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<PathBuf>> {
+        let maybe_offset_and_path = Self::take_snapshot_internal(&self.committed_state, repo)?;
+        Ok(maybe_offset_and_path.map(|(_, path)| path))
+    }
+
+    pub(crate) fn take_snapshot_internal(
+        committed_state: &RwLock<CommittedState>,
+        repo: &SnapshotRepository,
+    ) -> Result<Option<(TxOffset, PathBuf)>> {
+        let mut committed_state = committed_state.write();
+        let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {
+            return Ok(None);
+        };
+
+        log::info!(
+            "Capturing snapshot of database {:?} at TX offset {}",
+            repo.database_identity(),
+            tx_offset,
+        );
+
+        let CommittedState {
+            ref mut tables,
+            ref blob_store,
+            ..
+        } = *committed_state;
+        let snapshot_dir = repo.create_snapshot(tables.values_mut(), blob_store, tx_offset)?;
+
+        Ok(Some((tx_offset, snapshot_dir)))
+    }
+
     /// Returns a list over all the currently connected clients,
     /// reading from the `st_clients` system table.
     pub fn connected_clients<'a>(
         &'a self,
-        ctx: &'a ExecutionContext,
         tx: &'a TxId,
     ) -> Result<impl Iterator<Item = Result<(Identity, Address)>> + 'a> {
-        let iter = self.iter_tx(ctx, tx, ST_CLIENT_ID)?.map(|row_ref| {
+        let iter = self.iter_tx(tx, ST_CLIENT_ID)?.map(|row_ref| {
             let row = StClientRow::try_from(row_ref)?;
             Ok((row.identity.0, row.address.0))
         });
@@ -243,7 +287,7 @@ impl Locking {
             .table_id_from_name_mut_tx(tx, &name)?
             .ok_or_else(|| TableError::NotFound(name.into()))?;
 
-        tx.alter_table_access(self.database_identity, table_id, access)
+        tx.alter_table_access(table_id, access)
     }
 }
 
@@ -259,52 +303,61 @@ impl DataRow for Locking {
 impl Tx for Locking {
     type Tx = TxId;
 
-    fn begin_tx(&self) -> Self::Tx {
+    fn begin_tx(&self, workload: Workload) -> Self::Tx {
         let timer = Instant::now();
 
         let committed_state_shared_lock = self.committed_state.read_arc();
         let lock_wait_time = timer.elapsed();
+        let ctx = ExecutionContext::with_workload(self.database_identity, workload);
         Self::Tx {
             committed_state_shared_lock,
             lock_wait_time,
             timer,
+            ctx,
         }
     }
 
-    fn release_tx(&self, ctx: &ExecutionContext, tx: Self::Tx) {
-        tx.release(ctx);
+    fn release_tx(&self, tx: Self::Tx) {
+        tx.release();
     }
 }
 
 impl TxDatastore for Locking {
-    type Iter<'a> = Iter<'a> where Self: 'a;
-    type IterByColEq<'a, 'r> = IterByColRange<'a, &'r AlgebraicValue> where Self: 'a;
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
+    type Iter<'a>
+        = Iter<'a>
+    where
+        Self: 'a;
+    type IterByColEq<'a, 'r>
+        = IterByColRange<'a, &'r AlgebraicValue>
+    where
+        Self: 'a;
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>
+        = IterByColRange<'a, R>
+    where
+        Self: 'a;
 
-    fn iter_tx<'a>(&'a self, ctx: &'a ExecutionContext, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>> {
-        tx.iter(ctx, table_id)
+    fn iter_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>> {
+        tx.iter(table_id)
     }
 
     fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
-        ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
         cols: impl Into<ColList>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>> {
-        tx.iter_by_col_range(ctx, table_id, cols.into(), range)
+        tx.iter_by_col_range(table_id, cols.into(), range)
     }
 
     fn iter_by_col_eq_tx<'a, 'r>(
         &'a self,
-        ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
-        tx.iter_by_col_eq(ctx, table_id, cols, value)
+        tx.iter_by_col_eq(table_id, cols, value)
     }
 
     fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool {
@@ -312,7 +365,7 @@ impl TxDatastore for Locking {
     }
 
     fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> Result<Option<TableId>> {
-        tx.table_id_from_name(table_name, self.database_identity)
+        tx.table_id_from_name(table_name)
     }
 
     fn table_name_from_id_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Option<Cow<'a, str>>> {
@@ -320,11 +373,11 @@ impl TxDatastore for Locking {
     }
 
     fn schema_for_table_tx(&self, tx: &Self::Tx, table_id: TableId) -> Result<Arc<TableSchema>> {
-        tx.schema_for_table(&ExecutionContext::internal(self.database_identity), table_id)
+        tx.schema_for_table(table_id)
     }
 
-    fn get_all_tables_tx(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Vec<Arc<TableSchema>>> {
-        self.iter_tx(ctx, tx, ST_TABLE_ID)?
+    fn get_all_tables_tx(&self, tx: &Self::Tx) -> Result<Vec<Arc<TableSchema>>> {
+        self.iter_tx(tx, ST_TABLE_ID)?
             .map(|row_ref| {
                 let table_id = row_ref.read_col(StTableFields::TableId)?;
                 self.schema_for_table_tx(tx, table_id)
@@ -332,15 +385,15 @@ impl TxDatastore for Locking {
             .collect()
     }
 
-    fn metadata(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Metadata>> {
-        self.iter_tx(ctx, tx, ST_MODULE_ID)?
+    fn metadata(&self, tx: &Self::Tx) -> Result<Option<Metadata>> {
+        self.iter_tx(tx, ST_MODULE_ID)?
             .next()
             .map(metadata_from_row)
             .transpose()
     }
 
-    fn program(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Program>> {
-        self.iter_tx(ctx, tx, ST_MODULE_ID)?
+    fn program(&self, tx: &Self::Tx) -> Result<Option<Program>> {
+        self.iter_tx(tx, ST_MODULE_ID)?
             .next()
             .map(|row_ref| {
                 let hash = read_hash_from_col(row_ref, StModuleFields::ProgramHash)?;
@@ -353,7 +406,7 @@ impl TxDatastore for Locking {
 
 impl MutTxDatastore for Locking {
     fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: TableSchema) -> Result<TableId> {
-        tx.create_table(schema, self.database_identity)
+        tx.create_table(schema)
     }
 
     /// This function is used to get the `ProductType` of the rows in a
@@ -370,7 +423,7 @@ impl MutTxDatastore for Locking {
     ///
     /// This function is known to be called quite frequently.
     fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<RowTypeForTable<'tx>> {
-        tx.row_type_for_table(table_id, self.database_identity)
+        tx.row_type_for_table(table_id)
     }
 
     /// IMPORTANT! This function is relatively expensive, and much more
@@ -378,105 +431,90 @@ impl MutTxDatastore for Locking {
     /// `row_type_for_table_mut_tx` if you only need to access the `ProductType`
     /// of the table.
     fn schema_for_table_mut_tx(&self, tx: &Self::MutTx, table_id: TableId) -> Result<Arc<TableSchema>> {
-        tx.schema_for_table(&ExecutionContext::internal(self.database_identity), table_id)
+        tx.schema_for_table(table_id)
     }
 
     /// This function is relatively expensive because it needs to be
     /// transactional, however we don't expect to be dropping tables very often.
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId) -> Result<()> {
-        tx.drop_table(table_id, self.database_identity)
+        tx.drop_table(table_id)
     }
 
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: &str) -> Result<()> {
-        tx.rename_table(table_id, new_name, self.database_identity)
+        tx.rename_table(table_id, new_name)
     }
 
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTx, table_name: &str) -> Result<Option<TableId>> {
-        tx.table_id_from_name(table_name, self.database_identity)
+        tx.table_id_from_name(table_name)
     }
 
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool {
         tx.table_name(*table_id).is_some()
     }
 
-    fn table_name_from_id_mut_tx<'a>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTx,
-        table_id: TableId,
-    ) -> Result<Option<Cow<'a, str>>> {
-        tx.table_name_from_id(ctx, table_id)
+    fn table_name_from_id_mut_tx<'a>(&'a self, tx: &'a Self::MutTx, table_id: TableId) -> Result<Option<Cow<'a, str>>> {
+        tx.table_name_from_id(table_id)
             .map(|opt| opt.map(|s| Cow::Owned(s.into())))
     }
 
     fn create_index_mut_tx(&self, tx: &mut Self::MutTx, index_schema: IndexSchema, is_unique: bool) -> Result<IndexId> {
-        let ctx = &ExecutionContext::internal(self.database_identity);
-        tx.create_index(ctx, index_schema, is_unique)
+        tx.create_index(index_schema, is_unique)
     }
 
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTx, index_id: IndexId) -> Result<()> {
-        tx.drop_index(index_id, self.database_identity)
+        tx.drop_index(index_id)
     }
 
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> Result<Option<IndexId>> {
-        tx.index_id_from_name(index_name, self.database_identity)
+        tx.index_id_from_name(index_name)
     }
 
     fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<i128> {
-        tx.get_next_sequence_value(seq_id, self.database_identity)
+        tx.get_next_sequence_value(seq_id)
     }
 
     fn create_sequence_mut_tx(&self, tx: &mut Self::MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId> {
-        tx.create_sequence(sequence_schema, self.database_identity)
+        tx.create_sequence(sequence_schema)
     }
 
     fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<()> {
-        tx.drop_sequence(seq_id, self.database_identity)
+        tx.drop_sequence(seq_id)
     }
 
     fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> Result<Option<SequenceId>> {
-        tx.sequence_id_from_name(sequence_name, self.database_identity)
+        tx.sequence_id_from_name(sequence_name)
     }
 
     fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint_id: ConstraintId) -> Result<()> {
-        let ctx = &ExecutionContext::internal(self.database_identity);
-        tx.drop_constraint(ctx, constraint_id)
+        tx.drop_constraint(constraint_id)
     }
 
     fn constraint_id_from_name(&self, tx: &Self::MutTx, constraint_name: &str) -> Result<Option<ConstraintId>> {
-        let ctx = &ExecutionContext::internal(self.database_identity);
-        tx.constraint_id_from_name(ctx, constraint_name)
+        tx.constraint_id_from_name(constraint_name)
     }
 
-    fn iter_mut_tx<'a>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTx,
-        table_id: TableId,
-    ) -> Result<Self::Iter<'a>> {
-        tx.iter(ctx, table_id)
+    fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTx, table_id: TableId) -> Result<Self::Iter<'a>> {
+        tx.iter(table_id)
     }
 
     fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
-        ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
         cols: impl Into<ColList>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>> {
-        tx.iter_by_col_range(ctx, table_id, cols.into(), range)
+        tx.iter_by_col_range(table_id, cols.into(), range)
     }
 
     fn iter_by_col_eq_mut_tx<'a, 'r>(
         &'a self,
-        ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
-        tx.iter_by_col_eq(ctx, table_id, cols.into(), value)
+        tx.iter_by_col_eq(table_id, cols.into(), value)
     }
 
     fn get_mut_tx<'a>(
@@ -527,19 +565,17 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         mut row: ProductValue,
     ) -> Result<(AlgebraicValue, RowRef<'a>)> {
-        let (gens, row_ref) = tx.insert(table_id, &mut row, self.database_identity)?;
+        let (gens, row_ref) = tx.insert(table_id, &mut row)?;
         Ok((gens, row_ref.collapse()))
     }
 
     fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>> {
-        let ctx = ExecutionContext::internal(self.database_identity);
-        tx.iter(&ctx, ST_MODULE_ID)?.next().map(metadata_from_row).transpose()
+        tx.iter(ST_MODULE_ID)?.next().map(metadata_from_row).transpose()
     }
 
     fn update_program(&self, tx: &mut Self::MutTx, program_kind: ModuleKind, program: Program) -> Result<()> {
-        let ctx = ExecutionContext::internal(self.database_identity);
         let old = tx
-            .iter(&ctx, ST_MODULE_ID)?
+            .iter(ST_MODULE_ID)?
             .next()
             .map(|row| {
                 let ptr = row.pointer();
@@ -554,8 +590,7 @@ impl MutTxDatastore for Locking {
                 row.program_bytes = program.bytes;
 
                 tx.delete(ST_MODULE_ID, ptr)?;
-                tx.insert(ST_MODULE_ID, &mut row.into(), self.database_identity)
-                    .map(drop)
+                tx.insert(ST_MODULE_ID, &mut row.into()).map(drop)
             }
 
             None => Err(anyhow!(
@@ -644,47 +679,39 @@ impl MutTx for Locking {
 
     /// Note: We do not use the isolation level here because this implementation
     /// guarantees the highest isolation level, Serializable.
-    fn begin_mut_tx(&self, _isolation_level: IsolationLevel) -> Self::MutTx {
+    fn begin_mut_tx(&self, _isolation_level: IsolationLevel, workload: Workload) -> Self::MutTx {
         let timer = Instant::now();
 
         let committed_state_write_lock = self.committed_state.write_arc();
         let sequence_state_lock = self.sequence_state.lock_arc();
         let lock_wait_time = timer.elapsed();
+        let ctx = ExecutionContext::with_workload(self.database_identity, workload);
         MutTxId {
             committed_state_write_lock,
             sequence_state_lock,
             tx_state: TxState::default(),
             lock_wait_time,
             timer,
+            ctx,
         }
     }
 
-    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) {
-        tx.rollback(ctx);
+    fn rollback_mut_tx(&self, tx: Self::MutTx) {
+        tx.rollback();
     }
 
-    fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>> {
-        Ok(Some(tx.commit(ctx)))
-    }
-
-    #[cfg(test)]
-    fn commit_mut_tx_for_test(&self, tx: Self::MutTx) -> crate::db::datastore::Result<Option<TxData>> {
-        self.commit_mut_tx(&ExecutionContext::default(), tx)
-    }
-
-    #[cfg(test)]
-    fn rollback_mut_tx_for_test(&self, tx: Self::MutTx) {
-        self.rollback_mut_tx(&ExecutionContext::default(), tx)
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<TxData>> {
+        Ok(Some(tx.commit()))
     }
 }
 
 impl Locking {
-    pub fn rollback_mut_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTxId) -> TxId {
-        tx.rollback_downgrade(ctx)
+    pub fn rollback_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> TxId {
+        tx.rollback_downgrade(workload)
     }
 
-    pub fn commit_mut_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, TxId)>> {
-        Ok(Some(tx.commit_downgrade(ctx)))
+    pub fn commit_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> Result<Option<(TxData, TxId)>> {
+        Ok(Some(tx.commit_downgrade(workload)))
     }
 }
 
@@ -719,7 +746,7 @@ impl<F> Replay<F> {
         f(&mut visitor)
     }
 
-    pub(crate) fn next_tx_offset(&self) -> u64 {
+    pub fn next_tx_offset(&self) -> u64 {
         self.committed_state.read_arc().next_tx_offset
     }
 }
@@ -835,9 +862,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         table_id: TableId,
         reader: &mut R,
     ) -> std::result::Result<(), Self::Error> {
-        let schema = self
-            .committed_state
-            .schema_for_table(&ExecutionContext::default(), table_id)?;
+        let schema = self.committed_state.schema_for_table(table_id)?;
         ProductValue::decode(schema.get_row_type(), reader)?;
         Ok(())
     }
@@ -847,9 +872,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         table_id: TableId,
         reader: &mut R,
     ) -> std::result::Result<Self::Row, Self::Error> {
-        let schema = self
-            .committed_state
-            .schema_for_table(&ExecutionContext::default(), table_id)?;
+        let schema = self.committed_state.schema_for_table(table_id)?;
         let row = ProductValue::decode(schema.get_row_type(), reader)?;
 
         self.committed_state
@@ -875,9 +898,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         table_id: TableId,
         reader: &mut R,
     ) -> std::result::Result<Self::Row, Self::Error> {
-        let schema = self
-            .committed_state
-            .schema_for_table(&ExecutionContext::default(), table_id)?;
+        let schema = self.committed_state.schema_for_table(table_id)?;
         // TODO: avoid clone
         let table_name = schema.table_name.clone();
         let row = ProductValue::decode(schema.get_row_type(), reader)?;
@@ -976,18 +997,17 @@ mod tests {
     /// Utility to query the system tables and return their concrete table row
     pub struct SystemTableQuery<'a> {
         db: &'a MutTxId,
-        ctx: &'a ExecutionContext,
     }
 
-    fn query_st_tables<'a>(ctx: &'a ExecutionContext, tx: &'a MutTxId) -> SystemTableQuery<'a> {
-        SystemTableQuery { db: tx, ctx }
+    fn query_st_tables(tx: &MutTxId) -> SystemTableQuery<'_> {
+        SystemTableQuery { db: tx }
     }
 
     impl SystemTableQuery<'_> {
         pub fn scan_st_tables(&self) -> Result<Vec<StTableRow>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_TABLE_ID)?
+                .iter(ST_TABLE_ID)?
                 .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
@@ -1000,7 +1020,7 @@ mod tests {
         ) -> Result<Vec<StTableRow>> {
             Ok(self
                 .db
-                .iter_by_col_eq(self.ctx, ST_TABLE_ID, cols.into(), value)?
+                .iter_by_col_eq(ST_TABLE_ID, cols.into(), value)?
                 .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
@@ -1009,7 +1029,7 @@ mod tests {
         pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_COLUMN_ID)?
+                .iter(ST_COLUMN_ID)?
                 .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
@@ -1022,7 +1042,7 @@ mod tests {
         ) -> Result<Vec<StColumnRow>> {
             Ok(self
                 .db
-                .iter_by_col_eq(self.ctx, ST_COLUMN_ID, cols.into(), value)?
+                .iter_by_col_eq(ST_COLUMN_ID, cols.into(), value)?
                 .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
@@ -1031,7 +1051,7 @@ mod tests {
         pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_CONSTRAINT_ID)?
+                .iter(ST_CONSTRAINT_ID)?
                 .map(|row| StConstraintRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.constraint_id)
                 .collect::<Vec<_>>())
@@ -1040,7 +1060,7 @@ mod tests {
         pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_SEQUENCE_ID)?
+                .iter(ST_SEQUENCE_ID)?
                 .map(|row| StSequenceRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.sequence_id))
                 .collect::<Vec<_>>())
@@ -1049,7 +1069,7 @@ mod tests {
         pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_INDEX_ID)?
+                .iter(ST_INDEX_ID)?
                 .map(|row| StIndexRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.index_id)
                 .collect::<Vec<_>>())
@@ -1304,7 +1324,7 @@ mod tests {
 
     fn setup_table() -> ResultTest<(Locking, MutTxId, TableId)> {
         let datastore = get_datastore()?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let schema = basic_table_schema();
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         Ok((datastore, tx, table_id))
@@ -1312,14 +1332,14 @@ mod tests {
 
     fn all_rows(datastore: &Locking, tx: &MutTxId, table_id: TableId) -> Vec<ProductValue> {
         datastore
-            .iter_mut_tx(&ExecutionContext::default(), tx, table_id)
+            .iter_mut_tx(tx, table_id)
             .unwrap()
             .map(|r| r.to_product_value().clone())
             .collect()
     }
 
     fn all_rows_tx(tx: &TxId, table_id: TableId) -> Vec<ProductValue> {
-        tx.iter(&ExecutionContext::default(), table_id)
+        tx.iter(table_id)
             .unwrap()
             .map(|r| r.to_product_value().clone())
             .collect()
@@ -1328,9 +1348,8 @@ mod tests {
     #[test]
     fn test_bootstrapping_sets_up_tables() -> ResultTest<()> {
         let datastore = get_datastore()?;
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
-        let ctx = ExecutionContext::default();
-        let query = query_st_tables(&ctx, &tx);
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let query = query_st_tables(&tx);
         #[rustfmt::skip]
         assert_eq!(query.scan_st_tables()?, map_array([
             TableRow { id: ST_TABLE_ID.into(), name: ST_TABLE_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StTableFields::TableId.into()) },
@@ -1497,15 +1516,14 @@ mod tests {
             );
         }
 
-        datastore.rollback_mut_tx_for_test(tx);
+        datastore.rollback_mut_tx(tx);
         Ok(())
     }
 
     #[test]
     fn test_create_table_pre_commit() -> ResultTest<()> {
         let (_, tx, table_id) = setup_table()?;
-        let ctx = ExecutionContext::default();
-        let query = query_st_tables(&ctx, &tx);
+        let query = query_st_tables(&tx);
 
         let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
@@ -1521,10 +1539,9 @@ mod tests {
     #[test]
     fn test_create_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.commit_mut_tx_for_test(tx)?;
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
-        let ctx = ExecutionContext::default();
-        let query = query_st_tables(&ctx, &tx);
+        datastore.commit_mut_tx(tx)?;
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let query = query_st_tables(&tx);
 
         let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
@@ -1541,14 +1558,13 @@ mod tests {
     #[test]
     fn test_create_table_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.rollback_mut_tx_for_test(tx);
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        datastore.rollback_mut_tx(tx);
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         assert!(
             !datastore.table_id_exists_mut_tx(&tx, &table_id),
             "Table should not exist"
         );
-        let ctx = ExecutionContext::default();
-        let query = query_st_tables(&ctx, &tx);
+        let query = query_st_tables(&tx);
 
         let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         assert_eq!(table_rows, []);
@@ -1558,9 +1574,8 @@ mod tests {
     }
 
     fn verify_schemas_consistent(tx: &mut MutTxId, table_id: TableId) {
-        let ctx = &ExecutionContext::default();
         let s1 = tx.get_schema(table_id).expect("should exist");
-        let s2 = tx.schema_for_table_raw(ctx, table_id).expect("should exist");
+        let s2 = tx.schema_for_table_raw(table_id).expect("should exist");
         assert_eq!(**s1, s2);
     }
 
@@ -1579,8 +1594,8 @@ mod tests {
     #[test]
     fn test_schema_for_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        datastore.commit_mut_tx(tx)?;
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         verify_schemas_consistent(&mut tx, table_id);
         let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
         #[rustfmt::skip]
@@ -1591,9 +1606,9 @@ mod tests {
     #[test]
     fn test_schema_for_table_alter_indexes() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.commit_mut_tx_for_test(tx)?;
+        datastore.commit_mut_tx(tx)?;
 
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
 
         let mut dropped_indexes = 0;
@@ -1605,9 +1620,9 @@ mod tests {
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
             "no indexes should be left in the schema pre-commit"
         );
-        datastore.commit_mut_tx_for_test(tx)?;
+        datastore.commit_mut_tx(tx)?;
 
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         assert!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
             "no indexes should be left in the schema post-commit"
@@ -1641,16 +1656,16 @@ mod tests {
             "created index should be present in schema pre-commit"
         );
 
-        datastore.commit_mut_tx_for_test(tx)?;
+        datastore.commit_mut_tx(tx)?;
 
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         assert_eq!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
             expected_indexes,
             "created index should be present in schema post-commit"
         );
 
-        datastore.commit_mut_tx_for_test(tx)?;
+        datastore.commit_mut_tx(tx)?;
 
         Ok(())
     }
@@ -1658,8 +1673,8 @@ mod tests {
     #[test]
     fn test_schema_for_table_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.rollback_mut_tx_for_test(tx);
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        datastore.rollback_mut_tx(tx);
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id);
         assert!(schema.is_err());
         Ok(())
@@ -1690,8 +1705,8 @@ mod tests {
         let (datastore, mut tx, table_id) = setup_table()?;
         // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, u32_str_u32(0, "Foo", 18))?;
-        datastore.commit_mut_tx_for_test(tx)?;
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        datastore.commit_mut_tx(tx)?;
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
@@ -1701,11 +1716,11 @@ mod tests {
     fn test_insert_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         let row = u32_str_u32(15, "Foo", 18); // 15 is ignored.
-        datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        datastore.commit_mut_tx(tx)?;
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
-        datastore.rollback_mut_tx_for_test(tx);
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        datastore.rollback_mut_tx(tx);
+        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![]);
         Ok(())
@@ -1716,8 +1731,8 @@ mod tests {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
-        datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        datastore.commit_mut_tx(tx)?;
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let created_row = u32_str_u32(1, "Foo", 18);
         let num_deleted = datastore.delete_by_rel_mut_tx(&mut tx, table_id, [created_row]);
         assert_eq!(num_deleted, 1);
@@ -1785,8 +1800,8 @@ mod tests {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
-        datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        datastore.commit_mut_tx(tx)?;
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
@@ -1805,12 +1820,12 @@ mod tests {
     #[test]
     fn test_unique_constraint_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        datastore.commit_mut_tx(tx)?;
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
-        datastore.rollback_mut_tx_for_test(tx);
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        datastore.rollback_mut_tx(tx);
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(2, "Foo", 18)]);
@@ -1820,14 +1835,14 @@ mod tests {
     #[test]
     fn test_create_index_pre_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.commit_mut_tx_for_test(tx)?;
+        datastore.commit_mut_tx(tx)?;
 
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
-        datastore.commit_mut_tx_for_test(tx)?;
+        datastore.commit_mut_tx(tx)?;
 
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let index_def = IndexSchema {
             index_id: IndexId::SENTINEL,
             table_id,
@@ -1837,8 +1852,7 @@ mod tests {
         // TODO: it's slightly incorrect to create an index with `is_unique: true` without creating a corresponding constraint.
         // But the `Table` crate allows it for now.
         datastore.create_index_mut_tx(&mut tx, index_def, true)?;
-        let ctx = ExecutionContext::default();
-        let query = query_st_tables(&ctx, &tx);
+        let query = query_st_tables(&tx);
         let seq_start = FIRST_NON_SYSTEM_ID;
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
@@ -1880,8 +1894,8 @@ mod tests {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
-        datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        datastore.commit_mut_tx(tx)?;
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let index_def = IndexSchema {
             index_id: IndexId::SENTINEL,
             table_id,
@@ -1889,10 +1903,9 @@ mod tests {
             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),
         };
         datastore.create_index_mut_tx(&mut tx, index_def, true)?;
-        datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
-        let ctx = ExecutionContext::default();
-        let query = query_st_tables(&ctx, &tx);
+        datastore.commit_mut_tx(tx)?;
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let query = query_st_tables(&tx);
 
         let seq_start = FIRST_NON_SYSTEM_ID;
         let index_rows = query.scan_st_indexes()?;
@@ -1935,8 +1948,8 @@ mod tests {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
-        datastore.commit_mut_tx_for_test(tx)?;
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        datastore.commit_mut_tx(tx)?;
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let index_def = IndexSchema {
             index_id: IndexId::SENTINEL,
             table_id,
@@ -1945,10 +1958,9 @@ mod tests {
         };
         datastore.create_index_mut_tx(&mut tx, index_def, true)?;
 
-        datastore.rollback_mut_tx_for_test(tx);
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
-        let ctx = ExecutionContext::default();
-        let query = query_st_tables(&ctx, &tx);
+        datastore.rollback_mut_tx(tx);
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let query = query_st_tables(&tx);
 
         let seq_start = FIRST_NON_SYSTEM_ID;
         let index_rows = query.scan_st_indexes()?;
@@ -1988,24 +2000,18 @@ mod tests {
                                              // Because of auto_inc columns, we will get a slightly different
                                              // value than the one we inserted.
         let row = datastore.insert_mut_tx(&mut tx, table_id, row)?.1.to_product_value();
-        datastore.commit_mut_tx_for_test(tx)?;
+        datastore.commit_mut_tx(tx)?;
 
         let all_rows_col_0_eq_1 = |tx: &MutTxId| {
             datastore
-                .iter_by_col_eq_mut_tx(
-                    &ExecutionContext::default(),
-                    tx,
-                    table_id,
-                    ColId(0),
-                    &AlgebraicValue::U32(1),
-                )
+                .iter_by_col_eq_mut_tx(tx, table_id, ColId(0), &AlgebraicValue::U32(1))
                 .unwrap()
                 .map(|row_ref| row_ref.to_product_value())
                 .collect::<Vec<_>>()
         };
 
         // Update the db with the same actual value for that row, in a new tx.
-        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         // Iterate over all rows with the value 1 (from the auto_inc) in column 0.
         let rows = all_rows_col_0_eq_1(&tx);
         assert_eq!(rows.len(), 1);
@@ -2028,7 +2034,7 @@ mod tests {
         // second transaction, and see exactly one row.
         assert_eq!(all_rows_col_0_eq_1(&tx).len(), 1);
 
-        datastore.commit_mut_tx_for_test(tx)?;
+        datastore.commit_mut_tx(tx)?;
 
         Ok(())
     }
@@ -2042,16 +2048,16 @@ mod tests {
         datastore.insert_mut_tx(&mut tx, table_id, row1.clone())?;
         let row2 = u32_str_u32(2, "Bar", 20);
         datastore.insert_mut_tx(&mut tx, table_id, row2.clone())?;
-        datastore.commit_mut_tx_for_test(tx)?;
+        datastore.commit_mut_tx(tx)?;
 
         // create multiple read only tx, and use them together.
-        let read_tx_1 = datastore.begin_tx();
-        let read_tx_2 = datastore.begin_tx();
+        let read_tx_1 = datastore.begin_tx(Workload::Internal);
+        let read_tx_2 = datastore.begin_tx(Workload::Internal);
         let rows = &[row1, row2];
         assert_eq!(&all_rows_tx(&read_tx_2, table_id), rows);
         assert_eq!(&all_rows_tx(&read_tx_1, table_id), rows);
-        read_tx_2.release(&ExecutionContext::default());
-        read_tx_1.release(&ExecutionContext::default());
+        read_tx_2.release();
+        read_tx_1.release();
         Ok(())
     }
 
@@ -2063,10 +2069,9 @@ mod tests {
             sql: "SELECT * FROM bar".into(),
             table_id,
         };
-        let ctx = ExecutionContext::default();
-        tx.create_row_level_security(&ctx, rls.clone())?;
+        tx.create_row_level_security(rls.clone())?;
 
-        let result = tx.row_level_security_for_table_id(&ctx, table_id)?;
+        let result = tx.row_level_security_for_table_id(table_id)?;
         assert_eq!(
             result,
             vec![RowLevelSecuritySchema {
@@ -2075,8 +2080,8 @@ mod tests {
             }]
         );
 
-        tx.drop_row_level_security(&ctx, rls.sql)?;
-        assert_eq!(tx.row_level_security_for_table_id(&ctx, table_id)?, []);
+        tx.drop_row_level_security(rls.sql)?;
+        assert_eq!(tx.row_level_security_for_table_id(table_id)?, []);
 
         Ok(())
     }

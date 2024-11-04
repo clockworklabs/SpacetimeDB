@@ -2,7 +2,7 @@ use crate::common_args;
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
 use crate::util;
-use crate::util::{add_auth_header_opt, database_identity, get_auth_header_only};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
 use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgMatches};
 use itertools::Either;
@@ -29,11 +29,6 @@ pub fn cli() -> clap::Command {
         )
         .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
-        .arg(
-            common_args::identity()
-                .conflicts_with("anon_identity")
-                .help("The identity to use for the call"),
-        )
         .arg(common_args::anonymous())
         .after_help("Run `spacetime help call` for more detailed information.\n")
 }
@@ -44,7 +39,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     let arguments = args.get_many::<String>("arguments");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
-    let identity = args.get_one::<String>("identity");
     let anon_identity = args.get_flag("anon_identity");
 
     let database_identity = database_identity(&config, database, server).await?;
@@ -55,7 +49,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         database_identity.clone(),
         reducer_name
     ));
-    let auth_header = get_auth_header_only(&mut config, anon_identity, identity, server).await?;
+    let auth_header = get_auth_header(&config, anon_identity)?;
     let builder = add_auth_header_opt(builder, &auth_header);
     let describe_reducer = util::describe_reducer(
         &mut config,
@@ -63,7 +57,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         server.map(|x| x.to_string()),
         reducer_name.clone(),
         anon_identity,
-        identity.cloned(),
     )
     .await?;
 
