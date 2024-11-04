@@ -2,12 +2,12 @@ use super::execution_unit::{ExecutionUnit, QueryHash};
 use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
 use crate::db::relational_db::{RelationalDB, Tx};
-use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent};
+use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use arrayvec::ArrayVec;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryUpdate,
+    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryUpdate, WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, HashCollectionExt, HashMap, HashSet, IntMap};
 use spacetimedb_lib::{Address, Identity};
@@ -21,6 +21,7 @@ use std::time::Duration;
 type Id = (Identity, Address);
 type Query = Arc<ExecutionUnit>;
 type Client = Arc<ClientConnectionSender>;
+type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
 
 /// Responsible for the efficient evaluation of subscriptions.
 /// It performs basic multi-query optimization,
@@ -121,7 +122,7 @@ impl SubscriptionManager {
         db: &RelationalDB,
         tx: &Tx,
         event: Arc<ModuleEvent>,
-        sender_client: Option<&ClientConnectionSender>,
+        caller: Option<&ClientConnectionSender>,
         slow_query_threshold: Option<Duration>,
     ) {
         use FormatSwitch::{Bsatn, Json};
@@ -144,7 +145,7 @@ impl SubscriptionManager {
 
             let span = tracing::info_span!("eval_incr").entered();
             let tx = &tx.into();
-            let eval = units
+            let mut eval = units
                 .par_iter()
                 .filter_map(|(&hash, tables)| {
                     let unit = self.queries.get(hash)?;
@@ -165,21 +166,24 @@ impl SubscriptionManager {
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
                     let mut ops_bin: Option<(CompressableQueryUpdate<BsatnFormat>, _)> = None;
                     let mut ops_json: Option<(QueryUpdate<JsonFormat>, _)> = None;
+
+                    fn memo_encode<F: WebsocketFormat>(
+                        updates: &UpdatesRelValue<'_>,
+                        client: &ClientConnectionSender,
+                        memory: &mut Option<(F::QueryUpdate, u64)>,
+                    ) -> (F::QueryUpdate, u64) {
+                        memory
+                            .get_or_insert_with(|| updates.encode::<F>(client.config.compression))
+                            .clone()
+                    }
+
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
                         let client = &*self.clients[id];
-                        let ops = match client.protocol {
-                            Protocol::Binary => Bsatn(
-                                ops_bin
-                                    .get_or_insert_with(|| delta.updates.encode::<BsatnFormat>(client.compression))
-                                    .clone(),
-                            ),
-                            Protocol::Text => Json(
-                                ops_json
-                                    .get_or_insert_with(|| delta.updates.encode::<JsonFormat>(client.compression))
-                                    .clone(),
-                            ),
+                        let update = match client.config.protocol {
+                            Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(&delta.updates, client, &mut ops_bin)),
+                            Protocol::Text => Json(memo_encode::<JsonFormat>(&delta.updates, client, &mut ops_json)),
                         };
-                        (id, table_id, table_name.clone(), ops)
+                        (id, table_id, table_name.clone(), update)
                     })
                 })
                 .collect::<Vec<_>>()
@@ -210,7 +214,7 @@ impl SubscriptionManager {
                 // So before sending the updates to each client,
                 // we must stitch together the `TableUpdate*`s into an aggregated list.
                 .fold(
-                    HashMap::<&Id, FormatSwitch<ws::DatabaseUpdate<_>, ws::DatabaseUpdate<_>>>::new(),
+                    HashMap::<&Id, SwitchedDbUpdate>::new(),
                     |mut updates, ((id, _), update)| {
                         let entry = updates.entry(id);
                         let entry = entry.or_insert_with(|| match &update {
@@ -228,38 +232,40 @@ impl SubscriptionManager {
 
             let _span = tracing::info_span!("eval_send").entered();
 
-            if let Some((_, client)) = event
-                .caller_address
-                .zip(sender_client)
-                .filter(|(addr, _)| !eval.contains_key(&(event.caller_identity, *addr)))
-            {
-                // Caller is not subscribed to any queries,
-                // but send a transaction update with an empty subscription update.
-                let update = SubscriptionUpdateMessage::default_for_protocol(client.protocol, event.request_id);
-                send_to_client(client, &event, update);
+            // We might have a known caller that hasn't been hidden from here..
+            // This caller may have subscribed to some query.
+            // If they haven't, we'll send them an empty update.
+            // Regardless, the update that we send to the caller, if we send any,
+            // is a full tx update, rather than a light one.
+            // That is, in the case of the caller, we don't respect the light setting.
+            if let Some((caller, addr)) = caller.zip(event.caller_address) {
+                let update = eval
+                    .remove(&(event.caller_identity, addr))
+                    .map(|update| SubscriptionUpdateMessage::from_event_and_update(&event, update))
+                    .unwrap_or_else(|| {
+                        SubscriptionUpdateMessage::default_for_protocol(caller.config.protocol, event.request_id)
+                    });
+                send_to_client(caller, Some(event.clone()), update);
             }
 
-            eval.into_iter().for_each(|(id, tables)| {
-                let database_update = SubscriptionUpdateMessage {
-                    database_update: tables,
-                    request_id: event.request_id,
-                    timer: event.timer,
-                };
-                send_to_client(self.client(id).as_ref(), &event, database_update);
-            });
+            // Send all the other updates.
+            for (id, update) in eval {
+                let message = SubscriptionUpdateMessage::from_event_and_update(&event, update);
+                let client = self.client(id);
+                // Conditionally send out a full update or a light one otherwise.
+                let event = client.config.tx_update_full.then(|| event.clone());
+                send_to_client(&client, event, message);
+            }
         })
     }
 }
 
 fn send_to_client(
     client: &ClientConnectionSender,
-    event: &Arc<ModuleEvent>,
+    event: Option<Arc<ModuleEvent>>,
     database_update: SubscriptionUpdateMessage,
 ) {
-    if let Err(e) = client.send_message(TransactionUpdateMessage {
-        event: event.clone(),
-        database_update,
-    }) {
+    if let Err(e) = client.send_message(TransactionUpdateMessage { event, database_update }) {
         tracing::warn!(%client.id, "failed to send update message to client: {e}")
     }
 }
@@ -276,7 +282,7 @@ mod tests {
     use super::SubscriptionManager;
     use crate::execution_context::Workload;
     use crate::{
-        client::{ClientActorId, ClientConnectionSender, ClientName, Protocol},
+        client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName},
         db::relational_db::{tests_utils::TestDB, RelationalDB},
         energy::EnergyQuanta,
         host::{
@@ -313,13 +319,14 @@ mod tests {
     }
 
     fn client(address: u128) -> ClientConnectionSender {
+        let (identity, address) = id(address);
         ClientConnectionSender::dummy(
             ClientActorId {
-                identity: Identity::ZERO,
-                address: Address::from_u128(address),
+                identity,
+                address,
                 name: ClientName(0),
             },
-            Protocol::Binary,
+            ClientConfig::for_test(),
         )
     }
 
@@ -508,7 +515,8 @@ mod tests {
 
         let id0 = Identity::ZERO;
         let client0 = ClientActorId::for_test(id0);
-        let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, Protocol::Binary);
+        let config = ClientConfig::for_test();
+        let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, config);
 
         let subscriptions = SubscriptionManager::default();
 
