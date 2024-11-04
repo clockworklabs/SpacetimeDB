@@ -1435,8 +1435,8 @@ impl<'ctx> __sdk::Table for PkMultiIdentityTableHandle<'ctx> {
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 
 		let _table = client_cache.get_or_make_table::<PkMultiIdentity>("pk_multi_identity");
-	_table.add_unique_constraint::<u32>("id", |row| &row.id)
-	_table.add_unique_constraint::<u32>("other", |row| &row.other)
+	_table.add_unique_constraint::<u32>("id", |row| &row.id);
+	_table.add_unique_constraint::<u32>("other", |row| &row.other);
 }
 pub struct PkMultiIdentityUpdateCallbackId(__sdk::CallbackId);
 
@@ -1969,7 +1969,7 @@ impl<'ctx> __sdk::Table for RepeatingTestArgTableHandle<'ctx> {
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 
 		let _table = client_cache.get_or_make_table::<RepeatingTestArg>("repeating_test_arg");
-	_table.add_unique_constraint::<u64>("scheduled_id", |row| &row.scheduled_id)
+	_table.add_unique_constraint::<u64>("scheduled_id", |row| &row.scheduled_id);
 }
 pub struct RepeatingTestArgUpdateCallbackId(__sdk::CallbackId);
 
@@ -2596,7 +2596,7 @@ impl<'ctx> __sdk::Table for TestETableHandle<'ctx> {
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 
 		let _table = client_cache.get_or_make_table::<TestE>("test_e");
-	_table.add_unique_constraint::<u64>("id", |row| &row.id)
+	_table.add_unique_constraint::<u64>("id", |row| &row.id);
 }
 pub struct TestEUpdateCallbackId(__sdk::CallbackId);
 
