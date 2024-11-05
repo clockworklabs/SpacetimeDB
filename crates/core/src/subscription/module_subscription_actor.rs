@@ -15,7 +15,7 @@ use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use spacetimedb_client_api_messages::websocket::FormatSwitch;
-use spacetimedb_expr::check::parse_and_type_sub;
+use spacetimedb_expr::check::compile_sql_sub;
 use spacetimedb_expr::ty::TyCtx;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
@@ -88,7 +88,7 @@ impl ModuleSubscriptions {
             } else {
                 // NOTE: The following ensures compliance with the 1.0 sql api.
                 // Come 1.0, it will have replaced the current compilation stack.
-                parse_and_type_sub(
+                compile_sql_sub(
                     &mut TyCtx::default(),
                     sql,
                     &SchemaViewer::new(&self.relational_db, &*tx, &auth),

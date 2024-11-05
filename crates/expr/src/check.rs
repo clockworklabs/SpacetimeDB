@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use crate::statement::Statement;
+use crate::ty::TyId;
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_sql_parser::{
     ast::{
@@ -10,14 +12,12 @@ use spacetimedb_sql_parser::{
     parser::sub::parse_subscription,
 };
 
-use crate::ty::TyId;
-
 use super::{
     assert_eq_types,
     errors::{DuplicateName, TypingError, Unresolved, Unsupported},
     expr::{Expr, Let, RelExpr},
     ty::{Symbol, TyCtx, TyEnv},
-    type_expr, type_proj, type_select,
+    type_expr, type_proj, type_select, StatementCtx, StatementSource,
 };
 
 /// The result of type checking and name resolution
@@ -179,15 +179,24 @@ pub fn parse_and_type_sub(ctx: &mut TyCtx, sql: &str, tx: &impl SchemaView) -> T
     expect_table_type(ctx, expr)
 }
 
+/// Parse and type check a *subscription* query into a `StatementCtx`
+pub fn compile_sql_sub<'a>(ctx: &mut TyCtx, sql: &'a str, tx: &impl SchemaView) -> TypingResult<StatementCtx<'a>> {
+    let expr = parse_and_type_sub(ctx, sql, tx)?;
+    Ok(StatementCtx {
+        statement: Statement::Select(expr),
+        sql,
+        source: StatementSource::Subscription,
+    })
+}
+
 /// Returns an error if the input type is not a table type or relvar
 fn expect_table_type(ctx: &TyCtx, expr: RelExpr) -> TypingResult<RelExpr> {
     let _ = expr.ty(ctx)?.expect_relvar().map_err(|_| Unsupported::ReturnType)?;
     Ok(expr)
 }
 
-#[cfg(test)]
-mod tests {
-    use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, AlgebraicType, ProductType};
+pub mod test_utils {
+    use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, ProductType};
     use spacetimedb_primitives::TableId;
     use spacetimedb_schema::{
         def::ModuleDef,
@@ -195,36 +204,17 @@ mod tests {
     };
     use std::sync::Arc;
 
-    use crate::ty::TyCtx;
+    use super::SchemaView;
 
-    use super::{parse_and_type_sub, SchemaView};
-
-    fn module_def() -> ModuleDef {
+    pub fn build_module_def(types: Vec<(&str, ProductType)>) -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
-        builder.build_table_with_new_type(
-            "t",
-            ProductType::from([
-                ("u32", AlgebraicType::U32),
-                ("f32", AlgebraicType::F32),
-                ("str", AlgebraicType::String),
-                ("arr", AlgebraicType::array(AlgebraicType::String)),
-            ]),
-            true,
-        );
-        builder.build_table_with_new_type(
-            "s",
-            ProductType::from([
-                ("id", AlgebraicType::identity()),
-                ("u32", AlgebraicType::U32),
-                ("arr", AlgebraicType::array(AlgebraicType::String)),
-                ("bytes", AlgebraicType::bytes()),
-            ]),
-            true,
-        );
+        for (name, ty) in types {
+            builder.build_table_with_new_type(name, ty, true);
+        }
         builder.finish().try_into().expect("failed to generate module def")
     }
 
-    struct SchemaViewer(ModuleDef);
+    pub struct SchemaViewer(pub ModuleDef);
 
     impl SchemaView for SchemaViewer {
         fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
@@ -237,6 +227,39 @@ mod tests {
                 ))
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::check::test_utils::{build_module_def, SchemaViewer};
+    use crate::ty::TyCtx;
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+    use spacetimedb_schema::def::ModuleDef;
+
+    use super::parse_and_type_sub;
+
+    fn module_def() -> ModuleDef {
+        build_module_def(vec![
+            (
+                "t",
+                ProductType::from([
+                    ("u32", AlgebraicType::U32),
+                    ("f32", AlgebraicType::F32),
+                    ("str", AlgebraicType::String),
+                    ("arr", AlgebraicType::array(AlgebraicType::String)),
+                ]),
+            ),
+            (
+                "s",
+                ProductType::from([
+                    ("id", AlgebraicType::identity()),
+                    ("u32", AlgebraicType::U32),
+                    ("arr", AlgebraicType::array(AlgebraicType::String)),
+                    ("bytes", AlgebraicType::bytes()),
+                ]),
+            ),
+        ])
     }
 
     #[test]
