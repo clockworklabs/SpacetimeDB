@@ -604,7 +604,7 @@ impl MutTxDatastore for Locking {
 
 /// This utility is responsible for recording all transaction metrics.
 pub(super) fn record_metrics(
-    ctx: ExecutionContext,
+    ctx: &ExecutionContext,
     tx_timer: Instant,
     lock_wait_time: Duration,
     committed: bool,

@@ -654,37 +654,6 @@ impl<'a> CommittedIndexIter<'a> {
     }
 }
 
-// TODO(shub): this runs parralely for subscriptions leading to lock contention.
-// commenting until we find a way to batch them without lock.
-// impl Drop for CommittedIndexIter<'_> {
-//     fn drop(&mut self) {
-//         let mut metrics = self.ctx.metrics.write();
-//         let get_table_name = || {
-//             self.committed_state
-//                 .get_schema(&self.table_id)
-//                 .map(|table| &*table.table_name)
-//                 .unwrap_or_default()
-//                 .to_string()
-//         };
-
-//         metrics.inc_by(self.table_id, MetricType::IndexSeeks, 1, get_table_name);
-//         // Increment number of index keys scanned
-//         metrics.inc_by(
-//             self.table_id,
-//             MetricType::KeysScanned,
-//             self.committed_rows.num_pointers_yielded(),
-//             get_table_name,
-//         );
-//         // Increment number of rows fetched
-//         metrics.inc_by(
-//             self.table_id,
-//             MetricType::RowsFetched,
-//             self.num_committed_rows_fetched,
-//             get_table_name,
-//         );
-//     }
-// }
-
 impl<'a> Iterator for CommittedIndexIter<'a> {
     type Item = RowRef<'a>;
 

@@ -154,19 +154,6 @@ pub struct Iter<'a> {
     num_committed_rows_fetched: u64,
 }
 
-// impl Drop for Iter<'_> {
-//     fn drop(&mut self) {
-//         let mut metrics = self.ctx.metrics.write();
-//         // Increment number of rows fetched
-//         metrics.inc_by(
-//             self.table_id,
-//             MetricType::RowsFetched,
-//             self.num_committed_rows_fetched,
-//             || self.table_name.to_string(),
-//         );
-//     }
-// }
-
 impl<'a> Iter<'a> {
     pub(super) fn new(
         table_id: TableId,
@@ -293,41 +280,6 @@ pub struct IndexSeekIterMutTxId<'a> {
     pub(super) committed_rows: Option<IndexScanIter<'a>>,
     pub(super) num_committed_rows_fetched: u64,
 }
-
-// impl Drop for IndexSeekIterMutTxId<'_> {
-//     fn drop(&mut self) {
-//         let mut metrics = self.ctx.metrics.write();
-//         let get_table_name = || {
-//             self.committed_state
-//                 .get_schema(&self.table_id)
-//                 .map(|table| &*table.table_name)
-//                 .unwrap_or_default()
-//                 .to_string()
-//         };
-
-//         let num_pointers_yielded = self
-//             .committed_rows
-//             .as_ref()
-//             .map_or(0, |iter| iter.num_pointers_yielded());
-
-//         // Increment number of index seeks
-//         metrics.inc_by(self.table_id, MetricType::IndexSeeks, 1, get_table_name);
-//         // Increment number of index keys scanned
-//         metrics.inc_by(
-//             self.table_id,
-//             MetricType::KeysScanned,
-//             num_pointers_yielded,
-//             get_table_name,
-//         );
-//         // Increment number of rows fetched
-//         metrics.inc_by(
-//             self.table_id,
-//             MetricType::RowsFetched,
-//             self.num_committed_rows_fetched,
-//             get_table_name,
-//         );
-//     }
-// }
 
 impl<'a> Iterator for IndexSeekIterMutTxId<'a> {
     type Item = RowRef<'a>;
