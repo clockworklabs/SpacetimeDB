@@ -417,6 +417,7 @@ mod tests {
             min_tx_offset: 0,
             n: 4,
             records: vec![0; 128],
+            epoch: Commit::DEFAULT_EPOCH,
         };
 
         let txs = commit
