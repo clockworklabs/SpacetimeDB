@@ -86,6 +86,7 @@ impl Address {
     ///
     /// This method is the correct choice if you have converted the bytes of a hexadecimal-formatted `Address`
     /// to a byte array in the following way:
+    ///
     /// ```ignore
     /// "0xb0b1b2..."
     /// ->
