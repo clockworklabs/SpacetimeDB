@@ -90,7 +90,7 @@ jobs:
       - name: Install SpacetimeDB CLI from specific branch
         run: |
           cd unity-tests~
-          git clone --recurse-submodules https://github.com/clockworklabs/SpacetimeDB.git
+          git clone https://github.com/clockworklabs/SpacetimeDB.git
           cd SpacetimeDB
           # Sanitize the branch name by trimming any newlines or spaces
           branch_name=$(echo "${{ steps.extract-branch.outputs.branch }}" | tr -d '[:space:]')
@@ -99,6 +99,8 @@ jobs:
             branch_name="master"
           fi
           git checkout "$branch_name"
+          git submodule init
+          git submodule update --recursive
           echo "Checked out branch: $branch_name"
           cargo build --release -p spacetimedb-cli
           sudo mv target/release/spacetime /usr/bin/spacetime
