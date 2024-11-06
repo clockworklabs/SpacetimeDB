@@ -6,5 +6,11 @@
     "@clockworklabs/spacetimedb-sdk": "0.12.1",
     "@clockworklabs/test-app": "0.0.2"
   },
-  "changesets": []
+  "changesets": [
+    "dull-mangos-appear",
+    "long-laws-mix",
+    "smart-dogs-listen",
+    "three-cats-listen",
+    "two-garlics-sin"
+  ]
 }
