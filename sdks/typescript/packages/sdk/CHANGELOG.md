@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.0-rc1.0
+
+### Major Changes
+
+- [#116](https://github.com/clockworklabs/spacetimedb-typescript-sdk/pull/116) [`9032269`](https://github.com/clockworklabs/spacetimedb-typescript-sdk/commit/9032269004d4dae587c39ccd85da0a32fb9a0114) Thanks [@PuruVJ](https://github.com/PuruVJ)! - Enter RC
+
+- [#117](https://github.com/clockworklabs/spacetimedb-typescript-sdk/pull/117) [`5d7304b`](https://github.com/clockworklabs/spacetimedb-typescript-sdk/commit/5d7304bd3e05dd7a032cfb7069aab97b881f0179) Thanks [@PuruVJ](https://github.com/PuruVJ)! - feat: Switch to GZIP compression by default
+
+### Minor Changes
+
+- [#110](https://github.com/clockworklabs/spacetimedb-typescript-sdk/pull/110) [`a501f5c`](https://github.com/clockworklabs/spacetimedb-typescript-sdk/commit/a501f5ccf9a0a926eb4f345ddeb01ffcb872d67e) Thanks [@Centril](https://github.com/Centril)! - Support light tx updates via builder.with*light_mode(*) and the call flag NoSuccessNotify
+
+- [#119](https://github.com/clockworklabs/spacetimedb-typescript-sdk/pull/119) [`6547882`](https://github.com/clockworklabs/spacetimedb-typescript-sdk/commit/6547882bb28ed9a1ca436335745e9997328026ff) Thanks [@kazimuth](https://github.com/kazimuth)! - Update Identity and Address to use bigints rather than byte arrays (see https://github.com/clockworklabs/SpacetimeDB/pull/1616)
+
+### Patch Changes
+
+- [#109](https://github.com/clockworklabs/spacetimedb-typescript-sdk/pull/109) [`cf7b7d8`](https://github.com/clockworklabs/spacetimedb-typescript-sdk/commit/cf7b7d89a1547fb3863f6641f5b2eb40a27c05d8) Thanks [@PuruVJ](https://github.com/PuruVJ)! - fix: websocket message handling, Buffer, onConnect
+
 ## 0.12.1
 
 ### Patch Changes
