@@ -16,7 +16,7 @@ jobs:
       - name: Checkout submodule
         run: |
           git submodule init
-          git submodule update
+          git submodule update --recursive
           cd unity-tests~
           git checkout jdetter/circle-game-testsuite
       # Grab the branch name from the PR description. If it's not found, master will be used instead.
