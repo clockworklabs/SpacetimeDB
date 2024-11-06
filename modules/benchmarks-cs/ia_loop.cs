@@ -292,7 +292,7 @@ public static partial class ia_loop
             ?? throw new Exception("GameMobileEntityState Entity ID not found");
         mobile_entity.location_x += 1;
         mobile_entity.location_y += 1;
-        mobile_entity.timestamp = MomentMilliseconds();
+        mobile_entity.timestamp = agent.next_action_timestamp;
 
         ctx.Db.game_enemy_ai_agent_state.entity_id.Update(agent);
 
@@ -334,11 +334,6 @@ public static partial class ia_loop
 
         foreach (GameEnemyAiAgentState agent in ctx.Db.game_enemy_ai_agent_state.Iter())
         {
-            if (agent.next_action_timestamp > current_time_ms)
-            {
-                continue;
-            }
-
             GameTargetableState agent_targetable =
                 ctx.Db.game_targetable_state.entity_id.Find(agent.entity_id)
                 ?? throw new Exception("No TargetableState for AgentState entity");

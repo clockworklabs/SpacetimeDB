@@ -59,14 +59,14 @@ impl ModuleHandle {
         })
     }
 
-    pub async fn call_reducer_json(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
+    pub async fn call_reducer_json(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
         let args = serde_json::to_string(&args).unwrap();
         let message = Self::call_reducer_msg(reducer, args);
         self.send(serde_json::to_string(&SerializeWrapper::new(message)).unwrap())
             .await
     }
 
-    pub async fn call_reducer_binary(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
+    pub async fn call_reducer_binary(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
         let args = bsatn::to_vec(&args).unwrap();
         let message = Self::call_reducer_msg(reducer, args);
         self.send(bsatn::to_vec(&message).unwrap()).await
