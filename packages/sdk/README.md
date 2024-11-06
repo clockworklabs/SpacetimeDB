@@ -2,6 +2,8 @@
 
 ### Overview
 
+> NOTE: This SDK is currently in Release Candidate stage and tied to SpacetimeDB `v1.0.0-rc1`. Expect breaking changes in the future.
+
 This repository contains the TypeScript SDK for SpacetimeDB. The SDK allows to interact with the database server and is prepared to work with code generated from a SpacetimeDB backend code.
 
 ### Installation
