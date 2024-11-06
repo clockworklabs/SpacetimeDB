@@ -1,3 +1,6 @@
 [submodule "crates/jsonwebtoken"]
 	path = crates/jsonwebtoken
 	url = git@github.com:clockworklabs/jsonwebtoken.git
+[submodule "crates/jwks"]
+	path = crates/jwks
+	url = git@github.com:clockworklabs/jwks.git

@@ -15,6 +15,7 @@ members = [
   "crates/expr",
   "crates/fs-utils",
   "crates/jsonwebtoken",
+  "crates/jwks",
   "crates/lib",
   "crates/metrics",
   "crates/physical-plan",
