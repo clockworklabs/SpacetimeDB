@@ -22,6 +22,11 @@ export type TransactionUpdateMessage = {
   energyConsumed: bigint;
 };
 
+export type TransactionUpdateLightMessage = {
+  tag: 'TransactionUpdateLight';
+  tableUpdates: TableUpdate[];
+};
+
 export type IdentityTokenMessage = {
   tag: 'IdentityToken';
   identity: Identity;
@@ -32,4 +37,5 @@ export type IdentityTokenMessage = {
 export type Message =
   | InitialSubscriptionMessage
   | TransactionUpdateMessage
+  | TransactionUpdateLightMessage
   | IdentityTokenMessage;

@@ -13,8 +13,6 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
-  CallReducerFlags,
-  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -38,32 +36,46 @@ import {
   TableCache,
   // @ts-ignore
   deepEqual,
-} from '@clockworklabs/spacetimedb-sdk';
-export type Point = {
-  x: number;
-  y: number;
+} from '..';
+// @ts-ignore
+import { DatabaseUpdate as __DatabaseUpdate } from './database_update_type';
+
+export type TransactionUpdateLight = {
+  requestId: number;
+  update: __DatabaseUpdate;
 };
 
 /**
  * A namespace for generated helper functions.
  */
-export namespace Point {
+export namespace TransactionUpdateLight {
   /**
    * A function which returns this type represented as an AlgebraicType.
    * This function is derived from the AlgebraicType used to generate this type.
    */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement('x', AlgebraicType.createU16Type()),
-      new ProductTypeElement('y', AlgebraicType.createU16Type()),
+      new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
+      new ProductTypeElement(
+        'update',
+        __DatabaseUpdate.getTypeScriptAlgebraicType()
+      ),
     ]);
   }
 
-  export function serialize(writer: BinaryWriter, value: Point): void {
-    Point.getTypeScriptAlgebraicType().serialize(writer, value);
+  export function serialize(
+    writer: BinaryWriter,
+    value: TransactionUpdateLight
+  ): void {
+    TransactionUpdateLight.getTypeScriptAlgebraicType().serialize(
+      writer,
+      value
+    );
   }
 
-  export function deserialize(reader: BinaryReader): Point {
-    return Point.getTypeScriptAlgebraicType().deserialize(reader);
+  export function deserialize(reader: BinaryReader): TransactionUpdateLight {
+    return TransactionUpdateLight.getTypeScriptAlgebraicType().deserialize(
+      reader
+    );
   }
 }

@@ -66,11 +66,13 @@ export class WebsocketDecompressAdapter {
     wsProtocol,
     authToken,
     compression,
+    light_mode,
   }: {
     url: URL;
     wsProtocol: string;
     authToken?: string;
     compression: 'gzip' | 'none';
+    light_mode: boolean;
   }): Promise<WebsocketDecompressAdapter> {
     const headers = new Headers();
     if (authToken) {
@@ -100,6 +102,9 @@ export class WebsocketDecompressAdapter {
         'compression',
         compression === 'gzip' ? 'Gzip' : 'None'
       );
+      if (light_mode) {
+        url.searchParams.set('light', 'true');
+      }
     }
     const ws = new WS(url, wsProtocol);
 

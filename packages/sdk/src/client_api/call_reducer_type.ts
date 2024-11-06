@@ -41,6 +41,7 @@ export type CallReducer = {
   reducer: string;
   args: Uint8Array;
   requestId: number;
+  flags: number;
 };
 
 /**
@@ -59,6 +60,7 @@ export namespace CallReducer {
         AlgebraicType.createArrayType(AlgebraicType.createU8Type())
       ),
       new ProductTypeElement('requestId', AlgebraicType.createU32Type()),
+      new ProductTypeElement('flags', AlgebraicType.createU8Type()),
     ]);
   }
 

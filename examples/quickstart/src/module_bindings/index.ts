@@ -13,6 +13,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -105,8 +107,14 @@ const REMOTE_MODULE = {
   dbViewConstructor: (imp: DBConnectionImpl) => {
     return new RemoteTables(imp);
   },
-  reducersConstructor: (imp: DBConnectionImpl) => {
-    return new RemoteReducers(imp);
+  reducersConstructor: (
+    imp: DBConnectionImpl,
+    setReducerFlags: SetReducerFlags
+  ) => {
+    return new RemoteReducers(imp, setReducerFlags);
+  },
+  setReducerFlagsConstructor: () => {
+    return new SetReducerFlags();
   },
 };
 
@@ -120,10 +128,17 @@ export type Reducer =
   | { name: 'SetName'; args: SetName };
 
 export class RemoteReducers {
-  constructor(private connection: DBConnectionImpl) {}
+  constructor(
+    private connection: DBConnectionImpl,
+    private setCallReducerFlags: SetReducerFlags
+  ) {}
 
   identityConnected() {
-    this.connection.callReducer('__identity_connected__', new Uint8Array(0));
+    this.connection.callReducer(
+      '__identity_connected__',
+      new Uint8Array(0),
+      this.setCallReducerFlags.identityConnectedFlags
+    );
   }
 
   onIdentityConnected(callback: (ctx: EventContext) => void) {
@@ -135,7 +150,11 @@ export class RemoteReducers {
   }
 
   identityDisconnected() {
-    this.connection.callReducer('__identity_disconnected__', new Uint8Array(0));
+    this.connection.callReducer(
+      '__identity_disconnected__',
+      new Uint8Array(0),
+      this.setCallReducerFlags.identityDisconnectedFlags
+    );
   }
 
   onIdentityDisconnected(callback: (ctx: EventContext) => void) {
@@ -147,7 +166,11 @@ export class RemoteReducers {
   }
 
   init() {
-    this.connection.callReducer('__init__', new Uint8Array(0));
+    this.connection.callReducer(
+      '__init__',
+      new Uint8Array(0),
+      this.setCallReducerFlags.initFlags
+    );
   }
 
   onInit(callback: (ctx: EventContext) => void) {
@@ -163,7 +186,11 @@ export class RemoteReducers {
     let __writer = new BinaryWriter(1024);
     SendMessage.getAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer('send_message', __argsBuffer);
+    this.connection.callReducer(
+      'send_message',
+      __argsBuffer,
+      this.setCallReducerFlags.sendMessageFlags
+    );
   }
 
   onSendMessage(callback: (ctx: EventContext, text: string) => void) {
@@ -179,7 +206,11 @@ export class RemoteReducers {
     let __writer = new BinaryWriter(1024);
     SetName.getAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer('set_name', __argsBuffer);
+    this.connection.callReducer(
+      'set_name',
+      __argsBuffer,
+      this.setCallReducerFlags.setNameFlags
+    );
   }
 
   onSetName(callback: (ctx: EventContext, name: string) => void) {
@@ -188,6 +219,29 @@ export class RemoteReducers {
 
   removeOnSetName(callback: (ctx: EventContext, name: string) => void) {
     this.connection.offReducer('set_name', callback);
+  }
+}
+
+export class SetReducerFlags {
+  identityConnectedFlags: CallReducerFlags;
+  identityConnected(flags: CallReducerFlags) {
+    this.identityConnectedFlags = flags;
+  }
+  identityDisconnectedFlags: CallReducerFlags;
+  identityDisconnected(flags: CallReducerFlags) {
+    this.identityDisconnectedFlags = flags;
+  }
+  initFlags: CallReducerFlags;
+  init(flags: CallReducerFlags) {
+    this.initFlags = flags;
+  }
+  sendMessageFlags: CallReducerFlags;
+  sendMessage(flags: CallReducerFlags) {
+    this.sendMessageFlags = flags;
+  }
+  setNameFlags: CallReducerFlags;
+  setName(flags: CallReducerFlags) {
+    this.setNameFlags = flags;
   }
 }
 
@@ -211,7 +265,8 @@ export class RemoteTables {
 
 export class DBConnection extends DBConnectionImpl<
   RemoteTables,
-  RemoteReducers
+  RemoteReducers,
+  SetReducerFlags
 > {
   static builder = (): DBConnectionBuilder<DBConnection> => {
     return new DBConnectionBuilder<DBConnection>(
@@ -224,5 +279,6 @@ export class DBConnection extends DBConnectionImpl<
 export type EventContext = EventContextInterface<
   RemoteTables,
   RemoteReducers,
+  SetReducerFlags,
   Reducer
 >;
