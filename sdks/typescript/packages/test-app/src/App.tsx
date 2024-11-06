@@ -8,6 +8,7 @@ function App() {
     DBConnection.builder()
       .withUri('ws://localhost:3000')
       .withModuleName('game')
+      .withLightMode(true)
       .onDisconnect(() => {
         console.log('disconnected');
       })
@@ -24,16 +25,16 @@ function App() {
       })
       .withCredentials([
         Identity.fromString(
-          'c200f95df78dfd9cf328791c9fa8dcd60525d7fe361e29cf13454a6c71d91ef1'
+          'c200b22f7f282b8e44b908a9b020eabb2a7e554dd225461346603ab79255cffa'
         ),
-        'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIwMUpCQkNIV0pWMUpHNVg4Uk42S1E5N05GUCIsImlzcyI6Imh0dHA6Ly9sb2NhbGhvc3Q6NTE3MyIsImlhdCI6MTczMDQ2NDgxNywiZXhwIjoxNzkzNTM2ODE3fQ.aQjAg_aIa5UTr3CFTJY06_TtNLsCya_JXA3zfPlgeUm4DNXlFiTpRqnDtAtSRrArAb3WNk5LRX3XVuu23ulZzUZfq9tnHpG3ogd8-8ZmjtHB7mIAbaHUsKQs5cKRPrjvMvg6-hUdLnbLqBuMz4l2A1kl9d-XyYExXcZSl3GvvwkfoxxDAZkB7GVX557EofKCT-w8NCa3HE-1d9PEeQneVRwKh1pEKFtJcXGVAdppnp5fDTtjUKXk4uTdvWRK_psZRitwSDfE2Ikuna95c1_dtxG1MTfGQF6QyI5aHpZYnWYVtwikPZ87XiRVE41hNmQmuv9fbeG6UHNsWM7MeBA4yg',
+        'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIwMUpCQTBYRzRESFpIWUdQQk5GRFk5RDQ2SiIsImlzcyI6Imh0dHBzOi8vYXV0aC5zdGFnaW5nLnNwYWNldGltZWRiLmNvbSIsImlhdCI6MTczMDgwODUwNSwiZXhwIjoxNzkzODgwNTA1fQ.kGM4HGX0c0twL8NJoSQowzSZa8dc2Ogc-fsvaDK7otUrcdGFsZ3KsNON2eNkFh73FER0hl55_eJStr2tgoPwfTyl_v_TqkY45iUOUlLmHfB-X42cMzpE7PXbR_PKYcp-P-Wa4jGtVl4oF7CvdGKxlhIYEk3e0ElQlA9ThnZN4IEciYV0vwAXGqbaO9SOG8jbrmlmfN7oKgl02EgpodEAHTrnB2mD1qf1YyOw7_9n_EkxJxWLkJf9-nFCVRrbfSLqSJBeE6OKNAu2VLLYrSFE7GkVXNCFVugoCDM2oVJogX75AgzWimrp75QRmLsXbvB-YvvRkQ8Gfb2RZnqCj9kiYg',
       ])
       .build()
   );
 
   useEffect(() => {
-    connection.db.player.onInsert((ctx, player) => {
-      console.log(ctx, player);
+    connection.db.player.onInsert(player => {
+      console.log(player);
     });
 
     setTimeout(() => {

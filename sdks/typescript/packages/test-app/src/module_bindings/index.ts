@@ -13,6 +13,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -86,8 +88,14 @@ const REMOTE_MODULE = {
   dbViewConstructor: (imp: DBConnectionImpl) => {
     return new RemoteTables(imp);
   },
-  reducersConstructor: (imp: DBConnectionImpl) => {
-    return new RemoteReducers(imp);
+  reducersConstructor: (
+    imp: DBConnectionImpl,
+    setReducerFlags: SetReducerFlags
+  ) => {
+    return new RemoteReducers(imp, setReducerFlags);
+  },
+  setReducerFlagsConstructor: () => {
+    return new SetReducerFlags();
   },
 };
 
@@ -95,14 +103,21 @@ const REMOTE_MODULE = {
 export type Reducer = never | { name: 'CreatePlayer'; args: CreatePlayer };
 
 export class RemoteReducers {
-  constructor(private connection: DBConnectionImpl) {}
+  constructor(
+    private connection: DBConnectionImpl,
+    private setCallReducerFlags: SetReducerFlags
+  ) {}
 
   createPlayer(name: string, location: Point) {
     const __args = { name, location };
     let __writer = new BinaryWriter(1024);
     CreatePlayer.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer('create_player', __argsBuffer);
+    this.connection.callReducer(
+      'create_player',
+      __argsBuffer,
+      this.setCallReducerFlags.createPlayerFlags
+    );
   }
 
   onCreatePlayer(
@@ -115,6 +130,13 @@ export class RemoteReducers {
     callback: (ctx: EventContext, name: string, location: Point) => void
   ) {
     this.connection.offReducer('create_player', callback);
+  }
+}
+
+export class SetReducerFlags {
+  createPlayerFlags: CallReducerFlags = 'FullUpdate';
+  createPlayer(flags: CallReducerFlags) {
+    this.createPlayerFlags = flags;
   }
 }
 
@@ -140,7 +162,8 @@ export class RemoteTables {
 
 export class DBConnection extends DBConnectionImpl<
   RemoteTables,
-  RemoteReducers
+  RemoteReducers,
+  SetReducerFlags
 > {
   static builder = (): DBConnectionBuilder<DBConnection> => {
     return new DBConnectionBuilder<DBConnection>(
@@ -153,5 +176,6 @@ export class DBConnection extends DBConnectionImpl<
 export type EventContext = EventContextInterface<
   RemoteTables,
   RemoteReducers,
+  SetReducerFlags,
   Reducer
 >;

@@ -13,6 +13,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -81,6 +83,8 @@ import { Timestamp } from './timestamp_type.ts';
 export { Timestamp };
 import { TransactionUpdate } from './transaction_update_type.ts';
 export { TransactionUpdate };
+import { TransactionUpdateLight } from './transaction_update_light_type.ts';
+export { TransactionUpdateLight };
 import { UpdateStatus } from './update_status_type.ts';
 export { UpdateStatus };
 
@@ -98,8 +102,14 @@ const REMOTE_MODULE = {
   dbViewConstructor: (imp: DBConnectionImpl) => {
     return new RemoteTables(imp);
   },
-  reducersConstructor: (imp: DBConnectionImpl) => {
-    return new RemoteReducers(imp);
+  reducersConstructor: (
+    imp: DBConnectionImpl,
+    setReducerFlags: SetReducerFlags
+  ) => {
+    return new RemoteReducers(imp, setReducerFlags);
+  },
+  setReducerFlagsConstructor: () => {
+    return new SetReducerFlags();
   },
 };
 
@@ -107,8 +117,13 @@ const REMOTE_MODULE = {
 export type Reducer = never;
 
 export class RemoteReducers {
-  constructor(private connection: DBConnectionImpl) {}
+  constructor(
+    private connection: DBConnectionImpl,
+    private setCallReducerFlags: SetReducerFlags
+  ) {}
 }
+
+export class SetReducerFlags {}
 
 export class RemoteTables {
   constructor(private connection: DBConnectionImpl) {}
@@ -116,7 +131,8 @@ export class RemoteTables {
 
 export class DBConnection extends DBConnectionImpl<
   RemoteTables,
-  RemoteReducers
+  RemoteReducers,
+  SetReducerFlags
 > {
   static builder = (): DBConnectionBuilder<DBConnection> => {
     return new DBConnectionBuilder<DBConnection>(
@@ -129,5 +145,6 @@ export class DBConnection extends DBConnectionImpl<
 export type EventContext = EventContextInterface<
   RemoteTables,
   RemoteReducers,
+  SetReducerFlags,
   Reducer
 >;

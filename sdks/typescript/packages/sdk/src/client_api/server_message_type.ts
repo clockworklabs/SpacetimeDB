@@ -42,6 +42,8 @@ import { InitialSubscription as __InitialSubscription } from './initial_subscrip
 // @ts-ignore
 import { TransactionUpdate as __TransactionUpdate } from './transaction_update_type';
 // @ts-ignore
+import { TransactionUpdateLight as __TransactionUpdateLight } from './transaction_update_light_type';
+// @ts-ignore
 import { IdentityToken as __IdentityToken } from './identity_token_type';
 // @ts-ignore
 import { OneOffQueryResponse as __OneOffQueryResponse } from './one_off_query_response_type';
@@ -58,6 +60,10 @@ export namespace ServerMessage {
   export type TransactionUpdate = {
     tag: 'TransactionUpdate';
     value: __TransactionUpdate;
+  };
+  export type TransactionUpdateLight = {
+    tag: 'TransactionUpdateLight';
+    value: __TransactionUpdateLight;
   };
   export type IdentityToken = { tag: 'IdentityToken'; value: __IdentityToken };
   export type OneOffQueryResponse = {
@@ -77,6 +83,9 @@ export namespace ServerMessage {
   export const TransactionUpdate = (
     value: __TransactionUpdate
   ): ServerMessage => ({ tag: 'TransactionUpdate', value });
+  export const TransactionUpdateLight = (
+    value: __TransactionUpdateLight
+  ): ServerMessage => ({ tag: 'TransactionUpdateLight', value });
   export const IdentityToken = (value: __IdentityToken): ServerMessage => ({
     tag: 'IdentityToken',
     value,
@@ -94,6 +103,10 @@ export namespace ServerMessage {
       new SumTypeVariant(
         'TransactionUpdate',
         __TransactionUpdate.getTypeScriptAlgebraicType()
+      ),
+      new SumTypeVariant(
+        'TransactionUpdateLight',
+        __TransactionUpdateLight.getTypeScriptAlgebraicType()
       ),
       new SumTypeVariant(
         'IdentityToken',
@@ -119,6 +132,7 @@ export namespace ServerMessage {
 export type ServerMessage =
   | ServerMessage.InitialSubscription
   | ServerMessage.TransactionUpdate
+  | ServerMessage.TransactionUpdateLight
   | ServerMessage.IdentityToken
   | ServerMessage.OneOffQueryResponse;
 

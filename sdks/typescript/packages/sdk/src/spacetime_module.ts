@@ -18,5 +18,9 @@ export default interface SpacetimeModule {
   reducers: { [name: string]: ReducerRuntimeTypeInfo };
   eventContextConstructor: (imp: DBConnectionImpl, event: any) => any;
   dbViewConstructor: (connection: DBConnectionImpl) => any;
-  reducersConstructor: (connection: DBConnectionImpl) => any;
+  reducersConstructor: (
+    connection: DBConnectionImpl,
+    setReducerFlags: any
+  ) => any;
+  setReducerFlagsConstructor: () => any;
 }

@@ -55,8 +55,22 @@ export type { DBContext, EventContextInterface, ReducerEvent };
 
 export type ConnectionEvent = 'connect' | 'disconnect' | 'connectError';
 
-export class DBConnectionImpl<DBView = any, Reducers = any>
-  implements DBContext<DBView, Reducers>
+export type CallReducerFlags = 'FullUpdate' | 'NoSuccessNotify';
+
+function callReducerFlagsToNumber(flags: CallReducerFlags): number {
+  switch (flags) {
+    case 'FullUpdate':
+      return 0;
+    case 'NoSuccessNotify':
+      return 1;
+  }
+}
+
+export class DBConnectionImpl<
+  DBView = any,
+  Reducers = any,
+  SetReducerFlags = any,
+> implements DBContext<DBView, Reducers>
 {
   isActive = false;
   /**
@@ -81,6 +95,7 @@ export class DBConnectionImpl<DBView = any, Reducers = any>
   ws?: WebsocketDecompressAdapter | WebsocketTestAdapter;
   db: DBView;
   reducers: Reducers;
+  setReducerFlags: SetReducerFlags;
 
   clientAddress: Address = Address.random();
 
@@ -91,7 +106,11 @@ export class DBConnectionImpl<DBView = any, Reducers = any>
     this.#emitter = emitter;
     this.remoteModule = remoteModule;
     this.db = this.remoteModule.dbViewConstructor(this);
-    this.reducers = this.remoteModule.reducersConstructor(this);
+    this.setReducerFlags = this.remoteModule.setReducerFlagsConstructor();
+    this.reducers = this.remoteModule.reducersConstructor(
+      this,
+      this.setReducerFlags
+    );
   }
 
   subscriptionBuilder = (): SubscriptionBuilder => {
@@ -189,6 +208,17 @@ export class DBConnectionImpl<DBView = any, Reducers = any>
         const tableUpdates = await parseDatabaseUpdate(dbUpdate);
         const subscriptionUpdate: Message = {
           tag: 'InitialSubscription',
+          tableUpdates,
+        };
+        callback(subscriptionUpdate);
+        break;
+      }
+
+      case 'TransactionUpdateLight': {
+        const dbUpdate = message.value.update;
+        const tableUpdates = await parseDatabaseUpdate(dbUpdate);
+        const subscriptionUpdate: Message = {
+          tag: 'TransactionUpdateLight',
           tableUpdates,
         };
         callback(subscriptionUpdate);
@@ -311,22 +341,40 @@ export class DBConnectionImpl<DBView = any, Reducers = any>
    * @param reducerName The name of the reducer to call
    * @param argsSerializer The arguments to pass to the reducer
    */
-  callReducer(reducerName: string, argsBuffer: Uint8Array): void {
+  callReducer(
+    reducerName: string,
+    argsBuffer: Uint8Array,
+    flags: CallReducerFlags
+  ): void {
     const message = ws.ClientMessage.CallReducer({
       reducer: reducerName,
       args: argsBuffer,
       // The TypeScript SDK doesn't currently track `request_id`s,
       // so always use 0.
       requestId: 0,
+      flags: callReducerFlagsToNumber(flags),
     });
     this.#sendMessage(message);
   }
 
-  /**
+  /**s
    * Handles WebSocket onOpen event.
    */
   handleOnOpen(): void {
     this.isActive = true;
+  }
+
+  #applyTableUpdates(
+    tableUpdates: TableUpdate[],
+    eventContext: EventContextInterface
+  ): void {
+    for (let tableUpdate of tableUpdates) {
+      // Get table information for the table being updated
+      const tableName = tableUpdate.tableName;
+      const tableTypeInfo = this.remoteModule.tables[tableName]!;
+      const table = this.clientCache.getOrCreateTable(tableTypeInfo);
+      table.applyOperations(tableUpdate.operations, eventContext);
+    }
   }
 
   /**
@@ -342,17 +390,18 @@ export class DBConnectionImpl<DBView = any, Reducers = any>
             this,
             event
           );
-          for (let tableUpdate of message.tableUpdates) {
-            // Get table information for the table being updated
-            const tableName = tableUpdate.tableName;
-            const tableTypeInfo = this.remoteModule.tables[tableName]!;
-            const table = this.clientCache.getOrCreateTable(tableTypeInfo);
-            table.applyOperations(tableUpdate.operations, eventContext);
-          }
+          this.#applyTableUpdates(message.tableUpdates, eventContext);
 
           if (this.#emitter) {
             this.#onApplied?.(eventContext);
           }
+        } else if (message.tag === 'TransactionUpdateLight') {
+          const event: Event = { tag: 'UnknownTransaction' };
+          const eventContext = this.remoteModule.eventContextConstructor(
+            this,
+            event
+          );
+          this.#applyTableUpdates(message.tableUpdates, eventContext);
         } else if (message.tag === 'TransactionUpdate') {
           const reducerName = message.originalReducerName;
           const reducerTypeInfo = this.remoteModule.reducers[reducerName]!;
@@ -382,13 +431,7 @@ export class DBConnectionImpl<DBView = any, Reducers = any>
               event
             );
 
-            for (let tableUpdate of message.tableUpdates) {
-              // Get table information for the table being updated
-              const tableName = tableUpdate.tableName;
-              const tableTypeInfo = this.remoteModule.tables[tableName]!;
-              const table = this.clientCache.getOrCreateTable(tableTypeInfo);
-              table.applyOperations(tableUpdate.operations, eventContext);
-            }
+            this.#applyTableUpdates(message.tableUpdates, eventContext);
 
             const argsArray: any[] = [];
             reducerTypeInfo.argsType.product.elements.forEach(
