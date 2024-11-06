@@ -99,10 +99,10 @@ fn test_calling_a_reducer_with_private_table() {
         DEFAULT_CONFIG,
         |module| async move {
             module
-                .call_reducer_json("add_private", product!["Tyrion"])
+                .call_reducer_json("add_private", &product!["Tyrion"])
                 .await
                 .unwrap();
-            module.call_reducer_json("query_private", product![]).await.unwrap();
+            module.call_reducer_json("query_private", &product![]).await.unwrap();
 
             let logs = read_logs(&module)
                 .await
@@ -186,13 +186,12 @@ fn test_call_query_macro() {
         module.send(json).await.unwrap();
     });
 
-    let args_pv = product![
+    let args_pv = &product![
         product![0u32, 2u32, "Macro"],
         product!["Foo"],
         AlgebraicValue::sum(0, AlgebraicValue::unit()),
         AlgebraicValue::sum(2, AlgebraicValue::String("buzz".into())),
     ];
-    let args_pv_clone = args_pv.clone();
 
     // JSON via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
@@ -201,7 +200,7 @@ fn test_call_query_macro() {
 
     // BSATN via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
-        module.call_reducer_binary("test", args_pv_clone).await.unwrap();
+        module.call_reducer_binary("test", args_pv).await.unwrap();
     });
 }
 
@@ -215,28 +214,27 @@ fn test_index_scans() {
     CompiledModule::compile("perf-test", CompilationMode::Release).with_module_async(
         IN_MEMORY_CONFIG,
         |module| async move {
+            let no_args = &product![];
+
+            module.call_reducer_json("load_location_table", no_args).await.unwrap();
+
             module
-                .call_reducer_json("load_location_table", product![])
+                .call_reducer_json("test_index_scan_on_id", no_args)
                 .await
                 .unwrap();
 
             module
-                .call_reducer_json("test_index_scan_on_id", product![])
+                .call_reducer_json("test_index_scan_on_chunk", no_args)
                 .await
                 .unwrap();
 
             module
-                .call_reducer_json("test_index_scan_on_chunk", product![])
+                .call_reducer_json("test_index_scan_on_x_z_dimension", no_args)
                 .await
                 .unwrap();
 
             module
-                .call_reducer_json("test_index_scan_on_x_z_dimension", product![])
-                .await
-                .unwrap();
-
-            module
-                .call_reducer_json("test_index_scan_on_x_z", product![])
+                .call_reducer_json("test_index_scan_on_x_z", no_args)
                 .await
                 .unwrap();
 
