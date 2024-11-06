@@ -87,7 +87,7 @@ fn compile_cross_joins(joins: Vec<RelExpr>, ty: TyId) -> PhysicalPlan {
 
 fn compile_rel_expr(ast: RelExpr) -> PhysicalPlan {
     match ast {
-        RelExpr::RelVar(table, _ty) => PhysicalPlan::TableScan(table),
+        RelExpr::RelVar(table, ty) => PhysicalPlan::TableScan(table, ty),
         RelExpr::Select(select) => compile_filter(*select),
         RelExpr::Proj(proj) => compile_project(*proj),
         RelExpr::Join(joins, ty) => compile_cross_joins(joins.into_vec(), ty),
@@ -118,10 +118,10 @@ pub fn compile(ast: StatementCtx) -> PhysicalCtx {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use spacetimedb_expr::check::compile_sql_sub;
-    use spacetimedb_expr::check::test_utils::{build_module_def, SchemaViewer};
+    use spacetimedb_expr::check::test_utils::{build_module_def_with_index, SchemaViewer};
     use spacetimedb_expr::statement::compile_sql_stmt;
     use spacetimedb_expr::ty::TyCtx;
     use spacetimedb_expr::StatementCtx;
@@ -130,7 +130,7 @@ mod tests {
     use spacetimedb_schema::def::ModuleDef;
 
     fn module_def() -> ModuleDef {
-        build_module_def(vec![
+        build_module_def_with_index(vec![
             (
                 "t",
                 ProductType::from([
@@ -138,6 +138,7 @@ mod tests {
                     ("f32", AlgebraicType::F32),
                     ("str", AlgebraicType::String),
                 ]),
+                vec![0.into()],
             ),
             (
                 "u",
@@ -146,18 +147,19 @@ mod tests {
                     ("f32", AlgebraicType::F32),
                     ("str", AlgebraicType::String),
                 ]),
+                vec![0.into()],
             ),
-            ("x", ProductType::from([("u32", AlgebraicType::U32)])),
+            ("no_index", ProductType::from([("u32", AlgebraicType::U32)]), vec![]),
         ])
     }
 
-    fn compile_sql_sub_test(sql: &str) -> ResultTest<StatementCtx> {
+    pub fn compile_sql_sub_test(sql: &str) -> ResultTest<StatementCtx> {
         let tx = SchemaViewer(module_def());
         let expr = compile_sql_sub(&mut TyCtx::default(), sql, &tx)?;
         Ok(expr)
     }
 
-    fn compile_sql_stmt_test(sql: &str) -> ResultTest<StatementCtx> {
+    pub fn compile_sql_stmt_test(sql: &str) -> ResultTest<StatementCtx> {
         let tx = SchemaViewer(module_def());
         let statement = compile_sql_stmt(sql, &tx)?;
         Ok(statement)
@@ -166,7 +168,7 @@ mod tests {
     #[test]
     fn test_project() -> ResultTest<()> {
         let ast = compile_sql_sub_test("SELECT * FROM t")?;
-        assert!(matches!(compile(ast).plan, PhysicalPlan::TableScan(_)));
+        assert!(matches!(compile(ast).plan, PhysicalPlan::TableScan(_, _)));
 
         let ast = compile_sql_stmt_test("SELECT u32 FROM t")?;
         assert!(matches!(compile(ast).plan, PhysicalPlan::Project(_)));
@@ -192,18 +194,18 @@ mod tests {
         let CrossJoin { lhs, rhs, ty: _ } = input.as_cross().unwrap();
 
         assert!(matches!(op, PhysicalExpr::Field(_, _, _)));
-        assert!(matches!(&**lhs, PhysicalPlan::TableScan(_)));
-        assert!(matches!(&**rhs, PhysicalPlan::TableScan(_)));
+        assert!(matches!(&**lhs, PhysicalPlan::TableScan(_, _)));
+        assert!(matches!(&**rhs, PhysicalPlan::TableScan(_, _)));
 
         // Check we can do multiple joins
         let ast = compile(compile_sql_sub_test("SELECT t.* FROM t JOIN u JOIN x")?).plan;
         let plan::Project { input, op: _ } = ast.as_project().unwrap();
         let CrossJoin { lhs, rhs, ty: _ } = input.as_cross().unwrap();
-        assert!(matches!(&**rhs, PhysicalPlan::TableScan(_)));
+        assert!(matches!(&**rhs, PhysicalPlan::TableScan(_, _)));
 
         let CrossJoin { lhs, rhs, ty: _ } = lhs.as_cross().unwrap();
-        assert!(matches!(&**lhs, PhysicalPlan::TableScan(_)));
-        assert!(matches!(&**rhs, PhysicalPlan::TableScan(_)));
+        assert!(matches!(&**lhs, PhysicalPlan::TableScan(_, _)));
+        assert!(matches!(&**rhs, PhysicalPlan::TableScan(_, _)));
 
         // Check we can do a join with a filter
         let ast = compile(compile_sql_stmt_test("SELECT t.* FROM t JOIN u ON t.u32 = u.u32")?).plan;
@@ -213,8 +215,8 @@ mod tests {
         assert!(matches!(op, PhysicalExpr::BinOp(_, _, _)));
 
         let CrossJoin { lhs, rhs, ty: _ } = input.as_cross().unwrap();
-        assert!(matches!(&**lhs, PhysicalPlan::TableScan(_)));
-        assert!(matches!(&**rhs, PhysicalPlan::TableScan(_)));
+        assert!(matches!(&**lhs, PhysicalPlan::TableScan(_, _)));
+        assert!(matches!(&**rhs, PhysicalPlan::TableScan(_, _)));
 
         Ok(())
     }

@@ -17,7 +17,7 @@ use super::errors::{ExpectedRelation, InvalidOp};
 /// types are stored in a typing context [TyCtx].
 /// It will then hold references, in the form of [TyId]s,
 /// to the types defined in the [TyCtx].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TyId(u32);
 
 impl TyId {

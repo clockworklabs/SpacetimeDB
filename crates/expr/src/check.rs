@@ -196,20 +196,31 @@ fn expect_table_type(ctx: &TyCtx, expr: RelExpr) -> TypingResult<RelExpr> {
 }
 
 pub mod test_utils {
+    use super::SchemaView;
+    use spacetimedb_lib::db::raw_def::v9::RawIndexAlgorithm;
     use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, ProductType};
-    use spacetimedb_primitives::TableId;
+    use spacetimedb_primitives::{ColList, TableId};
     use spacetimedb_schema::{
         def::ModuleDef,
         schema::{Schema, TableSchema},
     };
     use std::sync::Arc;
 
-    use super::SchemaView;
-
     pub fn build_module_def(types: Vec<(&str, ProductType)>) -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
         for (name, ty) in types {
             builder.build_table_with_new_type(name, ty, true);
+        }
+        builder.finish().try_into().expect("failed to generate module def")
+    }
+
+    pub fn build_module_def_with_index(types: Vec<(&str, ProductType, Vec<ColList>)>) -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+        for (name, ty, idxs) in types {
+            let mut table = builder.build_table_with_new_type(name, ty, true);
+            for idx in idxs {
+                table = table.with_index(RawIndexAlgorithm::BTree { columns: idx }, name, None);
+            }
         }
         builder.finish().try_into().expect("failed to generate module def")
     }

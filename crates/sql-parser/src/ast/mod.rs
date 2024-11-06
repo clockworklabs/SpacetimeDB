@@ -87,7 +87,7 @@ pub enum SqlLiteral {
 }
 
 /// Binary infix operators
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOp {
     Eq,
     Ne,

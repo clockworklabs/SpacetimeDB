@@ -359,6 +359,7 @@ pub(crate) fn parse(value: String, ty: TypeWithCtx) -> Result<AlgebraicValue, In
 }
 
 /// The source of a statement
+#[derive(Clone, Copy, Debug)]
 pub enum StatementSource {
     Subscription,
     Query,
