@@ -326,10 +326,11 @@ const SUBSCRIBE_ALL: &[&str] = &[
 
 fn connect_with_then(
     test_counter: &std::sync::Arc<TestCounter>,
+    on_connect_suffix: &str,
     with_builder: impl FnOnce(DbConnectionBuilder<RemoteModule>) -> DbConnectionBuilder<RemoteModule>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
-    let connected_result = test_counter.add_test("on_connect");
+    let connected_result = test_counter.add_test(format!("on_connect_{on_connect_suffix}"));
     let name = db_name_or_panic();
     let builder = DbConnection::builder()
         .with_module_name(name)
@@ -348,7 +349,7 @@ fn connect_then(
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
-    connect_with_then(test_counter, |x| x, callback)
+    connect_with_then(test_counter, "", |x| x, callback)
 }
 
 fn connect(test_counter: &std::sync::Arc<TestCounter>) -> DbConnection {
@@ -1615,9 +1616,9 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
             .ok_or_else(|| anyhow::anyhow!("wrong value received: `{val}`, expected: `{eq}`"))
     }
 
+    let counter = TestCounter::new();
     let make_actor = |who| {
-        let counter = TestCounter::new();
-        let conn = connect_with_then(&counter, |b| b.with_light_mode(true), |_| {});
+        let conn = connect_with_then(&counter, who, |b| b.with_light_mode(true), |_| {});
 
         // Subscribe to the `OneU8` table.
         // The choice of table is a fairly random one: just one of the simpler tables.
@@ -1629,8 +1630,9 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
                 // Test that we are notified when a row is inserted.
                 let db = ctx.db();
                 let mut one_u8_inserted = Some(counter2.add_test(format!("one_u8_inserted_{who}")));
-                db.one_u_8()
-                    .on_insert(move |_, row| (one_u8_inserted.take().unwrap())(check_val(row.n, 42)));
+                db.one_u_8().on_insert(move |_, row| {
+                    (one_u8_inserted.take().unwrap())(check_val(row.n, 42));
+                });
                 let mut one_u16_inserted = Some(counter2.add_test(format!("one_u16_inserted_{who}")));
                 db.one_u_16().on_insert(move |event, row| {
                     let run_checks = || {
@@ -1646,16 +1648,16 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
             .on_error(|_| panic!("Subscription error"))
             .subscribe(["SELECT * FROM one_u8", "SELECT * FROM one_u16"]);
 
-        (counter, conn)
+        conn
     };
 
-    let (alice_counter, alice_conn) = make_actor("alice");
-    let (bob_counter, bob_conn) = make_actor("bob");
+    let alice_conn = make_actor("alice");
+    let bob_conn = make_actor("bob");
 
     // Alice executes a reducer.
     // This should cause a row callback to be received by Alice and Bob.
     // A reducer callback should only be received by Alice.
-    let mut alice_gets_reducer_callback = Some(alice_counter.add_test("gets_reducer_callback_alice"));
+    let mut alice_gets_reducer_callback = Some(counter.add_test("gets_reducer_callback_alice"));
     alice_conn
         .reducers()
         .on_insert_one_u_8(move |_, &val| (alice_gets_reducer_callback.take().unwrap())(check_val(val, 42)));
@@ -1676,10 +1678,7 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
         .on_insert_one_u_16(move |_, _| panic!("bob received reducer callback"));
     alice_conn.reducers().insert_one_u_16(24).unwrap();
 
-    alice_conn.run_threaded();
-    bob_conn.run_threaded();
-    alice_counter.wait_for_all();
-    bob_counter.wait_for_all();
+    counter.wait_for_all();
 
     // For the integrity of the test, ensure that Alice != Bob.
     // We do this after `run_threaded` so that the ids have been filled.
