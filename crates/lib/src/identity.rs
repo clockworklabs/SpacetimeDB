@@ -108,15 +108,15 @@ impl Identity {
     /// ->
     /// [0xb0, 0xb1, 0xb2, ...]
     /// ```
-    pub fn from_be_slice(slice: &[u8]) -> Self {
-        Self::from_be_byte_array(slice.try_into().unwrap())
+    pub fn from_be_slice(slice: &[u8]) -> anyhow::Result<Self> {
+        Ok(Self::from_be_byte_array(slice.try_into()?))
     }
 
     /// Returns an `Identity` defined as the given byte `slice`.
     /// The slice is assumed to be in LITTLE-ENDIAN format.
     /// If you are parsing an `Identity` from a string, you probably want `from_be_slice` instead.
-    pub fn from_slice(slice: &[u8]) -> Self {
-        Self::from_byte_array(slice.try_into().unwrap())
+    pub fn from_slice(slice: &[u8]) -> anyhow::Result<Self> {
+        Ok(Self::from_byte_array(slice.try_into()?))
     }
 
     #[doc(hidden)]
