@@ -6,7 +6,6 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::execution_context::Workload;
 use crate::{
     db::{
         datastore::{
@@ -25,6 +24,7 @@ use crate::{
     error::{DBError, TableError},
     execution_context::ExecutionContext,
 };
+use crate::{energy::DatastoreComputeDuration, execution_context::Workload};
 use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
@@ -314,11 +314,12 @@ impl Tx for Locking {
             lock_wait_time,
             timer,
             ctx,
+            datastore_compute_time_microseconds: Default::default(),
         }
     }
 
-    fn release_tx(&self, tx: Self::Tx) {
-        tx.release();
+    fn release_tx(&self, tx: Self::Tx) -> DatastoreComputeDuration {
+        tx.release()
     }
 }
 
@@ -603,6 +604,7 @@ impl MutTxDatastore for Locking {
 }
 
 /// This utility is responsible for recording all transaction metrics.
+// TODO(metrics): Add a metric for datastore compute time?
 pub(super) fn record_metrics(
     ctx: &ExecutionContext,
     tx_timer: Instant,
@@ -693,14 +695,15 @@ impl MutTx for Locking {
             lock_wait_time,
             timer,
             ctx,
+            datastore_compute_time_microseconds: Default::default(),
         }
     }
 
-    fn rollback_mut_tx(&self, tx: Self::MutTx) {
-        tx.rollback();
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> DatastoreComputeDuration {
+        tx.rollback()
     }
 
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<TxData>> {
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxData, DatastoreComputeDuration)>> {
         Ok(Some(tx.commit()))
     }
 }
@@ -1516,7 +1519,8 @@ mod tests {
             );
         }
 
-        datastore.rollback_mut_tx(tx);
+        // Ignore the returned datastore compute time; we don't care.
+        let _ = datastore.rollback_mut_tx(tx);
         Ok(())
     }
 
@@ -1558,7 +1562,10 @@ mod tests {
     #[test]
     fn test_create_table_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.rollback_mut_tx(tx);
+
+        // Ignore the returned datastore compute time; we don't care.
+        let _ = datastore.rollback_mut_tx(tx);
+
         let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         assert!(
             !datastore.table_id_exists_mut_tx(&tx, &table_id),
@@ -1673,7 +1680,8 @@ mod tests {
     #[test]
     fn test_schema_for_table_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
-        datastore.rollback_mut_tx(tx);
+        // Ignore the returned datastore compute time; we don't care.
+        let _ = datastore.rollback_mut_tx(tx);
         let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id);
         assert!(schema.is_err());
@@ -1716,10 +1724,16 @@ mod tests {
     fn test_insert_post_rollback() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         let row = u32_str_u32(15, "Foo", 18); // 15 is ignored.
-        datastore.commit_mut_tx(tx)?;
+
+        // Ignore the returned datastore compute time; we don't care.
+        let _ = datastore.commit_mut_tx(tx)?;
+
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
-        datastore.rollback_mut_tx(tx);
+
+        // Ignore the returned datastore compute time; we don't care.
+        let _ = datastore.rollback_mut_tx(tx);
+
         let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![]);
@@ -1824,7 +1838,10 @@ mod tests {
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
-        datastore.rollback_mut_tx(tx);
+
+        // Ignore the returned datastore compute time; we don't care.
+        let _ = datastore.rollback_mut_tx(tx);
+
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         #[rustfmt::skip]
@@ -1958,7 +1975,9 @@ mod tests {
         };
         datastore.create_index_mut_tx(&mut tx, index_def, true)?;
 
-        datastore.rollback_mut_tx(tx);
+        // Ignore the returned datastore compute time; we don't care.
+        let _ = datastore.rollback_mut_tx(tx);
+
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let query = query_st_tables(&tx);
 
@@ -2056,8 +2075,11 @@ mod tests {
         let rows = &[row1, row2];
         assert_eq!(&all_rows_tx(&read_tx_2, table_id), rows);
         assert_eq!(&all_rows_tx(&read_tx_1, table_id), rows);
-        read_tx_2.release();
-        read_tx_1.release();
+
+        // Ignore the returned datastore compute time; we don't care.
+        let _ = read_tx_2.release();
+        let _ = read_tx_1.release();
+
         Ok(())
     }
 

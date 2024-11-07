@@ -6,6 +6,7 @@ use std::{ops::RangeBounds, sync::Arc};
 use super::system_tables::ModuleKind;
 use super::Result;
 use crate::db::datastore::system_tables::ST_TABLE_ID;
+use crate::energy::DatastoreComputeDuration;
 use crate::execution_context::{ReducerContext, Workload};
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::{hash_bytes, Identity};
@@ -298,15 +299,25 @@ pub trait Tx {
     type Tx;
 
     fn begin_tx(&self, workload: Workload) -> Self::Tx;
-    fn release_tx(&self, tx: Self::Tx);
+    /// Returns a [`Duration`] representing the total time spent performing datastore operations
+    /// during the transaction, for which energy should be charged.
+    fn release_tx(&self, tx: Self::Tx) -> DatastoreComputeDuration;
 }
 
 pub trait MutTx {
     type MutTx;
 
     fn begin_mut_tx(&self, isolation_level: IsolationLevel, workload: Workload) -> Self::MutTx;
-    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<TxData>>;
-    fn rollback_mut_tx(&self, tx: Self::MutTx);
+    /// Returns as two values:
+    /// - A [`TxData`] containing all the mutations performed by the TX,
+    ///   which can be used to compute incremental queries.
+    /// - A [`Duration`] representing the total time spent performing datastore operations
+    ///   during the transaction, for which energy should be charged.
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxData, DatastoreComputeDuration)>>;
+    #[must_use]
+    /// Returns a [`Duration`] representing the total time spent performing datastore operations
+    /// during the transaction, for which energy should be charged.
+    fn rollback_mut_tx(&self, tx: Self::MutTx) -> DatastoreComputeDuration;
 }
 
 /// Standard metadata associated with a database.

@@ -687,6 +687,7 @@ impl Host {
                 EmptyHistory::new(),
                 None,
                 None,
+                energy_monitor.clone(),
             )?,
             db::Storage::Disk => {
                 let (durability, disk_size_fn) = relational_db::local_durability(&db_path).await?;
@@ -700,6 +701,7 @@ impl Host {
                     history,
                     Some((durability, disk_size_fn)),
                     Some(snapshot_repo),
+                    energy_monitor.clone(),
                 )?
             }
         };

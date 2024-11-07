@@ -202,9 +202,7 @@ impl ModuleSubscriptions {
                     stdb.rollback_mut_tx_downgrade(tx, Workload::Update)
                 }
             },
-            |tx| {
-                self.relational_db.release_tx(tx);
-            },
+            |tx| self.relational_db.release_tx(tx),
         );
         let event = Arc::new(event);
 

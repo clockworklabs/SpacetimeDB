@@ -249,7 +249,7 @@ impl ExecutionUnit {
 
     fn eval_query_expr_against_memtable<'a>(
         db: &'a RelationalDB,
-        tx: &'a TxMode,
+        tx: &'a TxMode<'a>,
         mem_table: &'a [ProductValue],
         eval_incr_plan: &'a QueryExpr,
     ) -> Box<IterRows<'a>> {

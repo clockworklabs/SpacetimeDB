@@ -22,6 +22,7 @@ pub trait EnergyMonitor: Send + Sync + 'static {
     );
     fn record_disk_usage(&self, database: &Database, replica_id: u64, disk_usage: u64, period: Duration);
     fn record_memory_usage(&self, database: &Database, replica_id: u64, mem_usage: u64, period: Duration);
+    fn record_datastore_time(&self, module_identity: Identity, execution_duration: DatastoreComputeDuration);
 }
 
 #[derive(Default)]
@@ -43,4 +44,6 @@ impl EnergyMonitor for NullEnergyMonitor {
     fn record_disk_usage(&self, _database: &Database, _replica_id: u64, _disk_usage: u64, _period: Duration) {}
 
     fn record_memory_usage(&self, _database: &Database, _replica_id: u64, _mem_usage: u64, _period: Duration) {}
+
+    fn record_datastore_time(&self, _module_identity: Identity, _execution_duration: DatastoreComputeDuration) {}
 }
