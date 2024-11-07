@@ -618,8 +618,9 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    /// Returns a [`Duration`] representing the total time spent performing datastore operations
-    /// during the transaction, for which energy should be charged.
+    /// Returns a [`DatastoreComputeDuration`]
+    /// representing the total time spent performing datastore operations during the transaction,
+    /// for which energy should be charged.
     pub fn release_tx(&self, tx: Tx) {
         log::trace!("RELEASE TX");
         let compute_duration = self.inner.release_tx(tx);

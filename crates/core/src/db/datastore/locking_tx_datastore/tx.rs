@@ -110,8 +110,9 @@ impl TxId {
         res
     }
 
-    /// Returns a [`Duration`] representing the total time spent performing datastore operations
-    /// during the transaction, for which energy should be charged.
+    /// Returns a [`DatastoreComputeDuration`]
+    /// representing the total time spent performing datastore operations during the transaction,
+    /// for which energy should be charged.
     ///
     /// If this transaction was created by downgrading a [`super::mut_tx::MutTxId`],
     /// the returned time includes compute time spent in both the original mutable transaction

@@ -299,8 +299,9 @@ pub trait Tx {
     type Tx;
 
     fn begin_tx(&self, workload: Workload) -> Self::Tx;
-    /// Returns a [`Duration`] representing the total time spent performing datastore operations
-    /// during the transaction, for which energy should be charged.
+    /// Returns a [`DatastoreComputeduration`]
+    /// representing the total time spent performing datastore operations during the transaction,
+    /// for which energy should be charged.
     fn release_tx(&self, tx: Self::Tx) -> DatastoreComputeDuration;
 }
 
@@ -311,12 +312,14 @@ pub trait MutTx {
     /// Returns as two values:
     /// - A [`TxData`] containing all the mutations performed by the TX,
     ///   which can be used to compute incremental queries.
-    /// - A [`Duration`] representing the total time spent performing datastore operations
-    ///   during the transaction, for which energy should be charged.
+    /// - A [`DatastoreComputeduration`]
+    ///   representing the total time spent performing datastore operations during the transaction,
+    ///   for which energy should be charged.
     fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxData, DatastoreComputeDuration)>>;
-    #[must_use]
-    /// Returns a [`Duration`] representing the total time spent performing datastore operations
-    /// during the transaction, for which energy should be charged.
+
+    /// Returns a [`DatastoreComputeDuration`]
+    /// representing the total time spent performing datastore operations during the transaction,
+    /// for which energy should be charged.
     fn rollback_mut_tx(&self, tx: Self::MutTx) -> DatastoreComputeDuration;
 }
 
