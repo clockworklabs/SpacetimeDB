@@ -32,6 +32,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
+          submodules: 'true'
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
       - uses: actions/setup-dotnet@v3
@@ -64,6 +65,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
+          submodules: 'true'
           ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
@@ -108,6 +110,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
+          submodules: 'true'
           ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
@@ -170,6 +173,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
+        with:
+          submodules: 'true'
 
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
@@ -191,6 +196,8 @@ jobs:
     runs-on: spacetimedb-runner
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: 'true'
 
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
