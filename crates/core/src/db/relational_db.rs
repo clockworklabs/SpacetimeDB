@@ -12,7 +12,6 @@ use super::datastore::{
     traits::TxData,
 };
 use super::db_metrics::DB_METRICS;
-use super::relational_operators::Relation;
 use crate::db::datastore::system_tables::{StModuleRow, WASM_MODULE};
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::{ReducerContext, Workload};
@@ -1148,7 +1147,12 @@ impl RelationalDB {
         self.inner.delete_mut_tx(tx, table_id, row_ids)
     }
 
-    pub fn delete_by_rel<R: Relation>(&self, tx: &mut MutTx, table_id: TableId, relation: R) -> u32 {
+    pub fn delete_by_rel<R: IntoIterator<Item = ProductValue>>(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        relation: R,
+    ) -> u32 {
         self.inner.delete_by_rel_mut_tx(tx, table_id, relation)
     }
 
