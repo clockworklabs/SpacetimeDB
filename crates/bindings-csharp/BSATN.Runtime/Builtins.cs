@@ -10,14 +10,14 @@ internal static class Util
 {
     /// <summary>
     /// Convert this object to a BIG-ENDIAN hex string.
-    /// 
+    ///
     /// Big endian is almost always the correct convention here. It puts the most significant bytes
     /// of the number at the lowest indexes of the resulting string; assuming the string is printed
     /// with low indexes to the left, this will result in the correct hex number being displayed.
-    /// 
+    ///
     /// (This might be wrong if the string is printed after, say, a unicode right-to-left marker.
     /// But, well, what can you do.)
-    /// 
+    ///
     /// Similar to `Convert.ToHexString`, but that method is not available in .NET Standard
     /// which we need to target for Unity support.
     /// </summary>
@@ -25,8 +25,7 @@ internal static class Util
     /// <param name="val"></param>
     /// <returns></returns>
     public static string ToHexBigEndian<T>(T val)
-        where T : struct =>
-        BitConverter.ToString(AsBytesBigEndian(val).ToArray()).Replace("-", "");
+        where T : struct => BitConverter.ToString(AsBytesBigEndian(val).ToArray()).Replace("-", "");
 
     /// <summary>
     /// Read a value of type T from the passed span, which is assumed to be in little-endian format.
@@ -36,8 +35,7 @@ internal static class Util
     /// <param name="source"></param>
     /// <returns></returns>
     public static T ReadLittleEndian<T>(ReadOnlySpan<byte> source)
-        where T : struct =>
-        Read<T>(source, !BitConverter.IsLittleEndian);
+        where T : struct => Read<T>(source, !BitConverter.IsLittleEndian);
 
     /// <summary>
     /// Read a value of type T from the passed span, which is assumed to be in big-endian format.
@@ -47,8 +45,7 @@ internal static class Util
     /// <param name="source"></param>
     /// <returns></returns>
     public static T ReadBigEndian<T>(ReadOnlySpan<byte> source)
-        where T : struct =>
-        Read<T>(source, BitConverter.IsLittleEndian);
+        where T : struct => Read<T>(source, BitConverter.IsLittleEndian);
 
     /// <summary>
     /// Convert the passed byte array to a value of type T, optionally reversing it before performing the conversion.
@@ -83,8 +80,7 @@ internal static class Util
     /// <param name="source"></param>
     /// <returns></returns>
     public static byte[] AsBytesLittleEndian<T>(T source)
-        where T : struct =>
-        AsBytes<T>(source, !BitConverter.IsLittleEndian);
+        where T : struct => AsBytes<T>(source, !BitConverter.IsLittleEndian);
 
     /// <summary>
     /// Convert the passed T to a big-endian byte array.
@@ -94,8 +90,7 @@ internal static class Util
     /// <param name="source"></param>
     /// <returns></returns>
     public static byte[] AsBytesBigEndian<T>(T source)
-        where T : struct =>
-        AsBytes<T>(source, BitConverter.IsLittleEndian);
+        where T : struct => AsBytes<T>(source, BitConverter.IsLittleEndian);
 
     /// <summary>
     /// Convert the passed T to a byte array, and optionally reverse the array before returning it.
@@ -106,7 +101,8 @@ internal static class Util
     /// <param name="source"></param>
     /// <param name="reverse"></param>
     /// <returns></returns>
-    static byte[] AsBytes<T>(T source, bool reverse) where T : struct
+    static byte[] AsBytes<T>(T source, bool reverse)
+        where T : struct
     {
         var result = MemoryMarshal.AsBytes([source]).ToArray();
         if (reverse)
@@ -140,8 +136,8 @@ internal static class Util
     /// <typeparam name="T"></typeparam>
     /// <param name="hex"></param>
     /// <returns></returns>
-    public static T ReadFromBigEndianHexString<T>(string hex) where T : struct
-    => ReadBigEndian<T>(StringToByteArray(hex));
+    public static T ReadFromBigEndianHexString<T>(string hex)
+        where T : struct => ReadBigEndian<T>(StringToByteArray(hex));
 }
 
 public readonly partial struct Unit
@@ -158,7 +154,6 @@ public readonly partial struct Unit
     }
 }
 
-
 public readonly record struct Address
 {
     private readonly U128 value;
@@ -167,10 +162,10 @@ public readonly record struct Address
 
     /// <summary>
     /// Create an Address from a LITTLE-ENDIAN byte array.
-    /// 
+    ///
     /// If you are parsing an Address from a string, you probably want FromHexString instead,
     /// or, failing that, FromBigEndian.
-    /// 
+    ///
     /// Returns null if the resulting address is the default.
     /// </summary>
     /// <param name="bytes"></param>
@@ -183,14 +178,14 @@ public readonly record struct Address
 
     /// <summary>
     /// Create an Address from a BIG-ENDIAN byte array.
-    /// 
+    ///
     /// This method is the correct choice if you have converted the bytes of a hexadecimal-formatted Address
     /// to a byte array in the following way:
-    /// 
+    ///
     /// "0xb0b1b2..."
     /// ->
     /// [0xb0, 0xb1, 0xb2, ...]
-    /// 
+    ///
     /// Returns null if the resulting address is the default.
     /// </summary>
     /// <param name="bytes"></param>
@@ -243,7 +238,7 @@ public readonly record struct Identity
 
     /// <summary>
     /// Create an Identity from a LITTLE-ENDIAN byte array.
-    /// 
+    ///
     /// If you are parsing an Identity from a string, you probably want FromHexString instead,
     /// or, failing that, FromBigEndian.
     /// </summary>
@@ -256,7 +251,7 @@ public readonly record struct Identity
 
     /// <summary>
     /// Create an Identity from a LITTLE-ENDIAN byte array.
-    /// 
+    ///
     /// If you are parsing an Identity from a string, you probably want FromHexString instead,
     /// or, failing that, FromBigEndian.
     /// </summary>
@@ -265,10 +260,10 @@ public readonly record struct Identity
 
     /// <summary>
     /// Create an Identity from a BIG-ENDIAN byte array.
-    /// 
+    ///
     /// This method is the correct choice if you have converted the bytes of a hexadecimal-formatted `Identity`
     /// to a byte array in the following way:
-    /// 
+    ///
     /// "0xb0b1b2..."
     /// ->
     /// [0xb0, 0xb1, 0xb2, ...]
