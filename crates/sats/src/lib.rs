@@ -6,19 +6,15 @@ pub mod array_type;
 pub mod array_value;
 pub mod bsatn;
 pub mod buffer;
-pub mod builtin_type;
 pub mod convert;
-pub mod db;
 pub mod de;
 pub mod hash;
 pub mod hex;
-pub mod map_type;
-pub mod map_value;
 pub mod meta_type;
+pub mod primitives;
 pub mod product_type;
 pub mod product_type_element;
 pub mod product_value;
-pub mod relation;
 mod resolve_refs;
 pub mod satn;
 pub mod ser;
@@ -30,22 +26,24 @@ pub mod typespace;
 #[cfg(any(test, feature = "proptest"))]
 pub mod proptest;
 
+/// Allows the macros in [`spacetimedb_bindings_macro`] to accept `crate = spacetimedb_sats`,
+/// which will then emit `$krate::sats`.
+#[doc(hidden)]
+pub use crate as sats;
+
 pub use algebraic_type::AlgebraicType;
 pub use algebraic_type_ref::AlgebraicTypeRef;
-pub use algebraic_value::{AlgebraicValue, F32, F64};
+pub use algebraic_value::{i256, u256, AlgebraicValue, F32, F64};
 pub use algebraic_value_hash::hash_bsatn;
 pub use array_type::ArrayType;
 pub use array_value::ArrayValue;
-pub use builtin_type::BuiltinType;
-pub use map_type::MapType;
-pub use map_value::MapValue;
 pub use product_type::ProductType;
 pub use product_type_element::ProductTypeElement;
 pub use product_value::ProductValue;
 pub use sum_type::SumType;
 pub use sum_type_variant::SumTypeVariant;
 pub use sum_value::SumValue;
-pub use typespace::{SpacetimeType, Typespace};
+pub use typespace::{GroundSpacetimeType, SpacetimeType, Typespace};
 
 /// The `Value` trait provides an abstract notion of a value.
 ///
@@ -140,6 +138,11 @@ impl<'a, T: ?Sized> WithTypespace<'a, T> {
         Self { typespace, ty }
     }
 
+    /// Wraps `ty` in an empty context.
+    pub const fn empty(ty: &'a T) -> Self {
+        Self::new(Typespace::EMPTY, ty)
+    }
+
     /// Returns the object that the context was created with.
     pub const fn ty(&self) -> &'a T {
         self.ty
@@ -223,4 +226,11 @@ where
     fn len(&self) -> usize {
         self.iter.len()
     }
+}
+
+/// Required for derive(SpacetimeType) to work outside of a module
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __make_register_reftype {
+    ($ty:ty, $name:literal) => {};
 }

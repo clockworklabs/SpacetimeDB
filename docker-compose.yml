@@ -24,7 +24,7 @@ services:
       - key_files:/etc/spacetimedb
       - /stdb
     ports:
-      - "3000:80"
+      - "3000:3000"
       # Tracy
       - "8086:8086"
     entrypoint: cargo watch -i flamegraphs -i log.conf --why -C crates/standalone -x 'run start'
@@ -36,8 +36,6 @@ services:
       SPACETIMEDB_TRACY: 1
       RUST_BACKTRACE: 1
       ENV: dev
-      SENDGRID_API_KEY:
-      SENDGRID_SENDER:
     networks:
       - spacetimedb_default
 

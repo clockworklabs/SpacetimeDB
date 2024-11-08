@@ -23,14 +23,12 @@
 
 use super::indexes::RowPointer;
 use super::table::RowRef;
-use crate::{
-    layout::{AlgebraicTypeLayout, RowTypeLayout},
-    read_column::ReadColumn,
-    static_assert_size,
-};
+use crate::{read_column::ReadColumn, static_assert_size, MemoryUsage};
 use core::ops::RangeBounds;
 use spacetimedb_primitives::{ColList, IndexId};
-use spacetimedb_sats::{algebraic_value::Packed, product_value::InvalidFieldError, AlgebraicValue};
+use spacetimedb_sats::{
+    algebraic_value::Packed, i256, product_value::InvalidFieldError, u256, AlgebraicType, AlgebraicValue, ProductType,
+};
 
 mod multimap;
 
@@ -52,6 +50,8 @@ enum TypedMultiMapRangeIter<'a> {
     I64(IndexIter<'a, i64>),
     U128(IndexIter<'a, Packed<u128>>),
     I128(IndexIter<'a, Packed<i128>>),
+    U256(IndexIter<'a, u256>),
+    I256(IndexIter<'a, i256>),
     String(IndexIter<'a, Box<str>>),
     AlgebraicValue(IndexIter<'a, AlgebraicValue>),
 }
@@ -71,6 +71,8 @@ impl Iterator for TypedMultiMapRangeIter<'_> {
             Self::I64(this) => this.next(),
             Self::U128(this) => this.next(),
             Self::I128(this) => this.next(),
+            Self::U256(this) => this.next(),
+            Self::I256(this) => this.next(),
             Self::String(this) => this.next(),
             Self::AlgebraicValue(this) => this.next(),
         }
@@ -119,8 +121,32 @@ enum TypedIndex {
     I64(Index<i64>),
     U128(Index<Packed<u128>>),
     I128(Index<Packed<i128>>),
+    U256(Index<u256>),
+    I256(Index<i256>),
     String(Index<Box<str>>),
     AlgebraicValue(Index<AlgebraicValue>),
+}
+
+impl MemoryUsage for TypedIndex {
+    fn heap_usage(&self) -> usize {
+        match self {
+            TypedIndex::Bool(this) => this.heap_usage(),
+            TypedIndex::U8(this) => this.heap_usage(),
+            TypedIndex::I8(this) => this.heap_usage(),
+            TypedIndex::U16(this) => this.heap_usage(),
+            TypedIndex::I16(this) => this.heap_usage(),
+            TypedIndex::U32(this) => this.heap_usage(),
+            TypedIndex::I32(this) => this.heap_usage(),
+            TypedIndex::U64(this) => this.heap_usage(),
+            TypedIndex::I64(this) => this.heap_usage(),
+            TypedIndex::U128(this) => this.heap_usage(),
+            TypedIndex::I128(this) => this.heap_usage(),
+            TypedIndex::U256(this) => this.heap_usage(),
+            TypedIndex::I256(this) => this.heap_usage(),
+            TypedIndex::String(this) => this.heap_usage(),
+            TypedIndex::AlgebraicValue(this) => this.heap_usage(),
+        }
+    }
 }
 
 impl TypedIndex {
@@ -138,8 +164,7 @@ impl TypedIndex {
             cols: &ColList,
             row_ref: RowRef<'_>,
         ) -> Result<(), InvalidFieldError> {
-            debug_assert!(cols.is_singleton());
-            let col_pos = cols.head();
+            let col_pos = cols.as_singleton().unwrap();
             let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
             this.insert(key, row_ref.pointer());
             Ok(())
@@ -156,6 +181,8 @@ impl TypedIndex {
             Self::I64(this) => insert_at_type(this, cols, row_ref),
             Self::U128(this) => insert_at_type(this, cols, row_ref),
             Self::I128(this) => insert_at_type(this, cols, row_ref),
+            Self::U256(this) => insert_at_type(this, cols, row_ref),
+            Self::I256(this) => insert_at_type(this, cols, row_ref),
             Self::String(this) => insert_at_type(this, cols, row_ref),
 
             Self::AlgebraicValue(this) => {
@@ -180,8 +207,7 @@ impl TypedIndex {
             cols: &ColList,
             row_ref: RowRef<'_>,
         ) -> Result<bool, InvalidFieldError> {
-            debug_assert!(cols.is_singleton());
-            let col_pos = cols.head();
+            let col_pos = cols.as_singleton().unwrap();
             let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
             Ok(this.delete(&key, &row_ref.pointer()))
         }
@@ -198,6 +224,8 @@ impl TypedIndex {
             Self::I64(this) => delete_at_type(this, cols, row_ref),
             Self::U128(this) => delete_at_type(this, cols, row_ref),
             Self::I128(this) => delete_at_type(this, cols, row_ref),
+            Self::U256(this) => delete_at_type(this, cols, row_ref),
+            Self::I256(this) => delete_at_type(this, cols, row_ref),
             Self::String(this) => delete_at_type(this, cols, row_ref),
 
             Self::AlgebraicValue(this) => {
@@ -231,6 +259,12 @@ impl TypedIndex {
             Self::I64(this) => TypedMultiMapRangeIter::I64(iter_at_type(this, range, AlgebraicValue::as_i64)),
             Self::U128(this) => TypedMultiMapRangeIter::U128(iter_at_type(this, range, AlgebraicValue::as_u128)),
             Self::I128(this) => TypedMultiMapRangeIter::I128(iter_at_type(this, range, AlgebraicValue::as_i128)),
+            Self::U256(this) => {
+                TypedMultiMapRangeIter::U256(iter_at_type(this, range, |av| av.as_u256().map(|x| &**x)))
+            }
+            Self::I256(this) => {
+                TypedMultiMapRangeIter::I256(iter_at_type(this, range, |av| av.as_i256().map(|x| &**x)))
+            }
             Self::String(this) => TypedMultiMapRangeIter::String(iter_at_type(this, range, AlgebraicValue::as_string)),
 
             Self::AlgebraicValue(this) => TypedMultiMapRangeIter::AlgebraicValue(this.values_in_range(range)),
@@ -250,6 +284,8 @@ impl TypedIndex {
             Self::I64(this) => this.clear(),
             Self::U128(this) => this.clear(),
             Self::I128(this) => this.clear(),
+            Self::U256(this) => this.clear(),
+            Self::I256(this) => this.clear(),
             Self::String(this) => this.clear(),
             Self::AlgebraicValue(this) => this.clear(),
         }
@@ -257,21 +293,7 @@ impl TypedIndex {
 
     #[allow(unused)] // used only by tests
     fn is_empty(&self) -> bool {
-        match self {
-            Self::Bool(this) => this.is_empty(),
-            Self::U8(this) => this.is_empty(),
-            Self::I8(this) => this.is_empty(),
-            Self::U16(this) => this.is_empty(),
-            Self::I16(this) => this.is_empty(),
-            Self::U32(this) => this.is_empty(),
-            Self::I32(this) => this.is_empty(),
-            Self::U64(this) => this.is_empty(),
-            Self::I64(this) => this.is_empty(),
-            Self::U128(this) => this.is_empty(),
-            Self::I128(this) => this.is_empty(),
-            Self::String(this) => this.is_empty(),
-            Self::AlgebraicValue(this) => this.is_empty(),
-        }
+        self.len() == 0
     }
 
     #[allow(unused)] // used only by tests
@@ -288,6 +310,8 @@ impl TypedIndex {
             Self::I64(this) => this.len(),
             Self::U128(this) => this.len(),
             Self::I128(this) => this.len(),
+            Self::U256(this) => this.len(),
+            Self::I256(this) => this.len(),
             Self::String(this) => this.len(),
             Self::AlgebraicValue(this) => this.len(),
         }
@@ -306,6 +330,8 @@ impl TypedIndex {
             Self::I64(this) => this.num_keys(),
             Self::U128(this) => this.num_keys(),
             Self::I128(this) => this.num_keys(),
+            Self::U256(this) => this.num_keys(),
+            Self::I256(this) => this.num_keys(),
             Self::String(this) => this.num_keys(),
             Self::AlgebraicValue(this) => this.num_keys(),
         }
@@ -320,50 +346,62 @@ pub struct BTreeIndex {
     pub(crate) is_unique: bool,
     /// The actual index, specialized for the appropriate key type.
     idx: TypedIndex,
+    /// The key type of this index.
+    /// This is the projection of the row type to the types of the columns indexed.
+    pub key_type: AlgebraicType,
 }
 
-static_assert_size!(BTreeIndex, 40);
+impl MemoryUsage for BTreeIndex {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            index_id,
+            is_unique,
+            idx,
+            key_type,
+        } = self;
+        index_id.heap_usage() + is_unique.heap_usage() + idx.heap_usage() + key_type.heap_usage()
+    }
+}
+
+static_assert_size!(BTreeIndex, 64);
 
 impl BTreeIndex {
     /// Returns a new possibly unique index, with `index_id` for a set of columns.
     pub fn new(
         index_id: IndexId,
-        row_type: &RowTypeLayout,
+        row_type: &ProductType,
         indexed_columns: &ColList,
         is_unique: bool,
     ) -> Result<Self, InvalidFieldError> {
+        let key_type = row_type.project(indexed_columns)?;
         // If the index is on a single column of a primitive type,
         // use a homogeneous map with a native key type.
-        let typed_index = if indexed_columns.is_singleton() {
-            let col_pos = indexed_columns.head();
-            let col = row_type.product().elements.get(col_pos.idx()).ok_or(col_pos)?;
+        let typed_index = match key_type {
+            AlgebraicType::Bool => TypedIndex::Bool(Index::new()),
+            AlgebraicType::I8 => TypedIndex::I8(Index::new()),
+            AlgebraicType::U8 => TypedIndex::U8(Index::new()),
+            AlgebraicType::I16 => TypedIndex::I16(Index::new()),
+            AlgebraicType::U16 => TypedIndex::U16(Index::new()),
+            AlgebraicType::I32 => TypedIndex::I32(Index::new()),
+            AlgebraicType::U32 => TypedIndex::U32(Index::new()),
+            AlgebraicType::I64 => TypedIndex::I64(Index::new()),
+            AlgebraicType::U64 => TypedIndex::U64(Index::new()),
+            AlgebraicType::I128 => TypedIndex::I128(Index::new()),
+            AlgebraicType::U128 => TypedIndex::U128(Index::new()),
+            AlgebraicType::I256 => TypedIndex::I256(Index::new()),
+            AlgebraicType::U256 => TypedIndex::U256(Index::new()),
+            AlgebraicType::String => TypedIndex::String(Index::new()),
 
-            match col.ty {
-                AlgebraicTypeLayout::Bool => TypedIndex::Bool(Index::new()),
-                AlgebraicTypeLayout::I8 => TypedIndex::I8(Index::new()),
-                AlgebraicTypeLayout::U8 => TypedIndex::U8(Index::new()),
-                AlgebraicTypeLayout::I16 => TypedIndex::I16(Index::new()),
-                AlgebraicTypeLayout::U16 => TypedIndex::U16(Index::new()),
-                AlgebraicTypeLayout::I32 => TypedIndex::I32(Index::new()),
-                AlgebraicTypeLayout::U32 => TypedIndex::U32(Index::new()),
-                AlgebraicTypeLayout::I64 => TypedIndex::I64(Index::new()),
-                AlgebraicTypeLayout::U64 => TypedIndex::U64(Index::new()),
-                AlgebraicTypeLayout::I128 => TypedIndex::I128(Index::new()),
-                AlgebraicTypeLayout::U128 => TypedIndex::U128(Index::new()),
-                AlgebraicTypeLayout::String => TypedIndex::String(Index::new()),
-
-                // If we don't specialize on the key type, use a map keyed on `AlgebraicValue`.
-                _ => TypedIndex::AlgebraicValue(Index::new()),
-            }
-        } else {
-            // If the index is on multiple columns, use a map keyed on `AlgebraicValue`,
-            // as the keys will be `ProductValue`s.
-            TypedIndex::AlgebraicValue(Index::new())
+            // The index is either multi-column,
+            // or we don't care to specialize on the key type,
+            // so use a map keyed on `AlgebraicValue`.
+            _ => TypedIndex::AlgebraicValue(Index::new()),
         };
         Ok(Self {
             index_id,
             is_unique,
             idx: typed_index,
+            key_type,
         })
     }
 
@@ -437,22 +475,21 @@ impl BTreeIndex {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{blob_store::HashMapBlobStore, indexes::SquashedOffset, table::Table};
+    use crate::{blob_store::HashMapBlobStore, table::test::table};
     use core::ops::Bound::*;
     use proptest::prelude::*;
     use proptest::{collection::vec, test_runner::TestCaseResult};
     use spacetimedb_data_structures::map::HashMap;
-    use spacetimedb_primitives::ColListBuilder;
+    use spacetimedb_primitives::ColId;
     use spacetimedb_sats::{
-        db::def::{TableDef, TableSchema},
         product,
         proptest::{generate_product_value, generate_row_type},
         AlgebraicType, ProductType, ProductValue,
     };
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {
-        vec((0..ty_len as u32).prop_map_into(), 1..=ty_len)
-            .prop_map(|cols| cols.into_iter().collect::<ColListBuilder>().build().unwrap())
+        vec((0..ty_len as u16).prop_map_into::<ColId>(), 1..=ty_len)
+            .prop_map(|cols| cols.into_iter().collect::<ColList>())
     }
 
     fn gen_row_and_cols() -> impl Strategy<Value = (ProductType, ColList, ProductValue)> {
@@ -466,19 +503,12 @@ mod test {
     }
 
     fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool) -> BTreeIndex {
-        let row_layout: RowTypeLayout = row_type.clone().into();
-        BTreeIndex::new(0.into(), &row_layout, cols, is_unique).unwrap()
-    }
-
-    fn table(ty: ProductType) -> Table {
-        let def = TableDef::from_product("", ty);
-        let schema = TableSchema::from_def(0.into(), def);
-        Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
+        BTreeIndex::new(0.into(), row_type, cols, is_unique).unwrap()
     }
 
     /// Extracts from `row` the relevant column values according to what columns are indexed.
     fn get_fields(cols: &ColList, row: &ProductValue) -> AlgebraicValue {
-        row.project_not_empty(cols).unwrap()
+        row.project(cols).unwrap()
     }
 
     /// Returns whether indexing `row` again would violate a unique constraint, if any.
@@ -559,7 +589,7 @@ mod test {
             let next = needle + 1;
             let range = prev..=next;
 
-            let mut val_to_ptr = HashMap::new();
+            let mut val_to_ptr = HashMap::default();
 
             // Insert `prev`, `needle`, and `next`.
             for x in range.clone() {

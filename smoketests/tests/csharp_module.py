@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 import shutil
 import subprocess
+import xml.etree.ElementTree as xml
 
 
 @requires_dotnet
@@ -17,31 +18,52 @@ class CreateProject(unittest.TestCase):
 
         try:
 
-            run_cmd("dotnet", "workload", "install", "wasi-experimental")
+            run_cmd("dotnet", "nuget", "locals", "all", "--clear", cwd=bindings, capture_stderr=True)
+            run_cmd("dotnet", "workload", "install", "wasi-experimental", "--skip-manifest-update")
             run_cmd("dotnet", "pack", cwd=bindings, capture_stderr=True)
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 spacetime("init", "--lang=csharp", tmpdir)
 
-                packed_projects = ["Codegen", "BSATN.Runtime", "Runtime"]
-                restore_sources = [str(bindings / project / "bin" / "Release") for project in packed_projects]
-                # note that nuget URL comes last, which ensures local sources should override it.
-                restore_sources.append("https://api.nuget.org/v3/index.json")
+                packed_projects = ["BSATN.Runtime", "Runtime"]
 
-                csproj = Path(tmpdir) / "StdbModule.csproj"
-                with open(csproj, "r") as f:
-                    contents = f.read()
+                config = xml.Element("configuration")
 
-                contents = contents.replace(
-                    "</PropertyGroup>",
-                    # note that nuget URL comes last, which ensures local sources should override it.
-                    f"""<RestoreSources>{str.join(";", restore_sources)}</RestoreSources>
-</PropertyGroup>""",
-                )
-                with open(csproj, "w") as f:
-                    f.write(contents)
+                sources = xml.SubElement(config, "packageSources")
+                mappings = xml.SubElement(config, "packageSourceMapping")
 
-                run_cmd("dotnet", "build", cwd=tmpdir, capture_stderr=True)
+                def add_mapping(source, pattern):
+                    mapping = xml.SubElement(mappings, "packageSource", key=source)
+                    xml.SubElement(mapping, "package", pattern=pattern)
+
+                for project in packed_projects:
+                    # Add local build directories as NuGet repositories.
+                    path = bindings / project / "bin" / "Release"
+                    project = f"SpacetimeDB.{project}"
+                    xml.SubElement(sources, "add", key=project, value=str(path))
+
+                    # Add strict package source mappings to ensure that
+                    # SpacetimeDB.* packages are used from those directories
+                    # and never from nuget.org.
+                    #
+                    # This prevents bugs where we silently used an outdated
+                    # version which led to tests passing when they shouldn't.
+                    add_mapping(project, project)
+
+                # Add fallback for other packages.
+                add_mapping("nuget.org", "*")
+
+                xml.indent(config)
+                config = xml.tostring(config, encoding="unicode", xml_declaration=True)
+
+                print("Writing `nuget.config` contents:")
+                print(config)
+
+                config_path = Path(tmpdir) / "nuget.config"
+                with open(config_path, "w") as f:
+                    f.write(config)
+
+                run_cmd("dotnet", "publish", cwd=tmpdir, capture_stderr=True)
 
         except subprocess.CalledProcessError as e:
             print(e)

@@ -6,13 +6,13 @@ mod impls;
 pub mod serde;
 
 #[doc(hidden)]
-pub use impls::{visit_named_product, visit_seq_product};
-use smallvec::SmallVec;
+pub use impls::{visit_named_product, visit_seq_product, WithBound};
 
+use crate::{i256, u256};
+use core::fmt;
+use core::marker::PhantomData;
+use smallvec::SmallVec;
 use std::borrow::Borrow;
-use std::collections::BTreeMap;
-use std::fmt;
-use std::marker::PhantomData;
 
 /// A **data format** that can deserialize any data structure supported by SATS.
 ///
@@ -87,25 +87,31 @@ pub trait Deserializer<'de>: Sized {
     /// Deserializes a `u128` value from the input.
     fn deserialize_u128(self) -> Result<u128, Self::Error>;
 
-    /// Deserializes an `i8 value from the input.
+    /// Deserializes a `u256` value from the input.
+    fn deserialize_u256(self) -> Result<u256, Self::Error>;
+
+    /// Deserializes an `i8` value from the input.
     fn deserialize_i8(self) -> Result<i8, Self::Error>;
 
-    /// Deserializes an `i16 value from the input.
+    /// Deserializes an `i16` value from the input.
     fn deserialize_i16(self) -> Result<i16, Self::Error>;
 
-    /// Deserializes an `i32 value from the input.
+    /// Deserializes an `i32` value from the input.
     fn deserialize_i32(self) -> Result<i32, Self::Error>;
 
-    /// Deserializes an `i64 value from the input.
+    /// Deserializes an `i64` value from the input.
     fn deserialize_i64(self) -> Result<i64, Self::Error>;
 
-    /// Deserializes an `i128 value from the input.
+    /// Deserializes an `i128` value from the input.
     fn deserialize_i128(self) -> Result<i128, Self::Error>;
 
-    /// Deserializes an `f32 value from the input.
+    /// Deserializes an `i256` value from the input.
+    fn deserialize_i256(self) -> Result<i256, Self::Error>;
+
+    /// Deserializes an `f32` value from the input.
     fn deserialize_f32(self) -> Result<f32, Self::Error>;
 
-    /// Deserializes an `f64 value from the input.
+    /// Deserializes an `f64` value from the input.
     fn deserialize_f64(self) -> Result<f64, Self::Error>;
 
     /// Deserializes a string-like object the input.
@@ -138,31 +144,6 @@ pub trait Deserializer<'de>: Sized {
         visitor: V,
         seed: T,
     ) -> Result<V::Output, Self::Error>;
-
-    /// Deserializes a map value.
-    ///
-    /// This is typically the same as [`deserialize_map_seed`](Deserializer::deserialize_map_seed)
-    /// with an uninteresting `seed` value.
-    fn deserialize_map<Vi: MapVisitor<'de, K, V>, K: Deserialize<'de>, V: Deserialize<'de>>(
-        self,
-        visitor: Vi,
-    ) -> Result<Vi::Output, Self::Error> {
-        self.deserialize_map_seed(visitor, PhantomData, PhantomData)
-    }
-
-    /// Deserializes a map value.
-    ///
-    /// The deserialization is provided with `kseed` and `vseed` for keys and values respectively.
-    fn deserialize_map_seed<
-        Vi: MapVisitor<'de, K::Output, V::Output>,
-        K: DeserializeSeed<'de> + Clone,
-        V: DeserializeSeed<'de> + Clone,
-    >(
-        self,
-        visitor: Vi,
-        kseed: K,
-        vseed: V,
-    ) -> Result<Vi::Output, Self::Error>;
 }
 
 /// The `Error` trait allows [`Deserialize`] implementations to create descriptive error messages
@@ -214,7 +195,7 @@ pub trait Error: Sized {
     fn unknown_variant_tag<'de, T: SumVisitor<'de>>(tag: u8, expected: &T) -> Self {
         Self::custom(format_args!(
             "unknown tag {tag:#x} for sum type {}",
-            expected.sum_name().unwrap_or("<sum>"),
+            expected.sum_name().unwrap_or("<unknown>"),
         ))
     }
 
@@ -548,51 +529,6 @@ pub trait ArrayAccess<'de> {
     }
 }
 
-/// A visitor walking through a [`Deserializer`] for maps.
-pub trait MapVisitor<'de, K, V> {
-    /// The output produced by this visitor.
-    type Output;
-
-    /// The input contains a key-value map.
-    fn visit<A: MapAccess<'de, Key = K, Value = V>>(self, map: A) -> Result<Self::Output, A::Error>;
-}
-
-/// Provides a [`MapVisitor`] with access to each element of the array in the input.
-///
-/// This is a trait that a [`Deserializer`] passes to a [`MapVisitor`] implementation.
-pub trait MapAccess<'de> {
-    /// The key type of the map.
-    type Key;
-
-    /// The value type of the map.
-    type Value;
-
-    /// The error type that can be returned if some error occurs during deserialization.
-    type Error: Error;
-
-    /// This returns `Ok(Some((key, value)))` for the next (key-value) pair in the map,
-    /// or `Ok(None)` if there are no more remaining items.
-    #[allow(clippy::type_complexity)]
-    fn next_entry(&mut self) -> Result<Option<(Self::Key, Self::Value)>, Self::Error>;
-
-    /// Returns the number of elements remaining in the map, if known.
-    fn size_hint(&self) -> Option<usize> {
-        None
-    }
-}
-
-impl<'de, A: MapAccess<'de>> ArrayAccess<'de> for A {
-    type Element = (A::Key, A::Value);
-    type Error = A::Error;
-
-    fn next_element(&mut self) -> Result<Option<Self::Element>, Self::Error> {
-        self.next_entry()
-    }
-    fn size_hint(&self) -> Option<usize> {
-        self.size_hint()
-    }
-}
-
 /// `DeserializeSeed` is the stateful form of the [`Deserialize`] trait.
 pub trait DeserializeSeed<'de> {
     /// The type produced by using this seed.
@@ -703,17 +639,6 @@ impl<'de, T, const N: usize> ArrayVisitor<'de, T> for BasicSmallVecVisitor<N> {
 
     fn visit<A: ArrayAccess<'de, Element = T>>(self, vec: A) -> Result<Self::Output, A::Error> {
         array_visit(vec)
-    }
-}
-
-/// An implementation of [`MapVisitor<'de, K, V>`] where the output is a `BTreeMap<K, V>`.
-pub struct BasicMapVisitor;
-
-impl<'de, K: Ord, V> MapVisitor<'de, K, V> for BasicMapVisitor {
-    type Output = BTreeMap<K, V>;
-
-    fn visit<A: MapAccess<'de, Key = K, Value = V>>(self, map: A) -> Result<Self::Output, A::Error> {
-        Ok(array_visit::<_, Vec<_>>(map)?.into_iter().collect())
     }
 }
 

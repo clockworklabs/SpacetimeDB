@@ -1,8 +1,17 @@
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
+use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, SumTypeVariant};
+use crate::{AlgebraicType, AlgebraicValue, SpacetimeType, SumTypeVariant};
+
+/// The tag used for the `Interval` variant of the special `ScheduleAt` sum type.
+pub const SCHEDULE_AT_INTERVAL_TAG: &str = "Interval";
+/// The tag used for the `Time` variant of the special `ScheduleAt` sum type.
+pub const SCHEDULE_AT_TIME_TAG: &str = "Time";
+/// The tag used for the `some` variant of the special `option` sum type.
+pub const OPTION_SOME_TAG: &str = "some";
+/// The tag used for the `none` variant of the special `option` sum type.
+pub const OPTION_NONE_TAG: &str = "none";
 
 /// A structural sum type.
 ///
@@ -28,7 +37,7 @@ use crate::{AlgebraicType, AlgebraicValue, SumTypeVariant};
 /// See also: https://ncatlab.org/nlab/show/sum+type.
 ///
 /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct SumType {
     /// The possible variants of the sum type.
@@ -49,21 +58,60 @@ impl SumType {
         Self { variants }
     }
 
-    /// Returns whether this sum type looks like an option type.
+    /// Check whether this sum type is a structural option type.
     ///
-    /// An option type has `some(T)` as its first variant and `none` as its second.
+    /// A structural option type has `some(T)` as its first variant and `none` as its second.
     /// That is, `{ some(T), none }` or `some: T | none` depending on your notation.
+    /// Note that `some` and `none` are lowercase, unlike Rust's `Option`.
+    /// Order matters, and an option type with these variants in the opposite order will not be recognized.
+    ///
+    /// If the type does look like a structural option type, returns the type `T`.
     pub fn as_option(&self) -> Option<&AlgebraicType> {
         match &*self.variants {
             [first, second]
                 if second.is_unit() // Done first to avoid pointer indirection when it doesn't matter.
-                    && first.has_name("some")
-                    && second.has_name("none") =>
+                    && first.has_name(OPTION_SOME_TAG)
+                    && second.has_name(OPTION_NONE_TAG) =>
             {
                 Some(&first.algebraic_type)
             }
             _ => None,
         }
+    }
+
+    /// Check whether this sum type is a structural option type.
+    ///
+    /// A structural option type has `some(T)` as its first variant and `none` as its second.
+    /// That is, `{ some(T), none }` or `some: T | none` depending on your notation.
+    /// Note that `some` and `none` are lowercase, unlike Rust's `Option`.
+    /// Order matters, and an option type with these variants in the opposite order will not be recognized.
+    pub fn is_option(&self) -> bool {
+        self.as_option().is_some()
+    }
+
+    /// Return whether this sum type is empty, that is, has no variants.
+    pub fn is_empty(&self) -> bool {
+        self.variants.is_empty()
+    }
+
+    /// Return whether this sum type is the special `ScheduleAt` type,
+    /// `Interval(u64) | Time(u64)`.
+    /// Does not follow `Ref`s.
+    pub fn is_schedule_at(&self) -> bool {
+        match &*self.variants {
+            [first, second] => {
+                first.has_name(SCHEDULE_AT_INTERVAL_TAG)
+                    && first.algebraic_type.is_u64()
+                    && second.has_name(SCHEDULE_AT_TIME_TAG)
+                    && second.algebraic_type.is_u64()
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns whether this sum type is a special known type, currently `Option` or `ScheduleAt`.
+    pub fn is_special(&self) -> bool {
+        self.is_option() || self.is_schedule_at()
     }
 
     /// Returns whether this sum type is like on in C without data attached to the variants.
@@ -89,6 +137,11 @@ impl SumType {
         } else {
             None
         }
+    }
+
+    /// Returns the sum type variant with the given `tag`.
+    pub fn get_variant_by_tag(&self, tag: u8) -> Option<&SumTypeVariant> {
+        self.variants.get(tag as usize)
     }
 }
 

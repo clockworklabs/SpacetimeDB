@@ -22,7 +22,7 @@
     &nbsp;
     <a href="https://github.com/clockworklabs/spacetimedb"><img src="https://img.shields.io/badge/built_with-Rust-dca282.svg?style=flat-square"></a>
     &nbsp;
-	<a href="https://github.com/clockworklabs/spacetimedb/actions"><img src="https://img.shields.io/github/actions/workflow/status/clockworklabs/spacetimedb/ci.yml?style=flat-square&branch=main"></a>
+	<a href="https://github.com/clockworklabs/spacetimedb/actions"><img src="https://img.shields.io/github/actions/workflow/status/clockworklabs/spacetimedb/ci.yml?style=flat-square&branch=master"></a>
     &nbsp;
     <a href="https://status.spacetimedb.com"><img src="https://img.shields.io/uptimerobot/ratio/7/m784409192-e472ca350bb615372ededed7?label=cloud%20uptime&style=flat-square"></a>
     &nbsp;
@@ -30,7 +30,11 @@
     &nbsp;
     <a href="https://github.com/clockworklabs/spacetimedb/blob/master/LICENSE.txt"><img src="https://img.shields.io/badge/license-BSL_1.1-00bfff.svg?style=flat-square"></a>
 </p>
-
+<p align="center">
+    <a href="https://crates.io/crates/spacetimedb"><img src="https://img.shields.io/crates/d/spacetimedb?color=e45928&label=Rust%20Crate&style=flat-square"></a>
+    &nbsp;
+    <a href="https://www.nuget.org/packages/SpacetimeDB.Runtime"><img src="https://img.shields.io/nuget/dt/spacetimedb.runtime?color=0b6cff&label=NuGet%20Package&style=flat-square"></a>
+</p>
 <p align="center">
     <a href="https://discord.gg/spacetimedb"><img src="https://img.shields.io/discord/1037340874172014652?label=discord&style=flat-square&color=5a66f6"></a>
     &nbsp;
@@ -172,8 +176,8 @@ You can write SpacetimeDB modules in a bunch of popular languages, with many mor
 
 - [Rust](https://spacetimedb.com/docs/modules/rust/quickstart)
 - [C# (experimental)](https://spacetimedb.com/docs/modules/c-sharp/quickstart)
-- Typescript (coming soon)
-- Python (coming soon)
+- Typescript (planned)
+- Python (planned)
 - C++ (planned)
 - Lua (planned)
 
@@ -182,7 +186,7 @@ You can write SpacetimeDB modules in a bunch of popular languages, with many mor
 - [Rust](https://spacetimedb.com/docs/sdks/rust/quickstart)
 - [C#](https://spacetimedb.com/docs/sdks/c-sharp/quickstart)
 - [Typescript](https://spacetimedb.com/docs/sdks/typescript/quickstart)
-- [Python](https://spacetimedb.com/docs/sdks/python/quickstart)
+- Python (planned)
 - C++ (planned)
 - Lua (planned)
 

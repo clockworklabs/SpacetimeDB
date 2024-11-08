@@ -1,0 +1,263 @@
+﻿{
+  Diagnostics: [
+    {/*
+    [AutoInc]
+    public float AutoIncField;
+                 ^^^^^^^^^^^^
+
+*/
+      Message: Field AutoIncField is marked as AutoInc but it has a non-integer type float.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0002,
+        Title: AutoInc fields must be of integer type,
+        MessageFormat: Field {0} is marked as AutoInc but it has a non-integer type {1}.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [AutoInc]
+    public string IdentityField;
+                  ^^^^^^^^^^^^^
+}
+*/
+      Message: Field IdentityField is marked as AutoInc but it has a non-integer type string.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0002,
+        Title: AutoInc fields must be of integer type,
+        MessageFormat: Field {0} is marked as AutoInc but it has a non-integer type {1}.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [Unique]
+    public int? UniqueField;
+                ^^^^^^^^^^^
+
+*/
+      Message: Field UniqueField is marked as Unique but it has a type int? which is not an equatable primitive.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0003,
+        Title: Unique fields must be equatable,
+        MessageFormat: Field {0} is marked as Unique but it has a type {1} which is not an equatable primitive.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [PrimaryKey]
+    public TestEnumWithExplicitValues PrimaryKeyField;
+                                      ^^^^^^^^^^^^^^^
+}
+*/
+      Message: Field PrimaryKeyField is marked as Unique but it has a type TestEnumWithExplicitValues which is not an equatable primitive.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0003,
+        Title: Unique fields must be equatable,
+        MessageFormat: Field {0} is marked as Unique but it has a type {1} which is not an equatable primitive.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Table]
+public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y)> { }
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+*/
+      Message: Table TestTableTaggedEnum is a tagged enum, which is not allowed.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0006,
+        Title: Tables cannot be tagged enums,
+        MessageFormat: Table {0} is a tagged enum, which is not allowed.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table(
+^^^^^^^^^^^^^^^^^^^
+    Name = "TestIncompatibleSchedule1",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Scheduled = nameof(TestIncompatibleScheduleReducer)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)]
+^^
+[SpacetimeDB.Table(Name = "TestIncompatibleSchedule2")]
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestIncompatibleSchedule
+*/
+      Message: Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0010,
+        Title: Incompatible `[Table(Schedule)]` attributes,
+        MessageFormat: Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table]
+^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Index]
+^^^^^^^^^^^^^^^^^^^
+public partial struct TestIndexWithoutColumns { }
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+*/
+      Message: An internal error occurred during codegen: Object reference not set to an instance of an object.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDBINT0001,
+        Title: Internal SpacetimeDB codegen error,
+        MessageFormat: An internal error occurred during codegen: {0},
+        Category: SpacetimeDB.Internal,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table]
+^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Index(BTree = [])]
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestIndexWithEmptyColumns { }
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+*/
+      Message: An internal error occurred during codegen: Object reference not set to an instance of an object.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDBINT0001,
+        Title: Internal SpacetimeDB codegen error,
+        MessageFormat: An internal error occurred during codegen: {0},
+        Category: SpacetimeDB.Internal,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.Reducer]
+    public static int TestReducerReturnType(ReducerContext ctx) => 0;
+                  ^^^
+
+*/
+      Message: Reducer method TestReducerReturnType returns int instead of void.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0001,
+        Title: [SpacetimeDB.Reducer] methods must return void,
+        MessageFormat: Reducer method {0} returns {1} instead of void.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.Reducer]
+    public static void TestReducerWithoutContext() { }
+                                                ^^
+
+*/
+      Message: Reducer method TestReducerWithoutContext does not have a ReducerContext parameter.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0008,
+        Title: Reducers must have a first argument of type ReducerContext,
+        MessageFormat: Reducer method {0} does not have a ReducerContext parameter.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.Reducer]
+    public static void OnReducerWithReservedPrefix(ReducerContext ctx) { }
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+*/
+      Message: Reducer method OnReducerWithReservedPrefix starts with 'On', which is a reserved prefix.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0009,
+        Title: Reducer method has a reserved name prefix,
+        MessageFormat: Reducer method {0} starts with '{1}', which is a reserved prefix.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.Reducer]
+    public static void __ReducerWithReservedPrefix(ReducerContext ctx) { }
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+      Message: Reducer method __ReducerWithReservedPrefix starts with '__', which is a reserved prefix.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0009,
+        Title: Reducer method has a reserved name prefix,
+        MessageFormat: Reducer method {0} starts with '{1}', which is a reserved prefix.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: Reducer with the same export name __init__ is registered in multiple places: Reducers.TestDuplicateReducerKind1, Reducers.TestDuplicateReducerKind2,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0007,
+        Title: Duplicate exports,
+        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: Reducer with the same export name TestDuplicateReducerName is registered in multiple places: Reducers.TestDuplicateReducerName, Reducers.InAnotherNamespace.TestDuplicateReducerName,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0007,
+        Title: Duplicate exports,
+        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: Table with the same export name TestDuplicateTableName is registered in multiple places: global::TestDuplicateTableName, global::InAnotherNamespace.TestDuplicateTableName,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0007,
+        Title: Duplicate exports,
+        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    }
+  ]
+}

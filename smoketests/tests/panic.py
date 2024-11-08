@@ -2,21 +2,21 @@ from .. import Smoketest
 
 class Panic(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{spacetimedb, println};
+use spacetimedb::{println, ReducerContext};
 use std::cell::RefCell;
 
 thread_local! {
     static X: RefCell<u32> = RefCell::new(0);
 }
-#[spacetimedb(reducer)]
-fn first() {
+#[spacetimedb::reducer]
+fn first(_ctx: &ReducerContext) {
     X.with(|x| {
         let _x = x.borrow_mut();
         panic!()
     })
 }
-#[spacetimedb(reducer)]
-fn second() {
+#[spacetimedb::reducer]
+fn second(_ctx: &ReducerContext) {
     X.with(|x| *x.borrow_mut());
     println!("Test Passed");
 }

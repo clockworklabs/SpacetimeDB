@@ -7,13 +7,13 @@ use thiserror::Error;
 use crate::{
     error,
     varint::{decode_varint, encode_varint},
-    Encode, Varchar,
+    Encode, Varchar, DEFAULT_LOG_FORMAT_VERSION,
 };
 
 // Re-export so we get a hyperlink in rustdocs by default
 pub use spacetimedb_primitives::TableId;
 
-/// A visitor useful to implement stateful [`Decoder`]s of [`Txdata`] payloads.
+/// A visitor useful to implement stateful [`super::Decoder`]s of [`Txdata`] payloads.
 pub trait Visitor {
     type Error: From<DecodeError>;
     /// The type corresponding to one element in [`Ops::rowdata`].
@@ -116,7 +116,7 @@ impl<T> Txdata<T> {
 }
 
 impl<T: Encode> Txdata<T> {
-    pub const VERSION: u8 = 0;
+    pub const VERSION: u8 = DEFAULT_LOG_FORMAT_VERSION;
 
     pub fn encode(&self, buf: &mut impl BufWriter) {
         let mut flags = Flags::empty();

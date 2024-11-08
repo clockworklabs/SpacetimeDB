@@ -1,116 +1,48 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use std::any::TypeId;
-use std::collections::{btree_map, BTreeMap};
+use crate::timestamp::with_timestamp_set;
+use crate::{sys, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, Timestamp};
+pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
+use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType};
+use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
+use spacetimedb_lib::sats::typespace::TypespaceBuilder;
+use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
+use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
+use spacetimedb_lib::{bsatn, Address, Identity, ProductType, RawModuleDef};
+use spacetimedb_primitives::*;
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
-use sys::Buffer;
-
-use crate::sats::db::def::{ColumnDef, ConstraintDef, IndexDef, SequenceDef, TableDef};
-use crate::timestamp::with_timestamp_set;
-use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timestamp};
-use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
-use spacetimedb_lib::sats::db::auth::StTableType;
-use spacetimedb_lib::sats::typespace::TypespaceBuilder;
-use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
-use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, Address, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDesc, TypeAlias};
-use spacetimedb_primitives::*;
+use sys::raw::{BytesSink, BytesSource};
 
 /// The `sender` invokes `reducer` at `timestamp` and provides it with the given `args`.
 ///
 /// Returns an invalid buffer on success
 /// and otherwise the error is written into the fresh one returned.
-pub fn invoke_reducer<'a, A: Args<'a>, T>(
-    reducer: impl Reducer<'a, A, T>,
-    sender: Buffer,
-    client_address: Buffer,
-    timestamp: u64,
+pub fn invoke_reducer<'a, A: Args<'a>>(
+    reducer: impl Reducer<'a, A>,
+    ctx: ReducerContext,
     args: &'a [u8],
-) -> Buffer {
-    let ctx = assemble_context(sender, timestamp, client_address);
-
+) -> Result<(), Box<str>> {
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
     // Run the reducer with the environment all set up.
-    let invoke = || reducer.invoke(ctx, args);
-    #[cfg(feature = "rand")]
-    let invoke = || crate::rng::with_rng_set(invoke);
-    let res = with_timestamp_set(ctx.timestamp, invoke);
-
-    // Any error is pushed into a `Buffer`.
-    cvt_result(res)
+    with_timestamp_set(ctx.timestamp, || reducer.invoke(&ctx, args))
 }
-
-/// Creates an index with the name `index_name` and type `index_type`,
-/// on a product of the given columns ids in `col_ids`,
-/// identifying columns in the table identified by `table_id`.
-///
-/// Currently only single-column-indices are supported
-/// and they may only be of the btree index type.
-/// Attempting to create a multi-column index will result in a panic.
-/// Attempting to use an index type other than btree, meanwhile, will return an error.
-///
-/// Returns an invalid buffer on success
-/// and otherwise the error is written into the fresh one returned
-/// when `table_id` doesn't identify a table.
-pub fn create_index(index_name: &str, table_id: TableId, index_type: sys::raw::IndexType, col_ids: Vec<u8>) -> Buffer {
-    let result = sys::create_index(index_name, table_id, index_type as u8, &col_ids);
-    cvt_result(result.map_err(cvt_errno))
-}
-
-/// Creates a reducer context from the given `sender`, `timestamp` and `client_address`.
-///
-/// `sender` must contain 32 bytes, from which we will read an `Identity`.
-///
-/// `timestamp` is a count of microseconds since the Unix epoch.
-///
-/// `client_address` must contain 16 bytes, from which we will read an `Address`.
-/// The all-zeros `client_address` (constructed by [`Address::__dummy`]) is used as a sentinel,
-/// and translated to `None`.
-fn assemble_context(sender: Buffer, timestamp: u64, client_address: Buffer) -> ReducerContext {
-    let sender = Identity::from_byte_array(sender.read_array::<32>());
-
-    let timestamp = Timestamp::UNIX_EPOCH + Duration::from_micros(timestamp);
-
-    let address = Address::from_arr(&client_address.read_array::<16>());
-
-    let address = if address == Address::__DUMMY {
-        None
-    } else {
-        Some(address)
-    };
-
-    ReducerContext {
-        sender,
-        timestamp,
-        address,
-    }
-}
-
-/// Converts `errno` into a string message.
-fn cvt_errno(errno: sys::Errno) -> Box<str> {
-    let message = format!("{errno}");
-    message.into_boxed_str()
-}
-
-/// Converts `res` into a `Buffer` where `Ok(_)` results in an invalid buffer
-/// and an error message is moved into a fresh buffer.
-fn cvt_result(res: Result<(), Box<str>>) -> Buffer {
-    match res {
-        Ok(()) => Buffer::INVALID,
-        Err(errmsg) => Buffer::alloc(errmsg.as_bytes()),
-    }
-}
-
 /// A trait for types representing the *execution logic* of a reducer.
-///
-/// The type parameter `T` is used for determining whether there is a context argument.
-pub trait Reducer<'de, A: Args<'de>, T> {
-    fn invoke(&self, ctx: ReducerContext, args: A) -> Result<(), Box<str>>;
+#[diagnostic::on_unimplemented(
+    message = "invalid reducer signature",
+    label = "this reducer signature is not valid",
+    note = "",
+    note = "reducer signatures must match the following pattern:",
+    note = "    `Fn(&ReducerContext, [T1, ...]) [-> Result<(), impl Display>]`",
+    note = "where each `Ti` type implements `SpacetimeType`.",
+    note = ""
+)]
+pub trait Reducer<'de, A: Args<'de>> {
+    fn invoke(&self, ctx: &ReducerContext, args: A) -> ReducerResult;
 }
 
 /// A trait for types that can *describe* a reducer.
@@ -118,17 +50,14 @@ pub trait ReducerInfo {
     /// The name of the reducer.
     const NAME: &'static str;
 
+    /// The lifecycle of the reducer, if there is one.
+    const LIFECYCLE: Option<LifecycleReducer> = None;
+
     /// A description of the parameter names of the reducer.
     const ARG_NAMES: &'static [Option<&'static str>];
 
     /// The function to call to invoke the reducer.
     const INVOKE: ReducerFn;
-}
-
-/// A trait for reducer types knowing their repeat interval.
-pub trait RepeaterInfo: ReducerInfo {
-    /// At what duration intervals should this reducer repeat?
-    const REPEAT_INTERVAL: Duration;
 }
 
 /// A trait of types representing the arguments of a reducer.
@@ -143,62 +72,116 @@ pub trait Args<'de>: Sized {
     fn serialize_seq_product<S: SerializeSeqProduct>(&self, prod: &mut S) -> Result<(), S::Error>;
 
     /// Returns the schema for this reducer provided a `typespace`.
-    fn schema<I: ReducerInfo>(typespace: &mut impl TypespaceBuilder) -> ReducerDef;
-}
-
-/// A trait of types representing the arguments of a scheduled reducer.
-pub trait ScheduleArgs<'de>: Sized {
-    /// The representation of the reducers arguments.
-    type Args: Args<'de>;
-
-    /// Convert into the real arguments.
-    fn into_args(self) -> Self::Args;
-}
-
-impl<'de, T: Args<'de>> ScheduleArgs<'de> for T {
-    type Args = Self;
-    fn into_args(self) -> Self::Args {
-        self
-    }
+    fn schema<I: ReducerInfo>(typespace: &mut impl TypespaceBuilder) -> ProductType;
 }
 
 /// A trait of types representing the result of executing a reducer.
-pub trait ReducerResult {
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a valid reducer return type",
+    note = "reducers cannot return values -- you can only return `()` or `Result<(), impl Display>`"
+)]
+pub trait IntoReducerResult {
     /// Convert the result into form where there is no value
     /// and the error message is a string.
     fn into_result(self) -> Result<(), Box<str>>;
 }
-impl ReducerResult for () {
+impl IntoReducerResult for () {
     #[inline]
     fn into_result(self) -> Result<(), Box<str>> {
         Ok(self)
     }
 }
-impl<E: fmt::Debug> ReducerResult for Result<(), E> {
+impl<E: fmt::Display> IntoReducerResult for Result<(), E> {
     #[inline]
     fn into_result(self) -> Result<(), Box<str>> {
-        self.map_err(|e| format!("{e:?}").into())
+        self.map_err(|e| e.to_string().into())
     }
 }
 
+#[diagnostic::on_unimplemented(
+    message = "the first argument of a reducer must be `&ReducerContext`",
+    note = "all reducers must take `&ReducerContext` as their first argument"
+)]
+pub trait ReducerContextArg {
+    // a little hack used in the macro to make error messages nicer. it generates <T as ReducerContextArg>::_ITEM
+    #[doc(hidden)]
+    const _ITEM: () = ();
+}
+impl ReducerContextArg for &ReducerContext {}
+
 /// A trait of types that can be an argument of a reducer.
-pub trait ReducerArg<'de> {}
-impl<'de, T: Deserialize<'de>> ReducerArg<'de> for T {}
-impl ReducerArg<'_> for ReducerContext {}
-/// Assert that `T: ReducerArg`.
-pub fn assert_reducer_arg<'de, T: ReducerArg<'de>>() {}
-/// Assert that `T: ReducerResult`.
-pub fn assert_reducer_ret<T: ReducerResult>() {}
-/// Assert that `T: TableType`.
-pub const fn assert_table<T: TableType>() {}
+#[diagnostic::on_unimplemented(
+    message = "the reducer argument `{Self}` does not implement `SpacetimeType`",
+    note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition"
+)]
+pub trait ReducerArg {
+    // a little hack used in the macro to make error messages nicer. it generates <T as ReducerArg>::_ITEM
+    #[doc(hidden)]
+    const _ITEM: () = ();
+}
+impl<T: SpacetimeType> ReducerArg for T {}
+
+/// Assert that a reducer type-checks with a given type.
+pub const fn scheduled_reducer_typecheck<'de, Row>(_x: impl ReducerForScheduledTable<'de, Row>)
+where
+    Row: SpacetimeType + Serialize + Deserialize<'de>,
+{
+    core::mem::forget(_x);
+}
+
+#[diagnostic::on_unimplemented(
+    message = "invalid signature for scheduled table reducer",
+    note = "the scheduled reducer must take `{TableRow}` as its sole argument",
+    note = "e.g: `fn scheduled_reducer(ctx: &ReducerContext, arg: {TableRow})`"
+)]
+pub trait ReducerForScheduledTable<'de, TableRow> {}
+impl<'de, TableRow: SpacetimeType + Serialize + Deserialize<'de>, R: Reducer<'de, (TableRow,)>>
+    ReducerForScheduledTable<'de, TableRow> for R
+{
+}
+
+// the macro generates <T as SpacetimeType>::make_type::<DummyTypespace>
+pub struct DummyTypespace;
+impl TypespaceBuilder for DummyTypespace {
+    fn add(
+        &mut self,
+        _: std::any::TypeId,
+        _: Option<&'static str>,
+        _: impl FnOnce(&mut Self) -> spacetimedb_lib::AlgebraicType,
+    ) -> spacetimedb_lib::AlgebraicType {
+        unreachable!()
+    }
+}
+
+#[diagnostic::on_unimplemented(
+    message = "the column type `{Self}` does not implement `SpacetimeType`",
+    note = "table column types all must implement `SpacetimeType`",
+    note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition"
+)]
+pub trait TableColumn {
+    // a little hack used in the macro to make error messages nicer. it generates <T as TableColumn>::_ITEM
+    #[doc(hidden)]
+    const _ITEM: () = ();
+}
+impl<T: SpacetimeType> TableColumn for T {}
+
+/// Assert that the primary_key column of a scheduled table is a u64.
+pub const fn assert_scheduled_table_primary_key<T: ScheduledTablePrimaryKey>() {}
+
+mod sealed {
+    pub trait Sealed {}
+}
+#[diagnostic::on_unimplemented(
+    message = "scheduled table primary key must be a `u64`",
+    label = "should be `u64`, not `{Self}`"
+)]
+pub trait ScheduledTablePrimaryKey: sealed::Sealed {}
+impl sealed::Sealed for u64 {}
+impl ScheduledTablePrimaryKey for u64 {}
 
 /// Used in the last type parameter of `Reducer` to indicate that the
 /// context argument *should* be passed to the reducer logic.
 pub struct ContextArg;
-
-/// Used in the last type parameter of `Reducer` to indicate that the
-/// context argument *should not* be passed to the reducer logic.
-pub struct NoContextArg;
 
 /// A visitor providing a deserializer for a type `A: Args`.
 struct ArgsVisitor<A> {
@@ -248,67 +231,41 @@ macro_rules! impl_reducer {
                 Ok(($($T,)*))
             }
 
+            #[allow(non_snake_case)]
             fn serialize_seq_product<Ser: SerializeSeqProduct>(&self, _prod: &mut Ser) -> Result<(), Ser::Error> {
                 // For every element in the product, serialize.
-                #[allow(non_snake_case)]
                 let ($($T,)*) = self;
                 $(_prod.serialize_element($T)?;)*
                 Ok(())
             }
 
             #[inline]
-            fn schema<Info: ReducerInfo>(_typespace: &mut impl TypespaceBuilder) -> ReducerDef {
+            #[allow(non_snake_case, irrefutable_let_patterns)]
+            fn schema<Info: ReducerInfo>(_typespace: &mut impl TypespaceBuilder) -> ProductType {
                 // Extract the names of the arguments.
-                #[allow(non_snake_case, irrefutable_let_patterns)]
                 let [.., $($T),*] = Info::ARG_NAMES else { panic!() };
-                ReducerDef {
-                    name: Info::NAME.into(),
-                    args: vec![
+                ProductType::new(vec![
                         $(ProductTypeElement {
                             name: $T.map(Into::into),
                             algebraic_type: <$T>::make_type(_typespace),
                         }),*
-                    ],
-                }
-            }
-        }
-
-        // `ScheduleArgs` prepends `ReducerContext` to the tuple.
-        impl<'de, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> ScheduleArgs<'de> for (ReducerContext, $($T,)*) {
-            type Args = ($($T,)*);
-            #[allow(clippy::unused_unit)]
-            fn into_args(self) -> Self::Args {
-                #[allow(non_snake_case)]
-                let (_ctx, $($T,)*) = self;
-                ($($T,)*)
+                ].into())
             }
         }
 
         // Implement `Reducer<..., ContextArg>` for the tuple type `($($T,)*)`.
-        impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*), ContextArg> for Func
+        impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*)> for Func
         where
-            Func: Fn(ReducerContext, $($T),*) -> Ret,
-            Ret: ReducerResult
+            Func: Fn(&ReducerContext, $($T),*) -> Ret,
+            Ret: IntoReducerResult
         {
-            fn invoke(&self, ctx: ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
-                #[allow(non_snake_case)]
+            #[allow(non_snake_case)]
+            fn invoke(&self, ctx: &ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
                 let ($($T,)*) = args;
                 self(ctx, $($T),*).into_result()
             }
         }
 
-        // Implement `Reducer<..., NoContextArg>` for the tuple type `($($T,)*)`.
-        impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*), NoContextArg> for Func
-        where
-            Func: Fn($($T),*) -> Ret,
-            Ret: ReducerResult
-        {
-            fn invoke(&self, _ctx: ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
-                #[allow(non_snake_case)]
-                let ($($T,)*) = args;
-                self($($T),*).into_result()
-            }
-        }
     };
     // Counts the number of elements in the tuple.
     (@count $($T:ident)*) => {
@@ -331,38 +288,6 @@ impl_serialize!(['de, A: Args<'de>] SerDeArgs<A>, (self, ser) => {
     prod.end()
 });
 
-/// Returns a timestamp that is `duration` from now.
-#[track_caller]
-pub fn schedule_in(duration: Duration) -> Timestamp {
-    Timestamp::now()
-        .checked_add(duration)
-        .unwrap_or_else(|| panic!("{duration:?} is too far into the future to schedule"))
-}
-
-/// Schedule reducer `R` to be executed async at `time`stamp with arguments `args`.
-///
-/// Returns a token for the schedule that can be used to cancel the schedule.
-pub fn schedule<'de, R: ReducerInfo>(time: Timestamp, args: impl ScheduleArgs<'de>) -> ScheduleToken<R> {
-    // bsatn serialize the arguments into a vector.
-    let arg_bytes = bsatn::to_vec(&SerDeArgs(args.into_args())).unwrap();
-
-    // Schedule the reducer.
-    let id = sys::schedule(R::NAME, &arg_bytes, time.micros_since_epoch);
-    ScheduleToken::new(id)
-}
-
-/// Schedule a repeating `_reducer` `I` with repeater args `A`.
-pub fn schedule_repeater<A: RepeaterArgs, T, I: RepeaterInfo>(_reducer: impl for<'de> Reducer<'de, A, T>) {
-    // First time to schedule reducer at.
-    let time = schedule_in(I::REPEAT_INTERVAL);
-
-    // bsatn serialize the repeater args into a vector.
-    let args = bsatn::to_vec(&SerDeArgs(A::get_now())).unwrap();
-
-    // Schedule the reducer.
-    sys::schedule(I::NAME, &args, time.micros_since_epoch);
-}
-
 /// A trait for types representing repeater arguments.
 pub trait RepeaterArgs: for<'de> Args<'de> {
     /// Returns a notion of now in time.
@@ -379,6 +304,12 @@ impl RepeaterArgs for (Timestamp,) {
     }
 }
 
+/// A trait for types that can *describe* a row-level security policy.
+pub trait RowLevelSecurityInfo {
+    /// The SQL expression for the row-level security policy.
+    const SQL: &'static str;
+}
+
 /// Registers into `DESCRIBERS` a function `f` to modify the module builder.
 fn register_describer(f: fn(&mut ModuleBuilder)) {
     DESCRIBERS.lock().unwrap().push(f)
@@ -387,98 +318,64 @@ fn register_describer(f: fn(&mut ModuleBuilder)) {
 /// Registers a describer for the `SpacetimeType` `T`.
 pub fn register_reftype<T: SpacetimeType>() {
     register_describer(|module| {
-        T::make_type(module);
+        T::make_type(&mut module.inner);
     })
 }
 
 /// Registers a describer for the `TableType` `T`.
-pub fn register_table<T: TableType>() {
+pub fn register_table<T: Table>() {
     register_describer(|module| {
-        let data = *T::make_type(module).as_ref().unwrap();
-        let columns = module
-            .module
-            .typespace
-            .with_type(&data)
-            .resolve_refs()
-            .and_then(|x| {
-                if let Ok(x) = x.into_product() {
-                    let cols: Vec<ColumnDef> = x.into();
-                    Some(cols)
-                } else {
-                    None
-                }
-            })
-            .expect("Fail to retrieve the columns from the module");
+        let product_type_ref = *T::Row::make_type(&mut module.inner).as_ref().unwrap();
 
-        let indexes: Vec<_> = T::INDEXES.iter().copied().map(Into::into).collect();
-        //WARNING: The definition  of table assumes the # of constraints == # of columns elsewhere `T::COLUMN_ATTRS` is queried
-        let constraints: Vec<_> = T::COLUMN_ATTRS
-            .iter()
-            .enumerate()
-            .map(|(col_pos, x)| {
-                let col = &columns[col_pos];
-                let kind = match (*x).try_into() {
-                    Ok(x) => x,
-                    Err(_) => Constraints::unset(),
-                };
+        let mut table = module
+            .inner
+            .build_table(T::TABLE_NAME, product_type_ref)
+            .with_type(TableType::User)
+            .with_access(T::TABLE_ACCESS);
 
-                ConstraintDef::for_column(T::TABLE_NAME, &col.col_name, kind, ColList::new(col_pos.into()))
-            })
-            .collect();
+        for &col in T::UNIQUE_COLUMNS {
+            table = table.with_unique_constraint(col, None);
+        }
+        for &index in T::INDEXES {
+            table = table.with_index(index.algo.into(), index.accessor_name, Some(index.name.into()));
+        }
+        if let Some(primary_key) = T::PRIMARY_KEY {
+            table = table.with_primary_key(primary_key);
+        }
+        for &col in T::SEQUENCES {
+            table = table.with_column_sequence(col, None);
+        }
+        if let Some(schedule) = T::SCHEDULE {
+            table = table.with_schedule(schedule.reducer_name, schedule.scheduled_at_column, None);
+        }
 
-        let sequences: Vec<_> = T::COLUMN_ATTRS
-            .iter()
-            .enumerate()
-            .filter_map(|(col_pos, x)| {
-                let col = &columns[col_pos];
-
-                if x.kind() == AttributeKind::AUTO_INC {
-                    Some(SequenceDef::for_column(T::TABLE_NAME, &col.col_name, col_pos.into()))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        let schema = TableDef::new(T::TABLE_NAME.into(), columns)
-            .with_type(StTableType::User)
-            .with_access(T::TABLE_ACCESS)
-            .with_constraints(constraints)
-            .with_sequences(sequences)
-            .with_indexes(indexes);
-        let schema = TableDesc { schema, data };
-
-        module.module.tables.push(schema)
+        table.finish();
     })
 }
 
-impl From<crate::IndexDesc<'_>> for IndexDef {
-    fn from(index: crate::IndexDesc<'_>) -> IndexDef {
-        let Ok(columns) = index
-            .col_ids
-            .iter()
-            .map(|x| (*x).into())
-            .collect::<ColListBuilder>()
-            .build()
-        else {
-            panic!("Need at least one column in IndexDesc for index `{}`", index.name);
-        };
-
-        IndexDef {
-            index_name: index.name.into(),
-            is_unique: false,
-            index_type: index.ty,
-            columns,
+impl From<crate::table::IndexAlgo<'_>> for RawIndexAlgorithm {
+    fn from(algo: crate::table::IndexAlgo<'_>) -> RawIndexAlgorithm {
+        match algo {
+            crate::table::IndexAlgo::BTree { columns } => RawIndexAlgorithm::BTree {
+                columns: columns.iter().copied().collect(),
+            },
         }
     }
 }
 
 /// Registers a describer for the reducer `I` with arguments `A`.
-pub fn register_reducer<'a, A: Args<'a>, T, I: ReducerInfo>(_: impl Reducer<'a, A, T>) {
+pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
     register_describer(|module| {
-        let schema = A::schema::<I>(module);
-        module.module.reducers.push(schema);
+        let params = A::schema::<I>(&mut module.inner);
+        module.inner.add_reducer(I::NAME, params, I::LIFECYCLE);
         module.reducers.push(I::INVOKE);
+    })
+}
+
+/// Registers a row-level security policy.
+pub fn register_row_level_security<R: RowLevelSecurityInfo>() {
+    register_describer(|module| {
+        module.inner.add_row_level_security(R::SQL);
     })
 }
 
@@ -486,56 +383,36 @@ pub fn register_reducer<'a, A: Args<'a>, T, I: ReducerInfo>(_: impl Reducer<'a, 
 #[derive(Default)]
 struct ModuleBuilder {
     /// The module definition.
-    module: ModuleDef,
+    inner: RawModuleDefV9Builder,
     /// The reducers of the module.
     reducers: Vec<ReducerFn>,
-    /// The type map from `T: 'static` Rust types to sats types.
-    type_map: BTreeMap<TypeId, AlgebraicTypeRef>,
-}
-
-impl TypespaceBuilder for ModuleBuilder {
-    fn add(
-        &mut self,
-        typeid: TypeId,
-        name: Option<&'static str>,
-        make_ty: impl FnOnce(&mut Self) -> AlgebraicType,
-    ) -> AlgebraicType {
-        let r = match self.type_map.entry(typeid) {
-            btree_map::Entry::Occupied(o) => *o.get(),
-            btree_map::Entry::Vacant(v) => {
-                // Bind a fresh alias to the unit type.
-                let slot_ref = self.module.typespace.add(AlgebraicType::unit());
-                // Relate `typeid -> fresh alias`.
-                v.insert(slot_ref);
-
-                // Alias provided? Relate `name -> slot_ref`.
-                if let Some(name) = name {
-                    self.module.misc_exports.push(MiscModuleExport::TypeAlias(TypeAlias {
-                        name: name.to_owned(),
-                        ty: slot_ref,
-                    }));
-                }
-
-                // Borrow of `v` has ended here, so we can now convince the borrow checker.
-                let ty = make_ty(self);
-                self.module.typespace[slot_ref] = ty;
-                slot_ref
-            }
-        };
-        AlgebraicType::Ref(r)
-    }
 }
 
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
 static DESCRIBERS: Mutex<Vec<fn(&mut ModuleBuilder)>> = Mutex::new(Vec::new());
 
-/// A reducer function takes in `(Sender, Timestamp, Args)` and writes to a new `Buffer`.
-pub type ReducerFn = fn(Buffer, Buffer, u64, &[u8]) -> Buffer;
+/// A reducer function takes in `(Sender, Timestamp, Args)`
+/// and returns a result with a possible error message.
+pub type ReducerFn = fn(ReducerContext, &[u8]) -> ReducerResult;
 static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 
-/// Describes the module into a serialized form that is returned and writes the set of `REDUCERS`.
+/// Called by the host when the module is initialized
+/// to describe the module into a serialized form that is returned.
+///
+/// This is also the module's opportunity to ready `__call_reducer__`
+/// (by writing the set of `REDUCERS`).
+///
+/// To `description`, a BSATN-encoded ModuleDef` should be written,.
+/// For the time being, the definition of `ModuleDef` is not stabilized,
+/// as it is being changed by the schema proposal.
+///
+/// The `ModuleDef` is used to define tables, constraints, indices, reducers, etc.
+/// This affords the module the opportunity
+/// to define and, to a limited extent, alter the schema at initialization time,
+/// including when modules are updated (re-publishing).
+/// After initialization, the module cannot alter the schema.
 #[no_mangle]
-extern "C" fn __describe_module__() -> Buffer {
+extern "C" fn __describe_module__(description: BytesSink) {
     // Collect the `module`.
     let mut module = ModuleBuilder::default();
     for describer in &*DESCRIBERS.lock().unwrap() {
@@ -543,27 +420,191 @@ extern "C" fn __describe_module__() -> Buffer {
     }
 
     // Serialize the module to bsatn.
-    let bytes = bsatn::to_vec(&module.module).expect("unable to serialize typespace");
+    let module_def = module.inner.finish();
+    let module_def = RawModuleDef::V9(module_def);
+    let bytes = bsatn::to_vec(&module_def).expect("unable to serialize typespace");
 
     // Write the set of reducers.
     REDUCERS.set(module.reducers).ok().unwrap();
 
-    // Allocate the bsatn data into a fresh buffer.
-    Buffer::alloc(&bytes)
+    // Write the bsatn data into the sink.
+    write_to_sink(description, &bytes);
 }
 
-/// The `sender` calls the reducer identified by `id` at `timestamp` with `args`.
+// TODO(1.0): update `__call_reducer__` docs + for `BytesSink`.
+
+/// Called by the host to execute a reducer
+/// when the `sender` calls the reducer identified by `id` at `timestamp` with `args`.
 ///
-/// The result of the reducer is written into a fresh buffer.
+/// The `sender_{0-3}` are the pieces of a `[u8; 32]` (`u256`) representing the sender's `Identity`.
+/// They are encoded as follows (assuming `identity.to_byte_array(): [u8; 32]`):
+/// - `sender_0` contains bytes `[0 ..8 ]`.
+/// - `sender_1` contains bytes `[8 ..16]`.
+/// - `sender_2` contains bytes `[16..24]`.
+/// - `sender_3` contains bytes `[24..32]`.
+///
+/// Note that `to_byte_array` uses LITTLE-ENDIAN order! This matches most host systems.
+///
+/// The `address_{0-1}` are the pieces of a `[u8; 16]` (`u128`) representing the callers's `Address`.
+/// They are encoded as follows (assuming `address.as_byte_array(): [u8; 16]`):
+/// - `address_0` contains bytes `[0 ..8 ]`.
+/// - `address_1` contains bytes `[8 ..16]`.
+///
+/// Again, note that `to_byte_array` uses LITTLE-ENDIAN order! This matches most host systems.
+///
+/// The `args` is a `BytesSource`, registered on the host side,
+/// which can be read with `bytes_source_read`.
+/// The contents of the buffer are the BSATN-encoding of the arguments to the reducer.
+/// In the case of empty arguments, `args` will be 0, that is, invalid.
+///
+/// The `error` is a `BytesSink`, registered on the host side,
+/// which can be written to with `bytes_sink_write`.
+/// When `error` is written to,
+/// it is expected that `HOST_CALL_FAILURE` is returned.
+/// Otherwise, `0` should be returned, i.e., the reducer completed successfully.
+/// Note that in the future, more failure codes could be supported.
 #[no_mangle]
 extern "C" fn __call_reducer__(
     id: usize,
-    sender: Buffer,
-    caller_address: Buffer,
+    sender_0: u64,
+    sender_1: u64,
+    sender_2: u64,
+    sender_3: u64,
+    address_0: u64,
+    address_1: u64,
     timestamp: u64,
-    args: Buffer,
-) -> Buffer {
+    args: BytesSource,
+    error: BytesSink,
+) -> i16 {
+    // Piece together `sender_i` into an `Identity`.
+    let sender = [sender_0, sender_1, sender_2, sender_3];
+    let sender: [u8; 32] = bytemuck::must_cast(sender);
+    let sender = Identity::from_byte_array(sender); // The LITTLE-ENDIAN constructor.
+
+    // Piece together `address_i` into an `Address`.
+    // The all-zeros `address` (`Address::__DUMMY`) is interpreted as `None`.
+    let address = [address_0, address_1];
+    let address: [u8; 16] = bytemuck::must_cast(address);
+    let address = Address::from_byte_array(address); // The LITTLE-ENDIAN constructor.
+    let address = (address != Address::__DUMMY).then_some(address);
+
+    // Assemble the `ReducerContext`.
+    let timestamp = Timestamp::UNIX_EPOCH + Duration::from_micros(timestamp);
+    let ctx = ReducerContext {
+        db: crate::Local {},
+        sender,
+        timestamp,
+        address,
+        rng: std::cell::OnceCell::new(),
+    };
+
+    // Fetch reducer function.
     let reducers = REDUCERS.get().unwrap();
-    let args = args.read();
-    reducers[id](sender, caller_address, timestamp, &args)
+    // Dispatch to it with the arguments read.
+    let res = with_read_args(args, |args| reducers[id](ctx, args));
+    // Convert any error message to an error code and writes to the `error` sink.
+    match res {
+        Ok(()) => 0,
+        Err(msg) => {
+            write_to_sink(error, msg.as_bytes());
+            errno::HOST_CALL_FAILURE.get() as i16
+        }
+    }
+}
+
+/// Run `logic` with `args` read from the host into a `&[u8]`.
+fn with_read_args<R>(args: BytesSource, logic: impl FnOnce(&[u8]) -> R) -> R {
+    if args == BytesSource::INVALID {
+        return logic(&[]);
+    }
+
+    // Steal an iteration row buffer.
+    // These were not meant for this purpose,
+    // but it's likely we have one sitting around being unused at this point,
+    // so use it to avoid allocating a temporary buffer if possible.
+    // And if we do allocate a temporary buffer now, it will likely be reused later.
+    let mut buf = IterBuf::take();
+
+    // Read `args` and run `logic`.
+    read_bytes_source_into(args, &mut buf);
+    logic(&buf)
+}
+
+const NO_SPACE: u16 = errno::NO_SPACE.get();
+const NO_SUCH_BYTES: u16 = errno::NO_SUCH_BYTES.get();
+
+/// Read `source` from the host fully into `buf`.
+fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
+    const INVALID: i16 = NO_SUCH_BYTES as i16;
+
+    loop {
+        // Write into the spare capacity of the buffer.
+        let buf_ptr = buf.spare_capacity_mut();
+        let spare_len = buf_ptr.len();
+        let mut buf_len = buf_ptr.len();
+        let buf_ptr = buf_ptr.as_mut_ptr().cast();
+        let ret = unsafe { sys::raw::bytes_source_read(source, buf_ptr, &mut buf_len) };
+        if ret <= 0 {
+            // SAFETY: `bytes_source_read` just appended `spare_len` bytes to `buf`.
+            unsafe { buf.set_len(buf.len() + spare_len) };
+        }
+        match ret {
+            // Host side source exhausted, we're done.
+            -1 => break,
+            // Wrote the entire spare capacity.
+            // Need to reserve more space in the buffer.
+            0 if spare_len == buf_len => buf.reserve(1024),
+            // Host didn't write as much as possible.
+            // Try to read some more.
+            // The host will likely not trigger this branch (current host doesn't),
+            // but a module should be prepared for it.
+            0 => {}
+            INVALID => panic!("invalid source passed"),
+            _ => unreachable!(),
+        }
+    }
+}
+
+/// Write `buf` to `sink`.
+fn write_to_sink(sink: BytesSink, mut buf: &[u8]) {
+    loop {
+        let len = &mut buf.len();
+        match unsafe { sys::raw::bytes_sink_write(sink, buf.as_ptr(), len) } {
+            0 => {
+                // Set `buf` to remainder and bail if it's empty.
+                (_, buf) = buf.split_at(*len);
+                if buf.is_empty() {
+                    break;
+                }
+            }
+            NO_SUCH_BYTES => panic!("invalid sink passed"),
+            NO_SPACE => panic!("no space left at sink"),
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __make_register_reftype {
+    ($ty:ty, $name:literal) => {
+        const _: () = {
+            #[export_name = concat!("__preinit__20_register_describer_", $name)]
+            extern "C" fn __register_describer() {
+                $crate::rt::register_reftype::<$ty>()
+            }
+        };
+    };
+}
+
+#[cfg(feature = "unstable")]
+#[doc(hidden)]
+pub fn volatile_nonatomic_schedule_immediate<'de, A: Args<'de>, R: Reducer<'de, A>, R2: ReducerInfo>(
+    _reducer: R,
+    args: A,
+) {
+    let arg_bytes = bsatn::to_vec(&SerDeArgs(args)).unwrap();
+
+    // Schedule the reducer.
+    sys::volatile_nonatomic_schedule_immediate(R2::NAME, &arg_bytes)
 }

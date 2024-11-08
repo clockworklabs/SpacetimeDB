@@ -1,11 +1,16 @@
+use spacetimedb_primitives::{ColId, ColList};
+
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
+use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, ValueWithType, WithTypespace};
+use crate::product_value::InvalidFieldError;
+use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SpacetimeType, ValueWithType, WithTypespace};
 
-pub const IDENTITY_TAG: &str = "__identity_bytes";
-pub const ADDRESS_TAG: &str = "__address_bytes";
+/// The tag used inside the special `Identity` product type.
+pub const IDENTITY_TAG: &str = "__identity__";
+/// The tag used inside the special `Address` product type.
+pub const ADDRESS_TAG: &str = "__address__";
 
 /// A structural product type  of the factors given by `elements`.
 ///
@@ -30,7 +35,7 @@ pub const ADDRESS_TAG: &str = "__address_bytes";
 /// so for example, `values({ A: U64, B: Bool }) = values(U64) * values(Bool)`.
 ///
 /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct ProductType {
     /// The factors of the product type.
@@ -46,34 +51,82 @@ impl ProductType {
         Self { elements }
     }
 
-    /// Returns whether this is a "newtype" over bytes.
-    fn is_bytes_newtype(&self, check: &str) -> bool {
+    /// Returns the unit product type.
+    pub fn unit() -> Self {
+        Self::new([].into())
+    }
+
+    /// Returns whether this is a "newtype" with `label` and satisfying `inner`.
+    /// Does not follow `Ref`s.
+    fn is_newtype(&self, check: &str, inner: impl FnOnce(&AlgebraicType) -> bool) -> bool {
         match &*self.elements {
             [ProductTypeElement {
                 name: Some(name),
                 algebraic_type,
-            }] => &**name == check && algebraic_type.is_bytes(),
+            }] => &**name == check && inner(algebraic_type),
             _ => false,
         }
     }
 
     /// Returns whether this is the special case of `spacetimedb_lib::Identity`.
+    /// Does not follow `Ref`s.
     pub fn is_identity(&self) -> bool {
-        self.is_bytes_newtype(IDENTITY_TAG)
+        self.is_newtype(IDENTITY_TAG, |i| i.is_u256())
     }
 
     /// Returns whether this is the special case of `spacetimedb_lib::Address`.
+    /// Does not follow `Ref`s.
     pub fn is_address(&self) -> bool {
-        self.is_bytes_newtype(ADDRESS_TAG)
+        self.is_newtype(ADDRESS_TAG, |i| i.is_u128())
     }
 
     /// Returns whether this is a special known `tag`, currently `Address` or `Identity`.
     pub fn is_special_tag(tag_name: &str) -> bool {
         tag_name == IDENTITY_TAG || tag_name == ADDRESS_TAG
     }
+
     /// Returns whether this is a special known type, currently `Address` or `Identity`.
+    /// Does not follow `Ref`s.
     pub fn is_special(&self) -> bool {
         self.is_identity() || self.is_address()
+    }
+
+    /// Returns whether this is a unit type, that is, has no elements.
+    pub fn is_unit(&self) -> bool {
+        self.elements.is_empty()
+    }
+
+    /// Returns index of the field with the given `name`.
+    pub fn index_of_field_name(&self, name: &str) -> Option<usize> {
+        self.elements
+            .iter()
+            .position(|field| field.name.as_deref() == Some(name))
+    }
+
+    /// This utility function is designed to project fields based on the supplied `indexes`.
+    ///
+    /// **Important:**
+    ///
+    /// The resulting [AlgebraicType] will wrap into a [ProductType] when projecting multiple
+    /// (including zero) fields, otherwise it will consist of a single [AlgebraicType].
+    ///
+    /// **Parameters:**
+    /// - `cols`: A [ColList] containing the indexes of fields to be projected.
+    pub fn project(&self, cols: &ColList) -> Result<AlgebraicType, InvalidFieldError> {
+        let get_field = |col_pos: ColId| {
+            self.elements
+                .get(col_pos.idx())
+                .ok_or(InvalidFieldError { col_pos, name: None })
+        };
+        if let Some(head) = cols.as_singleton() {
+            get_field(head).map(|f| f.algebraic_type.clone())
+        } else {
+            let mut fields = Vec::with_capacity(cols.len() as usize);
+            for col in cols.iter() {
+                fields.push(get_field(col)?.clone());
+            }
+            Ok(AlgebraicType::product(fields.into_boxed_slice()))
+        }
     }
 }
 

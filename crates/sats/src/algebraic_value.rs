@@ -1,11 +1,13 @@
 pub mod de;
 pub mod ser;
 
-use crate::{AlgebraicType, ArrayValue, MapValue, ProductValue, SumValue};
+use crate::{AlgebraicType, ArrayValue, ProductValue, SumValue};
 use core::mem;
 use core::ops::{Bound, RangeBounds};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
+
+pub use ethnum::{i256, u256};
 
 /// Totally ordered [`f32`] allowing all IEEE-754 floating point values.
 pub type F32 = decorum::Total<f32>;
@@ -24,6 +26,11 @@ pub type F64 = decorum::Total<f64>;
 /// So forms like `42 + 24` are not represented in an `AlgebraicValue`.
 #[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, From)]
 pub enum AlgebraicValue {
+    /// The minimum value in the total ordering.
+    /// Cannot be serialized and only exists to facilitate range index scans.
+    /// This variant must always be first.
+    Min,
+
     /// A structural sum value.
     ///
     /// Given a sum type `{ N_0(T_0), N_1(T_1), ..., N_n(T_n) }`
@@ -46,25 +53,6 @@ pub enum AlgebraicValue {
     /// The contained values are stored packed in a representation appropriate for their type.
     /// See [`ArrayValue`] for details on the representation.
     Array(ArrayValue),
-    /// An ordered map value of `key: AlgebraicValue`s mapped to `value: AlgebraicValue`s.
-    /// Each `key` must be of the same [`AlgebraicType`] as all the others
-    /// and the same applies to each `value`.
-    /// A map as a whole has the type [`AlgebraicType::Map(key_ty, val_ty)`].
-    ///
-    /// Maps are implemented internally as [`BTreeMap<AlgebraicValue, AlgebraicValue>`].
-    /// This implies that key/values are ordered first by key and then value
-    /// as if they were a sorted slice `[(key, value)]`.
-    /// This order is observable as maps are exposed both directly
-    /// and indirectly via `Ord for `[`AlgebraicValue`].
-    /// The latter lets us observe that e.g., `{ a: 42 } < { b: 42 }`.
-    /// However, we cannot observe any difference between `{ a: 0, b: 0 }` and `{ b: 0, a: 0 }`,
-    /// as the natural order is used as opposed to insertion order.
-    /// Where insertion order is relevant,
-    /// a [`AlgebraicValue::Array`] with `(key, value)` pairs can be used instead.
-    ///
-    /// We box the `MapValue` to reduce size
-    /// and because we assume that map values will be uncommon.
-    Map(Box<MapValue>),
     /// A [`bool`] value of type [`AlgebraicType::Bool`].
     Bool(bool),
     /// An [`i8`] value of type [`AlgebraicType::I8`].
@@ -85,12 +73,20 @@ pub enum AlgebraicValue {
     U64(u64),
     /// An [`i128`] value of type [`AlgebraicType::I128`].
     ///
-    /// We box these up as they allow us to shrink `AlgebraicValue`.
+    /// We pack these to shrink `AlgebraicValue`.
     I128(Packed<i128>),
     /// A [`u128`] value of type [`AlgebraicType::U128`].
     ///
-    /// We box these up as they allow us to shrink `AlgebraicValue`.
+    /// We pack these to to shrink `AlgebraicValue`.
     U128(Packed<u128>),
+    /// An [`i256`] value of type [`AlgebraicType::I256`].
+    ///
+    /// We box these up to shrink `AlgebraicValue`.
+    I256(Box<i256>),
+    /// A [`u256`] value of type [`AlgebraicType::U256`].
+    ///
+    /// We pack these to shrink `AlgebraicValue`.
+    U256(Box<u256>),
     /// A totally ordered [`F32`] value of type [`AlgebraicType::F32`].
     ///
     /// All floating point values defined in IEEE-754 are supported.
@@ -109,24 +105,17 @@ pub enum AlgebraicValue {
     ///
     /// Uses Rust's standard representation of strings.
     String(Box<str>),
+
+    /// The maximum value in the total ordering.
+    /// Cannot be serialized and only exists to facilitate range index scans.
+    /// This variant must always be last.
+    Max,
 }
 
 /// Wraps `T` making the outer type packed with alignment 1.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(packed)]
 pub struct Packed<T>(pub T);
-
-impl From<u128> for AlgebraicValue {
-    fn from(value: u128) -> Self {
-        Self::U128(Packed(value))
-    }
-}
-
-impl From<i128> for AlgebraicValue {
-    fn from(value: i128) -> Self {
-        Self::I128(Packed(value))
-    }
-}
 
 impl<T> From<T> for Packed<T> {
     fn from(value: T) -> Self {
@@ -205,11 +194,6 @@ impl AlgebraicValue {
         Self::Product(elements.into())
     }
 
-    /// Returns an [`AlgebraicValue`] representing a map value defined by the given `map`.
-    pub fn map(map: MapValue) -> Self {
-        Self::Map(Box::new(map))
-    }
-
     /// Returns the [`AlgebraicType`] of the product value `x`.
     pub(crate) fn type_of_product(x: &ProductValue) -> Option<AlgebraicType> {
         let mut elems = Vec::with_capacity(x.elements.len());
@@ -217,12 +201,6 @@ impl AlgebraicValue {
             elems.push(elem.type_of()?.into());
         }
         Some(AlgebraicType::product(elems.into_boxed_slice()))
-    }
-
-    /// Returns the [`AlgebraicType`] of the map with key type `k` and value type `v`.
-    pub(crate) fn type_of_map(val: &MapValue) -> Option<AlgebraicType> {
-        let (k, v) = val.first_key_value().and_then(|(k, v)| k.type_of().zip(v.type_of()))?;
-        Some(AlgebraicType::product([k, v]))
     }
 
     /// Infer the [`AlgebraicType`] of an [`AlgebraicValue`].
@@ -246,7 +224,6 @@ impl AlgebraicValue {
             Self::Sum(_) => None,
             Self::Product(x) => Self::type_of_product(x),
             Self::Array(x) => x.type_of().map(Into::into),
-            Self::Map(x) => Self::type_of_map(x),
             Self::Bool(_) => Some(AlgebraicType::Bool),
             Self::I8(_) => Some(AlgebraicType::I8),
             Self::U8(_) => Some(AlgebraicType::U8),
@@ -258,9 +235,12 @@ impl AlgebraicValue {
             Self::U64(_) => Some(AlgebraicType::U64),
             Self::I128(_) => Some(AlgebraicType::I128),
             Self::U128(_) => Some(AlgebraicType::U128),
+            Self::I256(_) => Some(AlgebraicType::I256),
+            Self::U256(_) => Some(AlgebraicType::U256),
             Self::F32(_) => Some(AlgebraicType::F32),
             Self::F64(_) => Some(AlgebraicType::F64),
             Self::String(_) => Some(AlgebraicType::String),
+            AlgebraicValue::Min | AlgebraicValue::Max => None,
         }
     }
 
@@ -279,6 +259,8 @@ impl AlgebraicValue {
             Self::U64(x) => x == 0,
             Self::I128(x) => x.0 == 0,
             Self::U128(x) => x.0 == 0,
+            Self::I256(ref x) => **x == i256::ZERO,
+            Self::U256(ref x) => **x == u256::ZERO,
             Self::F32(x) => x == 0.0,
             Self::F64(x) => x == 0.0,
             _ => false,
@@ -301,7 +283,9 @@ impl AlgebraicValue {
             AlgebraicType::U64 => (sequence_value as u64).into(),
             AlgebraicType::I128 => sequence_value.into(),
             AlgebraicType::U128 => (sequence_value as u128).into(),
-            _ => panic!("`{ty:?}` is not an integer type"),
+            AlgebraicType::I256 => sequence_value.into(),
+            AlgebraicType::U256 => (sequence_value as u128).into(),
+            _ => panic!("`{ty:?}` is not a sequence integer type"),
         }
     }
 }
@@ -337,8 +321,6 @@ impl RangeBounds<AlgebraicValue> for AlgebraicValue {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use crate::satn::Satn;
     use crate::{AlgebraicType, AlgebraicValue, ArrayValue, Typespace, ValueWithType, WithTypespace};
 
@@ -395,23 +377,5 @@ mod tests {
         let value = AlgebraicValue::Array([3u8].into());
         let typespace = Typespace::new(vec![]);
         assert_eq!(in_space(&typespace, &array, &value).to_satn(), "0x03");
-    }
-
-    #[test]
-    fn map() {
-        let map = AlgebraicType::map(AlgebraicType::U8, AlgebraicType::U8);
-        let value = AlgebraicValue::map(BTreeMap::new());
-        let typespace = Typespace::new(vec![]);
-        assert_eq!(in_space(&typespace, &map, &value).to_satn(), "[:]");
-    }
-
-    #[test]
-    fn map_of_values() {
-        let map = AlgebraicType::map(AlgebraicType::U8, AlgebraicType::U8);
-        let mut val = BTreeMap::<AlgebraicValue, AlgebraicValue>::new();
-        val.insert(AlgebraicValue::U8(2), AlgebraicValue::U8(3));
-        let value = AlgebraicValue::map(val);
-        let typespace = Typespace::new(vec![]);
-        assert_eq!(in_space(&typespace, &map, &value).to_satn(), "[2: 3]");
     }
 }

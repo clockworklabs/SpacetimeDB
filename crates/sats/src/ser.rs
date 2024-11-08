@@ -5,7 +5,7 @@ mod impls;
 #[cfg(feature = "serde")]
 pub mod serde;
 
-use std::fmt;
+use core::fmt;
 
 /// A **data format** that can deserialize any data structure supported by SATs.
 ///
@@ -31,10 +31,6 @@ pub trait Serializer: Sized {
     /// Type returned from [`serialize_array`](Serializer::serialize_array)
     /// for serializing the contents of the array.
     type SerializeArray: SerializeArray<Ok = Self::Ok, Error = Self::Error>;
-
-    /// Type returned from [`serialize_map`](Serializer::serialize_map)
-    /// for serializing the contents of the map.
-    type SerializeMap: SerializeMap<Ok = Self::Ok, Error = Self::Error>;
 
     /// Type returned from [`serialize_seq_product`](Serializer::serialize_seq_product)
     /// for serializing the contents of the *unnamed* product.
@@ -62,6 +58,9 @@ pub trait Serializer: Sized {
     /// Serialize a `u128` value.
     fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error>;
 
+    /// Serialize a `u256` value.
+    fn serialize_u256(self, v: u256) -> Result<Self::Ok, Self::Error>;
+
     /// Serialize an `i8` value.
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error>;
 
@@ -76,6 +75,9 @@ pub trait Serializer: Sized {
 
     /// Serialize an `i128` value.
     fn serialize_i128(self, v: i128) -> Result<Self::Ok, Self::Error>;
+
+    /// Serialize an `i256` value.
+    fn serialize_i256(self, v: i256) -> Result<Self::Ok, Self::Error>;
 
     /// Serialize an `f32` value.
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error>;
@@ -95,13 +97,6 @@ pub trait Serializer: Sized {
     ///
     /// The argument is the number of elements in the sequence.
     fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error>;
-
-    /// Begin to serialize a variably sized map.
-    /// This call must be followed by zero or more calls to [`SerializeMap::serialize_element`],
-    /// then a call to [`SerializeMap::end`].
-    ///
-    /// The argument is the number of elements in the map.
-    fn serialize_map(self, len: usize) -> Result<Self::SerializeMap, Self::Error>;
 
     /// Begin to serialize a product with unnamed fields.
     /// This call must be followed by zero or more calls to [`SerializeSeqProduct::serialize_element`],
@@ -203,6 +198,7 @@ pub trait Serializer: Sized {
     ) -> Result<Self::Ok, Self::Error>;
 }
 
+use ethnum::{i256, u256};
 pub use spacetimedb_bindings_macro::Serialize;
 
 use crate::AlgebraicType;
@@ -270,29 +266,6 @@ pub trait SerializeArray {
     fn serialize_element<T: Serialize + ?Sized>(&mut self, element: &T) -> Result<(), Self::Error>;
 
     /// Consumes and finalizes the array serializer returning the `Self::Ok` data.
-    fn end(self) -> Result<Self::Ok, Self::Error>;
-}
-
-/// Returned from [`Serializer::serialize_map`].
-///
-/// This provides a continuation of sorts
-/// where you can call [`serialize_entry`](SerializeMap::serialize_entry) however many times
-/// and then finally the [`end`](SerializeMap::end) is reached.
-pub trait SerializeMap {
-    /// Must match the `Ok` type of any `Serializer` that uses this type.
-    type Ok;
-
-    /// Must match the `Error` type of any `Serializer` that uses this type.
-    type Error: Error;
-
-    /// Serialize a map entry given by its `key` and `value`.
-    fn serialize_entry<K: Serialize + ?Sized, V: Serialize + ?Sized>(
-        &mut self,
-        key: &K,
-        value: &V,
-    ) -> Result<(), Self::Error>;
-
-    /// Consumes and finalizes the map serializer returning the `Self::Ok` data.
     fn end(self) -> Result<Self::Ok, Self::Error>;
 }
 

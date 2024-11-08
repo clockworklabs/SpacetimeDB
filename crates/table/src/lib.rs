@@ -10,7 +10,7 @@ pub mod bflatn_from;
 pub mod bflatn_to;
 mod bflatn_to_bsatn_fast_path;
 pub mod blob_store;
-mod btree_index;
+pub mod btree_index;
 pub mod eq;
 mod eq_to_pv;
 mod fixed_bit_set;
@@ -24,6 +24,9 @@ pub mod row_hash;
 pub mod row_type_visitor;
 pub mod table;
 pub mod var_len;
+
+mod memory_usage;
+pub use memory_usage::MemoryUsage;
 
 #[doc(hidden)] // Used in tests and benchmarks.
 pub mod util;

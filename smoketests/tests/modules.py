@@ -7,36 +7,34 @@ class UpdateModule(Smoketest):
     AUTOPUBLISH = False
 
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::{println, ReducerContext, Table};
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u64,
     name: String,
 }
 
-#[spacetimedb(reducer)]
-pub fn add(name: String) {
-    Person::insert(Person { id: 0, name }).unwrap();
+#[spacetimedb::reducer]
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { id: 0, name });
 }
 
-#[spacetimedb(reducer)]
-pub fn say_hello() {
-    for person in Person::iter() {
+#[spacetimedb::reducer]
+pub fn say_hello(ctx: &ReducerContext) {
+    for person in ctx.db.person().iter() {
         println!("Hello, {}!", person.name);
     }
     println!("Hello, World!");
 }
 """
     MODULE_CODE_B = """
-use spacetimedb::spacetimedb;
-
-#[spacetimedb(table)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u64,
     name: String,
     age: u8,
@@ -44,23 +42,23 @@ pub struct Person {
 """
 
     MODULE_CODE_C = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::{println, ReducerContext, Table};
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u64,
     name: String,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = pets)]
 pub struct Pet {
     species: String,
 }
 
-#[spacetimedb(update)]
-pub fn on_module_update() {
+#[spacetimedb::reducer]
+pub fn are_we_updated_yet(ctx: &ReducerContext) {
     println!("MODULE UPDATED");
 }
 """
@@ -95,29 +93,30 @@ pub fn on_module_update() {
         # Check that the old module is still running by calling say_hello
         self.call("say_hello")
 
-        # Adding a table is ok, and invokes update
+        # Adding a table is ok
         self.write_module_code(self.MODULE_CODE_C)
         self.publish_module(name, clear=False)
+        self.call("are_we_updated_yet")
         self.assertIn("MODULE UPDATED", self.logs(2))
 
 
 class UploadModule1(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::{println, ReducerContext, Table};
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
     name: String,
 }
 
-#[spacetimedb(reducer)]
-pub fn add(name: String) {
-    Person::insert(Person { name });
+#[spacetimedb::reducer]
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
 }
 
-#[spacetimedb(reducer)]
-pub fn say_hello() {
-    for person in Person::iter() {
+#[spacetimedb::reducer]
+pub fn say_hello(ctx: &ReducerContext) {
+    for person in ctx.db.person().iter() {
         println!("Hello, {}!", person.name);
     }
     println!("Hello, World!");
@@ -140,17 +139,22 @@ pub fn say_hello() {
 
 class UploadModule2(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb, Timestamp};
+use spacetimedb::{println, duration, ReducerContext, Table, Timestamp};
 
-#[spacetimedb(init)]
-fn init() {
-    spacetimedb::schedule!("100ms", my_repeating_reducer(Timestamp::now()));
+
+#[spacetimedb::table(name = scheduled_message, public, scheduled(my_repeating_reducer))]
+pub struct ScheduledMessage {
+    prev: Timestamp,
 }
 
-#[spacetimedb(reducer)]
-pub fn my_repeating_reducer(prev: Timestamp) {
-    println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), prev.elapsed());
-    spacetimedb::schedule!("100ms", my_repeating_reducer(Timestamp::now()));
+#[spacetimedb::reducer(init)]
+fn init(ctx: &ReducerContext) {
+    ctx.db.scheduled_message().insert(ScheduledMessage { prev: Timestamp::now(), scheduled_id: 0, scheduled_at: duration!(100ms).into(), });
+}
+
+#[spacetimedb::reducer]
+pub fn my_repeating_reducer(_ctx: &ReducerContext, arg: ScheduledMessage) {
+    println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), arg.prev.elapsed());
 }
 """
     def test_upload_module_2(self):
@@ -161,3 +165,79 @@ pub fn my_repeating_reducer(prev: Timestamp) {
         time.sleep(4)
         new_lines = sum(1 for line in self.logs(100) if "Invoked" in line)
         self.assertLess(lines, new_lines)
+
+
+class HotswapModule(Smoketest):
+    AUTOPUBLISH = False
+
+    MODULE_CODE = """
+use spacetimedb::{ReducerContext, Table};
+
+#[spacetimedb::table(name = person)]
+pub struct Person {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    name: String,
+}
+
+#[spacetimedb::reducer]
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { id: 0, name });
+}
+"""
+
+    MODULE_CODE_B = """
+use spacetimedb::{ReducerContext, Table};
+
+#[spacetimedb::table(name = person)]
+pub struct Person {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    name: String,
+}
+
+#[spacetimedb::reducer]
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { id: 0, name });
+}
+
+#[spacetimedb::table(name = pet)]
+pub struct Pet {
+    #[primary_key]
+    species: String,
+}
+
+#[spacetimedb::reducer]
+pub fn add_pet(ctx: &ReducerContext, species: String) {
+    ctx.db.pet().insert(Pet { species });
+}
+"""
+
+    def test_hotswap_module(self):
+        """Tests hotswapping of modules."""
+
+        # Publish MODULE_CODE and subscribe to all
+        name = random_string()
+        self.publish_module(name, clear=False)
+        sub = self.subscribe("SELECT * FROM *", n=2)
+
+        # Trigger event on the subscription
+        self.call("add_person", "Horst")
+
+        # Update the module
+        self.write_module_code(self.MODULE_CODE_B)
+        self.publish_module(name, clear=False)
+
+        # Assert that the module was updated
+        self.call("add_pet", "Turtle")
+        # And trigger another event on the subscription
+        self.call("add_person", "Cindy")
+
+        # Note that 'SELECT * FROM *' does NOT get refreshed to include the
+        # new table (this is a known limitation).
+        self.assertEqual(sub(), [
+            {'person': {'deletes': [], 'inserts': [{'id': 1, 'name': 'Horst'}]}},
+            {'person': {'deletes': [], 'inserts': [{'id': 2, 'name': 'Cindy'}]}}
+        ])

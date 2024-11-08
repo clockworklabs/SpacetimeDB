@@ -1,9 +1,9 @@
 use core::hash::{Hash, Hasher};
-use spacetimedb_sats::bsatn::ser::BsatnError;
-use spacetimedb_sats::db::auth::StAccess;
+use spacetimedb_lib::db::auth::StAccess;
+use spacetimedb_lib::relation::{ColExpr, ColExprRef, Header};
+use spacetimedb_sats::bsatn::{ser::BsatnError, ToBsatn};
 use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::relation::{ColExpr, ColExprRef, Header};
-use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue};
+use spacetimedb_sats::{impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
@@ -151,17 +151,28 @@ impl<'a> RelValue<'a> {
             })
             .collect()
     }
+}
 
-    /// BSATN-encode the row referred to by `self` into `buf`,
-    /// pushing `self`'s bytes onto the end of `buf` as if by [`Vec::extend`].
-    ///
-    /// This method will use a [`spacetimedb_table::bflatn_to_bsatn_fast_path::StaticBsatnLayout`]
-    /// if one is available, and may therefore be faster than calling [`bsatn::to_writer`].
-    pub fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+impl ToBsatn for RelValue<'_> {
+    fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
         match self {
-            RelValue::Row(row_ref) => row_ref.to_bsatn_extend(buf),
-            RelValue::Projection(row) => bsatn::to_writer(buf, row),
-            RelValue::ProjRef(row) => bsatn::to_writer(buf, row),
+            RelValue::Row(this) => this.to_bsatn_vec(),
+            RelValue::Projection(this) => this.to_bsatn_vec(),
+            RelValue::ProjRef(this) => (*this).to_bsatn_vec(),
+        }
+    }
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+        match self {
+            RelValue::Row(this) => this.to_bsatn_extend(buf),
+            RelValue::Projection(this) => this.to_bsatn_extend(buf),
+            RelValue::ProjRef(this) => this.to_bsatn_extend(buf),
+        }
+    }
+    fn static_bsatn_size(&self) -> Option<u16> {
+        match self {
+            RelValue::Row(this) => this.static_bsatn_size(),
+            RelValue::Projection(this) => this.static_bsatn_size(),
+            RelValue::ProjRef(this) => this.static_bsatn_size(),
         }
     }
 }

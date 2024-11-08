@@ -17,14 +17,13 @@ anyhow = { workspace = true, features = ["backtrace"] }
 anymap.workspace = true
 base64.workspace = true
 brotli.workspace = true
+bytes.workspace = true
 futures.workspace = true
 futures-channel.workspace = true
 home.workspace = true
 http.workspace = true
 im.workspace = true
-lazy_static.workspace = true
 log.workspace = true
-prost.workspace = true
 rand.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true

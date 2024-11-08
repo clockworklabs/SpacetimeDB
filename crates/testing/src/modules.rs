@@ -5,18 +5,19 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use spacetimedb::messages::control_db::HostType;
+use spacetimedb::Identity;
+use spacetimedb_client_api::auth::SpacetimeAuth;
+use spacetimedb_client_api::routes::subscribe::generate_random_address;
+use spacetimedb_lib::ser::serde::SerializeWrapper;
 use tokio::runtime::{Builder, Runtime};
 
-use spacetimedb::address::Address;
-
-use prost::Message;
-use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
+use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
-use spacetimedb::protobuf::client_api;
+use spacetimedb::messages::websocket as ws;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
-use spacetimedb_lib::sats;
+use spacetimedb_lib::{bsatn, sats};
 
 pub use spacetimedb::database_logger::LogLevel;
 
@@ -45,25 +46,30 @@ pub struct ModuleHandle {
     // Needs to hold a reference to the standalone env.
     _env: Arc<StandaloneEnv>,
     pub client: ClientConnection,
-    pub db_address: Address,
+    pub db_identity: Identity,
 }
 
 impl ModuleHandle {
-    pub async fn call_reducer_json(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
-        let args = serde_json::to_string(&args)?;
-        let args = format!("{{\"call\": {{\"fn\": \"{reducer}\", \"args\": {args} }} }}");
-        self.send(args).await
+    fn call_reducer_msg<Args>(reducer: &str, args: Args) -> ws::ClientMessage<Args> {
+        ws::ClientMessage::CallReducer(ws::CallReducer {
+            reducer: reducer.into(),
+            args,
+            request_id: 0,
+            flags: ws::CallReducerFlags::FullUpdate,
+        })
     }
 
-    pub async fn call_reducer_binary(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
-        let message = client_api::Message {
-            r#type: Some(client_api::message::Type::FunctionCall(client_api::FunctionCall {
-                reducer: reducer.to_string(),
-                arg_bytes: sats::bsatn::to_vec(&args)?,
-                request_id: 0,
-            })),
-        };
-        self.send(message.encode_to_vec()).await
+    pub async fn call_reducer_json(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
+        let args = serde_json::to_string(&args).unwrap();
+        let message = Self::call_reducer_msg(reducer, args);
+        self.send(serde_json::to_string(&SerializeWrapper::new(message)).unwrap())
+            .await
+    }
+
+    pub async fn call_reducer_binary(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
+        let args = bsatn::to_vec(&args).unwrap();
+        let message = Self::call_reducer_msg(reducer, args);
+        self.send(bsatn::to_vec(&message).unwrap()).await
     }
 
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {
@@ -72,7 +78,7 @@ impl ModuleHandle {
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
-        let filepath = DatabaseLogger::filepath(&self.db_address, self.client.database_instance_id);
+        let filepath = DatabaseLogger::filepath(&self.db_identity, self.client.replica_id);
         DatabaseLogger::read_latest(&filepath, size).await
     }
 }
@@ -147,9 +153,10 @@ impl CompiledModule {
 
         crate::set_key_env_vars(&paths);
         let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
-        let identity = env.create_identity().await.unwrap();
-        let db_address = env.create_address().await.unwrap();
-        let client_address = env.create_address().await.unwrap();
+        // TODO: Fix this when we update identity generation.
+        let identity = Identity::ZERO;
+        let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().identity;
+        let client_address = generate_random_address();
 
         let program_bytes = self
             .program_bytes
@@ -158,9 +165,8 @@ impl CompiledModule {
 
         env.publish_database(
             &identity,
-            Some(client_address),
             DatabaseDef {
-                address: db_address,
+                database_identity: db_identity,
                 program_bytes,
                 num_replicas: 1,
                 host_type: HostType::Wasm,
@@ -169,8 +175,8 @@ impl CompiledModule {
         .await
         .unwrap();
 
-        let database = env.get_database_by_address(&db_address).unwrap().unwrap();
-        let instance = env.get_leader_database_instance_by_database(database.id).unwrap();
+        let database = env.get_database_by_identity(&db_identity).unwrap().unwrap();
+        let instance = env.get_leader_replica_by_database(database.id).unwrap();
 
         let client_id = ClientActorId {
             identity,
@@ -191,8 +197,8 @@ impl CompiledModule {
         // for stuff like "get logs" or "get message log"
         ModuleHandle {
             _env: env,
-            client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module_rx),
-            db_address,
+            client: ClientConnection::dummy(client_id, ClientConfig::for_test(), instance.id, module_rx),
+            db_identity,
         }
     }
 }

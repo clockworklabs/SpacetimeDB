@@ -15,9 +15,9 @@ use super::{
 use core::cell::Cell;
 use core::str;
 use spacetimedb_sats::{
-    impl_serialize,
+    i256, impl_serialize,
     ser::{SerializeNamedProduct, Serializer},
-    AlgebraicType,
+    u256, AlgebraicType,
 };
 
 /// Serializes the row in `page` where the fixed part starts at `fixed_offset`
@@ -195,7 +195,7 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
         // SAFETY (applies to app primitive types):
         // Per caller requirement, know `value` points to a valid `ty`.
         // Thus `&bytes[range_move(0..ty.size(), *curr_offset)]` points to init bytes
-        // and `ty.size()` corresponds exactly to `N = 1, 1, 1, 2, 2, 4, 4, 8, 8, 16, 16, 4, 8`.
+        // and `ty.size()` corresponds exactly to `N = 1, 1, 1, 2, 2, 4, 4, 8, 8, 16, 16, 32, 32, 4, 8`.
         &AlgebraicTypeLayout::Bool => ser.serialize_bool(unsafe { read_from_bytes::<u8>(bytes, curr_offset) } != 0),
         &AlgebraicTypeLayout::I8 => ser.serialize_i8(unsafe { read_from_bytes(bytes, curr_offset) }),
         &AlgebraicTypeLayout::U8 => ser.serialize_u8(unsafe { read_from_bytes(bytes, curr_offset) }),
@@ -223,6 +223,12 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
         &AlgebraicTypeLayout::U128 => {
             ser.serialize_u128(u128::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }))
         }
+        &AlgebraicTypeLayout::I256 => {
+            ser.serialize_i256(i256::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }))
+        }
+        &AlgebraicTypeLayout::U256 => {
+            ser.serialize_u256(u256::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }))
+        }
         &AlgebraicTypeLayout::F32 => {
             ser.serialize_f32(f32::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }))
         }
@@ -235,7 +241,7 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
             // SAFETY: `value` was valid at `::String` and `VarLenRef`s won't be dangling.
             unsafe { serialize_string(ser, bytes, page, blob_store, curr_offset) }
         }
-        AlgebraicTypeLayout::VarLen(VarLenType::Array(ty) | VarLenType::Map(ty)) => {
+        AlgebraicTypeLayout::VarLen(VarLenType::Array(ty)) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
             unsafe { serialize_bsatn(ser, bytes, page, blob_store, curr_offset, ty) }
         }

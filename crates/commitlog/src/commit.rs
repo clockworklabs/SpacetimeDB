@@ -6,16 +6,27 @@ use std::{
 use crc32c::{Crc32cReader, Crc32cWriter};
 use spacetimedb_sats::buffer::{BufReader, Cursor, DecodeError};
 
-use crate::{error::ChecksumMismatch, payload::Decoder, segment::CHECKSUM_ALGORITHM_CRC32C, Transaction};
+use crate::{
+    error::ChecksumMismatch, payload::Decoder, segment::CHECKSUM_ALGORITHM_CRC32C, Transaction,
+    DEFAULT_LOG_FORMAT_VERSION,
+};
+
+#[derive(Default)]
+enum Version {
+    V0,
+    #[default]
+    V1,
+}
 
 pub struct Header {
-    min_tx_offset: u64,
-    n: u16,
-    len: u32,
+    pub min_tx_offset: u64,
+    pub epoch: u64,
+    pub n: u16,
+    pub len: u32,
 }
 
 impl Header {
-    pub const LEN: usize = /* offset */ 8 + /* n */ 2 + /* len */  4;
+    pub const LEN: usize = /* offset */ 8 + /* epoch */ 8 + /* n */ 2 + /* len */  4;
 
     /// Read [`Self::LEN`] bytes from `reader` and interpret them as the
     /// "header" of a [`Commit`].
@@ -30,8 +41,20 @@ impl Header {
     ///
     ///   This is to allow preallocation of segments.
     ///
-    pub fn decode<R: Read>(mut reader: R) -> io::Result<Option<Self>> {
-        let mut hdr = [0; Self::LEN];
+    pub fn decode<R: Read>(reader: R) -> io::Result<Option<Self>> {
+        Self::decode_v1(reader)
+    }
+
+    fn decode_internal<R: Read>(reader: R, v: Version) -> io::Result<Option<Self>> {
+        use Version::*;
+        match v {
+            V0 => Self::decode_v0(reader),
+            V1 => Self::decode_v1(reader),
+        }
+    }
+
+    fn decode_v0<R: Read>(mut reader: R) -> io::Result<Option<Self>> {
+        let mut hdr = [0; Self::LEN - 8];
         if let Err(e) = reader.read_exact(&mut hdr) {
             if e.kind() == io::ErrorKind::UnexpectedEof {
                 return Ok(None);
@@ -46,7 +69,39 @@ impl Header {
                 let n = buf.get_u16().map_err(decode_error)?;
                 let len = buf.get_u32().map_err(decode_error)?;
 
-                Ok(Some(Self { min_tx_offset, n, len }))
+                Ok(Some(Self {
+                    min_tx_offset,
+                    epoch: Commit::DEFAULT_EPOCH,
+                    n,
+                    len,
+                }))
+            }
+        }
+    }
+
+    fn decode_v1<R: Read>(mut reader: R) -> io::Result<Option<Self>> {
+        let mut hdr = [0; Self::LEN];
+        if let Err(e) = reader.read_exact(&mut hdr) {
+            if e.kind() == io::ErrorKind::UnexpectedEof {
+                return Ok(None);
+            }
+
+            return Err(e);
+        }
+        match &mut hdr.as_slice() {
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] => Ok(None),
+            buf => {
+                let min_tx_offset = buf.get_u64().map_err(decode_error)?;
+                let epoch = buf.get_u64().map_err(decode_error)?;
+                let n = buf.get_u16().map_err(decode_error)?;
+                let len = buf.get_u32().map_err(decode_error)?;
+
+                Ok(Some(Self {
+                    min_tx_offset,
+                    epoch,
+                    n,
+                    len,
+                }))
             }
         }
     }
@@ -60,6 +115,18 @@ pub struct Commit {
     /// The offset starts from zero and is counted from the beginning of the
     /// entire log.
     pub min_tx_offset: u64,
+    /// The epoch within which the commit was created.
+    ///
+    /// Indicates the monotonically increasing term number of the leader when
+    /// the commitlog is being written to in a distributed deployment.
+    ///
+    /// The default epoch is 0 (zero). It should be used when the log is written
+    /// to by a single process.
+    ///
+    /// Note, however, that an existing log may have a non-zero epoch.
+    /// It is currently unspecified how a commitlog is transitioned between
+    /// distributed and single-node deployment, wrt the epoch.
+    pub epoch: u64,
     /// The number of records in the commit.
     pub n: u16,
     /// A buffer of all records in the commit in serialized form.
@@ -70,6 +137,8 @@ pub struct Commit {
 }
 
 impl Commit {
+    pub const DEFAULT_EPOCH: u64 = 0;
+
     pub const FRAMING_LEN: usize = Header::LEN + /* crc32 */ 4;
     pub const CHECKSUM_ALGORITHM: u8 = CHECKSUM_ALGORITHM_CRC32C;
 
@@ -84,14 +153,18 @@ impl Commit {
     }
 
     /// Serialize and write `self` to `out`.
-    pub fn write<W: Write>(&self, out: W) -> io::Result<()> {
+    ///
+    /// Returns the crc32 checksum of the commit on success.
+    pub fn write<W: Write>(&self, out: W) -> io::Result<u32> {
         let mut out = Crc32cWriter::new(out);
 
         let min_tx_offset = self.min_tx_offset.to_le_bytes();
+        let epoch = self.epoch.to_le_bytes();
         let n = self.n.to_le_bytes();
         let len = (self.records.len() as u32).to_le_bytes();
 
         out.write_all(&min_tx_offset)?;
+        out.write_all(&epoch)?;
         out.write_all(&n)?;
         out.write_all(&len)?;
         out.write_all(&self.records)?;
@@ -100,7 +173,7 @@ impl Commit {
         let mut out = out.into_inner();
         out.write_all(&crc.to_le_bytes())?;
 
-        Ok(())
+        Ok(crc)
     }
 
     /// Attempt to read one [`Commit`] from the given [`Read`]er.
@@ -121,19 +194,49 @@ impl Commit {
     ///
     /// The supplied [`Decoder`] is responsible for extracting individual
     /// transactions from the `records` buffer.
+    ///
+    /// `version` is the log format version of the current segment, and gets
+    /// passed to [`Decoder::decode_record`].
+    ///
+    /// `from_offset` is the transaction offset within the current commit from
+    /// which to start decoding. That is:
+    ///
+    /// * if the tx offset within the commit is smaller than `from_offset`,
+    ///   [`Decoder::skip_record`] is called.
+    ///
+    ///   The iterator does not yield a value, unless `skip_record` returns an
+    ///   error.
+    ///
+    /// * if the tx offset within the commit is greater of equal to `from_offset`,
+    ///   [`Decoder::decode_record`] is called.
+    ///
+    ///   The iterator yields the result of this call.
+    ///
+    /// * if `from_offset` doesn't fall into the current commit, the iterator
+    ///   yields nothing.
+    ///
     pub fn into_transactions<D: Decoder>(
         self,
         version: u8,
+        from_offset: u64,
         de: &D,
     ) -> impl Iterator<Item = Result<Transaction<D::Record>, D::Error>> + '_ {
         let records = Cursor::new(self.records);
-        (self.min_tx_offset..(self.min_tx_offset + self.n as u64)).scan(records, move |recs, offset| {
-            let mut cursor = &*recs;
-            let tx = de
-                .decode_record(version, offset, &mut cursor)
-                .map(|txdata| Transaction { offset, txdata });
-            Some(tx)
-        })
+        (self.min_tx_offset..(self.min_tx_offset + self.n as u64))
+            .scan(records, move |recs, offset| {
+                let mut cursor = &*recs;
+                let ret = if offset < from_offset {
+                    de.skip_record(version, offset, &mut cursor).err().map(Err)
+                } else {
+                    let tx = de
+                        .decode_record(version, offset, &mut cursor)
+                        .map(|txdata| Transaction { offset, txdata });
+                    Some(tx)
+                };
+
+                Some(ret)
+            })
+            .flatten()
     }
 }
 
@@ -141,6 +244,7 @@ impl From<StoredCommit> for Commit {
     fn from(
         StoredCommit {
             min_tx_offset,
+            epoch,
             n,
             records,
             checksum: _,
@@ -148,6 +252,7 @@ impl From<StoredCommit> for Commit {
     ) -> Self {
         Self {
             min_tx_offset,
+            epoch,
             n,
             records,
         }
@@ -162,6 +267,8 @@ impl From<StoredCommit> for Commit {
 pub struct StoredCommit {
     /// See [`Commit::min_tx_offset`].
     pub min_tx_offset: u64,
+    /// See [`Commit::epoch`].
+    pub epoch: u64,
     /// See [`Commit::n`].
     pub n: u16,
     /// See [`Commit::records`].
@@ -184,9 +291,18 @@ impl StoredCommit {
     /// kind [`io::ErrorKind::InvalidData`] with an inner error downcastable to
     /// [`ChecksumMismatch`] is returned.
     pub fn decode<R: Read>(reader: R) -> io::Result<Option<Self>> {
+        Self::decode_internal(reader, DEFAULT_LOG_FORMAT_VERSION)
+    }
+
+    pub(crate) fn decode_internal<R: Read>(reader: R, log_format_version: u8) -> io::Result<Option<Self>> {
         let mut reader = Crc32cReader::new(reader);
 
-        let Some(hdr) = Header::decode(&mut reader)? else {
+        let v = if log_format_version == 0 {
+            Version::V0
+        } else {
+            Version::V1
+        };
+        let Some(hdr) = Header::decode_internal(&mut reader, v)? else {
             return Ok(None);
         };
         let mut records = vec![0; hdr.len as usize];
@@ -201,6 +317,7 @@ impl StoredCommit {
 
         Ok(Some(Self {
             min_tx_offset: hdr.min_tx_offset,
+            epoch: hdr.epoch,
             n: hdr.n,
             records,
             checksum: crc,
@@ -214,9 +331,10 @@ impl StoredCommit {
     pub fn into_transactions<D: Decoder>(
         self,
         version: u8,
+        from_offset: u64,
         de: &D,
     ) -> impl Iterator<Item = Result<Transaction<D::Record>, D::Error>> + '_ {
-        Commit::from(self).into_transactions(version, de)
+        Commit::from(self).into_transactions(version, from_offset, de)
     }
 }
 
@@ -225,6 +343,7 @@ impl StoredCommit {
 pub struct Metadata {
     pub tx_range: Range<u64>,
     pub size_in_bytes: u64,
+    pub epoch: u64,
 }
 
 impl Metadata {
@@ -242,6 +361,7 @@ impl From<Commit> for Metadata {
         Self {
             tx_range: commit.tx_range(),
             size_in_bytes: commit.encoded_len() as u64,
+            epoch: commit.epoch,
         }
     }
 }
@@ -265,9 +385,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use rand::prelude::*;
+    use std::num::NonZeroU8;
+
+    use proptest::prelude::*;
 
     use super::*;
+    use crate::{payload::ArrayDecoder, tests::helpers::enable_logging, DEFAULT_LOG_FORMAT_VERSION};
 
     #[test]
     fn commit_roundtrip() {
@@ -276,6 +399,7 @@ mod tests {
             min_tx_offset: 0,
             n: 3,
             records,
+            epoch: Commit::DEFAULT_EPOCH,
         };
 
         let mut buf = Vec::with_capacity(commit.encoded_len());
@@ -286,29 +410,63 @@ mod tests {
     }
 
     #[test]
-    fn bitflip() {
+    fn into_transactions_can_skip_txs() {
+        enable_logging();
+
         let commit = Commit {
-            min_tx_offset: 42,
-            n: 10,
-            records: vec![1; 512],
+            min_tx_offset: 0,
+            n: 4,
+            records: vec![0; 128],
+            epoch: Commit::DEFAULT_EPOCH,
         };
 
-        let mut buf = Vec::with_capacity(commit.encoded_len());
-        commit.write(&mut buf).unwrap();
+        let txs = commit
+            .into_transactions(DEFAULT_LOG_FORMAT_VERSION, 2, &ArrayDecoder::<32>)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
 
-        let mut rng = thread_rng();
-        let b = buf.choose_mut(&mut rng).unwrap();
-        *b ^= rng.gen::<u8>();
+        assert_eq!(
+            txs,
+            vec![
+                Transaction {
+                    offset: 2,
+                    txdata: [0u8; 32]
+                },
+                Transaction {
+                    offset: 3,
+                    txdata: [0; 32]
+                }
+            ]
+        )
+    }
 
-        match Commit::decode(&mut buf.as_slice()) {
-            Err(e) => {
-                assert_eq!(e.kind(), io::ErrorKind::InvalidData);
-                e.into_inner()
-                    .unwrap()
-                    .downcast::<ChecksumMismatch>()
-                    .expect("IO inner should be checksum mismatch");
+    proptest! {
+        #[test]
+        fn bitflip(pos in Header::LEN..512, mask in any::<NonZeroU8>()) {
+            let commit = Commit {
+                min_tx_offset: 42,
+                n: 10,
+                records: vec![1; 512],
+                epoch: Commit::DEFAULT_EPOCH,
+            };
+
+            let mut buf = Vec::with_capacity(commit.encoded_len());
+            commit.write(&mut buf).unwrap();
+
+            // Flip bit in the `records` section,
+            // so we get `ChecksumMismatch` not any other error.
+            buf[pos] ^= mask.get();
+
+            match Commit::decode(&mut buf.as_slice()) {
+                Err(e) => {
+                    assert_eq!(e.kind(), io::ErrorKind::InvalidData);
+                    e.into_inner()
+                        .unwrap()
+                        .downcast::<ChecksumMismatch>()
+                        .expect("IO inner should be checksum mismatch");
+                }
+                Ok(commit) => panic!("expected checksum mismatch, got valid commit: {commit:?}"),
             }
-            Ok(commit) => panic!("expected checksum mismatch, got valid commit: {commit:?}"),
         }
     }
 }

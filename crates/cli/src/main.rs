@@ -13,9 +13,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let matches = get_command().get_matches();
     let (cmd, subcommand_args) = matches.subcommand().unwrap();
 
-    let config = Config::load();
-    // Save a default version to disk
-    config.save();
+    let config = Config::load()?;
 
     exec_subcommand(config, cmd, subcommand_args).await?;
 

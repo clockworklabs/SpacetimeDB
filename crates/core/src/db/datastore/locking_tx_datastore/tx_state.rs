@@ -1,14 +1,20 @@
 use core::ops::RangeBounds;
-use spacetimedb_primitives::{ColList, TableId};
-use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_data_structures::map::{IntMap, IntSet};
+use spacetimedb_primitives::{ColList, IndexId, TableId};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
+    static_assert_size,
     table::{IndexScanIter, RowRef, Table},
 };
 use std::collections::{btree_map, BTreeMap, BTreeSet};
 
 pub(super) type DeleteTable = BTreeSet<RowPointer>;
+
+/// A mapping to find the actual index given an `IndexId`.
+pub(super) type IndexIdMap = IntMap<IndexId, (TableId, ColList)>;
+pub(super) type RemovedIndexIdSet = IntSet<IndexId>;
 
 /// `TxState` tracks all of the modifications made during a particular transaction.
 /// Rows inserted during a transaction will be added to insert_tables, and similarly,
@@ -61,9 +67,27 @@ pub(super) struct TxState {
     ///   and free each of them during rollback.
     /// - Traverse all rows in the `insert_tables` and free each of their blobs during rollback.
     pub(super) blob_store: HashMapBlobStore,
+
+    /// Provides fast lookup for index id -> an index.
+    pub(super) index_id_map: IndexIdMap,
+
+    /// Lists all the `IndexId` that are to be removed from `CommittedState::index_id_map`.
+    // This is in an `Option<Box<>>` to reduce the size of `TxState` - it's very uncommon
+    // that this would be created.
+    pub(super) index_id_map_removals: Option<Box<RemovedIndexIdSet>>,
 }
 
+static_assert_size!(TxState, 120);
+
 impl TxState {
+    /// Returns the row count in insert tables
+    /// and the number of rows deleted from committed state.
+    pub(super) fn table_row_count(&self, table_id: TableId) -> (Option<u64>, u64) {
+        let del_count = self.delete_tables.get(&table_id).map(|dt| dt.len() as u64).unwrap_or(0);
+        let ins_count = self.insert_tables.get(&table_id).map(|it| it.row_count);
+        (ins_count, del_count)
+    }
+
     /// When there's an index on `cols`,
     /// returns an iterator over the [BTreeIndex] that yields all the `RowId`s
     /// that match the specified `value` in the indexed column.
@@ -135,10 +159,16 @@ impl TxState {
         &'this mut self,
         table_id: TableId,
         template: Option<&Table>,
-    ) -> Option<(&'this mut Table, &'this mut dyn BlobStore, &'this mut DeleteTable)> {
+    ) -> Option<(
+        &'this mut Table,
+        &'this mut dyn BlobStore,
+        &'this mut IndexIdMap,
+        &'this mut DeleteTable,
+    )> {
         let insert_tables = &mut self.insert_tables;
         let delete_tables = &mut self.delete_tables;
         let blob_store = &mut self.blob_store;
+        let idx_map = &mut self.index_id_map;
         let tbl = match insert_tables.entry(table_id) {
             btree_map::Entry::Vacant(e) => {
                 let new_table = template?.clone_structure(SquashedOffset::TX_STATE);
@@ -146,6 +176,13 @@ impl TxState {
             }
             btree_map::Entry::Occupied(e) => e.into_mut(),
         };
-        Some((tbl, blob_store, delete_tables.entry(table_id).or_default()))
+        Some((tbl, blob_store, idx_map, delete_tables.entry(table_id).or_default()))
+    }
+
+    /// Returns the table and index associated with the given `table_id` and `col_list`, if any.
+    pub(super) fn get_table_and_index_type(&self, table_id: TableId, col_list: &ColList) -> Option<&AlgebraicType> {
+        let table = self.insert_tables.get(&table_id)?;
+        let index = table.indexes.get(col_list)?;
+        Some(&index.key_type)
     }
 }

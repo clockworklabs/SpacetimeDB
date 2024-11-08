@@ -6,8 +6,8 @@ use crate::energy::ReducerBudget;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
 use crate::host::wasm_common::*;
-use anyhow::anyhow;
-use bytes::Bytes;
+use crate::util::string_from_utf8_lossy_owned;
+use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use wasmtime::{AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace};
 
 fn log_traceback(func_type: &str, func: &str, e: &wasmtime::Error) {
@@ -34,14 +34,14 @@ impl WasmtimeModule {
         WasmtimeModule { module }
     }
 
-    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(8, 0);
+    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 0);
 
     pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
         #[allow(clippy::assertions_on_constants)]
         const _: () = assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION);
         macro_rules! link_functions {
             ($($module:literal :: $func:ident,)*) => {
-                linker$(.func_wrap($module, concat!("_", stringify!($func)), WasmInstanceEnv::$func)?)*;
+                linker$(.func_wrap($module, stringify!($func), WasmInstanceEnv::$func)?)*;
             }
         }
         abi_funcs!(link_functions);
@@ -75,6 +75,16 @@ impl module_host_actor::WasmModule for WasmtimeModule {
     }
 }
 
+fn handle_error_sink_code(code: i32, error: Vec<u8>) -> Result<(), Box<str>> {
+    match code {
+        0 => Ok(()),
+        CALL_FAILURE => Err(string_from_utf8_lossy_owned(error).into()),
+        _ => Err("unknown return code".into()),
+    }
+}
+
+const CALL_FAILURE: i32 = HOST_CALL_FAILURE.get() as i32;
+
 impl module_host_actor::WasmInstancePre for WasmtimeModule {
     type Instance = WasmtimeInstance;
 
@@ -101,24 +111,16 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
                 })?;
         }
 
-        let init = instance.get_typed_func::<(), u32>(&mut store, SETUP_DUNDER);
-        if let Ok(init) = init {
-            match init.call(&mut store, ()).map(BufferIdx) {
-                Ok(errbuf) if errbuf.is_invalid() => {}
-                Ok(errbuf) => {
-                    let errbuf = store
-                        .data_mut()
-                        .take_buffer(errbuf)
-                        .unwrap_or_else(|| "unknown error".as_bytes().into());
-                    let errbuf = crate::util::string_from_utf8_lossy_owned(errbuf.into()).into();
-                    // TODO: catch this and return the error message to the http client
-                    return Err(InitializationError::Setup(errbuf));
-                }
+        if let Ok(init) = instance.get_typed_func::<u32, i32>(&mut store, SETUP_DUNDER) {
+            let setup_error = store.data_mut().setup_standard_bytes_sink();
+            let res = init.call(&mut store, setup_error);
+            let error = store.data_mut().take_standard_bytes_sink();
+            match res {
+                // TODO: catch this and return the error message to the http client
+                Ok(code) => handle_error_sink_code(code, error).map_err(InitializationError::Setup)?,
                 Err(err) => {
-                    return Err(InitializationError::RuntimeError {
-                        err,
-                        func: SETUP_DUNDER.to_owned(),
-                    });
+                    let func = SETUP_DUNDER.to_owned();
+                    return Err(InitializationError::RuntimeError { err, func });
                 }
             }
         }
@@ -135,34 +137,40 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
     }
 }
 
+type CallReducerType = TypedFunc<(u32, u64, u64, u64, u64, u64, u64, u64, u32, u32), i32>;
+
 pub struct WasmtimeInstance {
     store: Store<WasmInstanceEnv>,
     instance: Instance,
-    call_reducer: TypedFunc<(u32, u32, u32, u64, u32), u32>,
+    call_reducer: CallReducerType,
 }
 
 impl module_host_actor::WasmInstance for WasmtimeInstance {
-    fn extract_descriptions(&mut self) -> Result<Bytes, DescribeError> {
+    fn extract_descriptions(&mut self) -> Result<Vec<u8>, DescribeError> {
         let describer_func_name = DESCRIBE_MODULE_DUNDER;
-        let describer = self.instance.get_func(&mut self.store, describer_func_name).unwrap();
+        let store = &mut self.store;
+
+        let describer = self.instance.get_func(&mut *store, describer_func_name).unwrap();
+        let describer = describer
+            .typed::<u32, ()>(&mut *store)
+            .map_err(|_| DescribeError::Signature)?;
+
+        let sink = store.data_mut().setup_standard_bytes_sink();
 
         let start = std::time::Instant::now();
         log::trace!("Start describer \"{}\"...", describer_func_name);
 
-        let store = &mut self.store;
-        let describer = describer
-            .typed::<(), u32>(&mut *store)
-            .map_err(|_| DescribeError::Signature)?;
-        let result = describer.call(&mut *store, ()).map(BufferIdx);
+        let result = describer.call(&mut *store, sink);
+
         let duration = start.elapsed();
-        log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros(),);
-        let buf = result
+        log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros());
+
+        result
             .inspect_err(|err| log_traceback("describer", describer_func_name, err))
             .map_err(DescribeError::RuntimeError)?;
-        let bytes = store.data_mut().take_buffer(buf).ok_or(DescribeError::BadBuffer)?;
 
-        // Clear all of the instance state associated to this describer call.
-        store.data_mut().finish_reducer();
+        // Fetch the bsatn returned by the describer call.
+        let bytes = store.data_mut().take_standard_bytes_sink();
 
         Ok(bytes)
     }
@@ -185,37 +193,35 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
         set_store_fuel(store, budget.into());
 
-        let mut make_buf = |data| store.data_mut().insert_buffer(data);
+        // Prepare sender identity and address, as LITTLE-ENDIAN byte arrays.
+        let [sender_0, sender_1, sender_2, sender_3] = bytemuck::must_cast(op.caller_identity.to_byte_array());
+        let [address_0, address_1] = bytemuck::must_cast(op.caller_address.as_byte_array());
 
-        let identity_buf = make_buf(op.caller_identity.as_bytes().to_vec().into());
-        let address_buf = make_buf(op.caller_address.as_slice().to_vec().into());
-        let args_buf = make_buf(op.arg_bytes);
+        // Prepare arguments to the reducer + the error sink & start timings.
+        let (args_source, errors_sink) = store.data_mut().start_reducer(op.name, op.arg_bytes);
 
-        store.data_mut().start_reducer(op.name);
-
-        let call_result = self
-            .call_reducer
-            .call(
-                &mut *store,
-                (op.id.0, identity_buf.0, address_buf.0, op.timestamp.0, args_buf.0),
-            )
-            .and_then(|errbuf| {
-                let errbuf = BufferIdx(errbuf);
-                Ok(if errbuf.is_invalid() {
-                    Ok(())
-                } else {
-                    let errmsg = store
-                        .data_mut()
-                        .take_buffer(errbuf)
-                        .ok_or_else(|| anyhow!("invalid buffer handle"))?;
-                    Err(crate::util::string_from_utf8_lossy_owned(errmsg.into()).into())
-                })
-            });
+        let call_result = self.call_reducer.call(
+            &mut *store,
+            (
+                op.id.0,
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                address_0,
+                address_1,
+                op.timestamp.microseconds,
+                args_source,
+                errors_sink,
+            ),
+        );
 
         // Signal that this reducer call is finished. This gets us the timings
         // associated to our reducer call, and clears all of the instance state
         // associated to the call.
-        let timings = store.data_mut().finish_reducer();
+        let (timings, error) = store.data_mut().finish_reducer();
+
+        let call_result = call_result.map(|code| handle_error_sink_code(code, error));
 
         let remaining: ReducerBudget = get_store_fuel(store).into();
         let energy = module_host_actor::EnergyStats {

@@ -1,9 +1,8 @@
-use std::fmt;
-
 use crate::buffer::BufWriter;
-
-use crate::ser::{self, Error, ForwardNamedToSeqProduct, Serialize, SerializeArray, SerializeMap, SerializeSeqProduct};
+use crate::ser::{self, Error, ForwardNamedToSeqProduct, SerializeArray, SerializeSeqProduct};
 use crate::AlgebraicValue;
+use crate::{i256, u256};
+use core::fmt;
 
 /// Defines the BSATN serialization data format.
 pub struct Serializer<'a, W> {
@@ -25,6 +24,7 @@ impl<'a, W> Serializer<'a, W> {
 
 /// An error during BSATN serialization.
 #[derive(Debug)]
+// TODO: rename to EncodeError
 pub struct BsatnError {
     /// The error message for the BSATN error.
     custom: String,
@@ -57,7 +57,6 @@ impl<W: BufWriter> ser::Serializer for Serializer<'_, W> {
     type Ok = ();
     type Error = BsatnError;
     type SerializeArray = Self;
-    type SerializeMap = Self;
     type SerializeSeqProduct = Self;
     type SerializeNamedProduct = ForwardNamedToSeqProduct<Self>;
 
@@ -85,6 +84,10 @@ impl<W: BufWriter> ser::Serializer for Serializer<'_, W> {
         self.writer.put_u128(v);
         Ok(())
     }
+    fn serialize_u256(self, v: u256) -> Result<Self::Ok, Self::Error> {
+        self.writer.put_u256(v);
+        Ok(())
+    }
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
         self.writer.put_i8(v);
         Ok(())
@@ -105,6 +108,10 @@ impl<W: BufWriter> ser::Serializer for Serializer<'_, W> {
         self.writer.put_i128(v);
         Ok(())
     }
+    fn serialize_i256(self, v: i256) -> Result<Self::Ok, Self::Error> {
+        self.writer.put_i256(v);
+        Ok(())
+    }
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
         self.writer.put_u32(v.to_bits());
         Ok(())
@@ -122,10 +129,6 @@ impl<W: BufWriter> ser::Serializer for Serializer<'_, W> {
         Ok(())
     }
     fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error> {
-        put_len(self.writer, len)?; // N.B. `len > u32::MAX` isn't allowed.
-        Ok(self)
-    }
-    fn serialize_map(self, len: usize) -> Result<Self::SerializeMap, Self::Error> {
         put_len(self.writer, len)?; // N.B. `len > u32::MAX` isn't allowed.
         Ok(self)
     }
@@ -201,24 +204,6 @@ impl<W: BufWriter> SerializeArray for Serializer<'_, W> {
 
     fn serialize_element<T: super::Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
         elem.serialize(self.reborrow())
-    }
-
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        Ok(())
-    }
-}
-
-impl<W: BufWriter> SerializeMap for Serializer<'_, W> {
-    type Ok = ();
-    type Error = BsatnError;
-
-    fn serialize_entry<K: Serialize + ?Sized, V: Serialize + ?Sized>(
-        &mut self,
-        key: &K,
-        value: &V,
-    ) -> Result<(), Self::Error> {
-        key.serialize(self.reborrow())?;
-        value.serialize(self.reborrow())
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {

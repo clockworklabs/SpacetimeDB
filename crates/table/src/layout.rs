@@ -6,6 +6,8 @@
 //! These, and others, determine what the layout of objects typed at those types are.
 //! They also implement [`HasLayout`] which generalizes over layout annotated types.
 
+use crate::MemoryUsage;
+
 use super::{
     indexes::Size,
     var_len::{VarLenGranule, VarLenRef},
@@ -14,9 +16,9 @@ use core::mem;
 use core::ops::Index;
 use enum_as_inner::EnumAsInner;
 use spacetimedb_sats::{
-    bsatn, AlgebraicType, AlgebraicValue, BuiltinType, ProductType, ProductTypeElement, ProductValue, SumType,
-    SumTypeVariant,
+    bsatn, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant,
 };
+pub use spacetimedb_schema::type_for_generate::PrimitiveType;
 
 /// Aligns a `base` offset to the `required_alignment` (in the positive direction) and returns it.
 ///
@@ -55,6 +57,8 @@ pub struct Layout {
     pub align: u16,
 }
 
+impl MemoryUsage for Layout {}
+
 /// A type which knows what its layout is.
 ///
 /// This does not refer to layout in Rust.
@@ -89,8 +93,8 @@ pub trait HasLayout {
 ///   Supporting recursive types remains a TODO(future-work).
 ///   Note that the previous Spacetime datastore did not support recursive types in tables.
 ///
-/// - [`BuiltinType`] is separated into [`PrimitveType`] (atomically-sized types like integers)
-///   and  [`VarLenType`] (strings, arrays, and maps).
+/// - Scalar types (`ty.is_scalar()`) are separated into [`PrimitveType`] (atomically-sized types like integers).
+/// - Variable length types are separated into [`VarLenType`] (strings, arrays, and maps).
 ///   This separation allows cleaner pattern-matching, e.g. in `HasLayout::layout`,
 ///   where `VarLenType` returns a static ref to [`VAR_LEN_REF_LAYOUT`],
 ///   and `PrimitiveType` dispatches on its variant to return a static ref
@@ -105,6 +109,17 @@ pub enum AlgebraicTypeLayout {
     Primitive(PrimitiveType),
     /// A variable length type, annotated with its layout.
     VarLen(VarLenType),
+}
+
+impl MemoryUsage for AlgebraicTypeLayout {
+    fn heap_usage(&self) -> usize {
+        match self {
+            AlgebraicTypeLayout::Sum(x) => x.heap_usage(),
+            AlgebraicTypeLayout::Product(x) => x.heap_usage(),
+            AlgebraicTypeLayout::Primitive(x) => x.heap_usage(),
+            AlgebraicTypeLayout::VarLen(x) => x.heap_usage(),
+        }
+    }
 }
 
 impl HasLayout for AlgebraicTypeLayout {
@@ -131,6 +146,8 @@ impl AlgebraicTypeLayout {
     pub const U64: Self = Self::Primitive(PrimitiveType::U64);
     pub const I128: Self = Self::Primitive(PrimitiveType::I128);
     pub const U128: Self = Self::Primitive(PrimitiveType::U128);
+    pub const I256: Self = Self::Primitive(PrimitiveType::I256);
+    pub const U256: Self = Self::Primitive(PrimitiveType::U256);
     pub const F32: Self = Self::Primitive(PrimitiveType::F32);
     pub const F64: Self = Self::Primitive(PrimitiveType::F64);
     pub const String: Self = Self::VarLen(VarLenType::String);
@@ -167,6 +184,13 @@ pub const fn row_size_for_type<T>() -> Size {
 /// This type ensures that the minimum row size is adhered to.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RowTypeLayout(ProductTypeLayout);
+
+impl MemoryUsage for RowTypeLayout {
+    fn heap_usage(&self) -> usize {
+        let Self(layout) = self;
+        layout.heap_usage()
+    }
+}
 
 impl RowTypeLayout {
     /// Returns a view of this row type as a product type.
@@ -215,6 +239,13 @@ pub struct ProductTypeLayout {
     pub elements: Collection<ProductTypeElementLayout>,
 }
 
+impl MemoryUsage for ProductTypeLayout {
+    fn heap_usage(&self) -> usize {
+        let Self { layout, elements } = self;
+        layout.heap_usage() + elements.heap_usage()
+    }
+}
+
 impl HasLayout for ProductTypeLayout {
     fn layout(&self) -> &Layout {
         &self.layout
@@ -237,6 +268,13 @@ pub struct ProductTypeElementLayout {
     pub name: Option<Box<str>>,
 }
 
+impl MemoryUsage for ProductTypeElementLayout {
+    fn heap_usage(&self) -> usize {
+        let Self { offset, ty, name } = self;
+        offset.heap_usage() + ty.heap_usage() + name.heap_usage()
+    }
+}
+
 /// A mirrior of [`SumType`] annotated with a [`Layout`].
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SumTypeLayout {
@@ -247,6 +285,17 @@ pub struct SumTypeLayout {
     /// The relative offset of a sum value's payload for sums of this type.
     /// Sum value tags are always at offset 0.
     pub payload_offset: u16,
+}
+
+impl MemoryUsage for SumTypeLayout {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            layout,
+            variants,
+            payload_offset,
+        } = self;
+        layout.heap_usage() + variants.heap_usage() + payload_offset.heap_usage()
+    }
 }
 
 impl HasLayout for SumTypeLayout {
@@ -268,39 +317,30 @@ pub struct SumTypeVariantLayout {
     pub name: Option<Box<str>>,
 }
 
-/// Variants of [`BuiltinType`] which do not require a `VarLenRef` indirection,
-/// i.e. bools, integers and floats.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum PrimitiveType {
-    Bool,
-    I8,
-    U8,
-    I16,
-    U16,
-    I32,
-    U32,
-    I64,
-    U64,
-    I128,
-    U128,
-    F32,
-    F64,
+impl MemoryUsage for SumTypeVariantLayout {
+    fn heap_usage(&self) -> usize {
+        let Self { ty, name } = self;
+        ty.heap_usage() + name.heap_usage()
+    }
 }
 
+impl MemoryUsage for PrimitiveType {}
+
 impl HasLayout for PrimitiveType {
-    fn layout(&self) -> &Layout {
+    fn layout(&self) -> &'static Layout {
         match self {
             Self::Bool | Self::I8 | Self::U8 => &Layout { size: 1, align: 1 },
             Self::I16 | Self::U16 => &Layout { size: 2, align: 2 },
             Self::I32 | Self::U32 | Self::F32 => &Layout { size: 4, align: 4 },
             Self::I64 | Self::U64 | Self::F64 => &Layout { size: 8, align: 8 },
             Self::I128 | Self::U128 => &Layout { size: 16, align: 16 },
+            Self::I256 | Self::U256 => &Layout { size: 32, align: 32 },
         }
     }
 }
 
-/// [`BuiltinType`] variants which require a `VarLenRef` indirection,
-/// i.e. strings, arrays and maps.
+/// Types requiring a `VarLenRef` indirection,
+/// i.e. strings, arrays, and maps.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum VarLenType {
     /// The string type corresponds to `AlgebraicType::String`.
@@ -310,11 +350,15 @@ pub enum VarLenType {
     /// Storing the whole `AlgebraicType` here allows us to directly call BSATN ser/de,
     /// and to report type errors.
     Array(Box<AlgebraicType>),
-    /// A map type.  The whole outer `AlgebraicType` is stored here.
-    ///
-    /// Storing the whole `AlgebraicType` here allows us to directly call BSATN ser/de,
-    /// and to report type errors.
-    Map(Box<AlgebraicType>),
+}
+
+impl MemoryUsage for VarLenType {
+    fn heap_usage(&self) -> usize {
+        match self {
+            VarLenType::String => 0,
+            VarLenType::Array(x) => x.heap_usage(),
+        }
+    }
 }
 
 /// The layout of var-len objects. Aligned at a `u16` which it has 2 of.
@@ -336,28 +380,24 @@ impl From<AlgebraicType> for AlgebraicTypeLayout {
             AlgebraicType::Sum(sum) => AlgebraicTypeLayout::Sum(sum.into()),
             AlgebraicType::Product(prod) => AlgebraicTypeLayout::Product(prod.into()),
 
-            AlgebraicType::Builtin(ref builtin) => match builtin {
-                BuiltinType::String => AlgebraicTypeLayout::VarLen(VarLenType::String),
-                BuiltinType::Array(_) => AlgebraicTypeLayout::VarLen(VarLenType::Array(Box::new(ty))),
-                BuiltinType::Map(_) => AlgebraicTypeLayout::VarLen(VarLenType::Map(Box::new(ty))),
-                BuiltinType::Bool => AlgebraicTypeLayout::Primitive(PrimitiveType::Bool),
-                BuiltinType::I8 => AlgebraicTypeLayout::Primitive(PrimitiveType::I8),
-                BuiltinType::U8 => AlgebraicTypeLayout::Primitive(PrimitiveType::U8),
-                BuiltinType::I16 => AlgebraicTypeLayout::Primitive(PrimitiveType::I16),
-                BuiltinType::U16 => AlgebraicTypeLayout::Primitive(PrimitiveType::U16),
+            AlgebraicType::String => AlgebraicTypeLayout::VarLen(VarLenType::String),
+            AlgebraicType::Array(_) => AlgebraicTypeLayout::VarLen(VarLenType::Array(Box::new(ty))),
 
-                BuiltinType::I32 => AlgebraicTypeLayout::Primitive(PrimitiveType::I32),
-                BuiltinType::U32 => AlgebraicTypeLayout::Primitive(PrimitiveType::U32),
-
-                BuiltinType::I64 => AlgebraicTypeLayout::Primitive(PrimitiveType::I64),
-                BuiltinType::U64 => AlgebraicTypeLayout::Primitive(PrimitiveType::U64),
-
-                BuiltinType::I128 => AlgebraicTypeLayout::Primitive(PrimitiveType::I128),
-                BuiltinType::U128 => AlgebraicTypeLayout::Primitive(PrimitiveType::U128),
-
-                BuiltinType::F32 => AlgebraicTypeLayout::Primitive(PrimitiveType::F32),
-                BuiltinType::F64 => AlgebraicTypeLayout::Primitive(PrimitiveType::F64),
-            },
+            AlgebraicType::Bool => AlgebraicTypeLayout::Bool,
+            AlgebraicType::I8 => AlgebraicTypeLayout::I8,
+            AlgebraicType::U8 => AlgebraicTypeLayout::U8,
+            AlgebraicType::I16 => AlgebraicTypeLayout::I16,
+            AlgebraicType::U16 => AlgebraicTypeLayout::U16,
+            AlgebraicType::I32 => AlgebraicTypeLayout::I32,
+            AlgebraicType::U32 => AlgebraicTypeLayout::U32,
+            AlgebraicType::I64 => AlgebraicTypeLayout::I64,
+            AlgebraicType::U64 => AlgebraicTypeLayout::U64,
+            AlgebraicType::I128 => AlgebraicTypeLayout::I128,
+            AlgebraicType::U128 => AlgebraicTypeLayout::U128,
+            AlgebraicType::I256 => AlgebraicTypeLayout::I256,
+            AlgebraicType::U256 => AlgebraicTypeLayout::U256,
+            AlgebraicType::F32 => AlgebraicTypeLayout::F32,
+            AlgebraicType::F64 => AlgebraicTypeLayout::F64,
 
             AlgebraicType::Ref(_) => todo!("Refs unsupported without typespace context"),
         }
@@ -467,32 +507,11 @@ impl AlgebraicTypeLayout {
     }
 }
 
-impl PrimitiveType {
-    fn algebraic_type(&self) -> AlgebraicType {
-        match self {
-            PrimitiveType::Bool => AlgebraicType::Bool,
-            PrimitiveType::I8 => AlgebraicType::I8,
-            PrimitiveType::U8 => AlgebraicType::U8,
-            PrimitiveType::I16 => AlgebraicType::I16,
-            PrimitiveType::U16 => AlgebraicType::U16,
-            PrimitiveType::I32 => AlgebraicType::I32,
-            PrimitiveType::U32 => AlgebraicType::U32,
-            PrimitiveType::I64 => AlgebraicType::I64,
-            PrimitiveType::U64 => AlgebraicType::U64,
-            PrimitiveType::I128 => AlgebraicType::I128,
-            PrimitiveType::U128 => AlgebraicType::U128,
-            PrimitiveType::F32 => AlgebraicType::F32,
-            PrimitiveType::F64 => AlgebraicType::F64,
-        }
-    }
-}
-
 impl VarLenType {
     fn algebraic_type(&self) -> AlgebraicType {
         match self {
             VarLenType::String => AlgebraicType::String,
             VarLenType::Array(ty) => ty.as_ref().clone(),
-            VarLenType::Map(ty) => ty.as_ref().clone(),
         }
     }
 }
@@ -587,7 +606,7 @@ pub fn required_var_len_granules_for_row(val: &ProductValue) -> usize {
         match val {
             AlgebraicValue::Product(val) => traverse_product(val, count),
             AlgebraicValue::Sum(val) => traverse_av(&val.value, count),
-            AlgebraicValue::Array(_) | AlgebraicValue::Map(_) => add_for_bytestring(bsatn_len(val), count),
+            AlgebraicValue::Array(_) => add_for_bytestring(bsatn_len(val), count),
             AlgebraicValue::String(val) => add_for_bytestring(val.len(), count),
             _ => (),
         }
@@ -720,6 +739,11 @@ mod test {
                 16,
             ),
             (
+                AlgebraicType::product([AlgebraicType::I256, AlgebraicType::U256]),
+                64,
+                32,
+            ),
+            (
                 AlgebraicType::product([AlgebraicType::String, AlgebraicType::I16]),
                 6,
                 2,
@@ -763,6 +787,8 @@ mod test {
             (AlgebraicType::sum([AlgebraicType::I32, AlgebraicType::I32]), 8, 4),
             (AlgebraicType::sum([AlgebraicType::I64, AlgebraicType::I64]), 16, 8),
             (AlgebraicType::sum([AlgebraicType::I128, AlgebraicType::I128]), 32, 16),
+            (AlgebraicType::sum([AlgebraicType::I256, AlgebraicType::I128]), 64, 32),
+            (AlgebraicType::sum([AlgebraicType::I256, AlgebraicType::U256]), 64, 32),
             (AlgebraicType::sum([AlgebraicType::String, AlgebraicType::I16]), 6, 2),
         ] {
             assert_size_align(ty, size, align);

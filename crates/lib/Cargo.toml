@@ -19,6 +19,8 @@ default = ["serde", "metrics_impls"]
 serde = ["dep:serde", "spacetimedb-sats/serde"]
 # Allows using `Arbitrary` impls defined in this crate.
 proptest = ["dep:proptest", "dep:proptest-derive"]
+# Allows using additional test methods.
+test = ["proptest", "spacetimedb-sats/test"]
 metrics_impls = ["dep:spacetimedb-metrics", "spacetimedb-sats/metrics_impls"]
 
 [dependencies]
@@ -26,6 +28,7 @@ spacetimedb-bindings-macro.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-metrics = { workspace = true, optional = true }
+spacetimedb-data-structures.workspace = true
 
 anyhow.workspace = true
 bitflags.workspace = true
@@ -35,16 +38,20 @@ hex.workspace = true
 itertools.workspace = true
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
+blake3.workspace = true
 
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
+rand.workspace = true
 
 [dev-dependencies]
+spacetimedb-sats = { workspace = true, features = ["test"] }
 rand.workspace = true
 bytes.workspace = true
 serde_json.workspace = true
 insta.workspace = true
+ron.workspace = true
 
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true

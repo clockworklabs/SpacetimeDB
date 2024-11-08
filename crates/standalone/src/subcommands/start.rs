@@ -25,7 +25,7 @@ impl ProgramMode {
     /// based on the mode we're running the program in.
     fn listen_addr(&self) -> &'static str {
         match self {
-            ProgramMode::Standalone => "0.0.0.0:80",
+            ProgramMode::Standalone => "0.0.0.0:3000",
             ProgramMode::CLI => "127.0.0.1:3000",
         }
     }
@@ -215,7 +215,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
 
     let ctx = StandaloneEnv::init(config).await?;
 
-    let service = router().with_state(ctx);
+    let service = router(ctx);
 
     let tcp = TcpListener::bind(listen_addr).await?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;

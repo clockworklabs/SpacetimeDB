@@ -16,29 +16,32 @@ use super::{
     read_column::{ReadColumn, TypeError},
     row_hash::hash_row_in_page,
     row_type_visitor::{row_type_visitor, VarLenVisitorProgram},
-    static_assert_size,
+    static_assert_size, MemoryUsage,
 };
 use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
 use core::{fmt, ptr};
 use derive_more::{Add, AddAssign, From, Sub};
-use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_data_structures::map::{DefaultHashBuilder, HashCollectionExt, HashMap};
+use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId};
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
-    bsatn::{self, ser::BsatnError},
-    db::def::TableSchema,
+    bsatn::{self, ser::BsatnError, ToBsatn},
     product_value::InvalidFieldError,
     satn::Satn,
     ser::{Serialize, Serializer},
     AlgebraicValue, ProductType, ProductValue,
 };
+use spacetimedb_schema::schema::TableSchema;
 use std::sync::Arc;
 use thiserror::Error;
 
 /// The number of bytes used by, added to, or removed from a [`Table`]'s share of a [`BlobStore`].
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default, From, Add, Sub, AddAssign)]
 pub struct BlobNumBytes(usize);
+
+impl MemoryUsage for BlobNumBytes {}
 
 /// A database table containing the row schema, the rows, and indices.
 ///
@@ -112,13 +115,50 @@ impl TableInner {
         unsafe { RowRef::new(self, blob_store, ptr) }
     }
 
+    fn try_page_and_offset(&self, ptr: RowPointer) -> Option<(&Page, PageOffset)> {
+        (ptr.page_index().idx() < self.pages.len()).then(|| (&self.pages[ptr.page_index()], ptr.page_offset()))
+    }
+
     /// Returns the page and page offset that `ptr` points to.
     fn page_and_offset(&self, ptr: RowPointer) -> (&Page, PageOffset) {
-        (&self.pages[ptr.page_index()], ptr.page_offset())
+        self.try_page_and_offset(ptr).unwrap()
     }
 }
 
 static_assert_size!(Table, 256);
+
+impl MemoryUsage for Table {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            inner,
+            pointer_map,
+            indexes,
+            // MEMUSE: intentionally ignoring schema
+            schema: _,
+            squashed_offset,
+            row_count,
+            blob_store_bytes,
+        } = self;
+        inner.heap_usage()
+            + pointer_map.heap_usage()
+            + indexes.heap_usage()
+            + squashed_offset.heap_usage()
+            + row_count.heap_usage()
+            + blob_store_bytes.heap_usage()
+    }
+}
+
+impl MemoryUsage for TableInner {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            row_layout,
+            static_bsatn_layout,
+            visitor_prog,
+            pages,
+        } = self;
+        row_layout.heap_usage() + static_bsatn_layout.heap_usage() + visitor_prog.heap_usage() + pages.heap_usage()
+    }
+}
 
 /// Various error that can happen on table insertion.
 #[derive(Error, Debug)]
@@ -134,6 +174,16 @@ pub enum InsertError {
     /// Some index related error occurred.
     #[error(transparent)]
     IndexError(#[from] UniqueConstraintViolation),
+}
+
+/// Errors that can occur while trying to read a value via bsatn.
+#[derive(Error, Debug)]
+pub enum ReadViaBsatnError {
+    #[error(transparent)]
+    BSatnError(#[from] BsatnError),
+
+    #[error(transparent)]
+    DecodeError(#[from] DecodeError),
 }
 
 // Public API:
@@ -166,7 +216,7 @@ impl Table {
         mut is_deleted: impl FnMut(RowPointer) -> bool,
     ) -> Result<(), UniqueConstraintViolation> {
         for (cols, index) in self.indexes.iter().filter(|(_, index)| index.is_unique) {
-            let value = row.project_not_empty(cols).unwrap();
+            let value = row.project(cols).unwrap();
             if let Some(mut conflicts) = index.get_rows_that_violate_unique_constraint(&value) {
                 if conflicts.any(|ptr| !is_deleted(ptr)) {
                     return Err(self.build_error_unique(index, cols, value));
@@ -526,14 +576,12 @@ impl Table {
     /// Otherwise, the schema must be cloned, mutated,
     /// and then the cloned version is written back to the table.
     pub fn with_mut_schema(&mut self, with: impl FnOnce(&mut TableSchema)) {
-        let mut schema = self.schema.clone();
-        with(Arc::make_mut(&mut schema));
-        self.schema = schema;
+        with(Arc::make_mut(&mut self.schema));
     }
 
     /// Returns a new [`BTreeIndex`] for `table`.
     pub fn new_index(&self, id: IndexId, cols: &ColList, is_unique: bool) -> Result<BTreeIndex, InvalidFieldError> {
-        BTreeIndex::new(id, self.row_layout(), cols, is_unique)
+        BTreeIndex::new(id, self.get_schema().get_row_type(), cols, is_unique)
     }
 
     /// Inserts a new `index` into the table.
@@ -699,15 +747,13 @@ impl<'a> RowRef<'a> {
     ///
     /// Returns an error if `cols` specifies an index which is out-of-bounds for the row at `self`.
     ///
-    /// If `cols` contains more than one column, the values of the projected columns are wrapped in a [`ProductValue`].
+    /// If `cols` contains zero or more than one column, the values of the projected columns are wrapped in a [`ProductValue`].
     /// If `cols` is a single column, the value of that column is returned without wrapping in a `ProductValue`.
     pub fn project_not_empty(self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
-        let len = match cols.len() {
-            0 => unreachable!("A `ColList` can never be empty"),
-            1 => return self.read_col(cols.head()).map_err(|_| cols.head().into()),
-            len => len,
-        };
-        let mut elements = Vec::with_capacity(len as usize);
+        if let Some(head) = cols.as_singleton() {
+            return self.read_col(head).map_err(|_| head.into());
+        }
+        let mut elements = Vec::with_capacity(cols.len() as usize);
         for col in cols.iter() {
             let col_val = self.read_col(col).map_err(|err| match err {
                 TypeError::WrongType { .. } => {
@@ -761,43 +807,15 @@ impl<'a> RowRef<'a> {
         self.table.static_bsatn_layout.as_ref().map(|s| s.bsatn_length as usize)
     }
 
-    /// BSATN-encode the row referred to by `self` into a freshly-allocated `Vec<u8>`.
-    ///
-    /// This method will use a [`StaticBsatnLayout`] if one is available,
-    /// and may therefore be faster than calling [`bsatn::to_vec`].
-    pub fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
-        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
-            // Use fast path, by first fetching the row data and then using the static layout.
-            let row = self.get_row_data();
-            // SAFETY:
-            // - Existence of a `RowRef` treated as proof
-            //   of row's validity and type information's correctness.
-            Ok(unsafe { static_bsatn_layout.serialize_row_into_vec(row) })
-        } else {
-            bsatn::to_vec(self)
-        }
-    }
-
-    /// BSATN-encode the row referred to by `self` into `buf`,
-    /// pushing `self`'s bytes onto the end of `buf`, similar to [`Vec::extend`].
-    ///
-    /// This method will use a [`StaticBsatnLayout`] if one is available,
-    /// and may therefore be faster than calling [`bsatn::to_writer`].
-    pub fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
-        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
-            // Use fast path, by first fetching the row data and then using the static layout.
-            let row = self.get_row_data();
-            // SAFETY:
-            // - Existence of a `RowRef` treated as proof
-            //   of row's validity and type information's correctness.
-            unsafe {
-                static_bsatn_layout.serialize_row_extend(buf, row);
-            }
-            Ok(())
-        } else {
-            // Use the slower, but more general, `bsatn_from` serializer to write the row.
-            bsatn::to_writer(buf, self)
-        }
+    /// Encode the row referred to by `self` into a `Vec<u8>` using BSATN and then deserialize it.
+    /// The passed buffer is allowed to be in an arbitrary state before and after this operation.
+    pub fn read_via_bsatn<T>(&self, scratch: &mut Vec<u8>) -> Result<T, ReadViaBsatnError>
+    where
+        T: DeserializeOwned,
+    {
+        scratch.clear();
+        self.to_bsatn_extend(scratch)?;
+        Ok(bsatn::from_slice::<T>(scratch)?)
     }
 
     /// Return the number of bytes in the blob store to which this object holds a reference.
@@ -834,6 +852,51 @@ impl Serialize for RowRef<'_> {
         let (page, offset) = table.page_and_offset(self.pointer);
         // SAFETY: `ptr` points to a valid row in this table per above check.
         unsafe { serialize_row_from_page(ser, page, self.blob_store, offset, &table.row_layout) }
+    }
+}
+
+impl ToBsatn for RowRef<'_> {
+    /// BSATN-encode the row referred to by `self` into a freshly-allocated `Vec<u8>`.
+    ///
+    /// This method will use a [`StaticBsatnLayout`] if one is available,
+    /// and may therefore be faster than calling [`bsatn::to_vec`].
+    fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
+        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
+            // Use fast path, by first fetching the row data and then using the static layout.
+            let row = self.get_row_data();
+            // SAFETY:
+            // - Existence of a `RowRef` treated as proof
+            //   of row's validity and type information's correctness.
+            Ok(unsafe { static_bsatn_layout.serialize_row_into_vec(row) })
+        } else {
+            bsatn::to_vec(self)
+        }
+    }
+
+    /// BSATN-encode the row referred to by `self` into `buf`,
+    /// pushing `self`'s bytes onto the end of `buf`, similar to [`Vec::extend`].
+    ///
+    /// This method will use a [`StaticBsatnLayout`] if one is available,
+    /// and may therefore be faster than calling [`bsatn::to_writer`].
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
+            // Use fast path, by first fetching the row data and then using the static layout.
+            let row = self.get_row_data();
+            // SAFETY:
+            // - Existence of a `RowRef` treated as proof
+            //   of row's validity and type information's correctness.
+            unsafe {
+                static_bsatn_layout.serialize_row_extend(buf, row);
+            }
+            Ok(())
+        } else {
+            // Use the slower, but more general, `bsatn_from` serializer to write the row.
+            bsatn::to_writer(buf, self)
+        }
+    }
+
+    fn static_bsatn_size(&self) -> Option<u16> {
+        self.table.static_bsatn_layout.as_ref().map(|sbl| sbl.bsatn_length)
     }
 }
 
@@ -1039,7 +1102,7 @@ impl Table {
                 pages: Pages::default(),
             },
             schema,
-            indexes: HashMap::with_capacity(indexes_capacity),
+            indexes: HashMap::<_, _, DefaultHashBuilder>::with_capacity(indexes_capacity),
             pointer_map: PointerMap::default(),
             squashed_offset,
             row_count: 0,
@@ -1067,8 +1130,13 @@ impl Table {
     //       As such, our `delete` and `insert` methods can be `unsafe`
     //       and trust that the `RowPointer` is valid.
     fn is_row_present(&self, ptr: RowPointer) -> bool {
-        let (page, offset) = self.inner.page_and_offset(ptr);
-        self.squashed_offset == ptr.squashed_offset() && page.has_row_offset(self.row_size(), offset)
+        if self.squashed_offset != ptr.squashed_offset() {
+            return false;
+        }
+        let Some((page, offset)) = self.inner.try_page_and_offset(ptr) else {
+            return false;
+        };
+        page.has_row_offset(self.row_size(), offset)
     }
 
     /// Returns the row size for a row in the table.
@@ -1146,38 +1214,47 @@ pub(crate) mod test {
     use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
+    use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
+    use spacetimedb_primitives::{col_list, TableId};
     use spacetimedb_sats::bsatn::to_vec;
-    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
     use spacetimedb_sats::proptest::generate_typed_row;
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
+    use spacetimedb_schema::def::ModuleDef;
+    use spacetimedb_schema::schema::Schema as _;
 
+    /// Create a `Table` from a `ProductType` without validation.
     pub(crate) fn table(ty: ProductType) -> Table {
-        let def = TableDef::from_product("", ty);
-        let schema = TableSchema::from_def(0.into(), def);
+        // Use a fast path here to avoid slowing down Miri in the proptests.
+        // Does not perform validation.
+        let schema = TableSchema::from_product_type(ty);
         Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
     }
 
     #[test]
     fn unique_violation_error() {
-        let index_name = "my_unique_constraint";
-        // Build a table for (I32, I32) with a unique index on the 0th column.
-        let table_def = TableDef::new(
-            "UniqueIndexed".into(),
-            ["unique_col", "other_col"]
-                .map(|c| ColumnDef {
-                    col_name: c.into(),
-                    col_type: AlgebraicType::I32,
-                })
-                .into(),
-        )
-        .with_indexes(vec![IndexDef {
-            columns: 0.into(),
-            index_name: index_name.into(),
-            is_unique: true,
-            index_type: IndexType::BTree,
-        }]);
-        let schema = TableSchema::from_def(0.into(), table_def);
+        let table_name = "UniqueIndexed";
+        let constraint_name = "my_unique_constraint";
+        let index_name = "my_index";
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                table_name,
+                ProductType::from([("unique_col", AlgebraicType::I32), ("other_col", AlgebraicType::I32)]),
+                true,
+            )
+            .with_unique_constraint(0, Some(constraint_name.into()))
+            .with_index(
+                RawIndexAlgorithm::BTree { columns: col_list![0] },
+                "accessor_name_doesnt_matter",
+                Some(index_name.into()),
+            );
+
+        let def: ModuleDef = builder.finish().try_into().expect("Failed to build schema");
+
+        let schema = TableSchema::from_module_def(&def, def.table(table_name).unwrap(), (), TableId::SENTINEL);
+        assert_eq!(schema.indexes.len(), 1);
         let index_schema = schema.indexes[0].clone();
+
         let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
         let cols = ColList::new(0.into());
 
@@ -1416,5 +1493,29 @@ pub(crate) mod test {
         // Delete the first long string row. This gets us down to 0 (we've now deleted 2x).
         table1.delete(blob_store, long_row_ptr2, |_| ()).unwrap();
         assert_eq!(table1.blob_store_bytes, 0.into());
+    }
+
+    /// Assert that calling `get_row_ref` to get a row ref to a non-existent `RowPointer`
+    /// does not panic.
+    #[test]
+    fn get_row_ref_no_panic() {
+        let blob_store = &mut HashMapBlobStore::default();
+        let table = table([AlgebraicType::String, AlgebraicType::I32].into());
+
+        // This row pointer has an incorrect `SquashedOffset`, and so does not point into `table`.
+        assert!(table
+            .get_row_ref(
+                blob_store,
+                RowPointer::new(false, PageIndex(0), PageOffset(0), SquashedOffset::TX_STATE),
+            )
+            .is_none());
+
+        // This row pointer has the correct `SquashedOffset`, but points out-of-bounds within `table`.
+        assert!(table
+            .get_row_ref(
+                blob_store,
+                RowPointer::new(false, PageIndex(0), PageOffset(0), SquashedOffset::COMMITTED_STATE),
+            )
+            .is_none());
     }
 }

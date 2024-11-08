@@ -1,12 +1,12 @@
-use derive_more::{From, Into};
-use std::fmt;
-use std::fmt::Write as _;
-
 use crate::{
     algebraic_value::ser::ValueSerializer,
     ser::{self, Serialize},
     ProductType,
 };
+use crate::{i256, u256};
+use core::fmt;
+use core::fmt::Write as _;
+use derive_more::{From, Into};
 
 /// An extension trait for [`Serialize`](ser::Serialize) providing formatting methods.
 pub trait Satn: ser::Serialize {
@@ -253,7 +253,6 @@ impl<'a, 'b> ser::Serializer for SatnFormatter<'a, 'b> {
     type Ok = ();
     type Error = SatnError;
     type SerializeArray = ArrayFormatter<'a, 'b>;
-    type SerializeMap = MapFormatter<'a, 'b>;
     type SerializeSeqProduct = SeqFormatter<'a, 'b>;
     type SerializeNamedProduct = NamedFormatter<'a, 'b>;
 
@@ -275,6 +274,9 @@ impl<'a, 'b> ser::Serializer for SatnFormatter<'a, 'b> {
     fn serialize_u128(mut self, v: u128) -> Result<Self::Ok, Self::Error> {
         write!(self, "{v}")
     }
+    fn serialize_u256(mut self, v: u256) -> Result<Self::Ok, Self::Error> {
+        write!(self, "{v}")
+    }
     fn serialize_i8(mut self, v: i8) -> Result<Self::Ok, Self::Error> {
         write!(self, "{v}")
     }
@@ -288,6 +290,9 @@ impl<'a, 'b> ser::Serializer for SatnFormatter<'a, 'b> {
         write!(self, "{v}")
     }
     fn serialize_i128(mut self, v: i128) -> Result<Self::Ok, Self::Error> {
+        write!(self, "{v}")
+    }
+    fn serialize_i256(mut self, v: i256) -> Result<Self::Ok, Self::Error> {
         write!(self, "{v}")
     }
     fn serialize_f32(mut self, v: f32) -> Result<Self::Ok, Self::Error> {
@@ -308,16 +313,6 @@ impl<'a, 'b> ser::Serializer for SatnFormatter<'a, 'b> {
     fn serialize_array(mut self, _len: usize) -> Result<Self::SerializeArray, Self::Error> {
         write!(self, "[")?; // Closed via `.end()`.
         Ok(ArrayFormatter {
-            f: EntryWrapper::new(self.f),
-        })
-    }
-
-    fn serialize_map(mut self, len: usize) -> Result<Self::SerializeMap, Self::Error> {
-        write!(self, "[")?; // Closed via `.end()`.
-        if len == 0 {
-            write!(self, ":")?;
-        }
-        Ok(MapFormatter {
             f: EntryWrapper::new(self.f),
         })
     }
@@ -413,36 +408,6 @@ impl<'a, 'b> ser::SerializeArray for ArrayFormatter<'a, 'b> {
 
     fn serialize_element<T: ser::Serialize + ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error> {
         self.f.entry(|f| elem.serialize(SatnFormatter { f }).map_err(|e| e.0))?;
-        Ok(())
-    }
-
-    fn end(mut self) -> Result<Self::Ok, Self::Error> {
-        write!(self.f.fmt, "]")?;
-        Ok(())
-    }
-}
-
-/// Provides the data format for maps for SATN.
-struct MapFormatter<'a, 'b> {
-    /// The formatter for each element separating elements by a `,`.
-    f: EntryWrapper<'a, 'b, ','>,
-}
-
-impl<'a, 'b> ser::SerializeMap for MapFormatter<'a, 'b> {
-    type Ok = ();
-    type Error = SatnError;
-
-    fn serialize_entry<K: ser::Serialize + ?Sized, V: ser::Serialize + ?Sized>(
-        &mut self,
-        key: &K,
-        value: &V,
-    ) -> Result<(), Self::Error> {
-        self.f.entry(|mut f| {
-            key.serialize(SatnFormatter { f: f.as_mut() })?;
-            f.write_str(": ")?;
-            value.serialize(SatnFormatter { f })?;
-            Ok(())
-        })?;
         Ok(())
     }
 
@@ -601,7 +566,6 @@ impl<'a, 'b> ser::Serializer for PsqlFormatter<'a, 'b> {
     type Ok = ();
     type Error = SatnError;
     type SerializeArray = ArrayFormatter<'a, 'b>;
-    type SerializeMap = MapFormatter<'a, 'b>;
     type SerializeSeqProduct = PsqlSeqFormatter<'a, 'b>;
     type SerializeNamedProduct = PsqlNamedFormatter<'a, 'b>;
 
@@ -623,6 +587,9 @@ impl<'a, 'b> ser::Serializer for PsqlFormatter<'a, 'b> {
     fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error> {
         self.fmt.serialize_u128(v)
     }
+    fn serialize_u256(self, v: u256) -> Result<Self::Ok, Self::Error> {
+        self.fmt.serialize_u256(v)
+    }
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
         self.fmt.serialize_i8(v)
     }
@@ -637,6 +604,9 @@ impl<'a, 'b> ser::Serializer for PsqlFormatter<'a, 'b> {
     }
     fn serialize_i128(self, v: i128) -> Result<Self::Ok, Self::Error> {
         self.fmt.serialize_i128(v)
+    }
+    fn serialize_i256(self, v: i256) -> Result<Self::Ok, Self::Error> {
+        self.fmt.serialize_i256(v)
     }
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
         self.fmt.serialize_f32(v)
@@ -655,10 +625,6 @@ impl<'a, 'b> ser::Serializer for PsqlFormatter<'a, 'b> {
 
     fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error> {
         self.fmt.serialize_array(len)
-    }
-
-    fn serialize_map(self, len: usize) -> Result<Self::SerializeMap, Self::Error> {
-        self.fmt.serialize_map(len)
     }
 
     fn serialize_seq_product(self, len: usize) -> Result<Self::SerializeSeqProduct, Self::Error> {

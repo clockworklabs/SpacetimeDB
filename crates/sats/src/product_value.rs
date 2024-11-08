@@ -79,47 +79,20 @@ impl ProductValue {
         })
     }
 
-    /// This function is used to project fields based on the provided `indexes`.
-    ///
-    /// It will raise an [InvalidFieldError] if any of the supplied `indexes` cannot be found.
-    ///
-    /// The optional parameter `name: Option<&'static str>` serves a non-functional role and is
-    /// solely utilized for generating error messages.
-    ///
-    /// **Important:**
-    ///
-    /// The resulting [AlgebraicValue] will wrap into a [ProductValue] when projecting multiple
-    /// fields, otherwise it will consist of a single [AlgebraicValue].
-    pub fn project(&self, indexes: &[(ColId, Option<&'static str>)]) -> Result<AlgebraicValue, InvalidFieldError> {
-        let fields = match indexes {
-            [(index, name)] => self.get_field((*index).into(), *name)?.clone(),
-            indexes => {
-                let fields = indexes
-                    .iter()
-                    .map(|(index, name)| self.get_field((*index).into(), *name).cloned())
-                    .collect::<Result<Vec<_>, _>>()?;
-                AlgebraicValue::product(fields)
-            }
-        };
-
-        Ok(fields)
-    }
-
     /// This utility function is designed to project fields based on the supplied `indexes`.
     ///
     /// **Important:**
     ///
     /// The resulting [AlgebraicValue] will wrap into a [ProductValue] when projecting multiple
-    /// fields, otherwise it will consist of a single [AlgebraicValue].
+    /// (including zero) fields, otherwise it will consist of a single [AlgebraicValue].
     ///
     /// **Parameters:**
     /// - `cols`: A [ColList] containing the indexes of fields to be projected.s
-    pub fn project_not_empty(&self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
-        let proj_len = cols.len();
-        if proj_len == 1 {
-            self.get_field(cols.head().idx(), None).cloned()
+    pub fn project(&self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
+        if let Some(head) = cols.as_singleton() {
+            self.get_field(head.idx(), None).cloned()
         } else {
-            let mut fields = Vec::with_capacity(proj_len as usize);
+            let mut fields = Vec::with_capacity(cols.len() as usize);
             for col in cols.iter() {
                 fields.push(self.get_field(col.idx(), None)?.clone());
             }

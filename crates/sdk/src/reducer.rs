@@ -3,14 +3,25 @@ use crate::global_connection::{with_connection, with_reducer_callbacks};
 use crate::identity::Identity;
 use crate::Address;
 use anyhow::Result;
+use spacetimedb_client_api_messages::websocket::BsatnFormat;
 use spacetimedb_sats::{de::DeserializeOwned, ser::Serialize};
 use std::any::Any;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Status {
     Committed,
-    Failed(String),
+    Failed(Box<str>),
     OutOfEnergy,
+}
+
+impl Status {
+    pub(crate) fn from_update_status(status: &crate::ws_messages::UpdateStatus<BsatnFormat>) -> Self {
+        match status {
+            crate::ws_messages::UpdateStatus::Committed(_) => Self::Committed,
+            crate::ws_messages::UpdateStatus::Failed(errmsg) => Self::Failed(errmsg.clone()),
+            crate::ws_messages::UpdateStatus::OutOfEnergy => Self::OutOfEnergy,
+        }
+    }
 }
 
 #[derive(Copy, Clone)]

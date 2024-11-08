@@ -1,19 +1,22 @@
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
-use spacetimedb_primitives::{ColId, ColList, ConstraintKind, Constraints};
-use spacetimedb_sats::db::def::{ColumnDef, ConstraintDef, TableDef, TableSchema};
-use spacetimedb_sats::db::error::RelationError;
-use spacetimedb_sats::relation::{ColExpr, FieldName};
+use spacetimedb_expr::check::SchemaView;
+use spacetimedb_expr::statement::compile_sql_stmt;
+use spacetimedb_lib::db::auth::StAccess;
+use spacetimedb_lib::db::error::RelationError;
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::relation::{ColExpr, FieldName};
+use spacetimedb_primitives::ColId;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
+use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_vm::errors::ErrorVm;
-use spacetimedb_vm::expr::{DbType, Expr, FieldExpr, FieldOp};
+use spacetimedb_vm::expr::{Expr, FieldExpr, FieldOp};
 use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
 use spacetimedb_vm::ops::parse::{parse, parse_simple_enum};
 use sqlparser::ast::{
-    Assignment, BinaryOperator, ColumnDef as SqlColumnDef, ColumnOption, DataType, ExactNumberInfo, Expr as SqlExpr,
-    GeneratedAs, HiveDistributionStyle, Ident, JoinConstraint, JoinOperator, ObjectName, ObjectType, Query, Select,
-    SelectItem, SetExpr, Statement, TableFactor, TableWithJoins, Value, Values,
+    Assignment, BinaryOperator, Expr as SqlExpr, HiveDistributionStyle, Ident, JoinConstraint, JoinOperator,
+    ObjectName, Query, Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins, Value, Values,
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
@@ -174,6 +177,19 @@ impl From {
     pub(super) fn find_field(&self, f: &str) -> Result<(FieldName, &AlgebraicType), PlanError> {
         find_field(self.iter_tables(), f)
     }
+
+    /// Returns the name of the table,
+    /// together with the column definition at position `field.col`,
+    /// for table `field.table_id`.
+    pub(super) fn find_field_name(&self, field: FieldName) -> Option<(&str, &ColumnSchema)> {
+        self.iter_tables().find_map(|t| {
+            if t.table_id == field.table() {
+                t.get_column_by_field(field).map(|c| (&*t.table_name, c))
+            } else {
+                None
+            }
+        })
+    }
 }
 
 /// Returns the field matching `f` looking in `tables`
@@ -271,13 +287,6 @@ pub enum SqlAst {
     Delete {
         table: Arc<TableSchema>,
         selection: Option<Selection>,
-    },
-    CreateTable {
-        table: Box<TableDef>,
-    },
-    Drop {
-        name: String,
-        kind: DbType,
     },
     SetVar {
         name: String,
@@ -461,6 +470,36 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
         _compile_where(table, filter)
     } else {
         Ok(None)
+    }
+}
+
+pub struct SchemaViewer<'a, T> {
+    db: &'a RelationalDB,
+    tx: &'a T,
+    auth: &'a AuthCtx,
+}
+
+impl<T: TableSchemaView> SchemaView for SchemaViewer<'_, T> {
+    fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
+        let name = name.to_owned().into_boxed_str();
+        let schema = self
+            .tx
+            .find_table(self.db, Table { name })
+            .map(Some)
+            // If there was an error fetching the table schema,
+            // we swallow it and return None.
+            // It will be surfaced as a name resolution error instead.
+            .unwrap_or_else(|_| None)?;
+        if schema.table_access == StAccess::Private && self.auth.caller != self.auth.owner {
+            return None;
+        }
+        Some(schema)
+    }
+}
+
+impl<'a, T> SchemaViewer<'a, T> {
+    pub fn new(db: &'a RelationalDB, tx: &'a T, auth: &'a AuthCtx) -> Self {
+        Self { db, tx, auth }
     }
 }
 
@@ -771,167 +810,7 @@ fn compile_delete<T: TableSchemaView>(
     })
 }
 
-/// Infer the column `size` from the [SqlColumnDef]
-fn column_size(column: &SqlColumnDef) -> Option<u64> {
-    match column.data_type {
-        DataType::Char(x) => x.map(|x| x.length),
-        DataType::Varchar(x) => x.map(|x| x.length),
-        DataType::Nvarchar(x) => x,
-        DataType::Float(x) => x,
-        DataType::TinyInt(x) => x,
-        DataType::UnsignedTinyInt(x) => x,
-        DataType::SmallInt(x) => x,
-        DataType::UnsignedSmallInt(x) => x,
-        DataType::Int(x) => x,
-        DataType::Integer(x) => x,
-        DataType::UnsignedInt(x) => x,
-        DataType::UnsignedInteger(x) => x,
-        DataType::BigInt(x) => x,
-        DataType::UnsignedBigInt(x) => x,
-        DataType::Decimal(x) => match x {
-            ExactNumberInfo::None => None,
-            ExactNumberInfo::Precision(x) => Some(x),
-            ExactNumberInfo::PrecisionAndScale(x, _) => Some(x),
-        },
-        _ => None,
-    }
-}
-
-/// Infer the column [AlgebraicType] from the [DataType] + `is_null` definition
-//NOTE: We don't support `SERIAL` as recommended in https://wiki.postgresql.org/wiki/Don%27t_Do_This#Don.27t_use_serial
-fn column_def_type(named: &String, is_null: bool, data_type: &DataType) -> Result<AlgebraicType, PlanError> {
-    let ty = match data_type {
-        DataType::Char(_) | DataType::Varchar(_) | DataType::Nvarchar(_) | DataType::Text | DataType::String => {
-            AlgebraicType::String
-        }
-        DataType::Float(_) => AlgebraicType::F64,
-        DataType::TinyInt(_) => AlgebraicType::I8,
-        DataType::UnsignedTinyInt(_) => AlgebraicType::U8,
-        DataType::SmallInt(_) => AlgebraicType::I16,
-        DataType::UnsignedSmallInt(_) => AlgebraicType::U16,
-        DataType::Int(_) => AlgebraicType::I32,
-        DataType::Integer(_) => AlgebraicType::I32,
-        DataType::UnsignedInt(_) => AlgebraicType::U32,
-        DataType::UnsignedInteger(_) => AlgebraicType::U32,
-        DataType::BigInt(_) => AlgebraicType::I64,
-        DataType::UnsignedBigInt(_) => AlgebraicType::U64,
-        DataType::Real => AlgebraicType::F32,
-        DataType::Double => AlgebraicType::F64,
-        DataType::Boolean => AlgebraicType::Bool,
-        DataType::Array(Some(ty)) => AlgebraicType::array(column_def_type(named, false, ty)?),
-        DataType::Enum(values) => AlgebraicType::simple_enum(values.iter().map(|x| x.as_str())),
-        x => {
-            return Err(PlanError::Unsupported {
-                feature: format!("Column {} of type {}", named, x),
-            });
-        }
-    };
-
-    Ok(if is_null { AlgebraicType::option(ty) } else { ty })
-}
-
-/// Extract the column attributes into [ColumnAttribute]
-fn compile_column_option(col: &SqlColumnDef) -> Result<(bool, Constraints), PlanError> {
-    let mut attr = Constraints::unset();
-    let mut is_null = false;
-
-    for x in &col.options {
-        match &x.option {
-            ColumnOption::Null => {
-                is_null = true;
-            }
-            ColumnOption::NotNull => {
-                is_null = false;
-            }
-            ColumnOption::Unique { is_primary } => {
-                attr = attr.push(if *is_primary {
-                    Constraints::primary_key()
-                } else {
-                    Constraints::unique()
-                });
-            }
-            ColumnOption::Generated {
-                generated_as,
-                sequence_options: _,
-                generation_expr,
-            } => {
-                unsupported!("IDENTITY options", generation_expr);
-
-                match generated_as {
-                    GeneratedAs::ByDefault => {
-                        attr = attr.push(Constraints::identity());
-                    }
-                    x => {
-                        return Err(PlanError::Unsupported {
-                            feature: format!("IDENTITY option {x:?}"),
-                        });
-                    }
-                }
-            }
-            ColumnOption::Comment(_) => {}
-            x => {
-                return Err(PlanError::Unsupported {
-                    feature: format!("Column option {x}"),
-                });
-            }
-        }
-    }
-    Ok((is_null, attr))
-}
-
-/// Compiles the `CREATE TABLE ...` clause
-fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst, PlanError> {
-    let mut constraints = Vec::new();
-
-    let mut columns = Vec::with_capacity(cols.len());
-    for (col_pos, col) in cols.into_iter().enumerate() {
-        if column_size(&col).is_some() {
-            return Err(PlanError::Unsupported {
-                feature: format!("Column with a defined size {}", col.name),
-            });
-        }
-
-        let name = col.name.to_string();
-        let (is_null, attr) = compile_column_option(&col)?;
-
-        if attr.kind() != ConstraintKind::UNSET {
-            constraints.push(ConstraintDef::for_column(
-                &table.name,
-                &name,
-                attr,
-                ColList::new(col_pos.into()),
-            ));
-        }
-
-        let ty = column_def_type(&name, is_null, &col.data_type)?;
-        columns.push(ColumnDef {
-            col_name: name.into(),
-            col_type: ty,
-        });
-    }
-
-    let table = Box::new(TableDef::new(table.name, columns).with_constraints(constraints));
-
-    Ok(SqlAst::CreateTable { table })
-}
-
-/// Compiles the `DROP ...` clause
-fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError> {
-    let kind = match kind {
-        ObjectType::Table => DbType::Table,
-        ObjectType::Index => DbType::Index,
-        x => {
-            return Err(PlanError::Unsupported {
-                feature: format!("DROP {x}"),
-            });
-        }
-    };
-
-    let name = name.to_string();
-    Ok(SqlAst::Drop { name, kind })
-}
-
-/// Compiles the equivalent of `SET key = value`
+// Compiles the equivalent of `SET key = value`
 fn compile_set_config(name: ObjectName, value: Vec<SqlExpr>) -> Result<SqlAst, PlanError> {
     let name = name.to_string();
 
@@ -1048,103 +927,6 @@ fn compile_statement<T: TableSchemaView>(db: &RelationalDB, tx: &T, statement: S
             let table_name = compile_table_factor(table.relation)?;
             compile_delete(db, tx, table_name, selection)
         }
-        Statement::CreateTable {
-            transient,
-            columns,
-            constraints,
-            //not supported
-            or_replace,
-            temporary,
-            external,
-            global,
-            if_not_exists,
-            name,
-            hive_distribution,
-            hive_formats,
-            table_properties,
-            with_options,
-            file_format,
-            location,
-            query,
-            without_rowid,
-            like,
-            clone,
-            engine,
-            default_charset,
-            collation,
-            on_commit,
-            on_cluster,
-            order_by,
-            comment,
-            auto_increment_offset,
-            strict,
-        } => {
-            if let Some(x) = &hive_formats {
-                if x.row_format
-                    .as_ref()
-                    .and(x.location.as_ref())
-                    .and(x.storage.as_ref())
-                    .is_some()
-                {
-                    unsupported!("CREATE TABLE", hive_formats);
-                }
-            }
-            unsupported!(
-                "CREATE TABLE",
-                transient,
-                or_replace,
-                temporary,
-                external,
-                global,
-                if_not_exists,
-                constraints,
-                hive_distribution,
-                table_properties,
-                with_options,
-                file_format,
-                location,
-                query,
-                without_rowid,
-                like,
-                clone,
-                engine,
-                default_charset,
-                collation,
-                on_commit,
-                on_cluster,
-                order_by,
-                comment,
-                auto_increment_offset,
-                strict,
-            );
-            let table = Table::new(name);
-            compile_create_table(table, columns)
-        }
-        Statement::Drop {
-            object_type,
-            if_exists,
-            names,
-            cascade,
-            restrict,
-            purge,
-            temporary,
-        } => {
-            unsupported!("DROP", if_exists, cascade, purge, restrict, temporary);
-
-            if names.len() > 1 {
-                return Err(PlanError::Unsupported {
-                    feature: "DROP with more than 1 name".into(),
-                });
-            }
-            let name = if let Some(name) = names.first() {
-                name
-            } else {
-                return Err(PlanError::Unsupported {
-                    feature: "DROP without names".into(),
-                });
-            };
-            compile_drop(name, object_type)
-        }
         Statement::SetVariable {
             local,
             hivevar,
@@ -1164,9 +946,14 @@ fn compile_statement<T: TableSchemaView>(db: &RelationalDB, tx: &T, statement: S
 /// Compiles a `sql` string into a `Vec<SqlAst>` using a SQL parser with [PostgreSqlDialect]
 pub(crate) fn compile_to_ast<T: TableSchemaView>(
     db: &RelationalDB,
+    auth: &AuthCtx,
     tx: &T,
     sql_text: &str,
 ) -> Result<Vec<SqlAst>, DBError> {
+    // NOTE: The following ensures compliance with the 1.0 sql api.
+    // Come 1.0, it will have replaced the current compilation stack.
+    compile_sql_stmt(sql_text, &SchemaViewer::new(db, tx, auth))?;
+
     let dialect = PostgreSqlDialect {};
     let ast = Parser::parse_sql(&dialect, sql_text).map_err(|error| DBError::SqlParser {
         sql: sql_text.to_string(),

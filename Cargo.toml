@@ -11,14 +11,19 @@ members = [
   "crates/core",
   "crates/data-structures",
   "crates/durability",
+  "crates/execution",
+  "crates/expr",
   "crates/fs-utils",
   "crates/lib",
   "crates/metrics",
+  "crates/physical-plan",
   "crates/primitives",
   "crates/sats",
+  "crates/schema",
   "crates/sdk",
   "crates/snapshot",
   "crates/sqltest",
+  "crates/sql-parser",
   "crates/standalone",
   "crates/table",
   "crates/testing",
@@ -77,31 +82,36 @@ inherits = "release"
 debug = true
 
 [workspace.package]
-version = "0.10.0"
+version = "1.0.0-rc2"
 edition = "2021"
 # update rust-toolchain.toml too!
 rust-version = "1.78.0"
 
 [workspace.dependencies]
-spacetimedb = { path = "crates/bindings", version = "0.10.0" }
-spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "0.10.0" }
-spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "0.10.0" }
-spacetimedb-cli = { path = "crates/cli", version = "0.10.0" }
-spacetimedb-client-api = { path = "crates/client-api", version = "0.10.0" }
-spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "0.10.0" }
-spacetimedb-commitlog = { path = "crates/commitlog", version = "0.10.0" }
-spacetimedb-core = { path = "crates/core", version = "0.10.0" }
-spacetimedb-data-structures = { path = "crates/data-structures", version = "0.10.0" }
-spacetimedb-durability = { path = "crates/durability", version = "0.10.0" }
-spacetimedb-lib = { path = "crates/lib", default-features = false, version = "0.10.0" }
-spacetimedb-metrics = { path = "crates/metrics", version = "0.10.0" }
-spacetimedb-primitives = { path = "crates/primitives", version = "0.10.0" }
-spacetimedb-sats = { path = "crates/sats", version = "0.10.0" }
-spacetimedb-standalone = { path = "crates/standalone", version = "0.10.0" }
-spacetimedb-table = { path = "crates/table", version = "0.10.0" }
-spacetimedb-vm = { path = "crates/vm", version = "0.10.0" }
-spacetimedb-fs-utils = { path = "crates/fs-utils", version = "0.10.0" }
-spacetimedb-snapshot = { path = "crates/snapshot", version = "0.10.0" }
+spacetimedb = { path = "crates/bindings", version = "1.0.0-rc2" }
+spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "1.0.0-rc2" }
+spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "1.0.0-rc2" }
+spacetimedb-cli = { path = "crates/cli", version = "1.0.0-rc2" }
+spacetimedb-client-api = { path = "crates/client-api", version = "1.0.0-rc2" }
+spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "1.0.0-rc2" }
+spacetimedb-commitlog = { path = "crates/commitlog", version = "1.0.0-rc2" }
+spacetimedb-core = { path = "crates/core", version = "1.0.0-rc2" }
+spacetimedb-data-structures = { path = "crates/data-structures", version = "1.0.0-rc2" }
+spacetimedb-durability = { path = "crates/durability", version = "1.0.0-rc2" }
+spacetimedb-execution = { path = "crates/execution", version = "1.0.0-rc2" }
+spacetimedb-expr = { path = "crates/expr", version = "1.0.0-rc2" }
+spacetimedb-lib = { path = "crates/lib", default-features = false, version = "1.0.0-rc2" }
+spacetimedb-metrics = { path = "crates/metrics", version = "1.0.0-rc2" }
+spacetimedb-physical-plan = { path = "crates/physical-plan", version = "1.0.0-rc2" }
+spacetimedb-primitives = { path = "crates/primitives", version = "1.0.0-rc2" }
+spacetimedb-sats = { path = "crates/sats", version = "1.0.0-rc2" }
+spacetimedb-schema = { path = "crates/schema", version = "1.0.0-rc2" }
+spacetimedb-standalone = { path = "crates/standalone", version = "1.0.0-rc2" }
+spacetimedb-sql-parser = { path = "crates/sql-parser", version = "1.0.0-rc2" }
+spacetimedb-table = { path = "crates/table", version = "1.0.0-rc2" }
+spacetimedb-vm = { path = "crates/vm", version = "1.0.0-rc2" }
+spacetimedb-fs-utils = { path = "crates/fs-utils", version = "1.0.0-rc2" }
+spacetimedb-snapshot = { path = "crates/snapshot", version = "1.0.0-rc2" }
 
 ahash = "0.8"
 anyhow = "1.0.68"
@@ -116,12 +126,12 @@ bitflags = "2.3.3"
 blake3 = "1.5.1"
 brotli = "3.5"
 byte-unit = "4.0.18"
-bytemuck = { version = "1.16", features = ["derive", "must_cast"] }
+bytemuck = { version = "1.16.2", features = ["must_cast"] }
 bytes = "1.2.1"
 bytestring = { version = "1.2.0", features = ["serde"] }
 cargo_metadata = "0.17.0"
 chrono = { version = "0.4.24", default-features = false }
-clap = { version = "4.2.4", features = ["derive"] }
+clap = { version = "4.2.4", features = ["derive", "wrap_help"] }
 colored = "2.0.0"
 console = { version = "0.15.6" }
 convert_case = "0.6.0"
@@ -138,6 +148,7 @@ email_address = "0.2.4"
 enum-as-inner = "0.6"
 enum-map = "2.6.3"
 env_logger = "0.10"
+ethnum = { version = "1.5.0", features = ["serde"] }
 flate2 = "1.0.24"
 fs-err = "2.9.0"
 fs2 = "0.4.3"
@@ -145,8 +156,9 @@ futures = "0.3"
 futures-channel = "0.3"
 getrandom = "0.2.7"
 glob = "0.3.1"
-hashbrown = "0.14"
+hashbrown = { version = "0.15", default-features = false, features = ["equivalent", "inline-more"] }
 headers = "0.4"
+heck = "0.4"
 hex = "0.4.3"
 home = "0.5"
 hostname = "^0.3"
@@ -161,7 +173,7 @@ indicatif = "0.16"
 insta = { version = "1.21.0", features = ["toml"] }
 is-terminal = "0.4"
 itertools = "0.12"
-jsonwebtoken = { version = "8.1.0" }
+jsonwebtoken = { package = "spacetimedb-jsonwebtoken", version = "9.3.0" }
 lazy_static = "1.4.0"
 log = "0.4.17"
 mimalloc = "0.1.39"
@@ -169,14 +181,14 @@ nohash-hasher = "0.2"
 once_cell = "1.16"
 parking_lot = { version = "0.12.1", features = ["send_guard", "arc_lock"] }
 paste = "1.0"
+petgraph = { version = "0.6.5", default-features = false }
 pin-project-lite = "0.2.9"
 postgres-types = "0.2.5"
+pretty_assertions = "1.4"
 proc-macro2 = "1.0"
 prometheus = "0.13.0"
 proptest = "1.4"
 proptest-derive = "0.4"
-prost = "0.10"
-prost-build = { version = "0.10" }
 quick-junit = { version = "0.3.2" }
 quote = "1.0.8"
 rand = "0.8.5"
@@ -184,17 +196,17 @@ rayon = "1.8"
 rayon-core = "1.11.0"
 regex = "1"
 reqwest = { version = "0.12", features = ["stream", "json"] }
+ron = "0.8"
 rusqlite = { version = "0.29.0", features = ["bundled", "column_decltype"] }
 rust_decimal = { version = "1.29.1", features = ["db-tokio-postgres"] }
 rustc-demangle = "0.1.21"
-rustc-hash = "1.1.0"
+rustc-hash = "2"
 rustyline = { version = "12.0.0", features = [] }
 scoped-tls = "1.0.1"
 scopeguard = "1.1.0"
 second-stack = "0.3"
-sendgrid = "0.21"
-serde = "1.0.136"
-serde_json = { version = "1.0.87", features = ["raw_value"] }
+serde = { version = "1.0.136", features = ["derive"] }
+serde_json = { version = "1.0.128", features = ["raw_value", "arbitrary_precision"] }
 serde_path_to_error = "0.1.9"
 serde_with = { version = "3.3.0", features = ["base64", "hex"] }
 serial_test = "2.0.0"
@@ -208,6 +220,7 @@ socket2 = "0.5"
 sqllogictest = "0.17"
 sqllogictest-engines = "0.17"
 sqlparser = "0.38.0"
+string-interner = "0.17.0"
 strum = { version = "0.25.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
 syntect = { version = "5.0.0", default-features = false, features = ["default-fancy"] }
@@ -216,6 +229,7 @@ tar = "0.4"
 tempdir = "0.3.7"
 tempfile = "3.8"
 termcolor = "1.2.0"
+thin-vec = "0.2.13"
 thiserror = "1.0.37"
 tokio = { version = "1.37", features = ["full"] }
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
@@ -229,20 +243,40 @@ tracing-core = "0.1.31"
 tracing-flame = "0.2.0"
 tracing-log = "0.1.3"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+trybuild = "1"
 typed-arena = "2.0"
+unicode-ident = "1.0.12"
+unicode-normalization = "0.1.23"
 url = "2.3.1"
 urlencoding = "2.1.2"
 uuid = { version = "1.2.1", features = ["v4"] }
 walkdir = "2.2.5"
 wasmbin = "0.6"
+webbrowser = "1.0.2"
 
+# Vendor the openssl we rely on, rather than depend on a
+# potentially very old system version.
+openssl = { version = "0.10", features = ["vendored"] }
 
-wasmtime = { version = "15", default-features = false, features = ["cranelift", "demangle", "addr2line", "cache"] }
+[workspace.dependencies.wasmtime]
+version = "25"
+default-features = false
+features = [
+  "addr2line",
+  "cache",
+  "cranelift",
+  "demangle",
+  "parallel-compilation",
+  "runtime",
+  "std",
+]
 
+[workspace.dependencies.tracing-tracy]
+version = "0.10.4"
 # We use the "ondemand" feature to allow connecting after the start,
 # and reconnecting, from the tracy client to the database.
 # TODO(George): Need to be able to remove "broadcast" in some build configurations.
-tracing-tracy = { version = "0.10.4", features = [
+features = [
   "enable",
   "system-tracing",
   "context-switch-tracing",
@@ -250,8 +284,4 @@ tracing-tracy = { version = "0.10.4", features = [
   "code-transfer",
   "broadcast",
   "ondemand",
-] }
-
-# Vendor the openssl we rely on, rather than depend on a
-# potentially very old system version.
-openssl = { version = "0.10", features = ["vendored"] }
+]

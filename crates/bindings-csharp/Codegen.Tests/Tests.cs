@@ -1,96 +1,170 @@
-namespace Codegen.Tests;
+namespace SpacetimeDB.Codegen.Tests;
 
 using System.Collections.Immutable;
-using System.Linq;
-using System.Reflection;
-using System.Threading.Tasks;
+using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
-using VerifyTests;
-using Xunit;
 
 public static class GeneratorSnapshotTests
 {
-    static GeneratorSnapshotTests()
+    // Note that we can't use assembly path here because it will be put in some deep nested folder.
+    // Instead, to get the test project directory, we can use the `CallerFilePath` attribute which will magically give us path to the current file.
+    static string GetProjectDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path)!;
+
+    record struct StepOutput(string Key, IncrementalStepRunReason Reason, object Value);
+
+    class Fixture(string projectDir, CSharpCompilation sampleCompilation)
     {
-        // Default diff order is weird and causes new lines to look like deleted and old as inserted.
-        Environment.SetEnvironmentVariable("DiffEngine_TargetOnLeft", "true");
-        // Store snapshots in a separate directory.
-        UseProjectRelativeDirectory("snapshots");
-        VerifySourceGenerators.Initialize();
-        // Format code for more readable snapshots and to avoid diffs on whitespace changes.
-        VerifierSettings.AddScrubber(
-            "cs",
-            (sb) =>
-            {
-                var unformattedCode = sb.ToString();
-                sb.Clear();
-                var result = CSharpier.CodeFormatter.Format(
-                    unformattedCode,
-                    new() { IncludeGenerated = true, EndOfLine = CSharpier.EndOfLine.LF }
-                );
-                if (result.CompilationErrors.Any())
-                {
-                    sb.AppendLine("// Generated code produced compilation errors:");
-                    foreach (var diag in result.CompilationErrors)
-                    {
-                        sb.Append("// ").AppendLine(diag.ToString());
-                    }
-                    sb.AppendLine();
-                }
-                sb.Append(result.Code);
-            },
-            ScrubberLocation.Last
+        public static async Task<Fixture> Compile(string name)
+        {
+            var projectDir = Path.Combine(GetProjectDir(), "fixtures", name);
+            using var workspace = MSBuildWorkspace.Create();
+            var sampleProject = await workspace.OpenProjectAsync($"{projectDir}/{name}.csproj");
+            var compilation = await sampleProject.GetCompilationAsync();
+            return new(projectDir, (CSharpCompilation)compilation!);
+        }
+
+        private static CSharpGeneratorDriver CreateDriver(
+            IIncrementalGenerator generator,
+            LanguageVersion languageVersion
+        )
+        {
+            return CSharpGeneratorDriver.Create(
+                [generator.AsSourceGenerator()],
+                driverOptions: new(
+                    disabledOutputs: IncrementalGeneratorOutputKind.None,
+                    trackIncrementalGeneratorSteps: true
+                ),
+                // Make sure that generated files are parsed with the same language version.
+                parseOptions: new(languageVersion)
+            );
+        }
+
+        public Task Verify(string fileName, object target) =>
+            Verifier.Verify(target).UseDirectory($"{projectDir}/snapshots").UseFileName(fileName);
+
+        private async Task<IEnumerable<SyntaxTree>> RunAndCheckGenerator(
+            IIncrementalGenerator generator
+        )
+        {
+            var driver = CreateDriver(generator, sampleCompilation.LanguageVersion);
+
+            // Store the new driver instance - it contains the results and the cache.
+            var driverAfterGen = driver.RunGenerators(sampleCompilation);
+            var genResult = driverAfterGen.GetRunResult();
+
+            // Verify the generated code against the snapshots.
+            await Verify(generator.GetType().Name, genResult);
+
+            CheckCacheWorking(sampleCompilation, driverAfterGen);
+
+            return genResult.GeneratedTrees;
+        }
+
+        public async Task<CSharpCompilation> RunAndCheckGenerators(
+            params IIncrementalGenerator[] generators
+        ) =>
+            sampleCompilation.AddSyntaxTrees(
+                (await Task.WhenAll(generators.Select(RunAndCheckGenerator))).SelectMany(output =>
+                    output
+                )
+            );
+    }
+
+    private static void CheckCacheWorking(
+        CSharpCompilation sampleCompilation,
+        GeneratorDriver driverAfterGen
+    )
+    {
+        // Run again with a driver containing the cache and a trivially modified code to verify that the cache is working.
+        var modifiedCompilation = sampleCompilation
+            .RemoveAllSyntaxTrees()
+            .AddSyntaxTrees(
+                sampleCompilation.SyntaxTrees.Select(tree =>
+                    tree.WithChangedText(
+                        SourceText.From(
+                            string.Join(
+                                "\n",
+                                tree.GetText().Lines.Select(line => $"{line} // Modified")
+                            )
+                        )
+                    )
+                )
+            );
+
+        var driverAfterRegen = driverAfterGen.RunGenerators(modifiedCompilation);
+
+        var regenSteps = driverAfterRegen
+            .GetRunResult()
+            .Results.SelectMany(result => result.TrackedSteps)
+            .Where(step => step.Key.StartsWith("SpacetimeDB."))
+            .SelectMany(step =>
+                step.Value.SelectMany(value => value.Outputs)
+                    .Select(output => new StepOutput(step.Key, output.Reason, output.Value))
+            )
+            .ToImmutableArray();
+
+        // Ensure that we have tracked steps at all.
+        Assert.NotEmpty(regenSteps);
+
+        // Ensure that all steps were cached.
+        Assert.Empty(
+            regenSteps.Where(step =>
+                step.Reason
+                    is not (IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged)
+            )
         );
     }
 
-    private static readonly string DotNetDir = Path.GetDirectoryName(
-        typeof(object).Assembly.Location
-    )!;
-
-    private static readonly ImmutableArray<PortableExecutableReference> CompilationReferences =
-        Enumerable
-            .Concat(
-                ImmutableArray
-                    .Create("System.Private.CoreLib", "System.Runtime")
-                    .Select(assemblyName => Path.Join(DotNetDir, $"{assemblyName}.dll")),
-                ImmutableArray
-                    .Create(
-                        // For `SpacetimeDB.BSATN.Runtime`.
-                        typeof(SpacetimeDB.TypeAttribute),
-                        // For `SpacetimeDB.Runtime`.
-                        typeof(SpacetimeDB.TableAttribute)
-                    )
-                    .Select(type => type.Assembly.Location)
-            )
-            .Select(assemblyPath => MetadataReference.CreateFromFile(assemblyPath))
-            .ToImmutableArray();
-
-    private static readonly CSharpCompilationOptions CompilationOptions =
-        new(OutputKind.ConsoleApplication, nullableContextOptions: NullableContextOptions.Enable);
-
-    private static readonly SyntaxTree SampleSource = CSharpSyntaxTree.ParseText(
-        SourceText.From(Assembly.GetExecutingAssembly().GetManifestResourceStream("Sample.cs")!)
-    );
-
-    [Theory]
-    [InlineData(typeof(SpacetimeDB.Codegen.Module))]
-    [InlineData(typeof(SpacetimeDB.Codegen.Type))]
-    public static Task VerifyDriver(Type generatorType)
+    static IEnumerable<Diagnostic> GetCompilationErrors(Compilation compilation)
     {
-        var compilation = CSharpCompilation.Create(
-            assemblyName: generatorType.Name,
-            references: CompilationReferences,
-            options: CompilationOptions,
-            syntaxTrees: [SampleSource]
+        return compilation
+            .Emit(Stream.Null)
+            .Diagnostics.Where(diag => diag.Severity != DiagnosticSeverity.Hidden)
+            // The order of diagnostics is not predictable, sort them by location to make the test deterministic.
+            .OrderBy(diag => diag.Location.ToString());
+    }
+
+    [Fact]
+    public static async Task TypeGeneratorOnClient()
+    {
+        var fixture = await Fixture.Compile("client");
+
+        var compilationAfterGen = await fixture.RunAndCheckGenerators(
+            new SpacetimeDB.Codegen.Type()
         );
 
-        var generator = (IIncrementalGenerator)Activator.CreateInstance(generatorType)!;
-        var driver = CSharpGeneratorDriver.Create(generator);
-        // Store the new driver instance - it contains the results and the cache.
-        var genDriver = driver.RunGenerators(compilation);
+        Assert.Empty(GetCompilationErrors(compilationAfterGen));
+    }
 
-        return Verify(genDriver).UseFileName(generatorType.Name);
+    [Fact]
+    public static async Task TypeAndModuleGeneratorsOnServer()
+    {
+        var fixture = await Fixture.Compile("server");
+
+        var compilationAfterGen = await fixture.RunAndCheckGenerators(
+            new SpacetimeDB.Codegen.Type(),
+            new SpacetimeDB.Codegen.Module()
+        );
+
+        Assert.Empty(GetCompilationErrors(compilationAfterGen));
+    }
+
+    [Fact]
+    public static async Task TestDiagnostics()
+    {
+        var fixture = await Fixture.Compile("diag");
+
+        var compilationAfterGen = await fixture.RunAndCheckGenerators(
+            new SpacetimeDB.Codegen.Type(),
+            new SpacetimeDB.Codegen.Module()
+        );
+
+        // Unlike in regular tests, we don't expect this compilation to succeed - it's supposed to be full of errors.
+        // We already reported the useful ones from the generator, but let's snapshot those emitted by the compiler as well.
+        // This way we can notice when they get particularly noisy and improve our codegen for the case of a broken code.
+        await fixture.Verify("ExtraCompilationErrors", GetCompilationErrors(compilationAfterGen));
     }
 }

@@ -28,6 +28,9 @@ impl Segment {
     pub fn len(&self) -> usize {
         self.buf.read().unwrap().len()
     }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl From<SharedBytes> for Segment {
@@ -37,11 +40,11 @@ impl From<SharedBytes> for Segment {
 }
 
 impl FileLike for Segment {
-    fn fsync(&self) -> io::Result<()> {
+    fn fsync(&mut self) -> io::Result<()> {
         Ok(())
     }
 
-    fn ftruncate(&self, size: u64) -> io::Result<()> {
+    fn ftruncate(&mut self, _tx_offset: u64, size: u64) -> io::Result<()> {
         let mut inner = self.buf.write().unwrap();
         inner.resize(size as usize, 0);
         Ok(())

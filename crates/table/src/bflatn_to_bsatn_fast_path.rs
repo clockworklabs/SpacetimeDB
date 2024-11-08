@@ -20,6 +20,8 @@
 //! one of 20 bytes to copy the leading `(u64, u64, u32)`, which contains no padding,
 //! and then one of 8 bytes to copy the trailing `u64`, skipping over 4 bytes of padding in between.
 
+use crate::MemoryUsage;
+
 use super::{
     indexes::{Byte, Bytes},
     layout::{
@@ -45,6 +47,13 @@ pub(crate) struct StaticBsatnLayout {
     /// A series of `memcpy` invocations from a BFLATN row into a BSATN buffer
     /// which are sufficient to BSATN serialize the row.
     fields: Box<[MemcpyField]>,
+}
+
+impl MemoryUsage for StaticBsatnLayout {
+    fn heap_usage(&self) -> usize {
+        let Self { bsatn_length, fields } = self;
+        bsatn_length.heap_usage() + fields.heap_usage()
+    }
 }
 
 impl StaticBsatnLayout {
@@ -155,6 +164,8 @@ struct MemcpyField {
     /// Length to `memcpy`, in bytes.
     length: u16,
 }
+
+impl MemoryUsage for MemcpyField {}
 
 impl MemcpyField {
     /// Copies the bytes at `row[self.bflatn_offset .. self.bflatn_offset + self.length]`
@@ -353,18 +364,18 @@ mod test {
                 })
                 .collect(),
         };
-        let row_type = RowTypeLayout::from(ty);
+        let row_type = RowTypeLayout::from(ty.clone());
         let Some(computed_layout) = StaticBsatnLayout::for_row_type(&row_type) else {
             panic!("assert_expected_layout: Computed `None` for row {row_type:#?}\nExpected:{expected_layout:#?}");
         };
         assert_eq!(
             computed_layout, expected_layout,
-            "assert_expected_layout: Computed layout (left) does not match expected layout (right)"
+            "assert_expected_layout: Computed layout (left) doesn't match expected (right) for {ty:?}",
         );
     }
 
     #[test]
-    fn known_types_expected_layout() {
+    fn known_types_expected_layout_plain() {
         for prim in [
             AlgebraicType::Bool,
             AlgebraicType::U8,
@@ -377,11 +388,16 @@ mod test {
             AlgebraicType::I64,
             AlgebraicType::U128,
             AlgebraicType::I128,
+            AlgebraicType::U256,
+            AlgebraicType::I256,
         ] {
             let size = AlgebraicTypeLayout::from(prim.clone()).size() as u16;
             assert_expected_layout(ProductType::from([prim]), size, &[(0, 0, size)]);
         }
+    }
 
+    #[test]
+    fn known_types_expected_layout_complex() {
         for (ty, bsatn_length, fields) in [
             (ProductType::new([].into()), 0, &[][..]),
             (
@@ -424,14 +440,25 @@ mod test {
             ),
             (
                 ProductType::from([
+                    AlgebraicType::sum([AlgebraicType::U256, AlgebraicType::I256]),
+                    AlgebraicType::U32,
+                ]),
+                37,
+                // In BFLATN, sums have padding after the tag to the max alignment of any variant payload.
+                // In this case, 15 bytes of padding.
+                &[(0, 0, 1), (32, 1, 36)][..],
+            ),
+            (
+                ProductType::from([
+                    AlgebraicType::U256,
                     AlgebraicType::U128,
                     AlgebraicType::U64,
                     AlgebraicType::U32,
                     AlgebraicType::U16,
                     AlgebraicType::U8,
                 ]),
-                31,
-                &[(0, 0, 31)][..],
+                63,
+                &[(0, 0, 63)][..],
             ),
             (
                 ProductType::from([
@@ -506,7 +533,6 @@ mod test {
             AlgebraicType::bytes(),
             AlgebraicType::never(),
             AlgebraicType::array(AlgebraicType::U16),
-            AlgebraicType::map(AlgebraicType::U8, AlgebraicType::I8),
             AlgebraicType::sum([AlgebraicType::U8, AlgebraicType::U16]),
         ] {
             let layout = RowTypeLayout::from(ProductType::from([ty]));

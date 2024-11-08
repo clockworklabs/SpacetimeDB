@@ -1,5 +1,5 @@
 use core::str::FromStr;
-use spacetimedb_lib::address::Address;
+use spacetimedb_lib::Identity;
 use std::fs::OpenOptions;
 use std::fs::{self, File};
 use std::io::{self, prelude::*, SeekFrom};
@@ -126,10 +126,10 @@ impl DatabaseLogger {
     //     PathBuf::from(path)
     // }
 
-    pub fn filepath(address: &Address, instance_id: u64) -> PathBuf {
-        let root = crate::stdb_path("worker_node/database_instances");
-        root.join(&*address.to_hex())
-            .join(instance_id.to_string())
+    pub fn filepath(identity: &Identity, replica_id: u64) -> PathBuf {
+        let root = crate::stdb_path("worker_node/replicas");
+        root.join(&*identity.to_hex())
+            .join(replica_id.to_string())
             .join("module_logs")
     }
 

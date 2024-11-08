@@ -1,14 +1,13 @@
-use spacetimedb::{query, spacetimedb, time_span::Span};
+use spacetimedb::{log_stopwatch::LogStopwatch, ReducerContext, Table};
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "x", x))]
-#[spacetimedb(index(btree, name = "chunk", chunk))]
-#[spacetimedb(index(btree, name = "coordinates", x, z, dimension))]
+#[spacetimedb::table(name = location, index(name = coordinates, btree(columns = [x, z, dimension])))]
 #[derive(Debug, PartialEq, Eq)]
 pub struct Location {
-    #[primarykey]
+    #[primary_key]
     pub id: u64,
+    #[index(btree)]
     pub chunk: u64,
+    #[index(btree)]
     pub x: i32,
     pub z: i32,
     pub dimension: u32,
@@ -18,15 +17,15 @@ pub struct Location {
 const NUM_CHUNKS: u64 = 1000;
 const ROWS_PER_CHUNK: u64 = 1200;
 
-#[spacetimedb(reducer)]
-pub fn load_location_table() {
+#[spacetimedb::reducer]
+pub fn load_location_table(ctx: &ReducerContext) {
     for chunk in 0u64..NUM_CHUNKS {
         for i in 0u64..ROWS_PER_CHUNK {
             let id = chunk * 1200 + i;
             let x = 0i32;
             let z = chunk as i32;
             let dimension = id as u32;
-            let _ = Location::insert(Location {
+            ctx.db.location().insert(Location {
                 id,
                 chunk,
                 x,
@@ -40,41 +39,41 @@ pub fn load_location_table() {
 const ID: u64 = 989_987;
 const CHUNK: u64 = ID / ROWS_PER_CHUNK;
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 /// Probing a single column index for a single row should be fast!
-pub fn test_index_scan_on_id() {
-    let span = Span::start("Index scan on {id}");
-    let location = Location::filter_by_id(&ID).unwrap();
+pub fn test_index_scan_on_id(ctx: &ReducerContext) {
+    let span = LogStopwatch::new("Index scan on {id}");
+    let location = ctx.db.location().id().find(ID).unwrap();
     span.end();
     assert_eq!(ID, location.id);
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 /// Scanning a single column index for `ROWS_PER_CHUNK` rows should also be fast!
-pub fn test_index_scan_on_chunk() {
-    let span = Span::start("Index scan on {chunk}");
-    let n = Location::filter_by_chunk(&CHUNK).count();
+pub fn test_index_scan_on_chunk(ctx: &ReducerContext) {
+    let span = LogStopwatch::new("Index scan on {chunk}");
+    let n = ctx.db.location().chunk().filter(&CHUNK).count();
     span.end();
     assert_eq!(n as u64, ROWS_PER_CHUNK);
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 /// Probing a multi-column index for a single row should be fast!
-pub fn test_index_scan_on_x_z_dimension() {
+pub fn test_index_scan_on_x_z_dimension(ctx: &ReducerContext) {
     let z = CHUNK as i32;
     let dimension = ID as u32;
-    let span = Span::start("Index scan on {x, z, dimension}");
-    let n = query!(|r: Location| r.x == 0 && r.z == z && r.dimension == dimension).count();
+    let span = LogStopwatch::new("Index scan on {x, z, dimension}");
+    let n = ctx.db.location().coordinates().filter((0, z, dimension)).count();
     span.end();
     assert_eq!(n, 1);
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 /// Probing a multi-column index for `ROWS_PER_CHUNK` rows should also be fast!
-pub fn test_index_scan_on_x_z() {
+pub fn test_index_scan_on_x_z(ctx: &ReducerContext) {
     let z = CHUNK as i32;
-    let span = Span::start("Index scan on {x, z}");
-    let n = query!(|r: Location| r.x == 0 && r.z == z).count();
+    let span = LogStopwatch::new("Index scan on {x, z}");
+    let n = ctx.db.location().coordinates().filter((0, z)).count();
     span.end();
     assert_eq!(n as u64, ROWS_PER_CHUNK);
 }

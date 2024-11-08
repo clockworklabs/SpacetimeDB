@@ -1,18 +1,20 @@
-use spacetimedb::address::Address;
-use spacetimedb::hash::hash_bytes;
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
+use spacetimedb::messages::control_db::{Database, EnergyBalance, Node, Replica};
 use spacetimedb::{energy, stdb_path};
 
 use spacetimedb_client_api_messages::name::{
     DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef,
 };
-use spacetimedb_client_api_messages::recovery::RecoveryCode;
 use spacetimedb_lib::bsatn;
 
 #[cfg(test)]
 mod tests;
 
+/// A control database when SpacetimeDB is running standalone.
+///
+/// Important note: The `Addresses` and `Identities` stored in this database
+/// are stored as *LITTLE-ENDIAN* byte arrays. This means that printing such an array
+/// in hexadecimal will result in the REVERSE of the standard way to print `Addresses` and `Identities`.
 #[derive(Clone)]
 pub struct ControlDb {
     db: sled::Db,
@@ -28,8 +30,8 @@ pub enum Error {
     Database(sled::Error),
     #[error("record with the name {0} already exists")]
     RecordAlreadyExists(DomainName),
-    #[error("database with address {0} already exists")]
-    DatabaseAlreadyExists(Address),
+    #[error("database with identity {0} already exists")]
+    DatabaseAlreadyExists(Identity),
     #[error("failed to register {0} domain")]
     DomainRegistrationFailure(DomainName),
     #[error("failed to decode data")]
@@ -75,18 +77,18 @@ impl ControlDb {
 }
 
 impl ControlDb {
-    pub fn spacetime_dns(&self, domain: &DomainName) -> Result<Option<Address>> {
+    pub fn spacetime_dns(&self, domain: &DomainName) -> Result<Option<Identity>> {
         let tree = self.db.open_tree("dns")?;
         let value = tree.get(domain.to_lowercase().as_bytes())?;
         if let Some(value) = value {
-            return Ok(Some(Address::from_slice(&value[..])));
+            return Ok(Some(Identity::from_slice(&value[..])));
         }
         Ok(None)
     }
 
-    pub fn spacetime_reverse_dns(&self, address: &Address) -> Result<Vec<DomainName>> {
+    pub fn spacetime_reverse_dns(&self, database_identity: &Identity) -> Result<Vec<DomainName>> {
         let tree = self.db.open_tree("reverse_dns")?;
-        let value = tree.get(address.as_slice())?;
+        let value = tree.get(database_identity.to_byte_array())?;
         if let Some(value) = value {
             let vec: Vec<DomainName> = serde_json::from_slice(&value[..])?;
             return Ok(vec);
@@ -94,7 +96,7 @@ impl ControlDb {
         Ok(vec![])
     }
 
-    /// Creates a new domain which points to address. For example:
+    /// Creates a new domain which points to the database identity. For example:
     ///  * `my_domain/my_database`
     ///  * `my_company/my_team/my_product`
     ///
@@ -104,17 +106,17 @@ impl ControlDb {
     ///  * `...`
     ///
     /// # Arguments
-    ///  * `address` - The address the database name should point to
+    ///  * `database_identity` - The identity the database name should point to
     ///  * `database_name` - The database name to register
     ///  * `owner_identity` - The identity that is publishing the database name
     pub fn spacetime_insert_domain(
         &self,
-        address: &Address,
+        database_identity: &Identity,
         domain: DomainName,
         owner_identity: Identity,
         try_register_tld: bool,
     ) -> Result<InsertDomainResult> {
-        let address = *address;
+        let database_identity = *database_identity;
         if self.spacetime_dns(&domain)?.is_some() {
             return Err(Error::RecordAlreadyExists(domain));
         }
@@ -141,22 +143,26 @@ impl ControlDb {
             }
         }
 
+        let identity_bytes = database_identity.to_byte_array();
         let tree = self.db.open_tree("dns")?;
-        tree.insert(domain.to_lowercase().as_bytes(), &address.as_slice()[..])?;
+        tree.insert(domain.to_lowercase(), &identity_bytes)?;
 
         let tree = self.db.open_tree("reverse_dns")?;
-        match tree.get(address.as_slice())? {
+        match tree.get(identity_bytes)? {
             Some(value) => {
                 let mut vec: Vec<DomainName> = serde_json::from_slice(&value[..])?;
                 vec.push(domain.clone());
-                tree.insert(address.as_slice(), serde_json::to_string(&vec)?.as_bytes())?;
+                tree.insert(identity_bytes, serde_json::to_string(&vec)?.as_bytes())?;
             }
             None => {
-                tree.insert(address.as_slice(), serde_json::to_string(&vec![&domain])?.as_bytes())?;
+                tree.insert(identity_bytes, serde_json::to_string(&vec![&domain])?.as_bytes())?;
             }
         }
 
-        Ok(InsertDomainResult::Success { domain, address })
+        Ok(InsertDomainResult::Success {
+            domain,
+            database_identity,
+        })
     }
 
     /// Inserts a top level domain that will be owned by `owner_identity`.
@@ -178,52 +184,10 @@ impl ControlDb {
                 }
             }
             None => {
-                tree.insert(key, owner_identity.as_bytes())?;
+                tree.insert(key, &owner_identity.to_byte_array())?;
                 Ok(RegisterTldResult::Success { domain: tld })
             }
         }
-    }
-
-    /// Starts a recovery code request
-    ///
-    ///  * `email` - The email to send the recovery code to
-    pub fn spacetime_insert_recovery_code(&self, email: &str, new_code: RecoveryCode) -> Result<()> {
-        // TODO(jdetter): This function should take an identity instead of an email
-        let tree = self.db.open_tree("recovery_codes")?;
-        let current_requests = tree.get(email.as_bytes())?;
-        match current_requests {
-            None => {
-                tree.insert(email.as_bytes(), serde_json::to_string(&vec![new_code])?.as_bytes())?;
-            }
-            Some(codes_bytes) => {
-                let mut codes: Vec<RecoveryCode> = serde_json::from_slice(&codes_bytes[..])?;
-                codes.push(new_code);
-                tree.insert(email.as_bytes(), serde_json::to_string(&codes)?.as_bytes())?;
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn spacetime_get_recovery_codes(&self, email: &str) -> Result<Vec<RecoveryCode>> {
-        let tree = self.db.open_tree("recovery_codes")?;
-        let current_requests = tree.get(email.as_bytes())?;
-        current_requests
-            .map(|bytes| {
-                let codes: Vec<RecoveryCode> = serde_json::from_slice(&bytes[..])?;
-                Ok(codes)
-            })
-            .unwrap_or(Ok(vec![]))
-    }
-
-    pub fn _spacetime_get_recovery_code(&self, email: &str, code: &str) -> Result<Option<RecoveryCode>> {
-        for recovery_code in self.spacetime_get_recovery_codes(email)? {
-            if recovery_code.code == code {
-                return Ok(Some(recovery_code));
-            }
-        }
-
-        Ok(None)
     }
 
     /// Returns the owner (or `None` if there is no owner) of the domain.
@@ -238,74 +202,13 @@ impl ControlDb {
         }
     }
 
-    pub fn alloc_spacetime_identity(&self) -> Result<Identity> {
-        // TODO: this really doesn't need to be a single global count
-        let id = self.db.generate_id()?;
-        let bytes: &[u8] = &id.to_le_bytes();
-        let name = b"clockworklabs:";
-        let bytes = [name, bytes].concat();
-        let hash = Identity::from_hashing_bytes(bytes);
-        Ok(hash)
-    }
-
-    pub fn alloc_spacetime_address(&self) -> Result<Address> {
-        // TODO: this really doesn't need to be a single global count
-        // We could do something more intelligent for addresses...
-        // A. generating them randomly
-        // B. doing ipv6 generation
-        let id = self.db.generate_id()?;
-        let bytes: &[u8] = &id.to_le_bytes();
-        let name = b"clockworklabs:";
-        let bytes = [name, bytes].concat();
-        let hash = hash_bytes(bytes);
-        let address = Address::from_slice(&hash.as_slice()[..16]);
-        Ok(address)
-    }
-
-    pub async fn associate_email_spacetime_identity(&self, identity: Identity, email: &str) -> Result<()> {
-        // Lowercase the email before storing
-        let email = email.to_lowercase();
-
-        let tree = self.db.open_tree("email")?;
-        let identity_email = IdentityEmail { identity, email };
-        let buf = bsatn::to_vec(&identity_email).unwrap();
-        tree.insert(identity.as_bytes(), buf)?;
-        Ok(())
-    }
-
-    pub fn get_identities_for_email(&self, email: &str) -> Result<Vec<IdentityEmail>> {
-        let mut result = Vec::<IdentityEmail>::new();
-        let tree = self.db.open_tree("email")?;
-        for i in tree.iter() {
-            let (_, value) = i?;
-            let iemail: IdentityEmail = bsatn::from_slice(&value)?;
-            if iemail.email.eq_ignore_ascii_case(email) {
-                result.push(iemail);
-            }
-        }
-        Ok(result)
-    }
-
-    pub fn get_emails_for_identity(&self, identity: &Identity) -> Result<Vec<IdentityEmail>> {
-        let mut result = Vec::<IdentityEmail>::new();
-        let tree = self.db.open_tree("email")?;
-        for i in tree.iter() {
-            let (_, value) = i?;
-            let iemail: IdentityEmail = bsatn::from_slice(&value)?;
-            if &iemail.identity == identity {
-                result.push(iemail);
-            }
-        }
-        Ok(result)
-    }
-
     pub fn get_databases(&self) -> Result<Vec<Database>> {
         let tree = self.db.open_tree("database")?;
         let mut databases = Vec::new();
         let scan_key: &[u8] = b"";
         for result in tree.range(scan_key..) {
             let (_key, value) = result?;
-            let database = bsatn::from_slice(&value).unwrap();
+            let database = compat::Database::from_slice(&value).unwrap().into();
             databases.push(database);
         }
         Ok(databases)
@@ -320,12 +223,12 @@ impl ControlDb {
         Ok(None)
     }
 
-    pub fn get_database_by_address(&self, address: &Address) -> Result<Option<Database>> {
-        let tree = self.db.open_tree("database_by_address")?;
-        let key = address.to_hex();
-        let value = tree.get(key.as_bytes())?;
+    pub fn get_database_by_identity(&self, identity: &Identity) -> Result<Option<Database>> {
+        let tree = self.db.open_tree("database_by_identity")?;
+        let key = identity.to_be_byte_array();
+        let value = tree.get(&key[..])?;
         if let Some(value) = value {
-            let database = bsatn::from_slice(&value[..]).unwrap();
+            let database = compat::Database::from_slice(&value[..]).unwrap().into();
             return Ok(Some(database));
         }
         Ok(None)
@@ -333,16 +236,16 @@ impl ControlDb {
 
     pub fn insert_database(&self, mut database: Database) -> Result<u64> {
         let id = self.db.generate_id()?;
-        let tree = self.db.open_tree("database_by_address")?;
+        let tree = self.db.open_tree("database_by_identity")?;
 
-        let key = database.address.to_hex();
+        let key = database.database_identity.to_be_byte_array();
         if tree.contains_key(key)? {
-            return Err(Error::DatabaseAlreadyExists(database.address));
+            return Err(Error::DatabaseAlreadyExists(database.database_identity));
         }
 
         database.id = id;
 
-        let buf = sled::IVec::from(bsatn::to_vec(&database).unwrap());
+        let buf = sled::IVec::from(compat::Database::from(database).to_vec().unwrap());
 
         tree.insert(key, buf.clone())?;
 
@@ -354,13 +257,13 @@ impl ControlDb {
 
     pub fn delete_database(&self, id: u64) -> Result<Option<u64>> {
         let tree = self.db.open_tree("database")?;
-        let tree_by_address = self.db.open_tree("database_by_address")?;
+        let tree_by_identity = self.db.open_tree("database_by_identity")?;
 
         if let Some(old_value) = tree.get(id.to_be_bytes())? {
-            let database: Database = bsatn::from_slice(&old_value[..])?;
-            let key = database.address.to_hex();
+            let database = compat::Database::from_slice(&old_value[..])?;
+            let key = database.database_identity().to_be_byte_array();
 
-            tree_by_address.remove(key.as_bytes())?;
+            tree_by_identity.remove(&key[..])?;
             tree.remove(id.to_be_bytes())?;
             return Ok(Some(id));
         }
@@ -368,35 +271,35 @@ impl ControlDb {
         Ok(None)
     }
 
-    pub fn get_database_instances(&self) -> Result<Vec<DatabaseInstance>> {
-        let tree = self.db.open_tree("database_instance")?;
-        let mut database_instances = Vec::new();
+    pub fn get_replicas(&self) -> Result<Vec<Replica>> {
+        let tree = self.db.open_tree("replica")?;
+        let mut replicas = Vec::new();
         let scan_key: &[u8] = b"";
         for result in tree.range(scan_key..) {
             let (_key, value) = result?;
-            let database_instance = bsatn::from_slice(&value[..]).unwrap();
-            database_instances.push(database_instance);
+            let replica = bsatn::from_slice(&value[..]).unwrap();
+            replicas.push(replica);
         }
-        Ok(database_instances)
+        Ok(replicas)
     }
 
-    pub fn get_database_instance_by_id(&self, database_instance_id: u64) -> Result<Option<DatabaseInstance>> {
-        for di in self.get_database_instances()? {
-            if di.id == database_instance_id {
+    pub fn get_replica_by_id(&self, replica_id: u64) -> Result<Option<Replica>> {
+        for di in self.get_replicas()? {
+            if di.id == replica_id {
                 return Ok(Some(di));
             }
         }
         Ok(None)
     }
 
-    pub fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance> {
-        self.get_database_instances()
+    pub fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+        self.get_replicas()
             .unwrap()
             .into_iter()
             .find(|instance| instance.database_id == database_id && instance.leader)
     }
 
-    pub fn get_database_instances_by_database(&self, database_id: u64) -> Result<Vec<DatabaseInstance>> {
+    pub fn get_replicas_by_database(&self, database_id: u64) -> Result<Vec<Replica>> {
         // TODO: because we don't have foreign key constraints it's actually possible to have
         // instances in here with no database. Although we'd be in a bit of a corrupted state
         // in that case
@@ -406,30 +309,30 @@ impl ControlDb {
         //     return Err(anyhow::anyhow!("No such database."));
         // }
         //
-        let database_instances = self
-            .get_database_instances()?
+        let replicas = self
+            .get_replicas()?
             .iter()
             .filter(|instance| instance.database_id == database_id)
             .cloned()
             .collect::<Vec<_>>();
-        Ok(database_instances)
+        Ok(replicas)
     }
 
-    pub fn insert_database_instance(&self, mut database_instance: DatabaseInstance) -> Result<u64> {
-        let tree = self.db.open_tree("database_instance")?;
+    pub fn insert_replica(&self, mut replica: Replica) -> Result<u64> {
+        let tree = self.db.open_tree("replica")?;
 
         let id = self.db.generate_id()?;
 
-        database_instance.id = id;
-        let buf = bsatn::to_vec(&database_instance).unwrap();
+        replica.id = id;
+        let buf = bsatn::to_vec(&replica).unwrap();
 
         tree.insert(id.to_be_bytes(), buf)?;
 
         Ok(id)
     }
 
-    pub fn delete_database_instance(&self, id: u64) -> Result<()> {
-        let tree = self.db.open_tree("database_instance")?;
+    pub fn delete_replica(&self, id: u64) -> Result<()> {
+        let tree = self.db.open_tree("replica")?;
         tree.remove(id.to_be_bytes())?;
         Ok(())
     }
@@ -520,7 +423,7 @@ impl ControlDb {
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
     pub fn get_energy_balance(&self, identity: &Identity) -> Result<Option<energy::EnergyBalance>> {
         let tree = self.db.open_tree("energy_budget")?;
-        let value = tree.get(identity.as_bytes())?;
+        let value = tree.get(identity.to_byte_array())?;
         if let Some(value) = value {
             let arr = <[u8; 16]>::try_from(value.as_ref()).map_err(|_| bsatn::DecodeError::BufferLength {
                 for_type: "Identity".into(),
@@ -539,8 +442,85 @@ impl ControlDb {
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
     pub fn set_energy_balance(&self, identity: Identity, energy_balance: energy::EnergyBalance) -> Result<()> {
         let tree = self.db.open_tree("energy_budget")?;
-        tree.insert(identity.as_bytes(), &energy_balance.get().to_be_bytes())?;
+        tree.insert(identity.to_byte_array(), &energy_balance.get().to_be_bytes())?;
 
         Ok(())
+    }
+}
+
+mod compat {
+    use spacetimedb::hash::Hash;
+    use spacetimedb::messages::control_db::{Database as CanonicalDatabase, HostType};
+    use spacetimedb::Identity;
+    use spacetimedb_lib::bsatn::ser::BsatnError;
+    use spacetimedb_lib::bsatn::{self, DecodeError};
+    use spacetimedb_lib::{de::Deserialize, ser::Serialize};
+
+    /// Serialized form of a [`spacetimedb::messages::control_db::Database`].
+    ///
+    /// To maintain compatibility.
+    #[derive(Serialize, Deserialize)]
+    pub(super) struct Database {
+        id: u64,
+        database_identity: Identity,
+        owner_identity: Identity,
+        host_type: HostType,
+        initial_program: Hash,
+    }
+
+    impl Database {
+        pub fn database_identity(&self) -> Identity {
+            self.database_identity
+        }
+
+        #[inline]
+        pub fn from_slice(s: &[u8]) -> Result<Self, DecodeError> {
+            bsatn::from_slice(s)
+        }
+
+        #[inline]
+        pub fn to_vec(&self) -> Result<Vec<u8>, BsatnError> {
+            bsatn::to_vec(self)
+        }
+    }
+
+    impl From<Database> for CanonicalDatabase {
+        fn from(
+            Database {
+                id,
+                database_identity,
+                owner_identity,
+                host_type,
+                initial_program,
+            }: Database,
+        ) -> Self {
+            Self {
+                id,
+                database_identity,
+                owner_identity,
+                host_type,
+                initial_program,
+            }
+        }
+    }
+
+    impl From<CanonicalDatabase> for Database {
+        fn from(
+            CanonicalDatabase {
+                id,
+                database_identity,
+                owner_identity,
+                host_type,
+                initial_program,
+            }: CanonicalDatabase,
+        ) -> Self {
+            Self {
+                id,
+                database_identity,
+                owner_identity,
+                host_type,
+                initial_program,
+            }
+        }
     }
 }

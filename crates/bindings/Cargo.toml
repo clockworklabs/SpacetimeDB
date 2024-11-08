@@ -16,6 +16,7 @@ bench = false
 [features]
 default = ["rand"]
 rand = ["dep:rand", "dep:getrandom"]
+unstable = ["spacetimedb-bindings-sys/unstable"]
 
 [dependencies]
 spacetimedb-bindings-sys.workspace = true
@@ -23,6 +24,7 @@ spacetimedb-lib.workspace = true
 spacetimedb-bindings-macro.workspace = true
 spacetimedb-primitives.workspace = true
 
+bytemuck.workspace = true
 derive_more.workspace = true
 log.workspace = true
 scoped-tls.workspace = true
@@ -35,3 +37,4 @@ getrandom = { workspace = true, optional = true, features = ["custom"] }
 
 [dev-dependencies]
 insta.workspace = true
+trybuild.workspace = true

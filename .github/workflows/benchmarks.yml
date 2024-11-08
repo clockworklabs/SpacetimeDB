@@ -29,6 +29,11 @@ jobs:
     env:
       PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.issue.number || null }}
     steps:
+      - name: Clear stdb dir
+        if: always()
+        run: |
+          rm -fr /stdb/*
+
       - name: Enable CPU boost
         run: echo "1" | sudo tee /sys/devices/system/cpu/cpufreq/boost
 
@@ -106,6 +111,7 @@ jobs:
             echo "Running benchmarks with sqlite"
           fi
           pushd crates/bench
+          rm -rf .spacetime
           cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" "$BENCH_FILTER"
           # sticker price benchmark
           cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" 'stdb_module/disk/update_bulk'
@@ -177,6 +183,12 @@ jobs:
     env:
       PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.issue.number || null }}
     steps:
+      - name: Clear stdb dir
+        if: always()
+        shell: bash
+        run: |
+          rm -fr /stdb/*
+
       - name: Install valgrind & iai-callgrind-runner
         run: |
           apt-get update
@@ -276,6 +288,7 @@ jobs:
             echo "Running master callgrind benchmarks"
           fi
           pushd crates/bench
+          rm -rf .spacetime
           cargo bench --bench callgrind -- --save-summary pretty-json
           cargo run --bin summarize pack-callgrind "$BASELINE_NAME"
           popd

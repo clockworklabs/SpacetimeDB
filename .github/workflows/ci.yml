@@ -34,14 +34,13 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
+      - uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: "8.x"
       - name: Start containers
         run: docker compose up -d
       - name: Run smoketests
-        run: python -m smoketests --docker -x zz_docker
-      # These cannot run in parallel, even though the script tries to handle it
-      # TODO: Fix flaky tests https://github.com/clockworklabs/SpacetimeDB/issues/630
-      # - name: Run restarting smoketests
-      #   run: python -m smoketests --docker zz_docker
+        run: python -m smoketests --docker
       - name: Stop containers
         if: always()
         run: docker compose down
@@ -81,8 +80,89 @@ jobs:
       - name: Run cargo test
         run: cargo test --all
 
+      - name: Ensure C# autogen bindings are up-to-date
+        run: |
+          cargo run --example regen-csharp-moduledef
+          git diff --exit-code -- crates/bindings-csharp
+
+      - name: C# bindings tests
+        working-directory: crates/bindings-csharp
+        run: dotnet test -warnaserror
+
+  sdk_test:
+    name: SDK Tests
+    runs-on: spacetimedb-runner
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: "8.x"
+
+      - name: Create /stdb dir
+        run: |
+          sudo mkdir /stdb
+          sudo chmod 777 /stdb
+      - name: Checkout C# SDK
+        uses: actions/checkout@v4
+        with:
+          repository: clockworklabs/spacetimedb-csharp-sdk
+          ref: staging
+          path: spacetimedb-csharp-sdk
+
       - name: C# SDK tests
-        run: dotnet test crates/bindings-csharp
+        run: |
+          ( cd crates/bindings-csharp/BSATN.Runtime && dotnet pack )
+          cd spacetimedb-csharp-sdk
+
+          # Write out the nuget config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
+          # to be aware of the local versions of the `bindings-csharp` packages in SpacetimeDB, and use them if
+          # available. Otherwise, `spacetimedb-csharp-sdk` will use the NuGet versions of the packages.
+          # This means that (if version numbers match) we will test the local versions of the C# packages, even
+          # if they're not pushed to NuGet.
+          # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file,
+          # and https://tldp.org/LDP/abs/html/here-docs.html for more info on this bash feature.
+          cat >nuget.config <<EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <!-- Local NuGet repositories -->
+              <add key="Local SpacetimeDB.BSATN.Runtime" value="../crates/bindings-csharp/BSATN.Runtime/bin/Release" />
+            </packageSources>
+            <packageSourceMapping>
+              <!-- Ensure that SpacetimeDB.BSATN.Runtime is used from the local folder. -->
+              <!-- Otherwise we risk an outdated version being quietly pulled from NuGet for testing. -->
+              <packageSource key="Local SpacetimeDB.BSATN.Runtime">
+                <package pattern="SpacetimeDB.BSATN.Runtime" />
+              </packageSource>
+              <!-- Fallback to NuGet for other packages. -->
+              <packageSource key="nuget.org">
+                <package pattern="*" />
+              </packageSource>
+            </packageSourceMapping>
+          </configuration>
+          EOF
+
+          # clear package caches, so we get fresh ones even if version numbers haven't changed
+          dotnet nuget locals all --clear
+          dotnet test
 
   lints:
     name: Lints
@@ -99,6 +179,12 @@ jobs:
 
       - name: Run cargo clippy
         run: cargo clippy --all --tests --benches -- -D warnings
+
+      - name: Run C# formatting check
+        working-directory: crates/bindings-csharp
+        run: |
+          dotnet tool restore
+          dotnet csharpier --check .
 
   wasm_bindings:
     name: Build and test wasm bindings

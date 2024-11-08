@@ -1,57 +1,43 @@
 use super::wasm_common::{CLIENT_CONNECTED_DUNDER, CLIENT_DISCONNECTED_DUNDER};
-use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
+use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId};
 use crate::client::{ClientActorId, ClientConnectionSender};
-use crate::database_instance_context::DatabaseInstanceContext;
-use crate::database_logger::LogLevel;
+use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::system_tables::{StClientsFields, StClientsRow, ST_CLIENTS_ID};
-use crate::db::datastore::traits::TxData;
-use crate::db::update::UpdateDatabaseError;
+use crate::db::datastore::system_tables::{StClientFields, StClientRow, ST_CLIENT_ID};
+use crate::db::datastore::traits::{IsolationLevel, Program, TxData};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
-use crate::execution_context::{ExecutionContext, ReducerContext};
+use crate::execution_context::{ExecutionContext, ReducerContext, Workload};
 use crate::hash::Hash;
 use crate::identity::Identity;
-use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
 use crate::messages::control_db::Database;
-use crate::protobuf::client_api::{TableRowOperation, TableUpdate};
+use crate::replica_context::ReplicaContext;
+use crate::sql;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::worker_metrics::WORKER_METRICS;
+use anyhow::Context;
 use bytes::Bytes;
-use derive_more::{From, Into};
+use derive_more::From;
 use futures::{Future, FutureExt};
-use indexmap::IndexMap;
-use itertools::{Either, Itertools};
+use indexmap::IndexSet;
+use itertools::Itertools;
 use smallvec::SmallVec;
-use spacetimedb_client_api_messages::client_api::table_row_operation::OperationType;
-use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, IntMap};
-use spacetimedb_lib::bsatn::to_vec;
-use spacetimedb_lib::identity::RequestId;
-use spacetimedb_lib::{Address, ReducerDef, TableDesc};
+use spacetimedb_client_api_messages::timestamp::Timestamp;
+use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, WebsocketFormat};
+use spacetimedb_data_structures::error_stream::ErrorStream;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
+use spacetimedb_lib::identity::{AuthCtx, RequestId};
+use spacetimedb_lib::Address;
 use spacetimedb_primitives::{col_list, TableId};
-use spacetimedb_sats::{algebraic_value, ProductValue, Typespace, WithTypespace};
+use spacetimedb_sats::{algebraic_value, ProductValue};
+use spacetimedb_schema::auto_migrate::AutoMigrateError;
+use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
+use spacetimedb_schema::def::{ModuleDef, ReducerDef};
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
-
-#[derive(Debug, Clone, From, Into)]
-pub struct ProtocolDatabaseUpdate {
-    pub tables: Either<Vec<TableUpdate>, Vec<TableUpdateJson>>,
-}
-
-impl From<ProtocolDatabaseUpdate> for Vec<TableUpdate> {
-    fn from(update: ProtocolDatabaseUpdate) -> Self {
-        update.tables.unwrap_left()
-    }
-}
-
-impl From<ProtocolDatabaseUpdate> for Vec<TableUpdateJson> {
-    fn from(update: ProtocolDatabaseUpdate) -> Self {
-        update.tables.unwrap_right()
-    }
-}
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -96,17 +82,10 @@ impl DatabaseUpdate {
             tables: map.into_values().collect(),
         }
     }
-}
 
-impl From<DatabaseUpdate> for Vec<TableUpdate> {
-    fn from(update: DatabaseUpdate) -> Self {
-        update.tables.into_iter().map_into().collect()
-    }
-}
-
-impl From<DatabaseUpdate> for Vec<TableUpdateJson> {
-    fn from(update: DatabaseUpdate) -> Self {
-        update.tables.into_iter().map_into().collect()
+    /// The number of rows in the payload
+    pub fn num_rows(&self) -> usize {
+        self.tables.iter().map(|t| t.inserts.len() + t.deletes.len()).sum()
     }
 }
 
@@ -119,44 +98,6 @@ pub struct DatabaseTableUpdate {
     // contained `ProductValue`s.
     pub inserts: Arc<[ProductValue]>,
     pub deletes: Arc<[ProductValue]>,
-}
-
-impl From<DatabaseTableUpdate> for TableUpdate {
-    fn from(table: DatabaseTableUpdate) -> Self {
-        let deletes = table
-            .deletes
-            .iter()
-            .map(|r| product_to_table_row_op_binary(r, OpType::Delete));
-        let inserts = table
-            .inserts
-            .iter()
-            .map(|r| product_to_table_row_op_binary(r, OpType::Insert));
-        let table_row_operations = deletes.chain(inserts).collect();
-        Self {
-            table_id: table.table_id.into(),
-            table_name: table.table_name.into(),
-            table_row_operations,
-        }
-    }
-}
-
-impl From<DatabaseTableUpdate> for TableUpdateJson {
-    fn from(table: DatabaseTableUpdate) -> Self {
-        let deletes = table
-            .deletes
-            .iter()
-            .map(|r| product_to_table_row_op_json(r.clone(), OpType::Delete));
-        let inserts = table
-            .inserts
-            .iter()
-            .map(|r| product_to_table_row_op_json(r.clone(), OpType::Insert));
-        let table_row_operations = deletes.chain(inserts).map_into().collect();
-        Self {
-            table_id: table.table_id.into(),
-            table_name: table.table_name,
-            table_row_operations,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -183,107 +124,14 @@ impl UpdatesRelValue<'_> {
         !(self.deletes.is_empty() && self.inserts.is_empty())
     }
 
-    /// Returns a combined iterator over both deletes and inserts.
-    fn iter(&self) -> impl Iterator<Item = (OpType, &RelValue<'_>)> {
-        self.deletes
-            .iter()
-            .map(|row| (OpType::Delete, row))
-            .chain(self.inserts.iter().map(|row| (OpType::Insert, row)))
+    pub fn encode<F: WebsocketFormat>(&self, compression: Compression) -> (F::QueryUpdate, u64) {
+        let (deletes, nr_del) = F::encode_list(self.deletes.iter());
+        let (inserts, nr_ins) = F::encode_list(self.inserts.iter());
+        let num_rows = nr_del + nr_ins;
+        let qu = QueryUpdate { deletes, inserts };
+        let cqu = F::into_query_update(qu, compression);
+        (cqu, num_rows)
     }
-}
-
-impl From<&UpdatesRelValue<'_>> for Vec<TableRowOperation> {
-    fn from(updates: &UpdatesRelValue<'_>) -> Self {
-        let mut scratch = Vec::new();
-        updates
-            .iter()
-            .map(|(op, row)| rel_value_to_table_row_op_binary(&mut scratch, row, op))
-            .collect()
-    }
-}
-
-impl From<&UpdatesRelValue<'_>> for Vec<TableRowOperationJson> {
-    fn from(updates: &UpdatesRelValue<'_>) -> Self {
-        updates
-            .iter()
-            .map(|(op, row)| rel_value_to_table_row_op_json(row.clone(), op))
-            .collect()
-    }
-}
-
-impl From<&UpdatesRelValue<'_>> for Vec<ProductValue> {
-    fn from(updates: &UpdatesRelValue<'_>) -> Self {
-        updates
-            .iter()
-            .map(|(_, row)| row.clone().into_product_value())
-            .collect()
-    }
-}
-
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OpType {
-    Delete = 0,
-    Insert = 1,
-}
-
-impl OpType {
-    /// Converts the type to its JSON representation.
-    fn as_json_str(self) -> &'static str {
-        match self {
-            Self::Delete => "delete",
-            Self::Insert => "insert",
-        }
-    }
-}
-
-impl From<OpType> for OperationType {
-    fn from(op_ty: OpType) -> Self {
-        match op_ty {
-            OpType::Delete => Self::Delete,
-            OpType::Insert => Self::Insert,
-        }
-    }
-}
-
-impl From<OpType> for i32 {
-    fn from(op_ty: OpType) -> Self {
-        OperationType::from(op_ty) as i32
-    }
-}
-
-/// Annotate `row` with `op` as a `TableRowOperationJson`.
-pub(crate) fn rel_value_to_table_row_op_json(row: RelValue<'_>, op: OpType) -> TableRowOperationJson {
-    product_to_table_row_op_json(row.into_product_value(), op)
-}
-
-/// Annotate `row` BSATN-encoded with `op` as a `TableRowOperation`.
-pub(crate) fn rel_value_to_table_row_op_binary(
-    scratch: &mut Vec<u8>,
-    row: &RelValue<'_>,
-    op: OpType,
-) -> TableRowOperation {
-    let op = op.into();
-
-    row.to_bsatn_extend(scratch).unwrap();
-    let row = scratch.clone();
-    scratch.clear();
-
-    TableRowOperation { op, row }
-}
-
-/// Annotate `row` BSATN-encoded with `op` as a `TableRowOperation`.
-fn product_to_table_row_op_binary(row: &ProductValue, op: OpType) -> TableRowOperation {
-    let op = op.into();
-    let row = to_vec(&row).unwrap();
-    TableRowOperation { op, row }
-}
-
-/// Annotate `row` with `op` as a `TableRowOperationJson`.
-fn product_to_table_row_op_json(row: ProductValue, op: OpType) -> TableRowOperationJson {
-    let op = op.as_json_str().into();
-    let row = row.elements.into();
-    TableRowOperationJson { op, row }
 }
 
 #[derive(Debug, Clone)]
@@ -302,9 +150,10 @@ impl EventStatus {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ModuleFunctionCall {
     pub reducer: String,
+    pub reducer_id: ReducerId,
     pub args: ArgsTuple,
 }
 
@@ -321,19 +170,84 @@ pub struct ModuleEvent {
     pub timer: Option<Instant>,
 }
 
+/// Information about a running module.
 #[derive(Debug)]
 pub struct ModuleInfo {
-    pub identity: Identity,
-    pub address: Address,
+    /// The definition of the module.
+    /// Loaded by loading the module's program from the system tables, extracting its definition,
+    /// and validating.
+    pub module_def: ModuleDef,
+    /// Map between reducer IDs and reducer names.
+    /// Reducer names are sorted alphabetically.
+    pub reducers_map: ReducersMap,
+    /// The identity of the module.
+    pub owner_identity: Identity,
+    /// The identity of the database.
+    pub database_identity: Identity,
+    /// The hash of the module.
     pub module_hash: Hash,
-    pub typespace: Typespace,
-    pub reducers: ReducersMap,
-    pub catalog: HashMap<Box<str>, EntityDef>,
+    /// Allows subscribing to module logs.
     pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
+    /// Subscriptions to this module.
     pub subscriptions: ModuleSubscriptions,
 }
 
-pub struct ReducersMap(pub IndexMap<Box<str>, ReducerDef>);
+impl ModuleInfo {
+    /// Create a new `ModuleInfo`.
+    /// Reducers are sorted alphabetically by name and assigned IDs.
+    pub fn new(
+        module_def: ModuleDef,
+        owner_identity: Identity,
+        database_identity: Identity,
+        module_hash: Hash,
+        log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
+        subscriptions: ModuleSubscriptions,
+    ) -> Arc<Self> {
+        // Note: sorts alphabetically!
+        let reducers_map = module_def.reducers().map(|r| &*r.name).collect();
+        Arc::new(ModuleInfo {
+            module_def,
+            reducers_map,
+            owner_identity,
+            database_identity,
+            module_hash,
+            log_tx,
+            subscriptions,
+        })
+    }
+
+    /// Get the reducer seed and ID for a reducer name, if any.
+    pub fn reducer_seed_and_id(&self, reducer_name: &str) -> Option<(ReducerArgsDeserializeSeed, ReducerId)> {
+        let seed = self.module_def.reducer_arg_deserialize_seed(reducer_name)?;
+        let reducer_id = self
+            .reducers_map
+            .lookup_id(reducer_name)
+            .expect("seed was present, so ID should be present!");
+        Some((seed, reducer_id))
+    }
+
+    /// Get a reducer by its ID.
+    pub fn get_reducer_by_id(&self, reducer_id: ReducerId) -> Option<&ReducerDef> {
+        let name = self.reducers_map.lookup_name(reducer_id)?;
+        Some(
+            self.module_def
+                .reducer(name)
+                .expect("id was present, so reducer should be present!"),
+        )
+    }
+}
+
+/// A bidirectional map between `Identifiers` (reducer names) and `ReducerId`s.
+/// Invariant: the reducer names are in alphabetical order.
+pub struct ReducersMap(IndexSet<Box<str>>);
+
+impl<'a> FromIterator<&'a str> for ReducersMap {
+    fn from_iter<T: IntoIterator<Item = &'a str>>(iter: T) -> Self {
+        let mut sorted = Vec::from_iter(iter);
+        sorted.sort();
+        ReducersMap(sorted.into_iter().map_into().collect())
+    }
+}
 
 impl fmt::Debug for ReducersMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -341,20 +255,16 @@ impl fmt::Debug for ReducersMap {
     }
 }
 
-impl std::ops::Index<ReducerId> for ReducersMap {
-    type Output = ReducerDef;
-    fn index(&self, index: ReducerId) -> &Self::Output {
-        &self.0[index.0 as usize]
-    }
-}
-
 impl ReducersMap {
+    /// Lookup the ID for a reducer name.
     pub fn lookup_id(&self, reducer_name: &str) -> Option<ReducerId> {
         self.0.get_index_of(reducer_name).map(ReducerId::from)
     }
 
-    pub fn lookup(&self, reducer_name: &str) -> Option<(ReducerId, &ReducerDef)> {
-        self.0.get_full(reducer_name).map(|(id, _, def)| (id.into(), def))
+    /// Lookup the name for a reducer ID.
+    pub fn lookup_name(&self, reducer_id: ReducerId) -> Option<&str> {
+        let result = self.0.get_index(reducer_id.0 as _)?;
+        Some(&**result)
     }
 }
 
@@ -364,15 +274,8 @@ pub trait Module: Send + Sync + 'static {
     fn initial_instances(&mut self) -> Self::InitialInstances<'_>;
     fn info(&self) -> Arc<ModuleInfo>;
     fn create_instance(&self) -> Self::Instance;
-    fn dbic(&self) -> &DatabaseInstanceContext;
-    fn inject_logs(&self, log_level: LogLevel, message: &str);
+    fn replica_ctx(&self) -> &ReplicaContext;
     fn close(self);
-    fn one_off_query(
-        &self,
-        caller_identity: Identity,
-        query: String,
-    ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
-    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
     #[cfg(feature = "tracelogging")]
@@ -382,20 +285,17 @@ pub trait Module: Send + Sync + 'static {
 pub trait ModuleInstance: Send + 'static {
     fn trapped(&self) -> bool;
 
-    fn init_database(
-        &mut self,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> anyhow::Result<Option<ReducerCallResult>>;
+    /// If the module instance's replica_ctx is uninitialized, initialize it.
+    fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>>;
 
+    /// Update the module instance's database to match the schema of the module instance.
     fn update_database(
         &mut self,
-        caller_address: Option<Address>,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
     ) -> anyhow::Result<UpdateDatabaseResult>;
 
-    fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult;
+    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult;
 }
 
 pub struct CallReducerParams {
@@ -428,27 +328,22 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     fn trapped(&self) -> bool {
         self.inst.trapped()
     }
-    fn init_database(
-        &mut self,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> anyhow::Result<Option<ReducerCallResult>> {
-        let ret = self.inst.init_database(program_hash, program_bytes);
+    fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+        let ret = self.inst.init_database(program);
         self.check_trap();
         ret
     }
     fn update_database(
         &mut self,
-        caller_address: Option<Address>,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let ret = self.inst.update_database(caller_address, program_hash, program_bytes);
+        let ret = self.inst.update_database(program, old_module_info);
         self.check_trap();
         ret
     }
-    fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
-        let ret = self.inst.call_reducer(params);
+    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
+        let ret = self.inst.call_reducer(tx, params);
         self.check_trap();
         ret
     }
@@ -456,7 +351,7 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
 
 #[derive(Clone)]
 pub struct ModuleHost {
-    info: Arc<ModuleInfo>,
+    pub info: Arc<ModuleInfo>,
     inner: Arc<dyn DynModuleHost>,
     /// Called whenever a reducer call on this host panics.
     on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
@@ -473,15 +368,8 @@ impl fmt::Debug for ModuleHost {
 
 #[async_trait::async_trait]
 trait DynModuleHost: Send + Sync + 'static {
-    async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
-    fn dbic(&self) -> &DatabaseInstanceContext;
-    fn inject_logs(&self, log_level: LogLevel, message: &str);
-    fn one_off_query(
-        &self,
-        caller_identity: Identity,
-        query: String,
-    ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
-    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
+    async fn get_instance(&self, db: Identity) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
+    fn replica_ctx(&self) -> &ReplicaContext;
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
 }
@@ -517,7 +405,7 @@ async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> 
 
 #[async_trait::async_trait]
 impl<T: Module> DynModuleHost for HostControllerActor<T> {
-    async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
+    async fn get_instance(&self, db: Identity) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
         // in the future we should do something like in the else branch here -- add more instances based on load.
         // we need to do write-skew retries first - right now there's only ever once instance per module.
         let inst = if true {
@@ -540,24 +428,8 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         }))
     }
 
-    fn dbic(&self) -> &DatabaseInstanceContext {
-        self.module.dbic()
-    }
-
-    fn inject_logs(&self, log_level: LogLevel, message: &str) {
-        self.module.inject_logs(log_level, message)
-    }
-
-    fn one_off_query(
-        &self,
-        caller_identity: Identity,
-        query: String,
-    ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError> {
-        self.module.one_off_query(caller_identity, query)
-    }
-
-    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
-        self.module.clear_table(table_name)
+    fn replica_ctx(&self) -> &ReplicaContext {
+        self.module.replica_ctx()
     }
 
     fn exit(&self) -> Closed<'_> {
@@ -575,18 +447,21 @@ pub struct WeakModuleHost {
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
 }
 
-pub type UpdateDatabaseResult = Result<UpdateDatabaseSuccess, UpdateDatabaseError>;
-
-#[derive(Debug, Default)]
-pub struct UpdateDatabaseSuccess {
-    /// Outcome of calling the module's __update__ reducer, `None` if none is
-    /// defined.
-    pub update_result: Option<ReducerCallResult>,
-    /// Outcome of calling the module's pending __migrate__ reducers, empty if
-    /// none are defined or pending.
-    ///
-    /// Currently always empty, as __migrate__ is not yet supported.
-    pub migrate_results: Vec<ReducerCallResult>,
+#[derive(Debug)]
+pub enum UpdateDatabaseResult {
+    NoUpdateNeeded,
+    UpdatePerformed,
+    AutoMigrateError(ErrorStream<AutoMigrateError>),
+    ErrorExecutingMigration(anyhow::Error),
+}
+impl UpdateDatabaseResult {
+    /// Check if a database update was successful.
+    pub fn was_successful(&self) -> bool {
+        matches!(
+            self,
+            UpdateDatabaseResult::UpdatePerformed | UpdateDatabaseResult::NoUpdateNeeded
+        )
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -601,6 +476,8 @@ pub enum ReducerCallError {
     NoSuchModule(#[from] NoSuchModule),
     #[error("no such reducer")]
     NoSuchReducer,
+    #[error("no such scheduled reducer")]
+    ScheduleReducerNotFound,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -645,22 +522,18 @@ impl ModuleHost {
             // Record the time spent waiting in the queue
             let _guard = WORKER_METRICS
                 .reducer_wait_time
-                .with_label_values(&self.info.address, reducer)
+                .with_label_values(&self.info.database_identity, reducer)
                 .start_timer();
-            log::debug!("get instance");
-            self.inner.get_instance(self.info.address).await?
+            self.inner.get_instance(self.info.database_identity).await?
         };
 
-        let result = tokio::task::spawn_blocking(move || {
-            log::debug!("call");
-            f(&mut *inst)
-        })
-        .await
-        .unwrap_or_else(|e| {
-            log::warn!("reducer `{reducer}` panicked");
-            (self.on_panic)();
-            std::panic::resume_unwind(e.into_panic())
-        });
+        let result = tokio::task::spawn_blocking(move || f(&mut *inst))
+            .await
+            .unwrap_or_else(|e| {
+                log::warn!("reducer `{reducer}` panicked");
+                (self.on_panic)();
+                std::panic::resume_unwind(e.into_panic())
+            });
         Ok(result)
     }
 
@@ -693,18 +566,15 @@ impl ModuleHost {
             CLIENT_DISCONNECTED_DUNDER
         };
 
-        let db = &self.inner.dbic().relational_db;
-        let ctx = || {
-            ExecutionContext::reducer(
-                db.address(),
-                ReducerContext {
-                    name: reducer_name.to_owned(),
-                    caller_identity,
-                    caller_address,
-                    timestamp: Timestamp::now(),
-                    arg_bsatn: Bytes::new(),
-                },
-            )
+        let db = &self.inner.replica_ctx().relational_db;
+        let workload = || {
+            Workload::Reducer(ReducerContext {
+                name: reducer_name.to_owned(),
+                caller_identity,
+                caller_address,
+                timestamp: Timestamp::now(),
+                arg_bsatn: Bytes::new(),
+            })
         };
 
         let result = self
@@ -727,7 +597,7 @@ impl ModuleHost {
                 // This is necessary to be able to disconnect clients after a server
                 // crash.
                 ReducerCallError::NoSuchReducer => db
-                    .with_auto_commit(&ctx(), |mut_tx| {
+                    .with_auto_commit(workload(), |mut_tx| {
                         if connected {
                             self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
                         } else {
@@ -747,7 +617,7 @@ impl ModuleHost {
         // Deleting client from `st_clients`does not depend upon result of disconnect reducer hence done in a separate tx.
         if !connected {
             let _ = db
-                .with_auto_commit(&ctx(), |mut_tx| {
+                .with_auto_commit(workload(), |mut_tx| {
                     self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
                 })
                 .map_err(|e| {
@@ -764,27 +634,26 @@ impl ModuleHost {
         caller_address: Address,
         connected: bool,
     ) -> Result<(), DBError> {
-        let db = &*self.inner.dbic().relational_db;
-        let ctx = &ExecutionContext::internal(db.address());
-        let row = &StClientsRow {
-            identity: caller_identity,
-            address: caller_address,
+        let db = &*self.inner.replica_ctx().relational_db;
+
+        let row = &StClientRow {
+            identity: caller_identity.into(),
+            address: caller_address.into(),
         };
 
         if connected {
-            db.insert(mut_tx, ST_CLIENTS_ID, row.into()).map(|_| ())
+            db.insert(mut_tx, ST_CLIENT_ID, row.into()).map(|_| ())
         } else {
             let row = db
                 .iter_by_col_eq_mut(
-                    ctx,
                     mut_tx,
-                    ST_CLIENTS_ID,
-                    col_list![StClientsFields::Identity, StClientsFields::Address],
+                    ST_CLIENT_ID,
+                    col_list![StClientFields::Identity, StClientFields::Address],
                     &algebraic_value::AlgebraicValue::product(row),
                 )?
                 .map(|row_ref| row_ref.pointer())
                 .collect::<SmallVec<[_; 1]>>();
-            db.delete(mut_tx, ST_CLIENTS_ID, row);
+            db.delete(mut_tx, ST_CLIENT_ID, row);
             Ok::<(), DBError>(())
         }
     }
@@ -799,26 +668,35 @@ impl ModuleHost {
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let (reducer_id, schema) = self
+        let reducer_seed = self
             .info
-            .reducers
-            .lookup(reducer_name)
+            .module_def
+            .reducer_arg_deserialize_seed(reducer_name)
             .ok_or(ReducerCallError::NoSuchReducer)?;
 
-        let args = args.into_tuple(self.info.typespace.with_type(schema))?;
+        let reducer_id = self
+            .info
+            .reducers_map
+            .lookup_id(reducer_name)
+            .expect("if we found the seed, we should find the ID!");
+
+        let args = args.into_tuple(reducer_seed)?;
         let caller_address = caller_address.unwrap_or(Address::__DUMMY);
 
         self.call(reducer_name, move |inst| {
-            inst.call_reducer(CallReducerParams {
-                timestamp: Timestamp::now(),
-                caller_identity,
-                caller_address,
-                client,
-                request_id,
-                timer,
-                reducer_id,
-                args,
-            })
+            inst.call_reducer(
+                None,
+                CallReducerParams {
+                    timestamp: Timestamp::now(),
+                    caller_identity,
+                    caller_address,
+                    client,
+                    request_id,
+                    timer,
+                    reducer_id,
+                    args,
+                },
+            )
         })
         .await
         .map_err(Into::into)
@@ -868,34 +746,70 @@ impl ModuleHost {
         res
     }
 
-    pub fn catalog(&self) -> Catalog {
-        Catalog(self.info.clone())
+    // Scheduled reducers require a different function here to call their reducer
+    // because their reducer arguments are stored in the database and need to be fetched
+    // within the same transaction as the reducer call.
+    pub async fn call_scheduled_reducer(
+        &self,
+        call_reducer_params: impl FnOnce(&MutTxId) -> anyhow::Result<Option<CallReducerParams>> + Send + 'static,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        let db = self.inner.replica_ctx().relational_db.clone();
+        // scheduled reducer name not fetched yet, anyway this is only for logging purpose
+        const REDUCER: &str = "scheduled_reducer";
+        let module = self.info.clone();
+        self.call(REDUCER, move |inst: &mut dyn ModuleInstance| {
+            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+
+            match call_reducer_params(&mut tx) {
+                Ok(Some(params)) => {
+                    // Is necessary to patch the context with the actual calling reducer
+                    let reducer = module
+                        .reducers_map
+                        .lookup_name(params.reducer_id)
+                        .ok_or(ReducerCallError::ScheduleReducerNotFound)?;
+
+                    tx.ctx = ExecutionContext::with_workload(
+                        tx.ctx.database_identity(),
+                        Workload::Reducer(ReducerContext {
+                            name: reducer.into(),
+                            caller_identity: params.caller_identity,
+                            caller_address: params.caller_address,
+                            timestamp: Timestamp::now(),
+                            arg_bsatn: params.args.get_bsatn().clone(),
+                        }),
+                    );
+
+                    Ok(inst.call_reducer(Some(tx), params))
+                }
+                Ok(None) => Err(ReducerCallError::ScheduleReducerNotFound),
+                Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments {
+                    err,
+                    reducer: REDUCER.into(),
+                })),
+            }
+        })
+        .await
+        .unwrap_or_else(|e| Err(e.into()))
+        .map_err(Into::into)
     }
 
     pub fn subscribe_to_logs(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {
         Ok(self.info().log_tx.subscribe())
     }
 
-    pub async fn init_database(
-        &self,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
-        self.call("<init_database>", move |inst| {
-            inst.init_database(program_hash, program_bytes)
-        })
-        .await?
-        .map_err(InitDatabaseError::Other)
+    pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
+        self.call("<init_database>", move |inst| inst.init_database(program))
+            .await?
+            .map_err(InitDatabaseError::Other)
     }
 
     pub async fn update_database(
         &self,
-        caller_address: Option<Address>,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         self.call("<update_database>", move |inst| {
-            inst.update_database(caller_address, program_hash, program_bytes)
+            inst.update_database(program, old_module_info)
         })
         .await?
         .map_err(Into::into)
@@ -910,24 +824,51 @@ impl ModuleHost {
     }
 
     pub fn inject_logs(&self, log_level: LogLevel, message: &str) {
-        self.inner.inject_logs(log_level, message)
+        self.replica_ctx().logger.write(
+            log_level,
+            &Record {
+                ts: chrono::Utc::now(),
+                target: None,
+                filename: Some("external"),
+                line_number: None,
+                message,
+            },
+            &(),
+        )
     }
 
-    pub async fn one_off_query(
-        &self,
-        caller_identity: Identity,
-        query: String,
-    ) -> Result<Vec<MemTable>, anyhow::Error> {
-        let result = self.inner.one_off_query(caller_identity, query)?;
-        Ok(result)
+    #[tracing::instrument(skip_all)]
+    pub fn one_off_query(&self, caller_identity: Identity, query: String) -> Result<Vec<MemTable>, anyhow::Error> {
+        let replica_ctx = self.replica_ctx();
+        let db = &replica_ctx.relational_db;
+        let auth = AuthCtx::new(replica_ctx.owner_identity, caller_identity);
+        log::debug!("One-off query: {query}");
+
+        db.with_read_only(Workload::Sql, |tx| {
+            let ast = sql::compiler::compile_sql(db, &auth, tx, &query)?;
+            sql::execute::execute_sql_tx(db, tx, &query, ast, auth)?
+                .context("One-off queries are not allowed to modify the database")
+        })
     }
 
     /// FIXME(jgilles): this is a temporary workaround for deleting not currently being supported
     /// for tables without primary keys. It is only used in the benchmarks.
     /// Note: this doesn't drop the table, it just clears it!
-    pub async fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
-        self.inner.clear_table(table_name)?;
-        Ok(())
+    pub fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
+        let db = &*self.replica_ctx().relational_db;
+
+        db.with_auto_commit(Workload::Internal, |tx| {
+            let tables = db.get_all_tables_mut(tx)?;
+            // We currently have unique table names,
+            // so we can assume there's only one table to clear.
+            if let Some(table_id) = tables
+                .iter()
+                .find_map(|t| (&*t.table_name == table_name).then_some(t.table_id))
+            {
+                db.clear_table(tx, table_id)?;
+            }
+            Ok(())
+        })
     }
 
     pub fn downgrade(&self) -> WeakModuleHost {
@@ -939,11 +880,11 @@ impl ModuleHost {
     }
 
     pub fn database_info(&self) -> &Database {
-        &self.dbic().database
+        &self.replica_ctx().database
     }
 
-    pub(crate) fn dbic(&self) -> &DatabaseInstanceContext {
-        self.inner.dbic()
+    pub(crate) fn replica_ctx(&self) -> &ReplicaContext {
+        self.inner.replica_ctx()
     }
 }
 
@@ -956,51 +897,5 @@ impl WeakModuleHost {
             inner,
             on_panic,
         })
-    }
-}
-
-#[derive(Debug)]
-pub enum EntityDef {
-    Reducer(ReducerDef),
-    Table(TableDesc),
-}
-impl EntityDef {
-    pub fn as_reducer(&self) -> Option<&ReducerDef> {
-        match self {
-            Self::Reducer(x) => Some(x),
-            _ => None,
-        }
-    }
-    pub fn as_table(&self) -> Option<&TableDesc> {
-        match self {
-            Self::Table(x) => Some(x),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Catalog(Arc<ModuleInfo>);
-impl Catalog {
-    pub fn typespace(&self) -> &Typespace {
-        &self.0.typespace
-    }
-
-    pub fn get(&self, name: &str) -> Option<WithTypespace<'_, EntityDef>> {
-        self.0.catalog.get(name).map(|ty| self.0.typespace.with_type(ty))
-    }
-    pub fn get_reducer(&self, name: &str) -> Option<WithTypespace<'_, ReducerDef>> {
-        let schema = self.get(name)?;
-        Some(schema.with(schema.ty().as_reducer()?))
-    }
-    pub fn get_table(&self, name: &str) -> Option<WithTypespace<'_, TableDesc>> {
-        let schema = self.get(name)?;
-        Some(schema.with(schema.ty().as_table()?))
-    }
-    pub fn iter(&self) -> impl Iterator<Item = (&str, WithTypespace<'_, EntityDef>)> + '_ {
-        self.0
-            .catalog
-            .iter()
-            .map(|(name, e)| (&**name, self.0.typespace.with_type(e)))
     }
 }

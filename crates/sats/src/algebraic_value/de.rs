@@ -1,6 +1,6 @@
 use crate::array_value::{ArrayValueIntoIter, ArrayValueIterCloned};
 use crate::{de, AlgebraicValue, SumValue};
-
+use crate::{i256, u256};
 use derive_more::From;
 
 /// An implementation of [`Deserializer`](de::Deserializer)
@@ -87,6 +87,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
         map_err(self.val.into_u128().map(|x| x.0))
     }
 
+    fn deserialize_u256(self) -> Result<u256, Self::Error> {
+        map_err(self.val.into_u256().map(|x| *x))
+    }
+
     fn deserialize_i8(self) -> Result<i8, Self::Error> {
         map_err(self.val.into_i8())
     }
@@ -105,6 +109,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
 
     fn deserialize_i128(self) -> Result<i128, Self::Error> {
         map_err(self.val.into_i128().map(|x| x.0))
+    }
+
+    fn deserialize_i256(self) -> Result<i256, Self::Error> {
+        map_err(self.val.into_i256().map(|x| *x))
     }
 
     fn deserialize_f32(self) -> Result<f32, Self::Error> {
@@ -130,20 +138,6 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
     ) -> Result<V::Output, Self::Error> {
         let iter = map_err(self.val.into_array())?.into_iter();
         visitor.visit(ArrayAccess { iter, seed })
-    }
-
-    fn deserialize_map_seed<
-        Vi: de::MapVisitor<'de, K::Output, V::Output>,
-        K: de::DeserializeSeed<'de> + Clone,
-        V: de::DeserializeSeed<'de> + Clone,
-    >(
-        self,
-        visitor: Vi,
-        kseed: K,
-        vseed: V,
-    ) -> Result<Vi::Output, Self::Error> {
-        let iter = map_err(self.val.into_map())?.into_iter();
-        visitor.visit(MapAccess { iter, kseed, vseed })
     }
 }
 
@@ -220,38 +214,6 @@ impl<'de, T: de::DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for ArrayAcc
     }
 }
 
-/// Defines deserialization for [`ValueDeserializer`] where a map value is in the input.
-struct MapAccess<K, V> {
-    /// The elements of the map as an iterator of owned key/value entries.
-    iter: std::collections::btree_map::IntoIter<AlgebraicValue, AlgebraicValue>,
-    /// A key seed value provided by the caller of
-    /// [`deserialize_map_seed`](de::Deserializer::deserialize_map_seed).
-    kseed: K,
-    /// A value seed value provided by the caller of
-    /// [`deserialize_map_seed`](de::Deserializer::deserialize_map_seed).
-    vseed: V,
-}
-
-impl<'de, K: de::DeserializeSeed<'de> + Clone, V: de::DeserializeSeed<'de> + Clone> de::MapAccess<'de>
-    for MapAccess<K, V>
-{
-    type Key = K::Output;
-    type Value = V::Output;
-    type Error = ValueDeserializeError;
-
-    fn next_entry(&mut self) -> Result<Option<(Self::Key, Self::Value)>, Self::Error> {
-        self.iter
-            .next()
-            .map(|(key, val)| {
-                Ok((
-                    self.kseed.clone().deserialize(ValueDeserializer { val: key })?,
-                    self.vseed.clone().deserialize(ValueDeserializer { val })?,
-                ))
-            })
-            .transpose()
-    }
-}
-
 impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
     type Error = ValueDeserializeError;
 
@@ -283,6 +245,9 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
     fn deserialize_u128(self) -> Result<u128, Self::Error> {
         ok_or(self.val.as_u128().copied().map(|x| x.0))
     }
+    fn deserialize_u256(self) -> Result<u256, Self::Error> {
+        ok_or(self.val.as_u256().map(|x| **x))
+    }
     fn deserialize_i8(self) -> Result<i8, Self::Error> {
         ok_or(self.val.as_i8().copied())
     }
@@ -297,6 +262,9 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
     }
     fn deserialize_i128(self) -> Result<i128, Self::Error> {
         ok_or(self.val.as_i128().copied().map(|x| x.0))
+    }
+    fn deserialize_i256(self) -> Result<i256, Self::Error> {
+        ok_or(self.val.as_i256().map(|x| **x))
     }
     fn deserialize_f32(self) -> Result<f32, Self::Error> {
         ok_or(self.val.as_f32().copied().map(f32::from))
@@ -320,20 +288,6 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
     ) -> Result<V::Output, Self::Error> {
         let iter = ok_or(self.val.as_array())?.iter_cloned();
         visitor.visit(RefArrayAccess { iter, seed })
-    }
-
-    fn deserialize_map_seed<
-        Vi: de::MapVisitor<'de, K::Output, V::Output>,
-        K: de::DeserializeSeed<'de> + Clone,
-        V: de::DeserializeSeed<'de> + Clone,
-    >(
-        self,
-        visitor: Vi,
-        kseed: K,
-        vseed: V,
-    ) -> Result<Vi::Output, Self::Error> {
-        let iter = ok_or(self.val.as_map())?.iter();
-        visitor.visit(RefMapAccess { iter, kseed, vseed })
     }
 }
 
@@ -391,38 +345,6 @@ impl<'de, T: de::DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for RefArray
         self.iter
             .next()
             .map(|val| self.seed.clone().deserialize(ValueDeserializer { val }))
-            .transpose()
-    }
-}
-
-/// Defines deserialization for [`&'de ValueDeserializer`] where an map value is in the input.
-struct RefMapAccess<'a, K, V> {
-    /// The elements of the map as an iterator of borrowed key/value entries.
-    iter: std::collections::btree_map::Iter<'a, AlgebraicValue, AlgebraicValue>,
-    /// A key seed value provided by the caller of
-    /// [`deserialize_map_seed`](de::Deserializer::deserialize_map_seed).
-    kseed: K,
-    /// A value seed value provided by the caller of
-    /// [`deserialize_map_seed`](de::Deserializer::deserialize_map_seed).
-    vseed: V,
-}
-
-impl<'de, K: de::DeserializeSeed<'de> + Clone, V: de::DeserializeSeed<'de> + Clone> de::MapAccess<'de>
-    for RefMapAccess<'de, K, V>
-{
-    type Key = K::Output;
-    type Value = V::Output;
-    type Error = ValueDeserializeError;
-
-    fn next_entry(&mut self) -> Result<Option<(Self::Key, Self::Value)>, Self::Error> {
-        self.iter
-            .next()
-            .map(|(key, val)| {
-                Ok((
-                    self.kseed.clone().deserialize(ValueDeserializer::from_ref(key))?,
-                    self.vseed.clone().deserialize(ValueDeserializer::from_ref(val))?,
-                ))
-            })
             .transpose()
     }
 }

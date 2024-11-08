@@ -1,10 +1,19 @@
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_primitives::SequenceId;
-use spacetimedb_sats::db::def::SequenceSchema;
+use spacetimedb_schema::schema::SequenceSchema;
+use spacetimedb_table::MemoryUsage;
 
 pub(super) struct Sequence {
     schema: SequenceSchema,
     pub(super) value: i128,
+}
+
+impl MemoryUsage for Sequence {
+    fn heap_usage(&self) -> usize {
+        // MEMUSE: intentionally ignoring schema
+        let Self { schema: _, value } = self;
+        value.heap_usage()
+    }
 }
 
 impl Sequence {
@@ -86,7 +95,9 @@ impl Sequence {
     /// 6. incr = 1 allocated = 10, value = 10
     /// 7. next_value() -> 11
     fn needs_allocation(&self) -> bool {
-        self.value == self.schema.allocated
+        // In order to yield a value, it must be strictly less than the allocation amount,
+        // because on restart we will begin at the allocation amount.
+        self.value >= self.schema.allocated
     }
 
     pub(super) fn set_allocation(&mut self, allocated: i128) {
@@ -100,6 +111,13 @@ pub(super) struct SequencesState {
     sequences: IntMap<SequenceId, Sequence>,
 }
 
+impl MemoryUsage for SequencesState {
+    fn heap_usage(&self) -> usize {
+        let Self { sequences } = self;
+        sequences.heap_usage()
+    }
+}
+
 impl SequencesState {
     pub(super) fn get_sequence_mut(&mut self, seq_id: SequenceId) -> Option<&mut Sequence> {
         self.sequences.get_mut(&seq_id)
@@ -109,7 +127,7 @@ impl SequencesState {
         self.sequences.insert(seq_id, seq);
     }
 
-    pub(super) fn remove(&mut self, seq_id: SequenceId) {
-        self.sequences.remove(&seq_id);
+    pub(super) fn remove(&mut self, seq_id: SequenceId) -> Option<Sequence> {
+        self.sequences.remove(&seq_id)
     }
 }

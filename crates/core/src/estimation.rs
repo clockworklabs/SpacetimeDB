@@ -1,4 +1,4 @@
-use crate::db::relational_db::Tx;
+use crate::db::{datastore::locking_tx_datastore::state_view::StateView as _, relational_db::Tx};
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr};
 
@@ -11,7 +11,7 @@ pub fn num_rows(tx: &Tx, expr: &QueryExpr) -> u64 {
 fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
     match ops {
         // The base case is the table row count.
-        [] => src.table_id().and_then(|id| tx.get_row_count(id)).unwrap_or(0),
+        [] => src.table_id().and_then(|id| tx.table_row_count(id)).unwrap_or(0),
         // Walk in reverse from the end (`op`) to the beginning.
         [input @ .., op] => match op {
             // How selective is an index lookup?
@@ -61,19 +61,19 @@ fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
 /// Note this method is not applicable to range scans.
 fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
     tx.num_distinct_values(table_id, cols)
-        .map_or(0, |ndv| tx.get_row_count(table_id).unwrap_or(0) / ndv)
+        .map_or(0, |ndv| tx.table_row_count(table_id).unwrap_or(0) / ndv)
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::execution_context::Workload;
     use crate::{
         db::relational_db::{tests_utils::TestDB, RelationalDB},
         error::DBError,
         estimation::num_rows,
-        execution_context::ExecutionContext,
         sql::compiler::compile_sql,
     };
-    use spacetimedb_lib::AlgebraicType;
+    use spacetimedb_lib::{identity::AuthCtx, AlgebraicType};
     use spacetimedb_sats::product;
     use spacetimedb_vm::expr::CrudExpr;
 
@@ -82,8 +82,8 @@ mod tests {
     }
 
     fn num_rows_for(db: &RelationalDB, sql: &str) -> u64 {
-        let tx = db.begin_tx();
-        match &*compile_sql(db, &tx, sql).expect("Failed to compile sql") {
+        let tx = db.begin_tx(Workload::ForTests);
+        match &*compile_sql(db, &AuthCtx::for_testing(), &tx, sql).expect("Failed to compile sql") {
             [CrudExpr::Query(expr)] => num_rows(&tx, expr),
             exprs => panic!("unexpected result from compilation: {:#?}", exprs),
         }
@@ -101,7 +101,7 @@ mod tests {
             .create_table_for_test("T", &["a", "b"].map(|n| (n, AlgebraicType::U64)), indexes)
             .expect("Failed to create table");
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+        db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
             for i in 0..NUM_T_ROWS {
                 db.insert(tx, table_id, product![i % NDV_T, i])
                     .expect("failed to insert into table");
@@ -118,7 +118,7 @@ mod tests {
             .create_table_for_test("S", &["a", "c"].map(|n| (n, AlgebraicType::U64)), indexes)
             .expect("Failed to create table");
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+        db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
             for i in 0..NUM_S_ROWS {
                 db.insert(tx, rhs, product![i, i]).expect("failed to insert into table");
             }

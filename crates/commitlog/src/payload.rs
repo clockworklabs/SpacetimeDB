@@ -41,7 +41,7 @@ impl Encode for () {
 ///
 /// Unlike [`Encode`], this is not a datatype: the canonical commitlog format
 /// requires to look up row types during log traversal in order to be able to
-/// decode (see also [`RowDecoder`]).
+/// decode.
 pub trait Decoder {
     /// The type of records this decoder can decode.
     /// This is also the type which can be appended to a commitlog, and so must
@@ -53,7 +53,7 @@ pub trait Decoder {
     /// Decode one [`Self::Record`] from the given buffer.
     ///
     /// The `version` argument corresponds to the log format version of the
-    /// current segment (see [`segment::Header::log_format_version`]).
+    /// current segment (see [`crate::segment::Header::log_format_version`]).
     ///
     /// The `tx_argument` is the transaction offset of the current record
     /// relative to the start of the log.
@@ -124,7 +124,6 @@ impl<const N: usize> Decoder for ArrayDecoder<N> {
         tx_offset: u64,
         reader: &mut R,
     ) -> Result<(), Self::Error> {
-        self.decode_record(version, tx_offset, reader)?;
-        Ok(())
+        self.decode_record(version, tx_offset, reader).map(drop)
     }
 }

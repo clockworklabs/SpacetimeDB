@@ -7,15 +7,15 @@ use derive_more::From;
 use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
+use spacetimedb_lib::db::auth::{StAccess, StTableType};
+use spacetimedb_lib::db::error::{AuthError, RelationError};
+use spacetimedb_lib::relation::{ColExpr, DbTable, FieldName, Header};
 use spacetimedb_lib::{AlgebraicType, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::{TableDef, TableSchema};
-use spacetimedb_sats::db::error::{AuthError, RelationError};
-use spacetimedb_sats::relation::{ColExpr, DbTable, FieldName, Header};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::ProductValue;
+use spacetimedb_schema::schema::TableSchema;
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::btree_map::Entry;
@@ -237,8 +237,8 @@ impl ColumnOp {
         let cmp = |(col, value): (ColId, _)| Self::cmp(col, op, value);
 
         // For singleton constraints, the `value` must be used directly.
-        if cols.is_singleton() {
-            return cmp((cols.head(), value));
+        if let Some(head) = cols.as_singleton() {
+            return cmp((head, value));
         }
 
         // Otherwise, pair column ids and product fields together.
@@ -829,13 +829,6 @@ pub enum CrudExpr {
     Delete {
         query: QueryExpr,
     },
-    CreateTable {
-        table: Box<TableDef>,
-    },
-    Drop {
-        name: String,
-        kind: DbType,
-    },
     SetVar {
         name: String,
         literal: String,
@@ -1065,7 +1058,7 @@ fn select_best_index<'a>(
         .collect::<SmallVec<[_; 1]>>();
     indices.sort_unstable_by_key(|cl| Reverse(cl.len()));
 
-    let mut found: IndexColumnOpSink = IndexColumnOpSink::new();
+    let mut found: IndexColumnOpSink = IndexColumnOpSink::default();
 
     // Collect fields into a multi-map `(col_id, cmp) -> [col value]`.
     // This gives us `log(N)` seek + deletion.
@@ -1081,14 +1074,14 @@ fn select_best_index<'a>(
             break;
         }
 
-        if col_list.is_singleton() {
+        if let Some(head) = col_list.as_singleton() {
             // Go through each operator.
             // NOTE: We do not consider `OpCmp::NotEq` at the moment
             // since those are typically not answered using an index.
             for cmp in [OpCmp::Eq, OpCmp::Lt, OpCmp::LtEq, OpCmp::Gt, OpCmp::GtEq] {
                 // For a single column index,
                 // we want to avoid the `ProductValue` indirection of below.
-                for ColValue { cmp, value, col, .. } in col_map.remove(&(col_list.head(), cmp)).into_iter().flatten() {
+                for ColValue { cmp, value, col, .. } in col_map.remove(&(head, cmp)).into_iter().flatten() {
                     found.push(make_index_arg(cmp, col_list, value.clone()));
                     cols_indexed.insert((col, cmp));
                 }
@@ -1875,7 +1868,7 @@ impl QueryExpr {
     fn optimize_select(mut q: QueryExpr, op: ColumnOp, tables: &[SourceExpr]) -> QueryExpr {
         // Go through each table schema referenced in the query.
         // Find the first sargable condition and short-circuit.
-        let mut fields_found = HashSet::new();
+        let mut fields_found = HashSet::default();
         for schema in tables {
             for op in select_best_index(&mut fields_found, schema.head(), &op) {
                 if let IndexColumnOp::Scan(op) = &op {
@@ -2124,8 +2117,10 @@ impl From<Code> for CodeResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use spacetimedb_sats::relation::Column;
+
+    use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, relation::Column};
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
+    use spacetimedb_schema::{def::ModuleDef, schema::Schema};
     use typed_arena::Arena;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);
@@ -2152,7 +2147,7 @@ mod tests {
                     table_id: 42.into(),
                     table_name: "foo".into(),
                     fields: vec![],
-                    constraints: vec![(ColId(42).into(), Constraints::indexed())],
+                    constraints: [(ColId(42).into(), Constraints::indexed())].into_iter().collect(),
                 }),
                 table_id: 42.into(),
                 table_type: StTableType::User,
@@ -2219,7 +2214,7 @@ mod tests {
         assert!(matches!(auth.check_auth(ALICE, BOB), Err(AuthError::OwnerRequired)));
     }
 
-    fn mem_table(id: TableId, name: &str, fields: &[(u32, AlgebraicType, bool)]) -> SourceExpr {
+    fn mem_table(id: TableId, name: &str, fields: &[(u16, AlgebraicType, bool)]) -> SourceExpr {
         let table_access = StAccess::Public;
         let head = Header::new(
             id,
@@ -2232,8 +2227,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .filter(|(_, (_, _, indexed))| *indexed)
-                .map(|(i, _)| (ColId::from(i).into(), Constraints::indexed()))
-                .collect(),
+                .map(|(i, _)| (ColId::from(i).into(), Constraints::indexed())),
         );
         SourceExpr::InMemory {
             source_id: SourceId(0),
@@ -2439,7 +2433,7 @@ mod tests {
 
         let col_list_arena = Arena::new();
         let idx = |cmp, cols: &[ColId], val: &AlgebraicValue| {
-            let columns = cols.iter().copied().collect::<ColListBuilder>().build().unwrap();
+            let columns = cols.iter().copied().collect::<ColList>();
             let columns = col_list_arena.alloc(columns);
             make_index_arg(cmp, columns, val.clone())
         };
@@ -2579,42 +2573,27 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_auth_crud_code_create_table() {
-        let table = TableDef::new("etcpasswd".into(), vec![])
-            .with_access(StAccess::Public)
-            .with_type(StTableType::System); // hah!
-
-        let crud = CrudExpr::CreateTable { table: Box::new(table) };
-        assert_owner_required(crud);
-    }
-
-    #[test]
-    fn test_auth_crud_code_drop() {
-        let crud = CrudExpr::Drop {
-            name: "etcpasswd".into(),
-            kind: DbType::Table,
-        };
-        assert_owner_required(crud);
+    fn test_def() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder.build_table_with_new_type(
+            "lhs",
+            ProductType::from([("a", AlgebraicType::I32), ("b", AlgebraicType::String)]),
+            true,
+        );
+        builder.build_table_with_new_type(
+            "rhs",
+            ProductType::from([("c", AlgebraicType::I32), ("d", AlgebraicType::I64)]),
+            true,
+        );
+        builder.finish().try_into().expect("test def should be valid")
     }
 
     #[test]
     /// Tests that [`QueryExpr::optimize`] can rewrite inner joins followed by projections into semijoins.
     fn optimize_inner_join_to_semijoin() {
-        let lhs = TableSchema::from_def(
-            TableId(0),
-            TableDef::new(
-                "lhs".into(),
-                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String]).into(),
-            ),
-        );
-        let rhs = TableSchema::from_def(
-            TableId(1),
-            TableDef::new(
-                "rhs".into(),
-                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64]).into(),
-            ),
-        );
+        let def: ModuleDef = test_def();
+        let lhs = TableSchema::from_module_def(&def, def.table("lhs").unwrap(), (), 0.into());
+        let rhs = TableSchema::from_module_def(&def, def.table("rhs").unwrap(), (), 1.into());
 
         let lhs_source = SourceExpr::from(&lhs);
         let rhs_source = SourceExpr::from(&rhs);
@@ -2625,7 +2604,7 @@ mod tests {
                 [0, 1]
                     .map(|c| FieldExpr::Name(FieldName::new(lhs.table_id, c.into())))
                     .into(),
-                Some(TableId(0)),
+                Some(TableId::SENTINEL),
             )
             .unwrap();
         let q = q.optimize(&|_, _| 0);
@@ -2653,20 +2632,9 @@ mod tests {
     #[test]
     /// Tests that [`QueryExpr::optimize`] will not rewrite inner joins which are not followed by projections to the LHS table.
     fn optimize_inner_join_no_project() {
-        let lhs = TableSchema::from_def(
-            TableId(0),
-            TableDef::new(
-                "lhs".into(),
-                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String]).into(),
-            ),
-        );
-        let rhs = TableSchema::from_def(
-            TableId(1),
-            TableDef::new(
-                "rhs".into(),
-                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64]).into(),
-            ),
-        );
+        let def: ModuleDef = test_def();
+        let lhs = TableSchema::from_module_def(&def, def.table("lhs").unwrap(), (), 0.into());
+        let rhs = TableSchema::from_module_def(&def, def.table("rhs").unwrap(), (), 1.into());
 
         let lhs_source = SourceExpr::from(&lhs);
         let rhs_source = SourceExpr::from(&rhs);
@@ -2679,20 +2647,9 @@ mod tests {
     #[test]
     /// Tests that [`QueryExpr::optimize`] will not rewrite inner joins followed by projections to the RHS rather than LHS table.
     fn optimize_inner_join_wrong_project() {
-        let lhs = TableSchema::from_def(
-            TableId(0),
-            TableDef::new(
-                "lhs".into(),
-                ProductType::from([AlgebraicType::I32, AlgebraicType::String]).into(),
-            ),
-        );
-        let rhs = TableSchema::from_def(
-            TableId(1),
-            TableDef::new(
-                "rhs".into(),
-                ProductType::from([AlgebraicType::I32, AlgebraicType::I64]).into(),
-            ),
-        );
+        let def: ModuleDef = test_def();
+        let lhs = TableSchema::from_module_def(&def, def.table("lhs").unwrap(), (), 0.into());
+        let rhs = TableSchema::from_module_def(&def, def.table("rhs").unwrap(), (), 1.into());
 
         let lhs_source = SourceExpr::from(&lhs);
         let rhs_source = SourceExpr::from(&rhs);

@@ -1,9 +1,12 @@
 use crate::{
+    common_args,
     util::{host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, VALID_PROTOCOLS},
     Config,
 };
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use spacetimedb::stdb_path;
+use std::path::PathBuf;
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
     Table, Tabled,
@@ -29,7 +32,12 @@ fn get_subcommands() -> Vec<Command> {
             ),
         Command::new("add")
             .about("Add a new server configuration")
-            .arg(Arg::new("url").help("The URL of the server to add").required(true))
+            .arg(
+                Arg::new("url")
+                    .long("url")
+                    .help("The URL of the server to add")
+                    .required(true),
+            )
             .arg(Arg::new("name").help("Nickname for this server").required(true))
             .arg(
                 Arg::new("default")
@@ -51,65 +59,38 @@ fn get_subcommands() -> Vec<Command> {
                     .help("The nickname, host name or URL of the server to remove")
                     .required(true),
             )
-            .arg(
-                Arg::new("delete-identities")
-                    .help("Also delete all identities which apply to the server")
-                    .long("delete-identities")
-                    .short('I')
-                    .action(ArgAction::SetTrue),
-            )
-            .arg(
-                Arg::new("force")
-                    .help("Do not prompt before deleting identities")
-                    .long("force")
-                    .short('f')
-                    .action(ArgAction::SetTrue),
-            ),
+            .arg(common_args::yes()),
         Command::new("fingerprint")
             .about("Show or update a saved server's fingerprint")
             .arg(
                 Arg::new("server")
-                    .short('s')
-                    .long("server")
+                    .required(true)
+                    .help("The nickname, host name or URL of the server"),
+            )
+            .arg(common_args::yes()),
+        Command::new("ping")
+            .about("Checks to see if a SpacetimeDB host is online")
+            .arg(
+                Arg::new("server")
+                    .required(true)
+                    .help("The nickname, host name or URL of the server to ping"),
+            ),
+        Command::new("edit")
+            .about("Update a saved server's nickname, host name or protocol")
+            .arg(
+                Arg::new("server")
+                    .required(true)
                     .help("The nickname, host name or URL of the server"),
             )
             .arg(
-                Arg::new("force")
-                    .help("Save changes to the server's configuration without confirming")
-                    .short('f')
-                    .long("force")
-                    .action(ArgAction::SetTrue),
-            )
-            .arg(
-                Arg::new("delete-obsolete-identities")
-                    .help("Delete obsoleted identities if the server's fingerprint has changed")
-                    .long("delete-obsolete-identities")
-                    .short('I')
-                    .action(ArgAction::SetTrue),
-            ),
-        Command::new("ping")
-            .about("Checks to see if a SpacetimeDB host is online")
-            .arg(Arg::new("server").help("The nickname, host name or URL of the server to ping")),
-        Command::new("edit")
-            .about("Update a saved server's nickname, host name or protocol")
-            .arg(Arg::new("server").help("The nickname, host name or URL of the server"))
-            .arg(
                 Arg::new("nickname")
                     .help("A new nickname to assign the server configuration")
-                    .short('n')
-                    .long("nickname"),
+                    .long("new-name"),
             )
             .arg(
-                Arg::new("host")
-                    .help("A new hostname to assign the server configuration")
-                    .short('H')
-                    .long("host"),
-            )
-            .arg(
-                Arg::new("protocol")
-                    .help("A new protocol to assign the server configuration; http or https")
-                    .short('p')
-                    .long("protocol"),
+                Arg::new("url")
+                    .long("url")
+                    .help("A new URL to assign the server configuration"),
             )
             .arg(
                 Arg::new("no-fingerprint")
@@ -117,20 +98,10 @@ fn get_subcommands() -> Vec<Command> {
                     .long("no-fingerprint")
                     .action(ArgAction::SetTrue),
             )
-            .arg(
-                Arg::new("delete-obsolete-identities")
-                    .help("Delete obsoleted identities if the server's fingerprint has changed")
-                    .long("delete-obsolete-identities")
-                    .short('I')
-                    .action(ArgAction::SetTrue),
-            )
-            .arg(
-                Arg::new("force")
-                    .help("Do not prompt before saving the edited configuration")
-                    .long("force")
-                    .short('f')
-                    .action(ArgAction::SetTrue),
-            ),
+            .arg(common_args::yes()),
+        Command::new("clear")
+            .about("Deletes all data from all local databases")
+            .arg(common_args::yes()),
         // TODO: set-name, set-protocol, set-host, set-url
     ]
 }
@@ -149,6 +120,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
         "fingerprint" => exec_fingerprint(config, args).await,
         "ping" => exec_ping(config, args).await,
         "edit" => exec_edit(config, args).await,
+        "clear" => exec_clear(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
@@ -203,7 +175,9 @@ fn valid_protocol_or_error(protocol: &str) -> anyhow::Result<()> {
 }
 
 pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let url = args.get_one::<String>("url").unwrap();
+    // Trim trailing `/`s because otherwise we end up with a double `//` in some later codepaths.
+    // See https://github.com/clockworklabs/SpacetimeDB/issues/1551.
+    let url = args.get_one::<String>("url").unwrap().trim_end_matches('/');
     let nickname = args.get_one::<String>("name");
     let default = *args.get_one::<bool>("default").unwrap();
     let no_fingerprint = *args.get_one::<bool>("no-fingerprint").unwrap();
@@ -221,7 +195,7 @@ pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyho
                 "Unable to retrieve fingerprint for server: {url}
 Is the server running?
 Add a server without retrieving its fingerprint with:
-\tspacetime server add {url} --no-fingerprint",
+\tspacetime server add --url {url} --no-fingerprint",
             )
         })?;
         println!("For server {}, got fingerprint:\n{}", url, fingerprint);
@@ -244,41 +218,15 @@ Add a server without retrieving its fingerprint with:
 
 pub async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").unwrap();
-    let delete_identities = args.get_flag("delete-identities");
-    let force = args.get_flag("force");
 
-    let deleted_ids = config.remove_server(server, delete_identities)?;
-
-    if !deleted_ids.is_empty() {
-        println!(
-            "Deleting {} {}:",
-            deleted_ids.len(),
-            if deleted_ids.len() == 1 {
-                " identity"
-            } else {
-                "identities"
-            }
-        );
-        for id in deleted_ids {
-            println!("{}", id.identity);
-        }
-        if !(force || y_or_n("Continue?")?) {
-            anyhow::bail!("Aborted");
-        }
-
-        config.update_all_default_identities();
-    }
+    config.remove_server(server)?;
 
     config.save();
 
     Ok(())
 }
 
-async fn update_server_fingerprint(
-    config: &mut Config,
-    server: Option<&str>,
-    delete_identities: bool,
-) -> Result<bool, anyhow::Error> {
+async fn update_server_fingerprint(config: &mut Config, server: Option<&str>) -> Result<bool, anyhow::Error> {
     let url = config.get_host_url(server)?;
     let nick_or_host = config.server_nick_or_host(server)?;
     let new_fing = spacetime_server_fingerprint(&url)
@@ -294,30 +242,6 @@ async fn update_server_fingerprint(
                 "Fingerprint has changed for server {}.\nWas:\n{}\nNew:\n{}",
                 nick_or_host, saved_fing, new_fing
             );
-
-            if delete_identities {
-                // Unfortunate clone because we need to mutate `config`
-                // while holding `saved_fing`.
-                let saved_fing = saved_fing.to_string();
-
-                let deleted_ids = config.remove_identities_for_fingerprint(&saved_fing)?;
-                if !deleted_ids.is_empty() {
-                    println!(
-                        "Deleting {} obsolete {}:",
-                        deleted_ids.len(),
-                        if deleted_ids.len() == 1 {
-                            "identity"
-                        } else {
-                            "identities"
-                        }
-                    );
-                    for id in deleted_ids {
-                        println!("{}", id.identity);
-                    }
-                }
-
-                config.update_all_default_identities();
-            }
 
             config.set_server_fingerprint(server, new_fing)?;
 
@@ -336,12 +260,11 @@ async fn update_server_fingerprint(
 }
 
 pub async fn exec_fingerprint(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let server = args.get_one::<String>("server").map(|s| s.as_str());
-    let delete_identities = args.get_flag("delete-obsolete-identities");
+    let server = args.get_one::<String>("server").unwrap().as_str();
     let force = args.get_flag("force");
 
-    if update_server_fingerprint(&mut config, server, delete_identities).await? {
-        if !(force || y_or_n("Continue?")?) {
+    if update_server_fingerprint(&mut config, Some(server)).await? {
+        if !y_or_n(force, "Continue?")? {
             anyhow::bail!("Aborted");
         }
 
@@ -352,8 +275,8 @@ pub async fn exec_fingerprint(mut config: Config, args: &ArgMatches) -> Result<(
 }
 
 pub async fn exec_ping(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let url = config.get_host_url(server)?;
+    let server = args.get_one::<String>("server").unwrap().as_str();
+    let url = config.get_host_url(Some(server))?;
 
     let builder = reqwest::Client::new().get(format!("{}/database/ping", url).as_str());
     let response = builder.send().await?;
@@ -373,19 +296,22 @@ pub async fn exec_ping(config: Config, args: &ArgMatches) -> Result<(), anyhow::
 }
 
 pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let server = args
-        .get_one::<String>("server")
-        .map(|s| s.as_str())
-        .expect("Supply a server to spacetime server edit");
+    let server = args.get_one::<String>("server").unwrap().as_str();
 
     let old_url = config.get_host_url(Some(server))?;
 
     let new_nick = args.get_one::<String>("nickname").map(|s| s.as_str());
-    let new_host = args.get_one::<String>("host").map(|s| s.as_str());
-    let new_proto = args.get_one::<String>("protocol").map(|s| s.as_str());
+    let new_url = args.get_one::<String>("url").map(|s| s.as_str());
+    let (new_host, new_proto) = match new_url {
+        None => (None, None),
+        Some(new_url) => {
+            let (new_host, new_proto) = host_or_url_to_host_and_protocol(new_url);
+            let new_proto = new_proto.ok_or_else(|| anyhow::anyhow!("Invalid url: {}", new_url))?;
+            (Some(new_host), Some(new_proto))
+        }
+    };
 
     let no_fingerprint = args.get_flag("no-fingerprint");
-    let delete_identities = args.get_flag("delete-obsolete-identities");
     let force = args.get_flag("force");
 
     if let Some(new_proto) = new_proto {
@@ -393,6 +319,7 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
     }
 
     let (old_nick, old_host, old_proto) = config.edit_server(server, new_nick, new_host, new_proto)?;
+    let server = new_nick.unwrap_or(server);
 
     if let (Some(new_nick), Some(old_nick)) = (new_nick, old_nick) {
         println!("Changing nickname from {} to {}", old_nick, new_nick);
@@ -410,15 +337,60 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
         if no_fingerprint {
             config.delete_server_fingerprint(Some(&new_url))?;
         } else {
-            update_server_fingerprint(&mut config, Some(&new_url), delete_identities).await?;
+            update_server_fingerprint(&mut config, Some(&new_url)).await?;
         }
     }
 
-    if !(force || y_or_n("Continue?")?) {
+    if !y_or_n(force, "Continue?")? {
         anyhow::bail!("Aborted");
     }
 
     config.save();
 
+    Ok(())
+}
+
+async fn exec_clear(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let force = args.get_flag("force");
+    if std::env::var_os("STDB_PATH").map(PathBuf::from).is_none() {
+        let mut path = dirs::home_dir().unwrap_or_default();
+        path.push(".spacetime");
+        std::env::set_var("STDB_PATH", path.to_str().unwrap());
+    }
+
+    let control_node_dir = stdb_path("control_node");
+    let worker_node_dir = stdb_path("worker_node");
+    if control_node_dir.exists() || worker_node_dir.exists() {
+        if control_node_dir.exists() {
+            println!("Control node database path: {}", control_node_dir.to_str().unwrap());
+        } else {
+            println!("Control node database path: <not found>");
+        }
+
+        if worker_node_dir.exists() {
+            println!("Worker node database path: {}", worker_node_dir.to_str().unwrap());
+        } else {
+            println!("Worker node database path: <not found>");
+        }
+
+        if !y_or_n(
+            force,
+            "Are you sure you want to delete all data from the local database?",
+        )? {
+            println!("Aborting");
+            return Ok(());
+        }
+
+        if control_node_dir.exists() {
+            std::fs::remove_dir_all(&control_node_dir)?;
+            println!("Deleted control node database: {}", control_node_dir.to_str().unwrap());
+        }
+        if worker_node_dir.exists() {
+            std::fs::remove_dir_all(&worker_node_dir)?;
+            println!("Deleted worker node database: {}", worker_node_dir.to_str().unwrap());
+        }
+    } else {
+        println!("Local database not found. Nothing has been deleted.");
+    }
     Ok(())
 }

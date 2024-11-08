@@ -11,6 +11,7 @@ spacetimedb-sats.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-table.workspace = true
+spacetimedb-schema.workspace = true
 
 anyhow.workspace = true
 arrayvec.workspace = true

@@ -1,19 +1,258 @@
 namespace SpacetimeDB.Codegen;
 
-using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Utils;
 
-struct VariableDeclaration(string name, ITypeSymbol typeSymbol)
+public record MemberDeclaration(string Name, string Type, string TypeInfo)
 {
-    public string Name = name;
-    public string Type = SymbolToName(typeSymbol);
-    public string TypeInfo = GetTypeInfo(typeSymbol);
+    public MemberDeclaration(ISymbol member, ITypeSymbol type, DiagReporter diag)
+        : this(member.Name, SymbolToName(type), "")
+    {
+        try
+        {
+            TypeInfo = GetTypeInfo(type);
+        }
+        catch (Exception e)
+        {
+            diag.Report(ErrorDescriptor.UnsupportedType, (member, type, e));
+            // dummy type; can't instantiate an interface, but at least it will produce fewer noisy errors
+            TypeInfo = $"SpacetimeDB.BSATN.IReadWrite<{Type}>";
+        }
+    }
+
+    public MemberDeclaration(IFieldSymbol field, DiagReporter diag)
+        : this(field, field.Type, diag) { }
+
+    public static string GenerateBsatnFields(
+        Accessibility visibility,
+        IEnumerable<MemberDeclaration> members
+    )
+    {
+        var visStr = SyntaxFacts.GetText(visibility);
+        return string.Join(
+            "\n",
+            members.Select(m => $"{visStr} static readonly {m.TypeInfo} {m.Name} = new();")
+        );
+    }
+
+    public static string GenerateDefs(IEnumerable<MemberDeclaration> members) =>
+        string.Join(
+            ",\n",
+            members.Select(m => $"new(nameof({m.Name}), {m.Name}.GetAlgebraicType(registrar))")
+        );
+}
+
+public enum TypeKind
+{
+    Product,
+    Sum,
+}
+
+public abstract record BaseTypeDeclaration<M>
+    where M : MemberDeclaration, IEquatable<M>
+{
+    public readonly Scope Scope;
+    public readonly string ShortName;
+    public readonly string FullName;
+    public readonly TypeKind Kind;
+    public EquatableArray<M> Members { get; init; }
+
+    protected abstract M ConvertMember(IFieldSymbol field, DiagReporter diag);
+
+    public BaseTypeDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
+    {
+        var typeSyntax = (TypeDeclarationSyntax)context.TargetNode;
+        var type = (INamedTypeSymbol)context.TargetSymbol;
+
+        // Note: we could use naively use `type.GetMembers()` to get all fields of the type,
+        // but some users add their own fields in extra partial declarations like this:
+        //
+        // ```csharp
+        // [SpacetimeDB.Type]
+        // partial class MyType
+        // {
+        //     public int TableField;
+        // }
+        //
+        // partial class MyType
+        // {
+        //     public int ExtraField;
+        // }
+        // ```
+        //
+        // In this scenario, only fields declared inside the declaration with the `[SpacetimeDB.Type]` attribute
+        // should be considered as BSATN fields, and others are expected to be ignored.
+        //
+        // To achieve this, we need to walk over the annotated type syntax node, collect the field names,
+        // and look up the resolved field symbols only for those fields.
+        var fields = typeSyntax
+            .Members.OfType<FieldDeclarationSyntax>()
+            .SelectMany(f => f.Declaration.Variables)
+            .Select(v => type.GetMembers(v.Identifier.Text).OfType<IFieldSymbol>().Single())
+            .Where(f => !f.IsStatic);
+
+        // Check if type implements generic `SpacetimeDB.TaggedEnum<Variants>` and, if so, extract the `Variants` type.
+        if (type.BaseType?.OriginalDefinition.ToString() == "SpacetimeDB.TaggedEnum<Variants>")
+        {
+            Kind = TypeKind.Sum;
+
+            if (
+                type.BaseType.TypeArguments.FirstOrDefault()
+                is not INamedTypeSymbol { IsTupleType: true, TupleElements: var taggedEnumVariants }
+            )
+            {
+                diag.Report(ErrorDescriptor.TaggedEnumInlineTuple, type.BaseType);
+            }
+
+            if (fields.FirstOrDefault() is { } field)
+            {
+                diag.Report(ErrorDescriptor.TaggedEnumField, field);
+            }
+
+            fields = taggedEnumVariants;
+        }
+        else
+        {
+            Kind = TypeKind.Product;
+        }
+
+        if (typeSyntax.TypeParameterList is { } typeParams)
+        {
+            diag.Report(ErrorDescriptor.TypeParams, typeParams);
+        }
+
+        Scope = new(typeSyntax);
+        ShortName = type.Name;
+        FullName = SymbolToName(type);
+        Members = new(fields.Select(field => ConvertMember(field, diag)).ToImmutableArray());
+    }
+
+    public virtual Scope.Extensions ToExtensions()
+    {
+        string read,
+            write;
+
+        var extensions = new Scope.Extensions(Scope, FullName);
+
+        var bsatnDecls = Members.Cast<MemberDeclaration>();
+        var fieldNames = bsatnDecls.Select(m => m.Name);
+
+        if (Kind is TypeKind.Sum)
+        {
+            extensions.Contents.Append(
+                $$"""
+                private {{ShortName}}() { }
+
+                internal enum @enum: byte
+                {
+                    {{string.Join(",\n", fieldNames)}}
+                }
+                """
+            );
+
+            bsatnDecls = bsatnDecls.Prepend(
+                new("__enumTag", "@enum", "SpacetimeDB.BSATN.Enum<@enum>")
+            );
+
+            extensions.Contents.Append(
+                string.Join(
+                    "\n",
+                    Members.Select(m =>
+                        // C# puts field names in the same namespace as records themselves, and will complain about clashes if they match.
+                        // To avoid this, we append an underscore to the field name.
+                        // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
+                        $"public sealed record {m.Name}({m.Type} {m.Name}_) : {ShortName};"
+                    )
+                )
+            );
+
+            read = $$"""
+                __enumTag.Read(reader) switch {
+                    {{string.Join(
+                        "\n",
+                        fieldNames.Select(name =>
+                            $"@enum.{name} => new {name}({name}.Read(reader)),"
+                        )
+                    )}}
+                    _ => throw new System.InvalidOperationException("Invalid tag value, this state should be unreachable.")
+                }
+                """;
+
+            write = $$"""
+                switch (value) {
+                    {{string.Join(
+                        "\n",
+                        fieldNames.Select(name => $"""
+                            case {name}(var inner):
+                                __enumTag.Write(writer, @enum.{name});
+                                {name}.Write(writer, inner);
+                                break;
+                            """)
+                    )}}
+                }
+                """;
+        }
+        else
+        {
+            extensions.BaseTypes.Add("SpacetimeDB.BSATN.IStructuralReadWrite");
+
+            extensions.Contents.Append(
+                $$"""
+                public void ReadFields(System.IO.BinaryReader reader) {
+                    {{string.Join(
+                        "\n",
+                        fieldNames.Select(name => $"{name} = BSATN.{name}.Read(reader);")
+                    )}}
+                }
+
+                public void WriteFields(System.IO.BinaryWriter writer) {
+                    {{string.Join(
+                        "\n",
+                        fieldNames.Select(name => $"BSATN.{name}.Write(writer, {name});")
+                    )}}
+                }
+                """
+            );
+
+            read = $"SpacetimeDB.BSATN.IStructuralReadWrite.Read<{FullName}>(reader)";
+
+            write = "value.WriteFields(writer);";
+        }
+
+        extensions.Contents.Append(
+            $$"""
+            public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<{{FullName}}>
+            {
+                {{MemberDeclaration.GenerateBsatnFields(Accessibility.Internal, bsatnDecls)}}
+
+                public {{FullName}} Read(System.IO.BinaryReader reader) => {{read}};
+
+                public void Write(System.IO.BinaryWriter writer, {{FullName}} value) {
+                    {{write}}
+                }
+
+                public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                    registrar.RegisterType<{{FullName}}>(_ => new SpacetimeDB.BSATN.AlgebraicType.{{Kind}}(new SpacetimeDB.BSATN.AggregateElement[] {
+                        {{MemberDeclaration.GenerateDefs(Members)}}
+                    }));
+            }
+            """
+        );
+
+        return extensions;
+    }
+}
+
+record TypeDeclaration : BaseTypeDeclaration<MemberDeclaration>
+{
+    public TypeDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
+        : base(context, diag) { }
+
+    protected override MemberDeclaration ConvertMember(IFieldSymbol field, DiagReporter diag) =>
+        new(field, diag);
 }
 
 [Generator]
@@ -21,230 +260,53 @@ public class Type : IIncrementalGenerator
 {
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        WithAttrAndPredicate(
-            context,
-            "SpacetimeDB.TypeAttribute",
-            (node) =>
-            {
-                // structs and classes should be always processed
-                if (node is not EnumDeclarationSyntax enumType)
-                    return true;
-
-                // Ensure variants are contiguous as SATS enums don't support explicit tags.
-                if (enumType.Members.Any(m => m.EqualsValue is not null))
-                {
-                    throw new InvalidOperationException(
-                        "[SpacetimeDB.Type] enums cannot have explicit values: "
-                            + enumType.Identifier
-                    );
-                }
-
-                // Ensure all enums fit in `byte` as that's what SATS uses for tags.
-                if (enumType.Members.Count > 256)
-                {
-                    throw new InvalidOperationException(
-                        "[SpacetimeDB.Type] enums cannot have more than 256 variants."
-                    );
-                }
-
-                // Check that enums are compatible with SATS but otherwise skip from extra processing.
-                return false;
-            }
-        );
-
-        // Any table should be treated as a type without an explicit [Type] attribute.
-        WithAttrAndPredicate(context, "SpacetimeDB.TableAttribute", (_node) => true);
-    }
-
-    public static void WithAttrAndPredicate(
-        IncrementalGeneratorInitializationContext context,
-        string fullyQualifiedMetadataName,
-        Func<SyntaxNode, bool> predicate
-    )
-    {
         context
             .SyntaxProvider.ForAttributeWithMetadataName(
-                fullyQualifiedMetadataName,
-                predicate: (node, ct) => predicate(node),
+                "SpacetimeDB.TypeAttribute",
+                // for enums, we just do diagnostics, nothing else
+                predicate: (node, ct) => node is EnumDeclarationSyntax,
                 transform: (context, ct) =>
-                {
-                    var type = (TypeDeclarationSyntax)context.TargetNode;
+                    context.ParseWithDiags(diag =>
+                    {
+                        var enumType = (EnumDeclarationSyntax)context.TargetNode;
 
-                    // Check if type implements generic `SpacetimeDB.TaggedEnum<Variants>` and, if so, extract the `Variants` type.
-                    var taggedEnumVariants = type.BaseList?.Types
-                        .OfType<SimpleBaseTypeSyntax>()
-                        .Select(t => context.SemanticModel.GetTypeInfo(t.Type, ct).Type)
-                        .OfType<INamedTypeSymbol>()
-                        .Where(t =>
-                            t.OriginalDefinition.ToString() == "SpacetimeDB.TaggedEnum<Variants>"
-                        )
-                        .Select(t =>
-                            (ImmutableArray<IFieldSymbol>?)
-                                ((INamedTypeSymbol)t.TypeArguments[0]).TupleElements
-                        )
-                        .FirstOrDefault();
-
-                    var fields = type.Members.OfType<FieldDeclarationSyntax>()
-                        .Where(f =>
-                            !f.Modifiers.Any(m =>
-                                m.IsKind(SyntaxKind.StaticKeyword)
-                                || m.IsKind(SyntaxKind.ConstKeyword)
-                            )
-                        )
-                        .SelectMany(f =>
+                        // Ensure variants are contiguous as SATS enums don't support explicit tags.
+                        foreach (var variant in enumType.Members)
                         {
-                            var typeSymbol = context
-                                .SemanticModel.GetTypeInfo(f.Declaration.Type, ct)
-                                .Type!;
-                            // Seems like a bug in Roslyn - nullability annotation is not set on the top type.
-                            // Set it manually for now. TODO: report upstream.
-                            if (f.Declaration.Type is NullableTypeSyntax)
+                            if (variant.EqualsValue is { } equalsValue)
                             {
-                                typeSymbol = typeSymbol.WithNullableAnnotation(
-                                    NullableAnnotation.Annotated
+                                diag.Report(
+                                    ErrorDescriptor.EnumWithExplicitValues,
+                                    (equalsValue, variant, enumType)
                                 );
                             }
-                            return f.Declaration.Variables.Select(v => new VariableDeclaration(
-                                v.Identifier.Text,
-                                typeSymbol
-                            ));
-                        });
-
-                    if (taggedEnumVariants is not null)
-                    {
-                        if (fields.Any())
-                        {
-                            throw new InvalidOperationException("Tagged enums cannot have fields.");
                         }
-                        fields = taggedEnumVariants.Value.Select(v => new VariableDeclaration(
-                            v.Name,
-                            v.Type
-                        ));
-                    }
 
-                    if (type.TypeParameterList is not null)
-                    {
-                        throw new InvalidOperationException(
-                            "Types with type parameters are not yet supported."
-                        );
-                    }
+                        // Ensure all enums fit in `byte` as that's what SATS uses for tags.
+                        if (enumType.Members.Count > 256)
+                        {
+                            diag.Report(ErrorDescriptor.EnumTooManyVariants, enumType);
+                        }
 
-                    return new
-                    {
-                        Scope = new Scope(type),
-                        ShortName = type.Identifier.Text,
-                        FullName = SymbolToName(context.SemanticModel.GetDeclaredSymbol(type, ct)!),
-                        IsTaggedEnum = taggedEnumVariants is not null,
-                        Members = fields.ToArray(),
-                    };
-                }
+                        // Unused empty type.
+                        return default(ValueTuple);
+                    })
             )
-            .Select(
-                (type, ct) =>
-                {
-                    string typeKind,
-                        read,
-                        write;
+            .ReportDiagnostics(context)
+            .WithTrackingName("SpacetimeDB.Type.ParseEnum");
 
-                    var typeDesc = "";
-
-                    var bsatnDecls = type.Members.Select(m => (m.Name, m.TypeInfo)).ToList();
-
-                    var fieldNames = bsatnDecls.Select(m => m.Name).ToArray();
-
-                    if (type.IsTaggedEnum)
-                    {
-                        typeKind = "Sum";
-
-                        typeDesc +=
-                            $@"
-                            private {type.ShortName}() {{ }}
-
-                            internal enum @enum: byte
-                            {{
-                                {string.Join(",\n", fieldNames)}
-                            }}
-                        ";
-
-                        bsatnDecls.Insert(
-                            0,
-                            (Name: "__enumTag", TypeInfo: "SpacetimeDB.BSATN.Enum<@enum>")
-                        );
-
-                        typeDesc += string.Join(
-                            "\n",
-                            type.Members.Select(m =>
-                                // C# puts field names in the same namespace as records themselves, and will complain about clashes if they match.
-                                // To avoid this, we append an underscore to the field name.
-                                // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
-                                $@"public sealed record {m.Name}({m.Type} {m.Name}_) : {type.ShortName};"
-                            )
-                        );
-
-                        read =
-                            $@"__enumTag.Read(reader) switch {{
-                                {string.Join("\n", fieldNames.Select(name => $"@enum.{name} => new {name}({name}.Read(reader)),"))}
-                                _ => throw new System.InvalidOperationException(""Invalid tag value, this state should be unreachable."")
-                            }}";
-
-                        write =
-                            $@"switch (value) {{
-                                {string.Join("\n", fieldNames.Select(name => $@"
-                                    case {name}(var inner):
-                                        __enumTag.Write(writer, @enum.{name});
-                                        {name}.Write(writer, inner);
-                                        break;
-                                "))}
-                            }}";
-                    }
-                    else
-                    {
-                        typeKind = "Product";
-
-                        typeDesc +=
-                            $@"
-                            public void ReadFields(System.IO.BinaryReader reader) {{
-                                {string.Join("\n", fieldNames.Select(name => $"{name} = BSATN.{name}.Read(reader);"))}
-                            }}
-
-                            public void WriteFields(System.IO.BinaryWriter writer) {{
-                                {string.Join("\n", fieldNames.Select(name => $"BSATN.{name}.Write(writer, {name});"))}
-                            }}
-                        ";
-
-                        read =
-                            $"SpacetimeDB.BSATN.IStructuralReadWrite.Read<{type.ShortName}>(reader)";
-
-                        write = "value.WriteFields(writer);";
-                    }
-
-                    typeDesc +=
-                        $@"
-                        public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<{type.ShortName}>
-                        {{
-                            {string.Join("\n", bsatnDecls.Select(decl => $"internal static readonly {decl.TypeInfo} {decl.Name} = new();"))}
-
-                            public {type.ShortName} Read(System.IO.BinaryReader reader) => {read};
-
-                            public void Write(System.IO.BinaryWriter writer, {type.ShortName} value) {{
-                                {write}
-                            }}
-
-                            public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) => registrar.RegisterType<{type.ShortName}>(typeRef => new SpacetimeDB.BSATN.AlgebraicType.{typeKind}(new SpacetimeDB.BSATN.AggregateElement[] {{
-                                {string.Join(",\n", fieldNames.Select(name => $"new(nameof({name}), {name}.GetAlgebraicType(registrar))"))}
-                            }}));
-                        }}
-                    ";
-
-                    return new KeyValuePair<string, string>(
-                        type.FullName,
-                        type.Scope.GenerateExtensions(
-                            typeDesc,
-                            type.IsTaggedEnum ? null : "SpacetimeDB.BSATN.IStructuralReadWrite"
-                        )
-                    );
-                }
+        context
+            .SyntaxProvider.ForAttributeWithMetadataName(
+                "SpacetimeDB.TypeAttribute",
+                // parse anything except enums here (they're handled above)
+                predicate: (node, ct) => node is not EnumDeclarationSyntax,
+                transform: (context, ct) =>
+                    context.ParseWithDiags(diag => new TypeDeclaration(context, diag))
             )
+            .ReportDiagnostics(context)
+            .WithTrackingName("SpacetimeDB.Type.Parse")
+            .Select((type, ct) => type.ToExtensions())
+            .WithTrackingName("SpacetimeDB.Type.GenerateExtensions")
             .RegisterSourceOutputs(context);
     }
 }

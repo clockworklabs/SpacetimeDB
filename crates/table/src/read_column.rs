@@ -11,7 +11,7 @@ use crate::{
 };
 use spacetimedb_sats::{
     algebraic_value::{ser::ValueSerializer, Packed},
-    AlgebraicType, AlgebraicValue, ArrayValue, MapValue, ProductType, ProductValue, SumValue,
+    i256, u256, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumValue,
 };
 use std::{cell::Cell, mem};
 use thiserror::Error;
@@ -236,6 +236,8 @@ impl_read_column_number! {
     U64 => u64;
     I128 => i128;
     U128 => u128;
+    I256 => i256;
+    U256 => u256;
     F32 => f32;
     F64 => f64;
 }
@@ -303,7 +305,6 @@ macro_rules! impl_read_column_via_av {
 impl_read_column_via_av! {
     AlgebraicTypeLayout::VarLen(VarLenType::String) => into_string => Box<str>;
     AlgebraicTypeLayout::VarLen(VarLenType::Array(_)) => into_array => ArrayValue;
-    AlgebraicTypeLayout::VarLen(VarLenType::Map(_)) => into_map => Box<MapValue>;
     AlgebraicTypeLayout::Sum(_) => into_sum => SumValue;
     AlgebraicTypeLayout::Product(_) => into_product => ProductValue;
 }
@@ -326,31 +327,24 @@ macro_rules! impl_read_column_via_from {
 }
 
 impl_read_column_via_from! {
-    u32 => spacetimedb_primitives::ColId;
+    u16 => spacetimedb_primitives::ColId;
     u32 => spacetimedb_primitives::TableId;
     u32 => spacetimedb_primitives::IndexId;
     u32 => spacetimedb_primitives::ConstraintId;
     u32 => spacetimedb_primitives::SequenceId;
     u128 => Packed<u128>;
     i128 => Packed<i128>;
+    u256 => Box<u256>;
+    i256 => Box<i256>;
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{blob_store::HashMapBlobStore, indexes::SquashedOffset, table::Table};
+    use crate::blob_store::HashMapBlobStore;
+    use crate::table::test::table;
     use proptest::{prelude::*, prop_assert_eq, proptest, test_runner::TestCaseResult};
-    use spacetimedb_sats::{
-        db::def::{TableDef, TableSchema},
-        product,
-        proptest::generate_typed_row,
-    };
-
-    fn table(ty: ProductType) -> Table {
-        let def = TableDef::from_product("", ty);
-        let schema = TableSchema::from_def(0.into(), def);
-        Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
-    }
+    use spacetimedb_sats::{product, proptest::generate_typed_row};
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
@@ -394,6 +388,8 @@ mod test {
                 assert_wrong_type_error::<i64>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::I64)?;
                 assert_wrong_type_error::<u128>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::U128)?;
                 assert_wrong_type_error::<i128>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::I128)?;
+                assert_wrong_type_error::<u256>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::U256)?;
+                assert_wrong_type_error::<i256>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::I256)?;
                 assert_wrong_type_error::<f32>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::F32)?;
                 assert_wrong_type_error::<f64>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::F64)?;
                 assert_wrong_type_error::<bool>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::Bool)?;
@@ -455,7 +451,7 @@ mod test {
         Ok(())
     }
 
-    /// Define a test or tests which construct a row containing a known value of a known type,
+    /// Define a test or tests which constructs a row containing a known value of a known type,
     /// then uses `ReadColumn::read_column` to extract that type as a native type,
     /// e.g. a Rust integer,
     /// and asserts that the extracted value is as expected.
@@ -492,6 +488,13 @@ mod test {
         read_column_u64 { AlgebraicType::U64 => u64 = 0xa5a5a5a5_a5a5a5a5 };
         read_column_i128 { AlgebraicType::I128 => i128 = i128::MAX };
         read_column_u128 { AlgebraicType::U128 => u128 = 0xa5a5a5a5_a5a5a5a5_a5a5a5a5_a5a5a5a5 };
+        read_column_i256 { AlgebraicType::I256 => i256 = i256::MAX };
+        read_column_u256 { AlgebraicType::U256 => u256 =
+            u256::from_words(
+                0xa5a5a5a5_a5a5a5a5_a5a5a5a5_a5a5a5a5,
+                0xa5a5a5a5_a5a5a5a5_a5a5a5a5_a5a5a5a5
+            )
+        };
 
         read_column_f32 { AlgebraicType::F32 => f32 = 1.0 };
         read_column_f64 { AlgebraicType::F64 => f64 = 1.0 };

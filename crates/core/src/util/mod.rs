@@ -1,4 +1,3 @@
-use derive_more::From;
 use futures::{Future, FutureExt};
 use std::borrow::Cow;
 use std::pin::pin;
@@ -15,40 +14,6 @@ pub(crate) fn string_from_utf8_lossy_owned(v: Vec<u8>) -> String {
         // SAFETY: from_utf8_lossy() returned Borrowed, which means the original buffer is valid utf8
         Cow::Borrowed(_) => unsafe { String::from_utf8_unchecked(v) },
         Cow::Owned(s) => s,
-    }
-}
-
-#[derive(Clone, From)]
-pub enum AnyBytes {
-    Bytes(bytes::Bytes),
-    IVec(sled::IVec),
-}
-
-impl From<Vec<u8>> for AnyBytes {
-    fn from(b: Vec<u8>) -> Self {
-        Self::Bytes(b.into())
-    }
-}
-
-impl From<Box<[u8]>> for AnyBytes {
-    fn from(b: Box<[u8]>) -> Self {
-        Self::Bytes(b.into())
-    }
-}
-
-impl AsRef<[u8]> for AnyBytes {
-    fn as_ref(&self) -> &[u8] {
-        self
-    }
-}
-
-impl std::ops::Deref for AnyBytes {
-    type Target = [u8];
-    fn deref(&self) -> &Self::Target {
-        match self {
-            AnyBytes::Bytes(b) => b,
-            AnyBytes::IVec(b) => b,
-        }
     }
 }
 

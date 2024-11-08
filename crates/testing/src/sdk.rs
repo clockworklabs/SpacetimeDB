@@ -119,7 +119,7 @@ macro_rules! memoized {
         MEMOIZED
             .lock()
             .unwrap()
-            .get_or_insert_with(HashMap::new)
+            .get_or_insert_with(HashMap::default)
             .entry($key)
             .or_insert_with_key(|$key| -> $value_ty { $body })
             .clone()
@@ -147,12 +147,11 @@ fn publish_module(wasm_file: &str) -> String {
     let name = random_module_name();
     invoke_cli(&[
         "publish",
+        "--anonymous",
         "--server",
         "local",
-        "--debug",
-        "--project-path",
+        "--bin-path",
         wasm_file,
-        "--skip_clippy",
         &name,
     ]);
     name
@@ -194,11 +193,9 @@ fn generate_bindings(language: &str, wasm_file: &str, client_project: &str, gene
         create_dir_all(generate_dir).expect("Error creating generate subdir");
         invoke_cli(&[
             "generate",
-            "--debug",
-            "--skip_clippy",
             "--lang",
             language,
-            "--wasm-file",
+            "--bin-path",
             wasm_file,
             "--out-dir",
             generate_dir,

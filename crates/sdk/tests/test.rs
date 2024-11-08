@@ -39,6 +39,11 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
+            fn insert_caller_identity() {
+                make_test("insert_caller_identity").run();
+            }
+
+            #[test]
             fn delete_identity() {
                 make_test("delete_identity").run();
             }
@@ -51,6 +56,11 @@ macro_rules! declare_tests_with_suffix {
             #[test]
             fn insert_address() {
                 make_test("insert_address").run();
+            }
+
+            #[test]
+            fn insert_caller_address() {
+                make_test("insert_caller_address").run();
             }
 
             #[test]
@@ -79,6 +89,21 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
+            fn insert_option_some() {
+                make_test("insert_option_some").run();
+            }
+
+            #[test]
+            fn insert_option_none() {
+                make_test("insert_option_none").run();
+            }
+
+            #[test]
+            fn insert_struct() {
+                make_test("insert_struct").run();
+            }
+
+            #[test]
             fn insert_simple_enum() {
                 make_test("insert_simple_enum").run();
             }
@@ -94,9 +119,14 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
-            fn resubscribe() {
-                make_test("resubscribe").run();
+            fn insert_primitives_as_strings() {
+                make_test("insert_primitives_as_strings").run();
             }
+
+            // #[test]
+            // fn resubscribe() {
+            //     make_test("resubscribe").run();
+            // }
 
             #[test]
             #[should_panic]
@@ -141,9 +171,15 @@ macro_rules! declare_tests_with_suffix {
             fn subscribe_all_select_star() {
                 make_test("subscribe_all_select_star").run();
             }
+
+            #[test]
+            fn caller_alice_receives_reducer_callback_but_not_bob() {
+                make_test("caller_alice_receives_reducer_callback_but_not_bob").run();
+            }
         }
     };
 }
 
 declare_tests_with_suffix!(rust, "");
+// TODO: migrate csharp to snake_case table names
 declare_tests_with_suffix!(csharp, "-cs");

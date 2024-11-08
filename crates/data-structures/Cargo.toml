@@ -9,7 +9,9 @@ description = "Assorted data structures used in spacetimedb"
 serde = ["dep:serde"]
 
 [dependencies]
+ahash.workspace = true
 hashbrown.workspace = true
 nohash-hasher.workspace = true
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
+smallvec.workspace = true

@@ -16,22 +16,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Add aarch64 target
+      - name: Add cross-platform targets
         run: |
           rustup target add aarch64-apple-darwin
+          rustup target add x86_64-apple-darwin
 
       - name: Compile x86
         run: |
-          cargo build --release -p spacetimedb-cli
+          cargo build --release -p spacetimedb-cli --target x86_64-apple-darwin
           mkdir build
-          dd if=target/release/spacetime of=build/spacetime conv=noerror,sync  
+          file target/x86_64-apple-darwin/release/spacetime
+          dd if=target/x86_64-apple-darwin/release/spacetime of=build/spacetime conv=noerror,sync
+          chmod +x build/spacetime
           cd build && tar -czf spacetime.darwin-amd64.tar.gz spacetime
           rm spacetime
 
       - name: Compile Aarch64
         run: |
           cargo build --release -p spacetimedb-cli --target=aarch64-apple-darwin
-          dd if=target/aarch64-apple-darwin/release/spacetime of=build/spacetime conv=noerror,sync  
+          file target/aarch64-apple-darwin/release/spacetime
+          # dd is used to avoid incompatibilities between BSD tar vs. GNU tar
+          dd if=target/aarch64-apple-darwin/release/spacetime of=build/spacetime conv=noerror,sync
+          chmod +x build/spacetime
           cd build && tar -czf spacetime.darwin-arm64.tar.gz spacetime
           rm spacetime
 

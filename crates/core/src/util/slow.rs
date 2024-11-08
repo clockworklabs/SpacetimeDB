@@ -48,27 +48,29 @@ impl<'a> SlowQueryLogger<'a> {
 mod tests {
     use super::*;
 
+    use crate::db::datastore::system_tables::ST_VARNAME_SLOW_QRY;
     use crate::db::datastore::system_tables::{StVarName, StVarValue, ST_VARNAME_SLOW_INC, ST_VARNAME_SLOW_SUB};
     use crate::sql::compiler::compile_sql;
     use crate::sql::execute::tests::execute_for_testing;
-    use crate::{db::datastore::system_tables::ST_VARNAME_SLOW_QRY, execution_context::ExecutionContext};
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::ProductValue;
 
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::db::relational_db::RelationalDB;
+    use crate::execution_context::Workload;
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::relation::MemTable;
 
     fn run_query(db: &RelationalDB, sql: String) -> ResultTest<MemTable> {
-        let tx = db.begin_tx();
-        let q = compile_sql(db, &tx, &sql)?;
+        let tx = db.begin_tx(Workload::ForTests);
+        let q = compile_sql(db, &AuthCtx::for_testing(), &tx, &sql)?;
         Ok(execute_for_testing(db, &sql, q)?.pop().unwrap())
     }
 
     fn run_query_write(db: &RelationalDB, sql: String) -> ResultTest<()> {
-        let tx = db.begin_tx();
-        let q = compile_sql(db, &tx, &sql)?;
+        let tx = db.begin_tx(Workload::ForTests);
+        let q = compile_sql(db, &AuthCtx::for_testing(), &tx, &sql)?;
         drop(tx);
 
         execute_for_testing(db, &sql, q)?;
@@ -82,20 +84,18 @@ mod tests {
         let table_id =
             db.create_table_for_test("test", &[("x", AlgebraicType::I32), ("y", AlgebraicType::I32)], &[])?;
 
-        let ctx = ExecutionContext::default();
-
-        db.with_auto_commit(&ctx, |tx| -> ResultTest<_> {
+        db.with_auto_commit(Workload::ForTests, |tx| -> ResultTest<_> {
             for i in 0..100_000 {
                 db.insert(tx, table_id, product![i, i * 2])?;
             }
             Ok(())
         })?;
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
 
         let sql = "select * from test where x > 0";
-        let q = compile_sql(&db, &tx, sql)?;
+        let q = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?;
 
-        let slow = SlowQueryLogger::new(sql, Some(Duration::from_millis(1)), ctx.workload());
+        let slow = SlowQueryLogger::new(sql, Some(Duration::from_millis(1)), tx.ctx.workload());
 
         let result = execute_for_testing(&db, sql, q)?;
         assert_eq!(result[0].data[0], product![1, 2]);

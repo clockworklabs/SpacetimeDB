@@ -1,26 +1,26 @@
-use super::module_host::{EntityDef, EventStatus, ModuleHost, NoSuchModule, UpdateDatabaseResult};
+use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
-use super::Scheduler;
-use crate::database_instance_context::DatabaseInstanceContext;
+use super::{Scheduler, UpdateDatabaseResult};
 use crate::database_logger::DatabaseLogger;
-use crate::db::datastore::traits::Metadata;
+use crate::db::datastore::traits::Program;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{self, RelationalDB};
 use crate::energy::{EnergyMonitor, EnergyQuanta};
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
+use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::spawn_rayon;
 use crate::{db, host};
-use anyhow::{anyhow, bail, ensure, Context};
+use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
 use durability::EmptyHistory;
-use log::{debug, info, trace, warn};
+use log::{info, trace, warn};
 use parking_lot::Mutex;
 use serde::Serialize;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability as durability;
-use spacetimedb_lib::{hash_bytes, Address};
+use spacetimedb_lib::hash_bytes;
 use spacetimedb_sats::hash::Hash;
 use std::fmt;
 use std::future::Future;
@@ -64,12 +64,12 @@ pub struct HostController {
     /// Map of all hosts managed by this controller,
     /// keyed by database instance id.
     hosts: Hosts,
-    /// The directory to create database instances in.
+    /// The directory to create replicas in.
     ///
     /// For example:
     ///
-    /// - `$STDB_PATH/worker_node/database_instances`
-    /// - `$STDB_PATH/database_instances`
+    /// - `$STDB_PATH/worker_node/replicas`
+    /// - `$STDB_PATH/replicas`
     root_dir: Arc<Path>,
     /// The default configuration to use for databases created by this
     /// controller.
@@ -91,12 +91,6 @@ impl DescribedEntityType {
         match self {
             DescribedEntityType::Table => "table",
             DescribedEntityType::Reducer => "reducer",
-        }
-    }
-    pub fn from_entitydef(def: &EntityDef) -> Self {
-        match def {
-            EntityDef::Table(_) => Self::Table,
-            EntityDef::Reducer(_) => Self::Reducer,
         }
     }
 }
@@ -211,8 +205,8 @@ impl HostController {
     ///
     /// See also: [`Self::get_module_host`]
     #[tracing::instrument(skip_all)]
-    pub async fn get_or_launch_module_host(&self, database: Database, instance_id: u64) -> anyhow::Result<ModuleHost> {
-        let mut rx = self.watch_maybe_launch_module_host(database, instance_id).await?;
+    pub async fn get_or_launch_module_host(&self, database: Database, replica_id: u64) -> anyhow::Result<ModuleHost> {
+        let mut rx = self.watch_maybe_launch_module_host(database, replica_id).await?;
         let module = rx.borrow_and_update();
         Ok(module.clone())
     }
@@ -228,13 +222,13 @@ impl HostController {
     pub async fn watch_maybe_launch_module_host(
         &self,
         database: Database,
-        instance_id: u64,
+        replica_id: u64,
     ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
         // Try a read lock first.
         {
-            let guard = self.acquire_read_lock(instance_id).await;
+            let guard = self.acquire_read_lock(replica_id).await;
             if let Some(host) = &*guard {
-                trace!("cached host {}/{}", database.address, instance_id);
+                trace!("cached host {}/{}", database.database_identity, replica_id);
                 return Ok(host.module.subscribe());
             }
         }
@@ -242,14 +236,18 @@ impl HostController {
         // We didn't find a running module, so take a write lock.
         // Since [`tokio::sync::RwLock`] doesn't support upgrading of read locks,
         // we'll need to check again if a module was added meanwhile.
-        let mut guard = self.acquire_write_lock(instance_id).await;
+        let mut guard = self.acquire_write_lock(replica_id).await;
         if let Some(host) = &*guard {
-            trace!("cached host {}/{} (lock upgrade)", database.address, instance_id);
+            trace!(
+                "cached host {}/{} (lock upgrade)",
+                database.database_identity,
+                replica_id
+            );
             return Ok(host.module.subscribe());
         }
 
-        trace!("launch host {}/{}", database.address, instance_id);
-        let host = self.try_init_host(database, instance_id).await?;
+        trace!("launch host {}/{}", database.database_identity, replica_id);
+        let host = self.try_init_host(database, replica_id).await?;
 
         let rx = host.module.subscribe();
         *guard = Some(host);
@@ -263,15 +261,15 @@ impl HostController {
     /// If the computation `F` panics, the host is removed from this controller,
     /// releasing its resources.
     #[tracing::instrument(skip_all)]
-    pub async fn using_database<F, T>(&self, database: Database, instance_id: u64, f: F) -> anyhow::Result<T>
+    pub async fn using_database<F, T>(&self, database: Database, replica_id: u64, f: F) -> anyhow::Result<T>
     where
         F: FnOnce(&RelationalDB) -> T + Send + 'static,
         T: Send + 'static,
     {
-        trace!("using database {}/{}", database.address, instance_id);
-        let module = self.get_or_launch_module_host(database, instance_id).await?;
-        let on_panic = self.unregister_fn(instance_id);
-        let result = tokio::task::spawn_blocking(move || f(&module.dbic().relational_db))
+        trace!("using database {}/{}", database.database_identity, replica_id);
+        let module = self.get_or_launch_module_host(database, replica_id).await?;
+        let on_panic = self.unregister_fn(replica_id);
+        let result = tokio::task::spawn_blocking(move || f(&module.replica_ctx().relational_db))
             .await
             .unwrap_or_else(|e| {
                 warn!("database operation panicked");
@@ -281,7 +279,7 @@ impl HostController {
         Ok(result)
     }
 
-    /// Update the [`ModuleHost`] identified by `instance_id` to the given
+    /// Update the [`ModuleHost`] identified by `replica_id` to the given
     /// program.
     ///
     /// The host may not be running, in which case it is spawned (see
@@ -293,110 +291,78 @@ impl HostController {
     pub async fn update_module_host(
         &self,
         database: Database,
-        caller_address: Option<Address>,
         host_type: HostType,
-        instance_id: u64,
+        replica_id: u64,
         program_bytes: Box<[u8]>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let program_hash = hash_bytes(&program_bytes);
+        let program = Program {
+            hash: hash_bytes(&program_bytes),
+            bytes: program_bytes,
+        };
         trace!(
             "update module host {}/{}: genesis={} update-to={}",
-            database.address,
-            instance_id,
+            database.database_identity,
+            replica_id,
             database.initial_program,
-            program_hash
+            program.hash
         );
 
-        let mut guard = self.acquire_write_lock(instance_id).await;
-        let (update_result, maybe_updated_host) = match guard.take() {
-            // If we don't have a running `Host`, spawn one.
+        let mut guard = self.acquire_write_lock(replica_id).await;
+        let mut host = match guard.take() {
             None => {
                 trace!("host not running, try_init");
-                let host = self.try_init_host(database, instance_id).await?;
-                let module = host.module.borrow().clone();
-                // TODO: Make [ModuleHost] check if it supports the host type.
-                ensure!(
-                    matches!(host_type, HostType::Wasm),
-                    "unsupported host type {:?}",
-                    host_type,
-                );
-                let update_result =
-                    update_module(host.db(), &module, caller_address, (program_hash, program_bytes)).await?;
-                // If the update was not successul, drop the host.
-                // The `database` we gave it refers to a program hash which
-                // doesn't exist (because we just rejected it).
-                let maybe_updated_host = update_result.is_ok().then_some(host);
-
-                (update_result, maybe_updated_host)
+                self.try_init_host(database, replica_id).await?
             }
-
-            // Otherwise, update the host.
-            // Note that we always put back the host -- if the update failed, it
-            // will keep running the previous version of the module.
-            Some(mut host) => {
-                match host.dbic.relational_db.metadata()? {
-                    None => bail!("Host improperly initialized: no metadata"),
-                    Some(Metadata {
-                        database_address,
-                        owner_identity,
-                        ..
-                    }) => {
-                        ensure!(
-                            database_address == database.address,
-                            "cannot change database address when updating module host"
-                        );
-                        ensure!(
-                            owner_identity == database.owner_identity,
-                            "cannot change owner identity when updating module host"
-                        );
-                    }
-                }
+            Some(host) => {
                 trace!("host found, updating");
-                let update_result = host
-                    .update_module(
-                        caller_address,
-                        host_type,
-                        (program_hash, program_bytes),
-                        self.unregister_fn(instance_id),
-                    )
-                    .await?;
-
-                (update_result, Some(host))
+                host
             }
         };
+        let update_result = host
+            .update_module(host_type, program, self.unregister_fn(replica_id))
+            .await?;
 
-        *guard = maybe_updated_host;
+        *guard = Some(host);
         Ok(update_result)
     }
 
-    // Accomodates control db bootstrap.
-    // Lives here to avoid letting the [RelationalDB] escape the controller.
-    // TODO: Figure out a non-bracket variant of `using_database`.
-    #[doc(hidden)]
-    pub async fn custom_bootstrap<F, T>(
+    /// Start the host `replica_id` and conditionally update it.
+    ///
+    /// If the host was not initialized before, it is initialized with the
+    /// program [`Database::initial_program`], which is loaded from the
+    /// controller's [`ProgramStorage`].
+    ///
+    /// If it was already initialized and its stored program hash matches
+    /// [`Database::initial_program`], no further action is taken.
+    ///
+    /// Otherwise, if `expected_hash` is `Some` and does **not** match the
+    /// stored hash, an error is returned.
+    ///
+    /// Otherwise, the host is updated to [`Database::initial_program`], loading
+    /// the program data from the controller's [`ProgramStorage`].
+    ///
+    /// > Note that this ascribes different semantics to [`Database::initial_program`]
+    /// > than elsewhere, where the [`Database`] value is provided by the control
+    /// > database. The method is mainly useful for bootstrapping the control
+    /// > database itself.
+    pub async fn init_maybe_update_module_host(
         &self,
-        caller_address: Option<Address>,
-        expected_hash: Option<Hash>,
         database: Database,
-        instance_id: u64,
-        post_boot: F,
-    ) -> anyhow::Result<T>
-    where
-        F: FnOnce(&RelationalDB) -> anyhow::Result<T> + Send + 'static,
-        T: Send + 'static,
-    {
-        trace!("custom bootstrap {}/{}", database.address, instance_id);
+        replica_id: u64,
+        expected_hash: Option<Hash>,
+    ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
+        trace!("custom bootstrap {}/{}", database.database_identity, replica_id);
 
-        let db_addr = database.address;
+        let db_addr = database.database_identity;
         let host_type = database.host_type;
         let program_hash = database.initial_program;
 
-        let mut guard = self.acquire_write_lock(instance_id).await;
+        let mut guard = self.acquire_write_lock(replica_id).await;
         let mut host = match guard.take() {
             Some(host) => host,
-            None => self.try_init_host(database, instance_id).await?,
+            None => self.try_init_host(database, replica_id).await?,
         };
-        let module = host.module.clone();
+        let module = host.module.subscribe();
 
         // The program is now either:
         //
@@ -422,116 +388,109 @@ impl HostController {
                 "[{}] updating database from `{}` to `{}`",
                 db_addr, stored_hash, program_hash
             );
-            let program_bytes = load_program(&self.program_storage, program_hash).await?;
+            let program = load_program(&self.program_storage, program_hash).await?;
             let update_result = host
-                .update_module(
-                    caller_address,
-                    host_type,
-                    (program_hash, program_bytes),
-                    self.unregister_fn(instance_id),
-                )
+                .update_module(host_type, program, self.unregister_fn(replica_id))
                 .await?;
-            if update_result.is_ok() {
-                *guard = Some(host);
+            match update_result {
+                UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {
+                    *guard = Some(host);
+                }
+                UpdateDatabaseResult::AutoMigrateError(e) => {
+                    return Err(anyhow::anyhow!(e));
+                }
+                UpdateDatabaseResult::ErrorExecutingMigration(e) => {
+                    return Err(e);
+                }
             }
-            update_result.map(drop)?;
         }
 
-        let on_panic = self.unregister_fn(instance_id);
-        tokio::task::spawn_blocking(move || post_boot(&module.borrow().dbic().relational_db))
-            .await
-            .unwrap_or_else(|e| {
-                warn!("post-boot database operation panicked");
-                on_panic();
-                std::panic::resume_unwind(e.into_panic())
-            })
-            .map_err(Into::into)
+        Ok(module)
     }
 
-    /// Release all resources of the [`ModuleHost`] identified by `instance_id`,
+    /// Release all resources of the [`ModuleHost`] identified by `replica_id`,
     /// and deregister it from the controller.
     #[tracing::instrument(skip_all)]
-    pub async fn exit_module_host(&self, instance_id: u64) -> Result<(), anyhow::Error> {
-        trace!("exit module host {}", instance_id);
-        let lock = self.hosts.lock().remove(&instance_id);
+    pub async fn exit_module_host(&self, replica_id: u64) -> Result<(), anyhow::Error> {
+        trace!("exit module host {}", replica_id);
+        let lock = self.hosts.lock().remove(&replica_id);
         if let Some(lock) = lock {
             if let Some(host) = lock.write_owned().await.take() {
                 let module = host.module.borrow().clone();
                 module.exit().await;
-                host.scheduler.clear();
             }
         }
 
         Ok(())
     }
 
-    /// Get the [`ModuleHost`] identified by `instance_id` or return an error
+    /// Get the [`ModuleHost`] identified by `replica_id` or return an error
     /// if it is not registered with the controller.
     ///
     /// See [`Self::get_or_launch_module_host`] for a variant which launches
     /// the host if it is not running.
     #[tracing::instrument(skip_all)]
-    pub async fn get_module_host(&self, instance_id: u64) -> Result<ModuleHost, NoSuchModule> {
-        trace!("get module host {}", instance_id);
-        let guard = self.acquire_read_lock(instance_id).await;
+    pub async fn get_module_host(&self, replica_id: u64) -> Result<ModuleHost, NoSuchModule> {
+        trace!("get module host {}", replica_id);
+        let guard = self.acquire_read_lock(replica_id).await;
         guard
             .as_ref()
             .map(|Host { module, .. }| module.borrow().clone())
             .ok_or(NoSuchModule)
     }
 
-    /// Subscribe to updates of the [`ModuleHost`] identified by `instance_id`,
+    /// Subscribe to updates of the [`ModuleHost`] identified by `replica_id`,
     /// or return an error if it is not registered with the controller.
     ///
     /// See [`Self::watch_maybe_launch_module_host`] for a variant which
     /// launches the host if it is not running.
     #[tracing::instrument(skip_all)]
-    pub async fn watch_module_host(&self, instance_id: u64) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
-        trace!("watch module host {}", instance_id);
-        let guard = self.acquire_read_lock(instance_id).await;
+    pub async fn watch_module_host(&self, replica_id: u64) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
+        trace!("watch module host {}", replica_id);
+        let guard = self.acquire_read_lock(replica_id).await;
         guard
             .as_ref()
             .map(|Host { module, .. }| module.subscribe())
             .ok_or(NoSuchModule)
     }
 
-    /// `true` if the module host `instance_id` is currently registered with
+    /// `true` if the module host `replica_id` is currently registered with
     /// the controller.
-    pub async fn has_module_host(&self, instance_id: u64) -> bool {
-        self.acquire_read_lock(instance_id).await.is_some()
+    pub async fn has_module_host(&self, replica_id: u64) -> bool {
+        self.acquire_read_lock(replica_id).await.is_some()
     }
 
     /// On-panic callback passed to [`ModuleHost`]s created by this controller.
     ///
-    /// Removes the module with the given `instance_id` from this controller.
-    fn unregister_fn(&self, instance_id: u64) -> impl Fn() + Send + Sync + 'static {
+    /// Removes the module with the given `replica_id` from this controller.
+    fn unregister_fn(&self, replica_id: u64) -> impl Fn() + Send + Sync + 'static {
         let hosts = Arc::downgrade(&self.hosts);
         move || {
             if let Some(hosts) = hosts.upgrade() {
-                hosts.lock().remove(&instance_id);
+                hosts.lock().remove(&replica_id);
             }
         }
     }
 
-    async fn acquire_write_lock(&self, instance_id: u64) -> OwnedRwLockWriteGuard<Option<Host>> {
-        let lock = self.hosts.lock().entry(instance_id).or_default().clone();
+    async fn acquire_write_lock(&self, replica_id: u64) -> OwnedRwLockWriteGuard<Option<Host>> {
+        let lock = self.hosts.lock().entry(replica_id).or_default().clone();
         lock.write_owned().await
     }
 
-    async fn acquire_read_lock(&self, instance_id: u64) -> OwnedRwLockReadGuard<Option<Host>> {
-        let lock = self.hosts.lock().entry(instance_id).or_default().clone();
+    async fn acquire_read_lock(&self, replica_id: u64) -> OwnedRwLockReadGuard<Option<Host>> {
+        let lock = self.hosts.lock().entry(replica_id).or_default().clone();
         lock.read_owned().await
     }
 
-    async fn try_init_host(&self, database: Database, instance_id: u64) -> anyhow::Result<Host> {
+    async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
         Host::try_init(
             &self.root_dir,
             self.default_config,
             database,
-            instance_id,
+            replica_id,
             self.program_storage.clone(),
             self.energy_monitor.clone(),
-            self.unregister_fn(instance_id),
+            self.unregister_fn(replica_id),
         )
         .await
     }
@@ -542,81 +501,105 @@ fn stored_program_hash(db: &RelationalDB) -> anyhow::Result<Option<Hash>> {
     Ok(meta.map(|meta| meta.program_hash))
 }
 
-async fn make_dbic(
+async fn make_replica_ctx(
     database: Database,
-    instance_id: u64,
+    replica_id: u64,
     relational_db: Arc<RelationalDB>,
-) -> anyhow::Result<DatabaseInstanceContext> {
-    let log_path = DatabaseLogger::filepath(&database.address, instance_id);
+) -> anyhow::Result<ReplicaContext> {
+    let log_path = DatabaseLogger::filepath(&database.database_identity, replica_id);
     let logger = tokio::task::block_in_place(|| Arc::new(DatabaseLogger::open(log_path)));
     let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.owner_identity);
 
-    Ok(DatabaseInstanceContext {
+    Ok(ReplicaContext {
         database,
-        database_instance_id: instance_id,
+        replica_id,
         logger,
         relational_db,
         subscriptions,
     })
 }
 
+/// Initialize a module host for the given program.
+/// The passed replica_ctx may not be configured for this version of the program's database schema yet.
 async fn make_module_host(
     host_type: HostType,
-    mcc: ModuleCreationContext,
+    replica_ctx: Arc<ReplicaContext>,
+    scheduler: Scheduler,
+    program: Program,
+    energy_monitor: Arc<dyn EnergyMonitor>,
     unregister: impl Fn() + Send + Sync + 'static,
-) -> anyhow::Result<ModuleHost> {
+) -> anyhow::Result<(Program, ModuleHost)> {
     spawn_rayon(move || {
         let module_host = match host_type {
             HostType::Wasm => {
+                let mcc = ModuleCreationContext {
+                    replica_ctx,
+                    scheduler,
+                    program: &program,
+                    energy_monitor,
+                };
                 let start = Instant::now();
                 let actor = host::wasmtime::make_actor(mcc)?;
                 trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
                 ModuleHost::new(actor, unregister)
             }
         };
-        Ok(module_host)
+        Ok((program, module_host))
     })
     .await
 }
 
-async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Box<[u8]>> {
-    debug!("lookup program {}", hash);
-    storage
+async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Program> {
+    let bytes = storage
         .lookup(hash)
         .await?
-        .with_context(|| format!("program {} not found", hash))
+        .with_context(|| format!("program {} not found", hash))?;
+    Ok(Program { hash, bytes })
+}
+
+struct LaunchedModule {
+    replica_ctx: Arc<ReplicaContext>,
+    module_host: ModuleHost,
+    scheduler: Scheduler,
+    scheduler_starter: SchedulerStarter,
 }
 
 async fn launch_module(
-    root_dir: &Path,
     database: Database,
-    instance_id: u64,
-    program_bytes: Box<[u8]>,
+    replica_id: u64,
+    program: Program,
     on_panic: impl Fn() + Send + Sync + 'static,
     relational_db: Arc<RelationalDB>,
     energy_monitor: Arc<dyn EnergyMonitor>,
-) -> anyhow::Result<(Arc<DatabaseInstanceContext>, ModuleHost, Scheduler, SchedulerStarter)> {
-    let program_hash = database.initial_program;
+) -> anyhow::Result<(Program, LaunchedModule)> {
+    let address = database.database_identity;
     let host_type = database.host_type;
 
-    let dbic = make_dbic(database, instance_id, relational_db).await.map(Arc::new)?;
-    let (scheduler, scheduler_starter) = Scheduler::open(dbic.scheduler_db_path(root_dir.to_path_buf()))?;
-    let module_host = make_module_host(
+    let replica_ctx = make_replica_ctx(database, replica_id, relational_db)
+        .await
+        .map(Arc::new)?;
+    let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db.clone());
+    let (program, module_host) = make_module_host(
         host_type,
-        ModuleCreationContext {
-            dbic: dbic.clone(),
-            scheduler: scheduler.clone(),
-            program_hash,
-            program_bytes: program_bytes.into(),
-            energy_monitor: energy_monitor.clone(),
-        },
+        replica_ctx.clone(),
+        scheduler.clone(),
+        program,
+        energy_monitor.clone(),
         on_panic,
     )
     .await?;
 
-    debug!("launch done");
+    trace!("launched database {} with program {}", address, program.hash);
 
-    Ok((dbic, module_host, scheduler, scheduler_starter))
+    Ok((
+        program,
+        LaunchedModule {
+            replica_ctx,
+            module_host,
+            scheduler,
+            scheduler_starter,
+        },
+    ))
 }
 
 /// Update a module.
@@ -631,22 +614,22 @@ async fn launch_module(
 async fn update_module(
     db: &RelationalDB,
     module: &ModuleHost,
-    caller_address: Option<Address>,
-    (program_hash, program_bytes): (Hash, Box<[u8]>),
+    program: Program,
+    old_module_info: Arc<ModuleInfo>,
 ) -> anyhow::Result<UpdateDatabaseResult> {
-    let addr = db.address();
+    let addr = db.database_identity();
     match stored_program_hash(db)? {
         None => Err(anyhow!("database `{}` not yet initialized", addr)),
-        Some(stored) if stored == program_hash => {
-            info!("database `{}` up to date with program `{}`", addr, program_hash);
-            anyhow::Ok(Ok(<_>::default()))
-        }
         Some(stored) => {
-            info!("updating `{}` from {} to {}", addr, stored, program_hash);
-            let update_result = module
-                .update_database(caller_address, program_hash, program_bytes)
-                .await?;
-            Ok(update_result)
+            let res = if stored == program.hash {
+                info!("database `{}` up to date with program `{}`", addr, program.hash);
+                UpdateDatabaseResult::NoUpdateNeeded
+            } else {
+                info!("updating `{}` from {} to {}", addr, stored, program.hash);
+                module.update_database(program, old_module_info).await?
+            };
+
+            Ok(res)
         }
     }
 }
@@ -660,17 +643,17 @@ struct Host {
     /// clients may subscribe to the channel, so they get the most recent
     /// [`ModuleHost`] version or an error if the [`Host`] was dropped.
     module: watch::Sender<ModuleHost>,
-    /// Pointer to the `module`'s [`DatabaseInstanceContext`].
+    /// Pointer to the `module`'s [`ReplicaContext`].
     ///
     /// The database stays the same if and when the module is updated via
     /// [`Host::update_module`].
-    dbic: Arc<DatabaseInstanceContext>,
+    replica_ctx: Arc<ReplicaContext>,
     /// Scheduler for repeating reducers, operating on the current `module`.
     scheduler: Scheduler,
     /// Handle to the metrics collection task started via [`disk_monitor`].
     ///
-    /// The task collects metrics from the `dbic`, and so stays alive as long
-    /// as the `dbic` is live. The task is aborted when [`Host`] is dropped.
+    /// The task collects metrics from the `replica_ctx`, and so stays alive as long
+    /// as the `replica_ctx` is live. The task is aborted when [`Host`] is dropped.
     metrics_task: AbortHandle,
 
     /// [`EnergyMonitor`] to use for [`Host::update_module`].
@@ -687,19 +670,19 @@ impl Host {
         root_dir: &Path,
         config: db::Config,
         database: Database,
-        instance_id: u64,
+        replica_id: u64,
         program_storage: ProgramStorage,
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
     ) -> anyhow::Result<Self> {
         let mut db_path = root_dir.to_path_buf();
-        db_path.extend([&*database.address.to_hex(), &*instance_id.to_string()]);
+        db_path.extend([&*database.database_identity.to_hex(), &*replica_id.to_string()]);
         db_path.push("database");
 
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
                 &db_path,
-                database.address,
+                database.database_identity,
                 database.owner_identity,
                 EmptyHistory::new(),
                 None,
@@ -707,11 +690,12 @@ impl Host {
             )?,
             db::Storage::Disk => {
                 let (durability, disk_size_fn) = relational_db::local_durability(&db_path).await?;
-                let snapshot_repo = relational_db::open_snapshot_repo(&db_path, database.address, instance_id)?;
+                let snapshot_repo =
+                    relational_db::open_snapshot_repo(&db_path, database.database_identity, replica_id)?;
                 let history = durability.clone();
                 RelationalDB::open(
                     &db_path,
-                    database.address,
+                    database.database_identity,
                     database.owner_identity,
                     history,
                     Some((durability, disk_size_fn)),
@@ -719,44 +703,46 @@ impl Host {
                 )?
             }
         };
-        let (dbic, module_host, scheduler, scheduler_starter) = match db.program_bytes()? {
+        let LaunchedModule {
+            replica_ctx,
+            module_host,
+            scheduler,
+            scheduler_starter,
+        } = match db.program()? {
             // Launch module with program from existing database.
-            Some(program_bytes) => {
-                launch_module(
-                    root_dir,
+            Some(program) => {
+                let (_, launched) = launch_module(
                     database,
-                    instance_id,
-                    program_bytes,
+                    replica_id,
+                    program,
                     on_panic,
                     Arc::new(db),
                     energy_monitor.clone(),
                 )
-                .await?
+                .await?;
+                launched
             }
 
             // Database is empty, load program from external storage and run
             // initialization.
             None => {
-                let program_hash = database.initial_program;
-                let program_bytes = load_program(&program_storage, program_hash).await?;
-                let res = launch_module(
-                    root_dir,
+                let program = load_program(&program_storage, database.initial_program).await?;
+                let (program, launched) = launch_module(
                     database,
-                    instance_id,
-                    program_bytes.clone(),
+                    replica_id,
+                    program,
                     on_panic,
                     Arc::new(db),
                     energy_monitor.clone(),
                 )
                 .await?;
 
-                let module_host = &res.1;
-                let call_result = module_host.init_database(program_hash, program_bytes).await?;
+                let call_result = launched.module_host.init_database(program).await?;
                 if let Some(call_result) = call_result {
                     Result::from(call_result)?;
                 }
 
-                res
+                launched
             }
         };
 
@@ -768,17 +754,17 @@ impl Host {
                 .with_context(|| {
                     format!(
                         "Error calling disconnect for {} {} on {}",
-                        identity, address, dbic.address
+                        identity, address, replica_ctx.database_identity
                     )
                 })?;
         }
 
         scheduler_starter.start(&module_host)?;
-        let metrics_task = tokio::spawn(disk_monitor(dbic.clone(), energy_monitor.clone())).abort_handle();
+        let metrics_task = tokio::spawn(storage_monitor(replica_ctx.clone(), energy_monitor.clone())).abort_handle();
 
         Ok(Host {
             module: watch::Sender::new(module_host),
-            dbic,
+            replica_ctx,
             scheduler,
             metrics_task,
 
@@ -789,7 +775,7 @@ impl Host {
     /// Attempt to replace this [`Host`]'s [`ModuleHost`] with a new one running
     /// the program `program_hash`.
     ///
-    /// The associated [`DatabaseInstanceContext`] stays the same.
+    /// The associated [`ReplicaContext`] stays the same.
     ///
     /// Executes [`ModuleHost::update_database`] on the newly instantiated
     /// module, updating the database schema and invoking the `__update__`
@@ -800,35 +786,32 @@ impl Host {
     /// Either way, the [`UpdateDatabaseResult`] is returned.
     async fn update_module(
         &mut self,
-        caller_address: Option<Address>,
         host_type: HostType,
-        (program_hash, program_bytes): (Hash, Box<[u8]>),
+        program: Program,
         on_panic: impl Fn() + Send + Sync + 'static,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let dbic = &self.dbic;
+        let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = self.scheduler.new_with_same_db();
-        let module = make_module_host(
+
+        let (program, module) = make_module_host(
             host_type,
-            ModuleCreationContext {
-                dbic: dbic.clone(),
-                scheduler: scheduler.clone(),
-                program_bytes: program_bytes.clone().into(),
-                program_hash,
-                energy_monitor: self.energy_monitor.clone(),
-            },
+            replica_ctx.clone(),
+            scheduler.clone(),
+            program,
+            self.energy_monitor.clone(),
             on_panic,
         )
         .await?;
 
-        let update_result = update_module(
-            &dbic.relational_db,
-            &module,
-            caller_address,
-            (program_hash, program_bytes),
-        )
-        .await?;
-        debug!("update result: {update_result:?}");
-        if update_result.is_ok() {
+        // Get the old module info to diff against when building a migration plan.
+        let old_module_info = self.module.borrow().info.clone();
+
+        let update_result = update_module(&replica_ctx.relational_db, &module, program, old_module_info).await?;
+        trace!("update result: {update_result:?}");
+        // Only replace the module + scheduler if the update succeeded.
+        // Otherwise, we want the database to continue running with the old state.
+        if update_result.was_successful() {
+            self.scheduler = scheduler;
             scheduler_starter.start(&module)?;
             let old_module = self.module.send_replace(module);
             old_module.exit().await;
@@ -838,7 +821,7 @@ impl Host {
     }
 
     fn db(&self) -> &RelationalDB {
-        &self.dbic.relational_db
+        &self.replica_ctx.relational_db
     }
 }
 
@@ -848,36 +831,38 @@ impl Drop for Host {
     }
 }
 
-const DISK_METERING_INTERVAL: Duration = Duration::from_secs(5);
+const STORAGE_METERING_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Periodically collect the disk usage of `dbic` and update metrics as well as
+/// Periodically collect the disk usage of `replica_ctx` and update metrics as well as
 /// the `energy_monitor` accordingly.
-async fn disk_monitor(dbic: Arc<DatabaseInstanceContext>, energy_monitor: Arc<dyn EnergyMonitor>) {
-    let mut interval = tokio::time::interval(DISK_METERING_INTERVAL);
+async fn storage_monitor(replica_ctx: Arc<ReplicaContext>, energy_monitor: Arc<dyn EnergyMonitor>) {
+    let mut interval = tokio::time::interval(STORAGE_METERING_INTERVAL);
     // We don't care about happening precisely every 5 seconds - it just matters
     // that the time between ticks is accurate.
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-    let mut prev_disk_usage = dbic.total_disk_usage();
+    let mut prev_disk_usage = tokio::task::block_in_place(|| replica_ctx.total_disk_usage());
     let mut prev_tick = interval.tick().await;
     loop {
         let tick = interval.tick().await;
         let dt = tick - prev_tick;
-        let disk_usage = tokio::task::block_in_place(|| dbic.total_disk_usage());
+        let (disk_usage, mem_usage) =
+            tokio::task::block_in_place(|| (replica_ctx.total_disk_usage(), replica_ctx.mem_usage()));
         if let Some(num_bytes) = disk_usage.durability {
             DB_METRICS
                 .message_log_size
-                .with_label_values(&dbic.address)
+                .with_label_values(&replica_ctx.database_identity)
                 .set(num_bytes as i64);
         }
         if let Some(num_bytes) = disk_usage.logs {
             DB_METRICS
                 .module_log_file_size
-                .with_label_values(&dbic.address)
+                .with_label_values(&replica_ctx.database_identity)
                 .set(num_bytes as i64);
         }
         let disk_usage = disk_usage.or(prev_disk_usage);
-        energy_monitor.record_disk_usage(&dbic.database, dbic.database_instance_id, disk_usage.sum(), dt);
+        energy_monitor.record_disk_usage(&replica_ctx.database, replica_ctx.replica_id, disk_usage.sum(), dt);
+        energy_monitor.record_memory_usage(&replica_ctx.database, replica_ctx.replica_id, mem_usage as u64, dt);
         prev_disk_usage = disk_usage;
         prev_tick = tick;
     }

@@ -4,21 +4,21 @@ import time
 class NewUserFlow(Smoketest):
     AUTOPUBLISH = False
     MODULE_CODE = """
-use spacetimedb::{spacetimedb, println};
+use spacetimedb::{println, ReducerContext, Table};
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
     name: String
 }
 
-#[spacetimedb(reducer)]
-pub fn add(name: String) {
-    Person::insert(Person { name });
+#[spacetimedb::reducer]
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
 }
 
-#[spacetimedb(reducer)]
-pub fn say_hello() {
-    for person in Person::iter() {
+#[spacetimedb::reducer]
+pub fn say_hello(ctx: &ReducerContext) {
+    for person in ctx.db.person().iter() {
         println!("Hello, {}!", person.name);
     }
     println!("Hello, World!");
@@ -29,7 +29,7 @@ pub fn say_hello() {
         """Test the entirety of the new user flow."""
 
         ## Publish your module
-        self.new_identity(email=None)
+        self.new_identity()
 
         self.publish_module()
 
@@ -43,7 +43,7 @@ pub fn say_hello() {
         self.assertEqual(self.logs(5).count("Hello, World!"), 2)
         self.assertEqual(self.logs(5).count("Hello, Tyler!"), 1)
 
-        out = self.spacetime("sql", self.address, "SELECT * FROM Person")
+        out = self.spacetime("sql", self.database_identity, "SELECT * FROM person")
         # The spaces after the name are important
         self.assertMultiLineEqual(out, """\
  name    

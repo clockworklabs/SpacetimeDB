@@ -1,17 +1,28 @@
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 
+pub(super) type Indenter = CodeIndenter<String>;
+
+#[macro_export]
+macro_rules! indent_scope {
+    ($x:ident) => {
+        let mut $x = $x.indented(1);
+    };
+}
+
 pub struct CodeIndenter<W: fmt::Write> {
     writer: W,
     level: u32,
     needs_indenting: bool,
+    indent: &'static str,
 }
 impl<W: fmt::Write> CodeIndenter<W> {
-    pub fn new(writer: W) -> Self {
+    pub fn new(writer: W, indent: &'static str) -> Self {
         CodeIndenter {
             writer,
             level: 0,
             needs_indenting: true,
+            indent,
         }
     }
     // pub fn get_ref(&self) -> &W {
@@ -35,7 +46,7 @@ impl<W: fmt::Write> CodeIndenter<W> {
     }
     fn write_indent(&mut self) -> fmt::Result {
         for _ in 0..self.level {
-            self.writer.write_str(super::INDENT)?;
+            self.writer.write_str(self.indent)?;
         }
         Ok(())
     }
@@ -46,6 +57,9 @@ impl<W: fmt::Write> CodeIndenter<W> {
         f(&mut indenter)
     }
 
+    // Writes a newline without setting the `needs_indenting` flag.
+    // TODO(cloutiertyler): I think it should set the flag, but I don't know
+    // if anyone is relying on the current behavior.
     pub fn newline(&mut self) {
         self.writer.write_char('\n').unwrap();
     }

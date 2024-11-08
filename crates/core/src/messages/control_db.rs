@@ -3,8 +3,6 @@ use spacetimedb_sats::de::Deserialize;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::ser::Serialize;
 
-use crate::address::Address;
-
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct IdentityEmail {
     pub identity: Identity,
@@ -26,8 +24,8 @@ pub struct EnergyBalance {
 pub struct Database {
     /// Internal id of the database, assigned by the control database.
     pub id: u64,
-    /// Public identity (i.e. [`Address`]) of the database.
-    pub address: Address,
+    /// Public identity (i.e. [`Identity`]) of the database.
+    pub database_identity: Identity,
     /// [`Identity`] of the database's owner.
     pub owner_identity: Identity,
     /// [`HostType`] of the module associated with the database.
@@ -38,12 +36,6 @@ pub struct Database {
     ///
     /// Updating the database's module will **not** change this value.
     pub initial_program: Hash,
-    /// The client address of the (initial) publisher of the database.
-    ///
-    /// If set, the value will be part of the  `__init__` reducer's context.
-    /// The meaning of this value is unspecified if the `owner_identity` is
-    /// changed after creation of the database.
-    pub publisher_address: Option<Address>,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -51,14 +43,14 @@ pub struct DatabaseStatus {
     pub state: String,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct DatabaseInstance {
+pub struct Replica {
     pub id: u64,
     pub database_id: u64,
     pub node_id: u64,
     pub leader: bool,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct DatabaseInstanceStatus {
+pub struct ReplicaStatus {
     pub state: String,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

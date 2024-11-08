@@ -5,42 +5,50 @@ use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
+use axum::Extension;
 use axum_extra::TypedHeader;
 use futures::future::MaybeDone;
 use futures::{Future, FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
-use spacetimedb::client::messages::{IdentityTokenMessage, SerializableMessage, ServerMessage};
-use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol};
+use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage};
+use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageHandleError, Protocol};
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::also_poll;
 use spacetimedb::worker_metrics::WORKER_METRICS;
+use spacetimedb_client_api_messages::websocket::Compression;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::Address;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
-use crate::auth::{SpacetimeAuthHeader, SpacetimeIdentity, SpacetimeIdentityToken};
+use crate::auth::SpacetimeAuth;
 use crate::util::websocket::{
     CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade,
 };
-use crate::util::{NameOrAddress, XForwardedFor};
+use crate::util::{NameOrIdentity, XForwardedFor};
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 #[allow(clippy::declare_interior_mutable_const)]
-pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static("v1.text.spacetimedb");
+pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static("v1.json.spacetimedb");
 #[allow(clippy::declare_interior_mutable_const)]
-pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static("v1.bin.spacetimedb");
+pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static("v1.bsatn.spacetimedb");
 
 #[derive(Deserialize)]
 pub struct SubscribeParams {
-    pub name_or_address: NameOrAddress,
+    pub name_or_identity: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
 pub struct SubscribeQueryParams {
     pub client_address: Option<AddressForUrl>,
+    #[serde(default)]
+    pub compression: Compression,
+    /// Whether we want "light" responses, tailored to network bandwidth constrained clients.
+    /// This knob works by setting other, more specifc, knobs to the value.
+    #[serde(default)]
+    pub light: bool,
 }
 
 // TODO: is this a reasonable way to generate client addresses?
@@ -48,22 +56,24 @@ pub struct SubscribeQueryParams {
 //       maintains a global counter, and hashes the next value from that counter
 //       with some constant salt.
 pub fn generate_random_address() -> Address {
-    Address::from_arr(&rand::random())
+    Address::from_byte_array(rand::random())
 }
 
 pub async fn handle_websocket<S>(
     State(ctx): State<S>,
-    Path(SubscribeParams { name_or_address }): Path<SubscribeParams>,
-    Query(SubscribeQueryParams { client_address }): Query<SubscribeQueryParams>,
+    Path(SubscribeParams { name_or_identity }): Path<SubscribeParams>,
+    Query(SubscribeQueryParams {
+        client_address,
+        compression,
+        light,
+    }): Query<SubscribeQueryParams>,
     forwarded_for: Option<TypedHeader<XForwardedFor>>,
-    auth: SpacetimeAuthHeader,
+    Extension(auth): Extension<SpacetimeAuth>,
     ws: WebSocketUpgrade,
 ) -> axum::response::Result<impl IntoResponse>
 where
     S: NodeDelegate + ControlStateDelegate,
 {
-    let auth = auth.get_or_create(&ctx).await?;
-
     let client_address = client_address
         .map(Address::from)
         .unwrap_or_else(generate_random_address);
@@ -75,30 +85,35 @@ where
         ))?;
     }
 
-    let db_address = name_or_address.resolve(&ctx).await?.into();
+    let db_address = name_or_identity.resolve(&ctx).await?.into();
 
     let (res, ws_upgrade, protocol) =
         ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
 
     let protocol = protocol.ok_or((StatusCode::BAD_REQUEST, "no valid protocol selected"))?;
+    let client_config = ClientConfig {
+        protocol,
+        compression,
+        tx_update_full: !light,
+    };
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
     // to connect to multiple modules
 
     let database = ctx
-        .get_database_by_address(&db_address)
+        .get_database_by_identity(&db_address)
         .unwrap()
-        .ok_or(StatusCode::BAD_REQUEST)?;
-    let database_instance = ctx
-        .get_leader_database_instance_by_database(database.id)
-        .ok_or(StatusCode::BAD_REQUEST)?;
-    let instance_id = database_instance.id;
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let replica = ctx
+        .get_leader_replica_by_database(database.id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let replica_id = replica.id;
 
-    let identity_token = auth.creds.token().to_owned();
+    let identity_token = auth.creds.token().into();
 
     let host = ctx.host_controller();
     let module_rx = host
-        .watch_maybe_launch_module_host(database, instance_id)
+        .watch_maybe_launch_module_host(database, replica_id)
         .await
         .map_err(log_and_500)?;
 
@@ -132,7 +147,7 @@ where
         }
 
         let actor = |client, sendrx| ws_client_actor(client, ws, sendrx);
-        let client = match ClientConnection::spawn(client_id, protocol, instance_id, module_rx, actor).await {
+        let client = match ClientConnection::spawn(client_id, client_config, replica_id, module_rx, actor).await {
             Ok(s) => s,
             Err(e) => {
                 log::warn!("ModuleHost died while we were connecting: {e:#}");
@@ -147,7 +162,7 @@ where
         // message.
         let message = IdentityTokenMessage {
             identity: auth.identity,
-            identity_token,
+            token: identity_token,
             address: client_address,
         };
         if let Err(e) = client.send_message(message) {
@@ -155,11 +170,7 @@ where
         }
     });
 
-    Ok((
-        TypedHeader(SpacetimeIdentity(auth.identity)),
-        TypedHeader(SpacetimeIdentityToken(auth.creds)),
-        res,
-    ))
+    Ok(res)
 }
 
 const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
@@ -209,6 +220,9 @@ async fn ws_client_actor_inner(
 
     let mut closed = false;
     let mut rx_buf = Vec::new();
+
+    let addr = client.module.info().database_identity;
+
     loop {
         rx_buf.clear();
         enum Item {
@@ -257,10 +271,24 @@ async fn ws_client_actor_inner(
                     log::info!("dropping messages due to ws already being closed: {:?}", &rx_buf[..n]);
                 } else {
                     let send_all = async {
-                        let id = client.id.identity;
-                        for msg in rx_buf.drain(..n).map(|msg| datamsg_to_wsmsg(msg.serialize(client.protocol))) {
-                            WORKER_METRICS.websocket_sent.with_label_values(&id).inc();
-                            WORKER_METRICS.websocket_sent_msg_size.with_label_values(&id).observe(msg.len() as f64);
+                        for msg in rx_buf.drain(..n) {
+                            let workload = msg.workload();
+                            let num_rows = msg.num_rows();
+
+                            let msg = datamsg_to_wsmsg(serialize(msg, client.config));
+
+                            // These metrics should be updated together,
+                            // or not at all.
+                            if let (Some(workload), Some(num_rows)) = (workload, num_rows) {
+                                WORKER_METRICS
+                                    .websocket_sent_num_rows
+                                    .with_label_values(&addr, &workload)
+                                    .observe(num_rows as f64);
+                                WORKER_METRICS
+                                    .websocket_sent_msg_size
+                                    .with_label_values(&addr, &workload)
+                                    .observe(msg.len() as f64);
+                            }
                             // feed() buffers the message, but does not necessarily send it
                             ws.feed(msg).await?;
                         }
@@ -335,7 +363,7 @@ async fn ws_client_actor_inner(
                 if let Err(e) = res {
                     if let MessageHandleError::Execution(err) = e {
                         log::error!("{err:#}");
-                        let msg = err.serialize(client.protocol);
+                        let msg = serialize(err, client.config);
                         if let Err(error) = ws.send(datamsg_to_wsmsg(msg)).await {
                             log::warn!("Websocket send error: {error}")
                         }

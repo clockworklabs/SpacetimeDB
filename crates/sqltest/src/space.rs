@@ -2,7 +2,7 @@ use crate::db::DBRunner;
 use async_trait::async_trait;
 use spacetimedb::db::relational_db::tests_utils::TestDB;
 use spacetimedb::error::DBError;
-use spacetimedb::execution_context::ExecutionContext;
+use spacetimedb::execution_context::Workload;
 use spacetimedb::sql::compiler::compile_sql;
 use spacetimedb::sql::execute::execute_sql;
 use spacetimedb::subscription::module_subscription_actor::ModuleSubscriptions;
@@ -11,7 +11,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_sats::algebraic_value::Packed;
 use spacetimedb_sats::meta_type::MetaType;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinType};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_vm::relation::MemTable;
 use sqllogictest::{AsyncDB, ColumnType, DBOutput};
 use std::fs;
@@ -33,22 +33,14 @@ impl ColumnType for Kind {
     }
 
     fn to_char(&self) -> char {
-        match self.0 {
-            AlgebraicType::Builtin(BuiltinType::Map(_)) | AlgebraicType::Builtin(BuiltinType::Array(_)) => '?',
-            AlgebraicType::I8
-            | AlgebraicType::U8
-            | AlgebraicType::U16
-            | AlgebraicType::I16
-            | AlgebraicType::I32
-            | AlgebraicType::U32
-            | AlgebraicType::I64
-            | AlgebraicType::U64
-            | AlgebraicType::I128
-            | AlgebraicType::U128 => 'I',
-            AlgebraicType::F32 | AlgebraicType::F64 => 'R',
+        match &self.0 {
+            AlgebraicType::Array(_) => '?',
+            ty if ty.is_integer() => 'I',
+            ty if ty.is_float() => 'R',
             AlgebraicType::String => 'T',
             AlgebraicType::Bool => 'B',
             AlgebraicType::Ref(_) | AlgebraicType::Sum(_) | AlgebraicType::Product(_) => '!',
+            _ => unreachable!(),
         }
     }
 }
@@ -77,8 +69,8 @@ impl SpaceDb {
     }
 
     pub(crate) fn run_sql(&self, sql: &str) -> anyhow::Result<Vec<MemTable>> {
-        self.conn.with_read_only(&ExecutionContext::default(), |tx| {
-            let ast = compile_sql(&self.conn, tx, sql)?;
+        self.conn.with_read_only(Workload::Sql, |tx| {
+            let ast = compile_sql(&self.conn, &AuthCtx::for_testing(), tx, sql)?;
             let subs = ModuleSubscriptions::new(Arc::new(self.conn.db.clone()), Identity::ZERO);
             let result = execute_sql(&self.conn, sql, ast, self.auth, Some(&subs))?;
             //remove comments to see which SQL worked. Can't collect it outside from lack of a hook in the external `sqllogictest` crate... :(
@@ -128,6 +120,8 @@ impl AsyncDB for SpaceDb {
                         AlgebraicValue::U64(x) => x.to_string(),
                         AlgebraicValue::I128(Packed(x)) => x.to_string(),
                         AlgebraicValue::U128(Packed(x)) => x.to_string(),
+                        AlgebraicValue::I256(x) => x.to_string(),
+                        AlgebraicValue::U256(x) => x.to_string(),
                         AlgebraicValue::F32(x) => format!("{:?}", x.as_ref()),
                         AlgebraicValue::F64(x) => format!("{:?}", x.as_ref()),
                         AlgebraicValue::String(x) => format!("'{}'", x),
