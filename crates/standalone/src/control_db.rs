@@ -80,8 +80,9 @@ impl ControlDb {
 }
 
 /// A helper to convert a `sled::IVec` into an `Identity`.
+/// This expects the identity to be in LITTLE_ENDIAN format.
 /// This fails if the `sled::IVec` is not 32 bytes long.
-fn identity_from_ivec(ivec: &sled::IVec) -> Result<Identity> {
+fn identity_from_le_ivec(ivec: &sled::IVec) -> Result<Identity> {
     let identity_bytes: [u8; 32] = ivec
         .as_ref()
         .try_into()
@@ -94,7 +95,7 @@ impl ControlDb {
         let tree = self.db.open_tree("dns")?;
         let value = tree.get(domain.to_lowercase().as_bytes())?;
         if let Some(value) = value {
-            return Ok(Some(identity_from_ivec(&value)?));
+            return Ok(Some(identity_from_le_ivec(&value)?));
         }
         Ok(None)
     }
@@ -190,7 +191,8 @@ impl ControlDb {
         let current_owner = tree.get(&key)?;
         match current_owner {
             Some(owner) => {
-                let current_owner = identity_from_ivec(&owner).context("Invalid current owner in top_level_domains")?;
+                let current_owner =
+                    identity_from_le_ivec(&owner).context("Invalid current owner in top_level_domains")?;
                 if current_owner == owner_identity {
                     Ok(RegisterTldResult::AlreadyRegistered { domain: tld })
                 } else {
@@ -211,7 +213,7 @@ impl ControlDb {
     pub fn spacetime_lookup_tld(&self, domain: impl AsRef<TldRef>) -> Result<Option<Identity>> {
         let tree = self.db.open_tree("top_level_domains")?;
         match tree.get(domain.as_ref().to_lowercase().as_bytes())? {
-            Some(owner) => Ok(Some(identity_from_ivec(&owner)?)),
+            Some(owner) => Ok(Some(identity_from_le_ivec(&owner)?)),
             None => Ok(None),
         }
     }
@@ -423,7 +425,7 @@ impl ControlDb {
                 given: balance_entry.1.len(),
             })?;
             let balance = i128::from_be_bytes(arr);
-            let identity = identity_from_ivec(&balance_entry.0).context("invalid identity in energy_budget")?;
+            let identity = identity_from_le_ivec(&balance_entry.0).context("invalid identity in energy_budget")?;
             let energy_balance = EnergyBalance { identity, balance };
             balances.push(energy_balance);
         }
