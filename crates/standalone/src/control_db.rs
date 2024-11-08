@@ -1,4 +1,5 @@
-use spacetimedb::identity::Identity;
+use anyhow::{Context};
+use spacetimedb::identity::{Identity};
 use spacetimedb::messages::control_db::{Database, EnergyBalance, Node, Replica};
 use spacetimedb::{energy, stdb_path};
 
@@ -78,12 +79,24 @@ impl ControlDb {
     }
 }
 
+/// A helper to convert a `sled::IVec` into an `Identity`.
+/// This fails if the `sled::IVec` is not 32 bytes long.
+fn identity_from_ivec(ivec: &sled::IVec) -> Result<Identity> {
+    let identity_bytes: [u8; 32] = ivec
+        .as_ref()
+        .try_into()
+        .map_err(|e| {
+            anyhow::anyhow!("invalid size for identity: {}", ivec.len())
+        })?;
+    Ok(Identity::from_byte_array(identity_bytes))
+}
+
 impl ControlDb {
     pub fn spacetime_dns(&self, domain: &DomainName) -> Result<Option<Identity>> {
         let tree = self.db.open_tree("dns")?;
         let value = tree.get(domain.to_lowercase().as_bytes())?;
         if let Some(value) = value {
-            return Ok(Some(Identity::from_slice(&value[..])?));
+            return Ok(Some(identity_from_ivec(&value)?));
         }
         Ok(None)
     }
@@ -179,7 +192,8 @@ impl ControlDb {
         let current_owner = tree.get(&key)?;
         match current_owner {
             Some(owner) => {
-                if Identity::from_slice(&owner[..])? == owner_identity {
+                let current_owner = identity_from_ivec(&owner).context("Invalid current owner in top_level_domains")?;
+                if current_owner == owner_identity {
                     Ok(RegisterTldResult::AlreadyRegistered { domain: tld })
                 } else {
                     Ok(RegisterTldResult::Unauthorized { domain: tld })
@@ -199,7 +213,7 @@ impl ControlDb {
     pub fn spacetime_lookup_tld(&self, domain: impl AsRef<TldRef>) -> Result<Option<Identity>> {
         let tree = self.db.open_tree("top_level_domains")?;
         match tree.get(domain.as_ref().to_lowercase().as_bytes())? {
-            Some(owner) => Ok(Some(Identity::from_slice(&owner[..])?)),
+            Some(owner) => Ok(Some(identity_from_ivec(&owner)?)),
             None => Ok(None),
         }
     }
@@ -411,8 +425,9 @@ impl ControlDb {
                 given: balance_entry.1.len(),
             })?;
             let balance = i128::from_be_bytes(arr);
+            let identity = identity_from_ivec(&balance_entry.0).context("invalid identity in energy_budget")?;
             let energy_balance = EnergyBalance {
-                identity: Identity::from_slice(balance_entry.0.iter().as_slice())?,
+                identity,
                 balance,
             };
             balances.push(energy_balance);
