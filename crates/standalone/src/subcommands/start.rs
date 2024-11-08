@@ -145,6 +145,7 @@ pub async fn exec(paths: Option<&SpacetimePaths>, args: &ArgMatches) -> anyhow::
     let exe_name = exe_name.file_name().unwrap().to_str().unwrap();
     println!("{} version: {}", exe_name, env!("CARGO_PKG_VERSION"));
     println!("{} path: {}", exe_name, std::env::current_exe()?.display());
+    println!("database running in data directory {}", data_dir.display());
 
     let config_path = data_dir.config_toml();
     let config = match ConfigFile::read(&data_dir.config_toml())? {
