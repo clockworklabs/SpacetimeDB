@@ -43,7 +43,7 @@ pub(super) type RemovedIndexIdSet = IntSet<IndexId>;
 ///   - any row in `delete_tables` must be in the associated `CommittedState`
 ///   - any row cannot be in both `insert_tables` and `delete_tables`
 #[derive(Default)]
-pub(super) struct TxState {
+pub(crate) struct TxState {
     //NOTE: Need to preserve order to correctly restore the db after reopen
     /// For any `TableId` that has had a row inserted into it in this TX
     /// (which may have since been deleted),

@@ -16,7 +16,7 @@ use std::{
 };
 
 pub struct TxId {
-    pub(super) committed_state_shared_lock: SharedReadGuard<CommittedState>,
+    pub(crate) committed_state_shared_lock: SharedReadGuard<CommittedState>,
     pub(super) lock_wait_time: Duration,
     pub(super) timer: Instant,
     pub(crate) ctx: ExecutionContext,

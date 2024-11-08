@@ -744,7 +744,7 @@ impl RelationalDB {
     /// to use `?`, you can write:
     ///
     /// ```ignore
-    /// db.with_auto_commit(|tx| {
+    /// db.with_auto_commit(Workload::Internal, |tx| {
     ///     let _ = db.schema_for_table(tx, 42)?;
     ///     // ...
     ///     Ok(())

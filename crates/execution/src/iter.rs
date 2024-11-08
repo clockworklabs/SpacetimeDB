@@ -141,6 +141,12 @@ pub struct DeltaScanIter<'a> {
     iter: std::slice::Iter<'a, ProductValue>,
 }
 
+impl<'a> DeltaScanIter<'a> {
+    pub fn empty_iter() -> Self {
+        Self { iter: [].iter() }
+    }
+}
+
 impl<'a> Iterator for DeltaScanIter<'a> {
     type Item = &'a ProductValue;
 
