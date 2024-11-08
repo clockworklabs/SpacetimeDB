@@ -13,7 +13,6 @@ pub struct ServerConfig {
     pub nickname: Option<String>,
     pub host: String,
     pub protocol: String,
-    pub default_identity: Option<String>,
     pub ecdsa_public_key: Option<String>,
 }
 
@@ -29,29 +28,11 @@ impl ServerConfig {
         format!("{}://{}", self.protocol, self.host)
     }
 
-    pub fn set_default_identity(&mut self, default_identity: String) {
-        self.default_identity = Some(default_identity);
-        // TODO: verify the identity exists and its token conforms to the server's `ecdsa_public_key`
-    }
-
     pub fn nick_or_host_or_url_is(&self, name: &str) -> bool {
         self.nickname.as_deref() == Some(name) || self.host == name || {
             let (host, _) = host_or_url_to_host_and_protocol(name);
             self.host == host
         }
-    }
-
-    fn default_identity(&self) -> anyhow::Result<&str> {
-        self.default_identity.as_deref().ok_or_else(|| {
-            let server = self.nick_or_host();
-            anyhow::anyhow!(
-                "No default identity for server: {server}
-Set the default identity with:
-\tspacetime identity set-default -s {server} <identity>
-Or initialize a default identity with:
-\tspacetime identity init-default -s {server}"
-            )
-        })
     }
 }
 
@@ -97,14 +78,12 @@ fn hanging_default_server_context(server: &str) -> String {
 impl RawConfig {
     fn new_with_localhost() -> Self {
         let local = ServerConfig {
-            default_identity: None,
             host: "127.0.0.1:3000".to_string(),
             protocol: "http".to_string(),
             nickname: Some("local".to_string()),
             ecdsa_public_key: None,
         };
         let testnet = ServerConfig {
-            default_identity: None,
             host: "testnet.spacetimedb.com".to_string(),
             protocol: "https".to_string(),
             nickname: Some("testnet".to_string()),
@@ -187,7 +166,6 @@ impl RawConfig {
             host,
             protocol,
             ecdsa_public_key,
-            default_identity: None,
         });
         Ok(())
     }
@@ -212,33 +190,6 @@ impl RawConfig {
         self.default_server()
             .with_context(|| "Cannot find protocol for default server")
             .map(|cfg| cfg.protocol.as_ref())
-    }
-
-    fn default_identity(&self, server: &str) -> anyhow::Result<&str> {
-        self.find_server(server).and_then(ServerConfig::default_identity)
-    }
-
-    fn default_server_default_identity(&self) -> anyhow::Result<&str> {
-        self.default_server().and_then(ServerConfig::default_identity)
-    }
-
-    fn set_server_default_identity(&mut self, server: &str, default_identity: String) -> anyhow::Result<()> {
-        let cfg = self.find_server_mut(server)?;
-        // TODO: create the server config if it doesn't already exist
-        // TODO: fetch the server's fingerprint to check if it has changed
-        cfg.default_identity = Some(default_identity);
-        Ok(())
-    }
-
-    fn set_default_server_default_identity(&mut self, default_identity: String) -> anyhow::Result<()> {
-        if let Some(default_server) = &self.default_server {
-            // Unfortunate clone,
-            // because `set_server_default_identity` needs a unique ref to `self`.
-            let def = default_server.to_string();
-            self.set_server_default_identity(&def, default_identity)
-        } else {
-            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
-        }
     }
 
     fn set_default_server(&mut self, server: &str) -> anyhow::Result<()> {
@@ -538,33 +489,6 @@ impl Config {
             }
         } else {
             self.home.default_protocol()
-        }
-    }
-
-    pub fn default_identity(&self, server: Option<&str>) -> anyhow::Result<&str> {
-        if let Some(server) = server {
-            let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.home.default_identity(host)
-        } else {
-            self.home.default_server_default_identity()
-        }
-    }
-
-    /// Set the default identity for `server` in the home configuration.
-    ///
-    /// Does not validate that `default_identity` applies to `server`.
-    ///
-    /// Returns an `Err` if:
-    /// - `server` is `Some`, but does not refer to any server
-    ///   in the home configuration.
-    /// - `server` is `None`, but the home configuration
-    ///   does not have a default server.
-    pub fn set_default_identity(&mut self, default_identity: String, server: Option<&str>) -> anyhow::Result<()> {
-        if let Some(server) = server {
-            let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.home.set_server_default_identity(host, default_identity)
-        } else {
-            self.home.set_default_server_default_identity(default_identity)
         }
     }
 
