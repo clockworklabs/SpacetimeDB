@@ -1,5 +1,5 @@
-use anyhow::{Context};
-use spacetimedb::identity::{Identity};
+use anyhow::Context;
+use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, EnergyBalance, Node, Replica};
 use spacetimedb::{energy, stdb_path};
 
@@ -85,9 +85,7 @@ fn identity_from_ivec(ivec: &sled::IVec) -> Result<Identity> {
     let identity_bytes: [u8; 32] = ivec
         .as_ref()
         .try_into()
-        .map_err(|e| {
-            anyhow::anyhow!("invalid size for identity: {}", ivec.len())
-        })?;
+        .map_err(|_| anyhow::anyhow!("invalid size for identity: {}", ivec.len()))?;
     Ok(Identity::from_byte_array(identity_bytes))
 }
 
@@ -426,10 +424,7 @@ impl ControlDb {
             })?;
             let balance = i128::from_be_bytes(arr);
             let identity = identity_from_ivec(&balance_entry.0).context("invalid identity in energy_budget")?;
-            let energy_balance = EnergyBalance {
-                identity,
-                balance,
-            };
+            let energy_balance = EnergyBalance { identity, balance };
             balances.push(energy_balance);
         }
         Ok(balances)
