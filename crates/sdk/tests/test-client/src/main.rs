@@ -1616,12 +1616,18 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
             .ok_or_else(|| anyhow::anyhow!("wrong value received: `{val}`, expected: `{eq}`"))
     }
 
-    let counter = TestCounter::new();
-    let make_actor = |who| {
-        let conn = connect_with_then(&counter, who, |b| b.with_light_mode(true), |_| {});
+    // Have two actors, Alice (0) and Bob (1), connect to the module.
+    let connect_counter = TestCounter::new();
+    let actors = ["alice", "bob"];
+    let conns = actors.map(|who| connect_with_then(&connect_counter, who, |b| b.with_light_mode(true), |_| {}));
+    // Ensure both have finished connecting so that there isn't a race condition
+    // between Alice executing the reducer and Bob being connected.
+    connect_counter.wait_for_all();
 
-        // Subscribe to the `OneU8` table.
-        // The choice of table is a fairly random one: just one of the simpler tables.
+    let counter = TestCounter::new();
+    // For each actor, subscribe to the `OneU8` table.
+    // The choice of table is a fairly random one: just one of the simpler tables.
+    for (who, conn) in actors.into_iter().zip(conns.iter()) {
         let sub_applied = counter.add_test(format!("sub_applied_{who}"));
         let counter2 = counter.clone();
         conn.subscription_builder()
@@ -1647,40 +1653,33 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
             })
             .on_error(|_| panic!("Subscription error"))
             .subscribe(["SELECT * FROM one_u8", "SELECT * FROM one_u16"]);
-
-        conn
-    };
-
-    let alice_conn = make_actor("alice");
-    let bob_conn = make_actor("bob");
+    }
 
     // Alice executes a reducer.
     // This should cause a row callback to be received by Alice and Bob.
     // A reducer callback should only be received by Alice.
     let mut alice_gets_reducer_callback = Some(counter.add_test("gets_reducer_callback_alice"));
-    alice_conn
+    conns[0]
         .reducers()
         .on_insert_one_u_8(move |_, &val| (alice_gets_reducer_callback.take().unwrap())(check_val(val, 42)));
-    bob_conn
+    conns[1]
         .reducers()
         .on_insert_one_u_8(move |_, _| panic!("bob received reducer callback"));
-    alice_conn.reducers().insert_one_u_8(42).unwrap();
+    conns[0].reducers().insert_one_u_8(42).unwrap();
 
     // Alice executes a reducer but decides not to be notified about it, so they shouldn't.
-    alice_conn
+    conns[0]
         .set_reducer_flags()
         .insert_one_u_16(CallReducerFlags::NoSuccessNotify);
-    alice_conn
-        .reducers()
-        .on_insert_one_u_16(move |_, _| panic!("alice received reducer callback"));
-    bob_conn
-        .reducers()
-        .on_insert_one_u_16(move |_, _| panic!("bob received reducer callback"));
-    alice_conn.reducers().insert_one_u_16(24).unwrap();
+    for conn in &conns {
+        conn.reducers()
+            .on_insert_one_u_16(move |_, _| panic!("received reducer callback"));
+    }
+    conns[0].reducers().insert_one_u_16(24).unwrap();
 
     counter.wait_for_all();
 
     // For the integrity of the test, ensure that Alice != Bob.
     // We do this after `run_threaded` so that the ids have been filled.
-    assert_ne!(alice_conn.identity(), bob_conn.identity());
+    assert_ne!(conns[0].identity(), conns[1].identity());
 }
