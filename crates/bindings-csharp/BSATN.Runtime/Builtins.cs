@@ -52,7 +52,8 @@ internal static class Util
 
     /// <summary>
     /// Convert the passed byte array to a value of type T, optionally reversing it before performing the conversion.
-    /// The behavior of this method depends on the endianness of the host system.
+    /// If the input is not reversed, it is treated as having the native endianness of the host system.
+    /// (The endianness of the host system can be checked via System.BitConverter.IsLittleEndian.)
     /// </summary>
     /// <typeparam name="T"></typeparam>
     /// <param name="source"></param>
@@ -98,7 +99,8 @@ internal static class Util
 
     /// <summary>
     /// Convert the passed T to a byte array, and optionally reverse the array before returning it.
-    /// The behavior of this method depends on the endianness of the host system.
+    /// If the output is not reversed, it will have the native endianness of the host system.
+    /// (The endianness of the host system can be checked via System.BitConverter.IsLittleEndian.)
     /// </summary>
     /// <typeparam name="T"></typeparam>
     /// <param name="source"></param>
