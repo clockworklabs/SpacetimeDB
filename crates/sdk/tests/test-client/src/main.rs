@@ -2,12 +2,15 @@
 #[allow(clippy::large_enum_variant)]
 mod module_bindings;
 
+use core::fmt::Display;
+
 use module_bindings::*;
 
 use spacetimedb_sdk::{
     credentials,
     sats::{i256, u256},
-    Address, DbContext, Event, Identity, ReducerEvent, Status, Table,
+    ws_messages::CallReducerFlags,
+    Address, DbConnectionBuilder, DbContext, Event, Identity, ReducerEvent, Status, Table,
 };
 use test_counter::TestCounter;
 
@@ -90,6 +93,9 @@ fn main() {
         "caller_always_notified" => exec_caller_always_notified(),
 
         "subscribe_all_select_star" => exec_subscribe_all_select_star(),
+        "caller_alice_receives_reducer_callback_but_not_bob" => {
+            exec_caller_alice_receives_reducer_callback_but_not_bob()
+        }
         _ => panic!("Unknown test: {}", test),
     }
 }
@@ -318,24 +324,32 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM table_holds_table;",
 ];
 
-fn connect_then(
+fn connect_with_then(
     test_counter: &std::sync::Arc<TestCounter>,
+    on_connect_suffix: &str,
+    with_builder: impl FnOnce(DbConnectionBuilder<RemoteModule>) -> DbConnectionBuilder<RemoteModule>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
-    let connected_result = test_counter.add_test("on_connect");
+    let connected_result = test_counter.add_test(format!("on_connect_{on_connect_suffix}"));
     let name = db_name_or_panic();
-    let conn = DbConnection::builder()
+    let builder = DbConnection::builder()
         .with_module_name(name)
         .with_uri(LOCALHOST)
         .on_connect(|ctx, _, _| {
             callback(ctx);
             connected_result(Ok(()));
         })
-        .on_connect_error(|e| panic!("Connect errored: {e:?}"))
-        .build()
-        .unwrap();
+        .on_connect_error(|e| panic!("Connect errored: {e:?}"));
+    let conn = with_builder(builder).build().unwrap();
     conn.run_threaded();
     conn
+}
+
+fn connect_then(
+    test_counter: &std::sync::Arc<TestCounter>,
+    callback: impl FnOnce(&DbConnection) + Send + 'static,
+) -> DbConnection {
+    connect_with_then(test_counter, "", |x| x, callback)
 }
 
 fn connect(test_counter: &std::sync::Arc<TestCounter>) -> DbConnection {
@@ -1593,4 +1607,79 @@ fn exec_subscribe_all_select_star() {
         .subscribe(["SELECT * FROM *"]);
 
     test_counter.wait_for_all();
+}
+
+fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
+    fn check_val<T: Display + Eq>(val: T, eq: T) -> anyhow::Result<()> {
+        (val == eq)
+            .then_some(())
+            .ok_or_else(|| anyhow::anyhow!("wrong value received: `{val}`, expected: `{eq}`"))
+    }
+
+    // Have two actors, Alice (0) and Bob (1), connect to the module.
+    let connect_counter = TestCounter::new();
+    let actors = ["alice", "bob"];
+    let conns = actors.map(|who| connect_with_then(&connect_counter, who, |b| b.with_light_mode(true), |_| {}));
+    // Ensure both have finished connecting so that there isn't a race condition
+    // between Alice executing the reducer and Bob being connected.
+    connect_counter.wait_for_all();
+
+    let counter = TestCounter::new();
+    // For each actor, subscribe to the `OneU8` table.
+    // The choice of table is a fairly random one: just one of the simpler tables.
+    for (who, conn) in actors.into_iter().zip(conns.iter()) {
+        let sub_applied = counter.add_test(format!("sub_applied_{who}"));
+        let counter2 = counter.clone();
+        conn.subscription_builder()
+            .on_applied(move |ctx| {
+                sub_applied(Ok(()));
+                // Test that we are notified when a row is inserted.
+                let db = ctx.db();
+                let mut one_u8_inserted = Some(counter2.add_test(format!("one_u8_inserted_{who}")));
+                db.one_u_8().on_insert(move |_, row| {
+                    (one_u8_inserted.take().unwrap())(check_val(row.n, 42));
+                });
+                let mut one_u16_inserted = Some(counter2.add_test(format!("one_u16_inserted_{who}")));
+                db.one_u_16().on_insert(move |event, row| {
+                    let run_checks = || {
+                        anyhow::ensure!(
+                            matches!(event.event, Event::UnknownTransaction),
+                            "reducer should be unknown",
+                        );
+                        check_val(row.n, 24)
+                    };
+                    (one_u16_inserted.take().unwrap())(run_checks());
+                });
+            })
+            .on_error(|_| panic!("Subscription error"))
+            .subscribe(["SELECT * FROM one_u8", "SELECT * FROM one_u16"]);
+    }
+
+    // Alice executes a reducer.
+    // This should cause a row callback to be received by Alice and Bob.
+    // A reducer callback should only be received by Alice.
+    let mut alice_gets_reducer_callback = Some(counter.add_test("gets_reducer_callback_alice"));
+    conns[0]
+        .reducers()
+        .on_insert_one_u_8(move |_, &val| (alice_gets_reducer_callback.take().unwrap())(check_val(val, 42)));
+    conns[1]
+        .reducers()
+        .on_insert_one_u_8(move |_, _| panic!("bob received reducer callback"));
+    conns[0].reducers().insert_one_u_8(42).unwrap();
+
+    // Alice executes a reducer but decides not to be notified about it, so they shouldn't.
+    conns[0]
+        .set_reducer_flags()
+        .insert_one_u_16(CallReducerFlags::NoSuccessNotify);
+    for conn in &conns {
+        conn.reducers()
+            .on_insert_one_u_16(move |_, _| panic!("received reducer callback"));
+    }
+    conns[0].reducers().insert_one_u_16(24).unwrap();
+
+    counter.wait_for_all();
+
+    // For the integrity of the test, ensure that Alice != Bob.
+    // We do this after `run_threaded` so that the ids have been filled.
+    assert_ne!(conns[0].identity(), conns[1].identity());
 }
