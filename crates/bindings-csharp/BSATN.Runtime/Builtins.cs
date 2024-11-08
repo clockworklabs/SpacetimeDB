@@ -114,6 +114,32 @@ internal static class Util
         return result;
     }
 
+    /// <summary>
+    /// Convert a hex string to a byte array.
+    /// </summary>
+    /// <param name="hex"></param>
+    /// <returns></returns>
+    public static byte[] StringToByteArray(string hex)
+    {
+        var NumberChars = hex.Length;
+        var bytes = new byte[NumberChars / 2];
+        for (var i = 0; i < NumberChars; i += 2)
+        {
+            bytes[i / 2] = Convert.ToByte(hex.Substring(i, 2), 16);
+        }
+        return bytes;
+    }
+
+    /// <summary>
+    /// Read a value from a "big-endian" hex string.
+    /// All hex strings we expect to encounter are big-endian (store most significant bytes
+    /// at low indexes) so this should always be used.
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    /// <param name="hex"></param>
+    /// <returns></returns>
+    public static T ReadFromBigEndianHexString<T>(string hex) where T : struct
+    => ReadBigEndian<T>(StringToByteArray(hex));
 }
 
 public readonly partial struct Unit
@@ -140,7 +166,8 @@ public readonly record struct Address
     /// <summary>
     /// Create an Address from a LITTLE-ENDIAN byte array.
     /// 
-    /// If you are parsing an Address from a string, you probably want FromBigEndian instead.
+    /// If you are parsing an Address from a string, you probably want FromHexString instead,
+    /// or, failing that, FromBigEndian.
     /// 
     /// Returns null if the resulting address is the default.
     /// </summary>
@@ -148,7 +175,7 @@ public readonly record struct Address
     public static Address? From(byte[] bytes)
     {
         Debug.Assert(bytes.Length == 16);
-        var addr = new Address(MemoryMarshal.Read<U128>(bytes));
+        var addr = new Address(Util.ReadLittleEndian<U128>(bytes));
         return addr == default ? null : addr;
     }
 
@@ -168,8 +195,18 @@ public readonly record struct Address
     public static Address? FromBigEndian(byte[] bytes)
     {
         Debug.Assert(bytes.Length == 16);
-        var val = Util.ReadBigEndian<U128>(bytes);
-        var addr = new Address(val);
+        var addr = new Address(Util.ReadBigEndian<U128>(bytes));
+        return addr == default ? null : addr;
+    }
+
+    /// <summary>
+    /// Create an Address from a hex string.
+    /// </summary>
+    /// <param name="hex"></param>
+    /// <returns></returns>
+    public static Address? FromHexString(string hex)
+    {
+        var addr = new Address(Util.ReadFromBigEndianHexString<U128>(hex));
         return addr == default ? null : addr;
     }
 
@@ -205,7 +242,8 @@ public readonly record struct Identity
     /// <summary>
     /// Create an Identity from a LITTLE-ENDIAN byte array.
     /// 
-    /// If you are parsing an Identity from a string, you probably want FromBigEndian instead.
+    /// If you are parsing an Identity from a string, you probably want FromHexString instead,
+    /// or, failing that, FromBigEndian.
     /// </summary>
     /// <param name="bytes"></param>
     public Identity(byte[] bytes)
@@ -217,7 +255,8 @@ public readonly record struct Identity
     /// <summary>
     /// Create an Identity from a LITTLE-ENDIAN byte array.
     /// 
-    /// If you are parsing an Identity from a string, you probably want FromBigEndian instead.
+    /// If you are parsing an Identity from a string, you probably want FromHexString instead,
+    /// or, failing that, FromBigEndian.
     /// </summary>
     /// <param name="bytes"></param>
     public static Identity From(byte[] bytes) => new(bytes);
@@ -236,9 +275,16 @@ public readonly record struct Identity
     public static Identity FromBigEndian(byte[] bytes)
     {
         Debug.Assert(bytes.Length == 32);
-        var val = Util.ReadBigEndian<U256>(bytes);
-        return new Identity(val);
+        return new Identity(Util.ReadBigEndian<U256>(bytes));
     }
+
+    /// <summary>
+    /// Create an Identity from a hex string.
+    /// </summary>
+    /// <param name="hex"></param>
+    /// <returns></returns>
+    public static Identity FromHexString(string hex) =>
+        new Identity(Util.ReadFromBigEndianHexString<U256>(hex));
 
     public readonly struct BSATN : IReadWrite<Identity>
     {
