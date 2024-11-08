@@ -93,11 +93,11 @@ async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
 }
 
 async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login: bool) -> anyhow::Result<String> {
-    TODO: Print a message if we're already logged in
-
     // Currently, this token does not expire. However, it will at some point in the future. When that happens,
     // this code will need to happen before any request to a spacetimedb server, rather than at the end of the login flow here.
     if let Some(token) = config.spacetimedb_token() {
+        println!("You are already logged in.");
+        println!("If you want to log out, use spacetime logout.");
         Ok(token.clone())
     } else {
         let token = if direct_login {
