@@ -670,7 +670,6 @@ impl From<ConstraintDef> for RawConstraintDefV9 {
 
 /// Data for a constraint attached to a table.
 #[derive(Debug, Clone, Eq, PartialEq)]
-#[non_exhaustive]
 pub enum ConstraintData {
     Unique(UniqueConstraintData),
 }
