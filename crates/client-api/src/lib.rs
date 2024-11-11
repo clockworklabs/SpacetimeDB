@@ -46,8 +46,10 @@ pub trait NodeDelegate: Send + Sync {
     /// Return a JWT encoding key for signing credentials.
     fn private_key(&self) -> &EncodingKey;
 
-    /// Return Ok(None), If this node is not suppose to host leader replica for the given
-    /// database else spawn a new `ModuleHost`, if already not running and return the `Host` object.
+    /// Return the leader [`Host`] of `database_id`.
+    ///
+    /// Returns `None` if the current leader is not hosted by this node.
+    /// The [`Host`] is spawned implicitly if not already running.
     async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>>;
 }
 
