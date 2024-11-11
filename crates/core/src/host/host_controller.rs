@@ -44,11 +44,7 @@ pub type ExternalDurability = (Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)
 
 #[async_trait]
 pub trait DurabilityProvider: Send + Sync + 'static {
-    async fn durability(
-        &self,
-        replica_id: u64,
-        database_identity: &Identity,
-    ) -> anyhow::Result<Option<ExternalDurability>>;
+    async fn durability(&self, replica_id: u64) -> anyhow::Result<ExternalDurability>;
 }
 
 #[async_trait]
@@ -498,25 +494,17 @@ impl HostController {
     }
 
     async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
-        let durability = self
-            .durability
-            .durability(replica_id, &database.database_identity)
-            .await?;
         Host::try_init(
             &get_replica_path(&self.root_dir, &database.database_identity, replica_id),
             self.default_config,
             database,
             replica_id,
             self.program_storage.clone(),
-            durability,
+            self.durability.clone(),
             self.energy_monitor.clone(),
             self.unregister_fn(replica_id),
         )
         .await
-    }
-
-    pub fn get_config(&self) -> &db::Config {
-        &self.default_config
     }
 }
 
@@ -705,7 +693,7 @@ impl Host {
         database: Database,
         replica_id: u64,
         program_storage: ProgramStorage,
-        durability: Option<ExternalDurability>,
+        durability: Arc<dyn DurabilityProvider>,
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
     ) -> anyhow::Result<Self> {
@@ -725,13 +713,14 @@ impl Host {
                 let snapshot_repo =
                     relational_db::open_snapshot_repo(&db_path, database.database_identity, replica_id)?;
                 let (history, _) = relational_db::local_durability(&db_path).await?;
+                let durability = durability.durability(replica_id).await?;
 
                 RelationalDB::open(
                     &db_path,
                     database.database_identity,
                     database.owner_identity,
                     history,
-                    durability,
+                    Some(durability),
                     Some(snapshot_repo),
                 )?
             }

@@ -347,17 +347,17 @@ pub async fn info<S: ControlStateDelegate>(
     State(worker_ctx): State<S>,
     Path(InfoParams { name_or_identity }): Path<InfoParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    log::trace!("Trying to resolve address: {:?}", name_or_identity);
-    let address = name_or_identity.resolve(&worker_ctx).await?.into();
-    log::trace!("Resolved address to: {address:?}");
-    let database = worker_ctx_find_database(&worker_ctx, &address)
+    log::trace!("Trying to resolve database identity: {:?}", name_or_identity);
+    let database_identity = name_or_identity.resolve(&worker_ctx).await?.into();
+    log::trace!("Resolved identity to: {database_identity:?}");
+    let database = worker_ctx_find_database(&worker_ctx, &database_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
-    log::trace!("Fetched database from the worker db for address: {address:?}");
+    log::trace!("Fetched database from the worker db for address: {database_identity:?}");
 
     let host_type: &str = database.host_type.as_ref();
     let response_json = json!({
-        "address": database.database_identity,
+        "database_identity": database.database_identity,
         "owner_identity": database.owner_identity,
         "host_type": host_type,
         "initial_program": database.initial_program,
@@ -504,6 +504,7 @@ where
         .map_err(log_and_500)?
         .ok_or(StatusCode::NOT_FOUND)?;
     let json = host.exec_sql(auth, database, body).await?;
+
     Ok((StatusCode::OK, axum::Json(json)))
 }
 
@@ -600,13 +601,14 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
 
-    let (db_addr, db_name) = match name_or_identity {
+    let (database_identity, db_name) = match name_or_identity {
         Some(noa) => match noa.try_resolve(&ctx).await? {
             Ok(resolved) => resolved.into(),
             Err(domain) => {
                 // `name_or_address` was a `NameOrAddress::Name`, but no record
                 // exists yet. Create it now with a fresh address.
-                let database_identity = Identity::placeholder();
+                let database_auth = SpacetimeAuth::alloc(&ctx).await?;
+                let database_identity = database_auth.identity;
                 ctx.create_dns_record(&auth.identity, &domain, &database_identity)
                     .await
                     .map_err(log_and_500)?;
@@ -614,18 +616,22 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
             }
         },
         None => {
-            let database_identity = Identity::placeholder();
+            let database_auth = SpacetimeAuth::alloc(&ctx).await?;
+            let database_identity = database_auth.identity;
             (database_identity, None)
         }
     };
 
-    log::trace!("Publishing to the address: {}", db_addr.to_hex());
+    log::trace!("Publishing to the address: {}", database_identity.to_hex());
 
     let op = {
-        let exists = ctx.get_database_by_identity(&db_addr).map_err(log_and_500)?.is_some();
+        let exists = ctx
+            .get_database_by_identity(&database_identity)
+            .map_err(log_and_500)?
+            .is_some();
 
         if clear && exists {
-            ctx.delete_database(&auth.identity, &db_addr)
+            ctx.delete_database(&auth.identity, &database_identity)
                 .await
                 .map_err(log_and_500)?;
         }
@@ -641,7 +647,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         .publish_database(
             &auth.identity,
             DatabaseDef {
-                database_identity: db_addr,
+                database_identity,
                 program_bytes: body.into(),
                 num_replicas: 1,
                 host_type: HostType::Wasm,
@@ -668,7 +674,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
 
     Ok(axum::Json(PublishResult::Success {
         domain: db_name.as_ref().map(ToString::to_string),
-        database_identity: db_addr,
+        database_identity,
         op,
     }))
 }
@@ -704,14 +710,14 @@ pub async fn set_name<S: ControlStateDelegate>(
     State(ctx): State<S>,
     Query(SetNameQueryParams {
         domain,
-        database_identity: address,
+        database_identity,
     }): Query<SetNameQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let address = Identity::from(address);
+    let database_identity = Identity::from(database_identity);
 
     let database = ctx
-        .get_database_by_identity(&address)
+        .get_database_by_identity(&database_identity)
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -721,7 +727,7 @@ pub async fn set_name<S: ControlStateDelegate>(
 
     let domain = domain.parse().map_err(|_| DomainParsingRejection)?;
     let response = ctx
-        .create_dns_record(&auth.identity, &domain, &address)
+        .create_dns_record(&auth.identity, &domain, &database_identity)
         .await
         // TODO: better error code handling
         .map_err(log_and_500)?;

@@ -1,7 +1,6 @@
 use super::datastore::locking_tx_datastore::MutTxId;
 use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
-use crate::execution_context::ExecutionContext;
 use crate::sql::parser::RowLevelExpr;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::auth::StTableType;
@@ -79,8 +78,6 @@ fn auto_migrate_database(
         .map(|table| (table.table_name.clone(), table))
         .collect::<HashMap<_, _>>();
 
-    let ctx = &ExecutionContext::internal(stdb.database_identity());
-
     log::info!("Running database update prechecks: {}", stdb.database_identity());
 
     for precheck in plan.prechecks {
@@ -97,7 +94,7 @@ fn auto_migrate_database(
                 let range = min..max;
 
                 if stdb
-                    .iter_by_col_range_mut(ctx, tx, table_schema.table_id, sequence_def.column, range)?
+                    .iter_by_col_range_mut(tx, table_schema.table_id, sequence_def.column, range)?
                     .next()
                     .is_some()
                 {

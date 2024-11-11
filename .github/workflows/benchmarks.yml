@@ -111,6 +111,7 @@ jobs:
             echo "Running benchmarks with sqlite"
           fi
           pushd crates/bench
+          rm -rf .spacetime
           cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" "$BENCH_FILTER"
           # sticker price benchmark
           cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" 'stdb_module/disk/update_bulk'
@@ -287,6 +288,7 @@ jobs:
             echo "Running master callgrind benchmarks"
           fi
           pushd crates/bench
+          rm -rf .spacetime
           cargo bench --bench callgrind -- --save-summary pretty-json
           cargo run --bin summarize pack-callgrind "$BASELINE_NAME"
           popd

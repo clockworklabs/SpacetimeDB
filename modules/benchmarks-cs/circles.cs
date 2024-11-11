@@ -11,7 +11,7 @@ public static partial class circles
         public float y = y;
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Name = "entity")]
     public partial struct Entity(uint id, float x, float y, uint mass)
     {
         [AutoInc]
@@ -21,21 +21,20 @@ public static partial class circles
         public uint mass = mass;
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Name = "circle")]
+    [SpacetimeDB.Index(BTree = [nameof(player_id)])]
     public partial struct Circle(uint entity_id, uint player_id, float x, float y, float magnitude)
     {
         [PrimaryKey]
         public uint entity_id = entity_id;
 
-        [Indexed]
         public uint player_id = player_id;
-
         public Vector2 direction = new(x, y);
         public float magnitude = magnitude;
         public ulong last_split_time = (ulong)(DateTimeOffset.UtcNow.Ticks / 10);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Name = "food")]
     public partial struct Food(uint entity_id)
     {
         [PrimaryKey]
@@ -64,7 +63,7 @@ public static partial class circles
     {
         for (uint id = 0; id < count; id++)
         {
-            ctx.Db.Entity.Insert(new(0, id, id + 5, id * 5));
+            ctx.Db.entity.Insert(new(0, id, id + 5, id * 5));
         }
         Log.Info($"INSERT ENTITY: {count}");
     }
@@ -74,7 +73,7 @@ public static partial class circles
     {
         for (uint id = 0; id < count; id++)
         {
-            ctx.Db.Circle.Insert(new(id, id, id, id + 5, id * 5));
+            ctx.Db.circle.Insert(new(id, id, id, id + 5, id * 5));
         }
         Log.Info($"INSERT CIRCLE: {count}");
     }
@@ -84,7 +83,7 @@ public static partial class circles
     {
         for (uint id = 1; id <= count; id++)
         {
-            ctx.Db.Food.Insert(new(id));
+            ctx.Db.food.Insert(new(id));
         }
         Log.Info($"INSERT FOOD: {count}");
     }
@@ -93,11 +92,11 @@ public static partial class circles
     public static void cross_join_all(ReducerContext ctx, uint expected)
     {
         uint count = 0;
-        foreach (Circle circle in ctx.Db.Circle.Iter())
+        foreach (Circle circle in ctx.Db.circle.Iter())
         {
-            foreach (Entity entity in ctx.Db.Entity.Iter())
+            foreach (Entity entity in ctx.Db.entity.Iter())
             {
-                foreach (Food food in ctx.Db.Food.Iter())
+                foreach (Food food in ctx.Db.food.Iter())
                 {
                     count++;
                 }
@@ -111,18 +110,18 @@ public static partial class circles
     public static void cross_join_circle_food(ReducerContext ctx, uint expected)
     {
         uint count = 0;
-        foreach (Circle circle in ctx.Db.Circle.Iter())
+        foreach (Circle circle in ctx.Db.circle.Iter())
         {
-            if (ctx.Db.Entity.FindByid(circle.entity_id) is not { } circle_entity)
+            if (ctx.Db.entity.id.Find(circle.entity_id) is not { } circle_entity)
             {
                 continue;
             }
 
-            foreach (Food food in ctx.Db.Food.Iter())
+            foreach (Food food in ctx.Db.food.Iter())
             {
                 count++;
                 Entity food_entity =
-                    ctx.Db.Entity.FindByid(food.entity_id)
+                    ctx.Db.entity.id.Find(food.entity_id)
                     ?? throw new Exception($"Entity not found: {food.entity_id}");
                 Bench.BlackBox(IsOverlapping(circle_entity, food_entity));
             }

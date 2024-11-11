@@ -24,8 +24,8 @@ use spacetimedb::host::{
 };
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
+use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
-use spacetimedb::{db, stdb_path};
 use spacetimedb_client_api::auth::LOCALHOST;
 use spacetimedb_client_api::{Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
@@ -54,8 +54,8 @@ impl StandaloneEnv {
         let program_store = Arc::new(DiskStorage::new(stdb_path("control_node/program_bytes")).await?);
         let root_dir = stdb_path("worker_node/replicas");
         let durability = Arc::new(StandaloneDurabilityProvider {
-            config,
             root_dir: root_dir.clone(),
+            control_db: control_db.clone(),
         });
 
         let host_controller = HostController::new(
@@ -86,28 +86,27 @@ impl StandaloneEnv {
 }
 
 struct StandaloneDurabilityProvider {
-    config: Config,
     root_dir: PathBuf,
+    control_db: ControlDb,
 }
 
 #[async_trait]
 impl DurabilityProvider for StandaloneDurabilityProvider {
-    async fn durability(
-        &self,
-        replica_id: u64,
-        database_identity: &Identity,
-    ) -> anyhow::Result<Option<ExternalDurability>> {
-        match self.config.storage {
-            db::Storage::Disk => {
-                let db_path = get_replica_path(&self.root_dir, &database_identity, replica_id);
-                relational_db::local_durability(&db_path)
-                    .await
-                    .map(|(durability, disk_size)| (durability as Arc<dyn Durability<TxData = Txdata>>, disk_size))
-                    .map(Some)
-                    .map_err(Into::into)
-            }
-            db::Storage::Memory => Ok(None),
-        }
+    async fn durability(&self, replica_id: u64) -> anyhow::Result<ExternalDurability> {
+        let replica = self
+            .control_db
+            .get_replica_by_id(replica_id)?
+            .ok_or_else(|| anyhow::anyhow!("Replica {} not found", replica_id))?;
+        let database = self
+            .control_db
+            .get_database_by_id(replica.database_id)?
+            .ok_or_else(|| anyhow::anyhow!("Database {} not found", replica.database_id))?;
+
+        let db_path = get_replica_path(&self.root_dir, &database.database_identity, replica_id);
+        relational_db::local_durability(&db_path)
+            .await
+            .map(|(durability, disk_size)| (durability as Arc<dyn Durability<TxData = Txdata>>, disk_size))
+            .map_err(Into::into)
     }
 }
 

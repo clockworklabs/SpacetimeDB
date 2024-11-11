@@ -92,6 +92,12 @@ namespace SpacetimeDB
                         "idx_TestAutoIncNotInteger_TestAutoIncNotInteger_IdentityField_unique"
                     ) { }
 
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::TestAutoIncNotInteger? Find(string key) =>
+                    DoFilter(key).Cast<global::TestAutoIncNotInteger?>().SingleOrDefault();
+
                 public bool Update(global::TestAutoIncNotInteger row) =>
                     DoUpdate(row.IdentityField, row);
             }
@@ -196,6 +202,12 @@ namespace SpacetimeDB
                         "idx_TestIncompatibleSchedule1_TestIncompatibleSchedule1_ScheduledId_unique"
                     ) { }
 
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::TestIncompatibleSchedule? Find(ulong key) =>
+                    DoFilter(key).Cast<global::TestIncompatibleSchedule?>().SingleOrDefault();
+
                 public bool Update(global::TestIncompatibleSchedule row) =>
                     DoUpdate(row.ScheduledId, row);
             }
@@ -260,6 +272,12 @@ namespace SpacetimeDB
                         handle,
                         "idx_TestIncompatibleSchedule2_TestIncompatibleSchedule2_ScheduledId_unique"
                     ) { }
+
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::TestIncompatibleSchedule? Find(ulong key) =>
+                    DoFilter(key).Cast<global::TestIncompatibleSchedule?>().SingleOrDefault();
 
                 public bool Update(global::TestIncompatibleSchedule row) =>
                     DoUpdate(row.ScheduledId, row);
@@ -356,6 +374,12 @@ namespace SpacetimeDB
                         "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique"
                     ) { }
 
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::TestUniqueNotEquatable? Find(int? key) =>
+                    DoFilter(key).Cast<global::TestUniqueNotEquatable?>().SingleOrDefault();
+
                 public bool Update(global::TestUniqueNotEquatable row) =>
                     DoUpdate(row.UniqueField, row);
             }
@@ -375,6 +399,12 @@ namespace SpacetimeDB
                         handle,
                         "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique"
                     ) { }
+
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::TestUniqueNotEquatable? Find(TestEnumWithExplicitValues key) =>
+                    DoFilter(key).Cast<global::TestUniqueNotEquatable?>().SingleOrDefault();
 
                 public bool Update(global::TestUniqueNotEquatable row) =>
                     DoUpdate(row.PrimaryKeyField, row);

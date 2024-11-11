@@ -1,4 +1,3 @@
-use std::io;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -8,12 +7,13 @@ use http::StatusCode;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
+use spacetimedb::execution_context::Workload;
 use spacetimedb::host::{HostController, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
-use spacetimedb::sql::execute::{ctx_sql, translate_col};
+use spacetimedb::sql::execute::translate_col;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_lib::ProductTypeElement;
 use tokio::sync::watch;
@@ -95,6 +95,7 @@ impl Host {
                     tracing::info!(sql = body);
                     let results =
                         sql::execute::run(db, &body, auth, Some(&module_host.info().subscriptions)).map_err(|e| {
+                            log::warn!("{}", e);
                             if let Some(auth_err) = e.get_auth_error() {
                                 (StatusCode::UNAUTHORIZED, auth_err.to_string())
                             } else {
@@ -102,7 +103,7 @@ impl Host {
                             }
                         })?;
 
-                    let json = db.with_read_only(&ctx_sql(db), |tx| {
+                    let json = db.with_read_only(Workload::Sql, |tx| {
                         results
                             .into_iter()
                             .map(|result| {
@@ -233,7 +234,7 @@ pub trait ControlStateWriteAccess: Send + Sync {
     async fn register_tld(&self, identity: &Identity, tld: Tld) -> anyhow::Result<RegisterTldResult>;
     async fn create_dns_record(
         &self,
-        identity: &Identity,
+        owner_identity: &Identity,
         domain: &DomainName,
         database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult>;
@@ -358,21 +359,4 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 pub fn log_and_500(e: impl std::fmt::Display) -> ErrorResponse {
     log::error!("internal error: {e:#}");
     (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")).into()
-}
-
-pub fn find_database(ctx: &impl ControlStateReadAccess, replica: u64) -> io::Result<Database> {
-    let replica = ctx
-        .get_replica_by_id(replica)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("not found: replica {replica}")))?;
-
-    ctx.get_database_by_id(replica.database_id)
-        .map(|db| db.map(|db| db))
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("not found: database {}", replica.database_id),
-            )
-        })
 }

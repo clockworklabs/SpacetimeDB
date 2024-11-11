@@ -10,8 +10,7 @@
 //! You can inspect its `event` field
 //! to determine what change in your connection's state caused the callback to run.
 
-use crate::spacetime_module::SpacetimeModule;
-use anyhow::Context as _;
+use crate::spacetime_module::{DbUpdate as _, SpacetimeModule};
 use spacetimedb_client_api_messages::websocket::BsatnFormat;
 use spacetimedb_lib::{Address, Identity};
 use std::time::SystemTime;
@@ -103,10 +102,9 @@ impl Status {
         status: crate::ws_messages::UpdateStatus<BsatnFormat>,
     ) -> anyhow::Result<(Self, Option<M::DbUpdate>)> {
         Ok(match status {
-            crate::ws_messages::UpdateStatus::Committed(update) => (
-                Self::Committed,
-                Some(M::DbUpdate::try_from(update).context("Failed to parse DatabaseUpdate from UpdateStatus")?),
-            ),
+            crate::ws_messages::UpdateStatus::Committed(update) => {
+                (Self::Committed, Some(M::DbUpdate::parse_update(update)?))
+            }
             crate::ws_messages::UpdateStatus::Failed(errmsg) => (Self::Failed(errmsg), None),
             crate::ws_messages::UpdateStatus::OutOfEnergy => (Self::OutOfEnergy, None),
         })

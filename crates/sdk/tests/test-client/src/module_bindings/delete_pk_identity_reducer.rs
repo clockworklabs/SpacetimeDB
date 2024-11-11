@@ -68,3 +68,23 @@ impl delete_pk_identity for super::RemoteReducers {
             .remove_on_reducer::<DeletePkIdentity>("delete_pk_identity", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `delete_pk_identity`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_delete_pk_identity {
+    /// Set the call-reducer flags for the reducer `delete_pk_identity` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn delete_pk_identity(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_delete_pk_identity for super::SetReducerFlags {
+    fn delete_pk_identity(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("delete_pk_identity", flags);
+    }
+}

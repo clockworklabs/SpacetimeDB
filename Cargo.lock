@@ -512,6 +512,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "block2"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c132eebf10f5cad5289222520a4a058514204aed6d791f1cf4fe8088b82d15f"
+dependencies = [
+ "objc2",
+]
+
+[[package]]
 name = "borsh"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -692,6 +701,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cesu8"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d43a04d8753f35258c91f8ec639f792891f748a1edbd759cf1dcea3382ad83c"
+
+[[package]]
 name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -859,8 +874,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "combine"
+version = "4.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
+dependencies = [
+ "bytes",
+ "memchr",
+]
+
+[[package]]
 name = "connect_disconnect_client"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "spacetimedb-sdk",
@@ -922,6 +947,16 @@ name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91e195e091a93c46f7102ec7818a2aa394e1e1771c3ab4825963fa03e45afb8f"
+dependencies = [
+ "core-foundation-sys",
+ "libc",
+]
+
+[[package]]
+name = "core-foundation"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b55271e5c8c478ad3f38ad24ef34923091e0548492a266d19b3c0b4d82574c63"
 dependencies = [
  "core-foundation-sys",
  "libc",
@@ -2623,6 +2658,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49f1f14873335454500d59611f1cf4a4b0f786f9ac11f4312a78e4cf2566695b"
 
 [[package]]
+name = "jni"
+version = "0.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a87aa2bb7d2af34197c04845522473242e1aa17c12f4935d5856491a7fb8c97"
+dependencies = [
+ "cesu8",
+ "cfg-if",
+ "combine",
+ "jni-sys",
+ "log",
+ "thiserror",
+ "walkdir",
+ "windows-sys 0.45.0",
+]
+
+[[package]]
+name = "jni-sys"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8eaf4bc02d17cbdd7ff4c7438cafcdf7fb9a4613313ad11b4f8fefe7d3fa0130"
+
+[[package]]
 name = "jobserver"
 version = "0.1.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2649,7 +2706,7 @@ dependencies = [
  "base64 0.13.1",
  "bitflags 1.3.2",
  "generic-array",
- "jsonwebtoken 8.3.0",
+ "jsonwebtoken",
  "num-bigint",
  "p256",
  "rand 0.8.5",
@@ -2672,33 +2729,6 @@ dependencies = [
  "serde",
  "serde_json",
  "simple_asn1",
-]
-
-[[package]]
-name = "jsonwebtoken"
-version = "9.3.0"
-source = "git+https://github.com/jsdt/jsonwebtoken.git?rev=7f0cef63c74f58dfa912e88da844932ba4c71562#7f0cef63c74f58dfa912e88da844932ba4c71562"
-dependencies = [
- "base64 0.21.7",
- "js-sys",
- "pem 3.0.4",
- "ring 0.17.8",
- "serde",
- "serde_json",
- "simple_asn1",
-]
-
-[[package]]
-name = "jwks"
-version = "0.1.3"
-source = "git+https://github.com/jsdt/jwks.git?rev=acb4241f3768ff89515a0c12d927e280a604fff3#acb4241f3768ff89515a0c12d927e280a604fff3"
-dependencies = [
- "base64 0.21.7",
- "jsonwebtoken 9.3.0",
- "reqwest 0.11.27",
- "serde",
- "thiserror",
- "tokio",
 ]
 
 [[package]]
@@ -2958,6 +2988,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ndk-context"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b"
+
+[[package]]
 name = "nibble_vec"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3105,6 +3141,40 @@ name = "number_prefix"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
+
+[[package]]
+name = "objc-sys"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdb91bdd390c7ce1a8607f35f3ca7151b65afc0ff5ff3b34fa350f7d7c7e4310"
+
+[[package]]
+name = "objc2"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46a785d4eeff09c14c487497c162e92766fbb3e4059a71840cecc03d9a50b804"
+dependencies = [
+ "objc-sys",
+ "objc2-encode",
+]
+
+[[package]]
+name = "objc2-encode"
+version = "4.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7891e71393cd1f227313c9379a26a584ff3d7e6e7159e988851f0934c993f0f8"
+
+[[package]]
+name = "objc2-foundation"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ee638a5da3799329310ad4cfa62fbf045d5f56e3ef5ba4149e7452dcf89d5a8"
+dependencies = [
+ "bitflags 2.6.0",
+ "block2",
+ "libc",
+ "objc2",
+]
 
 [[package]]
 name = "object"
@@ -4366,7 +4436,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "897b2245f0b511c87893af39b033e5ca9cce68824c4d7e7630b5a1d339658d02"
 dependencies = [
  "bitflags 2.6.0",
- "core-foundation",
+ "core-foundation 0.9.4",
  "core-foundation-sys",
  "libc",
  "security-framework-sys",
@@ -4720,7 +4790,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "bytemuck",
  "derive_more",
@@ -4738,7 +4808,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bench"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "anymap",
@@ -4776,7 +4846,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "bitflags 2.6.0",
  "heck 0.4.1",
@@ -4790,14 +4860,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-cli"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -4818,7 +4888,6 @@ dependencies = [
  "insta",
  "is-terminal",
  "itertools 0.12.1",
- "jsonwebtoken 9.3.0",
  "mimalloc",
  "regex",
  "reqwest 0.12.4",
@@ -4831,6 +4900,7 @@ dependencies = [
  "spacetimedb-core",
  "spacetimedb-data-structures",
  "spacetimedb-fs-utils",
+ "spacetimedb-jsonwebtoken",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-schema",
@@ -4847,11 +4917,12 @@ dependencies = [
  "toml 0.8.19",
  "wasmbin",
  "wasmtime",
+ "webbrowser",
 ]
 
 [[package]]
 name = "spacetimedb-client-api"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4870,7 +4941,6 @@ dependencies = [
  "hyper-util",
  "itoa",
  "jsonwebkey",
- "jsonwebtoken 9.3.0",
  "lazy_static",
  "log",
  "mime",
@@ -4883,6 +4953,7 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-data-structures",
+ "spacetimedb-jsonwebtoken",
  "spacetimedb-lib",
  "spacetimedb-schema",
  "tempfile",
@@ -4895,7 +4966,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api-messages"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "brotli",
  "bytes",
@@ -4919,7 +4990,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-commitlog"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "bitflags 2.6.0",
  "crc32c",
@@ -4940,7 +5011,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-core"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -4977,8 +5048,6 @@ dependencies = [
  "indexmap 2.6.0",
  "itertools 0.12.1",
  "jsonwebkey",
- "jsonwebtoken 9.3.0",
- "jwks",
  "lazy_static",
  "log",
  "once_cell",
@@ -5011,6 +5080,8 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-durability",
  "spacetimedb-expr",
+ "spacetimedb-jsonwebtoken",
+ "spacetimedb-jwks",
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-primitives",
@@ -5043,7 +5114,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-data-structures"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "ahash 0.8.11",
  "hashbrown 0.15.0",
@@ -5055,7 +5126,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-durability"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
@@ -5067,8 +5138,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-execution"
+version = "1.0.0-rc2"
+dependencies = [
+ "spacetimedb-expr",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-table",
+]
+
+[[package]]
 name = "spacetimedb-expr"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "derive_more",
  "spacetimedb-lib",
@@ -5082,7 +5163,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-fs-utils"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "hex",
@@ -5092,8 +5173,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-jsonwebtoken"
+version = "9.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f626b7b56a60c3ec4552bc928a4e26b12ec76af826c0b152a87811fb4a68544f"
+dependencies = [
+ "base64 0.22.1",
+ "js-sys",
+ "pem 3.0.4",
+ "ring 0.17.8",
+ "serde",
+ "serde_json",
+ "simple_asn1",
+]
+
+[[package]]
+name = "spacetimedb-jwks"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b87fbe70b43e34cb9ee9db5e6fdffab259932fa931fcf8283fd9e92d7c117c93"
+dependencies = [
+ "base64 0.22.1",
+ "reqwest 0.11.27",
+ "serde",
+ "spacetimedb-jsonwebtoken",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "spacetimedb-lib"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "bitflags 2.6.0",
@@ -5120,7 +5230,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-metrics"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "arrayvec",
  "itertools 0.12.1",
@@ -5129,8 +5239,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-physical-plan"
+version = "1.0.0-rc2"
+dependencies = [
+ "spacetimedb-expr",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-schema",
+ "spacetimedb-sql-parser",
+]
+
+[[package]]
 name = "spacetimedb-primitives"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "bitflags 2.6.0",
  "either",
@@ -5149,7 +5270,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sats"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "ahash 0.8.11",
  "arrayvec",
@@ -5179,7 +5300,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-schema"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "enum-as-inner",
@@ -5204,7 +5325,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sdk"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "anymap",
@@ -5231,7 +5352,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-snapshot"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "blake3",
  "hex",
@@ -5247,7 +5368,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sql-parser"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "derive_more",
  "sqlparser",
@@ -5256,7 +5377,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-standalone"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5286,7 +5407,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-table"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "ahash 0.8.11",
  "blake3",
@@ -5310,7 +5431,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-testing"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "clap 4.5.20",
@@ -5335,7 +5456,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-vm"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -5440,7 +5561,7 @@ dependencies = [
 
 [[package]]
 name = "sqltest"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5664,7 +5785,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba3a3adc5c275d719af8cb4272ea1c4a6d668a777f37e115f6d11ddbc1c8e0e7"
 dependencies = [
  "bitflags 1.3.2",
- "core-foundation",
+ "core-foundation 0.9.4",
  "system-configuration-sys",
 ]
 
@@ -5775,7 +5896,7 @@ dependencies = [
 
 [[package]]
 name = "test-client"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "env_logger",
@@ -5786,7 +5907,7 @@ dependencies = [
 
 [[package]]
 name = "test-counter"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "spacetimedb-data-structures",
@@ -6831,6 +6952,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "webbrowser"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e5f07fb9bc8de2ddfe6b24a71a75430673fd679e568c48b52716cef1cfae923"
+dependencies = [
+ "block2",
+ "core-foundation 0.10.0",
+ "home",
+ "jni",
+ "log",
+ "ndk-context",
+ "objc2",
+ "objc2-foundation",
+ "url",
+ "web-sys",
+]
+
+[[package]]
 name = "which"
 version = "4.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6959,6 +7098,15 @@ dependencies = [
 
 [[package]]
 name = "windows-sys"
+version = "0.45.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75283be5efb2831d37ea142365f009c02ec203cd29a3ebecbc093d52315b66d0"
+dependencies = [
+ "windows-targets 0.42.2",
+]
+
+[[package]]
+name = "windows-sys"
 version = "0.48.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "677d2418bec65e3338edb076e806bc1ec15693c5d0104683f2efe857f61056a9"
@@ -6982,6 +7130,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "windows-targets"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e5180c00cd44c9b1c88adb3693291f1cd93605ded80c250a75d472756b4d071"
+dependencies = [
+ "windows_aarch64_gnullvm 0.42.2",
+ "windows_aarch64_msvc 0.42.2",
+ "windows_i686_gnu 0.42.2",
+ "windows_i686_msvc 0.42.2",
+ "windows_x86_64_gnu 0.42.2",
+ "windows_x86_64_gnullvm 0.42.2",
+ "windows_x86_64_msvc 0.42.2",
 ]
 
 [[package]]
@@ -7017,6 +7180,12 @@ dependencies = [
 
 [[package]]
 name = "windows_aarch64_gnullvm"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "597a5118570b68bc08d8d59125332c54f1ba9d9adeedeef5b99b02ba2b0698f8"
+
+[[package]]
+name = "windows_aarch64_gnullvm"
 version = "0.48.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b38e32f0abccf9987a4e3079dfb67dcd799fb61361e53e2882c3cbaf0d905d8"
@@ -7029,6 +7198,12 @@ checksum = "32a4622180e7a0ec044bb555404c800bc9fd9ec262ec147edd5989ccd0c02cd3"
 
 [[package]]
 name = "windows_aarch64_msvc"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e08e8864a60f06ef0d0ff4ba04124db8b0fb3be5776a5cd47641e942e58c4d43"
+
+[[package]]
+name = "windows_aarch64_msvc"
 version = "0.48.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc35310971f3b2dbbf3f0690a219f40e2d9afcf64f9ab7cc1be722937c26b4bc"
@@ -7038,6 +7213,12 @@ name = "windows_aarch64_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09ec2a7bb152e2252b53fa7803150007879548bc709c039df7627cabbd05d469"
+
+[[package]]
+name = "windows_i686_gnu"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c61d927d8da41da96a81f029489353e68739737d3beca43145c8afec9a31a84f"
 
 [[package]]
 name = "windows_i686_gnu"
@@ -7059,6 +7240,12 @@ checksum = "0eee52d38c090b3caa76c563b86c3a4bd71ef1a819287c19d586d7334ae8ed66"
 
 [[package]]
 name = "windows_i686_msvc"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44d840b6ec649f480a41c8d80f9c65108b92d89345dd94027bfe06ac444d1060"
+
+[[package]]
+name = "windows_i686_msvc"
 version = "0.48.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f55c233f70c4b27f66c523580f78f1004e8b5a8b659e05a4eb49d4166cca406"
@@ -7068,6 +7255,12 @@ name = "windows_i686_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "240948bc05c5e7c6dabba28bf89d89ffce3e303022809e73deaefe4f6ec56c66"
+
+[[package]]
+name = "windows_x86_64_gnu"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8de912b8b8feb55c064867cf047dda097f92d51efad5b491dfb98f6bbb70cb36"
 
 [[package]]
 name = "windows_x86_64_gnu"
@@ -7083,6 +7276,12 @@ checksum = "147a5c80aabfbf0c7d901cb5895d1de30ef2907eb21fbbab29ca94c5b08b1a78"
 
 [[package]]
 name = "windows_x86_64_gnullvm"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26d41b46a36d453748aedef1486d5c7a85db22e56aff34643984ea85514e94a3"
+
+[[package]]
+name = "windows_x86_64_gnullvm"
 version = "0.48.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b7b52767868a23d5bab768e390dc5f5c55825b6d30b86c844ff2dc7414044cc"
@@ -7092,6 +7291,12 @@ name = "windows_x86_64_gnullvm"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "24d5b23dc417412679681396f2b49f3de8c1473deb516bd34410872eff51ed0d"
+
+[[package]]
+name = "windows_x86_64_msvc"
+version = "0.42.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9aec5da331524158c6d1a4ac0ab1541149c0b9505fde06423b02f5ef0106b9f0"
 
 [[package]]
 name = "windows_x86_64_msvc"
