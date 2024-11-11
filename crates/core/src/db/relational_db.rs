@@ -44,7 +44,7 @@ use std::fmt;
 use std::fs::{self, File};
 use std::io;
 use std::ops::RangeBounds;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 pub type MutTx = <Locking as super::datastore::traits::MutTx>::MutTx;
@@ -1311,14 +1311,6 @@ pub async fn local_durability(db_path: &Path) -> io::Result<(LocalDurability, Di
     });
 
     Ok((local, disk_size_fn))
-}
-
-/// Returns dyn [`Durability`] and [`DiskSizeFn`] for local durability.
-pub async fn local_durability_dyn(
-    db_path: PathBuf,
-) -> anyhow::Result<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)> {
-    let (local, disk_size_fn) = local_durability(&db_path).await?;
-    Ok((local as Arc<dyn Durability<TxData = Txdata>>, disk_size_fn))
 }
 
 /// Open a [`SnapshotRepository`] at `db_path/snapshots`,

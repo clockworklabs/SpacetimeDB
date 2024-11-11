@@ -16,7 +16,7 @@ use openssl::nid::Nid;
 use openssl::pkey::PKey;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
-use spacetimedb::db::relational_db;
+use spacetimedb::db::relational_db::{self, Durability, Txdata};
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{
@@ -27,10 +27,10 @@ use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::{db, stdb_path};
 use spacetimedb_client_api::auth::LOCALHOST;
-use spacetimedb_client_api::{find_database, Host, NodeDelegate};
+use spacetimedb_client_api::{Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -83,10 +83,6 @@ impl StandaloneEnv {
             metrics_registry,
         }))
     }
-
-    pub async fn find_database(&self, replica_id: u64) -> io::Result<Database> {
-        Ok(find_database(self, replica_id).unwrap())
-    }
 }
 
 struct StandaloneDurabilityProvider {
@@ -104,7 +100,11 @@ impl DurabilityProvider for StandaloneDurabilityProvider {
         match self.config.storage {
             db::Storage::Disk => {
                 let db_path = get_replica_path(&self.root_dir, &database_identity, replica_id);
-                relational_db::local_durability_dyn(db_path).await.map(Some)
+                relational_db::local_durability(&db_path)
+                    .await
+                    .map(|(durability, disk_size)| (durability as Arc<dyn Durability<TxData = Txdata>>, disk_size))
+                    .map(Some)
+                    .map_err(Into::into)
             }
             db::Storage::Memory => Ok(None),
         }

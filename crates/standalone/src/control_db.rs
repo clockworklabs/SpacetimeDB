@@ -508,7 +508,7 @@ mod compat {
                 owner_identity,
                 host_type,
                 initial_program,
-                replication,
+                replication: _,
             }: CanonicalDatabase,
         ) -> Self {
             Self {

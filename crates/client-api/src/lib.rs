@@ -53,7 +53,7 @@ pub trait NodeDelegate: Send + Sync {
     async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>>;
 }
 
-/// Client view to Host
+/// Client view of a running module.
 pub struct Host {
     pub replica_id: u64,
     host_controller: HostController,
