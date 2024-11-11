@@ -1,5 +1,5 @@
 use criterion::async_executor::AsyncExecutor;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 use mimalloc::MiMalloc;
 use spacetimedb_bench::{
     database::BenchDatabase,
@@ -9,6 +9,7 @@ use spacetimedb_bench::{
 use spacetimedb_lib::sats::{self, bsatn};
 use spacetimedb_lib::{bsatn::ToBsatn as _, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_testing::modules::{Csharp, ModuleLanguage, Rust};
 use std::sync::Arc;
 use std::sync::OnceLock;
 
@@ -20,14 +21,19 @@ fn criterion_benchmark(c: &mut Criterion) {
     serialize_benchmarks::<u32_u64_u64>(c);
     serialize_benchmarks::<u64_u64_u32>(c);
 
-    let db = SpacetimeModule::build(true).unwrap();
+    custom_benchmarks::<Rust>(c);
+    custom_benchmarks::<Csharp>(c);
+}
+
+fn custom_benchmarks<L: ModuleLanguage>(c: &mut Criterion) {
+    let db = SpacetimeModule::<L>::build(true).unwrap();
 
     custom_module_benchmarks(&db, c);
     custom_db_benchmarks(&db, c);
 }
 
-fn custom_module_benchmarks(m: &SpacetimeModule, c: &mut Criterion) {
-    let mut group = c.benchmark_group("special/stdb_module");
+fn custom_module_benchmarks<L: ModuleLanguage>(m: &SpacetimeModule<L>, c: &mut Criterion) {
+    let mut group = c.benchmark_group(format!("special/{}", SpacetimeModule::<L>::name()));
 
     let args = sats::product!["0".repeat(65536).into_boxed_str()];
     group.bench_function("large_arguments/64KiB", |b| {
@@ -44,10 +50,11 @@ fn custom_module_benchmarks(m: &SpacetimeModule, c: &mut Criterion) {
     }
 }
 
-fn custom_db_benchmarks(m: &SpacetimeModule, c: &mut Criterion) {
-    let mut group = c.benchmark_group("special/db_game");
+fn custom_db_benchmarks<L: ModuleLanguage>(m: &SpacetimeModule<L>, c: &mut Criterion) {
+    let mut group = c.benchmark_group(format!("special/db_game/{}", L::NAME));
     // This bench take long, so adjust for it
     group.sample_size(10);
+    group.sampling_mode(SamplingMode::Flat);
 
     let init_db: OnceLock<()> = OnceLock::new();
     for n in [10, 100] {
@@ -69,14 +76,14 @@ fn custom_db_benchmarks(m: &SpacetimeModule, c: &mut Criterion) {
     }
 
     let init_db: OnceLock<()> = OnceLock::new();
-    for n in [500, 5_000] {
+    for n in [10, 100] {
         let args = sats::product![n];
         group.bench_function(format!("ia_loop/load={n}"), |b| {
             // Initialize outside the benchmark so the db is seed once, to avoid `unique` constraints violations
             init_db.get_or_init(|| {
                 m.block_on(async {
                     m.module
-                        .call_reducer_binary("init_game_ia_loop", &sats::product![5_000])
+                        .call_reducer_binary("init_game_ia_loop", &sats::product![500])
                         .await
                         .unwrap();
                 })

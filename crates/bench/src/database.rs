@@ -10,7 +10,7 @@ use crate::ResultBench;
 ///
 /// Not all benchmarks have to go through this trait.
 pub trait BenchDatabase: Sized {
-    fn name() -> &'static str;
+    fn name() -> String;
 
     type TableId: Clone + 'static;
 
