@@ -5303,6 +5303,7 @@ dependencies = [
  "anyhow",
  "enum-as-inner",
  "hashbrown 0.15.0",
+ "indexmap 2.6.0",
  "itertools 0.12.1",
  "lazy_static",
  "petgraph",
