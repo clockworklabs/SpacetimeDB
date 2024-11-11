@@ -729,7 +729,7 @@ fn identifier(name: Box<str>) -> Result<Identifier> {
 
 fn check_scheduled_reducers_exist(
     tables: &IdentifierMap<TableDef>,
-    reducers: &IdentifierMap<ReducerDef>,
+    reducers: &IndexMap<Identifier, ReducerDef>,
 ) -> Result<()> {
     tables
         .values()
