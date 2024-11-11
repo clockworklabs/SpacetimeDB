@@ -11,11 +11,11 @@ use crate::{
 };
 
 pub(crate) mod fs;
-#[cfg(test)]
+#[cfg(any(test, feature = "test"))]
 pub mod mem;
 
 pub use fs::Fs;
-#[cfg(test)]
+#[cfg(any(test, feature = "test"))]
 pub use mem::Memory;
 
 pub type TxOffset = u64;
