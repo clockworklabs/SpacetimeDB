@@ -52,19 +52,19 @@ pub trait delete_pk_bool {
 
 impl delete_pk_bool for super::RemoteReducers {
     fn delete_pk_bool(&self, b: bool) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_bool", DeletePkBool { b })
+        self.imp.call_reducer(1, DeletePkBool { b })
     }
     fn on_delete_pk_bool(
         &self,
         mut callback: impl FnMut(&super::EventContext, &bool) + Send + 'static,
     ) -> DeletePkBoolCallbackId {
         DeletePkBoolCallbackId(self.imp.on_reducer::<DeletePkBool>(
-            "delete_pk_bool",
+            1,
             Box::new(move |ctx: &super::EventContext, args: &DeletePkBool| callback(ctx, &args.b)),
         ))
     }
     fn remove_on_delete_pk_bool(&self, callback: DeletePkBoolCallbackId) {
-        self.imp.remove_on_reducer::<DeletePkBool>("delete_pk_bool", callback.0)
+        self.imp.remove_on_reducer::<DeletePkBool>(1, callback.0)
     }
 }
 
@@ -84,6 +84,6 @@ pub trait set_flags_for_delete_pk_bool {
 
 impl set_flags_for_delete_pk_bool for super::SetReducerFlags {
     fn delete_pk_bool(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("delete_pk_bool", flags);
+        self.imp.set_call_reducer_flags(1, flags);
     }
 }

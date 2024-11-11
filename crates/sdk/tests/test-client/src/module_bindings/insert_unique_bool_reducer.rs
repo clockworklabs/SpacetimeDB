@@ -53,21 +53,19 @@ pub trait insert_unique_bool {
 
 impl insert_unique_bool for super::RemoteReducers {
     fn insert_unique_bool(&self, b: bool, data: i32) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_unique_bool", InsertUniqueBool { b, data })
+        self.imp.call_reducer(90, InsertUniqueBool { b, data })
     }
     fn on_insert_unique_bool(
         &self,
         mut callback: impl FnMut(&super::EventContext, &bool, &i32) + Send + 'static,
     ) -> InsertUniqueBoolCallbackId {
         InsertUniqueBoolCallbackId(self.imp.on_reducer::<InsertUniqueBool>(
-            "insert_unique_bool",
+            90,
             Box::new(move |ctx: &super::EventContext, args: &InsertUniqueBool| callback(ctx, &args.b, &args.data)),
         ))
     }
     fn remove_on_insert_unique_bool(&self, callback: InsertUniqueBoolCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueBool>("insert_unique_bool", callback.0)
+        self.imp.remove_on_reducer::<InsertUniqueBool>(90, callback.0)
     }
 }
 
@@ -87,6 +85,6 @@ pub trait set_flags_for_insert_unique_bool {
 
 impl set_flags_for_insert_unique_bool for super::SetReducerFlags {
     fn insert_unique_bool(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_unique_bool", flags);
+        self.imp.set_call_reducer_flags(90, flags);
     }
 }

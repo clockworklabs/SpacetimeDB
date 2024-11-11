@@ -52,20 +52,19 @@ pub trait insert_vec_address {
 
 impl insert_vec_address for super::RemoteReducers {
     fn insert_vec_address(&self, a: Vec<__sdk::Address>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_address", InsertVecAddress { a })
+        self.imp.call_reducer(105, InsertVecAddress { a })
     }
     fn on_insert_vec_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<__sdk::Address>) + Send + 'static,
     ) -> InsertVecAddressCallbackId {
         InsertVecAddressCallbackId(self.imp.on_reducer::<InsertVecAddress>(
-            "insert_vec_address",
+            105,
             Box::new(move |ctx: &super::EventContext, args: &InsertVecAddress| callback(ctx, &args.a)),
         ))
     }
     fn remove_on_insert_vec_address(&self, callback: InsertVecAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecAddress>("insert_vec_address", callback.0)
+        self.imp.remove_on_reducer::<InsertVecAddress>(105, callback.0)
     }
 }
 
@@ -85,6 +84,6 @@ pub trait set_flags_for_insert_vec_address {
 
 impl set_flags_for_insert_vec_address for super::SetReducerFlags {
     fn insert_vec_address(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_vec_address", flags);
+        self.imp.set_call_reducer_flags(105, flags);
     }
 }

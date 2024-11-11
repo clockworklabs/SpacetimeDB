@@ -21,19 +21,20 @@
 use crate::{
     callbacks::{CallbackId, DbCallbacks, ReducerCallback, ReducerCallbacks, RowCallback, UpdateCallback},
     client_cache::{ClientCache, ClientCacheView, TableCache, UniqueConstraint},
-    spacetime_module::{DbConnection, DbUpdate, EventContext, InModule, SpacetimeModule},
+    spacetime_module::{DbConnection, DbUpdate, EventContext, InModule, Reducer as _, SpacetimeModule},
     subscription::{OnAppliedCallback, OnErrorCallback, SubscriptionManager},
     websocket::{WsConnection, WsParams},
     ws_messages as ws, Event, ReducerEvent, Status,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use bytes::Bytes;
 use futures::StreamExt;
 use futures_channel::mpsc;
 use http::Uri;
 use spacetimedb_client_api_messages::websocket::{BsatnFormat, CallReducerFlags, Compression};
-use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address, Identity};
+use spacetimedb_primitives::{ReducerId, TableId};
 use std::{
     sync::{Arc, Mutex as StdMutex, OnceLock},
     time::{Duration, SystemTime},
@@ -109,10 +110,17 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             }
 
             // Initial `IdentityToken` message:
-            // confirm that the received identity and address are what we expect,
-            // store them,
+            // 1. confirm that the received identity and address are what we expect and store them,
+            // 2. construct the mappings between ids and names for tables and reducers.
             // then invoke the on_connect callback.
-            ParsedMessage::IdentityToken(identity, token, addr) => {
+            ParsedMessage::AfterConnecting(
+                ws::IdentityToken {
+                    address,
+                    identity,
+                    token,
+                },
+                ids_to_names,
+            ) => {
                 {
                     // Don't hold the `self.identity` lock while running callbacks.
                     // Callbacks can (will) call [`DbContext::identity`], which acquires that lock,
@@ -123,12 +131,32 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     }
                     *ident_store = Some(identity);
                 }
-                assert_eq!(get_client_address(), addr);
+                assert_eq!(get_client_address(), address);
                 let mut inner = self.inner.lock().unwrap();
+
+                // Handle the `ids_to_names` mappings.
+                // Validate that all the reducer and table names are as expected.
+                // These are `O(n)` checks, but it is only done once per connection for a small set.
+                inner.reducer_idx_to_id = ids_to_names.reducer_ids;
+                let check_eq = |got: &[Arc<_>], need: &[&_]| got.iter().map(|n| &**n).eq(need.iter().copied());
+                anyhow::ensure!(
+                    check_eq(&ids_to_names.reducer_names, M::Reducer::reducer_names()),
+                    "actual and expected reducer names do not match"
+                );
+                anyhow::ensure!(
+                    check_eq(&ids_to_names.table_names, M::DbUpdate::table_names()),
+                    "actual and expected reducer names do not match"
+                );
+
+                // Fire the `on_connect` callback, if any.
                 if let Some(on_connect) = inner.on_connect.take() {
                     let ctx = <M::DbConnection as DbConnection>::new(self.clone());
                     on_connect(&ctx, identity, &token);
                 }
+
+                // Handshake processed; now we can process pending mutations.
+                inner.processed_after_connecting = true;
+
                 Ok(())
             }
 
@@ -246,12 +274,16 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             }
 
             // CallReducer: send the `CallReducer` WS message.
-            PendingMutation::CallReducer { reducer, args_bsatn } => {
+            PendingMutation::CallReducer {
+                reducer_idx,
+                args_bsatn,
+            } => {
                 let inner = &mut *self.inner.lock().unwrap();
 
-                let flags = inner.call_reducer_flags.get_flags(reducer);
+                let reducer_id = inner.reducer_idx_to_id[reducer_idx as usize];
+                let flags = inner.call_reducer_flags.get_flags(reducer_idx);
                 let msg = ws::ClientMessage::CallReducer(ws::CallReducer {
-                    reducer: reducer.into(),
+                    reducer_id,
                     args: args_bsatn.into(),
                     request_id: 0,
                     flags,
@@ -275,7 +307,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
             // Callback stuff: these all do what you expect.
             PendingMutation::AddInsertCallback {
-                table,
+                table_idx,
                 callback_id,
                 callback,
             } => {
@@ -283,11 +315,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .lock()
                     .unwrap()
                     .db_callbacks
-                    .get_table_callbacks(table)
+                    .get_table_callbacks(table_idx)
                     .register_on_insert(callback_id, callback);
             }
             PendingMutation::AddDeleteCallback {
-                table,
+                table_idx,
                 callback_id,
                 callback,
             } => {
@@ -295,11 +327,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .lock()
                     .unwrap()
                     .db_callbacks
-                    .get_table_callbacks(table)
+                    .get_table_callbacks(table_idx)
                     .register_on_delete(callback_id, callback);
             }
             PendingMutation::AddUpdateCallback {
-                table,
+                table_idx,
                 callback_id,
                 callback,
             } => {
@@ -307,11 +339,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .lock()
                     .unwrap()
                     .db_callbacks
-                    .get_table_callbacks(table)
+                    .get_table_callbacks(table_idx)
                     .register_on_update(callback_id, callback);
             }
             PendingMutation::AddReducerCallback {
-                reducer,
+                reducer_idx,
                 callback_id,
                 callback,
             } => {
@@ -319,48 +351,48 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .lock()
                     .unwrap()
                     .reducer_callbacks
-                    .register_on_reducer(reducer, callback_id, callback);
+                    .register_on_reducer(reducer_idx, callback_id, callback);
             }
-            PendingMutation::RemoveInsertCallback { table, callback_id } => {
+            PendingMutation::RemoveInsertCallback { table_idx, callback_id } => {
                 self.inner
                     .lock()
                     .unwrap()
                     .db_callbacks
-                    .get_table_callbacks(table)
+                    .get_table_callbacks(table_idx)
                     .remove_on_insert(callback_id);
             }
-            PendingMutation::RemoveDeleteCallback { table, callback_id } => {
+            PendingMutation::RemoveDeleteCallback { table_idx, callback_id } => {
                 self.inner
                     .lock()
                     .unwrap()
                     .db_callbacks
-                    .get_table_callbacks(table)
+                    .get_table_callbacks(table_idx)
                     .remove_on_delete(callback_id);
             }
-            PendingMutation::RemoveUpdateCallback { table, callback_id } => {
+            PendingMutation::RemoveUpdateCallback { table_idx, callback_id } => {
                 self.inner
                     .lock()
                     .unwrap()
                     .db_callbacks
-                    .get_table_callbacks(table)
+                    .get_table_callbacks(table_idx)
                     .remove_on_update(callback_id);
             }
-            PendingMutation::RemoveReducerCallback { reducer, callback_id } => {
+            PendingMutation::RemoveReducerCallback {
+                reducer_idx,
+                callback_id,
+            } => {
                 self.inner
                     .lock()
                     .unwrap()
                     .reducer_callbacks
-                    .remove_on_reducer(reducer, callback_id);
+                    .remove_on_reducer(reducer_idx, callback_id);
             }
-            PendingMutation::SetCallReducerFlags {
-                reducer: reducer_name,
-                flags,
-            } => {
+            PendingMutation::SetCallReducerFlags { reducer_idx, flags } => {
                 self.inner
                     .lock()
                     .unwrap()
                     .call_reducer_flags
-                    .set_flags(reducer_name, flags);
+                    .set_flags(reducer_idx, flags);
             }
         };
         Ok(())
@@ -371,9 +403,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     ///
     /// Called by the autogenerated `DbConnection` method of the same name.
     pub fn advance_one_message(&self) -> Result<bool> {
-        // Apply any pending mutations before processing a WS message,
-        // so that pending callbacks don't get skipped.
-        self.apply_pending_mutations()?;
+        // The `AfterConnecting` incoming message must always come first,
+        // before any pending mutations are processed.
+        if self.inner.lock().unwrap().processed_after_connecting {
+            // Apply any pending mutations before processing a WS message,
+            // so that pending callbacks don't get skipped.
+            self.apply_pending_mutations()?;
+        }
 
         // Deranged behavior: mpsc's `try_next` returns `Ok(None)` when the channel is closed,
         // and `Err(_)` when the channel is open and waiting. This seems exactly backwards.
@@ -399,8 +435,15 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // We call this out as an incorrect and unsupported thing to do.
         #![allow(clippy::await_holding_lock)]
 
-        let mut pending_mutations = self.pending_mutations_recv.lock().await;
         let mut recv = self.recv.lock().await;
+
+        // The `AfterConnecting` incoming message must always come first,
+        // before any pending mutations are processed.
+        if !self.inner.lock().unwrap().processed_after_connecting {
+            return Message::Ws(recv.next().await);
+        }
+
+        let mut pending_mutations = self.pending_mutations_recv.lock().await;
 
         // Always process pending mutations before WS messages, if they're available,
         // so that newly registered callbacks run on messages.
@@ -507,56 +550,58 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     }
 
     /// Called by autogenerated table access methods.
-    pub fn get_table<Row: InModule<Module = M> + Send + Sync + 'static>(
-        &self,
-        table_name: &'static str,
-    ) -> TableHandle<Row> {
+    pub fn get_table<Row: InModule<Module = M> + Send + Sync + 'static>(&self, table_idx: u32) -> TableHandle<Row> {
         let table_view = self
             .cache
             .lock()
             .unwrap()
-            .get_table::<Row>(table_name)
+            .get_table::<Row>(table_idx)
             .cloned()
             .unwrap_or_else(|| Arc::new(TableCache::default()));
         let pending_mutations = self.pending_mutations_send.clone();
         TableHandle {
             table_view,
             pending_mutations,
-            table: table_name,
+            table_idx,
         }
     }
 
     /// Called by autogenerated reducer invocation methods.
-    pub fn call_reducer<Args: Serialize + InModule<Module = M>>(
-        &self,
-        reducer_name: &'static str,
-        args: Args,
-    ) -> Result<()> {
+    ///
+    /// The `reducer_idx` is the position of the reducer,
+    /// in the known list of reducers, sorted lexicographically by name.
+    /// It is not necessarily the ID of the reducer itself,
+    /// which is resolved using this index.
+    pub fn call_reducer<Args: Serialize + InModule<Module = M>>(&self, reducer_idx: u32, args: Args) -> Result<()> {
         // TODO(centril, perf): consider using a thread local pool to avoid allocating each time.
-        let args_bsatn = bsatn::to_vec(&args)
-            .with_context(|| format!("Failed to BSATN serialize arguments for reducer {reducer_name}"))?;
+        let args_bsatn = bsatn::to_vec(&args).with_context(|| {
+            format!(
+                "Failed to BSATN serialize arguments for reducer {}",
+                M::Reducer::reducer_names()[reducer_idx as usize]
+            )
+        })?;
 
         self.queue_mutation(PendingMutation::CallReducer {
-            reducer: reducer_name,
+            reducer_idx,
             args_bsatn,
         });
         Ok(())
     }
 
     /// Called by autogenerated on `reducer_config` methods.
-    pub fn set_call_reducer_flags(&self, reducer: &'static str, flags: CallReducerFlags) {
-        self.queue_mutation(PendingMutation::SetCallReducerFlags { reducer, flags });
+    pub fn set_call_reducer_flags(&self, reducer_idx: u32, flags: CallReducerFlags) {
+        self.queue_mutation(PendingMutation::SetCallReducerFlags { reducer_idx, flags });
     }
 
     /// Called by autogenerated reducer callback methods.
     pub fn on_reducer<Args: Deserialize<'static> + InModule<Module = M> + 'static>(
         &self,
-        reducer_name: &'static str,
+        reducer_idx: u32,
         mut callback: impl FnMut(&M::EventContext, &Args) + Send + 'static,
     ) -> CallbackId {
         let callback_id = CallbackId::get_next();
         self.queue_mutation(PendingMutation::AddReducerCallback {
-            reducer: reducer_name,
+            reducer_idx,
             callback_id,
             callback: Box::new(move |ctx, args| {
                 let args = args.downcast_ref::<Args>().unwrap();
@@ -567,10 +612,10 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     }
 
     /// Called by autogenerated reducer callback methods.
-    pub fn remove_on_reducer<Args: InModule<Module = M>>(&self, reducer_name: &'static str, callback: CallbackId) {
+    pub fn remove_on_reducer<Args: InModule<Module = M>>(&self, reducer_idx: u32, callback_id: CallbackId) {
         self.queue_mutation(PendingMutation::RemoveReducerCallback {
-            reducer: reducer_name,
-            callback_id: callback,
+            reducer_idx,
+            callback_id,
         });
     }
 
@@ -613,28 +658,32 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     on_disconnect: Option<OnDisconnectCallback<M>>,
 
     call_reducer_flags: CallReducerFlagsMap,
+    reducer_idx_to_id: Box<[ReducerId]>,
+
+    /// Have we processed `ParsedMessage::AfterConnecting`?
+    ///
+    /// This handshake message must come before processing all pending mutations.
+    processed_after_connecting: bool,
 }
 
-/// Maps reducer names to the flags to use for `.call_reducer(..)`.
+/// Maps reducer indices to the flags to use for `.call_reducer(..)`.
 #[derive(Default, Clone)]
 struct CallReducerFlagsMap {
-    // TODO(centril): consider replacing the string with a type-id based map
-    // where each reducer is associated with a marker type.
-    map: HashMap<&'static str, CallReducerFlags>,
+    map: IntMap<u32, CallReducerFlags>,
 }
 
 impl CallReducerFlagsMap {
-    /// Returns the [`CallReducerFlags`] for `reducer_name`.
-    fn get_flags(&self, reducer_name: &str) -> CallReducerFlags {
-        self.map.get(reducer_name).copied().unwrap_or_default()
+    /// Returns the [`CallReducerFlags`] for `reducer_idx`.
+    fn get_flags(&self, reducer_idx: u32) -> CallReducerFlags {
+        self.map.get(&reducer_idx).copied().unwrap_or_default()
     }
 
-    /// Sets the [`CallReducerFlags`] for `reducer_name` to `flags`.
-    pub fn set_flags(&mut self, reducer_name: &'static str, flags: CallReducerFlags) {
+    /// Sets the [`CallReducerFlags`] for `reducer_idx` to `flags`.
+    pub fn set_flags(&mut self, reducer_idx: u32, flags: CallReducerFlags) {
         if flags == <_>::default() {
-            self.map.remove(reducer_name)
+            self.map.remove(&reducer_idx)
         } else {
-            self.map.insert(reducer_name, flags)
+            self.map.insert(reducer_idx, flags)
         };
     }
 }
@@ -648,8 +697,8 @@ pub struct TableHandle<Row: InModule> {
     /// so we can send callback-related [`PendingMutation`] messages.
     pending_mutations: mpsc::UnboundedSender<PendingMutation<Row::Module>>,
 
-    /// The name of the table.
-    table: &'static str,
+    /// The index of the table in the list given at handshake.
+    table_idx: u32,
 }
 
 impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
@@ -675,7 +724,7 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
     ) -> CallbackId {
         let callback_id = CallbackId::get_next();
         self.queue_mutation(PendingMutation::AddInsertCallback {
-            table: self.table,
+            table_idx: self.table_idx,
             callback: Box::new(move |ctx, row| {
                 let row = row.downcast_ref::<Row>().unwrap();
                 callback(ctx, row);
@@ -688,7 +737,7 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
     /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
     pub fn remove_on_insert(&self, callback: CallbackId) {
         self.queue_mutation(PendingMutation::RemoveInsertCallback {
-            table: self.table,
+            table_idx: self.table_idx,
             callback_id: callback,
         });
     }
@@ -700,7 +749,7 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
     ) -> CallbackId {
         let callback_id = CallbackId::get_next();
         self.queue_mutation(PendingMutation::AddDeleteCallback {
-            table: self.table,
+            table_idx: self.table_idx,
             callback: Box::new(move |ctx, row| {
                 let row = row.downcast_ref::<Row>().unwrap();
                 callback(ctx, row);
@@ -713,7 +762,7 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
     /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
     pub fn remove_on_delete(&self, callback: CallbackId) {
         self.queue_mutation(PendingMutation::RemoveDeleteCallback {
-            table: self.table,
+            table_idx: self.table_idx,
             callback_id: callback,
         });
     }
@@ -725,7 +774,7 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
     ) -> CallbackId {
         let callback_id = CallbackId::get_next();
         self.queue_mutation(PendingMutation::AddUpdateCallback {
-            table: self.table,
+            table_idx: self.table_idx,
             callback: Box::new(move |ctx, old, new| {
                 let old = old.downcast_ref::<Row>().unwrap();
                 let new = new.downcast_ref::<Row>().unwrap();
@@ -739,7 +788,7 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
     /// Called by the autogenerated implementation of the [`crate::TableWithPrimaryKey`] method of the same name.
     pub fn remove_on_update(&self, callback: CallbackId) {
         self.queue_mutation(PendingMutation::RemoveUpdateCallback {
-            table: self.table,
+            table_idx: self.table_idx,
             callback_id: callback,
         });
     }
@@ -883,6 +932,8 @@ but you must call one of them, or else the connection will never progress.
             on_connect_error: self.on_connect_error,
             on_disconnect: self.on_disconnect,
             call_reducer_flags: <_>::default(),
+            reducer_idx_to_id: <_>::default(),
+            processed_after_connecting: false,
         }));
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
         let ctx_imp = DbContextImpl {
@@ -1028,8 +1079,14 @@ fn enter_or_create_runtime() -> Result<(Option<Runtime>, runtime::Handle)> {
 enum ParsedMessage<M: SpacetimeModule> {
     InitialSubscription { db_update: M::DbUpdate, sub_id: u32 },
     TransactionUpdate(Event<M::Reducer>, Option<M::DbUpdate>),
-    IdentityToken(Identity, Box<str>, Address),
+    AfterConnecting(ws::IdentityToken, IdsToNames),
     Error(anyhow::Error),
+}
+
+struct IdsToNames {
+    reducer_ids: Box<[ReducerId]>,
+    reducer_names: Box<[Arc<str>]>,
+    table_names: Box<[Arc<str>]>,
 }
 
 fn spawn_parse_loop<M: SpacetimeModule>(
@@ -1047,16 +1104,27 @@ async fn parse_loop<M: SpacetimeModule>(
     mut recv: mpsc::UnboundedReceiver<ws::ServerMessage<BsatnFormat>>,
     send: mpsc::UnboundedSender<ParsedMessage<M>>,
 ) {
+    type TableIdMap = IntMap<TableId, u32>;
+    let mut known_table_ids: TableIdMap = <_>::default();
+    let get_table_idx = |table_ids: &TableIdMap, table_id| {
+        table_ids
+            .get(&table_id)
+            .ok_or_else(|| anyhow!("no table with id {} found", table_id))
+            .copied()
+    };
+
+    let mut known_reducer_ids: IntMap<ReducerId, u32> = <_>::default();
+
     while let Some(msg) = recv.next().await {
         send.unbounded_send(match msg {
-            ws::ServerMessage::InitialSubscription(sub) => M::DbUpdate::try_from(sub.database_update)
-                .map(|update| ParsedMessage::InitialSubscription {
-                    db_update: update,
-                    sub_id: sub.request_id,
-                })
-                .unwrap_or_else(|e| {
-                    ParsedMessage::Error(e.context("Failed to parse DbUpdate from InitialSubscription"))
-                }),
+            ws::ServerMessage::InitialSubscription(sub) => {
+                let sub_id = sub.request_id;
+                let get_table_id = &|id| get_table_idx(&known_table_ids, id);
+                M::DbUpdate::parse_update(get_table_id, sub.database_update)
+                    .map(|db_update| ParsedMessage::InitialSubscription { db_update, sub_id })
+                    .map_err(|e| e.context("Failed to parse DbUpdate from InitialSubscription"))
+                    .unwrap_or_else(ParsedMessage::Error)
+            }
             ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate {
                 status,
                 timestamp,
@@ -1065,10 +1133,16 @@ async fn parse_loop<M: SpacetimeModule>(
                 reducer_call,
                 energy_quanta_used,
                 ..
-            }) => match Status::parse_status_and_update::<M>(status) {
+            }) => match Status::parse_status_and_update::<M>(&|id| get_table_idx(&known_table_ids, id), status) {
                 Err(e) => ParsedMessage::Error(e.context("Failed to parse Status from TransactionUpdate")),
                 Ok((status, db_update)) => {
-                    let event = M::Reducer::try_from(reducer_call)
+                    let get_reducer_idx = &|reducer_id| {
+                        known_reducer_ids
+                            .get(&reducer_id)
+                            .ok_or_else(|| anyhow!("no reducer with id {} found", reducer_id))
+                            .copied()
+                    };
+                    let event = M::Reducer::parse_call_info(get_reducer_idx, reducer_call)
                         .map(|reducer| {
                             Event::Reducer(ReducerEvent {
                                 caller_address: caller_address.none_if_zero(),
@@ -1086,16 +1160,32 @@ async fn parse_loop<M: SpacetimeModule>(
                 }
             },
             ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { update, request_id: _ }) => {
-                match M::DbUpdate::parse_update(update) {
-                    Err(e) => ParsedMessage::Error(e.context("Failed to parse update from TransactionUpdateLight")),
-                    Ok(db_update) => ParsedMessage::TransactionUpdate(Event::UnknownTransaction, Some(db_update)),
-                }
+                let get_table_id = &|id| get_table_idx(&known_table_ids, id);
+                M::DbUpdate::parse_update(get_table_id, update)
+                    .map(|db_update| ParsedMessage::TransactionUpdate(Event::UnknownTransaction, Some(db_update)))
+                    .map_err(|e| e.context("Failed to parse update from TransactionUpdateLight"))
+                    .unwrap_or_else(ParsedMessage::Error)
             }
-            ws::ServerMessage::IdentityToken(ws::IdentityToken {
-                identity,
-                token,
-                address,
-            }) => ParsedMessage::IdentityToken(identity, token, address),
+            ws::ServerMessage::AfterConnecting(ws::AfterConnecting {
+                identity_token,
+                ids_to_names,
+            }) => {
+                let ws::IdsToNames {
+                    table_ids,
+                    table_names,
+                    reducer_ids,
+                    reducer_names,
+                } = ids_to_names;
+                let ids_to_names = IdsToNames {
+                    table_names,
+                    reducer_ids,
+                    reducer_names,
+                };
+
+                known_table_ids = table_ids.iter().copied().zip(0u32..).collect();
+                known_reducer_ids = ids_to_names.reducer_ids.iter().copied().zip(0u32..).collect();
+                ParsedMessage::AfterConnecting(identity_token, ids_to_names)
+            }
             ws::ServerMessage::OneOffQueryResponse(_) => {
                 unreachable!("The Rust SDK does not implement one-off queries")
             }
@@ -1115,48 +1205,48 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
     },
     // TODO: Unsubscribe { ??? },
     CallReducer {
-        reducer: &'static str,
+        reducer_idx: u32,
         args_bsatn: Vec<u8>,
     },
     AddInsertCallback {
-        table: &'static str,
+        table_idx: u32,
         callback_id: CallbackId,
         callback: RowCallback<M>,
     },
     RemoveInsertCallback {
-        table: &'static str,
+        table_idx: u32,
         callback_id: CallbackId,
     },
     AddDeleteCallback {
-        table: &'static str,
+        table_idx: u32,
         callback_id: CallbackId,
         callback: RowCallback<M>,
     },
     RemoveDeleteCallback {
-        table: &'static str,
+        table_idx: u32,
         callback_id: CallbackId,
     },
     AddUpdateCallback {
-        table: &'static str,
+        table_idx: u32,
         callback_id: CallbackId,
         callback: UpdateCallback<M>,
     },
     RemoveUpdateCallback {
-        table: &'static str,
+        table_idx: u32,
         callback_id: CallbackId,
     },
     AddReducerCallback {
-        reducer: &'static str,
+        reducer_idx: u32,
         callback_id: CallbackId,
         callback: ReducerCallback<M>,
     },
     RemoveReducerCallback {
-        reducer: &'static str,
+        reducer_idx: u32,
         callback_id: CallbackId,
     },
     Disconnect,
     SetCallReducerFlags {
-        reducer: &'static str,
+        reducer_idx: u32,
         flags: CallReducerFlags,
     },
 }

@@ -154,7 +154,7 @@ impl insert_large_table for super::RemoteReducers {
         v: EveryVecStruct,
     ) -> __anyhow::Result<()> {
         self.imp.call_reducer(
-            "insert_large_table",
+            40,
             InsertLargeTable {
                 a,
                 b,
@@ -211,7 +211,7 @@ impl insert_large_table for super::RemoteReducers {
             + 'static,
     ) -> InsertLargeTableCallbackId {
         InsertLargeTableCallbackId(self.imp.on_reducer::<InsertLargeTable>(
-            "insert_large_table",
+            40,
             Box::new(move |ctx: &super::EventContext, args: &InsertLargeTable| {
                 callback(
                     ctx, &args.a, &args.b, &args.c, &args.d, &args.e, &args.f, &args.g, &args.h, &args.i, &args.j,
@@ -222,8 +222,7 @@ impl insert_large_table for super::RemoteReducers {
         ))
     }
     fn remove_on_insert_large_table(&self, callback: InsertLargeTableCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertLargeTable>("insert_large_table", callback.0)
+        self.imp.remove_on_reducer::<InsertLargeTable>(40, callback.0)
     }
 }
 
@@ -243,6 +242,6 @@ pub trait set_flags_for_insert_large_table {
 
 impl set_flags_for_insert_large_table for super::SetReducerFlags {
     fn insert_large_table(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_large_table", flags);
+        self.imp.set_call_reducer_flags(40, flags);
     }
 }

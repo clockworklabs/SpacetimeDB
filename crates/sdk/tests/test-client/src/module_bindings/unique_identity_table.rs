@@ -35,7 +35,7 @@ pub trait UniqueIdentityTableAccess {
 impl UniqueIdentityTableAccess for super::RemoteTables {
     fn unique_identity(&self) -> UniqueIdentityTableHandle<'_> {
         UniqueIdentityTableHandle {
-            imp: self.imp.get_table::<UniqueIdentity>("unique_identity"),
+            imp: self.imp.get_table::<UniqueIdentity>(56),
             ctx: std::marker::PhantomData,
         }
     }

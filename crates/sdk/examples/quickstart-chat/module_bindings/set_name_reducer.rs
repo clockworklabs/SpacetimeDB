@@ -49,19 +49,19 @@ pub trait set_name {
 
 impl set_name for super::RemoteReducers {
     fn set_name(&self, name: String) -> __anyhow::Result<()> {
-        self.imp.call_reducer("set_name", SetName { name })
+        self.imp.call_reducer(4, SetName { name })
     }
     fn on_set_name(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String) + Send + 'static,
     ) -> SetNameCallbackId {
         SetNameCallbackId(self.imp.on_reducer::<SetName>(
-            "set_name",
+            4,
             Box::new(move |ctx: &super::EventContext, args: &SetName| callback(ctx, &args.name)),
         ))
     }
     fn remove_on_set_name(&self, callback: SetNameCallbackId) {
-        self.imp.remove_on_reducer::<SetName>("set_name", callback.0)
+        self.imp.remove_on_reducer::<SetName>(4, callback.0)
     }
 }
 
@@ -81,6 +81,6 @@ pub trait set_flags_for_set_name {
 
 impl set_flags_for_set_name for super::SetReducerFlags {
     fn set_name(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("set_name", flags);
+        self.imp.set_call_reducer_flags(4, flags);
     }
 }

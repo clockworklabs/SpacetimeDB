@@ -36,7 +36,7 @@ pub trait OneSimpleEnumTableAccess {
 impl OneSimpleEnumTableAccess for super::RemoteTables {
     fn one_simple_enum(&self) -> OneSimpleEnumTableHandle<'_> {
         OneSimpleEnumTableHandle {
-            imp: self.imp.get_table::<OneSimpleEnum>("one_simple_enum"),
+            imp: self.imp.get_table::<OneSimpleEnum>(16),
             ctx: std::marker::PhantomData,
         }
     }

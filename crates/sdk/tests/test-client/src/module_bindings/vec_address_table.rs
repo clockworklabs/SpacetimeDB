@@ -35,7 +35,7 @@ pub trait VecAddressTableAccess {
 impl VecAddressTableAccess for super::RemoteTables {
     fn vec_address(&self) -> VecAddressTableHandle<'_> {
         VecAddressTableHandle {
-            imp: self.imp.get_table::<VecAddress>("vec_address"),
+            imp: self.imp.get_table::<VecAddress>(64),
             ctx: std::marker::PhantomData,
         }
     }

@@ -52,19 +52,19 @@ pub trait insert_one_u_32 {
 
 impl insert_one_u_32 for super::RemoteReducers {
     fn insert_one_u_32(&self, n: u32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_u32", InsertOneU32 { n })
+        self.imp.call_reducer(61, InsertOneU32 { n })
     }
     fn on_insert_one_u_32(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u32) + Send + 'static,
     ) -> InsertOneU32CallbackId {
         InsertOneU32CallbackId(self.imp.on_reducer::<InsertOneU32>(
-            "insert_one_u32",
+            61,
             Box::new(move |ctx: &super::EventContext, args: &InsertOneU32| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_insert_one_u_32(&self, callback: InsertOneU32CallbackId) {
-        self.imp.remove_on_reducer::<InsertOneU32>("insert_one_u32", callback.0)
+        self.imp.remove_on_reducer::<InsertOneU32>(61, callback.0)
     }
 }
 
@@ -84,6 +84,6 @@ pub trait set_flags_for_insert_one_u_32 {
 
 impl set_flags_for_insert_one_u_32 for super::SetReducerFlags {
     fn insert_one_u_32(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_one_u32", flags);
+        self.imp.set_call_reducer_flags(61, flags);
     }
 }

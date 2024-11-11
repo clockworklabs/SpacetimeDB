@@ -156,8 +156,6 @@ impl SubscriptionManager {
                 // we copy the DatabaseTableUpdate N times,
                 // which involves cloning BSATN (binary) or product values (json).
                 .flat_map_iter(|(hash, delta)| {
-                    let table_id = delta.table_id;
-                    let table_name = delta.table_name;
                     // Store at most one copy of the serialization to BSATN
                     // and ditto for the "serialization" for JSON.
                     // Each subscriber gets to pick which of these they want,
@@ -183,7 +181,7 @@ impl SubscriptionManager {
                             Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(&delta.updates, client, &mut ops_bin)),
                             Protocol::Text => Json(memo_encode::<JsonFormat>(&delta.updates, client, &mut ops_json)),
                         };
-                        (id, table_id, table_name.clone(), update)
+                        (id, delta.table_id, delta.table_name.clone(), update)
                     })
                 })
                 .collect::<Vec<_>>()
@@ -202,8 +200,8 @@ impl SubscriptionManager {
                                 Json((tbl_upd, update)) => tbl_upd.push(update),
                             },
                             Entry::Vacant(entry) => drop(entry.insert(match update {
-                                Bsatn(update) => Bsatn(TableUpdate::new(table_id, table_name, update)),
-                                Json(update) => Json(TableUpdate::new(table_id, table_name, update)),
+                                Bsatn(update) => Bsatn(TableUpdate::new(table_id, &table_name, update)),
+                                Json(update) => Json(TableUpdate::new(table_id, &table_name, update)),
                             })),
                         }
                         tables

@@ -7,6 +7,7 @@ use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::satn::Satn as _;
 use std::fmt;
 use std::string::FromUtf8Error;
+use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -72,7 +73,7 @@ pub enum LibError {
 #[derive(thiserror::Error, Debug)]
 pub enum AuthError {
     #[error("Table `{named}` is private")]
-    TablePrivate { named: String },
+    TablePrivate { named: Arc<str> },
     #[error("Index `{named}` is private")]
     IndexPrivate { named: String },
     #[error("Sequence `{named}` is private")]
@@ -114,12 +115,12 @@ pub enum SchemaError {
     #[error("{ty} {name} columns `{columns:?}` not found  in table `{table}`")]
     ColumnsNotFound {
         name: Box<str>,
-        table: Box<str>,
+        table: Arc<str>,
         columns: Vec<ColId>,
         ty: DefType,
     },
     #[error("table `{table}` {ty} should have name. {ty} id: {id}")]
-    EmptyName { table: Box<str>, ty: DefType, id: u32 },
+    EmptyName { table: Arc<str>, ty: DefType, id: u32 },
     #[error("table `{table}` have `Constraints::unset()` for columns: {columns:?}")]
     ConstraintUnset {
         table: Box<str>,
@@ -127,10 +128,10 @@ pub enum SchemaError {
         columns: ColList,
     },
     #[error("Attempt to define a column with more than 1 auto_inc sequence: Table: `{table}`, Field: `{field}`")]
-    OneAutoInc { table: Box<str>, field: Box<str> },
+    OneAutoInc { table: Arc<str>, field: Box<str> },
     #[error("Only Btree Indexes are supported: Table: `{table}`, Index: `{index}` is a `{index_type}`")]
     OnlyBtree {
-        table: Box<str>,
+        table: Arc<str>,
         index: Box<str>,
         index_type: IndexType,
     },

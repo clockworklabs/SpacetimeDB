@@ -41,7 +41,7 @@ pub trait LargeTableTableAccess {
 impl LargeTableTableAccess for super::RemoteTables {
     fn large_table(&self) -> LargeTableTableHandle<'_> {
         LargeTableTableHandle {
-            imp: self.imp.get_table::<LargeTable>("large_table"),
+            imp: self.imp.get_table::<LargeTable>(0),
             ctx: std::marker::PhantomData,
         }
     }

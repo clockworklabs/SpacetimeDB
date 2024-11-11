@@ -35,7 +35,7 @@ pub trait OptionI32TableAccess {
 impl OptionI32TableAccess for super::RemoteTables {
     fn option_i_32(&self) -> OptionI32TableHandle<'_> {
         OptionI32TableHandle {
-            imp: self.imp.get_table::<OptionI32>("option_i32"),
+            imp: self.imp.get_table::<OptionI32>(26),
             ctx: std::marker::PhantomData,
         }
     }

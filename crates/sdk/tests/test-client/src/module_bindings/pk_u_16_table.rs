@@ -35,7 +35,7 @@ pub trait PkU16TableAccess {
 impl PkU16TableAccess for super::RemoteTables {
     fn pk_u_16(&self) -> PkU16TableHandle<'_> {
         PkU16TableHandle {
-            imp: self.imp.get_table::<PkU16>("pk_u16"),
+            imp: self.imp.get_table::<PkU16>(42),
             ctx: std::marker::PhantomData,
         }
     }

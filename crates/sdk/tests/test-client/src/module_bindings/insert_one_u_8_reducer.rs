@@ -52,19 +52,19 @@ pub trait insert_one_u_8 {
 
 impl insert_one_u_8 for super::RemoteReducers {
     fn insert_one_u_8(&self, n: u8) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_u8", InsertOneU8 { n })
+        self.imp.call_reducer(63, InsertOneU8 { n })
     }
     fn on_insert_one_u_8(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u8) + Send + 'static,
     ) -> InsertOneU8CallbackId {
         InsertOneU8CallbackId(self.imp.on_reducer::<InsertOneU8>(
-            "insert_one_u8",
+            63,
             Box::new(move |ctx: &super::EventContext, args: &InsertOneU8| callback(ctx, &args.n)),
         ))
     }
     fn remove_on_insert_one_u_8(&self, callback: InsertOneU8CallbackId) {
-        self.imp.remove_on_reducer::<InsertOneU8>("insert_one_u8", callback.0)
+        self.imp.remove_on_reducer::<InsertOneU8>(63, callback.0)
     }
 }
 
@@ -84,6 +84,6 @@ pub trait set_flags_for_insert_one_u_8 {
 
 impl set_flags_for_insert_one_u_8 for super::SetReducerFlags {
     fn insert_one_u_8(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_one_u8", flags);
+        self.imp.set_call_reducer_flags(63, flags);
     }
 }

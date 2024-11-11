@@ -53,19 +53,19 @@ pub trait insert_pk_i_8 {
 
 impl insert_pk_i_8 for super::RemoteReducers {
     fn insert_pk_i_8(&self, n: i8, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_pk_i8", InsertPkI8 { n, data })
+        self.imp.call_reducer(78, InsertPkI8 { n, data })
     }
     fn on_insert_pk_i_8(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i8, &i32) + Send + 'static,
     ) -> InsertPkI8CallbackId {
         InsertPkI8CallbackId(self.imp.on_reducer::<InsertPkI8>(
-            "insert_pk_i8",
+            78,
             Box::new(move |ctx: &super::EventContext, args: &InsertPkI8| callback(ctx, &args.n, &args.data)),
         ))
     }
     fn remove_on_insert_pk_i_8(&self, callback: InsertPkI8CallbackId) {
-        self.imp.remove_on_reducer::<InsertPkI8>("insert_pk_i8", callback.0)
+        self.imp.remove_on_reducer::<InsertPkI8>(78, callback.0)
     }
 }
 
@@ -85,6 +85,6 @@ pub trait set_flags_for_insert_pk_i_8 {
 
 impl set_flags_for_insert_pk_i_8 for super::SetReducerFlags {
     fn insert_pk_i_8(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("insert_pk_i8", flags);
+        self.imp.set_call_reducer_flags(78, flags);
     }
 }
