@@ -57,7 +57,7 @@ mod tests {
     ) -> ResultBench<()> {
         prepare_tests();
 
-        let mut db = DB::build(in_memory, false)?;
+        let mut db = DB::build(in_memory)?;
         let table_id = db.create_table::<T>(index_strategy)?;
         assert_eq!(db.count_table(&table_id)?, 0, "tables should begin empty");
 

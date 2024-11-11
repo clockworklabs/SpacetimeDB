@@ -27,7 +27,7 @@ impl BenchDatabase for SQLite {
         "sqlite"
     }
 
-    fn build(in_memory: bool, fsync: bool) -> ResultBench<Self>
+    fn build(in_memory: bool) -> ResultBench<Self>
     where
         Self: Sized,
     {
@@ -37,13 +37,9 @@ impl BenchDatabase for SQLite {
         } else {
             Connection::open(temp_dir.path().join("test.db"))?
         };
-        // For sqlite benchmarks we should set synchronous to either full or off which more
-        // closely aligns with wal_fsync=true and wal_fsync=false respectively in stdb.
-        db.execute_batch(if fsync {
-            "PRAGMA journal_mode = WAL; PRAGMA synchronous = full;"
-        } else {
-            "PRAGMA journal_mode = WAL; PRAGMA synchronous = off;"
-        })?;
+        // For sqlite benchmarks we should set synchronous to off which more
+        // closely aligns with wal_fsync=false in stdb.
+        db.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = off;")?;
 
         Ok(SQLite {
             db,
