@@ -28,7 +28,7 @@ pub type TxOffsetIndex = IndexFile<TxOffset>;
 /// representation.
 pub trait Repo: Clone {
     /// The type of log segments managed by this repo, which must behave like a file.
-    type Segment: io::Read + io::Write + FileLike + io::Seek;
+    type Segment: io::Read + io::Write + FileLike + io::Seek + Send + Sync + 'static;
 
     /// Create a new segment with the minimum transaction offset `offset`.
     ///
