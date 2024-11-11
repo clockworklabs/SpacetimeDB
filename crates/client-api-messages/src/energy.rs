@@ -13,6 +13,21 @@ pub struct EnergyQuanta {
     pub quanta: u128,
 }
 
+#[derive(Copy, Clone)]
+#[repr(transparent)]
+#[must_use]
+/// Time taken while executing datastore operations, for which energy should be charged.
+///
+/// A transparent newtype around [`Duration`], to enable a `must_use`
+/// annotation so that we don't forget to charge energy.
+pub struct DatastoreComputeDuration(pub Duration);
+
+impl DatastoreComputeDuration {
+    pub fn from_micros(micros: u64) -> Self {
+        Self(Duration::from_micros(micros))
+    }
+}
+
 impl EnergyQuanta {
     pub const ZERO: Self = EnergyQuanta { quanta: 0 };
 
@@ -42,6 +57,15 @@ impl EnergyQuanta {
     pub fn from_memory_usage(bytes_stored: u64, storage_period: Duration) -> Self {
         let byte_seconds = Self::from_disk_usage(bytes_stored, storage_period).get();
         Self::new(byte_seconds * Self::ENERGY_PER_MEM_BYTE_SEC)
+    }
+
+    // TODO(energy): This should probably be dynamically specified by the server owner at startup,
+    // as the price/value per time to operate a machine varies wildly depending on the specific hardware.
+    const ENERGY_PER_DATASTORE_MICROSECOND: u128 = 100;
+
+    pub fn from_datastore_compute_duration(compute_time: DatastoreComputeDuration) -> Self {
+        let micros = compute_time.0.as_micros();
+        Self::new(micros * Self::ENERGY_PER_DATASTORE_MICROSECOND)
     }
 }
 

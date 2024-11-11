@@ -1,5 +1,7 @@
 use crate::control_db::ControlDb;
-use spacetimedb::energy::{EnergyBalance, EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
+use spacetimedb::energy::{
+    DatastoreComputeDuration, EnergyBalance, EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint,
+};
 use spacetimedb::messages::control_db::Database;
 use spacetimedb_lib::Identity;
 use std::time::Duration;
@@ -44,6 +46,11 @@ impl EnergyMonitor for StandaloneEnergyMonitor {
     fn record_memory_usage(&self, database: &Database, _instance_id: u64, mem_usage: u64, period: Duration) {
         let amount = EnergyQuanta::from_memory_usage(mem_usage, period);
         self.withdraw_energy(database.owner_identity, amount)
+    }
+
+    fn record_datastore_time(&self, module_identity: Identity, execution_duration: DatastoreComputeDuration) {
+        let amount = EnergyQuanta::from_datastore_compute_duration(execution_duration);
+        self.withdraw_energy(module_identity, amount)
     }
 }
 

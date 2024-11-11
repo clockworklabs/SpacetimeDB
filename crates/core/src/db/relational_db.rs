@@ -13,6 +13,7 @@ use super::datastore::{
 };
 use super::db_metrics::DB_METRICS;
 use crate::db::datastore::system_tables::{StModuleRow, WASM_MODULE};
+use crate::energy::{DatastoreComputeDuration, EnergyMonitor};
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::{ReducerContext, Workload};
 use crate::messages::control_db::HostType;
@@ -86,6 +87,7 @@ pub struct RelationalDB {
     inner: Locking,
     durability: Option<Arc<dyn Durability<TxData = Txdata>>>,
     snapshot_worker: Option<Arc<SnapshotWorker>>,
+    energy_monitor: Arc<dyn EnergyMonitor>,
 
     row_count_fn: RowCountFn,
     /// Function to determine the durable size on disk.
@@ -181,6 +183,7 @@ impl RelationalDB {
         inner: Locking,
         durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
         snapshot_repo: Option<Arc<SnapshotRepository>>,
+        energy_monitor: Arc<dyn EnergyMonitor>,
     ) -> Self {
         let (durability, disk_size_fn) = durability.unzip();
         let snapshot_worker =
@@ -195,6 +198,8 @@ impl RelationalDB {
 
             row_count_fn: default_row_count_fn(database_identity),
             disk_size_fn,
+
+            energy_monitor,
 
             _lock: lock,
         }
@@ -286,6 +291,7 @@ impl RelationalDB {
         history: impl durability::History<TxData = Txdata>,
         durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
         snapshot_repo: Option<Arc<SnapshotRepository>>,
+        energy_monitor: Arc<dyn EnergyMonitor>,
     ) -> Result<(Self, ConnectedClients), DBError> {
         log::trace!("[{}] DATABASE: OPEN", database_identity);
 
@@ -312,6 +318,7 @@ impl RelationalDB {
             inner,
             durability,
             snapshot_repo,
+            energy_monitor,
         );
 
         if let Some(meta) = db.metadata()? {
@@ -565,6 +572,11 @@ impl RelationalDB {
         Ok(AlgebraicValue::decode(col_ty, &mut &*bytes)?)
     }
 
+    fn record_compute_time(&self, datastore_compute_time: DatastoreComputeDuration) {
+        self.energy_monitor
+            .record_datastore_time(self.database_identity, datastore_compute_time);
+    }
+
     /// Begin a transaction.
     ///
     /// **Note**: this call **must** be paired with [`Self::rollback_mut_tx`] or
@@ -589,19 +601,29 @@ impl RelationalDB {
     #[tracing::instrument(skip_all)]
     pub fn rollback_mut_tx(&self, tx: MutTx) {
         log::trace!("ROLLBACK MUT TX");
-        self.inner.rollback_mut_tx(tx)
+        let compute_duration = self.inner.rollback_mut_tx(tx);
+        self.record_compute_time(compute_duration);
     }
 
     #[tracing::instrument(skip_all)]
+    /// Roll back the mutations performed by `tx` and convert it into an immutable [`Tx`].
+    ///
+    /// The returned [`Tx`] will inherit the tracked datastore compute time from `self`.
+    /// Callers should be sure to charge energy for the compute time on that [`TxId`].
+    /// This is handled automatically by calling [`Self::release_tx`] on the returned [`Tx`].
     pub fn rollback_mut_tx_downgrade(&self, tx: MutTx, workload: Workload) -> Tx {
         log::trace!("ROLLBACK MUT TX");
         self.inner.rollback_mut_tx_downgrade(tx, workload)
     }
 
     #[tracing::instrument(skip_all)]
+    /// Returns a [`DatastoreComputeDuration`]
+    /// representing the total time spent performing datastore operations during the transaction,
+    /// for which energy should be charged.
     pub fn release_tx(&self, tx: Tx) {
         log::trace!("RELEASE TX");
-        self.inner.release_tx(tx)
+        let compute_duration = self.inner.release_tx(tx);
+        self.record_compute_time(compute_duration);
     }
 
     #[tracing::instrument(skip_all)]
@@ -610,7 +632,7 @@ impl RelationalDB {
 
         // TODO: Never returns `None` -- should it?
         let reducer_context = tx.ctx.reducer_context().cloned();
-        let Some(tx_data) = self.inner.commit_mut_tx(tx)? else {
+        let Some((tx_data, datastore_compute_time)) = self.inner.commit_mut_tx(tx)? else {
             return Ok(None);
         };
 
@@ -620,10 +642,17 @@ impl RelationalDB {
             Self::do_durability(&**durability, reducer_context.as_ref(), &tx_data)
         }
 
+        self.record_compute_time(datastore_compute_time);
+
         Ok(Some(tx_data))
     }
 
     #[tracing::instrument(skip_all)]
+    /// Commit the mutations in `tx` and convert it into an immutable [`Tx`].
+    ///
+    /// The returned [`Tx`] will inherit the tracked datastore compute time from `self`.
+    /// Callers should be sure to charge energy for the compute time on that [`Tx`].
+    /// This is handled automatically by calling [`Self::release_tx`] on the returned [`Tx`].
     pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> Result<Option<(TxData, Tx)>, DBError> {
         log::trace!("COMMIT MUT TX");
 
@@ -1318,6 +1347,8 @@ fn default_row_count_fn(db: Identity) -> RowCountFn {
 
 #[cfg(any(test, feature = "test"))]
 pub mod tests_utils {
+    use crate::energy::NullEnergyMonitor;
+
     use super::*;
     use core::ops::Deref;
     use durability::EmptyHistory;
@@ -1496,6 +1527,7 @@ pub mod tests_utils {
                 history,
                 durability,
                 snapshot_repo,
+                Arc::new(NullEnergyMonitor),
             )?;
             debug_assert!(connected_clients.is_empty());
             let db = db.with_row_count(Self::row_count_fn());
@@ -1533,6 +1565,7 @@ mod tests {
         ST_SEQUENCE_ID, ST_TABLE_ID,
     };
     use crate::db::relational_db::tests_utils::TestDB;
+    use crate::energy::NullEnergyMonitor;
     use crate::error::IndexError;
     use crate::execution_context::ReducerContext;
     use anyhow::bail;
@@ -1628,6 +1661,7 @@ mod tests {
             EmptyHistory::new(),
             None,
             None,
+            Arc::new(NullEnergyMonitor),
         ) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
