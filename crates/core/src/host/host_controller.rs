@@ -15,7 +15,6 @@ use crate::{db, host};
 use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
-use futures::future::BoxFuture;
 use log::{info, trace, warn};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -41,8 +40,16 @@ type HostCell = Arc<AsyncRwLock<Option<Host>>>;
 /// The registry of all running hosts.
 type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
 
-/// A future that resolves to a [`durability::Durability`] instance.
-pub type DynDurabilityFut = BoxFuture<'static, anyhow::Result<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>>;
+pub type ExternalDurability = (Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn);
+
+#[async_trait]
+pub trait DurabilityProvider: Send + Sync + 'static {
+    async fn durability(
+        &self,
+        replica_id: u64,
+        database_identity: &Identity,
+    ) -> anyhow::Result<Option<ExternalDurability>>;
+}
 
 #[async_trait]
 pub trait ExternalStorage: Send + Sync + 'static {
@@ -82,6 +89,8 @@ pub struct HostController {
     program_storage: ProgramStorage,
     /// The [`EnergyMonitor`] used by this controller.
     energy_monitor: Arc<dyn EnergyMonitor>,
+    /// Provides implementations of [`Durability`] for each replica.
+    durability: Arc<dyn DurabilityProvider>,
 }
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Serialize, Debug)]
@@ -175,6 +184,7 @@ impl HostController {
         default_config: db::Config,
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
+        durability: Arc<dyn DurabilityProvider>,
     ) -> Self {
         Self {
             hosts: <_>::default(),
@@ -182,6 +192,7 @@ impl HostController {
             default_config,
             program_storage,
             energy_monitor,
+            durability,
         }
     }
 
@@ -209,15 +220,8 @@ impl HostController {
     ///
     /// See also: [`Self::get_module_host`]
     #[tracing::instrument(skip_all)]
-    pub async fn get_or_launch_module_host(
-        &self,
-        database: Database,
-        replica_id: u64,
-        durability: DynDurabilityFut,
-    ) -> anyhow::Result<ModuleHost> {
-        let mut rx = self
-            .watch_maybe_launch_module_host(database, replica_id, durability)
-            .await?;
+    pub async fn get_or_launch_module_host(&self, database: Database, replica_id: u64) -> anyhow::Result<ModuleHost> {
+        let mut rx = self.watch_maybe_launch_module_host(database, replica_id).await?;
         let module = rx.borrow_and_update();
         Ok(module.clone())
     }
@@ -234,7 +238,6 @@ impl HostController {
         &self,
         database: Database,
         replica_id: u64,
-        durability: DynDurabilityFut,
     ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
         // Try a read lock first.
         {
@@ -259,7 +262,7 @@ impl HostController {
         }
 
         trace!("launch host {}/{}", database.database_identity, replica_id);
-        let host = self.try_init_host(database, replica_id, durability).await?;
+        let host = self.try_init_host(database, replica_id).await?;
 
         let rx = host.module.subscribe();
         *guard = Some(host);
@@ -305,7 +308,6 @@ impl HostController {
         database: Database,
         host_type: HostType,
         replica_id: u64,
-        durability: DynDurabilityFut,
         program_bytes: Box<[u8]>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let program = Program {
@@ -324,7 +326,7 @@ impl HostController {
         let mut host = match guard.take() {
             None => {
                 trace!("host not running, try_init");
-                self.try_init_host(database, replica_id, durability).await?
+                self.try_init_host(database, replica_id).await?
             }
             Some(host) => {
                 trace!("host found, updating");
@@ -362,7 +364,6 @@ impl HostController {
         &self,
         database: Database,
         replica_id: u64,
-        durability: DynDurabilityFut,
         expected_hash: Option<Hash>,
     ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
         trace!("custom bootstrap {}/{}", database.database_identity, replica_id);
@@ -374,7 +375,7 @@ impl HostController {
         let mut guard = self.acquire_write_lock(replica_id).await;
         let mut host = match guard.take() {
             Some(host) => host,
-            None => self.try_init_host(database, replica_id, durability).await?,
+            None => self.try_init_host(database, replica_id).await?,
         };
         let module = host.module.subscribe();
 
@@ -496,14 +497,13 @@ impl HostController {
         lock.read_owned().await
     }
 
-    async fn try_init_host(
-        &self,
-        database: Database,
-        replica_id: u64,
-        durability: DynDurabilityFut,
-    ) -> anyhow::Result<Host> {
+    async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
+        let durability = self
+            .durability
+            .durability(replica_id, &database.database_identity)
+            .await?;
         Host::try_init(
-            &self.get_replica_path(&database.database_identity, replica_id),
+            &get_replica_path(&self.root_dir, &database.database_identity, replica_id),
             self.default_config,
             database,
             replica_id,
@@ -515,16 +515,16 @@ impl HostController {
         .await
     }
 
-    pub fn get_replica_path(&self, database_address: &Identity, replica_id: u64) -> PathBuf {
-        let mut db_path = self.root_dir.to_path_buf();
-        db_path.extend([&*database_address.to_hex(), &replica_id.to_string()]);
-        db_path.push("database");
-        db_path
-    }
-
     pub fn get_config(&self) -> &db::Config {
         &self.default_config
     }
+}
+
+pub fn get_replica_path(root_dir: &Path, database_address: &Identity, replica_id: u64) -> PathBuf {
+    let mut db_path = root_dir.to_path_buf();
+    db_path.extend([&*database_address.to_hex(), &replica_id.to_string()]);
+    db_path.push("database");
+    db_path
 }
 
 fn stored_program_hash(db: &RelationalDB) -> anyhow::Result<Option<Hash>> {
@@ -705,7 +705,7 @@ impl Host {
         database: Database,
         replica_id: u64,
         program_storage: ProgramStorage,
-        durability: DynDurabilityFut,
+        durability: Option<ExternalDurability>,
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
     ) -> anyhow::Result<Self> {
@@ -721,18 +721,17 @@ impl Host {
                 None,
             )?,
             db::Storage::Disk => {
-                let (durability, fn_size) = durability.await.unwrap();
+                // History trait does not let use `DynDurabilityFut` directly
                 let snapshot_repo =
                     relational_db::open_snapshot_repo(&db_path, database.database_identity, replica_id)?;
-                let (local_durability, _) = relational_db::local_durability(&db_path).await?;
-                let history = local_durability.clone();
+                let (history, _) = relational_db::local_durability(&db_path).await?;
 
                 RelationalDB::open(
                     &db_path,
                     database.database_identity,
                     database.owner_identity,
                     history,
-                    Some((durability, fn_size)),
+                    durability,
                     Some(snapshot_repo),
                 )?
             }

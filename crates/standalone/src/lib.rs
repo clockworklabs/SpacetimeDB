@@ -19,16 +19,18 @@ use spacetimedb::client::ClientActorIndex;
 use spacetimedb::db::relational_db;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{DiskStorage, DynDurabilityFut, HostController, UpdateDatabaseResult};
+use spacetimedb::host::{
+    get_replica_path, DiskStorage, DurabilityProvider, ExternalDurability, HostController, UpdateDatabaseResult,
+};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::{db, stdb_path};
 use spacetimedb_client_api::auth::LOCALHOST;
-use spacetimedb_client_api::{Host, NodeDelegate};
+use spacetimedb_client_api::{find_database, Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use std::fs::File;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -50,12 +52,18 @@ impl StandaloneEnv {
         let control_db = ControlDb::new().context("failed to initialize control db")?;
         let energy_monitor = Arc::new(StandaloneEnergyMonitor::new(control_db.clone()));
         let program_store = Arc::new(DiskStorage::new(stdb_path("control_node/program_bytes")).await?);
+        let root_dir = stdb_path("worker_node/replicas");
+        let durability = Arc::new(StandaloneDurabilityProvider {
+            config,
+            root_dir: root_dir.clone(),
+        });
 
         let host_controller = HostController::new(
-            stdb_path("worker_node/replicas").into(),
+            root_dir.into(),
             config,
             program_store.clone(),
             energy_monitor,
+            durability,
         );
         let client_actor_index = ClientActorIndex::new();
         let (public_key, private_key, public_key_bytes) = get_or_create_keys()?;
@@ -76,16 +84,29 @@ impl StandaloneEnv {
         }))
     }
 
-    pub fn durability(&self, address: &Identity, replica_id: u64) -> DynDurabilityFut {
-        match self.host_controller.get_config().storage {
+    pub async fn find_database(&self, replica_id: u64) -> io::Result<Database> {
+        Ok(find_database(self, replica_id).unwrap())
+    }
+}
+
+struct StandaloneDurabilityProvider {
+    config: Config,
+    root_dir: PathBuf,
+}
+
+#[async_trait]
+impl DurabilityProvider for StandaloneDurabilityProvider {
+    async fn durability(
+        &self,
+        replica_id: u64,
+        database_identity: &Identity,
+    ) -> anyhow::Result<Option<ExternalDurability>> {
+        match self.config.storage {
             db::Storage::Disk => {
-                let db_path = self.host_controller.get_replica_path(address, replica_id);
-                Box::pin(async move { relational_db::local_durability_dyn(db_path).await.map_err(Into::into) })
+                let db_path = get_replica_path(&self.root_dir, &database_identity, replica_id);
+                relational_db::local_durability_dyn(db_path).await.map(Some)
             }
-            db::Storage::Memory => {
-                let err_fut = async { Err(anyhow::anyhow!("Memory storage not supported for durability")) };
-                Box::pin(err_fut)
-            }
+            db::Storage::Memory => Ok(None),
         }
     }
 }
@@ -199,9 +220,8 @@ impl NodeDelegate for StandaloneEnv {
             .get_database_by_id(database_id)?
             .ok_or_else(|| anyhow::anyhow!("Database {} has no associated database", database_id))?;
 
-        let durability = self.durability(&database.database_identity, leader.id);
         self.host_controller
-            .get_or_launch_module_host(database, leader.id, durability)
+            .get_or_launch_module_host(database, leader.id)
             .await
             .context("failed to get or launch module host")?;
 
@@ -317,9 +337,8 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .leader(database_id)
                     .await?
                     .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
-                let durability = self.durability(&database_identity, leader.replica_id);
                 let update_result = leader
-                    .update(database, spec.host_type, spec.program_bytes.into(), durability)
+                    .update(database, spec.host_type, spec.program_bytes.into())
                     .await?;
                 if update_result.was_successful() {
                     let replicas = self.control_db.get_replicas_by_database(database_id)?;

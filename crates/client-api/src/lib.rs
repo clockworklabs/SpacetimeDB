@@ -1,3 +1,4 @@
+use std::io;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -7,7 +8,7 @@ use http::StatusCode;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{DynDurabilityFut, HostController, ModuleHost, NoSuchModule, UpdateDatabaseResult};
+use spacetimedb::host::{HostController, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
@@ -133,10 +134,9 @@ impl Host {
         database: Database,
         host_type: HostType,
         program_bytes: Box<[u8]>,
-        durability: DynDurabilityFut,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.host_controller
-            .update_module_host(database, host_type, self.replica_id, durability, program_bytes)
+            .update_module_host(database, host_type, self.replica_id, program_bytes)
             .await
     }
 }
@@ -356,4 +356,21 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 pub fn log_and_500(e: impl std::fmt::Display) -> ErrorResponse {
     log::error!("internal error: {e:#}");
     (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")).into()
+}
+
+pub fn find_database(ctx: &impl ControlStateReadAccess, replica: u64) -> io::Result<Database> {
+    let replica = ctx
+        .get_replica_by_id(replica)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("not found: replica {replica}")))?;
+
+    ctx.get_database_by_id(replica.database_id)
+        .map(|db| db.map(|db| db))
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("not found: database {}", replica.database_id),
+            )
+        })
 }
