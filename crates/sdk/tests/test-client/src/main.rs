@@ -1616,23 +1616,21 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
             .ok_or_else(|| anyhow::anyhow!("wrong value received: `{val}`, expected: `{eq}`"))
     }
 
-    // Have two actors, Alice (0) and Bob (1), connect to the module.
-    let connect_counter = TestCounter::new();
-    let actors = ["alice", "bob"];
-    let conns = actors.map(|who| connect_with_then(&connect_counter, who, |b| b.with_light_mode(true), |_| {}));
-    // Ensure both have finished connecting so that there isn't a race condition
-    // between Alice executing the reducer and Bob being connected.
-    connect_counter.wait_for_all();
-
     let counter = TestCounter::new();
+    let pre_ins_counter = TestCounter::new();
+
+    // Have two actors, Alice (0) and Bob (1), connect to the module.
     // For each actor, subscribe to the `OneU8` table.
     // The choice of table is a fairly random one: just one of the simpler tables.
-    for (who, conn) in actors.into_iter().zip(conns.iter()) {
-        let sub_applied = counter.add_test(format!("sub_applied_{who}"));
+    let conns = ["alice", "bob"].map(|who| {
+        let conn = connect_with_then(&pre_ins_counter, who, |b| b.with_light_mode(true), |_| {});
+        let sub_applied = pre_ins_counter.add_test(format!("sub_applied_{who}"));
+
         let counter2 = counter.clone();
         conn.subscription_builder()
             .on_applied(move |ctx| {
                 sub_applied(Ok(()));
+
                 // Test that we are notified when a row is inserted.
                 let db = ctx.db();
                 let mut one_u8_inserted = Some(counter2.add_test(format!("one_u8_inserted_{who}")));
@@ -1653,7 +1651,14 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
             })
             .on_error(|_| panic!("Subscription error"))
             .subscribe(["SELECT * FROM one_u8", "SELECT * FROM one_u16"]);
-    }
+        conn
+    });
+
+    // Ensure both have finished connecting
+    // and finished subscribing so that there isn't a race condition
+    // between Alice executing the reducer and Bob being connected
+    // or Alice executing the reducer and either having subscriptions applied.
+    pre_ins_counter.wait_for_all();
 
     // Alice executes a reducer.
     // This should cause a row callback to be received by Alice and Bob.
