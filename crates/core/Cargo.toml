@@ -45,7 +45,6 @@ clap.workspace = true
 crossbeam-channel.workspace = true
 derive_more.workspace = true
 dirs.workspace = true
-email_address.workspace = true
 enum-as-inner.workspace = true
 enum-map.workspace = true
 flate2.workspace = true
@@ -127,7 +126,5 @@ proptest-derive.workspace = true
 rand.workspace = true
 env_logger.workspace = true
 pretty_assertions.workspace = true
-jsonwebkey = { version = "0.3.5", features = ["generate", "jwt-convert"] }
 jsonwebtoken.workspace = true
-axum-test = "16.2.0"
 axum.workspace = true

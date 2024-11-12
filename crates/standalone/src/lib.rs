@@ -11,8 +11,6 @@ use anyhow::{ensure, Context};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use energy_monitor::StandaloneEnergyMonitor;
-use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
-use spacetimedb::auth::JwtKeys;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
@@ -21,7 +19,7 @@ use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::worker_metrics::WORKER_METRICS;
-use spacetimedb_client_api::auth::LOCALHOST;
+use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_paths::server::{PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
@@ -34,9 +32,9 @@ pub struct StandaloneEnv {
     program_store: Arc<DiskStorage>,
     host_controller: HostController,
     client_actor_index: ClientActorIndex,
-    jwt_keys: JwtKeys,
     metrics_registry: prometheus::Registry,
     _pid_file: PidFile,
+    auth_provider: auth::DefaultJwtAuthProvider,
 }
 
 impl StandaloneEnv {
@@ -69,6 +67,8 @@ impl StandaloneEnv {
         let client_actor_index = ClientActorIndex::new();
         let jwt_keys = certs.get_or_create_keys()?;
 
+        let auth_env = auth::default_auth_environment(jwt_keys, LOCALHOST.to_owned());
+
         let metrics_registry = prometheus::Registry::new();
         metrics_registry.register(Box::new(&*WORKER_METRICS)).unwrap();
         metrics_registry.register(Box::new(&*DB_METRICS)).unwrap();
@@ -78,9 +78,9 @@ impl StandaloneEnv {
             program_store,
             host_controller,
             client_actor_index,
-            jwt_keys,
             metrics_registry,
             _pid_file,
+            auth_provider: auth_env,
         }))
     }
 
@@ -102,20 +102,10 @@ impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
         &self.client_actor_index
     }
 
-    fn public_key(&self) -> &DecodingKey {
-        &self.jwt_keys.public
-    }
+    type JwtAuthProviderT = auth::DefaultJwtAuthProvider;
 
-    fn local_issuer(&self) -> String {
-        LOCALHOST.to_owned()
-    }
-
-    fn public_key_bytes(&self) -> &[u8] {
-        &self.jwt_keys.public_pem
-    }
-
-    fn private_key(&self) -> &EncodingKey {
-        &self.jwt_keys.private
+    fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT {
+        &self.auth_provider
     }
 }
 
