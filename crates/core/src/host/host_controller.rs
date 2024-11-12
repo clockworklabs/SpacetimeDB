@@ -1,7 +1,9 @@
 use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
+use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::database_logger::DatabaseLogger;
+use crate::db;
 use crate::db::datastore::traits::Program;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{self, RelationalDB};
@@ -11,7 +13,6 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::spawn_rayon;
-use crate::{db, host};
 use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
 use durability::EmptyHistory;
@@ -21,10 +22,10 @@ use serde::Serialize;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability as durability;
 use spacetimedb_lib::hash_bytes;
+use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
 use spacetimedb_sats::hash::Hash;
 use std::fmt;
 use std::future::Future;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
@@ -64,13 +65,8 @@ pub struct HostController {
     /// Map of all hosts managed by this controller,
     /// keyed by database instance id.
     hosts: Hosts,
-    /// The directory to create replicas in.
-    ///
-    /// For example:
-    ///
-    /// - `$STDB_PATH/worker_node/replicas`
-    /// - `$STDB_PATH/replicas`
-    root_dir: Arc<Path>,
+    /// The root directory for database data.
+    pub data_dir: Arc<ServerDataDir>,
     /// The default configuration to use for databases created by this
     /// controller.
     default_config: db::Config,
@@ -78,6 +74,19 @@ pub struct HostController {
     program_storage: ProgramStorage,
     /// The [`EnergyMonitor`] used by this controller.
     energy_monitor: Arc<dyn EnergyMonitor>,
+    /// The runtimes for running our modules.
+    runtimes: Arc<HostRuntimes>,
+}
+
+struct HostRuntimes {
+    wasmtime: WasmtimeRuntime,
+}
+
+impl HostRuntimes {
+    fn new(data_dir: &ServerDataDir) -> Arc<Self> {
+        let wasmtime = WasmtimeRuntime::new(data_dir);
+        Arc::new(Self { wasmtime })
+    }
 }
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Serialize, Debug)]
@@ -167,17 +176,18 @@ impl From<&EventStatus> for ReducerOutcome {
 
 impl HostController {
     pub fn new(
-        root_dir: Arc<Path>,
+        data_dir: Arc<ServerDataDir>,
         default_config: db::Config,
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
     ) -> Self {
         Self {
             hosts: <_>::default(),
-            root_dir,
             default_config,
             program_storage,
             energy_monitor,
+            runtimes: HostRuntimes::new(&data_dir),
+            data_dir,
         }
     }
 
@@ -319,7 +329,13 @@ impl HostController {
             }
         };
         let update_result = host
-            .update_module(host_type, program, self.unregister_fn(replica_id))
+            .update_module(
+                self.runtimes.clone(),
+                host_type,
+                program,
+                self.energy_monitor.clone(),
+                self.unregister_fn(replica_id),
+            )
             .await?;
 
         *guard = Some(host);
@@ -390,7 +406,13 @@ impl HostController {
             );
             let program = load_program(&self.program_storage, program_hash).await?;
             let update_result = host
-                .update_module(host_type, program, self.unregister_fn(replica_id))
+                .update_module(
+                    self.runtimes.clone(),
+                    host_type,
+                    program,
+                    self.energy_monitor.clone(),
+                    self.unregister_fn(replica_id),
+                )
                 .await?;
             match update_result {
                 UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {
@@ -483,16 +505,7 @@ impl HostController {
     }
 
     async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
-        Host::try_init(
-            &self.root_dir,
-            self.default_config,
-            database,
-            replica_id,
-            self.program_storage.clone(),
-            self.energy_monitor.clone(),
-            self.unregister_fn(replica_id),
-        )
-        .await
+        Host::try_init(self, database, replica_id).await
     }
 }
 
@@ -502,12 +515,12 @@ fn stored_program_hash(db: &RelationalDB) -> anyhow::Result<Option<Hash>> {
 }
 
 async fn make_replica_ctx(
+    path: ReplicaDir,
     database: Database,
     replica_id: u64,
     relational_db: Arc<RelationalDB>,
 ) -> anyhow::Result<ReplicaContext> {
-    let log_path = DatabaseLogger::filepath(&database.database_identity, replica_id);
-    let logger = tokio::task::block_in_place(|| Arc::new(DatabaseLogger::open(log_path)));
+    let logger = tokio::task::block_in_place(move || Arc::new(DatabaseLogger::open_today(path.module_logs())));
     let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.owner_identity);
 
     Ok(ReplicaContext {
@@ -522,6 +535,7 @@ async fn make_replica_ctx(
 /// Initialize a module host for the given program.
 /// The passed replica_ctx may not be configured for this version of the program's database schema yet.
 async fn make_module_host(
+    runtimes: Arc<HostRuntimes>,
     host_type: HostType,
     replica_ctx: Arc<ReplicaContext>,
     scheduler: Scheduler,
@@ -539,7 +553,7 @@ async fn make_module_host(
                     energy_monitor,
                 };
                 let start = Instant::now();
-                let actor = host::wasmtime::make_actor(mcc)?;
+                let actor = runtimes.wasmtime.make_actor(mcc)?;
                 trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
                 ModuleHost::new(actor, unregister)
             }
@@ -564,6 +578,7 @@ struct LaunchedModule {
     scheduler_starter: SchedulerStarter,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn launch_module(
     database: Database,
     replica_id: u64,
@@ -571,15 +586,18 @@ async fn launch_module(
     on_panic: impl Fn() + Send + Sync + 'static,
     relational_db: Arc<RelationalDB>,
     energy_monitor: Arc<dyn EnergyMonitor>,
+    replica_dir: ReplicaDir,
+    runtimes: Arc<HostRuntimes>,
 ) -> anyhow::Result<(Program, LaunchedModule)> {
     let address = database.database_identity;
     let host_type = database.host_type;
 
-    let replica_ctx = make_replica_ctx(database, replica_id, relational_db)
+    let replica_ctx = make_replica_ctx(replica_dir, database, replica_id, relational_db)
         .await
         .map(Arc::new)?;
     let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db.clone());
     let (program, module_host) = make_module_host(
+        runtimes.clone(),
         host_type,
         replica_ctx.clone(),
         scheduler.clone(),
@@ -655,9 +673,6 @@ struct Host {
     /// The task collects metrics from the `replica_ctx`, and so stays alive as long
     /// as the `replica_ctx` is live. The task is aborted when [`Host`] is dropped.
     metrics_task: AbortHandle,
-
-    /// [`EnergyMonitor`] to use for [`Host::update_module`].
-    energy_monitor: Arc<dyn EnergyMonitor>,
 }
 
 impl Host {
@@ -666,22 +681,21 @@ impl Host {
     /// Note that this does **not** run module initialization routines, but may
     /// create on-disk artifacts if the host / database did not exist.
     #[tracing::instrument(skip_all)]
-    async fn try_init(
-        root_dir: &Path,
-        config: db::Config,
-        database: Database,
-        replica_id: u64,
-        program_storage: ProgramStorage,
-        energy_monitor: Arc<dyn EnergyMonitor>,
-        on_panic: impl Fn() + Send + Sync + 'static,
-    ) -> anyhow::Result<Self> {
-        let mut db_path = root_dir.to_path_buf();
-        db_path.extend([&*database.database_identity.to_hex(), &*replica_id.to_string()]);
-        db_path.push("database");
+    async fn try_init(host_controller: &HostController, database: Database, replica_id: u64) -> anyhow::Result<Self> {
+        let HostController {
+            data_dir,
+            default_config: config,
+            program_storage,
+            energy_monitor,
+            runtimes,
+            ..
+        } = host_controller;
+        let on_panic = host_controller.unregister_fn(replica_id);
+        let replica_dir = data_dir.replica(replica_id);
 
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
-                &db_path,
+                &replica_dir,
                 database.database_identity,
                 database.owner_identity,
                 EmptyHistory::new(),
@@ -689,12 +703,12 @@ impl Host {
                 None,
             )?,
             db::Storage::Disk => {
-                let (durability, disk_size_fn) = relational_db::local_durability(&db_path).await?;
+                let (durability, disk_size_fn) = relational_db::local_durability(replica_dir.commit_log()).await?;
                 let snapshot_repo =
-                    relational_db::open_snapshot_repo(&db_path, database.database_identity, replica_id)?;
+                    relational_db::open_snapshot_repo(replica_dir.snapshots(), database.database_identity, replica_id)?;
                 let history = durability.clone();
                 RelationalDB::open(
-                    &db_path,
+                    &replica_dir,
                     database.database_identity,
                     database.owner_identity,
                     history,
@@ -703,48 +717,41 @@ impl Host {
                 )?
             }
         };
+        let (program, program_needs_init) = match db.program()? {
+            // Launch module with program from existing database.
+            Some(program) => (program, false),
+            // Database is empty, load program from external storage and run
+            // initialization.
+            None => (load_program(program_storage, database.initial_program).await?, true),
+        };
+
+        let (program, launched) = launch_module(
+            database,
+            replica_id,
+            program,
+            on_panic,
+            Arc::new(db),
+            energy_monitor.clone(),
+            replica_dir,
+            runtimes.clone(),
+        )
+        .await?;
+
+        if program_needs_init {
+            let call_result = launched.module_host.init_database(program).await?;
+            if let Some(call_result) = call_result {
+                Result::from(call_result)?;
+            }
+        } else {
+            drop(program)
+        }
+
         let LaunchedModule {
             replica_ctx,
             module_host,
             scheduler,
             scheduler_starter,
-        } = match db.program()? {
-            // Launch module with program from existing database.
-            Some(program) => {
-                let (_, launched) = launch_module(
-                    database,
-                    replica_id,
-                    program,
-                    on_panic,
-                    Arc::new(db),
-                    energy_monitor.clone(),
-                )
-                .await?;
-                launched
-            }
-
-            // Database is empty, load program from external storage and run
-            // initialization.
-            None => {
-                let program = load_program(&program_storage, database.initial_program).await?;
-                let (program, launched) = launch_module(
-                    database,
-                    replica_id,
-                    program,
-                    on_panic,
-                    Arc::new(db),
-                    energy_monitor.clone(),
-                )
-                .await?;
-
-                let call_result = launched.module_host.init_database(program).await?;
-                if let Some(call_result) = call_result {
-                    Result::from(call_result)?;
-                }
-
-                launched
-            }
-        };
+        } = launched;
 
         // Disconnect dangling clients.
         for (identity, address) in connected_clients {
@@ -767,8 +774,6 @@ impl Host {
             replica_ctx,
             scheduler,
             metrics_task,
-
-            energy_monitor,
         })
     }
 
@@ -786,19 +791,22 @@ impl Host {
     /// Either way, the [`UpdateDatabaseResult`] is returned.
     async fn update_module(
         &mut self,
+        runtimes: Arc<HostRuntimes>,
         host_type: HostType,
         program: Program,
+        energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
-        let (scheduler, scheduler_starter) = self.scheduler.new_with_same_db();
+        let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db.clone());
 
         let (program, module) = make_module_host(
+            runtimes,
             host_type,
             replica_ctx.clone(),
             scheduler.clone(),
             program,
-            self.energy_monitor.clone(),
+            energy_monitor,
             on_panic,
         )
         .await?;

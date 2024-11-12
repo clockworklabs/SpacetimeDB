@@ -449,11 +449,12 @@ where
         .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
     let replica_id = replica.id;
 
-    let filepath = DatabaseLogger::filepath(&database_identity, replica_id);
-    let lines = DatabaseLogger::read_latest(&filepath, num_lines).await;
+    let host = worker_ctx.host_controller();
+
+    let logs_dir = host.data_dir.replica(replica_id).module_logs();
+    let lines = DatabaseLogger::read_latest(logs_dir, num_lines).await;
 
     let body = if follow {
-        let host = worker_ctx.host_controller();
         let module = host
             .get_or_launch_module_host(database, replica_id)
             .await
