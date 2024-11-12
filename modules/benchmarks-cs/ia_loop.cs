@@ -134,7 +134,7 @@ public static partial class ia_loop
     }
 
     [SpacetimeDB.Reducer]
-    public static void Insert_bulk_position(ReducerContext ctx, uint count)
+    public static void insert_bulk_position(ReducerContext ctx, uint count)
     {
         for (uint id = 0; id < count; id++)
         {
@@ -359,7 +359,7 @@ public static partial class ia_loop
     {
         Load load = new(initial_load);
 
-        Insert_bulk_position(ctx, load.biggest_table);
+        insert_bulk_position(ctx, load.biggest_table);
         insert_bulk_velocity(ctx, load.big_table);
         update_position_all(ctx, load.biggest_table);
         update_position_with_velocity(ctx, load.big_table);
