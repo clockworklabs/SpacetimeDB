@@ -9,6 +9,7 @@ use crate::execution_context::ExecutionContext;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::TableSchema;
+use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::{
     ops::RangeBounds,
@@ -65,9 +66,19 @@ impl TxId {
 
     /// The Number of Distinct Values (NDV) for a column or list of columns,
     /// if there's an index available on `cols`.
-    pub(crate) fn num_distinct_values(&self, table_id: TableId, cols: &ColList) -> Option<u64> {
-        self.committed_state_shared_lock
-            .get_table(table_id)
-            .and_then(|t| t.indexes.get(cols).map(|index| index.num_keys() as u64))
+    ///
+    /// Returns `None` if:
+    /// - No such table as `table_id` exists.
+    /// - The table `table_id` does not have an index on exactly the `cols`.
+    /// - The table `table_id` contains zero rows.
+    //
+    // This method must never return 0, as it's used as the divisor in quotients.
+    // Do not change its return type to a bare `u64`.
+    pub(crate) fn num_distinct_values(&self, table_id: TableId, cols: &ColList) -> Option<NonZeroU64> {
+        self.committed_state_shared_lock.get_table(table_id).and_then(|t| {
+            t.indexes
+                .get(cols)
+                .and_then(|index| NonZeroU64::from(index.num_keys() as u64))
+        })
     }
 }

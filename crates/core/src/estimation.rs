@@ -18,6 +18,8 @@ fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
             // We assume a uniform distribution of keys,
             // which implies a selectivity = 1 / NDV,
             // where NDV stands for Number of Distinct Values.
+            // We assume that the table exists and has an index on the columns,
+            // so `index_row_est` will only return 0 if the table is empty.
             Query::IndexScan(scan) if scan.is_point() => {
                 index_row_est(tx, scan.table.table_id, &scan.columns)
             }
@@ -41,6 +43,8 @@ fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
             Query::IndexJoin(join) => {
                 row_est(tx, &join.probe_side.source, &join.probe_side.query)
                     .saturating_mul(
+                        // We assume that the table exists and has an index on the columns,
+                        // so `index_row_est` will only return 0 if the table is empty.
                         index_row_est(tx, src.table_id().unwrap(), &join.index_col.into())
                     )
             }
@@ -59,8 +63,15 @@ fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
 
 /// The estimated number of rows that an index probe will return.
 /// Note this method is not applicable to range scans.
+///
+/// Returns 0 in any case that [`Tx::num_distinct_values`] would return `None`:
+/// - If there is no such table as `table_id`.
+/// - If the table `table_id` does not have an index on exactly the `cols`.
+/// - If the table `table_id` contains 0 rows.
 fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
     tx.num_distinct_values(table_id, cols)
+        // `num_distinct_values` returns `Option<NonZeroU64>`,
+        // so this division can never panic.
         .map_or(0, |ndv| tx.table_row_count(table_id).unwrap_or(0) / ndv)
 }
 
