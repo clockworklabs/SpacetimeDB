@@ -1,13 +1,2 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <!--
-    Use local package sources instead of published ones.
-    This makes integration test somewhat differ from production configuration, but
-    at least it simplifies workflow for editing and testing C# code itself.
-  -->
-  <ItemGroup>
-    <ProjectReference Include="../../crates/bindings-csharp/Codegen/Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="../../crates/bindings-csharp/Runtime/Runtime.csproj" />
-  </ItemGroup>
-
-</Project>
+<!-- See ../Directory.Build.props for properties shared between all C# test modules. -->
+<Project Sdk="Microsoft.NET.Sdk" />

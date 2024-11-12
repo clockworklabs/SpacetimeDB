@@ -12,4 +12,16 @@
     <!-- ignore naming conventions, we're trying to match Rust 1:1 -->
     <NoWarn>$(NoWarn);CS8981;IDE1006</NoWarn>
   </PropertyGroup>
+
+  <!--
+    Import shared deps.
+
+    Use local package sources instead of published ones.
+    This makes integration test somewhat differ from production configuration, but
+    at least it simplifies workflow for editing and testing C# code itself.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="../../crates/bindings-csharp/Codegen/Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../crates/bindings-csharp/Runtime/Runtime.csproj" />
+  </ItemGroup>
 </Project>
