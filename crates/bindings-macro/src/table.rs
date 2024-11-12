@@ -526,14 +526,11 @@ pub(crate) fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput
     let integrate_gen_col = sequenced_columns.iter().map(|col| {
         let field = col.field.ident.unwrap();
         quote_spanned!(field.span()=>
-            if spacetimedb::table::IsSequenceTrigger::is_sequence_trigger(&_row.#field) {
-                _row.#field = spacetimedb::sats::bsatn::from_reader(_in).unwrap();
-            }
+            spacetimedb::table::SequenceTrigger::maybe_decode_into(&mut __row.#field, &mut __generated_cols);
         )
     });
     let integrate_generated_columns = quote_spanned!(item.span() =>
-        fn integrate_generated_columns(_row: &mut #row_type, mut _generated_cols: &[u8]) {
-            let mut _in = &mut _generated_cols;
+        fn integrate_generated_columns(__row: &mut #row_type, mut __generated_cols: &[u8]) {
             #(#integrate_gen_col)*
         }
     );
