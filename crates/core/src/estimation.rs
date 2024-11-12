@@ -18,6 +18,8 @@ fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
             // We assume a uniform distribution of keys,
             // which implies a selectivity = 1 / NDV,
             // where NDV stands for Number of Distinct Values.
+            // We assume that the table exists and has an index on the columns,
+            // so `index_row_est` will only return 0 if the table is empty.
             Query::IndexScan(scan) if scan.is_point() => {
                 index_row_est(tx, scan.table.table_id, &scan.columns)
             }
@@ -41,6 +43,8 @@ fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
             Query::IndexJoin(join) => {
                 row_est(tx, &join.probe_side.source, &join.probe_side.query)
                     .saturating_mul(
+                        // We assume that the table exists and has an index on the columns,
+                        // so `index_row_est` will only return 0 if the table is empty.
                         index_row_est(tx, src.table_id().unwrap(), &join.index_col.into())
                     )
             }
