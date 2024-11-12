@@ -15,23 +15,22 @@ namespace SpacetimeDB.ClientApi
 	[DataContract]
 	public partial class OneOffTable
 	{
-		[DataMember(Name = "table_name")]
-		public string TableName;
+		[DataMember(Name = "table_id")]
+		public uint TableId;
 		[DataMember(Name = "rows")]
 		public SpacetimeDB.ClientApi.BsatnRowList Rows;
 
 		public OneOffTable(
-			string TableName,
+			uint TableId,
 			SpacetimeDB.ClientApi.BsatnRowList Rows
 		)
 		{
-			this.TableName = TableName;
+			this.TableId = TableId;
 			this.Rows = Rows;
 		}
 
 		public OneOffTable()
 		{
-			this.TableName = "";
 			this.Rows = new();
 		}
 

@@ -39,7 +39,7 @@ namespace SpacetimeDB
 #if UNITY_5_3_OR_NEWER
             if (SpacetimeDBNetworkManager._instance != null)
             {
-                SpacetimeDBNetworkManager._instance.AddConnection(conn);    
+                SpacetimeDBNetworkManager._instance.AddConnection(conn);
             }
 #endif
             return conn;
@@ -150,7 +150,7 @@ namespace SpacetimeDB
         private bool connectionClosed;
         protected readonly ClientCache clientDB;
 
-        protected abstract Reducer ToReducer(TransactionUpdate update);
+        protected abstract Reducer ToReducer(string reducerName, TransactionUpdate update);
         protected abstract IEventContext ToEventContext(Event<Reducer> reducerEvent);
 
         private readonly Dictionary<Guid, TaskCompletionSource<OneOffQueryResponse>> waitingOneOffQueries = new();
@@ -158,6 +158,27 @@ namespace SpacetimeDB
         private bool isClosing;
         private readonly Thread networkMessageProcessThread;
         public readonly Stats stats = new();
+
+        private Dictionary<uint, string> reducerIdToName = new();
+        private Dictionary<string, uint> reducerNameToId = new();
+        private Dictionary<uint, string> tableIdToName = new();
+        private void InitIds(IdsToNames idsToNames)
+        {
+            for (int idx = 0; idx < idsToNames.ReducerIds.Count; idx++)
+            {
+                var id = idsToNames.ReducerIds[idx];
+                var name = idsToNames.ReducerNames[idx];
+                reducerIdToName.Add(id, name);
+                reducerNameToId.Add(name, id);
+            }
+            for (int idx = 0; idx < idsToNames.TableIds.Count; idx++)
+            {
+                var id = idsToNames.TableIds[idx];
+                var name = idsToNames.TableNames[idx];
+                tableIdToName.Add(id, name);
+            }
+        }
+        private string TableIdToName(uint tableId) => tableIdToName[tableId];
 
         protected DbConnectionBase()
         {
@@ -177,8 +198,8 @@ namespace SpacetimeDB
             {
                 if (SpacetimeDBNetworkManager._instance != null)
                 {
-                    SpacetimeDBNetworkManager._instance.RemoveConnection(this); 
-                }  
+                    SpacetimeDBNetworkManager._instance.RemoveConnection(this);
+                }
             };
 #endif
 
@@ -351,7 +372,7 @@ namespace SpacetimeDB
             {
                 foreach (var update in updates.Tables)
                 {
-                    var tableName = update.TableName;
+                    var tableName = tableIdToName[update.TableId];
                     var table = clientDB.GetTable(tableName);
                     if (table == null)
                     {
@@ -446,7 +467,7 @@ namespace SpacetimeDB
                                 {
                                     if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
                                     {
-                                        Log.Warn($"Update with the same primary key was applied multiple times! tableName={update.TableName}");
+                                        Log.Warn($"Update with the same primary key was applied multiple times! tableName={TableIdToName(update.TableId)}");
                                         // TODO(jdetter): Is this a correctable error? This would be a major error on the
                                         // SpacetimeDB side.
                                         continue;
@@ -481,7 +502,7 @@ namespace SpacetimeDB
                                 {
                                     if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
                                     {
-                                        Log.Warn($"Update with the same primary key was applied multiple times! tableName={update.TableName}");
+                                        Log.Warn($"Update with the same primary key was applied multiple times! tableName={TableIdToName(update.TableId)}");
                                         // TODO(jdetter): Is this a correctable error? This would be a major error on the
                                         // SpacetimeDB side.
                                         continue;
@@ -547,6 +568,17 @@ namespace SpacetimeDB
                         // Convert the generic event arguments in to a domain specific event object
                         try
                         {
+                            var reducerId = transactionUpdate.ReducerCall.ReducerId;
+                            string reducerName;
+                            if (reducerId == 4294967295) // u32::MAX (<none>)
+                            {
+                                reducerName = "<none>";
+                            }
+                            else
+                            {
+                                reducerName = reducerIdToName[reducerId];
+                            }
+
                             reducerEvent = new(
                                 DateTimeOffset.FromUnixTimeMilliseconds((long)transactionUpdate.Timestamp.Microseconds / 1000),
                                 transactionUpdate.Status switch
@@ -559,7 +591,8 @@ namespace SpacetimeDB
                                 transactionUpdate.CallerIdentity,
                                 transactionUpdate.CallerAddress,
                                 transactionUpdate.EnergyQuantaUsed.Quanta,
-                                ToReducer(transactionUpdate));
+                                ToReducer(reducerName, transactionUpdate)
+                            );
                         }
                         catch (Exception e)
                         {
@@ -574,7 +607,8 @@ namespace SpacetimeDB
                     case ServerMessage.TransactionUpdateLight(var update):
                         dbOps = PreProcessDatabaseUpdate(update.Update);
                         break;
-                    case ServerMessage.IdentityToken(var identityToken):
+                    case ServerMessage.AfterConnecting(var afterConnecting):
+                        InitIds(afterConnecting.IdsToNames);
                         break;
                     case ServerMessage.OneOffQueryResponse(var resp):
                         PreProcessOneOffQuery(resp);
@@ -793,7 +827,7 @@ namespace SpacetimeDB
 
                 case ServerMessage.TransactionUpdate(var transactionUpdate):
                     {
-                        var reducer = transactionUpdate.ReducerCall.ReducerName;
+                        var reducer = reducerIdToName[transactionUpdate.ReducerCall.ReducerId];
                         stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.TransactionUpdate)},reducer={reducer}");
                         var hostDuration = TimeSpan.FromMilliseconds(transactionUpdate.HostExecutionDurationMicros / 1000.0d);
                         stats.AllReducersTracker.InsertRequest(hostDuration, $"reducer={reducer}");
@@ -840,9 +874,10 @@ namespace SpacetimeDB
                         }
                         break;
                     }
-                case ServerMessage.IdentityToken(var identityToken):
+                case ServerMessage.AfterConnecting(var afterConnecting):
                     try
                     {
+                        var identityToken = afterConnecting.IdentityToken;
                         Identity = identityToken.Identity;
                         onConnect?.Invoke(identityToken.Identity, identityToken.Token);
                     }
@@ -875,10 +910,13 @@ namespace SpacetimeDB
                 return;
             }
 
+            var reducerName = args.ReducerName;
+            var reducerId = reducerNameToId[reducerName];
+
             webSocket.Send(new ClientMessage.CallReducer(new CallReducer(
-                args.ReducerName,
+                reducerId,
                 IStructuralReadWrite.ToBytes(args),
-                stats.ReducerRequestTracker.StartTrackingRequest(args.ReducerName),
+                stats.ReducerRequestTracker.StartTrackingRequest(reducerName),
                 (byte)flags
             )));
         }
@@ -950,11 +988,12 @@ namespace SpacetimeDB
             }
 
             var resultTable = result.Tables[0];
-            var cacheTable = clientDB.GetTable(resultTable.TableName);
+            var tableName = tableIdToName[resultTable.TableId];
+            var cacheTable = clientDB.GetTable(tableName);
 
             if (cacheTable?.ClientTableType != typeof(T))
             {
-                return LogAndThrow($"Mismatched result type, expected {typeof(T)} but got {resultTable.TableName}");
+                return LogAndThrow($"Mismatched result type, expected {typeof(T)} but got {tableName}");
             }
 
             return BsatnRowListIter(resultTable.Rows)

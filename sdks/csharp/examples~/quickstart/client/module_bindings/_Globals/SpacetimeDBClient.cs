@@ -25,30 +25,30 @@ namespace SpacetimeDB.Types
 
 		public class UserHandle : RemoteTableHandle<EventContext, User>
 		{
-			private static Dictionary<SpacetimeDB.Identity, User> Identity_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (User)row;
-				Identity_Index[value.Identity] = value;
+				Identity.Cache[value.Identity] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				Identity_Index.Remove(((User)row).Identity);
+				Identity.Cache.Remove(((User)row).Identity);
 			}
 
-			public readonly ref struct IdentityUniqueIndex
+			public class IdentityUniqueIndex
 			{
+				internal readonly Dictionary<SpacetimeDB.Identity, User> Cache = new(16);
 				public User? Find(SpacetimeDB.Identity value)
 				{
-					Identity_Index.TryGetValue(value, out var r);
+					Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public IdentityUniqueIndex Identity => new();
+			public IdentityUniqueIndex Identity = new();
 
 			internal UserHandle()
 			{
@@ -65,6 +65,54 @@ namespace SpacetimeDB.Types
 	{
 		internal RemoteReducers(DbConnection conn, SetReducerFlags SetReducerFlags) : base(conn) { this.SetCallReducerFlags = SetReducerFlags; }
 		internal readonly SetReducerFlags SetCallReducerFlags;
+		public delegate void IdentityConnectedHandler(EventContext ctx);
+		public event IdentityConnectedHandler? OnIdentityConnected;
+
+		public void IdentityConnected()
+		{
+			conn.InternalCallReducer(new IdentityConnected {  }, this.SetCallReducerFlags.IdentityConnectedFlags);
+		}
+
+		public bool InvokeIdentityConnected(EventContext ctx, IdentityConnected args)
+		{
+			if (OnIdentityConnected == null) return false;
+			OnIdentityConnected(
+				ctx
+			);
+			return true;
+		}
+		public delegate void IdentityDisconnectedHandler(EventContext ctx);
+		public event IdentityDisconnectedHandler? OnIdentityDisconnected;
+
+		public void IdentityDisconnected()
+		{
+			conn.InternalCallReducer(new IdentityDisconnected {  }, this.SetCallReducerFlags.IdentityDisconnectedFlags);
+		}
+
+		public bool InvokeIdentityDisconnected(EventContext ctx, IdentityDisconnected args)
+		{
+			if (OnIdentityDisconnected == null) return false;
+			OnIdentityDisconnected(
+				ctx
+			);
+			return true;
+		}
+		public delegate void InitHandler(EventContext ctx);
+		public event InitHandler? OnInit;
+
+		public void Init()
+		{
+			conn.InternalCallReducer(new Init {  }, this.SetCallReducerFlags.InitFlags);
+		}
+
+		public bool InvokeInit(EventContext ctx, Init args)
+		{
+			if (OnInit == null) return false;
+			OnInit(
+				ctx
+			);
+			return true;
+		}
 		public delegate void SendMessageHandler(EventContext ctx, string text);
 		public event SendMessageHandler? OnSendMessage;
 
@@ -104,6 +152,12 @@ namespace SpacetimeDB.Types
 	public sealed class SetReducerFlags
 	{
 		internal SetReducerFlags() { }
+		internal CallReducerFlags IdentityConnectedFlags;
+		public void IdentityConnected(CallReducerFlags flags) { this.IdentityConnectedFlags = flags; }
+		internal CallReducerFlags IdentityDisconnectedFlags;
+		public void IdentityDisconnected(CallReducerFlags flags) { this.IdentityDisconnectedFlags = flags; }
+		internal CallReducerFlags InitFlags;
+		public void Init(CallReducerFlags flags) { this.InitFlags = flags; }
 		internal CallReducerFlags SendMessageFlags;
 		public void SendMessage(CallReducerFlags flags) { this.SendMessageFlags = flags; }
 		internal CallReducerFlags SetNameFlags;
@@ -126,11 +180,12 @@ namespace SpacetimeDB.Types
 
 	[Type]
 	public partial record Reducer : TaggedEnum<(
+		IdentityConnected IdentityConnected,
+		IdentityDisconnected IdentityDisconnected,
+		Init Init,
 		SendMessage SendMessage,
 		SetName SetName,
-		Unit StdbNone,
-		Unit StdbIdentityConnected,
-		Unit StdbIdentityDisconnected
+		Unit StdbNone
 	)>;
 	public class DbConnection : DbConnectionBase<DbConnection, Reducer>
 	{
@@ -147,17 +202,16 @@ namespace SpacetimeDB.Types
 			clientDB.AddTable<User>("user", Db.User);
 		}
 
-		protected override Reducer ToReducer(TransactionUpdate update)
+		protected override Reducer ToReducer(string reducerName, TransactionUpdate update)
 		{
 			var encodedArgs = update.ReducerCall.Args;
-			return update.ReducerCall.ReducerName switch
-			{
+			return reducerName switch {
+				"__identity_connected__" => new Reducer.IdentityConnected(BSATNHelpers.Decode<IdentityConnected>(encodedArgs)),
+				"__identity_disconnected__" => new Reducer.IdentityDisconnected(BSATNHelpers.Decode<IdentityDisconnected>(encodedArgs)),
+				"__init__" => new Reducer.Init(BSATNHelpers.Decode<Init>(encodedArgs)),
 				"send_message" => new Reducer.SendMessage(BSATNHelpers.Decode<SendMessage>(encodedArgs)),
 				"set_name" => new Reducer.SetName(BSATNHelpers.Decode<SetName>(encodedArgs)),
 				"<none>" => new Reducer.StdbNone(default),
-				"__identity_connected__" => new Reducer.StdbIdentityConnected(default),
-				"__identity_disconnected__" => new Reducer.StdbIdentityDisconnected(default),
-				"" => new Reducer.StdbNone(default),
 				var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
 			};
 		}
@@ -168,13 +222,13 @@ namespace SpacetimeDB.Types
 		protected override bool Dispatch(IEventContext context, Reducer reducer)
 		{
 			var eventContext = (EventContext)context;
-			return reducer switch
-			{
+			return reducer switch {
+				Reducer.IdentityConnected(var args) => Reducers.InvokeIdentityConnected(eventContext, args),
+				Reducer.IdentityDisconnected(var args) => Reducers.InvokeIdentityDisconnected(eventContext, args),
+				Reducer.Init(var args) => Reducers.InvokeInit(eventContext, args),
 				Reducer.SendMessage(var args) => Reducers.InvokeSendMessage(eventContext, args),
 				Reducer.SetName(var args) => Reducers.InvokeSetName(eventContext, args),
-				Reducer.StdbNone or
-				Reducer.StdbIdentityConnected or
-				Reducer.StdbIdentityDisconnected => true,
+				Reducer.StdbNone => true,
 				_ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
 			};
 		}
