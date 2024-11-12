@@ -78,7 +78,7 @@ impl TxId {
         self.committed_state_shared_lock.get_table(table_id).and_then(|t| {
             t.indexes
                 .get(cols)
-                .and_then(|index| NonZeroU64::from(index.num_keys() as u64))
+                .and_then(|index| NonZeroU64::new(index.num_keys() as u64))
         })
     }
 }
