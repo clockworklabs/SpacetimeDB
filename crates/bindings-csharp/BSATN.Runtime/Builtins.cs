@@ -59,17 +59,20 @@ internal static class Util
     static T Read<T>(ReadOnlySpan<byte> source, bool reverse)
         where T : struct
     {
+        Debug.Assert(
+            source.Length == Marshal.SizeOf<T>(),
+            $"Error while reading ${typeof(T).FullName}: expected source span to be {Marshal.SizeOf<T>()} bytes long, but was {source.Length} bytes."
+        );
+
+        var result = MemoryMarshal.Read<T>(source);
+
         if (reverse)
         {
-            Span<byte> reversed = stackalloc byte[source.Length];
-            source.CopyTo(reversed);
-            reversed.Reverse();
-            return MemoryMarshal.Read<T>(reversed);
+            var resultSpan = MemoryMarshal.CreateSpan(ref result, 1);
+            MemoryMarshal.AsBytes(resultSpan).Reverse();
         }
-        else
-        {
-            return MemoryMarshal.Read<T>(source);
-        }
+
+        return result;
     }
 
     /// <summary>
@@ -80,7 +83,7 @@ internal static class Util
     /// <param name="source"></param>
     /// <returns></returns>
     public static byte[] AsBytesLittleEndian<T>(T source)
-        where T : struct => AsBytes<T>(source, !BitConverter.IsLittleEndian);
+        where T : struct => AsBytes(source, !BitConverter.IsLittleEndian);
 
     /// <summary>
     /// Convert the passed T to a big-endian byte array.
@@ -171,7 +174,6 @@ public readonly record struct Address
     /// <param name="bytes"></param>
     public static Address? From(byte[] bytes)
     {
-        Debug.Assert(bytes.Length == 16);
         var addr = new Address(Util.ReadLittleEndian<U128>(bytes));
         return addr == default ? null : addr;
     }
@@ -191,7 +193,6 @@ public readonly record struct Address
     /// <param name="bytes"></param>
     public static Address? FromBigEndian(byte[] bytes)
     {
-        Debug.Assert(bytes.Length == 16);
         var addr = new Address(Util.ReadBigEndian<U128>(bytes));
         return addr == default ? null : addr;
     }
@@ -245,7 +246,6 @@ public readonly record struct Identity
     /// <param name="bytes"></param>
     public Identity(byte[] bytes)
     {
-        Debug.Assert(bytes.Length == 32);
         value = Util.ReadLittleEndian<U256>(bytes);
     }
 
@@ -271,7 +271,6 @@ public readonly record struct Identity
     /// <param name="bytes"></param>
     public static Identity FromBigEndian(byte[] bytes)
     {
-        Debug.Assert(bytes.Length == 32);
         return new Identity(Util.ReadBigEndian<U256>(bytes));
     }
 

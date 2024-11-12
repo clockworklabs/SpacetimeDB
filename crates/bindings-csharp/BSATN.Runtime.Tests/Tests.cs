@@ -1,5 +1,6 @@
 namespace SpacetimeDB;
 
+using CsCheck;
 using Xunit;
 
 public static class BSATNRuntimeTests
@@ -62,20 +63,29 @@ public static class BSATNRuntimeTests
         Assert.Equal(addr5, addr);
     }
 
+    static readonly Gen<string> genHex = Gen.String[Gen.Char["0123456789abcdef"], 0, 128];
+
     [Fact]
     public static void AddressLengthCheck()
     {
-        for (var i = 0; i < 64; i++)
+        genHex.Sample(s =>
         {
-            if (i == 16)
+            if (s.Length == 32)
             {
-                continue;
+                return;
             }
-
-            var bytes = new byte[i];
-
-            Assert.ThrowsAny<Exception>(() => Address.From(bytes));
-        }
+            Assert.ThrowsAny<Exception>(() => Address.FromHexString(s));
+        });
+        Gen.Byte.Array[0, 64]
+            .Sample(arr =>
+            {
+                if (arr.Length == 16)
+                {
+                    return;
+                }
+                Assert.ThrowsAny<Exception>(() => Address.FromBigEndian(arr));
+                Assert.ThrowsAny<Exception>(() => Address.From(arr));
+            });
     }
 
     [Fact]
@@ -147,16 +157,23 @@ public static class BSATNRuntimeTests
     [Fact]
     public static void IdentityLengthCheck()
     {
-        for (var i = 0; i < 64; i++)
+        genHex.Sample(s =>
         {
-            if (i == 32)
+            if (s.Length == 64)
             {
-                continue;
+                return;
             }
-
-            var bytes = new byte[i];
-
-            Assert.ThrowsAny<Exception>(() => Identity.From(bytes));
-        }
+            Assert.ThrowsAny<Exception>(() => Identity.FromHexString(s));
+        });
+        Gen.Byte.Array[0, 64]
+            .Sample(arr =>
+            {
+                if (arr.Length == 32)
+                {
+                    return;
+                }
+                Assert.ThrowsAny<Exception>(() => Identity.FromBigEndian(arr));
+                Assert.ThrowsAny<Exception>(() => Identity.From(arr));
+            });
     }
 }
