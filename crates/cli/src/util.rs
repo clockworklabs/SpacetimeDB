@@ -5,7 +5,7 @@ use base64::{
 };
 use reqwest::RequestBuilder;
 use serde::Deserialize;
-use spacetimedb::auth::identity::{IncomingClaims, SpacetimeIdentityClaims2};
+use spacetimedb::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::{AlgebraicType, Identity};
@@ -259,11 +259,7 @@ pub fn unauth_error_context<T>(res: anyhow::Result<T>, identity: &str, server: &
     res.with_context(|| {
         format!(
             "Identity {identity} is not valid for server {server}.
-Has the server rotated its keys?
-Remove the outdated identity with:
-\tspacetime identity remove -i {identity}
-Generate a new identity with:
-\tspacetime identity new --no-email --server {server} --default"
+Please log back in with `spacetime logout` and then `spacetime login`."
         )
     })
 }
@@ -281,7 +277,7 @@ pub fn decode_identity(config: &Config) -> anyhow::Result<String> {
     let decoded_string = String::from_utf8(decoded_bytes)?;
 
     let claims_data: IncomingClaims = serde_json::from_str(decoded_string.as_str())?;
-    let claims_data: SpacetimeIdentityClaims2 = claims_data.try_into()?;
+    let claims_data: SpacetimeIdentityClaims = claims_data.try_into()?;
 
     Ok(claims_data.identity.to_string())
 }

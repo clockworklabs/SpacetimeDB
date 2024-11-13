@@ -9,6 +9,8 @@ description = "Implementation of the SpacetimeDB commitlog."
 
 [features]
 default = ["serde"]
+# Enable types + impls useful for testing
+test = []
 
 [dependencies]
 bitflags.workspace = true
@@ -18,6 +20,7 @@ log.workspace = true
 memmap2 = "0.9.4"
 serde = { workspace = true, optional = true }
 spacetimedb-primitives.workspace = true
+spacetimedb-paths.workspace = true
 spacetimedb-sats.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true

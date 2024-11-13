@@ -38,13 +38,11 @@ bytes = "1"
 tracing.workspace = true
 bytestring = "1"
 tokio-tungstenite.workspace = true
-itoa = "1.0.9"
+itoa.workspace = true
 derive_more = "0.99.17"
 uuid.workspace = true
-blake3.workspace = true
 jsonwebtoken.workspace = true
 scopeguard.workspace = true
 
 [dev-dependencies]
-jsonwebkey = { version = "0.3.5", features = ["generate","jwt-convert"] }
 jsonwebtoken.workspace = true
