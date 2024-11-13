@@ -57,6 +57,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("test", nargs="*", default=tests)
     parser.add_argument("--docker", action="store_true")
+    parser.add_argument("--compose-file")
     parser.add_argument("--skip-dotnet", action="store_true", help="ignore tests which require dotnet")
     parser.add_argument("--show-all-output", action="store_true", help="show all stdout/stderr from the tests as they're running")
     parser.add_argument("--parallel", action="store_true", help="run test classes in parallel")
@@ -75,9 +76,12 @@ def main():
     build_template_target()
 
     if args.docker:
-        docker_container = check_docker()
         # have docker logs print concurrently with the test output
-        subprocess.Popen(["docker", "logs", "-f", docker_container])
+        if args.compose_file:
+            subprocess.Popen(["docker", "compose", "-f", args.compose_file, "logs", "-f"])
+        else:
+            docker_container = check_docker()
+            subprocess.Popen(["docker", "logs", "-f", docker_container])
         smoketests.HAVE_DOCKER = True
 
     smoketests.new_identity(TEST_DIR / 'config.toml')
