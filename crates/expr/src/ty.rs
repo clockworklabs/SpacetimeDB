@@ -493,6 +493,18 @@ impl TyCtx {
         self.names.get(name)
     }
 
+    /// Are these rows structurally equivalent?
+    fn eq_row(&self, a: &[(Symbol, TyId)], b: &[(Symbol, TyId)]) -> bool {
+        a.len() == b.len() && {
+            for (i, (name, id)) in a.iter().enumerate() {
+                if name != &b[i].0 || !self.eq(*id, b[i].1).unwrap() {
+                    return false;
+                }
+            }
+            true
+        }
+    }
+
     /// Are these types structurally equivalent?
     pub fn eq(&self, a: TyId, b: TyId) -> Result<bool, InvalidTypeId> {
         if a.0 < TyId::N as u32 || b.0 < TyId::N as u32 {
@@ -500,15 +512,8 @@ impl TyCtx {
         }
         match (&*self.try_resolve(a)?, &*self.try_resolve(b)?) {
             (Type::Alg(a), Type::Alg(b)) => Ok(a == b),
-            (Type::Var(a, _), Type::Var(b, _)) => Ok(a == b),
-            (Type::Row(a), Type::Row(b)) => Ok(a.len() == b.len() && {
-                for (i, (name, id)) in a.iter().enumerate() {
-                    if name != &b[i].0 || !self.eq(*id, b[i].1)? {
-                        return Ok(false);
-                    }
-                }
-                true
-            }),
+            (Type::Var(a, row_a), Type::Var(b, row_b)) => Ok(a == b || self.eq_row(row_a, row_b)),
+            (Type::Row(a), Type::Row(b)) => Ok(self.eq_row(a, b)),
             _ => Ok(false),
         }
     }

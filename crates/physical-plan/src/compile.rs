@@ -147,10 +147,11 @@ mod tests {
         Ok((expr, ctx))
     }
 
-    fn compile_sql_stmt_test(sql: &str) -> ResultTest<StatementCtx> {
+    fn compile_sql_stmt_test(sql: &str) -> ResultTest<(StatementCtx, TyCtx)> {
         let tx = SchemaViewer(module_def());
-        let statement = compile_sql_stmt(sql, &tx)?;
-        Ok(statement)
+        let mut ctx = TyCtx::default();
+        let statement = compile_sql_stmt(&mut ctx, sql, &tx)?;
+        Ok((statement, ctx))
     }
 
     impl PhysicalPlan {
@@ -184,7 +185,7 @@ mod tests {
         let (ast, ctx) = compile_sql_sub_test("SELECT * FROM t")?;
         assert!(matches!(compile(&ctx, ast).plan, PhysicalPlan::TableScan(_)));
 
-        let ast = compile_sql_stmt_test("SELECT u32 FROM t")?;
+        let (ast, ctx) = compile_sql_stmt_test("SELECT u32 FROM t")?;
         assert!(matches!(compile(&ctx, ast).plan, PhysicalPlan::Project(..)));
 
         Ok(())

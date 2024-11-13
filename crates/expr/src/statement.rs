@@ -348,20 +348,20 @@ impl TypeChecker for SqlChecker {
     }
 }
 
-fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<Statement> {
+fn parse_and_type_sql(ctx: &mut TyCtx, sql: &str, tx: &impl SchemaView) -> TypingResult<Statement> {
     match parse_sql(sql)? {
-        SqlAst::Insert(insert) => Ok(Statement::Insert(type_insert(&mut TyCtx::default(), insert, tx)?)),
-        SqlAst::Delete(delete) => Ok(Statement::Delete(type_delete(&mut TyCtx::default(), delete, tx)?)),
-        SqlAst::Update(update) => Ok(Statement::Update(type_update(&mut TyCtx::default(), update, tx)?)),
-        SqlAst::Query(ast) => Ok(Statement::Select(SqlChecker::type_ast(&mut TyCtx::default(), ast, tx)?)),
-        SqlAst::Set(set) => Ok(Statement::Set(type_set(&TyCtx::default(), set)?)),
+        SqlAst::Insert(insert) => Ok(Statement::Insert(type_insert(ctx, insert, tx)?)),
+        SqlAst::Delete(delete) => Ok(Statement::Delete(type_delete(ctx, delete, tx)?)),
+        SqlAst::Update(update) => Ok(Statement::Update(type_update(ctx, update, tx)?)),
+        SqlAst::Query(ast) => Ok(Statement::Select(SqlChecker::type_ast(ctx, ast, tx)?)),
+        SqlAst::Set(set) => Ok(Statement::Set(type_set(ctx, set)?)),
         SqlAst::Show(show) => Ok(Statement::Show(type_show(show)?)),
     }
 }
 
 /// Parse and type check a *general* query into a [StatementCtx].
-pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<StatementCtx<'a>> {
-    let statement = parse_and_type_sql(sql, tx)?;
+pub fn compile_sql_stmt<'a>(ctx: &mut TyCtx, sql: &'a str, tx: &impl SchemaView) -> TypingResult<StatementCtx<'a>> {
+    let statement = parse_and_type_sql(ctx, sql, tx)?;
     Ok(StatementCtx {
         statement,
         sql,
