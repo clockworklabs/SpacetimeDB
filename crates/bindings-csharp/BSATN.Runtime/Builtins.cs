@@ -122,6 +122,19 @@ internal static class Util
     /// <returns></returns>
     public static byte[] StringToByteArray(string hex)
     {
+        Debug.Assert(
+            hex.Length % 2 == 0,
+            $"Expected input string (\"{hex}\") to be of even length"
+        );
+
+        foreach (var c in hex)
+        {
+            Debug.Assert(
+                (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'),
+                $"Expected input string (\"{hex}\") to be hexadecimal"
+            );
+        }
+
         var NumberChars = hex.Length;
         var bytes = new byte[NumberChars / 2];
         for (var i = 0; i < NumberChars; i += 2)

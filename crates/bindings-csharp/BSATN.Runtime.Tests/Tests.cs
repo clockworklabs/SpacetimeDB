@@ -41,17 +41,18 @@ public static class BSATNRuntimeTests
         Assert.Equal(addr3, addr);
 
         var memoryStream = new MemoryStream();
-        var writer = new BinaryWriter(memoryStream);
         var bsatn = new Address.BSATN();
-        if (addr is { } addrNotNull)
+        using (var writer = new BinaryWriter(memoryStream))
         {
-            bsatn.Write(writer, addrNotNull);
+            if (addr is { } addrNotNull)
+            {
+                bsatn.Write(writer, addrNotNull);
+            }
+            else
+            {
+                Assert.Fail("Impossible");
+            }
         }
-        else
-        {
-            Assert.Fail("Impossible");
-        }
-        writer.Flush();
 
         var littleEndianBytes = memoryStream.ToArray();
         var reader = new BinaryReader(new MemoryStream(littleEndianBytes));
@@ -96,41 +97,10 @@ public static class BSATNRuntimeTests
 
         Assert.Equal(ident.ToString(), str);
 
-        byte[] bytes =
-        [
-            0x00,
-            0x11,
-            0x22,
-            0x33,
-            0x44,
-            0x55,
-            0x66,
-            0x77,
-            0x88,
-            0x99,
-            0xaa,
-            0xbb,
-            0xcc,
-            0xdd,
-            0xee,
-            0xff,
-            0x00,
-            0x11,
-            0x22,
-            0x33,
-            0x44,
-            0x55,
-            0x66,
-            0x77,
-            0x88,
-            0x99,
-            0xaa,
-            0xbb,
-            0xcc,
-            0xdd,
-            0xee,
-            0xff,
-        ];
+        // We can't use this in the implementation because it isn't available
+        // in Unity's .NET. But we can use it in tests.
+        var bytes = Convert.FromHexString(str);
+
         var ident2 = Identity.FromBigEndian(bytes);
         Assert.Equal(ident2, ident);
 
@@ -175,5 +145,14 @@ public static class BSATNRuntimeTests
                 Assert.ThrowsAny<Exception>(() => Identity.FromBigEndian(arr));
                 Assert.ThrowsAny<Exception>(() => Identity.From(arr));
             });
+    }
+
+    [Fact]
+    public static void NonHexStrings()
+    {
+        // n.b. 32 chars long
+        Assert.ThrowsAny<Exception>(
+            () => Address.FromHexString("these are not hex characters....")
+        );
     }
 }
