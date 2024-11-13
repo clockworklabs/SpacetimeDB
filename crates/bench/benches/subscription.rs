@@ -47,7 +47,7 @@ fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> Database
 }
 
 fn eval(c: &mut Criterion) {
-    let raw = SpacetimeRaw::build(false, false).unwrap();
+    let raw = SpacetimeRaw::build(false).unwrap();
 
     let lhs = create_table_footprint(&raw.db).unwrap();
     let rhs = create_table_location(&raw.db).unwrap();

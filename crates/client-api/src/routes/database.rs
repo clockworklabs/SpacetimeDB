@@ -406,18 +406,20 @@ where
             .into());
     }
 
-    // Should not load module for "!follow" ?
-    let leader = worker_ctx
-        .leader(database.id)
-        .await
-        .map_err(log_and_500)?
-        .ok_or(StatusCode::NOT_FOUND)?;
-    let replica_id = leader.replica_id;
+    let replica = worker_ctx
+        .get_leader_replica_by_database(database.id)
+        .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
+    let replica_id = replica.id;
 
-    let filepath = DatabaseLogger::filepath(&database_identity, replica_id);
-    let lines = DatabaseLogger::read_latest(&filepath, num_lines).await;
+    let logs_dir = worker_ctx.module_logs_dir(replica_id);
+    let lines = DatabaseLogger::read_latest(logs_dir, num_lines).await;
 
     let body = if follow {
+        let leader = worker_ctx
+            .leader(database.id)
+            .await
+            .map_err(log_and_500)?
+            .ok_or(StatusCode::NOT_FOUND)?;
         let log_rx = leader
             .module()
             .await

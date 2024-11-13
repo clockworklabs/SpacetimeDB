@@ -10,6 +10,7 @@ spacetimedb-lib.workspace = true
 spacetimedb-core.workspace = true
 spacetimedb-standalone.workspace = true
 spacetimedb-client-api.workspace = true
+spacetimedb-paths.workspace = true
 
 anyhow.workspace = true
 env_logger.workspace = true

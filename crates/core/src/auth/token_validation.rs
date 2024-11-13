@@ -9,11 +9,13 @@ use jsonwebtoken::{decode, Validation};
 pub use jsonwebtoken::{DecodingKey, EncodingKey};
 use jwks::Jwks;
 use lazy_static::lazy_static;
+use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror;
 
-use super::identity::{IncomingClaims, SpacetimeIdentityClaims2};
+use super::identity::{IncomingClaims, SpacetimeIdentityClaims};
+use super::JwtKeys;
 
 #[derive(thiserror::Error, Debug)]
 pub enum TokenValidationError {
@@ -35,18 +37,37 @@ pub enum TokenValidationError {
     Other(#[from] anyhow::Error),
 }
 
+// A token signer is responsible for signing tokens without doing any validation.
+pub trait TokenSigner: Sync + Send {
+    // Serialize the given claims and sign a JWT token with them as the payload.
+    fn sign<T: Serialize>(&self, claims: &T) -> Result<String, JwtError>;
+}
+
+impl TokenSigner for EncodingKey {
+    fn sign<Token: Serialize>(&self, claims: &Token) -> Result<String, JwtError> {
+        let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
+        jsonwebtoken::encode(&header, claims, self)
+    }
+}
+
+impl TokenSigner for JwtKeys {
+    fn sign<Token: Serialize>(&self, claims: &Token) -> Result<String, JwtError> {
+        self.private.sign(claims)
+    }
+}
+
 // A TokenValidator is responsible for validating a token and returning the claims.
 // This includes looking up the public key for the issuer and verifying the signature.
 // It is also responsible for enforcing the rules around the claims.
 // For example, this must ensure that the issuer and sub are no longer than 128 bytes.
 #[async_trait]
 pub trait TokenValidator {
-    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError>;
+    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError>;
 }
 
 #[async_trait]
 impl<T: TokenValidator + Send + Sync> TokenValidator for Arc<T> {
-    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
+    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
         (**self).validate_token(token).await
     }
 }
@@ -55,7 +76,7 @@ pub struct UnimplementedTokenValidator;
 
 #[async_trait]
 impl TokenValidator for UnimplementedTokenValidator {
-    async fn validate_token(&self, _token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
+    async fn validate_token(&self, _token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
         Err(TokenValidationError::Other(anyhow::anyhow!("Unimplemented")))
     }
 }
@@ -74,7 +95,7 @@ impl<T> TokenValidator for FullTokenValidator<T>
 where
     T: TokenValidator + Send + Sync,
 {
-    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
+    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
         let local_key_error = {
             let first_validator = BasicTokenValidator {
                 public_key: self.local_key.clone(),
@@ -97,18 +118,14 @@ where
     }
 }
 
-// This is a helper function that uses a global JWK cache. We should remove this eventually, and make the server hold on to its own.
-pub async fn validate_token(
-    local_key: DecodingKey,
-    local_issuer: &str,
-    token: &str,
-) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
-    let validator = FullTokenValidator {
+pub type DefaultValidator = FullTokenValidator<CachingOidcTokenValidator>;
+
+pub fn new_validator(local_key: DecodingKey, local_issuer: String) -> FullTokenValidator<CachingOidcTokenValidator> {
+    FullTokenValidator {
         local_key,
-        local_issuer: local_issuer.to_string(),
-        oidc_validator: GLOBAL_OIDC_VALIDATOR.clone(),
-    };
-    validator.validate_token(token).await
+        local_issuer,
+        oidc_validator: CachingOidcTokenValidator::get_default(),
+    }
 }
 
 // This verifies against a given public key and expected issuer.
@@ -124,15 +141,9 @@ lazy_static! {
     static ref REQUIRED_CLAIMS: Vec<&'static str> = vec!["sub", "iss"];
 }
 
-lazy_static! {
-    // Eventually we will want to add more required claims.
-    static ref GLOBAL_OIDC_VALIDATOR: Arc<CachingOidcTokenValidator> = Arc::new(CachingOidcTokenValidator::get_default());
-}
-
 #[async_trait]
-impl TokenValidator for BasicTokenValidator {
-    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
-        // TODO: Make this stored in the struct so we don't need to keep creating it.
+impl TokenValidator for DecodingKey {
+    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
         let mut validation = Validation::new(jsonwebtoken::Algorithm::ES256);
         validation.algorithms = vec![
             jsonwebtoken::Algorithm::ES256,
@@ -141,15 +152,20 @@ impl TokenValidator for BasicTokenValidator {
         ];
         validation.set_required_spec_claims(&REQUIRED_CLAIMS);
 
-        if let Some(expected_issuer) = &self.issuer {
-            validation.set_issuer(&[expected_issuer.clone()]);
-        }
-
         // TODO: We should require a specific audience at some point.
         validation.validate_aud = false;
 
-        let data = decode::<IncomingClaims>(token, &self.public_key, &validation)?;
+        let data = decode::<IncomingClaims>(token, self, &validation)?;
         let claims = data.claims;
+        claims.try_into()
+    }
+}
+
+#[async_trait]
+impl TokenValidator for BasicTokenValidator {
+    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
+        // This validates everything but the issuer.
+        let claims = self.public_key.validate_token(token).await?;
         if let Some(expected_issuer) = &self.issuer {
             if claims.issuer != *expected_issuer {
                 return Err(TokenValidationError::Other(anyhow::anyhow!(
@@ -159,7 +175,7 @@ impl TokenValidator for BasicTokenValidator {
                 )));
             }
         }
-        claims.try_into()
+        Ok(claims)
     }
 }
 
@@ -210,7 +226,7 @@ impl async_cache::Fetcher<Arc<JwksValidator>> for KeyFetcher {
 
 #[async_trait]
 impl TokenValidator for CachingOidcTokenValidator {
-    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
+    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
         let raw_issuer = get_raw_issuer(token)?;
         log::debug!("Getting validator for issuer {}", raw_issuer.clone());
         let validator = self
@@ -240,7 +256,7 @@ fn get_raw_issuer(token: &str) -> Result<String, TokenValidationError> {
 
 #[async_trait]
 impl TokenValidator for OidcTokenValidator {
-    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
+    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
         // TODO: Make this stored in the struct so we don't need to keep creating it.
         let raw_issuer = get_raw_issuer(token)?;
         // TODO: Consider checking for trailing slashes or requiring a scheme.
@@ -261,7 +277,7 @@ struct JwksValidator {
 
 #[async_trait]
 impl TokenValidator for JwksValidator {
-    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims2, TokenValidationError> {
+    async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
         let header = decode_header(token)?;
         if let Some(kid) = header.kid {
             let key = self
@@ -301,69 +317,21 @@ impl TokenValidator for JwksValidator {
 
 #[cfg(test)]
 mod tests {
-
-    use std::sync::Arc;
-
-    use crate::auth::identity::{IncomingClaims, SpacetimeIdentityClaims2};
+    use crate::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
     use crate::auth::token_validation::{
-        BasicTokenValidator, CachingOidcTokenValidator, FullTokenValidator, OidcTokenValidator, TokenValidator,
+        BasicTokenValidator, CachingOidcTokenValidator, FullTokenValidator, OidcTokenValidator, TokenSigner,
+        TokenValidator,
     };
-    use jsonwebkey as jwk;
-    use jsonwebtoken::{DecodingKey, EncodingKey};
-    use rand::distributions::{Alphanumeric, DistString};
-    use rand::thread_rng;
+    use crate::auth::JwtKeys;
+    use base64::Engine;
+    use openssl::ec::{EcGroup, EcKey};
     use serde_json;
     use spacetimedb_lib::Identity;
-
-    struct KeyPair {
-        pub public_key: DecodingKey,
-        pub private_key: EncodingKey,
-        pub key_id: String,
-        pub jwk: jwk::JsonWebKey,
-    }
-
-    fn to_jwks_json<I, K>(keys: I) -> String
-    where
-        I: IntoIterator<Item = K>,
-        K: AsRef<KeyPair>,
-    {
-        format!(
-            r#"{{"keys":[{}]}}"#,
-            keys.into_iter()
-                .map(|key| serde_json::to_string(&key.as_ref().to_public()).unwrap())
-                .collect::<Vec<String>>()
-                .join(",")
-        )
-    }
-
-    impl KeyPair {
-        fn generate_p256() -> anyhow::Result<KeyPair> {
-            let key_id = Alphanumeric.sample_string(&mut thread_rng(), 16);
-            let mut my_jwk = jwk::JsonWebKey::new(jwk::Key::generate_p256());
-            my_jwk.key_id = Some(key_id.clone());
-            my_jwk.set_algorithm(jwk::Algorithm::ES256).unwrap();
-            let public_key =
-                jsonwebtoken::DecodingKey::from_ec_pem(my_jwk.key.to_public().unwrap().to_pem().as_bytes())?;
-            let private_key = jsonwebtoken::EncodingKey::from_ec_pem(my_jwk.key.try_to_pem()?.as_bytes())?;
-            Ok(KeyPair {
-                public_key,
-                private_key,
-                key_id,
-                jwk: my_jwk,
-            })
-        }
-
-        fn to_public(&self) -> jwk::JsonWebKey {
-            let mut public_only = self.jwk.clone();
-            public_only.key = Box::from(public_only.key.to_public().unwrap().into_owned());
-            public_only
-        }
-    }
 
     #[tokio::test]
     async fn test_local_validator_checks_issuer() -> anyhow::Result<()> {
         // Test that the issuer must match the expected issuer for LocalTokenValidator.
-        let kp = KeyPair::generate_p256()?;
+        let kp = JwtKeys::generate()?;
         let issuer = "test1";
         let subject = "test_subject";
 
@@ -375,17 +343,16 @@ mod tests {
             iat: std::time::SystemTime::now(),
             exp: None,
         };
-        let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
-        let token = jsonwebtoken::encode(&header, &orig_claims, &kp.private_key)?;
+        let token = kp.private.sign(&orig_claims)?;
 
         {
             // Test that we can validate it.
             let validator = BasicTokenValidator {
-                public_key: kp.public_key.clone(),
+                public_key: kp.public.clone(),
                 issuer: Some(issuer.to_string()),
             };
 
-            let parsed_claims: SpacetimeIdentityClaims2 = validator.validate_token(&token).await?;
+            let parsed_claims: SpacetimeIdentityClaims = validator.validate_token(&token).await?;
             assert_eq!(parsed_claims.issuer, issuer);
             assert_eq!(parsed_claims.subject, subject);
             assert_eq!(parsed_claims.identity, Identity::from_claims(issuer, subject));
@@ -393,7 +360,7 @@ mod tests {
         {
             // Now try with the wrong expected issuer.
             let validator = BasicTokenValidator {
-                public_key: kp.public_key.clone(),
+                public_key: kp.public.clone(),
                 issuer: Some("otherissuer".to_string()),
             };
 
@@ -406,7 +373,7 @@ mod tests {
     #[tokio::test]
     async fn test_local_validator_checks_key() -> anyhow::Result<()> {
         // Test that the decoding key must work for LocalTokenValidator.
-        let kp = KeyPair::generate_p256()?;
+        let kp = JwtKeys::generate()?;
         let issuer = "test1";
         let subject = "test_subject";
 
@@ -418,27 +385,26 @@ mod tests {
             iat: std::time::SystemTime::now(),
             exp: None,
         };
-        let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
-        let token = jsonwebtoken::encode(&header, &orig_claims, &kp.private_key)?;
+        let token = kp.private.sign(&orig_claims)?;
 
         {
             // Test that we can validate it.
             let validator = BasicTokenValidator {
-                public_key: kp.public_key.clone(),
+                public_key: kp.public.clone(),
                 issuer: Some(issuer.to_string()),
             };
 
-            let parsed_claims: SpacetimeIdentityClaims2 = validator.validate_token(&token).await?;
+            let parsed_claims: SpacetimeIdentityClaims = validator.validate_token(&token).await?;
             assert_eq!(parsed_claims.issuer, issuer);
             assert_eq!(parsed_claims.subject, subject);
             assert_eq!(parsed_claims.identity, Identity::from_claims(issuer, subject));
         }
         {
             // We generate a new keypair and try to decode with that key.
-            let other_kp = KeyPair::generate_p256()?;
+            let other_kp = JwtKeys::generate()?;
             // Now try with the wrong expected issuer.
             let validator = BasicTokenValidator {
-                public_key: other_kp.public_key.clone(),
+                public_key: other_kp.public.clone(),
                 issuer: Some("otherissuer".to_string()),
             };
 
@@ -460,7 +426,7 @@ mod tests {
     #[tokio::test]
     async fn resigned_token_ignores_issuer() -> anyhow::Result<()> {
         // Test that the decoding key must work for LocalTokenValidator.
-        let kp = KeyPair::generate_p256()?;
+        let kp = JwtKeys::generate()?;
         let local_issuer = "test1";
         let external_issuer = "other_issuer";
         let subject = "test_subject";
@@ -473,18 +439,17 @@ mod tests {
             iat: std::time::SystemTime::now(),
             exp: None,
         };
-        let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
-        let token = jsonwebtoken::encode(&header, &orig_claims, &kp.private_key)?;
+        let token = kp.private.sign(&orig_claims)?;
 
         // First, try the successful case with the FullTokenValidator.
         {
             let validator = FullTokenValidator {
-                local_key: kp.public_key.clone(),
+                local_key: kp.public.clone(),
                 local_issuer: local_issuer.to_string(),
                 oidc_validator: OidcTokenValidator,
             };
 
-            let parsed_claims: SpacetimeIdentityClaims2 = validator.validate_token(&token).await?;
+            let parsed_claims: SpacetimeIdentityClaims = validator.validate_token(&token).await?;
             assert_eq!(parsed_claims.issuer, external_issuer);
             assert_eq!(parsed_claims.subject, subject);
             assert_eq!(parsed_claims.identity, Identity::from_claims(external_issuer, subject));
@@ -494,7 +459,7 @@ mod tests {
         // Double check that validation fails if we check the issuer.
         assert_validation_fails(
             &BasicTokenValidator {
-                public_key: kp.public_key.clone(),
+                public_key: kp.public.clone(),
                 issuer: Some(local_issuer.to_string()),
             },
             &token,
@@ -531,11 +496,7 @@ mod tests {
     }
 
     impl OIDCServerHandle {
-        pub async fn start_new<I, K>(ks: I) -> anyhow::Result<Self>
-        where
-            I: IntoIterator<Item = K>,
-            K: AsRef<KeyPair>,
-        {
+        pub async fn start_new(jwks_json: String) -> anyhow::Result<Self> {
             let listener = TcpListener::bind("0.0.0.0:0").await.unwrap();
             let addr = listener.local_addr()?;
             let port = addr.port();
@@ -544,7 +505,6 @@ mod tests {
                 jwks_uri: format!("{}/jwks.json", base_url),
             };
             let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-            let jwks_json = to_jwks_json(ks);
 
             let app = Router::new()
                 .route(
@@ -583,13 +543,22 @@ mod tests {
 
     async fn run_oidc_test<T: TokenValidator>(validator: T) -> anyhow::Result<()> {
         // We will put 2 keys in the keyset.
-        let kp1 = Arc::new(KeyPair::generate_p256()?);
-        let kp2 = Arc::new(KeyPair::generate_p256()?);
+        let mut kp1 = JwtKeys::generate()?;
+        let mut kp2 = JwtKeys::generate()?;
+
+        // Note: our fetcher library requires these, even though they are optional in the spec.
+        // We should replace the jwks fetcher at some point, but most OIDC providers will have these.
+        kp1.kid = Some("key1".to_string());
+        kp2.kid = Some("key2".to_string());
 
         // We won't put this in the keyset.
-        let invalid_kp = KeyPair::generate_p256()?;
+        let invalid_kp = JwtKeys::generate()?;
 
-        let handle = OIDCServerHandle::start_new(vec![kp1.clone(), kp2.clone()]).await?;
+        let valid_keys: Vec<JwtKeys> = vec![kp1.clone(), kp2.clone()];
+        // let jwks = keyset_to_json(vec![&jk, &kp1])?;
+        let jwks = keyset_to_json(valid_keys)?;
+
+        let handle = OIDCServerHandle::start_new(jwks).await?;
 
         let issuer = handle.base_url.clone();
         let subject = "test_subject";
@@ -602,10 +571,10 @@ mod tests {
             iat: std::time::SystemTime::now(),
             exp: None,
         };
-        let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
         for kp in [kp1, kp2] {
-            log::debug!("Testing with key {}", kp.key_id);
-            let token = jsonwebtoken::encode(&header, &orig_claims, &kp.private_key)?;
+            log::debug!("Testing with key {:?}", kp.kid);
+            // TODO: This test should also try using key ids in the token headers.
+            let token = kp.private.sign(&orig_claims)?;
 
             let validated_claims = validator.validate_token(&token).await?;
             assert_eq!(validated_claims.issuer, issuer);
@@ -613,7 +582,7 @@ mod tests {
             assert_eq!(validated_claims.identity, Identity::from_claims(&issuer, subject));
         }
 
-        let invalid_token = jsonwebtoken::encode(&header, &orig_claims, &invalid_kp.private_key)?;
+        let invalid_token = invalid_kp.private.sign(&orig_claims)?;
         assert!(validator.validate_token(&invalid_token).await.is_err());
 
         Ok(())
@@ -623,6 +592,7 @@ mod tests {
     async fn test_oidc_flow() -> anyhow::Result<()> {
         run_oidc_test(OidcTokenValidator).await
     }
+
     #[tokio::test]
     async fn test_caching_oidc_flow() -> anyhow::Result<()> {
         let v = CachingOidcTokenValidator::get_default();
@@ -631,12 +601,60 @@ mod tests {
 
     #[tokio::test]
     async fn test_full_validator_fallback() -> anyhow::Result<()> {
-        let kp = KeyPair::generate_p256()?;
+        let kp = JwtKeys::generate()?;
         let v = FullTokenValidator {
-            local_key: kp.public_key.clone(),
+            local_key: kp.public,
             local_issuer: "local_issuer".to_string(),
             oidc_validator: OidcTokenValidator,
         };
         run_oidc_test(v).await
+    }
+
+    /// Convert a set of keys to a JWKS JSON string.
+    fn keyset_to_json<I>(jks: I) -> anyhow::Result<String>
+    where
+        I: IntoIterator<Item = JwtKeys>,
+    {
+        let jks = jks
+            .into_iter()
+            .map(|key| to_jwk_json(&key).unwrap())
+            .collect::<Vec<serde_json::Value>>();
+
+        let j = serde_json::json!({
+            "keys": jks,
+        });
+        Ok(j.to_string())
+    }
+
+    // Extract the x and y coordinates from a public key and return a JWK for a single key.
+    fn to_jwk_json(jk: &JwtKeys) -> anyhow::Result<serde_json::Value> {
+        let eck = EcKey::public_key_from_pem(&jk.public_pem)?;
+
+        let group = EcGroup::from_curve_name(openssl::nid::Nid::X9_62_PRIME256V1)?;
+        let mut ctx = openssl::bn::BigNumContext::new()?;
+
+        // Get the x and y coordinates.
+        let mut x = openssl::bn::BigNum::new()?;
+        // let mut x = openssl::bn::BigNumRef
+        let mut y = openssl::bn::BigNum::new()?;
+        eck.public_key().affine_coordinates(&group, &mut x, &mut y, &mut ctx)?;
+
+        let x_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(x.to_vec());
+        let y_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(y.to_vec());
+
+        let mut jwks = serde_json::json!(
+            {
+                "kty": "EC",
+                "crv": "P-256",
+                "use": "sig",
+                "alg": "ES256",
+                "x": x_b64,
+                "y": y_b64
+            }
+        );
+        if let Some(kid) = &jk.kid {
+            jwks["kid"] = kid.to_string().into();
+        }
+        Ok(jwks)
     }
 }

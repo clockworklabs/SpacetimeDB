@@ -32,7 +32,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
 #[inline(never)]
 fn bench_suite<DB: BenchDatabase>(c: &mut Criterion, in_memory: bool) -> ResultBench<()> {
-    let mut db = DB::build(in_memory, false)?; // don't need fsync benchmarks anymore
+    let mut db = DB::build(in_memory)?;
     let param_db_name = DB::name();
     let param_in_memory = if in_memory { "mem" } else { "disk" };
     let db_params = format!("{param_db_name}/{param_in_memory}");

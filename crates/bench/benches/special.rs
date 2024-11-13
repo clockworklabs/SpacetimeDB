@@ -20,7 +20,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     serialize_benchmarks::<u32_u64_u64>(c);
     serialize_benchmarks::<u64_u64_u32>(c);
 
-    let db = SpacetimeModule::build(true, true).unwrap();
+    let db = SpacetimeModule::build(true).unwrap();
 
     custom_module_benchmarks(&db, c);
     custom_db_benchmarks(&db, c);

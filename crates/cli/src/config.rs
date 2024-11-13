@@ -2,11 +2,8 @@ use crate::util::{contains_protocol, host_or_url_to_host_and_protocol};
 use anyhow::Context;
 use jsonwebtoken::DecodingKey;
 use serde::{Deserialize, Serialize};
-use spacetimedb_fs_utils::{atomic_write, create_parent_dir};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use spacetimedb_fs_utils::atomic_write;
+use spacetimedb_paths::cli::CliTomlPath;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ServerConfig {
@@ -50,12 +47,8 @@ pub struct RawConfig {
 #[derive(Debug, Clone)]
 pub struct Config {
     home: RawConfig,
+    home_path: CliTomlPath,
 }
-
-const HOME_CONFIG_DIR: &str = ".spacetime";
-const CONFIG_FILENAME: &str = "config.toml";
-const SPACETIME_FILENAME: &str = "spacetime.toml";
-const DOT_SPACETIME_FILENAME: &str = ".spacetime.toml";
 
 const NO_DEFAULT_SERVER_ERROR_MESSAGE: &str = "No default server configuration.
 Set an existing server as the default with:
@@ -496,57 +489,35 @@ impl Config {
         &self.home.server_configs
     }
 
-    fn find_config_path(config_dir: &Path) -> Option<PathBuf> {
-        [DOT_SPACETIME_FILENAME, SPACETIME_FILENAME, CONFIG_FILENAME]
-            .iter()
-            .map(|filename| config_dir.join(filename))
-            .find(|path| path.exists())
-    }
-
-    fn system_config_path() -> PathBuf {
-        if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
-            config_path.into()
-        } else {
-            let mut config_path = dirs::home_dir().unwrap();
-            config_path.push(HOME_CONFIG_DIR);
-            Self::find_config_path(&config_path).unwrap_or_else(|| config_path.join(CONFIG_FILENAME))
-        }
-    }
-
-    fn load_from_file(config_path: &Path) -> anyhow::Result<RawConfig> {
-        let text = fs::read_to_string(config_path)?;
-        Ok(toml::from_str(&text)?)
-    }
-
-    pub fn load() -> anyhow::Result<Self> {
-        let home_path = Self::system_config_path();
-        let config = if home_path.exists() {
-            Self {
-                home: Self::load_from_file(&home_path)
-                    .inspect_err(|e| eprintln!("config file {home_path:?} is invalid: {e:#?}"))?,
+    pub fn load(home_path: CliTomlPath) -> anyhow::Result<Self> {
+        let home = spacetimedb::config::parse_config::<RawConfig>(home_path.as_ref())
+            .with_context(|| format!("config file {} is invalid", home_path.display()))?;
+        Ok(match home {
+            Some(home) => Self { home, home_path },
+            None => {
+                let config = Self {
+                    home: RawConfig::new_with_localhost(),
+                    home_path,
+                };
+                config.save();
+                config
             }
-        } else {
-            let config = Self {
-                home: RawConfig::new_with_localhost(),
-            };
-            config.save();
-            config
-        };
-        Ok(config)
+        })
     }
 
     #[doc(hidden)]
     /// Used in tests.
-    pub fn new_with_localhost() -> Self {
+    pub fn new_with_localhost(home_path: CliTomlPath) -> Self {
         Self {
             home: RawConfig::new_with_localhost(),
+            home_path,
         }
     }
 
     pub fn save(&self) {
-        let home_path = Self::system_config_path();
+        let home_path = &self.home_path;
         // If the `home_path` is in a directory, ensure it exists.
-        create_parent_dir(home_path.as_ref()).unwrap();
+        home_path.create_parent().unwrap();
 
         let config = toml::to_string_pretty(&self.home).unwrap();
 
@@ -561,7 +532,7 @@ impl Config {
         //
         // We should address this issue, but we currently don't expect it to arise very frequently
         // (see https://github.com/clockworklabs/SpacetimeDB/pull/1341#issuecomment-2150857432).
-        if let Err(e) = atomic_write(&home_path, config) {
+        if let Err(e) = atomic_write(&home_path.0, config) {
             eprintln!("Could not save config file: {e}")
         }
     }

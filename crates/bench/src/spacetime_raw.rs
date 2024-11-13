@@ -26,7 +26,7 @@ impl BenchDatabase for SpacetimeRaw {
     }
     type TableId = TableId;
 
-    fn build(in_memory: bool, _fsync: bool) -> ResultBench<Self>
+    fn build(in_memory: bool) -> ResultBench<Self>
     where
         Self: Sized,
     {
