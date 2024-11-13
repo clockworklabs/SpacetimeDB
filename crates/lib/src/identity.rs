@@ -244,7 +244,7 @@ mod tests {
         );
     }
 
-    // Make sure the checksum is valid.
+    /// Make sure the checksum is valid.
     fn validate_checksum(id: &[u8; 32]) -> bool {
         let checksum_input = &id[6..];
         let mut checksum_input_with_prefix = [0u8; 28];
