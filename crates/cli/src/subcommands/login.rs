@@ -61,6 +61,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     if let Some(server) = server_issued_login {
         let host = Url::parse(&config.get_host_url(Some(server))?)?;
+        eprintln!("exec: requested server_issued_login at server {server:?}");
         spacetimedb_token_cached(&mut config, &host, true).await?;
     } else {
         spacetimedb_token_cached(&mut config, &host, false).await?;
@@ -101,6 +102,7 @@ async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login:
         Ok(token.clone())
     } else {
         let token = if direct_login {
+            println!("spacetimedb_token_cached: no cached token, and direct_login requested at {host:?}");
             spacetimedb_direct_login(host).await?
         } else {
             let session_token = web_login_cached(config, host).await?;
@@ -259,6 +261,8 @@ struct LocalLoginResponse {
 
 async fn spacetimedb_direct_login(host: &Url) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
-    let response: LocalLoginResponse = client.post(host.join("identity")?).send().await?.json().await?;
+    let url = host.join("identity")?;
+    eprintln!("spacetimedb_direct_login {host:?}: Sending request to {url:?}");
+    let response: LocalLoginResponse = client.post(url).send().await?.json().await?;
     Ok(response.token)
 }
