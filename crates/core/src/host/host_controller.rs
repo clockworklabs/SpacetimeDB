@@ -716,7 +716,6 @@ impl Host {
                 None,
             )?,
             db::Storage::Disk => {
-                // History trait does not let use `DynDurabilityFut` directly
                 let snapshot_repo =
                     relational_db::open_snapshot_repo(replica_dir.snapshots(), database.database_identity, replica_id)?;
                 let (history, _) = relational_db::local_durability(replica_dir.commit_log()).await?;

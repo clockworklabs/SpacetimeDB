@@ -501,7 +501,6 @@ mod compat {
                 owner_identity,
                 host_type,
                 initial_program,
-                replication: Default::default(),
             }
         }
     }
@@ -514,7 +513,6 @@ mod compat {
                 owner_identity,
                 host_type,
                 initial_program,
-                replication: _,
             }: CanonicalDatabase,
         ) -> Self {
             Self {

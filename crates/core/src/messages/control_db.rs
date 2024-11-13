@@ -36,15 +36,6 @@ pub struct Database {
     ///
     /// Updating the database's module will **not** change this value.
     pub initial_program: Hash,
-
-    /// Replication configuration for the database.
-    pub replication: ReplicationConfig,
-}
-
-#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct ReplicationConfig {
-    pub id: u32,
-    pub replicas: Vec<u64>,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

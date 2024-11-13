@@ -140,7 +140,7 @@ impl NodeDelegate for StandaloneEnv {
         let database = self
             .control_db
             .get_database_by_id(database_id)?
-            .ok_or_else(|| anyhow::anyhow!("Database {} has no associated database", database_id))?;
+            .with_context(|| format!("Database {} not found", database_id))?;
 
         self.host_controller
             .get_or_launch_module_host(database, leader.id)
@@ -234,7 +234,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     owner_identity: *publisher,
                     host_type: spec.host_type,
                     initial_program,
-                    replication: Default::default(),
                 };
                 let database_id = self.control_db.insert_database(database.clone())?;
                 database.id = database_id;
