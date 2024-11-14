@@ -349,6 +349,7 @@ impl TypeChecker for SqlChecker {
 }
 
 fn parse_and_type_sql(ctx: &mut TyCtx, sql: &str, tx: &impl SchemaView) -> TypingResult<Statement> {
+    ctx.source = StatementSource::Query;
     match parse_sql(sql)? {
         SqlAst::Insert(insert) => Ok(Statement::Insert(type_insert(ctx, insert, tx)?)),
         SqlAst::Delete(delete) => Ok(Statement::Delete(type_delete(ctx, delete, tx)?)),

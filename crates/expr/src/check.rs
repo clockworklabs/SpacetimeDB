@@ -175,6 +175,7 @@ impl TypeChecker for SubChecker {
 
 /// Parse and type check a subscription query
 pub fn parse_and_type_sub(ctx: &mut TyCtx, sql: &str, tx: &impl SchemaView) -> TypingResult<RelExpr> {
+    ctx.source = StatementSource::Subscription;
     let expr = SubChecker::type_ast(ctx, parse_subscription(sql)?, tx)?;
     expect_table_type(ctx, expr)
 }
