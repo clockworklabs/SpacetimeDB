@@ -5,7 +5,7 @@ use base64::{
 };
 use reqwest::RequestBuilder;
 use serde::Deserialize;
-use spacetimedb::auth::identity::{IncomingClaims, SpacetimeIdentityClaims2};
+use spacetimedb::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::{AlgebraicType, Identity};
@@ -277,7 +277,7 @@ pub fn decode_identity(config: &Config) -> anyhow::Result<String> {
     let decoded_string = String::from_utf8(decoded_bytes)?;
 
     let claims_data: IncomingClaims = serde_json::from_str(decoded_string.as_str())?;
-    let claims_data: SpacetimeIdentityClaims2 = claims_data.try_into()?;
+    let claims_data: SpacetimeIdentityClaims = claims_data.try_into()?;
 
     Ok(claims_data.identity.to_string())
 }
