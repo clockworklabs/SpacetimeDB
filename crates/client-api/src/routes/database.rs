@@ -312,7 +312,6 @@ where
     let response_json: SchemaEntities = HashMap::from_iter([(&*entity, entity_description_json(description))]);
 
     Ok((
-        StatusCode::OK,
         TypedHeader(SpacetimeIdentity(call_info.auth.identity)),
         TypedHeader(SpacetimeIdentityToken(call_info.auth.creds)),
         axum::Json(response_json).into_response(),
@@ -388,7 +387,6 @@ where
     };
 
     Ok((
-        StatusCode::OK,
         TypedHeader(SpacetimeIdentity(call_info.auth.identity)),
         TypedHeader(SpacetimeIdentityToken(call_info.auth.creds)),
         response_json,
@@ -434,7 +432,7 @@ pub async fn info<S: ControlStateDelegate>(
     log::trace!("Fetched database from the worker db for address: {database_identity:?}");
 
     let response = InfoResponse::from(database);
-    Ok((StatusCode::OK, axum::Json(response)))
+    Ok(axum::Json(response))
 }
 
 #[derive(Deserialize)]
@@ -519,7 +517,6 @@ where
     };
 
     Ok((
-        StatusCode::OK,
         TypedHeader(headers::CacheControl::new().with_no_cache()),
         TypedHeader(headers::ContentType::from(mime_ndjson())),
         body,
@@ -619,7 +616,7 @@ where
         .await
         .map_err(log_and_500)??;
 
-    Ok((StatusCode::OK, axum::Json(json)))
+    Ok(axum::Json(json))
 }
 
 #[derive(Deserialize)]
