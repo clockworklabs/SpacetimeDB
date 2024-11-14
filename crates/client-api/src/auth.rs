@@ -6,12 +6,13 @@ use axum::response::IntoResponse;
 use axum_extra::typed_header::TypedHeader;
 use headers::{authorization, HeaderMapExt};
 use http::{request, HeaderValue, StatusCode};
-use serde::Deserialize;
-use spacetimedb::auth::identity::SpacetimeIdentityClaims2;
-use spacetimedb::auth::identity::{
-    decode_token, encode_token, DecodingKey, EncodingKey, JwtError, JwtErrorKind, SpacetimeIdentityClaims,
+use serde::{Deserialize, Serialize};
+use spacetimedb::auth::identity::SpacetimeIdentityClaims;
+use spacetimedb::auth::identity::{JwtError, JwtErrorKind};
+use spacetimedb::auth::token_validation::{
+    new_validator, DefaultValidator, TokenSigner, TokenValidationError, TokenValidator,
 };
-use spacetimedb::auth::token_validation::{validate_token, TokenValidationError};
+use spacetimedb::auth::JwtKeys;
 use spacetimedb::energy::EnergyQuanta;
 use spacetimedb::identity::Identity;
 use uuid::Uuid;
@@ -57,17 +58,9 @@ impl SpacetimeCreds {
     pub fn token(&self) -> &str {
         &self.token
     }
-    /// Decode this token into auth claims.
-    pub fn decode_token(&self, public_key: &DecodingKey) -> Result<SpacetimeIdentityClaims, JwtError> {
-        decode_token(public_key, self.token()).map(|x| x.claims)
-    }
+
     pub fn from_signed_token(token: String) -> Self {
         Self { token }
-    }
-    /// Mint a new credentials JWT for an identity.
-    pub fn encode_token(private_key: &EncodingKey, identity: Identity) -> Result<Self, JwtError> {
-        let token = encode_token(private_key, identity)?;
-        Ok(Self { token })
     }
 
     /// Extract credentials from the headers or else query string of a request.
@@ -137,12 +130,12 @@ impl TokenClaims {
 
     pub fn encode_and_sign_with_expiry(
         &self,
-        private_key: &EncodingKey,
+        signer: &impl TokenSigner,
         expiry: Option<Duration>,
     ) -> Result<String, JwtError> {
         let iat = SystemTime::now();
         let exp = expiry.map(|dur| iat + dur);
-        let claims = SpacetimeIdentityClaims2 {
+        let claims = SpacetimeIdentityClaims {
             identity: self.id(),
             subject: self.subject.clone(),
             issuer: self.issuer.clone(),
@@ -150,12 +143,11 @@ impl TokenClaims {
             iat,
             exp,
         };
-        let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
-        jsonwebtoken::encode(&header, &claims, private_key)
+        signer.sign(&claims)
     }
 
-    pub fn encode_and_sign(&self, private_key: &EncodingKey) -> Result<String, JwtError> {
-        self.encode_and_sign_with_expiry(private_key, None)
+    pub fn encode_and_sign(&self, signer: &impl TokenSigner) -> Result<String, JwtError> {
+        self.encode_and_sign_with_expiry(signer, None)
     }
 }
 
@@ -165,7 +157,7 @@ impl SpacetimeAuth {
         // Generate claims with a random subject.
         let subject = Uuid::new_v4().to_string();
         let claims = TokenClaims {
-            issuer: ctx.local_issuer(),
+            issuer: ctx.jwt_auth_provider().local_issuer().to_owned(),
             subject: subject.clone(),
             // Placeholder audience.
             audience: vec!["spacetimedb".to_string()],
@@ -173,7 +165,7 @@ impl SpacetimeAuth {
 
         let identity = claims.id();
         let creds = {
-            let token = claims.encode_and_sign(ctx.private_key()).map_err(log_and_500)?;
+            let token = claims.encode_and_sign(ctx.jwt_auth_provider()).map_err(log_and_500)?;
             SpacetimeCreds::from_signed_token(token)
         };
 
@@ -181,7 +173,7 @@ impl SpacetimeAuth {
             creds,
             identity,
             subject,
-            issuer: ctx.local_issuer(),
+            issuer: ctx.jwt_auth_provider().local_issuer().to_string(),
         })
     }
 
@@ -196,8 +188,70 @@ impl SpacetimeAuth {
     // Sign a new token with the same claims and a new expiry.
     // Note that this will not change the issuer, so the private_key might not match.
     // We do this to create short-lived tokens that we will be able to verify.
-    pub fn re_sign_with_expiry(&self, private_key: &EncodingKey, expiry: Duration) -> Result<String, JwtError> {
-        TokenClaims::from(self.clone()).encode_and_sign_with_expiry(private_key, Some(expiry))
+    pub fn re_sign_with_expiry(&self, signer: &impl TokenSigner, expiry: Duration) -> Result<String, JwtError> {
+        TokenClaims::from(self.clone()).encode_and_sign_with_expiry(signer, Some(expiry))
+    }
+}
+
+// JwtAuthProvider is used for signing and verifying JWT tokens.
+pub trait JwtAuthProvider: Sync + Send + TokenSigner {
+    type TV: TokenValidator + Send + Sync;
+    /// Used to validate incoming JWTs.
+    fn validator(&self) -> &Self::TV;
+
+    /// The issuer to use when signing JWTs.
+    fn local_issuer(&self) -> &str;
+
+    /// Return the public key used to verify JWTs, as the bytes of a PEM public key file.
+    ///
+    /// The `/identity/public-key` route calls this method to return the public key to callers.
+    fn public_key_bytes(&self) -> &[u8];
+}
+
+pub struct JwtKeyAuthProvider<TV: TokenValidator + Send + Sync> {
+    keys: JwtKeys,
+    local_issuer: String,
+    validator: TV,
+}
+
+pub type DefaultJwtAuthProvider = JwtKeyAuthProvider<DefaultValidator>;
+
+// Create a new AuthEnvironment using the default caching validator.
+pub fn default_auth_environment(keys: JwtKeys, local_issuer: String) -> JwtKeyAuthProvider<DefaultValidator> {
+    let validator = new_validator(keys.public.clone(), local_issuer.clone());
+    JwtKeyAuthProvider::new(keys, local_issuer, validator)
+}
+
+impl<TV: TokenValidator + Send + Sync> JwtKeyAuthProvider<TV> {
+    fn new(keys: JwtKeys, local_issuer: String, validator: TV) -> Self {
+        Self {
+            keys,
+            local_issuer,
+            validator,
+        }
+    }
+}
+
+impl<TV: TokenValidator + Send + Sync> TokenSigner for JwtKeyAuthProvider<TV> {
+    fn sign<T: Serialize>(&self, claims: &T) -> Result<String, JwtError> {
+        let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
+        jsonwebtoken::encode(&header, &claims, &self.keys.private)
+    }
+}
+
+impl<TV: TokenValidator + Send + Sync> JwtAuthProvider for JwtKeyAuthProvider<TV> {
+    type TV = TV;
+
+    fn local_issuer(&self) -> &str {
+        &self.local_issuer
+    }
+
+    fn public_key_bytes(&self) -> &[u8] {
+        &self.keys.public_pem
+    }
+
+    fn validator(&self) -> &Self::TV {
+        &self.validator
     }
 }
 
@@ -205,32 +259,12 @@ impl SpacetimeAuth {
 mod tests {
     use crate::auth::TokenClaims;
     use anyhow::Ok;
-    use jsonwebkey as jwk;
-    use jsonwebtoken::{DecodingKey, EncodingKey};
-    use spacetimedb::auth::identity;
-
-    // TODO: this keypair stuff is duplicated. We should create a test-only crate with helpers.
-    struct KeyPair {
-        pub public_key: DecodingKey,
-        pub private_key: EncodingKey,
-    }
-
-    fn new_keypair() -> anyhow::Result<KeyPair> {
-        let mut my_jwk = jwk::JsonWebKey::new(jwk::Key::generate_p256());
-
-        my_jwk.set_algorithm(jwk::Algorithm::ES256).unwrap();
-        let public_key = jsonwebtoken::DecodingKey::from_ec_pem(my_jwk.key.to_public().unwrap().to_pem().as_bytes())?;
-        let private_key = jsonwebtoken::EncodingKey::from_ec_pem(my_jwk.key.try_to_pem()?.as_bytes())?;
-        Ok(KeyPair {
-            public_key,
-            private_key,
-        })
-    }
+    use spacetimedb::auth::{token_validation::TokenValidator, JwtKeys};
 
     // Make sure that when we encode TokenClaims, we can decode to get the expected identity.
-    #[test]
-    fn decode_encoded_token() -> Result<(), anyhow::Error> {
-        let kp = new_keypair()?;
+    #[tokio::test]
+    async fn decode_encoded_token() -> Result<(), anyhow::Error> {
+        let kp = JwtKeys::generate()?;
 
         let claims = TokenClaims {
             issuer: "localhost".to_string(),
@@ -238,10 +272,10 @@ mod tests {
             audience: vec!["spacetimedb".to_string()],
         };
         let id = claims.id();
-        let token = claims.encode_and_sign(&kp.private_key)?;
+        let token = claims.encode_and_sign(&kp.private)?;
+        let decoded = kp.public.validate_token(&token).await?;
 
-        let decoded = identity::decode_token(&kp.public_key, &token)?;
-        assert_eq!(decoded.claims.identity, id);
+        assert_eq!(decoded.identity, id);
         Ok(())
     }
 }
@@ -258,7 +292,10 @@ impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for Space
             return Ok(Self { auth: None });
         };
 
-        let claims = validate_token(state.public_key().clone(), &state.local_issuer(), &creds.token)
+        let claims = state
+            .jwt_auth_provider()
+            .validator()
+            .validate_token(&creds.token)
             .await
             .map_err(AuthorizationRejection::Custom)?;
 
