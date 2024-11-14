@@ -6,6 +6,7 @@ on:
       - master
       - staging
       - dev
+      - phoebe/hotfix/0.11.1/divide-by-zero
     tags:
       - 'v*'
 
