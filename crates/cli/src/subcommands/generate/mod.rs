@@ -23,6 +23,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use wasmtime::{Caller, StoreContextMut};
 
+use crate::detect::{has_rust_fmt, has_rust_up};
 use crate::util::y_or_n;
 use crate::Config;
 use crate::{build, common_args};
@@ -471,7 +472,15 @@ impl WasmCtx {
 fn format_files(generated_files: Vec<PathBuf>, lang: Language) -> anyhow::Result<()> {
     match lang {
         Language::Rust => {
-            cmd!("rustup", "component", "add", "rustfmt").run()?;
+            if !has_rust_fmt()? {
+                if has_rust_up()? {
+                    if let Err(err) = cmd!("rustup", "component", "add", "rustfmt").run() {
+                        println!("Warning: Failed to install rustfmt: {err}");
+                    }
+                } else {
+                    return Err(anyhow::anyhow!("rustfmt is not installed. Please install it."));
+                }
+            }
             for path in generated_files {
                 cmd!("rustfmt", "--edition", "2021", path.to_str().unwrap()).run()?;
             }

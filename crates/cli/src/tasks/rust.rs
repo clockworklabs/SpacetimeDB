@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
+use crate::detect::{has_rust_up, has_wasm32_target};
 use anyhow::Context;
 use cargo_metadata::Message;
 use duct::cmd;
@@ -20,12 +21,15 @@ fn cargo_cmd(subcommand: &str, build_debug: bool, args: &[&str]) -> duct::Expres
 }
 
 pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
-    // Make sure that we have the wasm target installed (ok to run if its already installed)
-    if let Err(err) = cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run() {
-        println!(
-            "Warning: Failed to install wasm32-unknown-unknown target: {}. Is `rustup` installed?",
-            err
-        );
+    if !has_wasm32_target()? {
+        if has_rust_up()? {
+            // Make sure that we have the wasm target installed (ok to run if its already installed)
+            if let Err(err) = cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run() {
+                println!("Warning: Failed to install wasm32-unknown-unknown target: {}", err);
+            }
+        } else {
+            anyhow::bail!("wasm32-unknown-unknown target is not installed. Please install it.");
+        }
     }
 
     // Note: Clippy has to run first so that it can build & cache deps for actual build while checking in parallel.
