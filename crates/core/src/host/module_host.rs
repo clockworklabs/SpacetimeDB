@@ -540,7 +540,7 @@ impl ModuleHost {
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
         let this = self.clone();
         let _ = tokio::task::spawn_blocking(move || {
-            this.subscriptions().remove_subscriber(client_id);
+            this.subscriptions().remove_all_subscribers(client_id);
         })
         .await;
         // ignore NoSuchModule; if the module's already closed, that's fine

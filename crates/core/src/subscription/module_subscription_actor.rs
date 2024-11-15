@@ -1,9 +1,9 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
 use super::module_subscription_manager::SubscriptionManager;
 use super::query::compile_read_only_query;
-use super::subscription::ExecutionSet;
-use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
+use crate::client::messages::{SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionRows, SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
+use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::datastore::system_tables::StVarTable;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
@@ -14,8 +14,8 @@ use crate::sql::ast::SchemaViewer;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
-use spacetimedb_client_api_messages::websocket::FormatSwitch;
 use spacetimedb_expr::check::compile_sql_sub;
+use spacetimedb_client_api_messages::websocket::{BsatnFormat, FormatSwitch, JsonFormat, TableUpdate, Unsubscribe};
 use spacetimedb_expr::ty::TyCtx;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
@@ -46,109 +46,82 @@ impl ModuleSubscriptions {
         }
     }
 
+    fn run_subscriber(&self, sender: Arc<ClientConnectionSender>, query: Arc<ExecutionUnit>, auth: AuthCtx, tx: &TxId) ->
+    Result<FormatSwitch<TableUpdate<BsatnFormat>, TableUpdate<JsonFormat>>, DBError> {
+        query.check_auth(auth.owner, auth.caller).map_err(ErrorVm::Auth)?;
+
+        check_row_limit(
+            &query,
+            &self.relational_db,
+            &tx,
+            |query, tx| query.row_estimate(tx),
+            &auth,
+        )?;
+
+        let slow_query_threshold = StVarTable::sub_limit(&self.relational_db, &tx)?.map(Duration::from_millis);
+        Ok(match sender.config.protocol {
+            Protocol::Binary => FormatSwitch::Bsatn(query.eval(
+                &self.relational_db,
+                &tx,
+                &query.sql,
+                slow_query_threshold,
+                sender.config.compression,
+            )),
+            Protocol::Text => FormatSwitch::Json(query.eval(
+                &self.relational_db,
+                &tx,
+                &query.sql,
+                slow_query_threshold,
+                sender.config.compression,
+            )),
+        })
+    }
+
     /// Add a subscriber to the module. NOTE: this function is blocking.
     #[tracing::instrument(skip_all)]
     pub fn add_subscriber(
         &self,
         sender: Arc<ClientConnectionSender>,
-        subscription: Subscribe,
+        request: Subscribe,
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(), DBError> {
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
             self.relational_db.release_tx(tx);
         });
-        let request_id = subscription.request_id;
+        let request_id = request.request_id;
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let mut queries = vec![];
-
         let guard = self.subscriptions.read();
+        let query = super::query::WHITESPACE.replace_all(&request.query, " ");
+        let sql = query.trim();
+        let hash = QueryHash::from_string(sql);
+        let query = if let Some(unit) = guard.query(&hash) { unit } else {
+            // NOTE: The following ensures compliance with the 1.0 sql api.
+            // Come 1.0, it will have replaced the current compilation stack.
+            compile_sql_sub(
+                &mut TyCtx::default(),
+                sql,
+                &SchemaViewer::new(&self.relational_db, &*tx, &auth),
+            )?;
 
-        for sql in subscription
-            .query_strings
-            .iter()
-            .map(|sql| super::query::WHITESPACE.replace_all(sql, " "))
-        {
-            let sql = sql.trim();
-            if sql == super::query::SUBSCRIBE_TO_ALL_QUERY {
-                queries.extend(
-                    super::subscription::get_all(&self.relational_db, &tx, &auth)?
-                        .into_iter()
-                        .map(|query| {
-                            let hash = QueryHash::from_string(&query.sql);
-                            ExecutionUnit::new(query, hash).map(Arc::new)
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
-                );
-                continue;
-            }
-            let hash = QueryHash::from_string(sql);
-            if let Some(unit) = guard.query(&hash) {
-                queries.push(unit);
-            } else {
-                // NOTE: The following ensures compliance with the 1.0 sql api.
-                // Come 1.0, it will have replaced the current compilation stack.
-                compile_sql_sub(
-                    &mut TyCtx::default(),
-                    sql,
-                    &SchemaViewer::new(&self.relational_db, &*tx, &auth),
-                )?;
-
-                let mut compiled = compile_read_only_query(&self.relational_db, &auth, &tx, sql)?;
-                // Note that no error path is needed here.
-                // We know this vec only has a single element,
-                // since `parse_and_type_sub` guarantees it.
-                // This check will be removed come 1.0.
-                if compiled.len() == 1 {
-                    queries.push(Arc::new(ExecutionUnit::new(compiled.remove(0), hash)?));
-                }
-            }
-        }
+            let compiled = compile_read_only_query(&self.relational_db, &auth, &tx, sql)?;
+            Arc::new(ExecutionUnit::new(compiled, hash)?)
+        };
 
         drop(guard);
 
-        let execution_set: ExecutionSet = queries.into();
-
-        execution_set
-            .check_auth(auth.owner, auth.caller)
-            .map_err(ErrorVm::Auth)?;
-
-        check_row_limit(
-            &execution_set,
-            &self.relational_db,
-            &tx,
-            |execution_set, tx| execution_set.row_estimate(tx),
-            &auth,
-        )?;
-
-        let slow_query_threshold = StVarTable::sub_limit(&self.relational_db, &tx)?.map(Duration::from_millis);
-        let database_update = match sender.config.protocol {
-            Protocol::Text => FormatSwitch::Json(execution_set.eval(
-                &self.relational_db,
-                &tx,
-                slow_query_threshold,
-                sender.config.compression,
-            )),
-            Protocol::Binary => FormatSwitch::Bsatn(execution_set.eval(
-                &self.relational_db,
-                &tx,
-                slow_query_threshold,
-                sender.config.compression,
-            )),
-        };
+        let table_rows = self.run_subscriber(sender.clone(), query.clone(), auth, &tx)?;
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
-        subscriptions.remove_subscription(&(sender.id.identity, sender.id.address));
-        subscriptions.add_subscription(sender.clone(), execution_set.into_iter());
-        let num_queries = subscriptions.num_queries();
+        subscriptions.add_subscription(sender.clone(), query.clone());
 
         WORKER_METRICS
             .subscription_queries
             .with_label_values(&self.relational_db.database_identity())
-            .set(num_queries as i64);
+            .set(subscriptions.num_queries() as i64);
 
         #[cfg(test)]
         if let Some(assert) = _assert {
@@ -159,21 +132,65 @@ impl ModuleSubscriptions {
         // thread it's possible for messages to get sent to the client out of order. If you do
         // spawn in another thread messages will need to be buffered until the state is sent out
         // on the wire
-        let _ = sender.send_message(SubscriptionUpdateMessage {
-            database_update,
+        let _ = sender.send_message(SubscriptionMessage {
             request_id: Some(request_id),
+            query_id: Some(query.hash().into()),
             timer: Some(timer),
+            result: SubscriptionResult::Subscribe(SubscriptionRows {
+                table_id: query.return_table(),
+                table_name: query.return_name(),
+                table_rows
+            }),
         });
         Ok(())
     }
 
-    pub fn remove_subscriber(&self, client_id: ClientActorId) {
+    pub fn remove_subscriber(&self, sender: Arc<ClientConnectionSender>, request: Unsubscribe, timer: Instant) -> Result<(), DBError> {
         let mut subscriptions = self.subscriptions.write();
-        subscriptions.remove_subscription(&(client_id.identity, client_id.address));
-        WORKER_METRICS
-            .subscription_queries
-            .with_label_values(&self.relational_db.database_identity())
-            .set(subscriptions.num_queries() as i64);
+
+        // NOTE: See note in add_subscriber()
+        let _ = sender.send_message(if let Some(query) = subscriptions.remove_subscription(&(sender.id.identity, sender.id.address), request.query_id.into()) {
+            let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
+            let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Unsubscribe), |tx| {
+                self.relational_db.release_tx(tx);
+            });
+            let table_rows = self.run_subscriber(sender.clone(), query.clone(), auth, &tx)?;
+
+            WORKER_METRICS
+                .subscription_queries
+                .with_label_values(&self.relational_db.database_identity())
+                .set(subscriptions.num_queries() as i64);
+
+            SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: Some(query.hash().into()),
+                timer: Some(timer),
+                result: SubscriptionResult::Unsubscribe(SubscriptionRows {
+                    table_id: query.return_table(),
+                    table_name: query.return_name(),
+                    table_rows
+                }),
+            }
+        }
+        else {
+            SubscriptionMessage {
+                request_id: Some(request.request_id),
+                query_id: None,
+                timer: Some(timer),
+                result: SubscriptionResult::Error(SubscriptionError {
+                    table_id: None,
+                    message: "No such query".into(),
+                })
+            }
+        });
+        
+        Ok(())
+    }
+
+    pub fn remove_all_subscribers(&self, client_id: ClientActorId) {
+        let mut subscriptions = self.subscriptions.write();
+
+        subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.address));
     }
 
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
@@ -258,7 +275,7 @@ mod tests {
         let module_subscriptions = ModuleSubscriptions::new(db.clone(), owner);
 
         let subscribe = Subscribe {
-            query_strings: [sql.into()].into(),
+            query: sql.into(),
             request_id: 0,
         };
         module_subscriptions.add_subscriber(sender, subscribe, Instant::now(), assert)

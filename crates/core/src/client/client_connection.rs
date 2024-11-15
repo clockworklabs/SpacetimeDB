@@ -7,7 +7,7 @@ use super::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use super::{message_handlers, ClientActorId, MessageHandleError};
 use crate::error::DBError;
 use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
-use crate::messages::websocket::Subscribe;
+use crate::messages::websocket::{Subscribe, Unsubscribe};
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
@@ -283,12 +283,23 @@ impl ClientConnection {
             .await
     }
 
-    pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
+    pub async fn subscribe(&self, request: Subscribe, timer: Instant) -> Result<(), DBError> {
         let me = self.clone();
         tokio::task::spawn_blocking(move || {
             me.module
                 .subscriptions()
-                .add_subscriber(me.sender, subscription, timer, None)
+                .add_subscriber(me.sender, request, timer, None)
+        })
+        .await
+        .unwrap()
+    }
+
+    pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<(), DBError> {
+        let me = self.clone();
+        tokio::task::spawn_blocking(move || {
+            me.module
+                .subscriptions()
+                .remove_subscriber(me.sender, request, timer)
         })
         .await
         .unwrap()

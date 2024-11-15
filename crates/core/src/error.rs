@@ -99,7 +99,9 @@ pub enum SubscriptionError {
     NotFound(IndexId),
     #[error("Empty string")]
     Empty,
-    #[error("Queries with side effects not allowed: {0:?}")]
+    #[error("Queries over multiple tables are not supported")]
+    Multiple,
+    #[error("Queries with side effects are not allowed: {0:?}")]
     SideEffect(Crud),
     #[error("Unsupported query on subscription: {0:?}")]
     Unsupported(String),

@@ -87,6 +87,14 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
+        ClientMessage::Unsubscribe(request) => {
+            let res = client.unsubscribe(request, timer).await;
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Unsubscribe, &address, "")
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
+        }
         ClientMessage::OneOffQuery(OneOffQuery {
             query_string: query,
             message_id,

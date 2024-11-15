@@ -8,13 +8,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_vm::expr::{self, Crud, CrudExpr, QueryExpr};
 
 pub(crate) static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
-pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 
-// TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
-// as it can only return back the changes valid for the tables in scope *right now*
-// instead of **continuously updating** the db changes
-// with system table modifications (add/remove tables, indexes, ...).
-//
 /// Variant of [`compile_read_only_query`] which appends `SourceExpr`s into a given `SourceBuilder`,
 /// rather than returning a new `SourceSet`.
 ///
@@ -25,7 +19,7 @@ pub fn compile_read_only_query(
     auth: &AuthCtx,
     tx: &Tx,
     input: &str,
-) -> Result<Vec<SupportedQuery>, DBError> {
+) -> Result<SupportedQuery, DBError> {
     let input = input.trim();
     if input.is_empty() {
         return Err(SubscriptionError::Empty.into());
@@ -34,31 +28,22 @@ pub fn compile_read_only_query(
     // Remove redundant whitespace, and in particular newlines, for debug info.
     let input = WHITESPACE.replace_all(input, " ");
 
-    let compiled = compile_sql(relational_db, auth, tx, &input)?;
-    let mut queries = Vec::with_capacity(compiled.len());
-    for q in compiled {
-        return Err(SubscriptionError::SideEffect(match q {
-            CrudExpr::Query(x) => {
-                queries.push(x);
-                continue;
-            }
-            CrudExpr::Insert { .. } => Crud::Insert,
-            CrudExpr::Update { .. } => Crud::Update,
-            CrudExpr::Delete { .. } => Crud::Delete,
-            CrudExpr::SetVar { .. } => Crud::Config,
-            CrudExpr::ReadVar { .. } => Crud::Config,
-        })
-        .into());
+    let mut compiled = compile_sql(relational_db, auth, tx, &input)?;
+    match compiled.len() {
+        1 => {},
+        0 => return Err(SubscriptionError::Empty.into()),
+        _ => return Err(SubscriptionError::Multiple.into()),
     }
 
-    if !queries.is_empty() {
-        Ok(queries
-            .into_iter()
-            .map(|query| SupportedQuery::new(query, input.to_string()))
-            .collect::<Result<_, _>>()?)
-    } else {
-        Err(SubscriptionError::Empty.into())
-    }
+    Err(SubscriptionError::SideEffect(match compiled.pop().unwrap() {
+        CrudExpr::Query(query) => return SupportedQuery::new(query, input.to_string()),
+        CrudExpr::Insert { .. } => Crud::Insert,
+        CrudExpr::Update { .. } => Crud::Update,
+        CrudExpr::Delete { .. } => Crud::Delete,
+        CrudExpr::SetVar { .. } => Crud::Config,
+        CrudExpr::ReadVar { .. } => Crud::Config,
+    })
+    .into())
 }
 
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
@@ -97,7 +82,7 @@ mod tests {
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
     use crate::sql::execute::collect_result;
     use crate::sql::execute::tests::run_for_testing;
-    use crate::subscription::subscription::{get_all, ExecutionSet};
+    use crate::subscription::subscription::ExecutionSet;
     use crate::vm::tests::create_table_with_rows;
     use crate::vm::DbProgram;
     use itertools::Itertools;
@@ -510,58 +495,15 @@ mod tests {
         AND MobileEntityState.location_z < 192000";
 
         let tx = db.begin_tx(Workload::ForTests);
-        let qset = compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, sql_query)?;
-
-        for q in qset {
-            let result = run_query(
-                &db,
-                &tx,
-                q.as_expr(),
-                AuthCtx::for_testing(),
-                SourceSet::<_, 0>::empty(),
-            )?;
-            assert_eq!(result.len(), 1, "Join query did not return any rows");
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_subscribe_all() -> ResultTest<()> {
-        let db = TestDB::durable()?;
-
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-
-        let (schema_1, _, _, _) = make_inv(&db, &mut tx, StAccess::Public)?;
-        let (schema_2, _, _, _) = make_player(&db, &mut tx)?;
-        db.commit_tx(tx)?;
-        let row_1 = product!(1u64, "health");
-        let row_2 = product!(2u64, "jhon doe");
-        let tx = db.begin_tx(Workload::Subscribe);
-        let s = get_all(&db, &tx, &AuthCtx::for_testing())?.into();
-        check_query_eval(&db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
-
-        let data1 = DatabaseTableUpdate {
-            table_id: schema_1.table_id,
-            table_name: "inventory".into(),
-            deletes: [row_1].into(),
-            inserts: [].into(),
-        };
-
-        let data2 = DatabaseTableUpdate {
-            table_id: schema_2.table_id,
-            table_name: "player".into(),
-            deletes: [].into(),
-            inserts: [row_2].into(),
-        };
-
-        let update = DatabaseUpdate {
-            tables: vec![data1, data2],
-        };
-
-        let row_1 = product!(1u64, "health");
-        let row_2 = product!(2u64, "jhon doe");
-        check_query_incr(&db, &tx, &s, &update, 2, &[row_1, row_2])?;
+        let q = compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, sql_query)?;
+        let result = run_query(
+            &db,
+            &tx,
+            q.as_expr(),
+            AuthCtx::for_testing(),
+            SourceSet::<_, 0>::empty(),
+        )?;
+        assert_eq!(result.len(), 1, "Join query did not return any rows");
 
         Ok(())
     }
@@ -596,18 +538,14 @@ mod tests {
             "SELECT * FROM lhs WHERE id > 5",
         ];
         for scan in scans {
-            let expr = compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, scan)?
-                .pop()
-                .unwrap();
+            let expr = compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, scan)?;
             assert_eq!(expr.kind(), Supported::Select, "{scan}\n{expr:#?}");
         }
 
         // Only index semijoins are supported
         let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
         for join in joins {
-            let expr = compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, join)?
-                .pop()
-                .unwrap();
+            let expr = compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, join)?;
             assert_eq!(expr.kind(), Supported::Semijoin, "{join}\n{expr:#?}");
         }
 

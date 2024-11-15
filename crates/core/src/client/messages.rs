@@ -11,7 +11,8 @@ use spacetimedb_client_api_messages::websocket::{
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::Address;
-use spacetimedb_sats::bsatn;
+use spacetimedb_primitives::TableId;
+use spacetimedb_sats::{bsatn, u256};
 use spacetimedb_vm::relation::MemTable;
 use std::sync::Arc;
 use std::time::Instant;
@@ -65,7 +66,7 @@ pub fn serialize(msg: impl ToProtocol<Encoded = SwitchedServerMessage>, config: 
 pub enum SerializableMessage {
     Query(OneOffQueryResponseMessage),
     Identity(IdentityTokenMessage),
-    Subscribe(SubscriptionUpdateMessage),
+    Subscribe(SubscriptionMessage),
     TxUpdate(TransactionUpdateMessage),
 }
 
@@ -82,7 +83,11 @@ impl SerializableMessage {
     pub fn workload(&self) -> Option<WorkloadType> {
         match self {
             Self::Query(_) => Some(WorkloadType::Sql),
-            Self::Subscribe(_) => Some(WorkloadType::Subscribe),
+            Self::Subscribe(x) => match x.result {
+                SubscriptionResult::Subscribe(_) => Some(WorkloadType::Subscribe),
+                SubscriptionResult::Unsubscribe(_) => Some(WorkloadType::Unsubscribe),
+                _ => None,
+            },
             Self::TxUpdate(_) => Some(WorkloadType::Update),
             Self::Identity(_) => None,
         }
@@ -225,19 +230,157 @@ impl ToProtocol for SubscriptionUpdateMessage {
         protocol.assert_matches_format_switch(&self.database_update);
         match self.database_update {
             FormatSwitch::Bsatn(database_update) => {
-                FormatSwitch::Bsatn(ws::ServerMessage::InitialSubscription(ws::InitialSubscription {
+                FormatSwitch::Bsatn(ws::SubscriptionUpdate {
                     database_update,
                     request_id,
                     total_host_execution_duration_micros,
-                }))
+                }.into())
             }
             FormatSwitch::Json(database_update) => {
-                FormatSwitch::Json(ws::ServerMessage::InitialSubscription(ws::InitialSubscription {
+                FormatSwitch::Json(ws::SubscriptionUpdate {
                     database_update,
                     request_id,
                     total_host_execution_duration_micros,
-                }))
+                }.into())
             }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SubscriptionRows {
+    pub table_id: TableId,
+    pub table_name: Box<str>,
+    pub table_rows: FormatSwitch<ws::TableUpdate<BsatnFormat>, ws::TableUpdate<JsonFormat>>,
+}
+
+impl ToProtocol for SubscriptionRows {
+    type Encoded = FormatSwitch<ws::SubscribeRows<BsatnFormat>, ws::SubscribeRows<JsonFormat>>;
+    fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
+        protocol.assert_matches_format_switch(&self.table_rows);
+        match self.table_rows {
+            FormatSwitch::Bsatn(table_rows) => FormatSwitch::Bsatn(ws::SubscribeRows {
+                table_id: self.table_id,
+                table_name: self.table_name,
+                table_rows
+            }.into()),
+            FormatSwitch::Json(table_rows) => FormatSwitch::Json(ws::SubscribeRows {
+                table_id: self.table_id,
+                table_name: self.table_name,
+                table_rows
+            }.into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SubscriptionError {
+    pub table_id: Option<TableId>,
+    pub message: Box<str>,
+}
+
+#[derive(Debug, Clone)]
+pub enum SubscriptionResult {
+    Subscribe(SubscriptionRows),
+    Unsubscribe(SubscriptionRows),
+    Error(SubscriptionError),
+}
+
+#[derive(Debug, Clone)]
+pub struct SubscriptionMessage {
+    pub timer: Option<Instant>,
+    pub request_id: Option<RequestId>,
+    pub query_id: Option<ws::QueryId>,
+    pub result: SubscriptionResult,
+}
+
+fn num_rows_in(rows: &SubscriptionRows) -> usize {
+    match &rows.table_rows {
+        FormatSwitch::Bsatn(x) => x.num_rows(),
+        FormatSwitch::Json(x) => x.num_rows(),
+    }
+}
+
+impl SubscriptionMessage {
+    fn num_rows(&self) -> usize {
+        match &self.result {
+            SubscriptionResult::Subscribe(x) => num_rows_in(&x),
+            SubscriptionResult::Unsubscribe(x) => num_rows_in(&x),
+            _ => 0,
+        }
+    }
+}
+
+impl ToProtocol for SubscriptionMessage {
+    type Encoded = SwitchedServerMessage;
+    fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
+        let request_id = self.request_id.unwrap_or(0);
+        let query_id = self.query_id.unwrap_or(ws::QueryId { hash: u256::ZERO });
+        let total_host_execution_duration_micros = self.timer.map_or(0, |t| t.elapsed().as_micros() as u64);
+
+        match self.result {
+            SubscriptionResult::Subscribe(result) => {
+                protocol.assert_matches_format_switch(&result.table_rows);
+                match result.table_rows {
+                    FormatSwitch::Bsatn(table_rows) => FormatSwitch::Bsatn(ws::SubscribeApplied {
+                        total_host_execution_duration_micros,
+                        request_id,
+                        query_id,
+                        rows: ws::SubscribeRows {
+                            table_id: result.table_id,
+                            table_name: result.table_name,
+                            table_rows
+                        },
+                    }.into()),
+                    FormatSwitch::Json(table_rows) => FormatSwitch::Json(ws::SubscribeApplied {
+                        total_host_execution_duration_micros,
+                        request_id,
+                        query_id,
+                        rows: ws::SubscribeRows {
+                            table_id: result.table_id,
+                            table_name: result.table_name,
+                            table_rows
+                        },
+                    }.into()),
+                }
+            },
+            SubscriptionResult::Unsubscribe(result) => {
+                protocol.assert_matches_format_switch(&result.table_rows);
+                match result.table_rows {
+                    FormatSwitch::Bsatn(table_rows) => FormatSwitch::Bsatn(ws::UnsubscribeApplied {
+                        total_host_execution_duration_micros,
+                        request_id,
+                        query_id,
+                        rows: ws::SubscribeRows {
+                            table_id: result.table_id,
+                            table_name: result.table_name,
+                            table_rows
+                        },
+                    }.into()),
+                    FormatSwitch::Json(table_rows) => FormatSwitch::Json(ws::UnsubscribeApplied {
+                        total_host_execution_duration_micros,
+                        request_id,
+                        query_id,
+                        rows: ws::SubscribeRows {
+                            table_id: result.table_id,
+                            table_name: result.table_name,
+                            table_rows
+                        },
+                    }.into()),
+                }
+            },
+            SubscriptionResult::Error(error) => {
+                let msg = ws::SubscriptionError {
+                    total_host_execution_duration_micros,
+                    request_id: self.request_id, // Pass Option through
+                    table_id: error.table_id,
+                    error: error.message,
+                };
+                match protocol {
+                    Protocol::Binary => FormatSwitch::Bsatn(msg.into()),
+                    Protocol::Text => FormatSwitch::Json(msg.into()),
+                }
+            },
         }
     }
 }

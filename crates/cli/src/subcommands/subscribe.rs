@@ -121,7 +121,7 @@ struct SubscriptionTable {
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let queries = args.get_many::<String>("query").unwrap();
+    let query = args.get_one::<String>("query").unwrap();
     let num = args.get_one::<u32>("num-updates").copied();
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
@@ -152,7 +152,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
 
     let task = async {
-        subscribe(&mut ws, queries.cloned().map(Into::into).collect()).await?;
+        subscribe(&mut ws, query.clone().into_boxed_str()).await?;
         await_initial_update(&mut ws, print_initial_update.then_some(&module_def)).await?;
         consume_transaction_updates(&mut ws, num, &module_def).await
     };
@@ -175,13 +175,13 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 }
 
 /// Send the subscribe message.
-async fn subscribe<S>(ws: &mut S, query_strings: Box<[Box<str>]>) -> Result<(), S::Error>
+async fn subscribe<S>(ws: &mut S, query: Box<str>) -> Result<(), S::Error>
 where
     S: Sink<WsMessage> + Unpin,
 {
     let msg = serde_json::to_string(&SerializeWrapper::new(ws::ClientMessage::<()>::Subscribe(
         ws::Subscribe {
-            query_strings,
+            query,
             request_id: 0,
         },
     )))
@@ -201,7 +201,7 @@ where
     while let Some(msg) = ws.try_next().await? {
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
-            ws::ServerMessage::InitialSubscription(sub) => {
+            ws::ServerMessage::SubscriptionUpdate(sub) => {
                 if let Some(module_def) = module_def {
                     let formatted = reformat_update(&sub.database_update, module_def)?;
                     let output = serde_json::to_string(&formatted)? + "\n";
@@ -247,7 +247,7 @@ where
 
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
-            ws::ServerMessage::InitialSubscription(_) => {
+            ws::ServerMessage::SubscriptionUpdate(_) => {
                 anyhow::bail!("protocol error: received a second initial subscription update")
             }
             ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { update, .. })

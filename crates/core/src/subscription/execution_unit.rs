@@ -8,11 +8,12 @@ use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue,
 use crate::messages::websocket::TableUpdate;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, RowListLen as _, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{Compression, QueryId, QueryUpdate, RowListLen as _, WebsocketFormat};
 use spacetimedb_lib::db::error::AuthError;
 use spacetimedb_lib::relation::DbTable;
 use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::u256;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::{AuthAccess, NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;
@@ -39,6 +40,20 @@ use std::time::Duration;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct QueryHash {
     data: [u8; 32],
+}
+
+impl Into<QueryId> for QueryHash {
+    fn into(self) -> QueryId {
+        let ptr = &self.data as *const [u8; 32] as *const u128;
+        QueryId { hash: unsafe { u256::from_words(*ptr, *ptr.wrapping_add(1)) } }
+    }
+}
+
+impl Into<QueryHash> for QueryId {
+    fn into(self) -> QueryHash {
+        let ptr = &self.hash.0 as *const [u128; 2] as *const [u8; 32];
+        QueryHash { data: unsafe { *ptr } }
+    }
 }
 
 impl QueryHash {
@@ -208,7 +223,7 @@ impl ExecutionUnit {
         sql: &str,
         slow_query_threshold: Option<Duration>,
         compression: Compression,
-    ) -> Option<TableUpdate<F>> {
+    ) -> TableUpdate<F> {
         let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, tx.ctx.workload()).log_guard();
 
         // Build & execute the query and then encode it to a row list.
@@ -217,12 +232,10 @@ impl ExecutionUnit {
         let inserts = inserts.iter();
         let (inserts, num_rows) = F::encode_list(inserts);
 
-        (!inserts.is_empty()).then(|| {
-            let deletes = F::List::default();
-            let qu = QueryUpdate { deletes, inserts };
-            let update = F::into_query_update(qu, compression);
-            TableUpdate::new(self.return_table(), self.return_name(), (update, num_rows))
-        })
+        let deletes = F::List::default();
+        let qu = QueryUpdate { deletes, inserts };
+        let update = F::into_query_update(qu, compression);
+        TableUpdate::new(self.return_table(), self.return_name(), (update, num_rows))
     }
 
     /// Evaluate this execution unit against the given delta tables.

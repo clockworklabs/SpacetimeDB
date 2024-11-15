@@ -23,6 +23,12 @@ type Query = Arc<ExecutionUnit>;
 type Client = Arc<ClientConnectionSender>;
 type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
 
+#[derive(Debug)]
+pub struct ClientWithRefCount {
+    pub client: Client,
+    pub ref_count: u32,
+}
+
 /// Responsible for the efficient evaluation of subscriptions.
 /// It performs basic multi-query optimization,
 /// in that if a query has N subscribers,
@@ -31,7 +37,7 @@ type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::Databa
 #[derive(Debug, Default)]
 pub struct SubscriptionManager {
     // Subscriber identities and their client connections.
-    clients: HashMap<Id, Client>,
+    clients: HashMap<Id, ClientWithRefCount>,
     // Queries for which there is at least one subscriber.
     queries: HashMap<QueryHash, Query>,
     // The subscribers for each query.
@@ -42,7 +48,7 @@ pub struct SubscriptionManager {
 
 impl SubscriptionManager {
     pub fn client(&self, id: &Id) -> Client {
-        self.clients[id].clone()
+        self.clients[id].client.clone()
     }
 
     pub fn query(&self, hash: &QueryHash) -> Option<Query> {
@@ -72,15 +78,62 @@ impl SubscriptionManager {
     /// If a query is not already indexed,
     /// its table ids added to the inverted index.
     #[tracing::instrument(skip_all)]
-    pub fn add_subscription(&mut self, client: Client, queries: impl IntoIterator<Item = Query>) {
-        let id = (client.id.identity, client.id.address);
-        self.clients.insert(id, client);
-        for unit in queries {
-            let hash = unit.hash();
-            self.tables.entry(unit.return_table()).or_default().insert(hash);
-            self.tables.entry(unit.filter_table()).or_default().insert(hash);
-            self.subscribers.entry(hash).or_default().insert(id);
-            self.queries.insert(hash, unit);
+    pub fn add_subscription(&mut self, client: Client, query: Query) {
+        let client_id = (client.id.identity, client.id.address);
+        self.clients.entry(client_id)
+            .and_modify(|e| e.ref_count += 1)
+            .or_insert(ClientWithRefCount {client, ref_count: 0});
+
+        let hash = query.hash();
+        self.tables.entry(query.return_table()).or_default().insert(hash);
+        self.tables.entry(query.filter_table()).or_default().insert(hash);
+        self.subscribers.entry(hash).or_default().insert(client_id);
+        self.queries.insert(hash, query);
+    }
+
+    /// Removes a query from the client's subscriber mapping.
+    /// If a query no longer has any subscribers,
+    /// it is removed from the index along with its table ids.
+    /// If a client no longer has any queries,
+    /// it is removed from the index.
+    #[tracing::instrument(skip_all)]
+    pub fn remove_subscription(&mut self, client_id: &Id, query: QueryHash) -> Option<Query> {
+        // Remove `hash` from the set of queries for `table_id`.
+        // When the table has no queries, cleanup the map entry altogether.
+        let mut remove_table_query = |table_id: TableId| {
+            if let Entry::Occupied(mut entry) = self.tables.entry(table_id) {
+                let hashes = entry.get_mut();
+                if hashes.remove(&query) && hashes.is_empty() {
+                    entry.remove();
+                }
+            }
+        };
+
+        if let Some(client) = self.clients.get_mut(client_id) {
+            client.ref_count -= 1;
+            if client.ref_count == 0 {
+                self.clients.remove(client_id);
+            }
+        }
+
+        if let Some(ids) = self.subscribers.get_mut(&query) {
+            ids.remove(client_id);
+            if ids.is_empty() {
+                if let Some(query) = self.queries.remove(&query) {
+                    remove_table_query(query.return_table());
+                    remove_table_query(query.filter_table());
+                    Some(query)
+                }
+                else {
+                    None
+                }
+            }
+            else {
+                Some(self.queries[&query].clone())
+            }
+        }
+        else {
+            None
         }
     }
 
@@ -88,7 +141,7 @@ impl SubscriptionManager {
     /// If a query no longer has any subscribers,
     /// it is removed from the index along with its table ids.
     #[tracing::instrument(skip_all)]
-    pub fn remove_subscription(&mut self, client: &Id) {
+    pub fn remove_all_subscriptions(&mut self, client: &Id) {
         // Remove `hash` from the set of queries for `table_id`.
         // When the table has no queries, cleanup the map entry altogether.
         let mut remove_table_query = |table_id: TableId, hash: &QueryHash| {
@@ -178,7 +231,7 @@ impl SubscriptionManager {
                     }
 
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
-                        let client = &*self.clients[id];
+                        let client = &*self.clients[id].client;
                         let update = match client.config.protocol {
                             Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(&delta.updates, client, &mut ops_bin)),
                             Protocol::Text => Json(memo_encode::<JsonFormat>(&delta.updates, client, &mut ops_json)),
@@ -343,7 +396,7 @@ mod tests {
         let client = Arc::new(client(0));
 
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client, [plan]);
+        subscriptions.add_subscription(client, plan);
 
         assert!(subscriptions.contains_query(&hash));
         assert!(subscriptions.contains_subscription(&id, &hash));
@@ -365,8 +418,8 @@ mod tests {
         let client = Arc::new(client(0));
 
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client, [plan]);
-        subscriptions.remove_subscription(&id);
+        subscriptions.add_subscription(client, plan.clone());
+        subscriptions.remove_subscription(&id, plan.hash());
 
         assert!(!subscriptions.contains_query(&hash));
         assert!(!subscriptions.contains_subscription(&id, &hash));
@@ -388,14 +441,14 @@ mod tests {
         let client = Arc::new(client(0));
 
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client.clone(), [plan.clone()]);
-        subscriptions.add_subscription(client.clone(), [plan.clone()]);
+        subscriptions.add_subscription(client.clone(), plan.clone());
+        subscriptions.add_subscription(client.clone(), plan.clone());
 
         assert!(subscriptions.contains_query(&hash));
         assert!(subscriptions.contains_subscription(&id, &hash));
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
-        subscriptions.remove_subscription(&id);
+        subscriptions.remove_subscription(&id, plan.hash());
 
         assert!(!subscriptions.contains_query(&hash));
         assert!(!subscriptions.contains_subscription(&id, &hash));
@@ -420,15 +473,15 @@ mod tests {
         let client1 = Arc::new(client(1));
 
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client0, [plan.clone()]);
-        subscriptions.add_subscription(client1, [plan.clone()]);
+        subscriptions.add_subscription(client0, plan.clone());
+        subscriptions.add_subscription(client1, plan.clone());
 
         assert!(subscriptions.contains_query(&hash));
         assert!(subscriptions.contains_subscription(&id0, &hash));
         assert!(subscriptions.contains_subscription(&id1, &hash));
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
-        subscriptions.remove_subscription(&id0);
+        subscriptions.remove_subscription(&id0, plan.hash());
 
         assert!(subscriptions.contains_query(&hash));
         assert!(subscriptions.contains_subscription(&id1, &hash));
@@ -465,8 +518,10 @@ mod tests {
         let client1 = Arc::new(client(1));
 
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client0, [plan_scan.clone(), plan_select0.clone()]);
-        subscriptions.add_subscription(client1, [plan_scan.clone(), plan_select1.clone()]);
+        subscriptions.add_subscription(client0.clone(), plan_scan.clone());
+        subscriptions.add_subscription(client0.clone(), plan_select0.clone());
+        subscriptions.add_subscription(client1.clone(), plan_scan.clone());
+        subscriptions.add_subscription(client1.clone(), plan_select1.clone());
 
         assert!(subscriptions.contains_query(&hash_scan));
         assert!(subscriptions.contains_query(&hash_select0));
@@ -486,7 +541,8 @@ mod tests {
         assert!(!subscriptions.query_reads_from_table(&hash_select0, &s));
         assert!(!subscriptions.query_reads_from_table(&hash_select1, &t));
 
-        subscriptions.remove_subscription(&id0);
+        subscriptions.remove_subscription(&id0, plan_scan.hash());
+        subscriptions.remove_subscription(&id0, plan_select0.hash());
 
         assert!(subscriptions.contains_query(&hash_scan));
         assert!(subscriptions.contains_query(&hash_select1));

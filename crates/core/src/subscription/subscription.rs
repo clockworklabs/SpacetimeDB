@@ -33,9 +33,7 @@ use itertools::Either;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{Compression, WebsocketFormat};
 use spacetimedb_data_structures::map::HashSet;
-use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::error::AuthError;
-use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::DbTable;
 use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
@@ -44,7 +42,6 @@ use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::hash::Hash;
 use std::iter;
-use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -521,7 +518,7 @@ impl ExecutionSet {
             .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval(db, tx, &unit.sql, slow_query_threshold, compression))
+            .map(|unit| unit.eval(db, tx, &unit.sql, slow_query_threshold, compression))
             .collect();
         ws::DatabaseUpdate { tables }
     }
@@ -597,25 +594,6 @@ impl AuthAccess for ExecutionSet {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         self.exec_units.iter().try_for_each(|eu| eu.check_auth(owner, caller))
     }
-}
-
-/// Queries all the [`StTableType::User`] tables *right now*
-/// and turns them into [`QueryExpr`],
-/// the moral equivalent of `SELECT * FROM table`.
-pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<Vec<SupportedQuery>, DBError> {
-    Ok(relational_db
-        .get_all_tables(tx)?
-        .iter()
-        .map(Deref::deref)
-        .filter(|t| {
-            t.table_type == StTableType::User && (auth.owner == auth.caller || t.table_access == StAccess::Public)
-        })
-        .map(|src| SupportedQuery {
-            kind: query::Supported::Select,
-            expr: QueryExpr::new(src),
-            sql: format!("SELECT * FROM {}", src.table_name),
-        })
-        .collect())
 }
 
 #[cfg(test)]
