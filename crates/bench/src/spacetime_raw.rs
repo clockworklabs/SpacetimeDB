@@ -21,8 +21,8 @@ pub struct SpacetimeRaw {
 }
 
 impl BenchDatabase for SpacetimeRaw {
-    fn name() -> &'static str {
-        "stdb_raw"
+    fn name() -> String {
+        "stdb_raw".to_owned()
     }
     type TableId = TableId;
 
