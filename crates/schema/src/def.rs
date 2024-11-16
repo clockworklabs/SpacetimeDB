@@ -24,6 +24,7 @@ use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
 use deserialize::ReducerArgsDeserializeSeed;
 use hashbrown::Equivalent;
+use indexmap::IndexMap;
 use itertools::Itertools;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
 use spacetimedb_data_structures::map::HashMap;
@@ -84,7 +85,9 @@ pub struct ModuleDef {
     tables: IdentifierMap<TableDef>,
 
     /// The reducers of the module definition.
-    reducers: IdentifierMap<ReducerDef>,
+    /// Note: this is using IndexMap because reducer order is important
+    /// and must be preserved for future calls to `__call_reducer__`.
+    reducers: IndexMap<Identifier, ReducerDef>,
 
     /// The type definitions of the module definition.
     types: HashMap<ScopedTypeName, TypeDef>,
@@ -355,7 +358,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
 
         RawModuleDefV9 {
             tables: to_raw(tables, |table: &RawTableDefV9| &table.name),
-            reducers: to_raw(reducers, |reducer: &RawReducerDefV9| &reducer.name),
+            reducers: reducers.into_iter().map(|(_, def)| def.into()).collect(),
             types: to_raw(types, |type_: &RawTypeDefV9| &type_.name),
             misc_exports: vec![],
             typespace,
