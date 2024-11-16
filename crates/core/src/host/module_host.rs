@@ -238,14 +238,12 @@ impl ModuleInfo {
 }
 
 /// A bidirectional map between `Identifiers` (reducer names) and `ReducerId`s.
-/// Invariant: the reducer names are in alphabetical order.
+/// Invariant: the reducer names are in the same order as they were declared in the `ModuleDef`.
 pub struct ReducersMap(IndexSet<Box<str>>);
 
 impl<'a> FromIterator<&'a str> for ReducersMap {
     fn from_iter<T: IntoIterator<Item = &'a str>>(iter: T) -> Self {
-        let mut sorted = Vec::from_iter(iter);
-        sorted.sort();
-        ReducersMap(sorted.into_iter().map_into().collect())
+        Self(iter.into_iter().map_into().collect())
     }
 }
 
