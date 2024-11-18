@@ -1233,7 +1233,7 @@ pub(crate) mod test {
     #[test]
     fn unique_violation_error() {
         let table_name = "UniqueIndexed";
-        let index_name = "my_index";
+        let index_name = "index.btree(UniqueIndexed,[unique_col])";
         let mut builder = RawModuleDefV9Builder::new();
         builder
             .build_table_with_new_type(
