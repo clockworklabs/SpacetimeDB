@@ -4931,6 +4931,7 @@ dependencies = [
  "rayon",
  "rayon-core",
  "regex",
+ "reqwest 0.12.9",
  "rustc-demangle",
  "rustc-hash",
  "scopeguard",
