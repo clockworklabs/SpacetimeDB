@@ -204,7 +204,6 @@ impl From<TableAccess> for StAccess {
 pub struct RawSequenceDefV9 {
     /// In the future, the user may FOR SOME REASON want to override this.
     /// Even though there is ABSOLUTELY NO REASON TO.
-    /// Thanks, Tyler.
     /// If `None`, a nicely-formatted unique default will be chosen.
     pub name: Option<Box<str>>,
 
