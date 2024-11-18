@@ -545,7 +545,7 @@ mod tests {
             // Wait for server to be ready
             let client = reqwest::Client::new();
             let health_check_url = format!("{}/ok", base_url);
-            
+
             let mut attempts = 0;
             const MAX_ATTEMPTS: u32 = 10;
             const DELAY_MS: u64 = 50;
@@ -564,7 +564,6 @@ mod tests {
             if attempts == MAX_ATTEMPTS {
                 return Err(anyhow::anyhow!("Server failed to start after maximum attempts"));
             }
-
 
             Ok(OIDCServerHandle {
                 base_url,
