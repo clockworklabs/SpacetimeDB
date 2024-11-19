@@ -63,6 +63,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
 toml.workspace = true
+toml_edit.workspace = true
 wasmbin.workspace = true
 wasmtime.workspace = true
 webbrowser.workspace = true

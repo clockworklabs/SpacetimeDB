@@ -1,9 +1,43 @@
 use std::path::Path;
 use std::{fmt, io};
 
+use toml;
+use toml_edit::{DocumentMut, Formatted, Item, Table, Value};
+
 use spacetimedb_lib::Address;
 use spacetimedb_paths::cli::{ConfigDir, PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, MetadataTomlPath};
+
+pub fn current_version() -> semver::Version {
+    env!("CARGO_PKG_VERSION").parse().unwrap()
+}
+
+/// Parse a TOML file at the given path, returning `None` if the file does not exist.
+///
+/// **NOTE**: Comments and formatting in the file could be preserved.
+pub fn parse_preserving_config<T: serde::de::DeserializeOwned>(
+    path: &Path,
+) -> anyhow::Result<Option<(DocumentMut, T)>> {
+    match std::fs::read_to_string(path) {
+        Ok(contents) => {
+            let doc = contents.parse::<DocumentMut>()?;
+            Ok(Some((doc, toml::from_str(&contents)?)))
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Parse a TOML file at the given path, returning `None` if the file does not exist.
+///
+/// **WARNING**: Comments and formatting in the file will be lost.
+pub fn parse_config<T: serde::de::DeserializeOwned>(path: &Path) -> anyhow::Result<Option<T>> {
+    match std::fs::read_to_string(path) {
+        Ok(contents) => Ok(Some(toml::from_str(&contents)?)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct MetadataFile {
@@ -11,14 +45,6 @@ pub struct MetadataFile {
     pub edition: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_address: Option<Address>,
-}
-
-pub fn parse_config<T: serde::de::DeserializeOwned>(path: &Path) -> anyhow::Result<Option<T>> {
-    match std::fs::read_to_string(path) {
-        Ok(contents) => Ok(Some(toml::from_str(&contents)?)),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e.into()),
-    }
 }
 
 impl MetadataFile {
@@ -50,10 +76,6 @@ impl fmt::Display for MetadataFile {
     }
 }
 
-pub fn current_version() -> semver::Version {
-    env!("CARGO_PKG_VERSION").parse().unwrap()
-}
-
 #[derive(serde::Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct ConfigFile {
@@ -61,6 +83,12 @@ pub struct ConfigFile {
     pub certificate_authority: Option<CertificateAuthority>,
     #[serde(default)]
     pub logs: LogConfig,
+}
+
+impl ConfigFile {
+    pub fn read(path: &ConfigToml) -> anyhow::Result<Option<Self>> {
+        parse_config(path.as_ref())
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -93,8 +121,39 @@ pub struct LogConfig {
     pub directives: Vec<String>,
 }
 
-impl ConfigFile {
-    pub fn read(path: &ConfigToml) -> anyhow::Result<Option<Self>> {
-        parse_config(path.as_ref())
+/// Patch the value of a key in a TOML document,
+/// preserving the formatting and comments of the original value.
+fn patch_value(item: Option<&Item>, value: Option<&str>) -> Option<Item> {
+    match (value, item) {
+        (Some(value), Some(Item::Value(Value::String(v)))) => {
+            let mut new = Value::String(Formatted::new(value.to_string()));
+            let decor = new.decor_mut();
+            *decor = v.decor().clone();
+            Some(new.into())
+        }
+        (Some(val), _) => Some(val.into()),
+        (None, _) => None,
+    }
+}
+
+/// Set the value of a key in a `TOML` document, removing the key if the value is `None`.
+///
+/// **NOTE**: This function will preserve the formatting and comments of the original value.
+pub fn set_opt_value(doc: &mut DocumentMut, key: &str, value: Option<&str>) {
+    if let Some(value) = patch_value(doc.get(key), value) {
+        doc[key] = value;
+    } else {
+        doc.remove(key);
+    }
+}
+
+/// Set the value of a key in a `TOML` table, removing the key if the value is `None`.
+///
+/// **NOTE**: This function will preserve the formatting and comments of the original value.
+pub fn set_table_opt_value(table: &mut Table, key: &str, value: Option<&str>) {
+    if let Some(value) = patch_value(table.get(key), value) {
+        table[key] = value;
+    } else {
+        table.remove(key);
     }
 }
