@@ -149,7 +149,6 @@ fn test_tld_is_domain_name() {
     assert_eq!(None, dom.sub_domain());
 }
 
-#[cfg(feature = "serde")]
 mod serde {
     use super::*;
 

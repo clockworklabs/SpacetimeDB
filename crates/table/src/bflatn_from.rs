@@ -28,7 +28,7 @@ use spacetimedb_sats::{
 /// 1. the `fixed_offset` must point at a row in `page` lasting `ty.size()` byte.
 /// 2. the row must be a valid `ty`.
 /// 3. for any `vlr: VarLenRef` stored in the row,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 pub unsafe fn serialize_row_from_page<S: Serializer>(
     ser: S,
     page: &Page,
@@ -61,7 +61,7 @@ fn update<R>(curr_offset: CurrOffset<'_>, with: impl FnOnce(&mut usize) -> R) ->
 /// SAFETY:
 /// 1. the `value` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `value`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 unsafe fn serialize_product<S: Serializer>(
     ser: S,
     bytes: &Bytes,
@@ -100,7 +100,7 @@ unsafe fn serialize_product<S: Serializer>(
 /// SAFETY:
 /// 1. the `value` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `value`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 unsafe fn serialize_sum<S: Serializer>(
     ser: S,
     bytes: &Bytes,
@@ -165,7 +165,7 @@ impl_serialize!(['a] Value<'a>, (self, ser) => {
 /// SAFETY:
 /// 1. the `value` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `value`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 /// 3. `align_to(curr_offset.get(), ty.align())` must be the offset of a field typed at `ty`.
 pub(crate) unsafe fn serialize_value<S: Serializer>(
     ser: S,
@@ -255,7 +255,7 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
 /// SAFETY:
 /// 1. the `value` must be valid at type `::String` and properly aligned for `::String``.
 /// 2. for any `vlr: VarLenRef` stored in `value`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 unsafe fn serialize_string<S: Serializer>(
     ser: S,
     bytes: &Bytes,
