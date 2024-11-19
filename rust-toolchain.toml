@@ -1,6 +1,6 @@
 [toolchain]
-# change crates/standalone/Dockerfile and rust-version in Cargo.toml too!
+# change crates/{standalone,bench}/Dockerfile and rust-version in Cargo.toml too!
 # also the docker image tag in .github/workflows/benchmarks.yml:jobs/callgrind_benchmark/container/image
-channel = "1.78.0"
+channel = "1.83.0"
 profile = "default"
 targets = ["wasm32-unknown-unknown"]
