@@ -21,7 +21,8 @@ pub fn parse_preserving_config<T: for<'a> From<&'a DocumentMut>>(
     match std::fs::read_to_string(path) {
         Ok(contents) => {
             let doc = contents.parse::<DocumentMut>()?;
-            Ok(Some((doc, toml::from_str(&contents)?)))
+            let config = T::from(&doc);
+            Ok(Some((doc, config)))
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),
