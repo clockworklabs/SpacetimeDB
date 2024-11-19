@@ -194,7 +194,7 @@ pretty_assertions = { version = "1.4", features = ["unstable"] }
 proc-macro2 = "1.0"
 prometheus = "0.13.0"
 proptest = "1.4"
-proptest-derive = "0.4"
+proptest-derive = "0.5"
 quick-junit = { version = "0.3.2" }
 quote = "1.0.8"
 rand = "0.8.5"
