@@ -1,14 +1,13 @@
 use crate::util::{contains_protocol, host_or_url_to_host_and_protocol};
 use anyhow::Context;
 use jsonwebtoken::DecodingKey;
-use serde::{Deserialize, Serialize};
 use spacetimedb::config::{set_opt_value, set_table_opt_value};
 use spacetimedb_fs_utils::atomic_write;
 use spacetimedb_paths::cli::CliTomlPath;
 use std::collections::HashMap;
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct ServerConfig {
     pub nickname: Option<String>,
     pub host: String,
@@ -55,10 +54,9 @@ impl ServerConfig {
 }
 
 // Any change here must be coordinated with Config::doc
-#[derive(Default, Deserialize, Serialize, Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct RawConfig {
     default_server: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     server_configs: Vec<ServerConfig>,
     // TODO: Consider how these tokens should look to be backwards-compatible with the future changes (e.g. we may want to allow users to `login` to switch between multiple accounts - what will we cache and where?)
     // TODO: Move these IDs/tokens out of config so we're no longer storing sensitive tokens in a human-edited file.
@@ -390,6 +388,41 @@ Fetch the server's fingerprint with:
     pub fn clear_login_tokens(&mut self) {
         self.web_session_token = None;
         self.spacetimedb_token = None;
+    }
+}
+impl From<&DocumentMut> for RawConfig {
+    fn from(value: &DocumentMut) -> Self {
+        let default_server = value.get("default_server").and_then(Item::as_str).map(String::from);
+        let web_session_token = value.get("web_session_token").and_then(Item::as_str).map(String::from);
+        let spacetimedb_token = value.get("spacetimedb_token").and_then(Item::as_str).map(String::from);
+
+        let server_configs = value
+            .get("server_configs")
+            .and_then(Item::as_array_of_tables)
+            .map(|arr| {
+                arr.iter()
+                    .map(|table| {
+                        let nickname = table.get("nickname").and_then(Item::as_str).map(String::from);
+                        let host = table.get("host").and_then(Item::as_str).map(String::from).unwrap();
+                        let protocol = table.get("protocol").and_then(Item::as_str).map(String::from).unwrap();
+                        let ecdsa_public_key = table.get("ecdsa_public_key").and_then(Item::as_str).map(String::from);
+                        ServerConfig {
+                            nickname,
+                            host,
+                            protocol,
+                            ecdsa_public_key,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        RawConfig {
+            default_server,
+            server_configs,
+            web_session_token,
+            spacetimedb_token,
+        }
     }
 }
 
