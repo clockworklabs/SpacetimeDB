@@ -15,13 +15,14 @@ pub fn current_version() -> semver::Version {
 /// Parse a TOML file at the given path, returning `None` if the file does not exist.
 ///
 /// **NOTE**: Comments and formatting in the file could be preserved.
-pub fn parse_preserving_config<T: serde::de::DeserializeOwned>(
+pub fn parse_preserving_config<T: for<'a> From<&'a DocumentMut>>(
     path: &Path,
 ) -> anyhow::Result<Option<(DocumentMut, T)>> {
     match std::fs::read_to_string(path) {
         Ok(contents) => {
             let doc = contents.parse::<DocumentMut>()?;
-            Ok(Some((doc, toml::from_str(&contents)?)))
+            let config = T::from(&doc);
+            Ok(Some((doc, config)))
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),
