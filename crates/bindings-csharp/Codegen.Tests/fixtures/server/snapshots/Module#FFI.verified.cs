@@ -217,7 +217,7 @@ namespace SpacetimeDB
                 >
             {
                 internal BTreeViewsUniqueIndex(BTreeViews handle)
-                    : base(handle, "idx_BTreeViews_BTreeViews_Id_unique") { }
+                    : base(handle, "BTreeViews_Id_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -362,7 +362,7 @@ namespace SpacetimeDB
                 : UniqueIndex<MultiTable1, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
             {
                 internal MultiTable1UniqueIndex(MultiTable1 handle)
-                    : base(handle, "idx_MultiTable1_MultiTable1_Foo_unique") { }
+                    : base(handle, "MultiTable1_Foo_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -443,7 +443,7 @@ namespace SpacetimeDB
                 : UniqueIndex<MultiTable2, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
             {
                 internal MultiTable2UniqueIndex(MultiTable2 handle)
-                    : base(handle, "idx_MultiTable2_MultiTable2_Bar_unique") { }
+                    : base(handle, "MultiTable2_Bar_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -512,7 +512,7 @@ namespace SpacetimeDB
                 : UniqueIndex<PublicTable, global::PublicTable, int, SpacetimeDB.BSATN.I32>
             {
                 internal PublicTableUniqueIndex(PublicTable handle)
-                    : base(handle, "idx_PublicTable_PublicTable_Id_unique") { }
+                    : base(handle, "PublicTable_Id_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -576,7 +576,7 @@ namespace SpacetimeDB
                 >
             {
                 internal SendMessageTimerUniqueIndex(SendMessageTimer handle)
-                    : base(handle, "idx_SendMessageTimer_SendMessageTimer_ScheduledId_unique") { }
+                    : base(handle, "SendMessageTimer_ScheduledId_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based

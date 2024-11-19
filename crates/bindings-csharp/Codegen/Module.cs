@@ -302,9 +302,15 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             if (f.GetAttrs(viewName).HasFlag(ColumnAttrs.Unique))
             {
                 var iUniqueIndex = $"";
+
+                var standardIndexName = ViewIndex.StandardIndexName(
+                    "btree",
+                    viewName,
+                    [ct.col.Name]
+                );
                 yield return $$"""
                     {{vis}} sealed class {{viewName}}UniqueIndex : UniqueIndex<{{viewName}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
-                        internal {{viewName}}UniqueIndex({{viewName}} handle) : base(handle, "idx_{{viewName}}_{{viewName}}_{{ct.col.Name}}_unique") {}
+                        internal {{viewName}}UniqueIndex({{viewName}} handle) : base(handle, "{{standardIndexName}}") {}
                         // Important: don't move this to the base class.
                         // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                         // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
