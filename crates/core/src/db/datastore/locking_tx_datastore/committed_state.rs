@@ -73,7 +73,8 @@ impl MemoryUsage for CommittedState {
 impl StateView for CommittedState {
     type Iter<'a> = IterTx<'a>;
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeTx<'a, R>;
-    type IterByColEq<'a, 'r> = IterByColEqTx<'a, 'r>
+    type IterByColEq<'a, 'r>
+        = IterByColEqTx<'a, 'r>
     where
         Self: 'a;
 
@@ -317,7 +318,7 @@ impl CommittedState {
         let table = self
             .tables
             .get_mut(&table_id)
-            .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
+            .ok_or(TableError::IdNotFoundState(table_id))?;
         let blob_store = &mut self.blob_store;
         let skip_index_update = true;
         table

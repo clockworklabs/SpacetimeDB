@@ -24,17 +24,18 @@ impl PathBufExt for PathBuf {}
 /// path_type! {
 ///     /// optional docs
 ///     // optional. if false, makes the type's constructor public.
-///     #[non_exhaustive(FALSE)]
+/// #   // TODO: replace cfg(any()) with cfg(false) once stabilized (rust-lang/rust#131204)
+///     #[non_exhaustive(any())]
 ///     FooPath: dir // or file. adds extra utility methods for manipulating the file/dir
 /// }
 /// ```
 #[macro_export]
 macro_rules! path_type {
-    ($(#[doc = $doc:literal])* $(#[non_exhaustive($non_exhaustive:tt)])? $name:ident) => {
+    ($(#[doc = $doc:literal])* $(#[non_exhaustive($($non_exhaustive:tt)+)])? $name:ident) => {
         $(#[doc = $doc])*
         #[derive(Clone, Debug, $crate::__serde::Serialize, $crate::__serde::Deserialize)]
         #[serde(transparent)]
-        #[cfg_attr(all($($non_exhaustive)?), non_exhaustive)]
+        #[cfg_attr(all($($($non_exhaustive)+)?), non_exhaustive)]
         pub struct $name(pub std::path::PathBuf);
 
         impl AsRef<std::path::Path> for $name {

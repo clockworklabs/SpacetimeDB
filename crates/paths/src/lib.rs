@@ -173,7 +173,8 @@ pub trait FromPathUnchecked {
 
 path_type! {
     /// The --root-dir for the spacetime installation, if specified.
-    #[non_exhaustive(FALSE)]
+    // TODO: replace cfg(any()) with cfg(false) once stabilized
+    #[non_exhaustive(any())]
     RootDir
 }
 
