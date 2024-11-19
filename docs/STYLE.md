@@ -69,10 +69,6 @@ If your document needs to describe a feature that isn't implemented yet, either 
 
 Reference pages should be written in relatively formal language that would seem at home in an encyclopedia or a textbook. Or, say, [the Microsoft .NET API reference](https://learn.microsoft.com/en-us/dotnet/api/?view=net-8.0).
 
-#### Short descriptions of functions and methods: passive voice
-
-Use the passive voice for one-line descriptions of methods
-
 #### Declarative present tense, for behavior of properties, functions and methods
 
 Use the declarative voice when describing how code works or what it does. [For example](https://learn.microsoft.com/en-us/dotnet/api/system.collections.arraylist?view=net-8.0):
@@ -196,6 +192,42 @@ If the described item has any children (e.g. properties and methods of classes, 
 
 TODO: Figure out the best way to format grammars. What's in the SQL ref looks good. Find out how we made the flow chart graphics, and encourage using those.
 
+## Overview pages
+
+Landing page type things, usually named `index.md`.
+
+### Tone, tense and voice
+
+Use the same guidelines as for reference pages, except that you can refer to the reader as "you" more often.
+
+### Links
+
+Include as many links to more specific docs pages as possible within the text. Sharp-links to anchors/headers within other docs pages are super valuable here!
+
+### FAQs
+
+If there's any information you want to impart to users but you're not sure how to shoehorn it into any other page or section, just slap it in an "FAQ" section at the bottom of an overview page.
+
+Each FAQ item should start with a subheader, which is phrased as a question a user would ask.
+
+Answer these questions starting with a declarative or conversational sentence. Refer to the asker as "you," and their project as "your client," "your module" or "your app."
+
+For example:
+
+> #### What's the difference between a subscription query and a one-off query?
+>
+> Subscription queries are incremental: your client receives updates whenever the database state changes, containing only the altered rows. This is an efficient way to maintain a "materialized view," that is, a local copy of some subset of the database. Use subscriptions when you want to watch rows and react to changes, or to keep local copies of rows which you'll read frequently.
+>
+> A one-off query happens once, and then is done. Use one-off queries to look at rows you only need once.
+>
+> #### How do I get an authorization token?
+>
+> You can supply your users with authorization tokens in several different ways; which one is best for you will depend on the needs of your app. [...] (I don't actually want to write a real answer to this question - pgoldman 2024-11-19.)
+>
+> #### Can my client connect to multiple modules at the same time?
+>
+> Yes! Your client can construct as many `DbConnection`s simultaneously as it wants to, each of which will operate independently. If you want to connect to two modules with different schemas, use `spacetime generate` to include bindings for both of them in your client project. Note that SpacetimeDB may reject multiple concurrent connections to the same module by a single client.
+
 ## Tutorial pages
 
-TODO: Tutorial pages are more casual.
+TODO: Tutorial pages are more casual. They're basically going to look like [the Rust client quickstart](./sdks/rust/quickstart.md) and [the Rust server quickstart](./modules/rust/quickstart.md), which I still think are pretty good.
