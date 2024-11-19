@@ -566,7 +566,7 @@ pub struct ExpectedRelvar;
 /// The error type of [TypeWithCtx::expect_scalar()]
 pub struct ExpectedScalar;
 
-impl<'a> Display for TypeWithCtx<'a> {
+impl Display for TypeWithCtx<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.0 {
             Type::Alg(ty) => write!(f, "{}", fmt_algebraic_type(ty)),
@@ -608,7 +608,7 @@ pub struct RelType<'a> {
 
 impl<'a> RelType<'a> {
     /// Returns an iterator over the field names and types of this row type
-    pub fn iter(&'a self) -> impl Iterator<Item = (usize, Symbol, TyId)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (usize, Symbol, TyId)> + use<'a> {
         self.fields.iter().enumerate().map(|(i, (name, ty))| (i, *name, *ty))
     }
 

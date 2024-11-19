@@ -176,7 +176,7 @@ impl<'a> EntityDef<'a> {
             EntityDef::Table(_) => DescribedEntityType::Table,
         }
     }
-    fn name(&self) -> &str {
+    fn name(&self) -> &'a str {
         match self {
             EntityDef::Reducer(r) => &r.name[..],
             EntityDef::Table(t) => &t.name[..],

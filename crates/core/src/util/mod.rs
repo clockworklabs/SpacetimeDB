@@ -17,14 +17,6 @@ pub(crate) fn string_from_utf8_lossy_owned(v: Vec<u8>) -> String {
     }
 }
 
-#[track_caller]
-pub const fn const_unwrap<T: Copy>(o: Option<T>) -> T {
-    match o {
-        Some(x) => x,
-        None => panic!("called `const_unwrap()` on a `None` value"),
-    }
-}
-
 #[tracing::instrument(skip_all)]
 pub fn spawn_rayon<R: Send + 'static>(f: impl FnOnce() -> R + Send + 'static) -> impl Future<Output = R> {
     let span = tracing::Span::current();
