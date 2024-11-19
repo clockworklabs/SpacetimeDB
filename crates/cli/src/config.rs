@@ -2,8 +2,11 @@ use crate::util::{contains_protocol, host_or_url_to_host_and_protocol};
 use anyhow::Context;
 use jsonwebtoken::DecodingKey;
 use serde::{Deserialize, Serialize};
+use spacetimedb::config::{set_opt_value, set_table_opt_value};
 use spacetimedb_fs_utils::atomic_write;
 use spacetimedb_paths::cli::CliTomlPath;
+use std::collections::HashMap;
+use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ServerConfig {
@@ -14,6 +17,24 @@ pub struct ServerConfig {
 }
 
 impl ServerConfig {
+    /// Generate a new [Table] representing this [ServerConfig].
+    pub fn as_table(&self) -> Table {
+        let mut table = Table::new();
+        set_table_opt_value(&mut table, "nickname", self.nickname.as_deref());
+        table["host"] = self.host.as_str().into();
+        table["protocol"] = self.protocol.as_str().into();
+        set_table_opt_value(&mut table, "ecdsa_public_key", self.ecdsa_public_key.as_deref());
+        table
+    }
+
+    /// Update an existing [Table] with the values of a [ServerConfig].
+    pub fn update_table(edit: &mut Table, from: &ServerConfig) {
+        set_table_opt_value(edit, "nickname", from.nickname.as_deref());
+        edit["host"] = from.host.as_str().into();
+        edit["protocol"] = from.protocol.as_str().into();
+        set_table_opt_value(edit, "ecdsa_public_key", from.ecdsa_public_key.as_deref());
+    }
+
     fn nick_or_host(&self) -> &str {
         if let Some(nick) = &self.nickname {
             nick
@@ -33,6 +54,7 @@ impl ServerConfig {
     }
 }
 
+// Any change here must be coordinated with Config::doc
 #[derive(Default, Deserialize, Serialize, Debug, Clone)]
 pub struct RawConfig {
     default_server: Option<String>,
@@ -48,6 +70,9 @@ pub struct RawConfig {
 pub struct Config {
     home: RawConfig,
     home_path: CliTomlPath,
+    // The TOML document that was parsed to create `home`.
+    // We need to keep it to preserve comments and formatting when saving the config.
+    doc: DocumentMut,
 }
 
 const NO_DEFAULT_SERVER_ERROR_MESSAGE: &str = "No default server configuration.
@@ -490,14 +515,15 @@ impl Config {
     }
 
     pub fn load(home_path: CliTomlPath) -> anyhow::Result<Self> {
-        let home = spacetimedb::config::parse_config::<RawConfig>(home_path.as_ref())
+        let home = spacetimedb::config::parse_preserving_config::<RawConfig>(home_path.as_ref())
             .with_context(|| format!("config file {} is invalid", home_path.display()))?;
         Ok(match home {
-            Some(home) => Self { home, home_path },
+            Some((doc, home)) => Self { home, home_path, doc },
             None => {
                 let config = Self {
                     home: RawConfig::new_with_localhost(),
                     home_path,
+                    doc: Default::default(),
                 };
                 config.save();
                 config
@@ -511,7 +537,61 @@ impl Config {
         Self {
             home: RawConfig::new_with_localhost(),
             home_path,
+            doc: Default::default(),
         }
+    }
+
+    /// Returns a preserving copy of [Config].
+    fn doc(&self) -> DocumentMut {
+        let mut doc = self.doc.clone();
+
+        let mut set_value = |key: &str, value: Option<&str>| {
+            set_opt_value(&mut doc, key, value);
+        };
+        set_value("default_server", self.home.default_server.as_deref());
+        set_value("web_session_token", self.home.web_session_token.as_deref());
+        set_value("spacetimedb_token", self.home.spacetimedb_token.as_deref());
+
+        // Short-circuit if there are no servers.
+        if self.home.server_configs.is_empty() {
+            doc.remove("server_configs");
+            return doc;
+        }
+        // ... or if there are no server_configs to edit.
+        let server_configs = if let Some(cfg) = doc.get_mut("server_configs").and_then(Item::as_array_of_tables_mut) {
+            cfg
+        } else {
+            doc["server_configs"] =
+                Item::ArrayOfTables(self.home.server_configs.iter().map(ServerConfig::as_table).collect());
+            return doc;
+        };
+
+        let mut new_configs = self
+            .home
+            .server_configs
+            .iter()
+            .map(|cfg| (cfg.nick_or_host(), cfg))
+            .collect::<HashMap<_, _>>();
+
+        // Update the existing servers.
+        let mut new_vec = Vec::with_capacity(self.home.server_configs.len());
+        for old_config in server_configs.iter_mut() {
+            let nick_or_host = old_config
+                .get("nickname")
+                .or_else(|| old_config.get("host"))
+                .and_then(|v| v.as_str())
+                .unwrap();
+            if let Some(new_config) = new_configs.remove(nick_or_host) {
+                ServerConfig::update_table(old_config, new_config);
+                new_vec.push(old_config.clone());
+            }
+        }
+
+        // Add the new servers.
+        new_vec.extend(new_configs.values().cloned().map(ServerConfig::as_table));
+        *server_configs = ArrayOfTables::from_iter(new_vec);
+
+        doc
     }
 
     pub fn save(&self) {
@@ -519,7 +599,7 @@ impl Config {
         // If the `home_path` is in a directory, ensure it exists.
         home_path.create_parent().unwrap();
 
-        let config = toml::to_string_pretty(&self.home).unwrap();
+        let config = self.doc().to_string();
 
         eprintln!("Saving config to {}.", home_path.display());
         // TODO: We currently have a race condition if multiple processes are modifying the config.
@@ -630,5 +710,134 @@ Update the server's fingerprint with:
         } else {
             Err(anyhow::anyhow!("No login token found. Please run `spacetime login`."))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_paths::cli::CliTomlPath;
+    use spacetimedb_paths::FromPathUnchecked;
+    use std::fs;
+
+    const CONFIG_FULL: &str = r#"default_server = "local"
+web_session_token = "web_session"
+spacetimedb_token = "26ac38857c2bd6c5b60ec557ecd4f9add918fef577dc92c01ca96ff08af5b84d"
+
+# comment on table
+[[server_configs]]
+nickname = "local"
+host = "127.0.0.1:3000"
+protocol = "http"
+
+[[server_configs]]
+nickname = "testnet" # Comment nickname
+host = "testnet.spacetimedb.com"
+protocol = "https"
+
+# Comment end
+"#;
+    const CONFIG_FULL_NO_COMMENT: &str = r#"default_server = "local"
+web_session_token = "web_session"
+spacetimedb_token = "26ac38857c2bd6c5b60ec557ecd4f9add918fef577dc92c01ca96ff08af5b84d"
+
+[[server_configs]]
+nickname = "local"
+host = "127.0.0.1:3000"
+protocol = "http"
+
+[[server_configs]]
+nickname = "testnet"
+host = "testnet.spacetimedb.com"
+protocol = "https"
+
+# Comment end
+"#;
+    const CONFIG_CHANGE_SERVER: &str = r#"default_server = "local"
+web_session_token = "web_session"
+spacetimedb_token = "26ac38857c2bd6c5b60ec557ecd4f9add918fef577dc92c01ca96ff08af5b84d"
+
+[[server_configs]]
+nickname = "testnet" # Comment nickname
+host = "prod.spacetimedb.com"
+protocol = "https"
+
+# Comment end
+"#;
+    const CONFIG_EMPTY: &str = r#"
+# Comment end
+"#;
+    fn check_config<F>(input: &str, output: &str, f: F) -> ResultTest<()>
+    where
+        F: FnOnce(&mut Config) -> ResultTest<()>,
+    {
+        let tmp = tempfile::tempdir()?;
+        let config_path = CliTomlPath::from_path_unchecked(tmp.path().join("config.toml"));
+
+        fs::write(&config_path, input)?;
+
+        let mut config = Config::load(config_path.clone()).unwrap();
+        f(&mut config)?;
+        config.save();
+
+        let contents = fs::read_to_string(&config_path)?;
+
+        assert_eq!(contents, output);
+
+        Ok(())
+    }
+
+    // Test editing the config file.
+    #[test]
+    fn test_config_edits() -> ResultTest<()> {
+        check_config(CONFIG_FULL, CONFIG_EMPTY, |config| {
+            config.home.default_server = None;
+            config.home.server_configs.clear();
+            config.home.spacetimedb_token = None;
+            config.home.web_session_token = None;
+
+            Ok(())
+        })?;
+
+        check_config(CONFIG_FULL, CONFIG_CHANGE_SERVER, |config| {
+            config.home.server_configs.remove(0);
+            config.home.server_configs[0].host = "prod.spacetimedb.com".to_string();
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    // Test adding to the config file.
+    #[test]
+    fn test_config_adds() -> ResultTest<()> {
+        check_config(CONFIG_FULL, CONFIG_FULL, |_| Ok(()))?;
+        check_config(CONFIG_EMPTY, CONFIG_EMPTY, |_| Ok(()))?;
+
+        check_config(CONFIG_EMPTY, CONFIG_FULL_NO_COMMENT, |config| {
+            config.home.default_server = Some("local".to_string());
+            config.home.server_configs = vec![
+                ServerConfig {
+                    nickname: Some("local".to_string()),
+                    host: "127.0.0.1:3000".to_string(),
+                    protocol: "http".to_string(),
+                    ecdsa_public_key: None,
+                },
+                ServerConfig {
+                    nickname: Some("testnet".to_string()),
+                    host: "testnet.spacetimedb.com".to_string(),
+                    protocol: "https".to_string(),
+                    ecdsa_public_key: None,
+                },
+            ];
+            config.home.spacetimedb_token =
+                Some("26ac38857c2bd6c5b60ec557ecd4f9add918fef577dc92c01ca96ff08af5b84d".to_string());
+            config.home.web_session_token = Some("web_session".to_string());
+
+            Ok(())
+        })?;
+
+        Ok(())
     }
 }
