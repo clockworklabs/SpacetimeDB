@@ -1833,7 +1833,7 @@ mod tests {
         let schema = table_auto_inc();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "sequence(MyTable,my_col)")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![0i64])?;
@@ -1851,7 +1851,7 @@ mod tests {
         let schema = table_auto_inc();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "sequence(MyTable,my_col)")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![5i64])?;
@@ -1876,7 +1876,7 @@ mod tests {
 
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "sequence(MyTable,my_col)")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![0i64])?;
@@ -1904,7 +1904,7 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         assert!(
-            stdb.index_id_from_name(&tx, "index.btree(MyTable,[my_col])")?.is_some(),
+            stdb.index_id_from_name(&tx, "MyTable_my_col_idx_btree")?.is_some(),
             "Index not created"
         );
 
@@ -1973,7 +1973,7 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema).expect("stdb.create_table failed");
 
         assert!(
-            stdb.index_id_from_name(&tx, "index.btree(MyTable,[my_col])")
+            stdb.index_id_from_name(&tx, "MyTable_my_col_idx_btree")
                 .expect("index_id_from_name failed")
                 .is_some(),
             "Index not created"
@@ -2013,11 +2013,11 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         assert!(
-            stdb.index_id_from_name(&tx, "index.btree(MyTable,[my_col])")?.is_some(),
+            stdb.index_id_from_name(&tx, "MyTable_my_col_idx_btree")?.is_some(),
             "Index not created"
         );
 
-        let sequence = stdb.sequence_id_from_name(&tx, "sequence(MyTable,my_col)")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![0i64])?;

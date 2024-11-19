@@ -68,7 +68,7 @@ namespace SpacetimeDB
 
             internal sealed class LocationIndex()
                 : SpacetimeDB.Internal.IndexBase<global::BTreeMultiColumn>(
-                    "bt_BTreeMultiColumn_Location"
+                    "BTreeMultiColumn_X_Y_Z_idx_btree"
                 )
             {
                 public IEnumerable<global::BTreeMultiColumn> Filter(uint X) =>
@@ -231,7 +231,7 @@ namespace SpacetimeDB
             internal BTreeViewsUniqueIndex Id => new(this);
 
             internal sealed class LocationIndex()
-                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("bt_BTreeViews_Location")
+                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_X_Y_idx_btree")
             {
                 public IEnumerable<global::BTreeViews> Filter(uint X) =>
                     DoFilter(
@@ -297,7 +297,7 @@ namespace SpacetimeDB
             internal LocationIndex Location => new();
 
             internal sealed class FactionIndex()
-                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("bt_BTreeViews_Faction")
+                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_Faction_idx_btree")
             {
                 public IEnumerable<global::BTreeViews> Filter(string Faction) =>
                     DoFilter(
@@ -376,7 +376,9 @@ namespace SpacetimeDB
             public MultiTable1UniqueIndex Foo => new(this);
 
             public sealed class NameIndex()
-                : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>("bt_MultiTable1_Name")
+                : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>(
+                    "MultiTable1_Name_idx_btree"
+                )
             {
                 public IEnumerable<global::MultiTableRow> Filter(string Name) =>
                     DoFilter(

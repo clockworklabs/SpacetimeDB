@@ -62,21 +62,7 @@ partial struct TestUniqueNotEquatable : SpacetimeDB.Internal.ITable<TestUniqueNo
                             BSATN.PrimaryKeyField.GetAlgebraicType(registrar)
                         )
                     ],
-                    Indexes:
-                    [
-                        new(
-                            "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique",
-                            true,
-                            SpacetimeDB.Internal.IndexType.BTree,
-                            [0]
-                        ),
-                        new(
-                            "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique",
-                            true,
-                            SpacetimeDB.Internal.IndexType.BTree,
-                            [1]
-                        )
-                    ],
+                    Indexes: [],
                     Constraints:
                     [
                         new(

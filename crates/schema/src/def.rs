@@ -75,7 +75,7 @@ pub type StrMap<T> = HashMap<Box<str>, T>;
 /// let module_def = ModuleDef::try_from(raw_module_def).expect("valid module def");
 ///
 /// let table_name = Identifier::new("my_table".into()).expect("valid table name");
-/// let index_name = "index.btree(my_table,[my_column])";
+/// let index_name = "my_table_my_column_idx_btree";
 /// let scoped_type_name = ScopedTypeName::try_new([], "MyType").expect("valid scoped type name");
 ///
 /// let table: Option<&TableDef> = module_def.lookup(&table_name);

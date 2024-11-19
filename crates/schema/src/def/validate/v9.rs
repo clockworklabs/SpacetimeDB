@@ -746,7 +746,7 @@ fn column_name(table_type: &ProductType, column: ColId) -> String {
 
 /// Concatenate a list of column names.
 fn concat_column_names(table_type: &ProductType, selected: &ColList) -> String {
-    selected.iter().map(|col| column_name(table_type, col)).join(",")
+    selected.iter().map(|col| column_name(table_type, col)).join("_")
 }
 
 /// All indexes have this name format.
@@ -757,18 +757,18 @@ pub fn generate_index_name(table_name: &str, table_type: &ProductType, algorithm
         _ => unimplemented!("Unknown index algorithm {:?}", algorithm),
     };
     let column_names = concat_column_names(table_type, columns);
-    format!("index.{label}({table_name},[{column_names}])").into()
+    format!("{table_name}_{column_names}_idx_{label}").into()
 }
 
 /// All sequences have this name format.
 pub fn generate_sequence_name(table_name: &str, table_type: &ProductType, column: ColId) -> RawIdentifier {
     let column_name = column_name(table_type, column);
-    format!("sequence({table_name},{column_name})").into()
+    format!("{table_name}_{column_name}_seq").into()
 }
 
 /// All schedules have this name format.
 pub fn generate_schedule_name(table_name: &str) -> RawIdentifier {
-    format!("schedule({table_name})").into()
+    format!("{table_name}_sched").into()
 }
 
 /// All unique constraints have this name format.
@@ -778,7 +778,7 @@ pub fn generate_unique_constraint_name(
     columns: &ColList,
 ) -> RawIdentifier {
     let column_names = concat_column_names(product_type, columns);
-    format!("constraint.unique({table_name},[{column_names}])").into()
+    format!("{table_name}_{column_names}_key").into()
 }
 
 /// Helper to create an `Identifier` from a `str` with the appropriate error type.
@@ -958,7 +958,7 @@ mod tests {
         assert_eq!(apples_def.primary_key, None);
 
         assert_eq!(apples_def.constraints.len(), 1);
-        let apples_unique_constraint = "constraint.unique(Apples,[type])";
+        let apples_unique_constraint = "Apples_type_key";
         assert_eq!(
             apples_def.constraints[apples_unique_constraint].data,
             ConstraintData::Unique(UniqueConstraintData {
@@ -974,7 +974,7 @@ mod tests {
         for index in apples_def.indexes.values() {
             match &index.name[..] {
                 // manually added
-                "index.btree(Apples,[name,count])" => {
+                "Apples_name_count_idx_btree" => {
                     assert_eq!(
                         index.algorithm,
                         BTreeAlgorithm {
@@ -1177,7 +1177,7 @@ mod tests {
 
         expect_error_matching!(result, ValidationError::ColumnNotFound { table, def, column } => {
             &table[..] == "Bananas" &&
-            &def[..] == "index.btree(Bananas,[b,col_55])" &&
+            &def[..] == "Bananas_b_col_55_idx_btree" &&
             column == &55.into()
         });
     }
@@ -1197,7 +1197,7 @@ mod tests {
 
         expect_error_matching!(result, ValidationError::ColumnNotFound { table, def, column } => {
             &table[..] == "Bananas" &&
-            &def[..] == "constraint.unique(Bananas,[col_55])" &&
+            &def[..] == "Bananas_col_55_key" &&
             column == &55.into()
         });
     }
@@ -1218,7 +1218,7 @@ mod tests {
 
         expect_error_matching!(result, ValidationError::ColumnNotFound { table, def, column } => {
             &table[..] == "Bananas" &&
-            &def[..] == "sequence(Bananas,col_55)" &&
+            &def[..] == "Bananas_col_55_seq" &&
             column == &55.into()
         });
 
@@ -1235,7 +1235,7 @@ mod tests {
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::InvalidSequenceColumnType { sequence, column, column_type } => {
-            &sequence[..] == "sequence(Bananas,a)" &&
+            &sequence[..] == "Bananas_a_seq" &&
             column == &RawColumnName::new("Bananas", "a") &&
             column_type.0 == AlgebraicType::String
         });
@@ -1260,7 +1260,7 @@ mod tests {
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::DuplicateColumns{ def, columns } => {
-            &def[..] == "index.btree(Bananas,[b,b])" && columns == &ColList::from_iter([0, 0])
+            &def[..] == "Bananas_b_b_idx_btree" && columns == &ColList::from_iter([0, 0])
         });
     }
 
@@ -1278,7 +1278,7 @@ mod tests {
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::DuplicateColumns{ def, columns } => {
-            &def[..] == "constraint.unique(Bananas,[a,a])" && columns == &ColList::from_iter([1, 1])
+            &def[..] == "Bananas_a_a_key" && columns == &ColList::from_iter([1, 1])
         });
     }
 
@@ -1342,7 +1342,7 @@ mod tests {
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::OnlyBtree { index } => {
-            &index[..] == "index.hash(Bananas,[b])"
+            &index[..] == "Bananas_b_idx_hash"
         });
     }
 
@@ -1458,7 +1458,7 @@ mod tests {
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::MissingScheduledReducer { schedule, reducer } => {
-            &schedule[..] == "schedule(Deliveries)" &&
+            &schedule[..] == "Deliveries_sched" &&
             reducer == &expect_identifier("check_deliveries")
         });
     }

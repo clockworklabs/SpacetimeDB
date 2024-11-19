@@ -59,15 +59,7 @@ partial struct TestIncompatibleSchedule : SpacetimeDB.Internal.ITable<TestIncomp
                         new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
                         new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar))
                     ],
-                    Indexes:
-                    [
-                        new(
-                            "idx_TestIncompatibleSchedule1_TestIncompatibleSchedule1_ScheduledId_unique",
-                            true,
-                            SpacetimeDB.Internal.IndexType.BTree,
-                            [0]
-                        )
-                    ],
+                    Indexes: [],
                     Constraints:
                     [
                         new(
@@ -96,15 +88,7 @@ partial struct TestIncompatibleSchedule : SpacetimeDB.Internal.ITable<TestIncomp
                         new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
                         new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar))
                     ],
-                    Indexes:
-                    [
-                        new(
-                            "idx_TestIncompatibleSchedule2_TestIncompatibleSchedule2_ScheduledId_unique",
-                            true,
-                            SpacetimeDB.Internal.IndexType.BTree,
-                            [0]
-                        )
-                    ],
+                    Indexes: [],
                     Constraints:
                     [
                         new(

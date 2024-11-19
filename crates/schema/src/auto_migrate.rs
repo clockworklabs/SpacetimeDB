@@ -633,13 +633,13 @@ mod tests {
         let bananas = expect_identifier("Bananas");
         let oranges = expect_identifier("Oranges");
 
-        let bananas_sequence = "sequence(Bananas,id)";
-        let apples_unique_constraint = "constraint.unique(Apples,[id])";
-        let apples_sequence = "sequence(Apples,id)";
-        let apples_id_name_index = "index.btree(Apples,[id,name])";
-        let apples_id_count_index = "index.btree(Apples,[id,count])";
-        let deliveries_schedule = "schedule(Deliveries)";
-        let inspections_schedule = "schedule(Inspections)";
+        let bananas_sequence = "Bananas_id_seq";
+        let apples_unique_constraint = "Apples_id_key";
+        let apples_sequence = "Apples_id_seq";
+        let apples_id_name_index = "Apples_id_name_idx_btree";
+        let apples_id_count_index = "Apples_id_count_idx_btree";
+        let deliveries_schedule = "Deliveries_sched";
+        let inspections_schedule = "Inspections_sched";
 
         assert_eq!(plan.prechecks.len(), 1);
         assert_eq!(
@@ -780,7 +780,7 @@ mod tests {
         let apples = expect_identifier("Apples");
         let bananas = expect_identifier("Bananas");
 
-        let apples_name_unique_constraint = "constraint.unique(Apples,[name])";
+        let apples_name_unique_constraint = "Apples_name_key";
 
         let weight = expect_identifier("weight");
         let count = expect_identifier("count");
@@ -832,7 +832,7 @@ mod tests {
             AutoMigrateError::RemoveTable { table } => table == &bananas
         );
 
-        let apples_id_index = "index.btree(Apples,[id])";
+        let apples_id_index = "Apples_id_idx_btree";
         let accessor_old = expect_identifier("id_index");
         let accessor_new = expect_identifier("id_index_new_accessor");
         expect_error_matching!(
