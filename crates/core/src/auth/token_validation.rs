@@ -622,13 +622,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_oidc_flow() -> anyhow::Result<()> {
-        run_oidc_test(OidcTokenValidator).await
+        for _ in 0..10 {
+            run_oidc_test(OidcTokenValidator).await?
+        }
+        Ok(())
     }
 
     #[tokio::test]
     async fn test_caching_oidc_flow() -> anyhow::Result<()> {
-        let v = CachingOidcTokenValidator::get_default();
-        run_oidc_test(v).await
+        for _ in 0..10 {
+            let v = CachingOidcTokenValidator::get_default();
+            run_oidc_test(v).await?;
+        }
+        Ok(())
     }
 
     #[tokio::test]
@@ -671,8 +677,26 @@ mod tests {
         let mut y = openssl::bn::BigNum::new()?;
         eck.public_key().affine_coordinates(&group, &mut x, &mut y, &mut ctx)?;
 
-        let x_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(x.to_vec());
-        let y_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(y.to_vec());
+        let x_bytes = x.to_vec();
+        let y_bytes = y.to_vec();
+
+        let x_padded = if x_bytes.len() < 32 {
+            let mut padded = vec![0u8; 32];
+            padded[32 - x_bytes.len()..].copy_from_slice(&x_bytes);
+            padded
+        } else {
+            x_bytes
+        };
+
+        let y_padded = if y_bytes.len() < 32 {
+            let mut padded = vec![0u8; 32];
+            padded[32 - y_bytes.len()..].copy_from_slice(&y_bytes);
+            padded
+        } else {
+            y_bytes
+        };
+        let x_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(x_padded);
+        let y_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(y_padded);
 
         let mut jwks = serde_json::json!(
             {
