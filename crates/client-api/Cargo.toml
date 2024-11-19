@@ -43,6 +43,7 @@ derive_more = "0.99.17"
 uuid.workspace = true
 jsonwebtoken.workspace = true
 scopeguard.workspace = true
+spacetimedb-paths.workspace = true
 
 [dev-dependencies]
 jsonwebtoken.workspace = true

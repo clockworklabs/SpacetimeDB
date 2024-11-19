@@ -6,7 +6,7 @@ use crate::database_logger::DatabaseLogger;
 use crate::db;
 use crate::db::datastore::traits::Program;
 use crate::db::db_metrics::DB_METRICS;
-use crate::db::relational_db::{self, RelationalDB};
+use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
 use crate::energy::{EnergyMonitor, EnergyQuanta};
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -15,7 +15,7 @@ use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::spawn_rayon;
 use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
-use durability::EmptyHistory;
+use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -40,6 +40,13 @@ type HostCell = Arc<AsyncRwLock<Option<Host>>>;
 
 /// The registry of all running hosts.
 type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
+
+pub type ExternalDurability = (Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn);
+
+#[async_trait]
+pub trait DurabilityProvider: Send + Sync + 'static {
+    async fn durability(&self, replica_id: u64) -> anyhow::Result<ExternalDurability>;
+}
 
 #[async_trait]
 pub trait ExternalStorage: Send + Sync + 'static {
@@ -74,6 +81,8 @@ pub struct HostController {
     program_storage: ProgramStorage,
     /// The [`EnergyMonitor`] used by this controller.
     energy_monitor: Arc<dyn EnergyMonitor>,
+    /// Provides implementations of [`Durability`] for each replica.
+    durability: Arc<dyn DurabilityProvider>,
     /// The runtimes for running our modules.
     runtimes: Arc<HostRuntimes>,
 }
@@ -180,12 +189,14 @@ impl HostController {
         default_config: db::Config,
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
+        durability: Arc<dyn DurabilityProvider>,
     ) -> Self {
         Self {
             hosts: <_>::default(),
             default_config,
             program_storage,
             energy_monitor,
+            durability,
             runtimes: HostRuntimes::new(&data_dir),
             data_dir,
         }
@@ -680,6 +691,7 @@ impl Host {
     ///
     /// Note that this does **not** run module initialization routines, but may
     /// create on-disk artifacts if the host / database did not exist.
+
     #[tracing::instrument(skip_all)]
     async fn try_init(host_controller: &HostController, database: Database, replica_id: u64) -> anyhow::Result<Self> {
         let HostController {
@@ -688,6 +700,7 @@ impl Host {
             program_storage,
             energy_monitor,
             runtimes,
+            durability,
             ..
         } = host_controller;
         let on_panic = host_controller.unregister_fn(replica_id);
@@ -703,16 +716,17 @@ impl Host {
                 None,
             )?,
             db::Storage::Disk => {
-                let (durability, disk_size_fn) = relational_db::local_durability(replica_dir.commit_log()).await?;
                 let snapshot_repo =
                     relational_db::open_snapshot_repo(replica_dir.snapshots(), database.database_identity, replica_id)?;
-                let history = durability.clone();
+                let (history, _) = relational_db::local_durability(replica_dir.commit_log()).await?;
+                let durability = durability.durability(replica_id).await?;
+
                 RelationalDB::open(
                     &replica_dir,
                     database.database_identity,
                     database.owner_identity,
                     history,
-                    Some((durability, disk_size_fn)),
+                    Some(durability),
                     Some(snapshot_repo),
                 )?
             }

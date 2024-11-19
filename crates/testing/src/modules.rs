@@ -192,12 +192,12 @@ impl CompiledModule {
             name: env.client_actor_index().next_client_name(),
         };
 
-        let module = env
-            .host_controller()
-            .get_module_host(instance.id)
+        let host = env
+            .leader(database.id)
             .await
+            .expect("host should be running")
             .expect("host should be running");
-        let (_, module_rx) = tokio::sync::watch::channel(module);
+        let module_rx = host.module_watcher().await.unwrap();
 
         // TODO: it might be neat to add some functionality to module handle to make
         // it easier to interact with the database. For example it could include
