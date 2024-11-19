@@ -21,10 +21,7 @@ use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::{DescribedEntityType, UpdateDatabaseResult};
 use spacetimedb::host::{ModuleHost, ReducerArgs};
 use spacetimedb::identity::Identity;
-use spacetimedb::json::client_api::StmtResultJson;
-use spacetimedb::messages::control_db::{Database, HostType, Replica};
-use spacetimedb::sql;
-use spacetimedb::sql::execute::{ctx_sql, translate_col};
+use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::address::AddressForUrl;
@@ -32,7 +29,6 @@ use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::sats::WithTypespace;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
-use spacetimedb_lib::ProductTypeElement;
 use spacetimedb_schema::def::{ReducerDef, TableDef};
 
 use super::identity::IdentityForUrl;
@@ -76,15 +72,13 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         (StatusCode::NOT_FOUND, "No such database.")
     })?;
     let identity = database.owner_identity;
-    let replica = worker_ctx
-        .get_leader_replica_by_database(database.id)
-        .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
-    let replica_id = replica.id;
-    let host = worker_ctx.host_controller();
-    let module = host
-        .get_or_launch_module_host(database, replica_id)
+
+    let leader = worker_ctx
+        .leader(database.id)
         .await
-        .map_err(log_and_500)?;
+        .map_err(log_and_500)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let module = leader.module().await.map_err(log_and_500)?;
 
     // HTTP callers always need an address to provide to connect/disconnect,
     // so generate one if none was provided.
@@ -170,33 +164,6 @@ pub enum DBCallErr {
     InstanceNotScheduled,
 }
 
-pub struct DatabaseInformation {
-    replica: Replica,
-    auth: SpacetimeAuth,
-}
-/// Extract some common parameters that most API call invocations to the database will use.
-/// TODO(tyler): Ryan originally intended for extract call info to be used for any call that is specific to a
-/// database. However, there are some functions that should be callable from anyone, possibly even if they
-/// don't provide any credentials at all. The problem is that this function doesn't make sense in all places
-/// where credentials are required (e.g. publish), so for now we're just going to keep this as is, but we're
-/// going to generate a new set of credentials if you don't provide them.
-async fn extract_db_call_info(
-    ctx: &(impl ControlStateDelegate + NodeDelegate + ?Sized),
-    auth: SpacetimeAuth,
-    database_identity: &Identity,
-) -> Result<DatabaseInformation, ErrorResponse> {
-    let database = worker_ctx_find_database(ctx, database_identity).await?.ok_or_else(|| {
-        log::error!("Could not find database: {}", database_identity.to_hex());
-        (StatusCode::NOT_FOUND, "No such database.")
-    })?;
-
-    let replica = ctx
-        .get_leader_replica_by_database(database.id)
-        .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
-
-    Ok(DatabaseInformation { replica, auth })
-}
-
 pub enum EntityDef<'a> {
     Reducer(&'a ReducerDef),
     Table(&'a TableDef),
@@ -273,15 +240,13 @@ where
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
-    let call_info = extract_db_call_info(&worker_ctx, auth, &address).await?;
-
-    let replica_id = call_info.replica.id;
-    let module = worker_ctx
-        .host_controller()
-        .get_or_launch_module_host(database, replica_id)
+    let leader = worker_ctx
+        .leader(database.id)
         .await
-        .map_err(log_and_500)?;
+        .map_err(log_and_500)?
+        .ok_or(StatusCode::NOT_FOUND)?;
 
+    let module = leader.module().await.map_err(log_and_500)?;
     let entity_type = entity_type.as_str().parse().map_err(|()| {
         log::debug!("Request to describe unhandled entity type: {}", entity_type);
         (
@@ -297,8 +262,8 @@ where
 
     Ok((
         StatusCode::OK,
-        TypedHeader(SpacetimeIdentity(call_info.auth.identity)),
-        TypedHeader(SpacetimeIdentityToken(call_info.auth.creds)),
+        TypedHeader(SpacetimeIdentity(auth.identity)),
+        TypedHeader(SpacetimeIdentityToken(auth.creds)),
         axum::Json(response_json),
     ))
 }
@@ -341,14 +306,12 @@ where
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
-    let call_info = extract_db_call_info(&worker_ctx, auth, &address).await?;
-
-    let replica_id = call_info.replica.id;
-    let host = worker_ctx.host_controller();
-    let module = host
-        .get_or_launch_module_host(database, replica_id)
+    let leader = worker_ctx
+        .leader(database.id)
         .await
-        .map_err(log_and_500)?;
+        .map_err(log_and_500)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let module = leader.module().await.map_err(log_and_500)?;
 
     let response_json = if module_def {
         let raw = RawModuleDefV9::from(module.info().module_def.clone());
@@ -370,8 +333,8 @@ where
 
     Ok((
         StatusCode::OK,
-        TypedHeader(SpacetimeIdentity(call_info.auth.identity)),
-        TypedHeader(SpacetimeIdentityToken(call_info.auth.creds)),
+        TypedHeader(SpacetimeIdentity(auth.identity)),
+        TypedHeader(SpacetimeIdentityToken(auth.creds)),
         axum::Json(response_json),
     ))
 }
@@ -384,17 +347,17 @@ pub async fn info<S: ControlStateDelegate>(
     State(worker_ctx): State<S>,
     Path(InfoParams { name_or_identity }): Path<InfoParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    log::trace!("Trying to resolve address: {:?}", name_or_identity);
-    let address = name_or_identity.resolve(&worker_ctx).await?.into();
-    log::trace!("Resolved address to: {address:?}");
-    let database = worker_ctx_find_database(&worker_ctx, &address)
+    log::trace!("Trying to resolve database identity: {:?}", name_or_identity);
+    let database_identity = name_or_identity.resolve(&worker_ctx).await?.into();
+    log::trace!("Resolved identity to: {database_identity:?}");
+    let database = worker_ctx_find_database(&worker_ctx, &database_identity)
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
-    log::trace!("Fetched database from the worker db for address: {address:?}");
+    log::trace!("Fetched database from the worker db for address: {database_identity:?}");
 
     let host_type: &str = database.host_type.as_ref();
     let response_json = json!({
-        "address": database.database_identity,
+        "database_identity": database.database_identity,
         "owner_identity": database.owner_identity,
         "host_type": host_type,
         "initial_program": database.initial_program,
@@ -448,16 +411,21 @@ where
         .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
     let replica_id = replica.id;
 
-    let filepath = DatabaseLogger::filepath(&database_identity, replica_id);
-    let lines = DatabaseLogger::read_latest(&filepath, num_lines).await;
+    let logs_dir = worker_ctx.module_logs_dir(replica_id);
+    let lines = DatabaseLogger::read_latest(logs_dir, num_lines).await;
 
     let body = if follow {
-        let host = worker_ctx.host_controller();
-        let module = host
-            .get_or_launch_module_host(database, replica_id)
+        let leader = worker_ctx
+            .leader(database.id)
             .await
+            .map_err(log_and_500)?
+            .ok_or(StatusCode::NOT_FOUND)?;
+        let log_rx = leader
+            .module()
+            .await
+            .map_err(log_and_500)?
+            .subscribe_to_logs()
             .map_err(log_and_500)?;
-        let log_rx = module.subscribe_to_logs().map_err(log_and_500)?;
 
         let stream = tokio_stream::wrappers::BroadcastStream::new(log_rx).filter_map(move |x| {
             std::future::ready(match x {
@@ -531,57 +499,13 @@ where
 
     let auth = AuthCtx::new(database.owner_identity, auth.identity);
     log::debug!("auth: {auth:?}");
-    let replica = worker_ctx
-        .get_leader_replica_by_database(database.id)
-        .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
-    let replica_id = replica.id;
 
-    let host = worker_ctx.host_controller();
-    let module_host = host
-        .get_or_launch_module_host(database.clone(), replica_id)
+    let host = worker_ctx
+        .leader(database.id)
         .await
-        .map_err(log_and_500)?;
-    let json = host
-        .using_database(
-            database,
-            replica_id,
-            move |db| -> axum::response::Result<_, (StatusCode, String)> {
-                tracing::info!(sql = body);
-                let results =
-                    sql::execute::run(db, &body, auth, Some(&module_host.info().subscriptions)).map_err(|e| {
-                        log::warn!("{}", e);
-                        if let Some(auth_err) = e.get_auth_error() {
-                            (StatusCode::UNAUTHORIZED, auth_err.to_string())
-                        } else {
-                            (StatusCode::BAD_REQUEST, e.to_string())
-                        }
-                    })?;
-
-                let json = db.with_read_only(&ctx_sql(db), |tx| {
-                    results
-                        .into_iter()
-                        .map(|result| {
-                            let rows = result.data;
-                            let schema = result
-                                .head
-                                .fields
-                                .iter()
-                                .map(|x| {
-                                    let ty = x.algebraic_type.clone();
-                                    let name = translate_col(tx, x.field);
-                                    ProductTypeElement::new(ty, name)
-                                })
-                                .collect();
-                            StmtResultJson { schema, rows }
-                        })
-                        .collect::<Vec<_>>()
-                });
-
-                Ok(json)
-            },
-        )
-        .await
-        .map_err(log_and_500)??;
+        .map_err(log_and_500)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let json = host.exec_sql(auth, database, body).await?;
 
     Ok((StatusCode::OK, axum::Json(json)))
 }
@@ -679,13 +603,14 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
 
-    let (db_addr, db_name) = match name_or_identity {
+    let (database_identity, db_name) = match name_or_identity {
         Some(noa) => match noa.try_resolve(&ctx).await? {
             Ok(resolved) => resolved.into(),
             Err(domain) => {
                 // `name_or_address` was a `NameOrAddress::Name`, but no record
                 // exists yet. Create it now with a fresh address.
-                let database_identity = Identity::placeholder();
+                let database_auth = SpacetimeAuth::alloc(&ctx).await?;
+                let database_identity = database_auth.identity;
                 ctx.create_dns_record(&auth.identity, &domain, &database_identity)
                     .await
                     .map_err(log_and_500)?;
@@ -693,18 +618,22 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
             }
         },
         None => {
-            let database_identity = Identity::placeholder();
+            let database_auth = SpacetimeAuth::alloc(&ctx).await?;
+            let database_identity = database_auth.identity;
             (database_identity, None)
         }
     };
 
-    log::trace!("Publishing to the address: {}", db_addr.to_hex());
+    log::trace!("Publishing to the address: {}", database_identity.to_hex());
 
     let op = {
-        let exists = ctx.get_database_by_identity(&db_addr).map_err(log_and_500)?.is_some();
+        let exists = ctx
+            .get_database_by_identity(&database_identity)
+            .map_err(log_and_500)?
+            .is_some();
 
         if clear && exists {
-            ctx.delete_database(&auth.identity, &db_addr)
+            ctx.delete_database(&auth.identity, &database_identity)
                 .await
                 .map_err(log_and_500)?;
         }
@@ -720,7 +649,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         .publish_database(
             &auth.identity,
             DatabaseDef {
-                database_identity: db_addr,
+                database_identity,
                 program_bytes: body.into(),
                 num_replicas: 1,
                 host_type: HostType::Wasm,
@@ -747,7 +676,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
 
     Ok(axum::Json(PublishResult::Success {
         domain: db_name.as_ref().map(ToString::to_string),
-        database_identity: db_addr,
+        database_identity,
         op,
     }))
 }
@@ -783,14 +712,14 @@ pub async fn set_name<S: ControlStateDelegate>(
     State(ctx): State<S>,
     Query(SetNameQueryParams {
         domain,
-        database_identity: address,
+        database_identity,
     }): Query<SetNameQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let address = Identity::from(address);
+    let database_identity = Identity::from(database_identity);
 
     let database = ctx
-        .get_database_by_identity(&address)
+        .get_database_by_identity(&database_identity)
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
@@ -800,7 +729,7 @@ pub async fn set_name<S: ControlStateDelegate>(
 
     let domain = domain.parse().map_err(|_| DomainParsingRejection)?;
     let response = ctx
-        .create_dns_record(&auth.identity, &domain, &address)
+        .create_dns_record(&auth.identity, &domain, &database_identity)
         .await
         // TODO: better error code handling
         .map_err(log_and_500)?;

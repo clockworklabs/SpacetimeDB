@@ -68,3 +68,23 @@ impl delete_unique_u_128 for super::RemoteReducers {
             .remove_on_reducer::<DeleteUniqueU128>("delete_unique_u128", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `delete_unique_u128`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_delete_unique_u_128 {
+    /// Set the call-reducer flags for the reducer `delete_unique_u128` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn delete_unique_u_128(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_delete_unique_u_128 for super::SetReducerFlags {
+    fn delete_unique_u_128(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("delete_unique_u128", flags);
+    }
+}

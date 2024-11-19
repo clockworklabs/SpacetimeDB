@@ -1,8 +1,6 @@
 use crate::from_hex_pad;
 use blake3;
 use core::mem;
-use rand;
-use rand::Rng;
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::hex::HexString;
 use spacetimedb_sats::{hash, impl_st, u256, AlgebraicType, AlgebraicValue};
@@ -33,9 +31,22 @@ impl AuthCtx {
     }
 }
 
-/// An identifier for something interacting with the database.
+/// An `Identity` for something interacting with the database.
 ///
-/// This is a special type.
+/// An `Identity` is a 256-bit unsigned integer. These are encoded in various ways.
+/// - In JSON, an `Identity` is represented as a hexadecimal number wrapped in a string, `"0x[64 hex characters]"`.
+/// - In BSATN, an `Identity` is represented as a LITTLE-ENDIAN number 32 bytes long.
+/// - In memory, an `Identity` is stored as a 256-bit number with the endianness of the host system.
+///
+/// If you are manually converting a hexadecimal string to a byte array like so:
+/// ```ignore
+/// "0xb0b1b2..."
+/// ->
+/// [0xb0, 0xb1, 0xb2, ...]
+/// ```
+/// Make sure you call `Identity::from_be_byte_array` and NOT `Identity::from_byte_array`.
+/// The standard way of writing hexadecimal numbers follows a big-endian convention, if you
+/// index the characters in written text in increasing order from left to right.
 #[derive(Default, Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Serialize, Deserialize)]
 pub struct Identity {
     __identity__: u256,
@@ -53,18 +64,28 @@ impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
 impl Identity {
     pub const ZERO: Self = Self::from_u256(u256::ZERO);
 
-    pub fn placeholder() -> Self {
-        // Generate a random identity.
-        let mut rng = rand::thread_rng();
-        let mut random_bytes = [0u8; 32];
-        rng.fill(&mut random_bytes);
-        Identity::from_byte_array(random_bytes)
-    }
-    /// Returns an `Identity` defined as the given `bytes` byte array.
+    /// Create an `Identity` from a LITTLE-ENDIAN byte array.
+    ///
+    /// If you are parsing an `Identity` from a string, you probably want `from_be_byte_array` instead.
     pub const fn from_byte_array(bytes: [u8; 32]) -> Self {
-        // SAFETY: The transmute is an implementation of `u256::from_ne_bytes`,
+        // SAFETY: The transmute is an implementation of `u256::from_le_bytes`,
         // but works in a const context.
         Self::from_u256(u256::from_le(unsafe { mem::transmute(bytes) }))
+    }
+
+    /// Create an `Identity` from a BIG-ENDIAN byte array.
+    ///
+    /// This method is the correct choice if you have converted the bytes of a hexadecimal-formatted `Identity`
+    /// to a byte array in the following way:
+    /// ```ignore
+    /// "0xb0b1b2..."
+    /// ->
+    /// [0xb0, 0xb1, 0xb2, ...]
+    /// ```
+    pub const fn from_be_byte_array(bytes: [u8; 32]) -> Self {
+        // SAFETY: The transmute is an implementation of `u256::from_le_bytes`,
+        // but works in a const context.
+        Self::from_u256(u256::from_be(unsafe { mem::transmute(bytes) }))
     }
 
     /// Converts `__identity__: u256` to `Identity`.
@@ -78,6 +99,22 @@ impl Identity {
     }
 
     /// Returns an `Identity` defined as the given byte `slice`.
+    /// The slice is assumed to be in BIG-ENDIAN format.
+    ///
+    /// This method is the correct choice if you have converted the bytes of a hexadecimal-formatted `Identity`
+    /// to a byte array in the following way:
+    /// ```ignore
+    /// "0xb0b1b2..."
+    /// ->
+    /// [0xb0, 0xb1, 0xb2, ...]
+    /// ```
+    pub fn from_be_slice(slice: &[u8]) -> Self {
+        Self::from_be_byte_array(slice.try_into().unwrap())
+    }
+
+    /// Returns an `Identity` defined as the given byte `slice`.
+    /// The slice is assumed to be in LITTLE-ENDIAN format.
+    /// If you are parsing an `Identity` from a string, you probably want `from_be_slice` instead.
     pub fn from_slice(slice: &[u8]) -> Self {
         Self::from_byte_array(slice.try_into().unwrap())
     }
@@ -103,7 +140,11 @@ impl Identity {
         final_bytes[1] = 0x00;
         final_bytes[2..6].copy_from_slice(&checksum_hash.as_bytes()[..4]);
         final_bytes[6..].copy_from_slice(id_hash);
-        Identity::from_byte_array(final_bytes)
+
+        // We want the leading two bytes of the Identity to be `c200` when formatted.
+        // This means that these should be the MOST significant bytes.
+        // This corresponds to a BIG-ENDIAN byte order of our buffer above.
+        Identity::from_be_byte_array(final_bytes)
     }
 
     /// Returns this `Identity` as a byte array.
@@ -111,14 +152,23 @@ impl Identity {
         self.__identity__.to_le_bytes()
     }
 
+    /// Convert this `Identity` to a BIG-ENDIAN byte array.
+    pub fn to_be_byte_array(&self) -> [u8; 32] {
+        self.__identity__.to_be_bytes()
+    }
+
+    /// Convert this `Identity` to a hexadecimal string.
     pub fn to_hex(&self) -> HexString<32> {
-        spacetimedb_sats::hex::encode(&self.to_byte_array())
+        spacetimedb_sats::hex::encode(&self.to_be_byte_array())
     }
 
+    /// Extract the first 8 bytes of this `Identity` as if it was stored in BIG-ENDIAN
+    /// format. (That is, the most significant bytes.)
     pub fn abbreviate(&self) -> [u8; 8] {
-        self.to_byte_array()[..8].try_into().unwrap()
+        self.to_be_byte_array()[..8].try_into().unwrap()
     }
 
+    /// Extract the first 16 characters of this `Identity`'s hexadecimal representation.
     pub fn to_abbreviated_hex(&self) -> HexString<8> {
         spacetimedb_sats::hex::encode(&self.abbreviate())
     }
@@ -148,7 +198,7 @@ impl hex::FromHex for Identity {
     type Error = hex::FromHexError;
 
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
-        from_hex_pad(hex).map(Identity::from_byte_array)
+        from_hex_pad(hex).map(Identity::from_be_byte_array)
     }
 }
 
@@ -169,7 +219,7 @@ impl From<Identity> for AlgebraicValue {
 #[cfg(feature = "serde")]
 impl serde::Serialize for Identity {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        spacetimedb_sats::ser::serde::serialize_to(&self.to_byte_array(), serializer)
+        spacetimedb_sats::ser::serde::serialize_to(&self.to_be_byte_array(), serializer)
     }
 }
 
@@ -177,17 +227,67 @@ impl serde::Serialize for Identity {
 impl<'de> serde::Deserialize<'de> for Identity {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let arr = spacetimedb_sats::de::serde::deserialize_from(deserializer)?;
-        Ok(Identity::from_byte_array(arr))
+        Ok(Identity::from_be_byte_array(arr))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use spacetimedb_sats::GroundSpacetimeType as _;
+    use proptest::prelude::*;
+    use proptest::string::string_regex;
+    use spacetimedb_sats::{de::serde::DeserializeWrapper, ser::serde::SerializeWrapper, GroundSpacetimeType as _};
 
     #[test]
     fn identity_is_special() {
         assert!(Identity::get_type().is_special());
+    }
+
+    #[test]
+    fn identity_json_serialization_big_endian() {
+        let id = Identity::from_be_byte_array([
+            0xff, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+            28, 29, 30, 31,
+        ]);
+
+        let hex = id.to_hex();
+        assert!(
+            hex.as_str().starts_with("ff01"),
+            "expected {hex:?} to start with \"ff01\""
+        );
+
+        let json1 = serde_json::to_string(&id).unwrap();
+        let json2 = serde_json::to_string(SerializeWrapper::from_ref(&id)).unwrap();
+
+        assert!(
+            json1.contains(hex.as_str()),
+            "expected {json1} to contain {hex} but it didn't"
+        );
+        assert!(
+            json2.contains(hex.as_str()),
+            "expected {json2} to contain {hex} but it didn't"
+        );
+    }
+
+    proptest! {
+        #[test]
+        fn identity_conversions(w0: u128, w1: u128) {
+            let v = Identity::from_u256(u256::from_words(w0, w1));
+
+            prop_assert_eq!(Identity::from_byte_array(v.to_byte_array()), v);
+            prop_assert_eq!(Identity::from_be_byte_array(v.to_be_byte_array()), v);
+            prop_assert_eq!(Identity::from_hex(v.to_hex()).unwrap(), v);
+
+            let de1: Identity = serde_json::from_str(&serde_json::to_string(&v).unwrap()).unwrap();
+            prop_assert_eq!(de1, v);
+            let DeserializeWrapper(de2): DeserializeWrapper<Identity> = serde_json::from_str(&serde_json::to_string(SerializeWrapper::from_ref(&v)).unwrap()).unwrap();
+            prop_assert_eq!(de2, v);
+        }
+
+        #[test]
+        fn from_claims_formats_correctly(s1 in string_regex(r".{3,5}").unwrap(), s2 in string_regex(r".{3,5}").unwrap()) {
+            let id = Identity::from_claims(&s1, &s2);
+            prop_assert!(id.to_hex().starts_with("c200"));
+        }
     }
 }

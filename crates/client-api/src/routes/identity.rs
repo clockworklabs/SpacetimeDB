@@ -6,11 +6,10 @@ use http::header::CONTENT_TYPE;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use spacetimedb::auth::identity::encode_token_with_expiry;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::Identity;
 
-use crate::auth::{SpacetimeAuth, SpacetimeAuthRequired};
+use crate::auth::{JwtAuthProvider, SpacetimeAuth, SpacetimeAuthRequired};
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,7 +58,7 @@ impl IdentityForUrl {
 
 impl<'de> serde::Deserialize<'de> for IdentityForUrl {
     fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-        <_>::deserialize(de).map(|DeserializeWrapper(b)| IdentityForUrl(Identity::from_byte_array(b)))
+        <_>::deserialize(de).map(|DeserializeWrapper(b)| IdentityForUrl(Identity::from_be_byte_array(b)))
     }
 }
 
@@ -96,12 +95,18 @@ pub struct WebsocketTokenResponse {
     pub token: String,
 }
 
+// This endpoint takes a token from a client and sends a newly signed token with a 60s expiry.
+// Note that even if the token has a different issuer, we will sign it with our key.
+// This is ok because `FullTokenValidator` checks if we signed the token before worrying about the issuer.
 pub async fn create_websocket_token<S: NodeDelegate>(
     State(ctx): State<S>,
     SpacetimeAuthRequired(auth): SpacetimeAuthRequired,
 ) -> axum::response::Result<impl IntoResponse> {
     let expiry = Duration::from_secs(60);
-    let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(expiry)).map_err(log_and_500)?;
+    let token = auth
+        .re_sign_with_expiry(ctx.jwt_auth_provider(), expiry)
+        .map_err(log_and_500)?;
+    // let token = encode_token_with_expiry(ctx.private_key(), auth.identity, Some(expiry)).map_err(log_and_500)?;
     Ok(axum::Json(WebsocketTokenResponse { token }))
 }
 
@@ -126,7 +131,7 @@ pub async fn validate_token(
 pub async fn get_public_key<S: NodeDelegate>(State(ctx): State<S>) -> axum::response::Result<impl IntoResponse> {
     Ok((
         [(CONTENT_TYPE, "application/pem-certificate-chain")],
-        ctx.public_key_bytes().to_owned(),
+        ctx.jwt_auth_provider().public_key_bytes().to_owned(),
     ))
 }
 

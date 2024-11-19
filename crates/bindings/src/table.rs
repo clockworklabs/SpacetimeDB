@@ -3,7 +3,7 @@ use std::convert::Infallible;
 use std::marker::PhantomData;
 use std::{fmt, ops};
 
-use spacetimedb_lib::buffer::{BufReader, Cursor};
+use spacetimedb_lib::buffer::{BufReader, Cursor, DecodeError};
 use spacetimedb_lib::sats::{i256, u256};
 
 pub use spacetimedb_lib::db::raw_def::v9::TableAccess;
@@ -742,38 +742,77 @@ impl_terminator!(
 // impl<T, U, V> BTreeIndexBounds<(T, U, V)> for (T, U, Range<V>) {}
 // impl<T, U, V> BTreeIndexBounds<(T, U, V)> for (T, U, V) {}
 
-/// A trait for types that know if their value will trigger a sequence.
+/// A trait for types that can have a sequence based on them.
 /// This is used for auto-inc columns to determine if an insertion of a row
 /// will require the column to be updated in the row.
-///
-/// For now, this is equivalent to a "is zero" test.
-pub trait IsSequenceTrigger {
+pub trait SequenceTrigger: Sized {
     /// Is this value one that will trigger a sequence, if any,
     /// when used as a column value.
     fn is_sequence_trigger(&self) -> bool;
+    /// BufReader::get_[< self >]
+    fn decode(reader: &mut &[u8]) -> Result<Self, DecodeError>;
+    /// Read a generated column from the slice, if this row was a sequence trigger.
+    #[inline(always)]
+    fn maybe_decode_into(&mut self, gen_cols: &mut &[u8]) {
+        if self.is_sequence_trigger() {
+            *self = Self::decode(gen_cols).unwrap_or_else(|_| sequence_decode_error())
+        }
+    }
 }
 
-macro_rules! impl_is_seq_trigger {
-    ($($t:ty),*) => {
+#[cold]
+#[inline(never)]
+fn sequence_decode_error() -> ! {
+    unreachable!("a row was a sequence trigger but there was no generated column for it.")
+}
+
+macro_rules! impl_seq_trigger {
+    ($($get:ident($t:ty),)*) => {
         $(
-            impl IsSequenceTrigger for $t {
+            impl SequenceTrigger for $t {
+                #[inline(always)]
                 fn is_sequence_trigger(&self) -> bool { *self == 0 }
+                #[inline(always)]
+                fn decode(reader: &mut &[u8]) -> Result<Self, DecodeError> {
+                    reader.$get()
+                }
             }
         )*
     };
 }
 
-impl_is_seq_trigger![u8, i8, u16, i16, u32, i32, u64, i64, u128, i128];
+impl_seq_trigger!(
+    get_u8(u8),
+    get_i8(i8),
+    get_u16(u16),
+    get_i16(i16),
+    get_u32(u32),
+    get_i32(i32),
+    get_u64(u64),
+    get_i64(i64),
+    get_u128(u128),
+    get_i128(i128),
+);
 
-impl IsSequenceTrigger for crate::sats::i256 {
+impl SequenceTrigger for crate::sats::i256 {
+    #[inline(always)]
     fn is_sequence_trigger(&self) -> bool {
         *self == Self::ZERO
     }
+    #[inline(always)]
+    fn decode(reader: &mut &[u8]) -> Result<Self, DecodeError> {
+        reader.get_i256()
+    }
 }
 
-impl IsSequenceTrigger for crate::sats::u256 {
+impl SequenceTrigger for crate::sats::u256 {
+    #[inline(always)]
     fn is_sequence_trigger(&self) -> bool {
         *self == Self::ZERO
+    }
+    #[inline(always)]
+    fn decode(reader: &mut &[u8]) -> Result<Self, DecodeError> {
+        reader.get_u256()
     }
 }
 

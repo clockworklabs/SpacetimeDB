@@ -18,6 +18,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -87,6 +89,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -158,6 +162,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -227,6 +233,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -298,6 +306,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -367,6 +377,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -454,6 +466,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -540,6 +554,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -612,6 +628,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -678,6 +696,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -871,8 +891,11 @@ const REMOTE_MODULE = {
   dbViewConstructor: (imp: DBConnectionImpl) => {
     return new RemoteTables(imp);
   },
-  reducersConstructor: (imp: DBConnectionImpl) => {
-    return new RemoteReducers(imp);
+  reducersConstructor: (imp: DBConnectionImpl, setReducerFlags: SetReducerFlags) => {
+    return new RemoteReducers(imp, setReducerFlags);
+  },
+  setReducerFlagsConstructor: () => {
+    return new SetReducerFlags();
   }
 }
 
@@ -891,10 +914,10 @@ export type Reducer = never
 ;
 
 export class RemoteReducers {
-  constructor(private connection: DBConnectionImpl) {}
+  constructor(private connection: DBConnectionImpl, private setCallReducerFlags: SetReducerFlags) {}
 
   identityConnected() {
-    this.connection.callReducer("__identity_connected__", new Uint8Array(0));
+    this.connection.callReducer("__identity_connected__", new Uint8Array(0), this.setCallReducerFlags.identityConnectedFlags);
   }
 
   onIdentityConnected(callback: (ctx: EventContext) => void) {
@@ -906,7 +929,7 @@ export class RemoteReducers {
   }
 
   init() {
-    this.connection.callReducer("__init__", new Uint8Array(0));
+    this.connection.callReducer("__init__", new Uint8Array(0), this.setCallReducerFlags.initFlags);
   }
 
   onInit(callback: (ctx: EventContext) => void) {
@@ -922,7 +945,7 @@ export class RemoteReducers {
     let __writer = new BinaryWriter(1024);
     AddPlayer.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer("add_player", __argsBuffer);
+    this.connection.callReducer("add_player", __argsBuffer, this.setCallReducerFlags.addPlayerFlags);
   }
 
   onAddPlayer(callback: (ctx: EventContext, name: string) => void) {
@@ -938,7 +961,7 @@ export class RemoteReducers {
     let __writer = new BinaryWriter(1024);
     AddPrivate.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer("add_private", __argsBuffer);
+    this.connection.callReducer("add_private", __argsBuffer, this.setCallReducerFlags.addPrivateFlags);
   }
 
   onAddPrivate(callback: (ctx: EventContext, name: string) => void) {
@@ -954,7 +977,7 @@ export class RemoteReducers {
     let __writer = new BinaryWriter(1024);
     DeletePlayer.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer("delete_player", __argsBuffer);
+    this.connection.callReducer("delete_player", __argsBuffer, this.setCallReducerFlags.deletePlayerFlags);
   }
 
   onDeletePlayer(callback: (ctx: EventContext, id: bigint) => void) {
@@ -970,7 +993,7 @@ export class RemoteReducers {
     let __writer = new BinaryWriter(1024);
     DeletePlayersByName.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer("delete_players_by_name", __argsBuffer);
+    this.connection.callReducer("delete_players_by_name", __argsBuffer, this.setCallReducerFlags.deletePlayersByNameFlags);
   }
 
   onDeletePlayersByName(callback: (ctx: EventContext, name: string) => void) {
@@ -982,7 +1005,7 @@ export class RemoteReducers {
   }
 
   queryPrivate() {
-    this.connection.callReducer("query_private", new Uint8Array(0));
+    this.connection.callReducer("query_private", new Uint8Array(0), this.setCallReducerFlags.queryPrivateFlags);
   }
 
   onQueryPrivate(callback: (ctx: EventContext) => void) {
@@ -998,7 +1021,7 @@ export class RemoteReducers {
     let __writer = new BinaryWriter(1024);
     RepeatingTest.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer("repeating_test", __argsBuffer);
+    this.connection.callReducer("repeating_test", __argsBuffer, this.setCallReducerFlags.repeatingTestFlags);
   }
 
   onRepeatingTest(callback: (ctx: EventContext, arg: RepeatingTestArg) => void) {
@@ -1014,7 +1037,7 @@ export class RemoteReducers {
     let __writer = new BinaryWriter(1024);
     Test.getTypeScriptAlgebraicType().serialize(__writer, __args);
     let __argsBuffer = __writer.getBuffer();
-    this.connection.callReducer("test", __argsBuffer);
+    this.connection.callReducer("test", __argsBuffer, this.setCallReducerFlags.testFlags);
   }
 
   onTest(callback: (ctx: EventContext, arg: TestA, arg2: TestB, arg3: NamespaceTestC, arg4: NamespaceTestF) => void) {
@@ -1026,7 +1049,7 @@ export class RemoteReducers {
   }
 
   testBtreeIndexArgs() {
-    this.connection.callReducer("test_btree_index_args", new Uint8Array(0));
+    this.connection.callReducer("test_btree_index_args", new Uint8Array(0), this.setCallReducerFlags.testBtreeIndexArgsFlags);
   }
 
   onTestBtreeIndexArgs(callback: (ctx: EventContext) => void) {
@@ -1035,6 +1058,59 @@ export class RemoteReducers {
 
   removeOnTestBtreeIndexArgs(callback: (ctx: EventContext) => void) {
     this.connection.offReducer("test_btree_index_args", callback);
+  }
+
+}
+
+export class SetReducerFlags {
+  identityConnectedFlags: CallReducerFlags = 'FullUpdate';
+  identityConnected(flags: CallReducerFlags) {
+    this.identityConnectedFlags = flags;
+  }
+
+  initFlags: CallReducerFlags = 'FullUpdate';
+  init(flags: CallReducerFlags) {
+    this.initFlags = flags;
+  }
+
+  addPlayerFlags: CallReducerFlags = 'FullUpdate';
+  addPlayer(flags: CallReducerFlags) {
+    this.addPlayerFlags = flags;
+  }
+
+  addPrivateFlags: CallReducerFlags = 'FullUpdate';
+  addPrivate(flags: CallReducerFlags) {
+    this.addPrivateFlags = flags;
+  }
+
+  deletePlayerFlags: CallReducerFlags = 'FullUpdate';
+  deletePlayer(flags: CallReducerFlags) {
+    this.deletePlayerFlags = flags;
+  }
+
+  deletePlayersByNameFlags: CallReducerFlags = 'FullUpdate';
+  deletePlayersByName(flags: CallReducerFlags) {
+    this.deletePlayersByNameFlags = flags;
+  }
+
+  queryPrivateFlags: CallReducerFlags = 'FullUpdate';
+  queryPrivate(flags: CallReducerFlags) {
+    this.queryPrivateFlags = flags;
+  }
+
+  repeatingTestFlags: CallReducerFlags = 'FullUpdate';
+  repeatingTest(flags: CallReducerFlags) {
+    this.repeatingTestFlags = flags;
+  }
+
+  testFlags: CallReducerFlags = 'FullUpdate';
+  test(flags: CallReducerFlags) {
+    this.testFlags = flags;
+  }
+
+  testBtreeIndexArgsFlags: CallReducerFlags = 'FullUpdate';
+  testBtreeIndexArgs(flags: CallReducerFlags) {
+    this.testBtreeIndexArgsFlags = flags;
   }
 
 }
@@ -1079,13 +1155,13 @@ export class RemoteTables {
   }
 }
 
-export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers>  {
+export class DBConnection extends DBConnectionImpl<RemoteTables, RemoteReducers, SetReducerFlags>  {
   static builder = (): DBConnectionBuilder<DBConnection>  => {
     return new DBConnectionBuilder<DBConnection>(REMOTE_MODULE, (imp: DBConnectionImpl) => imp as DBConnection);
   }
 }
 
-export type EventContext = EventContextInterface<RemoteTables, RemoteReducers, Reducer>;
+export type EventContext = EventContextInterface<RemoteTables, RemoteReducers, SetReducerFlags, Reducer>;
 '''
 "init_reducer.ts" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
@@ -1102,6 +1178,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -1169,6 +1247,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -1249,6 +1329,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -1332,6 +1414,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -1471,6 +1555,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -1543,6 +1629,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -1614,6 +1702,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -1701,6 +1791,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -1787,6 +1879,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -1857,6 +1951,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -1923,6 +2019,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2040,6 +2138,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -2114,6 +2214,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -2186,6 +2288,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2273,6 +2377,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -2347,6 +2453,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -2417,6 +2525,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -2483,6 +2593,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2573,6 +2685,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -2645,6 +2759,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2762,6 +2878,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -2833,6 +2951,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
@@ -2923,6 +3043,8 @@ import {
   // @ts-ignore
   BinaryWriter,
   // @ts-ignore
+  CallReducerFlags,
+  // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore
   DBConnectionImpl,
@@ -2995,6 +3117,8 @@ import {
   BinaryReader,
   // @ts-ignore
   BinaryWriter,
+  // @ts-ignore
+  CallReducerFlags,
   // @ts-ignore
   DBConnectionBuilder,
   // @ts-ignore

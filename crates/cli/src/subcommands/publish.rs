@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::util::{add_auth_header_opt, get_auth_header};
-use crate::util::{unauth_error_context, y_or_n};
+use crate::util::{decode_identity, unauth_error_context, y_or_n};
 use crate::{build, common_args};
 
 pub fn cli() -> clap::Command {
@@ -50,13 +50,6 @@ pub fn cli() -> clap::Command {
                 .help("The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project."),
         )
         .arg(
-            common_args::identity()
-                .help("The identity that should own the database")
-                .long_help("The identity that should own the database. If no identity is provided, your default identity will be used.")
-                .required(false)
-                .conflicts_with("anon_identity")
-        )
-        .arg(
             common_args::anonymous()
         )
         .arg(
@@ -72,9 +65,8 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
-pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_str());
-    let identity = args.get_one::<String>("identity").map(String::as_str);
     let name_or_identity = args.get_one::<String>("name|identity");
     let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
     let clear_database = args.get_flag("clear_database");
@@ -88,9 +80,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // we want to use the default identity
     // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
     //  easily create a new identity with an email
-    let (auth_header, identity) = get_auth_header(&mut config, anon_identity, identity, server)
-        .await?
-        .unzip();
+    let auth_header = get_auth_header(&config, anon_identity)?;
 
     let mut query_params = Vec::<(&str, &str)>::new();
     query_params.push(("host_type", "wasm"));
@@ -160,14 +150,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
-        if let Some(identity) = &identity {
-            let err = res.text().await?;
-            return unauth_error_context(
-                Err(anyhow::anyhow!(err)),
-                &identity.to_hex(),
-                config.server_nick_or_host(server)?,
-            );
-        }
+        let identity = decode_identity(&config)?;
+        let err = res.text().await?;
+        return unauth_error_context(
+            Err(anyhow::anyhow!(err)),
+            &identity,
+            config.server_nick_or_host(server)?,
+        );
     }
     if res.status().is_client_error() || res.status().is_server_error() {
         let err = res.text().await?;
@@ -202,35 +191,28 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             ));
         }
         PublishResult::PermissionDenied { domain } => {
-            return match identity {
-                Some(identity) => {
-                    //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
-                    // we should perhaps generate fun names like 'green-fire-dragon' instead
-                    let suggested_tld: String = identity.to_hex().chars().take(12).collect();
-                    if let Some(sub_domain) = domain.sub_domain() {
-                        Err(anyhow::anyhow!(
-                            "The top level domain {} is not registered to the identity you provided.\n\
-                        We suggest you publish to a domain that starts with a TLD owned by you, or publish to a new domain like:\n\
-                        \tspacetime publish {}/{}\n",
-                            domain.tld(),
-                            suggested_tld,
-                            sub_domain
-                        ))
-                    } else {
-                        Err(anyhow::anyhow!(
-                            "The top level domain {} is not registered to the identity you provided.\n\
-                        We suggest you push to either a domain owned by you, or a new domain like:\n\
-                        \tspacetime publish {}\n",
-                            domain.tld(),
-                            suggested_tld
-                        ))
-                    }
-                }
-                None => Err(anyhow::anyhow!(
-                    "The domain {} is not registered to the identity you provided.",
-                    domain
-                )),
-            };
+            let identity = decode_identity(&config)?;
+            //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
+            // we should perhaps generate fun names like 'green-fire-dragon' instead
+            let suggested_tld: String = identity.chars().take(12).collect();
+            if let Some(sub_domain) = domain.sub_domain() {
+                return Err(anyhow::anyhow!(
+                    "The top level domain {} is not registered to the identity you provided.\n\
+                We suggest you publish to a domain that starts with a TLD owned by you, or publish to a new domain like:\n\
+                \tspacetime publish {}/{}\n",
+                    domain.tld(),
+                    suggested_tld,
+                    sub_domain
+                ));
+            } else {
+                return Err(anyhow::anyhow!(
+                    "The top level domain {} is not registered to the identity you provided.\n\
+                We suggest you push to either a domain owned by you, or a new domain like:\n\
+                \tspacetime publish {}\n",
+                    domain.tld(),
+                    suggested_tld
+                ));
+            }
         }
     }
 

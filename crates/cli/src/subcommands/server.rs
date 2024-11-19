@@ -5,7 +5,7 @@ use crate::{
 };
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use spacetimedb::stdb_path;
+use spacetimedb_standalone::subcommands::start::default_data_dir;
 use std::path::PathBuf;
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
@@ -59,13 +59,6 @@ fn get_subcommands() -> Vec<Command> {
                     .help("The nickname, host name or URL of the server to remove")
                     .required(true),
             )
-            .arg(
-                Arg::new("delete-identities")
-                    .help("Also delete all identities which apply to the server")
-                    .long("delete-identities")
-                    .short('I')
-                    .action(ArgAction::SetTrue),
-            )
             .arg(common_args::yes()),
         Command::new("fingerprint")
             .about("Show or update a saved server's fingerprint")
@@ -74,14 +67,7 @@ fn get_subcommands() -> Vec<Command> {
                     .required(true)
                     .help("The nickname, host name or URL of the server"),
             )
-            .arg(common_args::yes())
-            .arg(
-                Arg::new("delete-obsolete-identities")
-                    .help("Delete obsoleted identities if the server's fingerprint has changed")
-                    .long("delete-obsolete-identities")
-                    .short('I')
-                    .action(ArgAction::SetTrue),
-            ),
+            .arg(common_args::yes()),
         Command::new("ping")
             .about("Checks to see if a SpacetimeDB host is online")
             .arg(
@@ -112,16 +98,16 @@ fn get_subcommands() -> Vec<Command> {
                     .long("no-fingerprint")
                     .action(ArgAction::SetTrue),
             )
-            .arg(
-                Arg::new("delete-obsolete-identities")
-                    .help("Delete obsoleted identities if the server's fingerprint has changed")
-                    .long("delete-obsolete-identities")
-                    .short('I')
-                    .action(ArgAction::SetTrue),
-            )
             .arg(common_args::yes()),
         Command::new("clear")
             .about("Deletes all data from all local databases")
+            .arg(
+                Arg::new("data_dir")
+                    .long("data-dir")
+                    .help("The path to the data directory for the database")
+                    .default_value(default_data_dir().into_os_string())
+                    .value_parser(clap::value_parser!(PathBuf)),
+            )
             .arg(common_args::yes()),
         // TODO: set-name, set-protocol, set-host, set-url
     ]
@@ -239,41 +225,15 @@ Add a server without retrieving its fingerprint with:
 
 pub async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").unwrap();
-    let delete_identities = args.get_flag("delete-identities");
-    let force = args.get_flag("force");
 
-    let deleted_ids = config.remove_server(server, delete_identities)?;
-
-    if !deleted_ids.is_empty() {
-        println!(
-            "Deleting {} {}:",
-            deleted_ids.len(),
-            if deleted_ids.len() == 1 {
-                " identity"
-            } else {
-                "identities"
-            }
-        );
-        for id in deleted_ids {
-            println!("{}", id.identity);
-        }
-        if !y_or_n(force, "Continue?")? {
-            anyhow::bail!("Aborted");
-        }
-
-        config.update_all_default_identities();
-    }
+    config.remove_server(server)?;
 
     config.save();
 
     Ok(())
 }
 
-async fn update_server_fingerprint(
-    config: &mut Config,
-    server: Option<&str>,
-    delete_identities: bool,
-) -> Result<bool, anyhow::Error> {
+async fn update_server_fingerprint(config: &mut Config, server: Option<&str>) -> Result<bool, anyhow::Error> {
     let url = config.get_host_url(server)?;
     let nick_or_host = config.server_nick_or_host(server)?;
     let new_fing = spacetime_server_fingerprint(&url)
@@ -289,30 +249,6 @@ async fn update_server_fingerprint(
                 "Fingerprint has changed for server {}.\nWas:\n{}\nNew:\n{}",
                 nick_or_host, saved_fing, new_fing
             );
-
-            if delete_identities {
-                // Unfortunate clone because we need to mutate `config`
-                // while holding `saved_fing`.
-                let saved_fing = saved_fing.to_string();
-
-                let deleted_ids = config.remove_identities_for_fingerprint(&saved_fing)?;
-                if !deleted_ids.is_empty() {
-                    println!(
-                        "Deleting {} obsolete {}:",
-                        deleted_ids.len(),
-                        if deleted_ids.len() == 1 {
-                            "identity"
-                        } else {
-                            "identities"
-                        }
-                    );
-                    for id in deleted_ids {
-                        println!("{}", id.identity);
-                    }
-                }
-
-                config.update_all_default_identities();
-            }
 
             config.set_server_fingerprint(server, new_fing)?;
 
@@ -332,10 +268,9 @@ async fn update_server_fingerprint(
 
 pub async fn exec_fingerprint(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").unwrap().as_str();
-    let delete_identities = args.get_flag("delete-obsolete-identities");
     let force = args.get_flag("force");
 
-    if update_server_fingerprint(&mut config, Some(server), delete_identities).await? {
+    if update_server_fingerprint(&mut config, Some(server)).await? {
         if !y_or_n(force, "Continue?")? {
             anyhow::bail!("Aborted");
         }
@@ -384,7 +319,6 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
     };
 
     let no_fingerprint = args.get_flag("no-fingerprint");
-    let delete_identities = args.get_flag("delete-obsolete-identities");
     let force = args.get_flag("force");
 
     if let Some(new_proto) = new_proto {
@@ -410,7 +344,7 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
         if no_fingerprint {
             config.delete_server_fingerprint(Some(&new_url))?;
         } else {
-            update_server_fingerprint(&mut config, Some(&new_url), delete_identities).await?;
+            update_server_fingerprint(&mut config, Some(&new_url)).await?;
         }
     }
 
@@ -425,26 +359,10 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
 
 async fn exec_clear(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let force = args.get_flag("force");
-    if std::env::var_os("STDB_PATH").map(PathBuf::from).is_none() {
-        let mut path = dirs::home_dir().unwrap_or_default();
-        path.push(".spacetime");
-        std::env::set_var("STDB_PATH", path.to_str().unwrap());
-    }
+    let data_dir = args.get_one::<PathBuf>("data_dir").unwrap();
 
-    let control_node_dir = stdb_path("control_node");
-    let worker_node_dir = stdb_path("worker_node");
-    if control_node_dir.exists() || worker_node_dir.exists() {
-        if control_node_dir.exists() {
-            println!("Control node database path: {}", control_node_dir.to_str().unwrap());
-        } else {
-            println!("Control node database path: <not found>");
-        }
-
-        if worker_node_dir.exists() {
-            println!("Worker node database path: {}", worker_node_dir.to_str().unwrap());
-        } else {
-            println!("Worker node database path: <not found>");
-        }
+    if data_dir.exists() {
+        println!("Database path: {}", data_dir.display());
 
         if !y_or_n(
             force,
@@ -454,14 +372,8 @@ async fn exec_clear(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
             return Ok(());
         }
 
-        if control_node_dir.exists() {
-            std::fs::remove_dir_all(&control_node_dir)?;
-            println!("Deleted control node database: {}", control_node_dir.to_str().unwrap());
-        }
-        if worker_node_dir.exists() {
-            std::fs::remove_dir_all(&worker_node_dir)?;
-            println!("Deleted worker node database: {}", worker_node_dir.to_str().unwrap());
-        }
+        std::fs::remove_dir_all(data_dir)?;
+        println!("Deleted database: {}", data_dir.display());
     } else {
         println!("Local database not found. Nothing has been deleted.");
     }
