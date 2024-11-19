@@ -19,7 +19,7 @@ impl<'a> DeltaTx<'a> {
     }
 }
 
-impl<'a> Deref for DeltaTx<'a> {
+impl Deref for DeltaTx<'_> {
     type Target = TxId;
 
     fn deref(&self) -> &Self::Target {

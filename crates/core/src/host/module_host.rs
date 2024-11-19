@@ -252,10 +252,6 @@ pub trait Module: Send + Sync + 'static {
     fn create_instance(&self) -> Self::Instance;
     fn replica_ctx(&self) -> &ReplicaContext;
     fn close(self);
-    #[cfg(feature = "tracelogging")]
-    fn get_trace(&self) -> Option<bytes::Bytes>;
-    #[cfg(feature = "tracelogging")]
-    fn stop_trace(&self) -> anyhow::Result<()>;
 }
 
 pub trait ModuleInstance: Send + 'static {

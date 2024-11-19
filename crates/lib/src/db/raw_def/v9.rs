@@ -675,7 +675,7 @@ pub struct RawTableDefBuilder<'a> {
     table: RawTableDefV9,
 }
 
-impl<'a> RawTableDefBuilder<'a> {
+impl RawTableDefBuilder<'_> {
     /// Sets the type of the table and return it.
     ///
     /// This is not about column algebraic types, but about whether the table

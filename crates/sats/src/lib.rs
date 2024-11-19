@@ -146,7 +146,7 @@ impl<'a, T: Value> ValueWithType<'a, T> {
 }
 
 impl<'a, T: Value> ValueWithType<'a, Box<[T]>> {
-    pub fn iter(&self) -> impl Iterator<Item = ValueWithType<'_, T>> {
+    pub fn iter(&self) -> impl Iterator<Item = ValueWithType<'a, T>> + use<'_, 'a, T> {
         self.value().iter().map(|val| ValueWithType { ty: self.ty, val })
     }
 }

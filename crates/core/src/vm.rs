@@ -32,7 +32,7 @@ pub enum TxMode<'a> {
     Tx(&'a Tx),
 }
 
-impl<'a> TxMode<'a> {
+impl TxMode<'_> {
     /// Unwraps `self`, ensuring we are in a mutable tx.
     fn unwrap_mut(&mut self) -> &mut MutTx {
         match self {
@@ -277,7 +277,7 @@ pub struct IndexSemiJoinLeft<'c, Rhs, IndexIter, F> {
     index_function: F,
 }
 
-impl<'a, 'c, Rhs, IndexIter, F> IndexSemiJoinLeft<'c, Rhs, IndexIter, F>
+impl<'a, Rhs, IndexIter, F> IndexSemiJoinLeft<'_, Rhs, IndexIter, F>
 where
     F: Fn(AlgebraicValue) -> Result<IndexIter, DBError>,
     IndexIter: Iterator<Item = RowRef<'a>>,
@@ -288,7 +288,7 @@ where
     }
 }
 
-impl<'a, 'c, Rhs, IndexIter, F> RelOps<'a> for IndexSemiJoinLeft<'c, Rhs, IndexIter, F>
+impl<'a, Rhs, IndexIter, F> RelOps<'a> for IndexSemiJoinLeft<'_, Rhs, IndexIter, F>
 where
     F: Fn(AlgebraicValue) -> Result<IndexIter, DBError>,
     IndexIter: Iterator<Item = RowRef<'a>>,
