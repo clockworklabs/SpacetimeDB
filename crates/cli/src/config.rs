@@ -1,7 +1,6 @@
 use crate::util::{contains_protocol, host_or_url_to_host_and_protocol};
 use anyhow::Context;
 use jsonwebtoken::DecodingKey;
-use serde::{Deserialize, Serialize};
 use spacetimedb::config::{set_opt_value, set_table_opt_value};
 use spacetimedb_fs_utils::atomic_write;
 use spacetimedb_paths::cli::CliTomlPath;
