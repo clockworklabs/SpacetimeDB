@@ -178,7 +178,7 @@ pub struct JoinInner<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
     left: Option<RelValue<'a>>,
 }
 
-impl<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> JoinInner<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
+impl<Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> JoinInner<'_, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
     pub fn new(lhs: Lhs, rhs: Rhs, key_lhs: KeyLhs, key_rhs: KeyRhs, predicate: Pred, projection: Proj) -> Self {
         Self {
             map: HashMap::default(),

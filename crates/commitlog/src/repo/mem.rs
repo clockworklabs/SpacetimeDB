@@ -3,7 +3,6 @@ use std::{
     io,
     ops::DerefMut as _,
     sync::{Arc, RwLock},
-    u64,
 };
 
 use crate::segment::FileLike;
