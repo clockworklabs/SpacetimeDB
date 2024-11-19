@@ -4824,6 +4824,7 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-lib",
+ "spacetimedb-paths",
  "spacetimedb-schema",
  "tempfile",
  "tokio",
