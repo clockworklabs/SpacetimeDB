@@ -200,7 +200,7 @@ impl IndexArg {
                     .iter()
                     .map(|col| col.field.ident.unwrap().to_string())
                     .collect::<Vec<_>>();
-                let cols = cols.join(",");
+                let cols = cols.join("_");
                 format!("{table_name}_{cols}_idx_btree")
             }
             ValidatedIndexType::UniqueBTree { col } => {
