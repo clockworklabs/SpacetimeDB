@@ -48,8 +48,8 @@ pub mod raw {
         /// ```
         /// let table_name: String = "my_table".into();
         /// let column_names: Vec<String> = vec!["bananas".into(), "oranges".into()];
-        /// let column_names = column_names.join(",");
-        /// let name = format!("{table_name}.index.btree({column_names})");
+        /// let column_names = column_names.join("_");
+        /// let name = format!("{table_name}_{column_names}_idx_btree");
         /// ```
         /// (See the function `spacetimedb_schema::def::validate::v9::generate_index_name` for more
         /// information.)

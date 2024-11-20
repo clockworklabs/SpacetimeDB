@@ -448,10 +448,10 @@ fn autogen_csharp_access_funcs_for_struct(
 
                 // this is EXTREMELY JANKY.
                 // TODO(1.0): this code should be updated to not use `TableSchema` and rely on `accessor_name` instead!
-                let prefix_len = "index.btree(".len() + table_name.len() + ",[".len();
-                let suffix_len = "])".len();
+                let prefix_len = table_name.len() + "_".len();
+                let suffix_len = "_idx_btree".len();
                 let comma_separated_field_names = &idx.index_name[prefix_len..idx.index_name.len() - suffix_len];
-                let csharp_index_name = comma_separated_field_names.replace(',', "_").to_case(Case::Pascal);
+                let csharp_index_name = comma_separated_field_names.to_case(Case::Pascal);
 
                 let csharp_field_type = match csharp_field_type(field_type) {
                     None => continue,
@@ -498,11 +498,11 @@ fn autogen_csharp_access_funcs_for_struct(
             }
 
             // this is EXTREMELY JANKY.
-            // TODO(1.0): this code should be updated to not use `TableSchema` and rely on `accessor_name` instead!  let prefix_len = "index.btree(".len() + table_name.len() + ",[".len();
-            let prefix_len = "index.btree(".len() + table_name.len() + ",[".len();
-            let suffix_len = "])".len();
+            // TODO(1.0): this code should be updated to not use `TableSchema` and rely on `accessor_name` instead!
+            let prefix_len = table_name.len() + "_".len();
+            let suffix_len = "_idx_btree".len();
             let comma_separated_field_names = &idx.index_name[prefix_len..idx.index_name.len() - suffix_len];
-            let csharp_index_name = comma_separated_field_names.replace(',', "_").to_case(Case::Pascal);
+            let csharp_index_name = comma_separated_field_names.to_case(Case::Pascal);
 
             writeln!(output, "{csharp_index_name} = new(this);");
         }

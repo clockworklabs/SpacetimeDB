@@ -201,11 +201,11 @@ impl IndexArg {
                     .map(|col| col.field.ident.unwrap().to_string())
                     .collect::<Vec<_>>();
                 let cols = cols.join(",");
-                format!("index.btree({table_name},[{cols}])")
+                format!("{table_name}_{cols}_idx_btree")
             }
             ValidatedIndexType::UniqueBTree { col } => {
                 let col = col.field.ident.unwrap().to_string();
-                format!("index.btree({table_name},[{col}])")
+                format!("{table_name}_{col}_idx_btree")
             }
         };
         Ok(ValidatedIndex {
