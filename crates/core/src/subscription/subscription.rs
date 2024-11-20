@@ -637,7 +637,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let _ = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
@@ -646,7 +646,7 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -717,7 +717,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
@@ -726,7 +726,7 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let _ = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -797,7 +797,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let _lhs_id = db
             .create_table_for_test("lhs", schema, indexes)
             .expect("Failed to create_table_for_test lhs");
@@ -808,7 +808,7 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let _rhs_id = db
             .create_table_for_test("rhs", schema, indexes)
             .expect("Failed to create_table_for_test rhs");

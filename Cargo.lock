@@ -5197,6 +5197,7 @@ dependencies = [
  "itertools 0.12.1",
  "lazy_static",
  "petgraph",
+ "pretty_assertions",
  "proptest",
  "serde_json",
  "smallvec",

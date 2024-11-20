@@ -300,7 +300,7 @@ mod tests {
         db.create_table_for_test(
             "test",
             &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)],
-            &[(1.into(), "b"), (0.into(), "a")],
+            &[1.into(), 0.into()],
         )?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -321,7 +321,7 @@ mod tests {
 
         // Create table [test] with index on [a]
         let schema = &[("a", AlgebraicType::U64)];
-        let indexes = &[(0.into(), "a")];
+        let indexes = &[0.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -457,7 +457,7 @@ mod tests {
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -479,7 +479,7 @@ mod tests {
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -524,7 +524,7 @@ mod tests {
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0.into(), "a"), (1.into(), "b")];
+        let indexes = &[0.into(), 1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -545,7 +545,7 @@ mod tests {
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -566,7 +566,7 @@ mod tests {
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -592,7 +592,7 @@ mod tests {
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0.into(), "a"), (1.into(), "b")];
+        let indexes = &[0.into(), 1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -614,7 +614,7 @@ mod tests {
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0.into(), "a")];
+        let indexes = &[0.into()];
         let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with no indexes
@@ -781,12 +781,12 @@ mod tests {
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0.into(), "a")];
+        let indexes = &[0.into()];
         let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [c]
         let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "c")];
+        let indexes = &[1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -848,7 +848,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
@@ -857,7 +857,7 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -930,7 +930,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
@@ -1018,21 +1018,9 @@ mod tests {
     #[test]
     fn compile_type_check() -> ResultTest<()> {
         let db = TestDB::durable()?;
-        db.create_table_for_test(
-            "PlayerState",
-            &[("entity_id", AlgebraicType::U64)],
-            &[(0.into(), "entity_id")],
-        )?;
-        db.create_table_for_test(
-            "EnemyState",
-            &[("entity_id", AlgebraicType::I8)],
-            &[(0.into(), "entity_id")],
-        )?;
-        db.create_table_for_test(
-            "FriendState",
-            &[("entity_id", AlgebraicType::U64)],
-            &[(0.into(), "entity_id")],
-        )?;
+        db.create_table_for_test("PlayerState", &[("entity_id", AlgebraicType::U64)], &[0.into()])?;
+        db.create_table_for_test("EnemyState", &[("entity_id", AlgebraicType::I8)], &[0.into()])?;
+        db.create_table_for_test("FriendState", &[("entity_id", AlgebraicType::U64)], &[0.into()])?;
         let sql = "SELECT * FROM PlayerState WHERE entity_id = '161853'";
 
         // Should fail with type mismatch for selections and joins.
