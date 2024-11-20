@@ -1,5 +1,6 @@
 use rand::Rng;
 use spacetimedb::{spacetimedb_lib::ScheduleAt, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
+use spacetimedb::log;
 use std::time::Duration;
 
 // TODO:
@@ -10,7 +11,7 @@ use std::time::Duration;
 // - [ ] Ejecting mass
 // - [ ] Leaderboard
 
-const TARGET_FOOD_COUNT: usize = 600;
+const TARGET_FOOD_COUNT: usize = 100;
 const MINIMUM_SAFE_MASS_RATIO: f32 = 0.85;
 
 #[spacetimedb::table(name = config, public)]
@@ -272,11 +273,12 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
                 if let Some(other_circle) = other_circle {
                     if other_circle.player_id != circle.player_id {
                         let mass_ratio = entity.mass as f32 / circle_entity.mass as f32;
-                        if mass_ratio < MINIMUM_SAFE_MASS_RATIO {
-                            ctx.db.entity().id().delete(&entity.id);
-                            ctx.db.circle().entity_id().delete(&entity.id);
-                            circle_entity.mass += entity.mass;
-                        }
+                        log::info!("collision!");
+//                        if mass_ratio < MINIMUM_SAFE_MASS_RATIO {
+//                            ctx.db.entity().id().delete(&entity.id);
+//                            ctx.db.circle().entity_id().delete(&entity.id);
+//                            circle_entity.mass += entity.mass;
+//                        }
                     }
                 }
             }
