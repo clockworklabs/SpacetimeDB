@@ -23,7 +23,8 @@ use futures::channel::mpsc;
 use futures::StreamExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
-use spacetimedb_durability::{self as durability, Durability, TxOffset};
+pub use spacetimedb_durability::Durability;
+use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::address::Address;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, RawSql};
@@ -1260,15 +1261,14 @@ where
     Ok(())
 }
 
+pub type LocalDurability = Arc<durability::Local<ProductValue>>;
 /// Initialize local durability with the default parameters.
 ///
 /// Also returned is a [`DiskSizeFn`] as required by [`RelationalDB::open`].
 ///
 /// Note that this operation can be expensive, as it needs to traverse a suffix
 /// of the commitlog.
-pub async fn local_durability(
-    commitlog_dir: CommitLogDir,
-) -> io::Result<(Arc<durability::Local<ProductValue>>, DiskSizeFn)> {
+pub async fn local_durability(commitlog_dir: CommitLogDir) -> io::Result<(LocalDurability, DiskSizeFn)> {
     tokio::fs::create_dir_all(&commitlog_dir).await?;
     let rt = tokio::runtime::Handle::current();
     // TODO: Should this better be spawn_blocking?
