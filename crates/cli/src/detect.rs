@@ -35,21 +35,20 @@ pub(crate) fn has_rust_fmt() -> bool {
     }
 }
 
-/// Check if the [Target] is installed.
-///
-/// **NOTE:** If `rustup` is not installed, we check inside the `rustc sysroot` directory.
+/// Check if the target `wasm32-unknown-unknown` is installed.
 pub(crate) fn has_wasm32_target() -> bool {
     let result = || {
-        if has_rust_up() {
-            let output = cmd!("rustup", "target", "list", "--installed").read()?;
-            Ok(output.contains("wasm32-unknown-unknown"))
-        } else {
-            // When `rustup` is not installed, we need to manually check the [Target] inside the sysroot directory
-            let root = cmd!("rustc", "--print", "sysroot").read()?;
-            Path::new(&format!("{}/lib/rustlib/{}", root.trim(), "wasm32-unknown-unknown"))
-                .try_exists()
-                .map_err(|err: io::Error| anyhow::anyhow!(err))
-        }
+        let path = cmd!(
+            "rustc",
+            "--print",
+            "target-libdir",
+            "--target",
+            "wasm32-unknown-unknown"
+        )
+        .read()?;
+        Path::new(path.trim())
+            .try_exists()
+            .map_err(|err: io::Error| anyhow::anyhow!(err))
     };
 
     result().unwrap_or_else(|err| {
