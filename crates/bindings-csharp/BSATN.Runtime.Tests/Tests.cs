@@ -109,10 +109,11 @@ public static class BSATNRuntimeTests
         Assert.Equal(ident3, ident);
 
         var memoryStream = new MemoryStream();
-        var writer = new BinaryWriter(memoryStream);
         var bsatn = new Identity.BSATN();
-        bsatn.Write(writer, ident);
-        writer.Flush();
+        using (var writer = new BinaryWriter(memoryStream))
+        {
+            bsatn.Write(writer, ident);
+        }
 
         var littleEndianBytes = memoryStream.ToArray();
         var reader = new BinaryReader(new MemoryStream(littleEndianBytes));
