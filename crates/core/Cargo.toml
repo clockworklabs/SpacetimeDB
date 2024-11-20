@@ -128,3 +128,4 @@ env_logger.workspace = true
 pretty_assertions.workspace = true
 jsonwebtoken.workspace = true
 axum.workspace = true
+reqwest.workspace = true
