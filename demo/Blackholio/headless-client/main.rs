@@ -73,6 +73,10 @@ fn main() -> anyhow::Result<()> {
     conn.run_threaded();
 
     conn.reducers.create_player(name.clone())?;
+
+    // randomly stagger on the assumption that we're running many clients in parallel
+    std::thread::sleep(std::time::Duration::from_millis((rand::random::<f32>() * 1000.0) as u64));
+
     loop {
         conn.reducers.update_player_input(
             Vector2 {
