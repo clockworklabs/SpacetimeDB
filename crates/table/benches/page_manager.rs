@@ -670,7 +670,6 @@ trait IndexedRow: Row + Sized {
                     columns: Self::indexed_columns(),
                 },
                 "accessor_name_doesnt_matter",
-                None,
             );
         let def: ModuleDef = builder.finish().try_into().expect("failed to build table schema");
         def.table_schema(&name[..], TableId::SENTINEL).unwrap()

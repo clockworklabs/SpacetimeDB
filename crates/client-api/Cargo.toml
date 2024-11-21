@@ -23,7 +23,7 @@ prometheus = "0.13.0"
 email_address = "0.2.3"
 tempfile.workspace = true
 async-trait = "0.1.60"
-chrono = { version = "0.4.23", features = ["serde"] }
+chrono = { workspace = true, features = ["serde"] }
 rand = "0.8.5"
 axum.workspace = true
 axum-extra.workspace = true

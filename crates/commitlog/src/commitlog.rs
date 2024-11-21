@@ -95,7 +95,7 @@ impl<R: Repo, T> Generic<R, T> {
     pub fn set_epoch(&mut self, epoch: u64) -> io::Result<Option<Committed>> {
         use std::cmp::Ordering::*;
 
-        match self.head.epoch().cmp(&epoch) {
+        match epoch.cmp(&self.head.epoch()) {
             Less => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "new epoch is smaller than current epoch",
@@ -702,6 +702,8 @@ impl<R: Repo> Iterator for CommitsWithVersion<R> {
 mod tests {
     use std::{cell::Cell, iter::repeat};
 
+    use pretty_assertions::assert_matches;
+
     use super::*;
     use crate::{
         payload::{ArrayDecodeError, ArrayDecoder},
@@ -1017,5 +1019,34 @@ mod tests {
             total_txs,
             log.transactions_from(0, &ArrayDecoder).map(Result::unwrap).count()
         );
+    }
+
+    #[test]
+    fn set_same_epoch_does_nothing() {
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(), <_>::default()).unwrap();
+        assert_eq!(log.epoch(), Commit::DEFAULT_EPOCH);
+        let committed = log.set_epoch(Commit::DEFAULT_EPOCH).unwrap();
+        assert_eq!(committed, None);
+    }
+
+    #[test]
+    fn set_new_epoch_commits() {
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(), <_>::default()).unwrap();
+        assert_eq!(log.epoch(), Commit::DEFAULT_EPOCH);
+        log.append(<_>::default()).unwrap();
+        let committed = log
+            .set_epoch(42)
+            .unwrap()
+            .expect("should have committed the pending transaction");
+        assert_eq!(log.epoch(), 42);
+        assert_eq!(committed.tx_range.start, 0);
+    }
+
+    #[test]
+    fn set_lower_epoch_returns_error() {
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(), <_>::default()).unwrap();
+        log.set_epoch(42).unwrap();
+        assert_eq!(log.epoch(), 42);
+        assert_matches!(log.set_epoch(7), Err(e) if e.kind() == io::ErrorKind::InvalidInput)
     }
 }

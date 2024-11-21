@@ -28,6 +28,7 @@ thiserror.workspace = true
 [dev-dependencies]
 env_logger.workspace = true
 once_cell.workspace = true
+pretty_assertions = { workspace = true, features = ["unstable"] }
 proptest-derive.workspace = true
 proptest.workspace = true
 rand.workspace = true
