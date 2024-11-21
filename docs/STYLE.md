@@ -65,6 +65,10 @@ If your document needs to describe a feature that isn't implemented yet, either 
 
 ## Reference pages
 
+Reference pages are where intermediate users will look to get a view of all of the capabilities of a tool, and where experienced users will check for specific information on behaviors of the types, functions, methods &c they're using. Each user-facing component in the SpacetimeDB ecosystem should have a reference page.
+
+Each reference page should start with an introduction paragraph that says what the component is and when and how the user will interact with it. It should then either include a section describing how to install or set up that component, or a link to another page which accomplishes the same thing.
+
 ### Tone, tense and voice
 
 Reference pages should be written in relatively formal language that would seem at home in an encyclopedia or a textbook. Or, say, [the Microsoft .NET API reference](https://learn.microsoft.com/en-us/dotnet/api/?view=net-8.0).
@@ -186,7 +190,11 @@ Add comments to this code block which describe what it does. In particular, if t
 > */
 > ```
 
-If the described item has any children (e.g. properties and methods of classes, variants of enums), include one or more tables for those children, as described above, followed by subsections for each child item.
+#### Child items
+
+If the described item has any children (e.g. properties and methods of classes, variants of enums), include one or more tables for those children, as described above, followed by subsections for each child item. These subsections follow the same format as for the parent items, with a header, declaration, description, examples and tables of any (grand-)children.
+
+If a documentation page ends up with more than 3 layers of nested items, split it so that each top-level item has its own page.
 
 ### Grammars and syntax
 
@@ -230,4 +238,96 @@ For example:
 
 ## Tutorial pages
 
-TODO: Tutorial pages are more casual. They're basically going to look like [the Rust client quickstart](./sdks/rust/quickstart.md) and [the Rust server quickstart](./modules/rust/quickstart.md), which I still think are pretty good.
+Tutorials are where we funnel new-to-intermediate users to introduce them to new concepts.
+
+Some tutorials are associated with specific SpacetimeDB components, and should be included in (sub)directories alongside the documentation for those components. Other tutorials are more general or holisitc, touching many different parts of SpacetimeDB to produce a complete game or app, and should stand alone or be grouped into a "tutorials" or "projects" directory.
+
+### Tone, tense and voice
+
+Be friendly, but still precise and professional. Refer to the reader as "you." Make gentle suggestions for optional actions with "can" or "could." When telling them to do something that's required to advance the tutorial, use the imperative voice. When reminding them of past tutorials or preparing them for future ones, say "we," grouping you (the writer) together with the reader. You two are going on a journey together, so get comfortable!
+
+### Scope
+
+You don't have to teach the reader non-SpacetimeDB-specific things. If you're writing a tutorial on Rust modules, for example, assume basic-to-intermediate familiarity with "Rust," so you can focus on teaching the reader about the "modules" part.
+
+### Introduction: tell 'em what you're gonna tell 'em
+
+Each tutorial should start with a statement of its scope (what new concepts are introduced), goal (what you build or do during the tutorial) and prerequisites (what other tutorials you should have finished first).
+
+> In this tutorial, we'll implement a simple chat server as a SpacetimeDB module. We'll learn how to declare tables and to write reducers, functions which run in the database to modify those tables in response to client requests. Before starting, make sure you've [installed SpacetimeDB](/install) and [logged in with a developer `Identity`](/auth/for-devs).
+
+### Introducing and linking to definitions
+
+The first time a tutorial or series introduces a new type / function / method / &c, include a short paragraph describing what it is and how it's being used in this tutorial. Make sure to link to the reference section on that item.
+
+### Tutorial code
+
+If the tutorial involves writing code, e.g. for a module or client, the tutorial should include the complete result code within its text. Ideally, it should be possible for a reader to copy and paste all the code blocks in the document into a file, effectively concatentating them together, and wind up with a coherent and runnable program. Sometimes this is not possible, e.g. because C# requires wrapping your whole file in a bunch of scopes. In this case, precede each code block with a sentence that describes where the reader is going to paste it.
+
+Include even uninteresting code, like imports! You can rush through these without spending too much time on them, but make sure that every line of code required to make the project work appears in the tutorial.
+
+> spacetime init should have pre-populated server/src/lib.rs with a trivial module. Clear it out so we can write a new, simple module: a bare-bones chat server.
+>
+> To the top of server/src/lib.rs, add some imports we'll be using:
+>
+> ```rust
+> use spacetimedb::{table, reducer, Table, ReducerContext, Identity, Timestamp};
+> ```
+
+For code that *is* interesting, after the code block, add a description of what the code does. Usually this will be pretty succinct, as the code should hopefully be pretty clear on its own.
+
+### Words for telling the user to write code
+
+When introducing a code block that the user should put in their file, don't say "copy" or "paste." Instead, tell them (in the imperative) to "add" or "write" the code. This emphasizes active participation, as opposed to passive consumption, and implicitly encourages the user to modify the tutorial code if they'd like. Readers who just want to copy and paste will do so without our telling them.
+
+> To `server/src/lib.rs`, add the definition of the connect reducer:
+>
+> ```rust
+> I don't actually need to fill this in.
+> ```
+
+### Conclusion
+
+Each tutorial should end with a conclusion section, with a title like "What's next?"
+
+#### Tell 'em what you told 'em
+
+Start the conclusion with a sentence or paragraph that reminds the reader what they accomplished:
+
+> You've just set up your first database in SpacetimeDB, complete with its very own tables and reducers!
+
+#### Tell them what to do next
+
+If this tutorial is part of a series, link to the next entry:
+
+> You can use any of SpacetimDB's supported client languages to do this. Take a look at the quickstart guide for your client language of choice: [Rust](/docs/sdks/rust/quickstart), [C#](/docs/sdks/c-sharp/quickstart), or [TypeScript](/docs/sdks/typescript/quickstart). If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/unity/part-1) or check out our example game, [BitcraftMini](/docs/unity/part-3).
+
+If this tutorial is about a specific component, link to its reference page:
+
+> Check out the [Rust SDK Reference](/docs/sdks/rust) for a more comprehensive view of the SpacetimeDB Rust SDK.
+
+If this tutorial is the end of a series, or ends with a reasonably complete app, throw in some ideas about how the reader could extend it:
+
+> Our basic terminal interface has some limitations. Incoming messages can appear while the user is typing, which is less than ideal. Additionally, the user's input gets mixed with the program's output, making messages the user sends appear twice. You might want to try improving the interface by using [Rustyline](https://crates.io/crates/rustyline), [Cursive](https://crates.io/crates/cursive), or even creating a full-fledged GUI.
+>
+> Once your chat server runs for a while, you might want to limit the messages your client loads by refining your `Message` subscription query, only subscribing to messages sent within the last half-hour.
+>
+> You could also add features like:
+>
+> - Styling messages by interpreting HTML tags and printing appropriate [ANSI escapes](https://en.wikipedia.org/wiki/ANSI_escape_code).
+> - Adding a `moderator` flag to the `User` table, allowing moderators to manage users (e.g., time-out, ban).
+> - Adding rooms or channels that users can join or leave.
+> - Supporting direct messages or displaying user statuses next to their usernames.
+
+#### Complete code
+
+If the tutorial involved writing code, add a link to the complete code. This should be somewhere on GitHub, either as its own repo, or as an example project within an existing repo. Ensure the linked folder has a README.md file which includes:
+
+- The name of the tutorial project.
+- How to run or interact with the tutorial project, whatever that means (e.g. publish to testnet and then `spacetime call`).
+- Links to external dependencies (e.g. for client projects, the module which it runs against).
+- A back-link to the tutorial that builds this project.
+
+At the end of the tutorial that builds the `quickstart-chat` module in Rust, you might write:
+
+> You can find the full code for this module in [the SpacetimeDB module examples](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/quickstart-chat).
