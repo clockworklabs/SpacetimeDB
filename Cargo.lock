@@ -4869,6 +4869,7 @@ dependencies = [
  "log",
  "memmap2",
  "once_cell",
+ "pretty_assertions",
  "proptest",
  "proptest-derive",
  "rand 0.8.5",
