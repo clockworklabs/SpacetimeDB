@@ -78,6 +78,7 @@ impl Default for Header {
 }
 
 /// Metadata about a [`Commit`] which was successfully written via [`Writer::commit`].
+#[derive(Debug, PartialEq)]
 pub struct Committed {
     /// The range of transaction offsets included in the commit.
     pub tx_range: Range<u64>,
