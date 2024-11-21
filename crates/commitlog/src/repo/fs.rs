@@ -31,8 +31,9 @@ impl Fs {
     /// Create a commitlog repository which stores segments in the directory `root`.
     ///
     /// `root` must name an extant, accessible, writeable directory.
-    pub fn new(root: CommitLogDir) -> Self {
-        Self { root }
+    pub fn new(root: CommitLogDir) -> io::Result<Self> {
+        root.create()?;
+        Ok(Self { root })
     }
 
     /// Get the filename for a segment starting with `offset` within this
