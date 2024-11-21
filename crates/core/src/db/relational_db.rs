@@ -1269,7 +1269,6 @@ pub type LocalDurability = Arc<durability::Local<ProductValue>>;
 /// Note that this operation can be expensive, as it needs to traverse a suffix
 /// of the commitlog.
 pub async fn local_durability(commitlog_dir: CommitLogDir) -> io::Result<(LocalDurability, DiskSizeFn)> {
-    tokio::fs::create_dir_all(&commitlog_dir).await?;
     let rt = tokio::runtime::Handle::current();
     // TODO: Should this better be spawn_blocking?
     let local = spawn_rayon(move || {
