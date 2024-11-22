@@ -59,14 +59,15 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         }
     };
 
-    let address = client.module.info().address;
+    let address = client.module.info().database_identity;
     let res = match message {
         ClientMessage::CallReducer(CallReducer {
             ref reducer,
             args,
             request_id,
+            flags,
         }) => {
-            let res = client.call_reducer(reducer, args, request_id, timer).await;
+            let res = client.call_reducer(reducer, args, request_id, timer, flags).await;
             WORKER_METRICS
                 .request_round_trip
                 .with_label_values(&WorkloadType::Reducer, &address, reducer)
@@ -145,7 +146,7 @@ impl ToProtocol for MessageExecutionError {
     type Encoded = SwitchedServerMessage;
     fn to_protocol(self, protocol: super::Protocol) -> Self::Encoded {
         TransactionUpdateMessage {
-            event: Arc::new(self.into_event()),
+            event: Some(Arc::new(self.into_event())),
             database_update: SubscriptionUpdateMessage::default_for_protocol(protocol, None),
         }
         .to_protocol(protocol)

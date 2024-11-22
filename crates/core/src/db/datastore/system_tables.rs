@@ -13,7 +13,6 @@
 
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
-use crate::execution_context::ExecutionContext;
 use derive_more::From;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawSql};
@@ -243,7 +242,7 @@ st_fields_enum!(enum StRowLevelSecurityFields {
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StModuleFields {
-    "database_address", DatabaseAddress = 0,
+    "database_identity", DatabaseIdentity = 0,
     "owner_identity", OwnerIdentity = 1,
     "program_kind", ProgramKind = 2,
     "program_hash", ProgramHash = 3,
@@ -294,16 +293,16 @@ fn system_module_def() -> ModuleDef {
         .build_table(ST_TABLE_NAME, *st_table_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StTableFields::TableId)
-        .with_unique_constraint(StTableFields::TableName, None);
+        .with_unique_constraint(StTableFields::TableName);
 
     let st_raw_column_type = builder.add_type::<StColumnRow>();
     builder
         .build_table(ST_COLUMN_NAME, *st_raw_column_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(
-            col_list![StColumnFields::TableId.col_id(), StColumnFields::ColPos.col_id()],
-            None,
-        );
+        .with_unique_constraint(col_list![
+            StColumnFields::TableId.col_id(),
+            StColumnFields::ColPos.col_id()
+        ]);
 
     let st_index_type = builder.add_type::<StIndexRow>();
     builder
@@ -334,13 +333,12 @@ fn system_module_def() -> ModuleDef {
         )
         .with_type(TableType::System)
         .with_primary_key(StRowLevelSecurityFields::Sql)
-        .with_unique_constraint(StRowLevelSecurityFields::Sql, None)
+        .with_unique_constraint(StRowLevelSecurityFields::Sql)
         .with_index(
             RawIndexAlgorithm::BTree {
                 columns: StRowLevelSecurityFields::TableId.into(),
             },
             "accessor_name_doesnt_matter",
-            None,
         );
 
     let st_module_type = builder.add_type::<StModuleRow>();
@@ -353,13 +351,13 @@ fn system_module_def() -> ModuleDef {
     builder
         .build_table(ST_CLIENT_NAME, *st_client_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(col_list![StClientFields::Identity, StClientFields::Address], None); // FIXME: this is a noop?
+        .with_unique_constraint(col_list![StClientFields::Identity, StClientFields::Address]); // FIXME: this is a noop?
 
     let st_schedule_type = builder.add_type::<StScheduledRow>();
     builder
         .build_table(ST_SCHEDULED_NAME, *st_schedule_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(StScheduledFields::TableId, None)
+        .with_unique_constraint(StScheduledFields::TableId)
         .with_auto_inc_primary_key(StScheduledFields::ScheduleId);
     // TODO(1.0): unique constraint on name?
 
@@ -367,7 +365,7 @@ fn system_module_def() -> ModuleDef {
     builder
         .build_table(ST_VAR_NAME, *st_var_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(StVarFields::Name, None)
+        .with_unique_constraint(StVarFields::Name)
         .with_primary_key(StVarFields::Name);
 
     let result = builder
@@ -831,20 +829,20 @@ impl From<Identity> for IdentityViaU256 {
 /// This table holds exactly one row, describing the latest version of the
 /// SpacetimeDB module associated with the database:
 ///
-/// * `database_address` is the [`Address`] of the database.
+/// * `database_identity` is the [`Identity`] of the database.
 /// * `owner_identity` is the [`Identity`] of the owner of the database.
 /// * `program_kind` is the [`ModuleKind`] (currently always [`WASM_MODULE`]).
 /// * `program_hash` is the [`Hash`] of the raw bytes of the (compiled) module.
 /// * `program_bytes` are the raw bytes of the (compiled) module.
 /// * `module_version` is the version of the module.
 ///
-/// | database_address | owner_identity |  program_kind | program_bytes | program_hash        | module_version |
+/// | identity | owner_identity |  program_kind | program_bytes | program_hash        | module_version |
 /// |------------------|----------------|---------------|---------------|---------------------|----------------|
 /// | <bytes>          | <bytes>        |  0            | <bytes>       | <bytes>             | <string>       |
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StModuleRow {
-    pub(crate) database_address: AddressViaU128,
+    pub(crate) database_identity: IdentityViaU256,
     pub(crate) owner_identity: IdentityViaU256,
     pub(crate) program_kind: ModuleKind,
     pub(crate) program_hash: Hash,
@@ -869,9 +867,9 @@ pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u
 /// Read an [`Address`] directly from the column `col` in `row`.
 ///
 /// The [`Address`] is assumed to be stored as an u128.
-pub fn read_addr_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Address, DBError> {
-    let val: u128 = row.read_col(col.col_id())?;
-    Ok(val.into())
+pub fn read_addr_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Identity, DBError> {
+    let val: u256 = row.read_col(col.col_id())?;
+    Ok(Identity::from_u256(val))
 }
 
 /// Read an [`Identity`] directly from the column `col` in `row`.
@@ -938,8 +936,8 @@ pub struct StVarTable;
 
 impl StVarTable {
     /// Read the value of [ST_VARNAME_ROW_LIMIT] from `st_var`
-    pub fn row_limit(ctx: &ExecutionContext, db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        let data = Self::read_var(ctx, db, tx, StVarName::RowLimit);
+    pub fn row_limit(db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
+        let data = Self::read_var(db, tx, StVarName::RowLimit);
 
         if let Some(StVarValue::U64(limit)) = data? {
             return Ok(Some(limit));
@@ -948,38 +946,33 @@ impl StVarTable {
     }
 
     /// Read the value of [ST_VARNAME_SLOW_QRY] from `st_var`
-    pub fn query_limit(ctx: &ExecutionContext, db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = Self::read_var(ctx, db, tx, StVarName::SlowQryThreshold)? {
+    pub fn query_limit(db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
+        if let Some(StVarValue::U64(ms)) = Self::read_var(db, tx, StVarName::SlowQryThreshold)? {
             return Ok(Some(ms));
         }
         Ok(None)
     }
 
     /// Read the value of [ST_VARNAME_SLOW_SUB] from `st_var`
-    pub fn sub_limit(ctx: &ExecutionContext, db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = Self::read_var(ctx, db, tx, StVarName::SlowSubThreshold)? {
+    pub fn sub_limit(db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
+        if let Some(StVarValue::U64(ms)) = Self::read_var(db, tx, StVarName::SlowSubThreshold)? {
             return Ok(Some(ms));
         }
         Ok(None)
     }
 
     /// Read the value of [ST_VARNAME_SLOW_INC] from `st_var`
-    pub fn incr_limit(ctx: &ExecutionContext, db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = Self::read_var(ctx, db, tx, StVarName::SlowIncThreshold)? {
+    pub fn incr_limit(db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
+        if let Some(StVarValue::U64(ms)) = Self::read_var(db, tx, StVarName::SlowIncThreshold)? {
             return Ok(Some(ms));
         }
         Ok(None)
     }
 
     /// Read the value of a system variable from `st_var`
-    pub fn read_var(
-        ctx: &ExecutionContext,
-        db: &RelationalDB,
-        tx: &TxId,
-        name: StVarName,
-    ) -> Result<Option<StVarValue>, DBError> {
+    pub fn read_var(db: &RelationalDB, tx: &TxId, name: StVarName) -> Result<Option<StVarValue>, DBError> {
         if let Some(row_ref) = db
-            .iter_by_col_eq(ctx, tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
+            .iter_by_col_eq(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
             .next()
         {
             return Ok(Some(StVarRow::try_from(row_ref)?.value));
@@ -988,16 +981,10 @@ impl StVarTable {
     }
 
     /// Update the value of a system variable in `st_var`
-    pub fn write_var(
-        ctx: &ExecutionContext,
-        db: &RelationalDB,
-        tx: &mut MutTxId,
-        name: StVarName,
-        literal: &str,
-    ) -> Result<(), DBError> {
+    pub fn write_var(db: &RelationalDB, tx: &mut MutTxId, name: StVarName, literal: &str) -> Result<(), DBError> {
         let value = Self::parse_var(name, literal)?;
         if let Some(row_ref) = db
-            .iter_by_col_eq_mut(ctx, tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
+            .iter_by_col_eq_mut(tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
             .next()
         {
             db.delete(tx, ST_VAR_ID, [row_ref.pointer()]);
@@ -1336,20 +1323,19 @@ fn to_product_value<T: Serialize>(value: &T) -> ProductValue {
 
 #[cfg(test)]
 mod tests {
-    use crate::db::relational_db::tests_utils::TestDB;
-
     use super::*;
+    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::execution_context::Workload;
 
     #[test]
     fn test_system_variables() {
         let db = TestDB::durable().expect("failed to create db");
-        let ctx = ExecutionContext::default();
-        let _ = db.with_auto_commit(&ctx, |tx| {
-            StVarTable::write_var(&ctx, &db, tx, StVarName::RowLimit, "5")
+        let _ = db.with_auto_commit(Workload::ForTests, |tx| {
+            StVarTable::write_var(&db, tx, StVarName::RowLimit, "5")
         });
         assert_eq!(
             5,
-            db.with_read_only(&ctx, |tx| StVarTable::row_limit(&ctx, &db, tx))
+            db.with_read_only(Workload::ForTests, |tx| StVarTable::row_limit(&db, tx))
                 .expect("failed to read from st_var")
                 .expect("row_limit does not exist")
         );

@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
 use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use is_terminal::IsTerminal;
@@ -16,15 +16,11 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("database")
                 .required(true)
-                .help("The domain or address of the database to print logs from"),
+                .help("The name or identity of the database to print logs from"),
         )
         .arg(
             common_args::server()
                 .help("The nickname, host name or URL of the server hosting the database"),
-        )
-        .arg(
-            common_args::identity()
-                .help("The identity to use for printing logs from this database"),
         )
         .arg(
             Arg::new("num_lines")
@@ -113,17 +109,16 @@ impl clap::ValueEnum for Format {
     }
 }
 
-pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = args.get_one::<String>("identity");
     let mut num_lines = args.get_one::<u32>("num_lines").copied();
     let database = args.get_one::<String>("database").unwrap();
     let follow = args.get_flag("follow");
     let format = *args.get_one::<Format>("format").unwrap();
 
-    let auth_header = get_auth_header_only(&mut config, false, identity, server).await?;
+    let auth_header = get_auth_header(&config, false)?;
 
-    let address = database_address(&config, database, server).await?;
+    let database_identity = database_identity(&config, database, server).await?;
 
     if follow && num_lines.is_none() {
         // We typically don't want logs from the very beginning if we're also following.
@@ -133,7 +128,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let host_url = config.get_host_url(server)?;
 
-    let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", host_url, address));
+    let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", host_url, database_identity));
     let builder = add_auth_header_opt(builder, &auth_header);
     let mut res = builder.query(&query_parms).send().await?;
     let status = res.status();

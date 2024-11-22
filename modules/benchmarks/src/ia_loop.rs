@@ -350,7 +350,7 @@ fn move_agent(
         entity_id,
         location_x: mobile_entity.location_x + 1,
         location_y: mobile_entity.location_y + 1,
-        timestamp: moment_milliseconds(),
+        timestamp: agent.next_action_timestamp,
     };
 
     ctx.db.game_enemy_ai_agent_state().entity_id().update(agent.clone());
@@ -397,10 +397,6 @@ pub fn game_loop_enemy_ia(ctx: &ReducerContext, players: u64) {
     let current_time_ms = moment_milliseconds();
 
     for mut agent in ctx.db.game_enemy_ai_agent_state().iter() {
-        if agent.next_action_timestamp > current_time_ms {
-            continue;
-        }
-
         let agent_targetable = ctx
             .db
             .game_targetable_state()

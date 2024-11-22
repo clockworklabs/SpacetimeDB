@@ -231,7 +231,7 @@ mod tests {
     use super::*;
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::TestDB;
-    use crate::execution_context::ExecutionContext;
+    use crate::execution_context::Workload;
     use crate::sql::execute::tests::run_for_testing;
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::{Address, Identity};
@@ -281,7 +281,7 @@ mod tests {
         let indexes = &[];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Compile query
         let sql = "select * from test where a = 1";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
@@ -300,10 +300,10 @@ mod tests {
         db.create_table_for_test(
             "test",
             &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)],
-            &[(1.into(), "b"), (0.into(), "a")],
+            &[1.into(), 0.into()],
         )?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Should work with any qualified field.
         let sql = "select * from test where a = 1 and b <> 3";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
@@ -321,10 +321,10 @@ mod tests {
 
         // Create table [test] with index on [a]
         let schema = &[("a", AlgebraicType::U64)];
-        let indexes = &[(0.into(), "a")];
+        let indexes = &[0.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         //Compile query
         let sql = "select * from test where a = 1";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
@@ -354,7 +354,7 @@ mod tests {
             Address::__DUMMY
         ];
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+        db.with_auto_commit(Workload::ForTests, |tx| {
             db.insert(tx, table_id, row.clone())?;
             Ok::<(), TestError>(())
         })?;
@@ -367,7 +367,7 @@ mod tests {
         );
         run_for_testing(&db, sql)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Compile query, check for both hex formats and it to be case-insensitive...
         let sql = &format!(
             "select * from test where identity = {} AND identity_mix = x'93dda09db9a56d8fa6c024d843e805D8262191db3b4bA84c5efcd1ad451fed4e' AND address = x'{}' AND address = {}",
@@ -457,12 +457,12 @@ mod tests {
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx();
-        // Note, order does not matter matter.
-        // The sargable predicate occurs last but we can still generate an index scan.
+        let tx = db.begin_tx(Workload::ForTests);
+        // Note, order does not matter.
+        // The sargable predicate occurs last, but we can still generate an index scan.
         let sql = "select * from test where a = 1 and b = 2";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
@@ -479,11 +479,11 @@ mod tests {
 
         // Create table [test] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx();
-        // Note, order does not matters.
+        let tx = db.begin_tx(Workload::ForTests);
+        // Note, order does not matter.
         // The sargable predicate occurs first adn we can generate an index scan.
         let sql = "select * from test where b = 2 and a = 1";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
@@ -508,7 +508,7 @@ mod tests {
         ];
         db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
 
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let sql = "select * from test where b = 2 and a = 1";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
@@ -524,10 +524,10 @@ mod tests {
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0.into(), "a"), (1.into(), "b")];
+        let indexes = &[0.into(), 1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Compile query
         let sql = "select * from test where a = 1 or b = 2";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
@@ -545,10 +545,10 @@ mod tests {
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Compile query
         let sql = "select * from test where b > 2";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
@@ -566,10 +566,10 @@ mod tests {
 
         // Create table [test] with indexes on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Compile query
         let sql = "select * from test where b > 2 and b < 5";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
@@ -592,10 +592,10 @@ mod tests {
 
         // Create table [test] with indexes on [a] and [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0.into(), "a"), (1.into(), "b")];
+        let indexes = &[0.into(), 1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Note, order matters - the equality condition occurs first which
         // means an index scan will be generated rather than the range condition.
         let sql = "select * from test where a = 3 and b > 2 and b < 5";
@@ -614,7 +614,7 @@ mod tests {
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0.into(), "a")];
+        let indexes = &[0.into()];
         let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with no indexes
@@ -622,7 +622,7 @@ mod tests {
         let indexes = &[];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Should push sargable equality condition below join
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
         let exp = compile_sql(&db, &tx, sql)?.remove(0);
@@ -674,7 +674,7 @@ mod tests {
         let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
         let rhs_id = db.create_table_for_test("rhs", schema, &[])?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Should push equality condition below join
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
         let exp = compile_sql(&db, &tx, sql)?.remove(0);
@@ -731,7 +731,7 @@ mod tests {
         let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
         let rhs_id = db.create_table_for_test("rhs", schema, &[])?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Should push equality condition below join
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c = 3";
         let exp = compile_sql(&db, &tx, sql)?.remove(0);
@@ -781,15 +781,15 @@ mod tests {
 
         // Create table [lhs] with index on [a]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(0.into(), "a")];
+        let indexes = &[0.into()];
         let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [c]
         let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "c")];
+        let indexes = &[1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Should push the sargable equality condition into the join's left arg.
         // Should push the sargable range condition into the join's right arg.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where lhs.a = 3 and rhs.c < 4";
@@ -848,7 +848,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
@@ -857,10 +857,10 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
@@ -930,7 +930,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
@@ -942,7 +942,7 @@ mod tests {
         let indexes = col_list![0, 1];
         let rhs_id = db.create_table_for_test_multi_column("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c = 2 and rhs.b = 4 and rhs.d = 3";
@@ -1006,28 +1006,21 @@ mod tests {
         let db = TestDB::durable()?;
         db.create_table_for_test("A", &[("x", AlgebraicType::U64)], &[])?;
         db.create_table_for_test("B", &[("y", AlgebraicType::U64)], &[])?;
-        assert!(compile_sql(&db, &db.begin_tx(), "select B.* from B join A on B.y = A.x").is_ok());
+        assert!(compile_sql(
+            &db,
+            &db.begin_tx(Workload::ForTests),
+            "select B.* from B join A on B.y = A.x"
+        )
+        .is_ok());
         Ok(())
     }
 
     #[test]
     fn compile_type_check() -> ResultTest<()> {
         let db = TestDB::durable()?;
-        db.create_table_for_test(
-            "PlayerState",
-            &[("entity_id", AlgebraicType::U64)],
-            &[(0.into(), "entity_id")],
-        )?;
-        db.create_table_for_test(
-            "EnemyState",
-            &[("entity_id", AlgebraicType::I8)],
-            &[(0.into(), "entity_id")],
-        )?;
-        db.create_table_for_test(
-            "FriendState",
-            &[("entity_id", AlgebraicType::U64)],
-            &[(0.into(), "entity_id")],
-        )?;
+        db.create_table_for_test("PlayerState", &[("entity_id", AlgebraicType::U64)], &[0.into()])?;
+        db.create_table_for_test("EnemyState", &[("entity_id", AlgebraicType::I8)], &[0.into()])?;
+        db.create_table_for_test("FriendState", &[("entity_id", AlgebraicType::U64)], &[0.into()])?;
         let sql = "SELECT * FROM PlayerState WHERE entity_id = '161853'";
 
         // Should fail with type mismatch for selections and joins.
@@ -1035,27 +1028,27 @@ mod tests {
         // TODO: Type check other operations deferred for the new query engine.
 
         assert!(
-            compile_sql(&db, &db.begin_tx(), sql).is_err(),
+            compile_sql(&db, &db.begin_tx(Workload::ForTests), sql).is_err(),
             // Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` != `String(\"161853\"): String`, executing: `SELECT * FROM PlayerState WHERE entity_id = '161853'`".into())
         );
 
         // Check we can still compile the query if we remove the type mismatch and have multiple logical operations.
         let sql = "SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id = 2 AND entity_id = 3 OR entity_id = 4 OR entity_id = 5";
 
-        assert!(compile_sql(&db, &db.begin_tx(), sql).is_ok());
+        assert!(compile_sql(&db, &db.begin_tx(Workload::ForTests), sql).is_ok());
 
         // Now verify when we have a type mismatch in the middle of the logical operations.
         let sql = "SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id";
 
         assert!(
-            compile_sql(&db, &db.begin_tx(), sql).is_err(),
+            compile_sql(&db, &db.begin_tx(Workload::ForTests), sql).is_err(),
             // Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64 == U64(1): U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id`".into())
         );
         // Verify that all operands of `AND` must be `Bool`.
         let sql = "SELECT * FROM PlayerState WHERE entity_id AND entity_id";
 
         assert!(
-            compile_sql(&db, &db.begin_tx(), sql).is_err(),
+            compile_sql(&db, &db.begin_tx(Workload::ForTests), sql).is_err(),
             // Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id AND entity_id`".into())
         );
         Ok(())

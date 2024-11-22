@@ -10,6 +10,7 @@ pub mod util;
 use clap::{ArgMatches, Command};
 
 pub use config::Config;
+use spacetimedb_paths::SpacetimePaths;
 use spacetimedb_standalone::subcommands::start::ProgramMode;
 pub use subcommands::*;
 pub use tasks::build;
@@ -25,12 +26,13 @@ pub fn get_subcommands() -> Vec<Command> {
         logs::cli(),
         call::cli(),
         describe::cli(),
-        identity::cli(),
         energy::cli(),
         sql::cli(),
         dns::cli(),
         generate::cli(),
         list::cli(),
+        login::cli(),
+        logout::cli(),
         init::cli(),
         build::cli(),
         server::cli(),
@@ -41,10 +43,14 @@ pub fn get_subcommands() -> Vec<Command> {
     ]
 }
 
-pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec_subcommand(
+    config: Config,
+    paths: &SpacetimePaths,
+    cmd: &str,
+    args: &ArgMatches,
+) -> Result<(), anyhow::Error> {
     match cmd {
         "version" => version::exec(config, args).await,
-        "identity" => identity::exec(config, args).await,
         "call" => call::exec(config, args).await,
         "describe" => describe::exec(config, args).await,
         "energy" => energy::exec(config, args).await,
@@ -60,7 +66,9 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "server" => server::exec(config, args).await,
         "subscribe" => subscribe::exec(config, args).await,
         #[cfg(feature = "standalone")]
-        "start" => start::exec(args).await,
+        "start" => start::exec(Some(paths), args).await,
+        "login" => login::exec(config, args).await,
+        "logout" => logout::exec(config, args).await,
         "upgrade" => upgrade::exec(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }

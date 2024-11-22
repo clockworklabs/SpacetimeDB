@@ -1,4 +1,4 @@
-use super::{DataMessage, Protocol};
+use super::{ClientConfig, DataMessage, Protocol};
 use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::host::ArgsTuple;
@@ -25,19 +25,16 @@ pub trait ToProtocol {
 }
 
 pub(super) type SwitchedServerMessage = FormatSwitch<ws::ServerMessage<BsatnFormat>, ws::ServerMessage<JsonFormat>>;
+pub(super) type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
 
 /// Serialize `msg` into a [`DataMessage`] containing a [`ws::ServerMessage`].
 ///
 /// If `protocol` is [`Protocol::Binary`],
 /// the message will be conditionally compressed by this method according to `compression`.
-pub fn serialize(
-    msg: impl ToProtocol<Encoded = SwitchedServerMessage>,
-    protocol: Protocol,
-    compression: Compression,
-) -> DataMessage {
+pub fn serialize(msg: impl ToProtocol<Encoded = SwitchedServerMessage>, config: ClientConfig) -> DataMessage {
     // TODO(centril, perf): here we are allocating buffers only to throw them away eventually.
     // Consider pooling these allocations so that we reuse them.
-    match msg.to_protocol(protocol) {
+    match msg.to_protocol(config.protocol) {
         FormatSwitch::Json(msg) => serde_json::to_string(&SerializeWrapper::new(msg)).unwrap().into(),
         FormatSwitch::Bsatn(msg) => {
             // First write the tag so that we avoid shifting the entire message at the end.
@@ -46,7 +43,7 @@ pub fn serialize(
 
             // Conditionally compress the message.
             let srv_msg = &msg_bytes[1..];
-            let msg_bytes = match ws::decide_compression(srv_msg.len(), compression) {
+            let msg_bytes = match ws::decide_compression(srv_msg.len(), config.compression) {
                 Compression::None => msg_bytes,
                 Compression::Brotli => {
                     let mut out = vec![SERVER_MSG_COMPRESSION_TAG_BROTLI];
@@ -118,7 +115,9 @@ impl ToProtocol for IdentityTokenMessage {
 
 #[derive(Debug)]
 pub struct TransactionUpdateMessage {
-    pub event: Arc<ModuleEvent>,
+    /// The event that caused this update.
+    /// When `None`, this is a light update.
+    pub event: Option<Arc<ModuleEvent>>,
     pub database_update: SubscriptionUpdateMessage,
 }
 
@@ -132,13 +131,17 @@ impl ToProtocol for TransactionUpdateMessage {
     type Encoded = SwitchedServerMessage;
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
         fn convert<F: WebsocketFormat>(
-            event: Arc<ModuleEvent>,
-            request_id: Option<u32>,
-            upd: ws::DatabaseUpdate<F>,
+            event: Option<Arc<ModuleEvent>>,
+            request_id: u32,
+            update: ws::DatabaseUpdate<F>,
             conv_args: impl FnOnce(&ArgsTuple) -> F::Single,
         ) -> ws::ServerMessage<F> {
+            let Some(event) = event else {
+                return ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { request_id, update });
+            };
+
             let status = match &event.status {
-                EventStatus::Committed(_) => ws::UpdateStatus::Committed(upd),
+                EventStatus::Committed(_) => ws::UpdateStatus::Committed(update),
                 EventStatus::Failed(errmsg) => ws::UpdateStatus::Failed(errmsg.clone().into()),
                 EventStatus::OutOfEnergy => ws::UpdateStatus::OutOfEnergy,
             };
@@ -153,7 +156,7 @@ impl ToProtocol for TransactionUpdateMessage {
                     reducer_name: event.function_call.reducer.to_owned().into(),
                     reducer_id: event.function_call.reducer_id.into(),
                     args,
-                    request_id: request_id.unwrap_or(0),
+                    request_id,
                 },
                 energy_quanta_used: event.energy_quanta_used,
                 total_host_execution_duration: event.host_execution_duration.into(),
@@ -166,7 +169,7 @@ impl ToProtocol for TransactionUpdateMessage {
         let TransactionUpdateMessage { event, database_update } = self;
         let update = database_update.database_update;
         protocol.assert_matches_format_switch(&update);
-        let request_id = database_update.request_id;
+        let request_id = database_update.request_id.unwrap_or(0);
         match update {
             FormatSwitch::Bsatn(update) => FormatSwitch::Bsatn(convert(event, request_id, update, |args| {
                 Vec::from(args.get_bsatn().clone()).into()
@@ -180,7 +183,7 @@ impl ToProtocol for TransactionUpdateMessage {
 
 #[derive(Debug, Clone)]
 pub struct SubscriptionUpdateMessage {
-    pub database_update: FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>,
+    pub database_update: SwitchedDbUpdate,
     pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,
 }
@@ -194,6 +197,14 @@ impl SubscriptionUpdateMessage {
             },
             request_id,
             timer: None,
+        }
+    }
+
+    pub(crate) fn from_event_and_update(event: &ModuleEvent, update: SwitchedDbUpdate) -> Self {
+        Self {
+            database_update: update,
+            request_id: event.request_id,
+            timer: event.timer,
         }
     }
 

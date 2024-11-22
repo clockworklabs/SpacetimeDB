@@ -1,4 +1,4 @@
-#!/bin/env bash
+#!/usr/bin/env bash
 
 script_dir="$(readlink -f "$(dirname "$0")")"
 stdb_root="$(realpath "$script_dir/../")"

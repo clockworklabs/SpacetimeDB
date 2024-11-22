@@ -38,10 +38,12 @@ hex.workspace = true
 itertools.workspace = true
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
+blake3.workspace = true
 
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
+rand.workspace = true
 
 [dev-dependencies]
 spacetimedb-sats = { workspace = true, features = ["test"] }

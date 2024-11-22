@@ -60,7 +60,7 @@ fn assert_identical(module_def_1: ModuleDef, module_def_2: ModuleDef) {
     let module_def_2: RawModuleDefV9 = module_def_2.into();
     let s1 = serde_json::to_string_pretty(&SerializeWrapper::new(&module_def_1)).unwrap();
     let s2 = serde_json::to_string_pretty(&SerializeWrapper::new(&module_def_2)).unwrap();
-    assert_eq!(s1, s2, "ModuleDefs are not identical");
+    assert_eq!(s1, s2, "{}", pretty_assertions::StrComparison::new(&s1, &s2));
 }
 
 #[test]
@@ -70,4 +70,5 @@ fn validate_cs_modules() {
     validate_module("sdk-test-cs");
     validate_module("sdk-test-connect-disconnect-cs");
     validate_module("spacetimedb-quickstart-cs");
+    validate_module("benchmarks-cs");
 }

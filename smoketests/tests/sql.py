@@ -90,7 +90,7 @@ pub fn test(ctx: &ReducerContext) {
 
     def assertSql(self, sql, expected):
         self.maxDiff = None
-        sql_out = self.spacetime("sql", self.address, sql)
+        sql_out = self.spacetime("sql", self.database_identity, sql)
         sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
         expected = "\n".join([line.rstrip() for line in expected.splitlines()])
         self.assertMultiLineEqual(sql_out, expected)

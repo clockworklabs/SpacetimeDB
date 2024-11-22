@@ -25,7 +25,6 @@ use super::query;
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
-use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, UpdatesRelValue};
 use crate::messages::websocket as ws;
 use crate::vm::{build_query, TxMode};
@@ -126,13 +125,12 @@ impl AsRef<QueryExpr> for SupportedQuery {
 
 /// Evaluates `query` and returns all the updates.
 fn eval_updates<'a>(
-    ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
     mut sources: impl SourceProvider<'a>,
 ) -> impl 'a + Iterator<Item = RelValue<'a>> {
-    let mut query = build_query(ctx, db, tx, query, &mut sources);
+    let mut query = build_query(db, tx, query, &mut sources);
     iter::from_fn(move || query.next())
 }
 
@@ -261,29 +259,26 @@ impl IncrementalJoin {
     /// Evaluate join plan for lhs updates.
     fn eval_lhs<'a>(
         &'a self,
-        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
     ) -> impl Iterator<Item = RelValue<'a>> {
-        eval_updates(ctx, db, tx, self.plan_for_delta_lhs(), Some(lhs.map(RelValue::ProjRef)))
+        eval_updates(db, tx, self.plan_for_delta_lhs(), Some(lhs.map(RelValue::ProjRef)))
     }
 
     /// Evaluate join plan for rhs updates.
     fn eval_rhs<'a>(
         &'a self,
-        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
     ) -> impl Iterator<Item = RelValue<'a>> {
-        eval_updates(ctx, db, tx, self.plan_for_delta_rhs(), Some(rhs.map(RelValue::ProjRef)))
+        eval_updates(db, tx, self.plan_for_delta_rhs(), Some(rhs.map(RelValue::ProjRef)))
     }
 
     /// Evaluate join plan for both lhs and rhs updates.
     fn eval_all<'a>(
         &'a self,
-        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
@@ -292,7 +287,7 @@ impl IncrementalJoin {
         let is = Either::Left(lhs.map(RelValue::ProjRef));
         let ps = Either::Right(rhs.map(RelValue::ProjRef));
         let sources: SourceSet<_, 2> = if self.return_index_rows { [is, ps] } else { [ps, is] }.into();
-        eval_updates(ctx, db, tx, &self.virtual_plan, sources)
+        eval_updates(db, tx, &self.virtual_plan, sources)
     }
 
     /// Evaluate this [`IncrementalJoin`] over the row updates of a transaction t.
@@ -349,7 +344,6 @@ impl IncrementalJoin {
     /// (8) A+ x B-
     pub fn eval<'a>(
         &'a self,
-        ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         updates: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
@@ -420,35 +414,35 @@ impl IncrementalJoin {
 
         // (1) A+ x B(t)
         let j1_lhs_ins = lhs_inserts.clone();
-        let join_1 = make_iter(has_lhs_inserts, || self.eval_lhs(ctx, db, tx, j1_lhs_ins));
+        let join_1 = make_iter(has_lhs_inserts, || self.eval_lhs(db, tx, j1_lhs_ins));
         // (2) A- x B(t)
         let j2_lhs_del = lhs_deletes.clone();
-        let mut join_2 = collect_set(has_lhs_deletes, || self.eval_lhs(ctx, db, tx, j2_lhs_del));
+        let mut join_2 = collect_set(has_lhs_deletes, || self.eval_lhs(db, tx, j2_lhs_del));
         // (3) A- x B+
         let j3_lhs_del = lhs_deletes.clone();
         let j3_rhs_ins = rhs_inserts.clone();
         let join_3 = make_iter(has_lhs_deletes && has_rhs_inserts, || {
-            self.eval_all(ctx, db, tx, j3_lhs_del, j3_rhs_ins)
+            self.eval_all(db, tx, j3_lhs_del, j3_rhs_ins)
         });
         // (4) A- x B-
         let j4_rhs_del = rhs_deletes.clone();
         let join_4 = make_iter(has_lhs_deletes && has_rhs_deletes, || {
-            self.eval_all(ctx, db, tx, lhs_deletes, j4_rhs_del)
+            self.eval_all(db, tx, lhs_deletes, j4_rhs_del)
         });
         // (5) A(t) x B+
         let j5_rhs_ins = rhs_inserts.clone();
-        let mut join_5 = collect_set(has_rhs_inserts, || self.eval_rhs(ctx, db, tx, j5_rhs_ins));
+        let mut join_5 = collect_set(has_rhs_inserts, || self.eval_rhs(db, tx, j5_rhs_ins));
         // (6) A(t) x B-
         let j6_rhs_del = rhs_deletes.clone();
-        let mut join_6 = collect_set(has_rhs_deletes, || self.eval_rhs(ctx, db, tx, j6_rhs_del));
+        let mut join_6 = collect_set(has_rhs_deletes, || self.eval_rhs(db, tx, j6_rhs_del));
         // (7) A+ x B+
         let j7_lhs_ins = lhs_inserts.clone();
         let join_7 = make_iter(has_lhs_inserts && has_rhs_inserts, || {
-            self.eval_all(ctx, db, tx, j7_lhs_ins, rhs_inserts)
+            self.eval_all(db, tx, j7_lhs_ins, rhs_inserts)
         });
         // (8) A+ x B-
         let join_8 = make_iter(has_lhs_inserts && has_rhs_deletes, || {
-            self.eval_all(ctx, db, tx, lhs_inserts, rhs_deletes)
+            self.eval_all(db, tx, lhs_inserts, rhs_deletes)
         });
 
         // A- x B(s) = A- x B(t) \ A- x B+
@@ -517,7 +511,6 @@ pub struct ExecutionSet {
 impl ExecutionSet {
     pub fn eval<F: WebsocketFormat>(
         &self,
-        ctx: &ExecutionContext,
         db: &RelationalDB,
         tx: &Tx,
         slow_query_threshold: Option<Duration>,
@@ -528,7 +521,7 @@ impl ExecutionSet {
             .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval(ctx, db, tx, &unit.sql, slow_query_threshold, compression))
+            .filter_map(|unit| unit.eval(db, tx, &unit.sql, slow_query_threshold, compression))
             .collect();
         ws::DatabaseUpdate { tables }
     }
@@ -536,7 +529,7 @@ impl ExecutionSet {
     #[tracing::instrument(skip_all)]
     pub fn eval_incr_for_test<'a>(
         &'a self,
-        ctx: &'a ExecutionContext,
+
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         database_update: &'a [&'a DatabaseTableUpdate],
@@ -544,14 +537,9 @@ impl ExecutionSet {
     ) -> DatabaseUpdateRelValue<'a> {
         let mut tables = Vec::new();
         for unit in &self.exec_units {
-            if let Some(table) = unit.eval_incr(
-                ctx,
-                db,
-                tx,
-                &unit.sql,
-                database_update.iter().copied(),
-                slow_query_threshold,
-            ) {
+            if let Some(table) =
+                unit.eval_incr(db, tx, &unit.sql, database_update.iter().copied(), slow_query_threshold)
+            {
                 tables.push(table);
             }
         }
@@ -634,6 +622,7 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
 mod tests {
     use super::*;
     use crate::db::relational_db::tests_utils::TestDB;
+    use crate::execution_context::Workload;
     use crate::sql::compiler::compile_sql;
     use spacetimedb_lib::relation::DbTable;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx};
@@ -648,7 +637,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let _ = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
@@ -657,10 +646,10 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
@@ -728,7 +717,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
@@ -737,10 +726,10 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let _ = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
@@ -808,7 +797,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let _lhs_id = db
             .create_table_for_test("lhs", schema, indexes)
             .expect("Failed to create_table_for_test lhs");
@@ -819,12 +808,12 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let _rhs_id = db
             .create_table_for_test("rhs", schema, indexes)
             .expect("Failed to create_table_for_test rhs");
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
 
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.

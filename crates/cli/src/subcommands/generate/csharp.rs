@@ -96,7 +96,7 @@ fn default_init(ctx: &GenCtx, ty: &AlgebraicType) -> Option<&'static str> {
         AlgebraicType::Sum(sum_type) if sum_type.is_option() || sum_type.is_simple_enum() => None,
         // TODO: generate some proper default here (what would it be for tagged enums?).
         AlgebraicType::Sum(_) => Some("null!"),
-        // For product types, arrays, and maps, we can use the default constructor.
+        // For product types and arrays, we can use the default constructor.
         AlgebraicType::Product(_) | AlgebraicType::Array(_) => Some("new()"),
         // Strings must have explicit default value of "".
         AlgebraicType::String => Some(r#""""#),
@@ -413,20 +413,20 @@ fn autogen_csharp_access_funcs_for_struct(
             None => continue,
             Some(x) => x,
         };
-        writeln!(
-            output,
-            "public readonly ref struct {csharp_field_name_pascal}UniqueIndex"
-        );
+        writeln!(output, "public class {csharp_field_name_pascal}UniqueIndex");
         indented_block(output, |output| {
+            write!(
+                output,
+                "internal readonly Dictionary<{csharp_field_type}, {struct_name_pascal_case}> Cache = new(16);"
+            );
+            writeln!(output);
+
             writeln!(
                 output,
                 "public {struct_name_pascal_case}? Find({csharp_field_type} value)"
             );
             indented_block(output, |output| {
-                writeln!(
-                    output,
-                    "{csharp_field_name_pascal}_Index.TryGetValue(value, out var r);"
-                );
+                writeln!(output, "Cache.TryGetValue(value, out var r);");
                 writeln!(output, "return r;");
             });
             writeln!(output);
@@ -434,7 +434,7 @@ fn autogen_csharp_access_funcs_for_struct(
         writeln!(output);
         writeln!(
             output,
-            "public {csharp_field_name_pascal}UniqueIndex {csharp_field_name_pascal} => new();"
+            "public {csharp_field_name_pascal}UniqueIndex {csharp_field_name_pascal} = new();"
         );
         writeln!(output);
     }
@@ -451,8 +451,14 @@ fn autogen_csharp_access_funcs_for_struct(
                 let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
                 let field_type = &field.algebraic_type;
                 let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
-                // NOTE skipping the btree prefix and the table name from the index name
-                let csharp_index_name = (&idx.index_name[table_name.len() + 7..]).to_case(Case::Pascal);
+
+                // this is EXTREMELY JANKY.
+                // TODO(1.0): this code should be updated to not use `TableSchema` and rely on `accessor_name` instead!
+                let prefix_len = table_name.len() + "_".len();
+                let suffix_len = "_idx_btree".len();
+                let comma_separated_field_names = &idx.index_name[prefix_len..idx.index_name.len() - suffix_len];
+                let csharp_index_name = comma_separated_field_names.to_case(Case::Pascal);
+
                 let csharp_field_type = match csharp_field_type(field_type) {
                     None => continue,
                     Some(x) => x,
@@ -497,7 +503,13 @@ fn autogen_csharp_access_funcs_for_struct(
                 _ => continue,
             }
 
-            let csharp_index_name = (&idx.index_name[table_name.len() + 7..]).to_case(Case::Pascal);
+            // this is EXTREMELY JANKY.
+            // TODO(1.0): this code should be updated to not use `TableSchema` and rely on `accessor_name` instead!
+            let prefix_len = table_name.len() + "_".len();
+            let suffix_len = "_idx_btree".len();
+            let comma_separated_field_names = &idx.index_name[prefix_len..idx.index_name.len() - suffix_len];
+            let csharp_index_name = comma_separated_field_names.to_case(Case::Pascal);
+
             writeln!(output, "{csharp_index_name} = new(this);");
         }
     });
@@ -595,11 +607,6 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                     if !constraints[&ColList::new(col.col_pos)].has_unique() {
                         continue;
                     }
-                    let type_name = ty_fmt(ctx, &col.col_type, namespace);
-                    writeln!(
-                        output,
-                        "private static Dictionary<{type_name}, {table_type}> {field_name}_Index = new(16);"
-                    );
                     unique_indexes.push(field_name);
                 }
                 if !unique_indexes.is_empty() {
@@ -616,7 +623,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                             if !constraints[&ColList::new(col.col_pos)].has_unique() {
                                 continue;
                             }
-                            writeln!(output, "{field_name}_Index[value.{field_name}] = value;");
+                            writeln!(output, "{field_name}.Cache[value.{field_name}] = value;");
                         }
                     });
                     writeln!(output);
@@ -631,7 +638,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                             if !constraints[&ColList::new(col.col_pos)].has_unique() {
                                 continue;
                             }
-                            writeln!(output, "{field_name}_Index.Remove((({table_type})row).{field_name});");
+                            writeln!(output, "{field_name}.Cache.Remove((({table_type})row).{field_name});");
                         }
                     });
                     writeln!(output);
@@ -652,7 +659,11 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
 
     writeln!(output, "public sealed class RemoteReducers : RemoteBase<DbConnection>");
     indented_block(&mut output, |output| {
-        writeln!(output, "internal RemoteReducers(DbConnection conn) : base(conn) {{}}");
+        writeln!(
+            output,
+            "internal RemoteReducers(DbConnection conn, SetReducerFlags SetReducerFlags) : base(conn) {{ this.SetCallReducerFlags = SetReducerFlags; }}"
+        );
+        writeln!(output, "internal readonly SetReducerFlags SetCallReducerFlags;");
 
         for reducer in &reducers {
             let func_name = &*reducer.name;
@@ -694,7 +705,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
             indented_block(output, |output| {
                 writeln!(
                     output,
-                    "conn.InternalCallReducer(new {func_name_pascal_case} {{ {field_inits} }});"
+                    "conn.InternalCallReducer(new {func_name_pascal_case} {{ {field_inits} }}, this.SetCallReducerFlags.{func_name_pascal_case}Flags);"
                 );
             });
             writeln!(output);
@@ -727,12 +738,25 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
     });
     writeln!(output);
 
+    writeln!(output, "public sealed class SetReducerFlags");
+    indented_block(&mut output, |output| {
+        writeln!(output, "internal SetReducerFlags() {{ }}");
+        for reducer in &reducers {
+            let func_name = &*reducer.name;
+            let func_name_pascal_case = func_name.to_case(Case::Pascal);
+            writeln!(output, "internal CallReducerFlags {func_name_pascal_case}Flags;");
+            writeln!(output, "public void {func_name_pascal_case}(CallReducerFlags flags) {{ this.{func_name_pascal_case}Flags = flags; }}");
+        }
+    });
+    writeln!(output);
+
     writeln!(
         output,
         "public partial record EventContext : DbContext<RemoteTables>, IEventContext"
     );
     indented_block(&mut output, |output| {
         writeln!(output, "public readonly RemoteReducers Reducers;");
+        writeln!(output, "public readonly SetReducerFlags SetReducerFlags;");
         writeln!(output, "public readonly Event<Reducer> Event;");
         writeln!(output);
         writeln!(
@@ -741,6 +765,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
         );
         indented_block(output, |output| {
             writeln!(output, "Reducers = conn.Reducers;");
+            writeln!(output, "SetReducerFlags = conn.SetReducerFlags;");
             writeln!(output, "Event = reducerEvent;");
         });
     });
@@ -766,11 +791,13 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
     indented_block(&mut output, |output| {
         writeln!(output, "public readonly RemoteTables Db = new();");
         writeln!(output, "public readonly RemoteReducers Reducers;");
+        writeln!(output, "public readonly SetReducerFlags SetReducerFlags;");
         writeln!(output);
 
         writeln!(output, "public DbConnection()");
         indented_block(output, |output| {
-            writeln!(output, "Reducers = new(this);");
+            writeln!(output, "SetReducerFlags = new();");
+            writeln!(output, "Reducers = new(this, this.SetReducerFlags);");
             writeln!(output);
 
             for item in items {

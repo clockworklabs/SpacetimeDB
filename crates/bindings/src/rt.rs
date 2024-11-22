@@ -315,19 +315,19 @@ pub fn register_table<T: Table>() {
             .with_access(T::TABLE_ACCESS);
 
         for &col in T::UNIQUE_COLUMNS {
-            table = table.with_unique_constraint(col, None);
+            table = table.with_unique_constraint(col);
         }
         for &index in T::INDEXES {
-            table = table.with_index(index.algo.into(), index.accessor_name, Some(index.name.into()));
+            table = table.with_index(index.algo.into(), index.accessor_name);
         }
         if let Some(primary_key) = T::PRIMARY_KEY {
             table = table.with_primary_key(primary_key);
         }
         for &col in T::SEQUENCES {
-            table = table.with_column_sequence(col, None);
+            table = table.with_column_sequence(col);
         }
         if let Some(schedule) = T::SCHEDULE {
-            table = table.with_schedule(schedule.reducer_name, schedule.scheduled_at_column, None);
+            table = table.with_schedule(schedule.reducer_name, schedule.scheduled_at_column);
         }
 
         table.finish();
@@ -418,16 +418,20 @@ extern "C" fn __describe_module__(description: BytesSink) {
 /// when the `sender` calls the reducer identified by `id` at `timestamp` with `args`.
 ///
 /// The `sender_{0-3}` are the pieces of a `[u8; 32]` (`u256`) representing the sender's `Identity`.
-/// They are encoded as follows (assuming `identity.identity_bytes: [u8; 32]`):
+/// They are encoded as follows (assuming `identity.to_byte_array(): [u8; 32]`):
 /// - `sender_0` contains bytes `[0 ..8 ]`.
 /// - `sender_1` contains bytes `[8 ..16]`.
 /// - `sender_2` contains bytes `[16..24]`.
 /// - `sender_3` contains bytes `[24..32]`.
 ///
+/// Note that `to_byte_array` uses LITTLE-ENDIAN order! This matches most host systems.
+///
 /// The `address_{0-1}` are the pieces of a `[u8; 16]` (`u128`) representing the callers's `Address`.
-/// They are encoded as follows (assuming `address.__address__: u128`):
+/// They are encoded as follows (assuming `address.as_byte_array(): [u8; 16]`):
 /// - `address_0` contains bytes `[0 ..8 ]`.
 /// - `address_1` contains bytes `[8 ..16]`.
+///
+/// Again, note that `to_byte_array` uses LITTLE-ENDIAN order! This matches most host systems.
 ///
 /// The `args` is a `BytesSource`, registered on the host side,
 /// which can be read with `bytes_source_read`.
@@ -456,13 +460,13 @@ extern "C" fn __call_reducer__(
     // Piece together `sender_i` into an `Identity`.
     let sender = [sender_0, sender_1, sender_2, sender_3];
     let sender: [u8; 32] = bytemuck::must_cast(sender);
-    let sender = Identity::from_byte_array(sender);
+    let sender = Identity::from_byte_array(sender); // The LITTLE-ENDIAN constructor.
 
     // Piece together `address_i` into an `Address`.
     // The all-zeros `address` (`Address::__DUMMY`) is interpreted as `None`.
     let address = [address_0, address_1];
     let address: [u8; 16] = bytemuck::must_cast(address);
-    let address = Address::from_byte_array(address);
+    let address = Address::from_byte_array(address); // The LITTLE-ENDIAN constructor.
     let address = (address != Address::__DUMMY).then_some(address);
 
     // Assemble the `ReducerContext`.

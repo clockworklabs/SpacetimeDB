@@ -3,12 +3,14 @@ use std::convert::Infallible;
 use std::marker::PhantomData;
 use std::{fmt, ops};
 
-use spacetimedb_lib::buffer::{BufReader, Cursor};
+use spacetimedb_lib::buffer::{BufReader, Cursor, DecodeError};
+use spacetimedb_lib::sats::{i256, u256};
 
 pub use spacetimedb_lib::db::raw_def::v9::TableAccess;
+use spacetimedb_lib::Hash;
 pub use spacetimedb_primitives::{ColId, IndexId};
 
-use crate::{bsatn, sys, DeserializeOwned, IterBuf, Serialize, SpacetimeType, TableId};
+use crate::{bsatn, sys, Address, DeserializeOwned, Identity, IterBuf, Serialize, SpacetimeType, TableId};
 
 /// Implemented for every `TableHandle` struct generated in the client `module_bindings`
 /// and the module macroexpansion.
@@ -133,7 +135,6 @@ pub trait TableInternal: Sized {
 /// Describe a named index with an index type over a set of columns identified by their IDs.
 #[derive(Clone, Copy)]
 pub struct IndexDesc<'a> {
-    pub name: &'a str,
     pub accessor_name: &'a str,
     pub algo: IndexAlgo<'a>,
 }
@@ -439,12 +440,85 @@ impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
     }
 }
 
+/// Types which can appear as an argument to an index filtering operation
+/// for a column of type `Column`.
+///
+/// Types which can appear specifically as a terminating bound in a BTree index,
+/// which may be a range, instead use [`BTreeIndexBoundsTerminator`].
+///
+/// General rules for implementors of this type:
+/// - It should only be implemented for types that have
+///   simple-to-implement consistent total equality and ordering
+///   on all languages SpacetimeDB supports in both client and module SDKs.
+///   This means that user-defined compound types other than C-style enums,
+///   and arrays thereof,
+///   should not implement it, as C# and TypeScript use reference equality for those types.
+/// - It should only be implemented for owned values if those values are `Copy`.
+///   Otherwise it should only be implemented for references.
+///   This is so that rustc and IDEs will recommend rewriting `x` to `&x` rather than `x.clone()`.
+/// - `Arg: FilterableValue<Column = Col>`
+///   for any pair of types `(Arg, Col)` which meet the above criteria
+///   is desirable if `Arg` and `Col` have the same BSATN layout.
+///   E.g. `&str: FilterableValue<Column = String>` is desirable.
+pub trait FilterableValue: Serialize {
+    type Column;
+}
+
+macro_rules! impl_filterable_value {
+    (@one $arg:ty => $col:ty) => {
+        impl FilterableValue for $arg {
+            type Column = $col;
+        }
+    };
+    (@one $arg:ty: Copy) => {
+        impl_filterable_value!(@one $arg => $arg);
+        impl_filterable_value!(@one &$arg => $arg);
+    };
+    (@one $arg:ty) => {
+        impl_filterable_value!(@one &$arg => $arg);
+    };
+    ($($arg:ty $(: $copy:ident)? $(=> $col:ty)?),* $(,)?) => {
+        $(impl_filterable_value!(@one $arg $(: $copy)? $(=> $col)?);)*
+    };
+}
+
+impl_filterable_value! {
+    u8: Copy,
+    u16: Copy,
+    u32: Copy,
+    u64: Copy,
+    u128: Copy,
+    u256: Copy,
+    i8: Copy,
+    i16: Copy,
+    i32: Copy,
+    i64: Copy,
+    i128: Copy,
+    i256: Copy,
+    bool: Copy,
+    String,
+    &str => String,
+    Identity: Copy,
+    Address: Copy,
+    Hash: Copy,
+
+    // Some day we will likely also want to support `Vec<u8>` and `[u8]`,
+    // as they have trivial portable equality and ordering,
+    // but @RReverser's proposed filtering rules do not include them.
+    // Vec<u8>,
+    // &[u8] => Vec<u8>,
+}
+
 pub trait BTreeIndexBounds<T, K = ()> {
     #[doc(hidden)]
     fn get_args(&self) -> BTreeScanArgs;
 }
 
 #[doc(hidden)]
+/// Arguments to one of the BTree-related host-/sys-calls.
+///
+/// All pointers passed into the syscall are packed into a single buffer, `data`,
+/// with slices taken at the appropriate offsets, to save allocatons in WASM.
 pub struct BTreeScanArgs {
     data: IterBuf,
     prefix_elems: usize,
@@ -454,6 +528,7 @@ pub struct BTreeScanArgs {
 }
 
 impl BTreeScanArgs {
+    /// Get slices into `self.data` for the prefix, range start and range end.
     pub(crate) fn args_for_syscall(&self) -> (&[u8], ColId, &[u8], &[u8]) {
         let prefix = &self.data[..self.rstart_idx];
         let (rstart, rend) = if let Some(rend_idx) = self.rend_idx {
@@ -466,37 +541,72 @@ impl BTreeScanArgs {
     }
 }
 
+// Implement `BTreeIndexBounds` for all the different index column types
+// and filter argument types we support.
 macro_rules! impl_btree_index_bounds {
-    ($T:ident $(, $U:ident)*) => {
-        impl_btree_index_bounds!(@impl (), ($T $(, $U)*));
+    // In the first pattern, we accept two Prolog-style lists of type variables,
+    // the first of which we use for the column types in the index,
+    // and the second for the arguments supplied to the filter function.
+    // We do our "outer recursion" to visit the sublists of these two lists,
+    // at each step implementing the trait for indices of that many columns.
+    //
+    // There's also an "inner recursion" later on, which, given a fixed number of columns,
+    // implements the trait with the arguments being all the prefixes of that list.
+    (($ColTerminator:ident $(, $ColPrefix:ident)*), ($ArgTerminator:ident $(, $ArgPrefix:ident)*)) => {
+        // Implement the trait for all arguments N-column indices.
+        // The "inner recursion" described above happens in here.
+        impl_btree_index_bounds!(@inner_recursion (), ($ColTerminator $(, $ColPrefix)*), ($ArgTerminator $(, $ArgPrefix)*));
 
-        impl_btree_index_bounds!($($U),*);
+        // Recurse on the suffix of the two lists, to implement the trait for all arguments to (N - 1)-column indices.
+        impl_btree_index_bounds!(($($ColPrefix),*), ($($ArgPrefix),*));
     };
-    () => {};
-    (@impl ($($V:ident),*), ($T:ident $(, $U:ident)+)) => {
-        impl<$($V,)* $T: Serialize, $($U: Serialize,)+ Term: BTreeIndexBoundsTerminator<$T>> BTreeIndexBounds<($($U,)+ $T, $($V,)*)> for ($($U,)+ Term,) {
+    // Base case for the previous "outer recursion."
+    ((), ()) => {};
+
+    // The recursive case for the inner loop.
+    //
+    // When we start this recursion, `$ColUnused` will be empty,
+    // so we'll implement N-element queries on N-column indices.
+    // The next call will move one type name from `($ColTerminator, $ColPrefix)` into `$ColUnused`,
+    // so we'll implement (N - 1)-element queries on N-column indices.
+    // And so on.
+    (@inner_recursion ($($ColUnused:ident),*), ($ColTerminator:ident $(, $ColPrefix:ident)+), ($ArgTerminator:ident $(, $ArgPrefix:ident)+)) => {
+        // Emit the actual `impl BTreeIndexBounds` form for M-element queries on N-column indices.
+        impl_btree_index_bounds!(@emit_impl ($($ColUnused),*), ($ColTerminator $(,$ColPrefix)*), ($ArgTerminator $(, $ArgPrefix)*));
+        // Recurse, to implement for (M - 1)-element queries on N-column indices.
+        impl_btree_index_bounds!(@inner_recursion ($($ColUnused,)* $ColTerminator), ($($ColPrefix),*), ($($ArgPrefix),*));
+    };
+    // Base case for the inner recursive loop, when there is only one column remaining.
+    // Implement the trait for both single-element tuples of arguments,
+    // and for an argument passed outside of a tuple.
+    //
+    // As in the following `@emit_impl` case:
+    // - `$ColUnused` are the types of the ignored suffix of the indexed columns.
+    // - `$ColTerminator` is the type of the queried indexed column,
+    //   which may have a range supplied as its argument.
+    // - `$ArgTerminator` is the type of the argument provided for the queried column.
+    //   More precisely it is the "inner" type, like `i32` or `&str`,
+    //   which may be wrapped in a range like `std::ops::Range<$ArgTerminator>`.
+    // - `Term` (not a meta-variable) is the type of the range wrapped around the `$ArgTerminator`.
+    (@inner_recursion ($($ColUnused:ident),*), ($ColTerminator:ident), ($ArgTerminator:ident)) => {
+        // Implementation for one-element tuples: defer to the implementation for bare values.
+        impl<
+            $($ColUnused,)*
+            $ColTerminator,
+            Term: BTreeIndexBoundsTerminator<Arg = $ArgTerminator>,
+            $ArgTerminator: FilterableValue<Column = $ColTerminator>,
+        > BTreeIndexBounds<($ColTerminator, $($ColUnused,)*)> for (Term,) {
             fn get_args(&self) -> BTreeScanArgs {
-                let mut data = IterBuf::take();
-                let prefix_elems = impl_btree_index_bounds!(@count $($U)+);
-                #[allow(non_snake_case)]
-                let ($($U,)+ term,) = self;
-                Ok(())
-                    $(.and_then(|()| data.serialize_into($U)))+
-                    .unwrap();
-                let rstart_idx = data.len();
-                let rend_idx = term.bounds().serialize_into(&mut data);
-                BTreeScanArgs { data, prefix_elems, rstart_idx, rend_idx }
+                BTreeIndexBounds::<($ColTerminator, $($ColUnused,)*), SingleBound>::get_args(&self.0)
             }
         }
-        impl_btree_index_bounds!(@impl ($($V,)* $T), ($($U),*));
-    };
-    (@impl ($($V:ident),*), ($T:ident)) => {
-        impl<$($V,)* $T: Serialize, Term: BTreeIndexBoundsTerminator<$T>> BTreeIndexBounds<($T, $($V,)*)> for (Term,) {
-            fn get_args(&self) -> BTreeScanArgs {
-                BTreeIndexBounds::<($T, $($V,)*), SingleBound>::get_args(&self.0)
-            }
-        }
-        impl<$($V,)* $T: Serialize, Term: BTreeIndexBoundsTerminator<$T>> BTreeIndexBounds<($T, $($V,)*), SingleBound> for Term {
+        // Implementation for bare values: serialize the value as the terminating bounds.
+        impl<
+            $($ColUnused,)*
+            $ColTerminator,
+            Term: BTreeIndexBoundsTerminator<Arg = $ArgTerminator>,
+            $ArgTerminator: FilterableValue<Column = $ColTerminator>,
+        > BTreeIndexBounds<($ColTerminator, $($ColUnused,)*), SingleBound> for Term {
             fn get_args(&self) -> BTreeScanArgs {
                 let mut data = IterBuf::take();
                 let rend_idx = self.bounds().serialize_into(&mut data);
@@ -504,6 +614,58 @@ macro_rules! impl_btree_index_bounds {
             }
         }
     };
+
+    // - `$ColUnused` are the types of the ignored suffix of the indexed columns.
+    // - `$ColTerminator` is the type of the last queried indexed column,
+    //   which may have a range supplied as its argument.
+    // - `$ColPrefix` are the types of the queried prefix of the indexed columns,
+    //   which must have single values supplied as their arguments.
+    // - `$ArgTerminator` is the type of the argument provided for the last queried column.
+    //   More precisely it is the "inner" type, like `i32` or `&str`,
+    //   which may be wrapped in a range like `std::ops::Range<$ArgTerminator>`.
+    // - `Term` (not a meta-variable) is the type of the range wrapped around the `$ArgTerminator`.
+    // - `$ArgPrefix` are the types of the arguments provided for the queried prefix columns.
+    (@emit_impl ($($ColUnused:ident),*), ($ColTerminator:ident $(, $ColPrefix:ident)+), ($ArgTerminator:ident $(, $ArgPrefix:ident)+)) => {
+        impl<
+            $($ColUnused,)*
+            $ColTerminator,
+            $($ColPrefix,)*
+            Term: BTreeIndexBoundsTerminator<Arg = $ArgTerminator>,
+            $ArgTerminator: FilterableValue<Column = $ColTerminator>,
+            $($ArgPrefix: FilterableValue<Column = $ColPrefix>,)+
+        > BTreeIndexBounds<
+            ($($ColPrefix,)+
+             $ColTerminator,
+             $($ColUnused,)*)
+          > for ($($ArgPrefix,)+ Term,) {
+            fn get_args(&self) -> BTreeScanArgs {
+                let mut data = IterBuf::take();
+
+                // Get the number of prefix elements.
+                let prefix_elems = impl_btree_index_bounds!(@count $($ColPrefix)+);
+
+                // Destructure the argument tuple into variables with the same names as their types.
+                #[allow(non_snake_case)]
+                let ($($ArgPrefix,)+ term,) = self;
+
+                // For each prefix queried, zerialize it into the `data` buffer.
+                Ok(())
+                    $(.and_then(|()| data.serialize_into($ArgPrefix)))+
+                    .unwrap();
+
+                // Remember the separator between the prefix and the terminator,
+                // so that we can slice them separately and pass them to the appropriate filter host call.
+                let rstart_idx = data.len();
+
+                // Serialize the terminating range,
+                // and get the info required to separately slice the lower and upper bounds of that range
+                // since the host call takes those as separate slices.
+                let rend_idx = term.bounds().serialize_into(&mut data);
+                BTreeScanArgs { data, prefix_elems, rstart_idx, rend_idx }
+            }
+        }
+    };
+
     // Counts the number of elements in the tuple.
     (@count $($T:ident)*) => {
         0 $(+ impl_btree_index_bounds!(@drop $T 1))*
@@ -513,14 +675,19 @@ macro_rules! impl_btree_index_bounds {
 
 pub struct SingleBound;
 
-impl_btree_index_bounds!(A, B, C, D, E, F);
+impl_btree_index_bounds!(
+    (ColA, ColB, ColC, ColD, ColE, ColF),
+    (ArgA, ArgB, ArgC, ArgD, ArgE, ArgF)
+);
 
 pub enum TermBound<T> {
     Single(ops::Bound<T>),
     Range(ops::Bound<T>, ops::Bound<T>),
 }
-impl<T: Serialize> TermBound<&T> {
+impl<Bound: FilterableValue> TermBound<&Bound> {
     #[inline]
+    /// If `self` is [`TermBound::Range`], returns the `rend_idx` value for [`BTreeScanArgs`],
+    /// i.e. the index in `buf` of the first byte in the end range
     fn serialize_into(&self, buf: &mut Vec<u8>) -> Option<usize> {
         let (start, end) = match self {
             TermBound::Single(elem) => (elem, None),
@@ -534,24 +701,22 @@ impl<T: Serialize> TermBound<&T> {
         })
     }
 }
-pub trait BTreeIndexBoundsTerminator<T> {
-    fn bounds(&self) -> TermBound<&T>;
+pub trait BTreeIndexBoundsTerminator {
+    type Arg;
+    fn bounds(&self) -> TermBound<&Self::Arg>;
 }
 
-impl<T> BTreeIndexBoundsTerminator<T> for T {
-    fn bounds(&self) -> TermBound<&T> {
-        TermBound::Single(ops::Bound::Included(self))
-    }
-}
-impl<T> BTreeIndexBoundsTerminator<T> for &T {
-    fn bounds(&self) -> TermBound<&T> {
+impl<Col, Arg: FilterableValue<Column = Col>> BTreeIndexBoundsTerminator for Arg {
+    type Arg = Arg;
+    fn bounds(&self) -> TermBound<&Arg> {
         TermBound::Single(ops::Bound::Included(self))
     }
 }
 
 macro_rules! impl_terminator {
-    ($($range:ty,)*) => {
-        $(impl<T> BTreeIndexBoundsTerminator<T> for $range {
+    ($($range:ty),* $(,)?) => {
+        $(impl<T: FilterableValue> BTreeIndexBoundsTerminator for $range {
+            type Arg = T;
             fn bounds(&self) -> TermBound<&T> {
                 TermBound::Range(
                     ops::RangeBounds::start_bound(self),
@@ -564,17 +729,11 @@ macro_rules! impl_terminator {
 
 impl_terminator!(
     ops::Range<T>,
-    ops::Range<&T>,
     ops::RangeFrom<T>,
-    ops::RangeFrom<&T>,
     ops::RangeInclusive<T>,
-    ops::RangeInclusive<&T>,
     ops::RangeTo<T>,
-    ops::RangeTo<&T>,
     ops::RangeToInclusive<T>,
-    ops::RangeToInclusive<&T>,
     (ops::Bound<T>, ops::Bound<T>),
-    (ops::Bound<&T>, ops::Bound<&T>),
 );
 
 // Single-column indices
@@ -595,38 +754,77 @@ impl_terminator!(
 // impl<T, U, V> BTreeIndexBounds<(T, U, V)> for (T, U, Range<V>) {}
 // impl<T, U, V> BTreeIndexBounds<(T, U, V)> for (T, U, V) {}
 
-/// A trait for types that know if their value will trigger a sequence.
+/// A trait for types that can have a sequence based on them.
 /// This is used for auto-inc columns to determine if an insertion of a row
 /// will require the column to be updated in the row.
-///
-/// For now, this is equivalent to a "is zero" test.
-pub trait IsSequenceTrigger {
+pub trait SequenceTrigger: Sized {
     /// Is this value one that will trigger a sequence, if any,
     /// when used as a column value.
     fn is_sequence_trigger(&self) -> bool;
+    /// BufReader::get_[< self >]
+    fn decode(reader: &mut &[u8]) -> Result<Self, DecodeError>;
+    /// Read a generated column from the slice, if this row was a sequence trigger.
+    #[inline(always)]
+    fn maybe_decode_into(&mut self, gen_cols: &mut &[u8]) {
+        if self.is_sequence_trigger() {
+            *self = Self::decode(gen_cols).unwrap_or_else(|_| sequence_decode_error())
+        }
+    }
 }
 
-macro_rules! impl_is_seq_trigger {
-    ($($t:ty),*) => {
+#[cold]
+#[inline(never)]
+fn sequence_decode_error() -> ! {
+    unreachable!("a row was a sequence trigger but there was no generated column for it.")
+}
+
+macro_rules! impl_seq_trigger {
+    ($($get:ident($t:ty),)*) => {
         $(
-            impl IsSequenceTrigger for $t {
+            impl SequenceTrigger for $t {
+                #[inline(always)]
                 fn is_sequence_trigger(&self) -> bool { *self == 0 }
+                #[inline(always)]
+                fn decode(reader: &mut &[u8]) -> Result<Self, DecodeError> {
+                    reader.$get()
+                }
             }
         )*
     };
 }
 
-impl_is_seq_trigger![u8, i8, u16, i16, u32, i32, u64, i64, u128, i128];
+impl_seq_trigger!(
+    get_u8(u8),
+    get_i8(i8),
+    get_u16(u16),
+    get_i16(i16),
+    get_u32(u32),
+    get_i32(i32),
+    get_u64(u64),
+    get_i64(i64),
+    get_u128(u128),
+    get_i128(i128),
+);
 
-impl IsSequenceTrigger for crate::sats::i256 {
+impl SequenceTrigger for crate::sats::i256 {
+    #[inline(always)]
     fn is_sequence_trigger(&self) -> bool {
         *self == Self::ZERO
     }
+    #[inline(always)]
+    fn decode(reader: &mut &[u8]) -> Result<Self, DecodeError> {
+        reader.get_i256()
+    }
 }
 
-impl IsSequenceTrigger for crate::sats::u256 {
+impl SequenceTrigger for crate::sats::u256 {
+    #[inline(always)]
     fn is_sequence_trigger(&self) -> bool {
         *self == Self::ZERO
+    }
+    #[inline(always)]
+    fn decode(reader: &mut &[u8]) -> Result<Self, DecodeError> {
+        reader.get_u256()
     }
 }
 

@@ -7,7 +7,7 @@ use crate::db::datastore::system_tables::{StClientFields, StClientRow, ST_CLIENT
 use crate::db::datastore::traits::{IsolationLevel, Program, TxData};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
-use crate::execution_context::{ExecutionContext, ReducerContext};
+use crate::execution_context::{ExecutionContext, ReducerContext, Workload};
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
@@ -181,9 +181,9 @@ pub struct ModuleInfo {
     /// Reducer names are sorted alphabetically.
     pub reducers_map: ReducersMap,
     /// The identity of the module.
-    pub identity: Identity,
-    /// The address of the module.
-    pub address: Address,
+    pub owner_identity: Identity,
+    /// The identity of the database.
+    pub database_identity: Identity,
     /// The hash of the module.
     pub module_hash: Hash,
     /// Allows subscribing to module logs.
@@ -197,8 +197,8 @@ impl ModuleInfo {
     /// Reducers are sorted alphabetically by name and assigned IDs.
     pub fn new(
         module_def: ModuleDef,
-        identity: Identity,
-        address: Address,
+        owner_identity: Identity,
+        database_identity: Identity,
         module_hash: Hash,
         log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
         subscriptions: ModuleSubscriptions,
@@ -208,8 +208,8 @@ impl ModuleInfo {
         Arc::new(ModuleInfo {
             module_def,
             reducers_map,
-            identity,
-            address,
+            owner_identity,
+            database_identity,
             module_hash,
             log_tx,
             subscriptions,
@@ -238,14 +238,12 @@ impl ModuleInfo {
 }
 
 /// A bidirectional map between `Identifiers` (reducer names) and `ReducerId`s.
-/// Invariant: the reducer names are in alphabetical order.
+/// Invariant: the reducer names are in the same order as they were declared in the `ModuleDef`.
 pub struct ReducersMap(IndexSet<Box<str>>);
 
 impl<'a> FromIterator<&'a str> for ReducersMap {
     fn from_iter<T: IntoIterator<Item = &'a str>>(iter: T) -> Self {
-        let mut sorted = Vec::from_iter(iter);
-        sorted.sort();
-        ReducersMap(sorted.into_iter().map_into().collect())
+        Self(iter.into_iter().map_into().collect())
     }
 }
 
@@ -368,7 +366,7 @@ impl fmt::Debug for ModuleHost {
 
 #[async_trait::async_trait]
 trait DynModuleHost: Send + Sync + 'static {
-    async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
+    async fn get_instance(&self, db: Identity) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
     fn replica_ctx(&self) -> &ReplicaContext;
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
@@ -405,7 +403,7 @@ async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> 
 
 #[async_trait::async_trait]
 impl<T: Module> DynModuleHost for HostControllerActor<T> {
-    async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
+    async fn get_instance(&self, db: Identity) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
         // in the future we should do something like in the else branch here -- add more instances based on load.
         // we need to do write-skew retries first - right now there's only ever once instance per module.
         let inst = if true {
@@ -522,9 +520,9 @@ impl ModuleHost {
             // Record the time spent waiting in the queue
             let _guard = WORKER_METRICS
                 .reducer_wait_time
-                .with_label_values(&self.info.address, reducer)
+                .with_label_values(&self.info.database_identity, reducer)
                 .start_timer();
-            self.inner.get_instance(self.info.address).await?
+            self.inner.get_instance(self.info.database_identity).await?
         };
 
         let result = tokio::task::spawn_blocking(move || f(&mut *inst))
@@ -567,17 +565,14 @@ impl ModuleHost {
         };
 
         let db = &self.inner.replica_ctx().relational_db;
-        let ctx = || {
-            ExecutionContext::reducer(
-                db.address(),
-                ReducerContext {
-                    name: reducer_name.to_owned(),
-                    caller_identity,
-                    caller_address,
-                    timestamp: Timestamp::now(),
-                    arg_bsatn: Bytes::new(),
-                },
-            )
+        let workload = || {
+            Workload::Reducer(ReducerContext {
+                name: reducer_name.to_owned(),
+                caller_identity,
+                caller_address,
+                timestamp: Timestamp::now(),
+                arg_bsatn: Bytes::new(),
+            })
         };
 
         let result = self
@@ -600,7 +595,7 @@ impl ModuleHost {
                 // This is necessary to be able to disconnect clients after a server
                 // crash.
                 ReducerCallError::NoSuchReducer => db
-                    .with_auto_commit(&ctx(), |mut_tx| {
+                    .with_auto_commit(workload(), |mut_tx| {
                         if connected {
                             self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
                         } else {
@@ -620,7 +615,7 @@ impl ModuleHost {
         // Deleting client from `st_clients`does not depend upon result of disconnect reducer hence done in a separate tx.
         if !connected {
             let _ = db
-                .with_auto_commit(&ctx(), |mut_tx| {
+                .with_auto_commit(workload(), |mut_tx| {
                     self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
                 })
                 .map_err(|e| {
@@ -638,7 +633,7 @@ impl ModuleHost {
         connected: bool,
     ) -> Result<(), DBError> {
         let db = &*self.inner.replica_ctx().relational_db;
-        let ctx = &ExecutionContext::internal(db.address());
+
         let row = &StClientRow {
             identity: caller_identity.into(),
             address: caller_address.into(),
@@ -649,7 +644,6 @@ impl ModuleHost {
         } else {
             let row = db
                 .iter_by_col_eq_mut(
-                    ctx,
                     mut_tx,
                     ST_CLIENT_ID,
                     col_list![StClientFields::Identity, StClientFields::Address],
@@ -760,11 +754,31 @@ impl ModuleHost {
         let db = self.inner.replica_ctx().relational_db.clone();
         // scheduled reducer name not fetched yet, anyway this is only for logging purpose
         const REDUCER: &str = "scheduled_reducer";
+        let module = self.info.clone();
         self.call(REDUCER, move |inst: &mut dyn ModuleInstance| {
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
 
             match call_reducer_params(&mut tx) {
-                Ok(Some(params)) => Ok(inst.call_reducer(Some(tx), params)),
+                Ok(Some(params)) => {
+                    // Is necessary to patch the context with the actual calling reducer
+                    let reducer = module
+                        .reducers_map
+                        .lookup_name(params.reducer_id)
+                        .ok_or(ReducerCallError::ScheduleReducerNotFound)?;
+
+                    tx.ctx = ExecutionContext::with_workload(
+                        tx.ctx.database_identity(),
+                        Workload::Reducer(ReducerContext {
+                            name: reducer.into(),
+                            caller_identity: params.caller_identity,
+                            caller_address: params.caller_address,
+                            timestamp: Timestamp::now(),
+                            arg_bsatn: params.args.get_bsatn().clone(),
+                        }),
+                    );
+
+                    Ok(inst.call_reducer(Some(tx), params))
+                }
                 Ok(None) => Err(ReducerCallError::ScheduleReducerNotFound),
                 Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments {
                     err,
@@ -827,8 +841,8 @@ impl ModuleHost {
         let db = &replica_ctx.relational_db;
         let auth = AuthCtx::new(replica_ctx.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
-        let ctx = &ExecutionContext::sql(db.address());
-        db.with_read_only(ctx, |tx| {
+
+        db.with_read_only(Workload::Sql, |tx| {
             let ast = sql::compiler::compile_sql(db, &auth, tx, &query)?;
             sql::execute::execute_sql_tx(db, tx, &query, ast, auth)?
                 .context("One-off queries are not allowed to modify the database")
@@ -840,7 +854,8 @@ impl ModuleHost {
     /// Note: this doesn't drop the table, it just clears it!
     pub fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
         let db = &*self.replica_ctx().relational_db;
-        db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
+
+        db.with_auto_commit(Workload::Internal, |tx| {
             let tables = db.get_all_tables_mut(tx)?;
             // We currently have unique table names,
             // so we can assume there's only one table to clear.

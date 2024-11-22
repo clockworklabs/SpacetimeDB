@@ -21,7 +21,7 @@ use super::{
     expr::{Expr, RelExpr},
     parse,
     ty::{TyCtx, TyEnv},
-    type_expr, type_proj, type_select,
+    type_expr, type_proj, type_select, StatementCtx, StatementSource,
 };
 
 pub enum Statement {
@@ -348,7 +348,7 @@ impl TypeChecker for SqlChecker {
     }
 }
 
-pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<Statement> {
+fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<Statement> {
     match parse_sql(sql)? {
         SqlAst::Insert(insert) => Ok(Statement::Insert(type_insert(&mut TyCtx::default(), insert, tx)?)),
         SqlAst::Delete(delete) => Ok(Statement::Delete(type_delete(&mut TyCtx::default(), delete, tx)?)),
@@ -357,4 +357,14 @@ pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<State
         SqlAst::Set(set) => Ok(Statement::Set(type_set(&TyCtx::default(), set)?)),
         SqlAst::Show(show) => Ok(Statement::Show(type_show(show)?)),
     }
+}
+
+/// Parse and type check a *general* query into a [StatementCtx].
+pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<StatementCtx<'a>> {
+    let statement = parse_and_type_sql(sql, tx)?;
+    Ok(StatementCtx {
+        statement,
+        sql,
+        source: StatementSource::Query,
+    })
 }

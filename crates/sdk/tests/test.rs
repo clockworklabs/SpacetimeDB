@@ -181,6 +181,11 @@ macro_rules! declare_tests_with_suffix {
             fn subscribe_all_select_star() {
                 make_test("subscribe_all_select_star").run();
             }
+
+            #[test]
+            fn caller_alice_receives_reducer_callback_but_not_bob() {
+                make_test("caller_alice_receives_reducer_callback_but_not_bob").run();
+            }
         }
     };
 }

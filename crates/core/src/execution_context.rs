@@ -1,113 +1,22 @@
 use std::sync::Arc;
 
-use crate::db::db_metrics::DB_METRICS;
 use bytes::Bytes;
 use derive_more::Display;
-use parking_lot::RwLock;
 use spacetimedb_commitlog::{payload::txdata, Varchar};
 use spacetimedb_lib::{Address, Identity, Timestamp};
-use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn;
-
-pub enum MetricType {
-    IndexSeeks,
-    KeysScanned,
-    RowsFetched,
-}
-
-#[derive(Default, Clone)]
-struct BufferMetric {
-    pub table_id: TableId,
-    pub index_seeks: u64,
-    pub keys_scanned: u64,
-    pub rows_fetched: u64,
-    pub cache_table_name: String,
-}
-
-impl BufferMetric {
-    pub fn inc_by(&mut self, ty: MetricType, val: u64) {
-        match ty {
-            MetricType::IndexSeeks => {
-                self.index_seeks += val;
-            }
-            MetricType::KeysScanned => {
-                self.keys_scanned += val;
-            }
-            MetricType::RowsFetched => {
-                self.rows_fetched += val;
-            }
-        }
-    }
-}
-
-impl BufferMetric {
-    pub fn new(table_id: TableId, table_name: String) -> Self {
-        Self {
-            table_id,
-            cache_table_name: table_name,
-            ..Default::default()
-        }
-    }
-}
-
-#[derive(Default, Clone)]
-pub struct Metrics(Vec<BufferMetric>);
-
-impl Metrics {
-    pub fn inc_by<F: FnOnce() -> String>(&mut self, table_id: TableId, ty: MetricType, val: u64, get_table_name: F) {
-        if let Some(metric) = self.0.iter_mut().find(|x| x.table_id == table_id) {
-            metric.inc_by(ty, val);
-        } else {
-            let table_name = get_table_name();
-            let mut metric = BufferMetric::new(table_id, table_name);
-            metric.inc_by(ty, val);
-            self.0.push(metric);
-        }
-    }
-
-    pub fn table_exists(&self, table_id: TableId) -> bool {
-        self.0.iter().any(|x| x.table_id == table_id)
-    }
-
-    #[allow(dead_code)]
-    fn flush(&mut self, workload: &WorkloadType, database: &Address, reducer: &str) {
-        macro_rules! flush_metric {
-            ($db_metric:expr, $metric:expr, $metric_field:ident) => {
-                if $metric.$metric_field > 0 {
-                    $db_metric
-                        .with_label_values(
-                            workload,
-                            database,
-                            reducer,
-                            &$metric.table_id.0,
-                            &$metric.cache_table_name,
-                        )
-                        .inc_by($metric.$metric_field);
-                }
-            };
-        }
-
-        self.0.iter().for_each(|metric| {
-            flush_metric!(DB_METRICS.rdb_num_index_seeks, metric, index_seeks);
-            flush_metric!(DB_METRICS.rdb_num_keys_scanned, metric, keys_scanned);
-            flush_metric!(DB_METRICS.rdb_num_rows_fetched, metric, rows_fetched);
-        });
-    }
-}
 
 /// Represents the context under which a database runtime method is executed.
 /// In particular it provides details about the currently executing txn to runtime operations.
 /// More generally it acts as a container for information that database operations may require to function correctly.
 #[derive(Default, Clone)]
 pub struct ExecutionContext {
-    /// The database on which a transaction is being executed.
-    database: Address,
+    /// The identity of the database on which a transaction is being executed.
+    pub database_identity: Identity,
     /// The reducer from which the current transaction originated.
-    reducer: Option<ReducerContext>,
+    pub reducer: Option<ReducerContext>,
     /// The type of workload that is being executed.
-    workload: WorkloadType,
-    /// The Metrics to be reported for this transaction.
-    pub metrics: Arc<RwLock<Metrics>>,
+    pub workload: WorkloadType,
 }
 
 /// If an [`ExecutionContext`] is a reducer context, describes the reducer.
@@ -161,6 +70,39 @@ impl From<&ReducerContext> for txdata::Inputs {
     }
 }
 
+impl TryFrom<&txdata::Inputs> for ReducerContext {
+    type Error = bsatn::DecodeError;
+
+    fn try_from(inputs: &txdata::Inputs) -> Result<Self, Self::Error> {
+        let args = &mut inputs.reducer_args.as_ref();
+        let caller_identity = bsatn::from_reader(args)?;
+        let caller_address = bsatn::from_reader(args)?;
+        let timestamp = bsatn::from_reader(args)?;
+
+        Ok(Self {
+            name: inputs.reducer_name.to_string(),
+            caller_identity,
+            caller_address,
+            timestamp,
+            arg_bsatn: Bytes::from(args.to_owned()),
+        })
+    }
+}
+
+/// Represents the type of workload that is being executed.
+///
+/// Used as constructor helper for [ExecutionContext].
+#[derive(Clone)]
+pub enum Workload {
+    #[cfg(test)]
+    ForTests,
+    Reducer(ReducerContext),
+    Sql,
+    Subscribe,
+    Update,
+    Internal,
+}
+
 /// Classifies a transaction according to its workload.
 /// A transaction can be executing a reducer.
 /// It can be used to satisfy a one-off sql query or subscription.
@@ -174,6 +116,20 @@ pub enum WorkloadType {
     Internal,
 }
 
+impl From<Workload> for WorkloadType {
+    fn from(value: Workload) -> Self {
+        match value {
+            #[cfg(test)]
+            Workload::ForTests => Self::Internal,
+            Workload::Reducer(_) => Self::Reducer,
+            Workload::Sql => Self::Sql,
+            Workload::Subscribe => Self::Subscribe,
+            Workload::Update => Self::Update,
+            Workload::Internal => Self::Internal,
+        }
+    }
+}
+
 impl Default for WorkloadType {
     fn default() -> Self {
         Self::Internal
@@ -182,50 +138,62 @@ impl Default for WorkloadType {
 
 impl ExecutionContext {
     /// Returns an [ExecutionContext] with the provided parameters and empty metrics.
-    fn new(database: Address, reducer: Option<ReducerContext>, workload: WorkloadType) -> Self {
+    fn new(database_identity: Identity, reducer: Option<ReducerContext>, workload: WorkloadType) -> Self {
         Self {
-            database,
+            database_identity,
             reducer,
             workload,
-            metrics: <_>::default(),
+        }
+    }
+
+    /// Returns an [ExecutionContext] with the provided [Workload] and empty metrics.
+    pub(crate) fn with_workload(database_identity: Identity, workload: Workload) -> Self {
+        match workload {
+            #[cfg(test)]
+            Workload::ForTests => Self::default(),
+            Workload::Internal => Self::internal(database_identity),
+            Workload::Reducer(ctx) => Self::reducer(database_identity, ctx),
+            Workload::Sql => Self::sql(database_identity),
+            Workload::Subscribe => Self::subscribe(database_identity),
+            Workload::Update => Self::incremental_update(database_identity),
         }
     }
 
     /// Returns an [ExecutionContext] for a reducer transaction.
-    pub fn reducer(database: Address, ctx: ReducerContext) -> Self {
-        Self::new(database, Some(ctx), WorkloadType::Reducer)
+    pub fn reducer(database_identity: Identity, ctx: ReducerContext) -> Self {
+        Self::new(database_identity, Some(ctx), WorkloadType::Reducer)
     }
 
     /// Returns an [ExecutionContext] for a one-off sql query.
-    pub fn sql(database: Address) -> Self {
-        Self::new(database, None, WorkloadType::Sql)
+    pub fn sql(database_identity: Identity) -> Self {
+        Self::new(database_identity, None, WorkloadType::Sql)
     }
 
     /// Returns an [ExecutionContext] for an initial subscribe call.
-    pub fn subscribe(database: Address) -> Self {
+    pub fn subscribe(database: Identity) -> Self {
         Self::new(database, None, WorkloadType::Subscribe)
     }
 
     /// Returns an [ExecutionContext] for a subscription update.
-    pub fn incremental_update(database: Address) -> Self {
+    pub fn incremental_update(database: Identity) -> Self {
         Self::new(database, None, WorkloadType::Update)
     }
 
     /// Returns an [ExecutionContext] for an incremental subscription update,
     /// where this update is the result of a reducer mutation.
-    pub fn incremental_update_for_reducer(database: Address, ctx: ReducerContext) -> Self {
+    pub fn incremental_update_for_reducer(database: Identity, ctx: ReducerContext) -> Self {
         Self::new(database, Some(ctx), WorkloadType::Update)
     }
 
     /// Returns an [ExecutionContext] for an internal database operation.
-    pub fn internal(database: Address) -> Self {
-        Self::new(database, None, WorkloadType::Internal)
+    pub fn internal(database_identity: Identity) -> Self {
+        Self::new(database_identity, None, WorkloadType::Internal)
     }
 
     /// Returns the address of the database on which we are operating.
     #[inline]
-    pub fn database(&self) -> Address {
-        self.database
+    pub fn database_identity(&self) -> Identity {
+        self.database_identity
     }
 
     /// If this is a reducer context, returns the name of the reducer.
@@ -244,14 +212,5 @@ impl ExecutionContext {
     #[inline]
     pub fn workload(&self) -> WorkloadType {
         self.workload
-    }
-}
-
-impl Drop for ExecutionContext {
-    fn drop(&mut self) {
-        let workload = self.workload;
-        let database = self.database;
-        let reducer = self.reducer_name();
-        self.metrics.write().flush(&workload, &database, reducer);
     }
 }

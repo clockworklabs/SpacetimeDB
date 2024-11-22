@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use crate::statement::Statement;
 use check::TypingResult;
 use errors::{DuplicateName, InvalidLiteral, InvalidWildcard, UnexpectedType, Unresolved};
 use expr::{Expr, Let, RelExpr};
@@ -113,6 +114,14 @@ pub(crate) fn type_proj(
                     // Create a single field expression for the projection.
                     // Note the variable reference has been inlined.
                     // Hence no let variables are needed for this expression.
+                    //
+                    // This is because the expression here don't flatten the row, ie:
+                    // `SELECT * FROM a JOIN b` = `Row{a:Row{...}, b:Row{...}}`
+                    //
+                    // Note, like all relational operators, project is polymorphic.
+                    // However it is polymorphic in the most general sense.
+                    // It is typed to operate on any relational expression,
+                    // not just those returning flattened rows.
                     Ok(RelExpr::project(
                         input,
                         Let {
@@ -347,4 +356,19 @@ pub(crate) fn parse(value: String, ty: TypeWithCtx) -> Result<AlgebraicValue, In
             .map_err(|_| InvalidLiteral::new(value, &ty)),
         _ => Err(InvalidLiteral::new(value, &ty)),
     }
+}
+
+/// The source of a statement
+pub enum StatementSource {
+    Subscription,
+    Query,
+}
+
+/// A statement context.
+///
+/// This is a wrapper around a statement, its source, and the original SQL text.
+pub struct StatementCtx<'a> {
+    pub statement: Statement,
+    pub sql: &'a str,
+    pub source: StatementSource,
 }

@@ -59,3 +59,23 @@ impl init for super::RemoteReducers {
         self.imp.remove_on_reducer::<Init>("__init__", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `__init__`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_init {
+    /// Set the call-reducer flags for the reducer `__init__` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn init(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_init for super::SetReducerFlags {
+    fn init(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("__init__", flags);
+    }
+}
