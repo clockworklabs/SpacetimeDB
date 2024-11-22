@@ -9,7 +9,7 @@
 use anyhow::{Context, Result};
 use spacetimedb::{
     sats::{i256, u256},
-    Address, Identity, ReducerContext, SpacetimeType, Table,
+    Address, Identity, ReducerContext, ScheduleAt, SpacetimeType, Table,
 };
 
 #[derive(SpacetimeType)]
@@ -645,6 +645,11 @@ spacetimedb::filter!("SELECT * FROM one_u8");
 #[spacetimedb::table(name = scheduled_table, scheduled(send_scheduled_message), public)]
 pub struct ScheduledTable {
     text: String,
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    #[scheduled_at]
+    scheduled_at: ScheduleAt,
 }
 
 #[spacetimedb::reducer]
