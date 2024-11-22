@@ -25,7 +25,7 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
         if has_rust_up() {
             // Make sure that we have the wasm target installed (ok to run if its already installed)
             if let Err(err) = cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run() {
-                println!("Warning: Failed to install wasm32-unknown-unknown target: {}", err);
+                anyhow::bail!("Failed to install wasm32-unknown-unknown target with rustup: {}", err);
             }
         } else {
             anyhow::bail!("wasm32-unknown-unknown target is not installed. Please install it.");

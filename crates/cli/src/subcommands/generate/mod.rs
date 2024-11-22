@@ -475,7 +475,7 @@ fn format_files(generated_files: Vec<PathBuf>, lang: Language) -> anyhow::Result
             if !has_rust_fmt() {
                 if has_rust_up() {
                     if let Err(err) = cmd!("rustup", "component", "add", "rustfmt").run() {
-                        println!("Warning: Failed to install rustfmt: {err}");
+                        return Err(anyhow::anyhow!("Failed to install rustfmt with rustup: {err}"));
                     }
                 } else {
                     return Err(anyhow::anyhow!("rustfmt is not installed. Please install it."));
