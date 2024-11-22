@@ -372,22 +372,22 @@ namespace SpacetimeDB
 	[DataContract]
 	public partial class RepeatingTestArg : IDatabaseRow
 	{
-		[DataMember(Name = "prev_time")]
-		public ulong PrevTime;
 		[DataMember(Name = "scheduled_id")]
 		public ulong ScheduledId;
 		[DataMember(Name = "scheduled_at")]
 		public SpacetimeDB.ScheduleAt ScheduledAt;
+		[DataMember(Name = "prev_time")]
+		public ulong PrevTime;
 
 		public RepeatingTestArg(
-			ulong PrevTime,
 			ulong ScheduledId,
-			SpacetimeDB.ScheduleAt ScheduledAt
+			SpacetimeDB.ScheduleAt ScheduledAt,
+			ulong PrevTime
 		)
 		{
-			this.PrevTime = PrevTime;
 			this.ScheduledId = ScheduledId;
 			this.ScheduledAt = ScheduledAt;
+			this.PrevTime = PrevTime;
 		}
 
 		public RepeatingTestArg()
