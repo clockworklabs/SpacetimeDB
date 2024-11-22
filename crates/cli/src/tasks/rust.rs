@@ -21,12 +21,12 @@ fn cargo_cmd(subcommand: &str, build_debug: bool, args: &[&str]) -> duct::Expres
 }
 
 pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
+    // Make sure that we have the wasm target installed
     if !has_wasm32_target() {
         if has_rust_up() {
-            // Make sure that we have the wasm target installed (ok to run if its already installed)
-            if let Err(err) = cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run() {
-                anyhow::bail!("Failed to install wasm32-unknown-unknown target with rustup: {}", err);
-            }
+            cmd!("rustup", "target", "add", "wasm32-unknown-unknown")
+                .run()
+                .context("Failed to install wasm32-unknown-unknown target with rustup")?;
         } else {
             anyhow::bail!("wasm32-unknown-unknown target is not installed. Please install it.");
         }

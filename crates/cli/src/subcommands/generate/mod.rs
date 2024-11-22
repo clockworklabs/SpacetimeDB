@@ -1,5 +1,6 @@
 #![warn(clippy::uninlined_format_args)]
 
+use anyhow::Context;
 use clap::parser::ValueSource;
 use clap::Arg;
 use clap::ArgAction::Set;
@@ -474,11 +475,11 @@ fn format_files(generated_files: Vec<PathBuf>, lang: Language) -> anyhow::Result
         Language::Rust => {
             if !has_rust_fmt() {
                 if has_rust_up() {
-                    if let Err(err) = cmd!("rustup", "component", "add", "rustfmt").run() {
-                        return Err(anyhow::anyhow!("Failed to install rustfmt with rustup: {err}"));
-                    }
+                    cmd!("rustup", "component", "add", "rustfmt")
+                        .run()
+                        .context("Failed to install rustfmt with Rustup")?;
                 } else {
-                    return Err(anyhow::anyhow!("rustfmt is not installed. Please install it."));
+                    anyhow::bail!("rustfmt is not installed. Please install it.");
                 }
             }
             for path in generated_files {
