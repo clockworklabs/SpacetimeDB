@@ -43,7 +43,7 @@ Material:
     - _Wavyness: 0.005
     - _WavynessSpeed: 0.4
     m_Colors:
-    - _MainTex: {r: 1, g: 0.0798079, b: 0, a: 1}
+    - _MainTex: {r: 1, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
 --- !u!114 &7567924816124296995
 MonoBehaviour:

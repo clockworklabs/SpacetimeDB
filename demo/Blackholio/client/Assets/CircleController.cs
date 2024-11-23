@@ -81,20 +81,11 @@ public class CircleController : MonoBehaviour
     {
         // Interpolate positions
         lerpTimePassed += Time.deltaTime;
-        transform.position = Vector3.Lerp(positionLerp1, positionLerp2,
-            lerpTimePassed / (1.0f / lerpUpdatesPerSecond));
-        if (lerpTimePassed >= 1.0f / lerpUpdatesPerSecond && targetPosition.HasValue)
-        {
-            // Take new positions
-            lerpTimePassed = 0.0f;
-            positionLerp1 = transform.position;
-            positionLerp2 = targetPosition.Value;
-        }
+        transform.position = targetPosition.Value;
 
         if (targetScale.HasValue)
         {
-            transform.localScale = Vector3.MoveTowards(transform.localScale,
-                targetScale.Value, 0.2f);
+            transform.localScale = targetScale.Value;
         }
     }
 }

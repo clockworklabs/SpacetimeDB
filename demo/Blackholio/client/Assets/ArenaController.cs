@@ -35,13 +35,13 @@ public class ArenaController : MonoBehaviour
             var size = worldSize / backgroundInstance.transform.localScale.x;
             backgroundInstance.size = new UnityEngine.Vector2(size, size);
             backgroundInstance.transform.position = new Vector3((float)worldSize / 2, (float)worldSize / 2);
-            
+
             // Start the camera in the middle of the screen for setup, but only if we have no player
             if (PlayerController.Local == null)
             {
-                GameManager.localCamera.transform.position = new Vector3((float)worldSize / 2, (float)worldSize / 2, -10.0f);
+//                GameManager.localCamera.transform.position = new Vector3((float)worldSize / 2, (float)worldSize / 2, -10.0f);
             }
         };
-        
+
     }
 }

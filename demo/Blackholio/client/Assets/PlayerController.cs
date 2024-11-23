@@ -74,7 +74,7 @@ public class PlayerController : MonoBehaviour
 
         circle.UpdatePosition(newCircle);
         var playerRadius = GameManager.MassToRadius(TotalMass());
-        previousCameraSize = targetCameraSize = playerRadius * 2 + 50.0f;
+        previousCameraSize = targetCameraSize = 100.0f;
     }
 
     public uint TotalMass()
@@ -104,7 +104,7 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
+        //GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
     }
 
     public bool IsLocalPlayer() => GameManager.localIdentity != null && identity == GameManager.localIdentity;
@@ -115,8 +115,8 @@ public class PlayerController : MonoBehaviour
         {
             return null;
         }
-        
-        var circles = circlesByEntityId.Values;        
+
+        var circles = circlesByEntityId.Values;
         float totalX = 0, totalY = 0;
         float totalMass = 0;
         foreach (var circle in circles)
@@ -130,18 +130,16 @@ public class PlayerController : MonoBehaviour
 
         return new UnityEngine.Vector2(totalX / totalMass, totalY / totalMass);
     }
-    
+
     public void Update()
     {
         if (IsLocalPlayer() && Input.GetKeyDown(KeyCode.Space))
         {
             GameManager.conn.Reducers.PlayerSplit();
         }
-        
+
         if (IsLocalPlayer() && previousCameraSize.HasValue)
         {
-            GameManager.localCamera.orthographicSize =
-                Mathf.Lerp(previousCameraSize.Value, targetCameraSize, Time.time / 10);
         }
 
         if (!IsLocalPlayer() ||
