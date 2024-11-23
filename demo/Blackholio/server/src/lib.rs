@@ -13,6 +13,7 @@ use std::time::Duration;
 
 const TARGET_FOOD_COUNT: usize = 100;
 const MINIMUM_SAFE_MASS_RATIO: f32 = 0.85;
+const EATING_ENABLED: bool = true;
 
 #[spacetimedb::table(name = config, public)]
 pub struct Config {
@@ -274,11 +275,13 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
                     if other_circle.player_id != circle.player_id {
                         let mass_ratio = entity.mass as f32 / circle_entity.mass as f32;
                         log::info!("collision!");
-//                        if mass_ratio < MINIMUM_SAFE_MASS_RATIO {
-//                            ctx.db.entity().id().delete(&entity.id);
-//                            ctx.db.circle().entity_id().delete(&entity.id);
-//                            circle_entity.mass += entity.mass;
-//                        }
+                        if EATING_ENABLED {
+                            if mass_ratio < MINIMUM_SAFE_MASS_RATIO {
+                                ctx.db.entity().id().delete(&entity.id);
+                                ctx.db.circle().entity_id().delete(&entity.id);
+                                circle_entity.mass += entity.mass;
+                            }
+                        }
                     }
                 }
             }
