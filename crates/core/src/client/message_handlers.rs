@@ -79,6 +79,12 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 )
             })
         }
+        ClientMessage::SubscribeSingle(subscription) => {
+            todo!("subscribe_single");
+        }
+        ClientMessage::Unsubscribe(subscription) => {
+            todo!("subscribe_single");
+        }
         ClientMessage::Subscribe(subscription) => {
             let res = client.subscribe(subscription, timer).await;
             WORKER_METRICS

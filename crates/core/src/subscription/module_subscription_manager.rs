@@ -2,6 +2,7 @@ use super::execution_unit::{ExecutionUnit, QueryHash};
 use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
 use crate::db::relational_db::{RelationalDB, Tx};
+use crate::error::SubscriptionError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use arrayvec::ArrayVec;
@@ -18,10 +19,31 @@ use std::time::Duration;
 /// Clients are uniquely identified by their Identity and Address.
 /// Identity is insufficient because different Addresses can use the same Identity.
 /// TODO: Determine if Address is sufficient for uniquely identifying a client.
-type Id = (Identity, Address);
+type ClientId = (Identity, Address);
 type Query = Arc<ExecutionUnit>;
 type Client = Arc<ClientConnectionSender>;
 type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
+
+type ClientRequestId = u32;
+type SubscriptionId = (ClientId, ClientRequestId);
+
+#[derive(Debug)]
+struct ClientInfo {
+    outbound_ref: Client,
+    subscriptions: HashMap<SubscriptionId, QueryHash>,
+    query_hash_to_subscriptions: HashMap<QueryHash, HashSet<SubscriptionId>>,
+    // This should be removed when we migrate to SubscribeSingle.
+    // In the meantime, no clients should have both types of subscriptions.
+    legacy_subscriptions: HashSet<QueryHash>,
+}
+
+
+#[derive(Debug)]
+struct QueryState {
+    query: Query,
+    legacy_subscribers: HashSet<ClientId>,
+    subscriptions: HashSet<SubscriptionId>,
+}
 
 /// Responsible for the efficient evaluation of subscriptions.
 /// It performs basic multi-query optimization,
@@ -31,17 +53,24 @@ type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::Databa
 #[derive(Debug, Default)]
 pub struct SubscriptionManager {
     // Subscriber identities and their client connections.
-    clients: HashMap<Id, Client>,
+    clients: HashMap<ClientId, Client>,
+
+    clients2: HashMap<ClientId, ClientInfo>,
+
+    
+    // Queries for which there is at least one subscriber.
+    queries2: HashMap<QueryHash, QueryState>,
+
     // Queries for which there is at least one subscriber.
     queries: HashMap<QueryHash, Query>,
     // The subscribers for each query.
-    subscribers: HashMap<QueryHash, HashSet<Id>>,
+    subscribers: HashMap<QueryHash, HashSet<ClientId>>,
     // Inverted index from tables to queries that read from them.
     tables: IntMap<TableId, HashSet<QueryHash>>,
 }
 
 impl SubscriptionManager {
-    pub fn client(&self, id: &Id) -> Client {
+    pub fn client(&self, id: &ClientId) -> Client {
         self.clients[id].clone()
     }
 
@@ -59,13 +88,33 @@ impl SubscriptionManager {
     }
 
     #[cfg(test)]
-    fn contains_subscription(&self, subscriber: &Id, query: &QueryHash) -> bool {
+    fn contains_subscription(&self, subscriber: &ClientId, query: &QueryHash) -> bool {
         self.subscribers.get(query).is_some_and(|ids| ids.contains(subscriber))
     }
 
     #[cfg(test)]
     fn query_reads_from_table(&self, query: &QueryHash, table: &TableId) -> bool {
         self.tables.get(table).is_some_and(|queries| queries.contains(query))
+    }
+
+    /// Adds a client and its queries to the subscription manager.
+    /// Sets up the set of subscriptions for the client, replacing any existing legacy subscriptions.
+    /// 
+    /// If a query is not already indexed,
+    /// its table ids added to the inverted index.
+    #[tracing::instrument(skip_all)]
+    pub fn set_legacy_subscription(&mut self, client: Client, queries: impl IntoIterator<Item = Query>) -> Result<(), SubscriptionError> {
+        // TODO: Remove existing subscriptions.
+        let id = (client.id.identity, client.id.address);
+        self.clients.insert(id, client);
+        for unit in queries {
+            let hash = unit.hash();
+            self.tables.entry(unit.return_table()).or_default().insert(hash);
+            self.tables.entry(unit.filter_table()).or_default().insert(hash);
+            self.subscribers.entry(hash).or_default().insert(id);
+            self.queries.insert(hash, unit);
+        }
+        Ok(())
     }
 
     /// Adds a client and its queries to the subscription manager.
@@ -88,7 +137,7 @@ impl SubscriptionManager {
     /// If a query no longer has any subscribers,
     /// it is removed from the index along with its table ids.
     #[tracing::instrument(skip_all)]
-    pub fn remove_subscription(&mut self, client: &Id) {
+    pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
         // Remove `hash` from the set of queries for `table_id`.
         // When the table has no queries, cleanup the map entry altogether.
         let mut remove_table_query = |table_id: TableId, hash: &QueryHash| {
@@ -194,7 +243,7 @@ impl SubscriptionManager {
                 // so their `TableUpdate` will contain either JSON (`Protocol::Text`)
                 // or BSATN (`Protocol::Binary`).
                 .fold(
-                    HashMap::<(&Id, TableId), FormatSwitch<TableUpdate<_>, TableUpdate<_>>>::new(),
+                    HashMap::<(&ClientId, TableId), FormatSwitch<TableUpdate<_>, TableUpdate<_>>>::new(),
                     |mut tables, (id, table_id, table_name, update)| {
                         match tables.entry((id, table_id)) {
                             Entry::Occupied(mut entry) => match entry.get_mut().zip_mut(update) {
@@ -214,7 +263,7 @@ impl SubscriptionManager {
                 // So before sending the updates to each client,
                 // we must stitch together the `TableUpdate*`s into an aggregated list.
                 .fold(
-                    HashMap::<&Id, SwitchedDbUpdate>::new(),
+                    HashMap::<&ClientId, SwitchedDbUpdate>::new(),
                     |mut updates, ((id, _), update)| {
                         let entry = updates.entry(id);
                         let entry = entry.or_insert_with(|| match &update {
@@ -366,7 +415,7 @@ mod tests {
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client, [plan]);
-        subscriptions.remove_subscription(&id);
+        subscriptions.remove_all_subscriptions(&id);
 
         assert!(!subscriptions.contains_query(&hash));
         assert!(!subscriptions.contains_subscription(&id, &hash));
@@ -395,7 +444,7 @@ mod tests {
         assert!(subscriptions.contains_subscription(&id, &hash));
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
-        subscriptions.remove_subscription(&id);
+        subscriptions.remove_all_subscriptions(&id);
 
         assert!(!subscriptions.contains_query(&hash));
         assert!(!subscriptions.contains_subscription(&id, &hash));
@@ -428,7 +477,7 @@ mod tests {
         assert!(subscriptions.contains_subscription(&id1, &hash));
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
-        subscriptions.remove_subscription(&id0);
+        subscriptions.remove_all_subscriptions(&id0);
 
         assert!(subscriptions.contains_query(&hash));
         assert!(subscriptions.contains_subscription(&id1, &hash));
@@ -486,7 +535,7 @@ mod tests {
         assert!(!subscriptions.query_reads_from_table(&hash_select0, &s));
         assert!(!subscriptions.query_reads_from_table(&hash_select1, &t));
 
-        subscriptions.remove_subscription(&id0);
+        subscriptions.remove_all_subscriptions(&id0);
 
         assert!(subscriptions.contains_query(&hash_scan));
         assert!(subscriptions.contains_query(&hash_select1));

@@ -31,7 +31,7 @@ use spacetimedb_sats::{
     de::{Deserialize, Error},
     impl_deserialize, impl_serialize, impl_st,
     ser::{serde::SerializeWrapper, Serialize},
-    AlgebraicType, SpacetimeType,
+    u256, AlgebraicType, SpacetimeType,
 };
 use std::{
     io::{self, Read as _, Write as _},
@@ -87,9 +87,14 @@ pub enum ClientMessage<Args> {
     /// Request a reducer run.
     CallReducer(CallReducer<Args>),
     /// Register SQL queries on which to receive updates.
+    #[deprecated = "Use `SubscribeSingle` instead."]
     Subscribe(Subscribe),
     /// Send a one-off SQL query without establishing a subscription.
     OneOffQuery(OneOffQuery),
+    /// Register a SQL query to to subscribe to updates. This does not affect other subscriptions.
+    SubscribeSingle(SubscribeSingle),
+    /// Remove a subscription to a SQL query that was added with SubscribeSingle.
+    Unsubscribe(Unsubscribe),
 }
 
 impl<Args> ClientMessage<Args> {
@@ -106,8 +111,10 @@ impl<Args> ClientMessage<Args> {
                 request_id,
                 flags,
             }),
-            ClientMessage::Subscribe(x) => ClientMessage::Subscribe(x),
             ClientMessage::OneOffQuery(x) => ClientMessage::OneOffQuery(x),
+            ClientMessage::SubscribeSingle(x) => ClientMessage::SubscribeSingle(x),
+            ClientMessage::Unsubscribe(x) => ClientMessage::Unsubscribe(x),
+            ClientMessage::Subscribe(x) => ClientMessage::Subscribe(x),
         }
     }
 }
@@ -162,6 +169,13 @@ impl_deserialize!([] CallReducerFlags, de => match de.deserialize_u8()? {
     x => Err(D::Error::custom(format_args!("invalid call reducer flag {x}"))),
 });
 
+/// A hash of a query. I'm not sure this has a use in the client other than for debugging.
+#[derive(SpacetimeType, Clone, Debug)]
+#[sats(crate = spacetimedb_lib)]
+pub struct QueryId {
+    pub hash: u256,
+}
+
 /// Sent by client to database to register a set of queries, about which the client will
 /// receive `TransactionUpdate`s.
 ///
@@ -178,10 +192,44 @@ impl_deserialize!([] CallReducerFlags, de => match de.deserialize_u8()? {
 /// already in `A`.
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
+#[deprecated = "Use `SubscribeSingle` instead."]
 pub struct Subscribe {
     /// A sequence of SQL queries.
     pub query_strings: Box<[Box<str>]>,
     pub request_id: u32,
+}
+
+/// Sent by client to register a subscription to single query, for which the client should receive
+/// receive relevant `TransactionUpdate`s.
+///
+/// After issuing a `SubscribeSingle` message, the client will receive a single
+/// `SubscribeApplied` message containing every current row which matches the query. Then, any
+/// time a reducer updates the query's results, the client will receive a `TransactionUpdate`
+/// containing the relevant updates.
+///
+/// If a client subscribes to queries with overlapping results, the client will receive
+/// multiple copies of rows that appear in multiple queries.
+#[derive(SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct SubscribeSingle {
+    /// A single SQL `SELECT` query to subscribe to.
+    pub query: Box<str>,
+    /// An identifier for a client request.
+    /// This should not be reused for any other subscriptions on the same connection.
+    /// TODO: Can we call this subscription_id? It feels odd that this request_id will be used for multiple messages (the Unsubscribe call).
+    pub request_id: u32,
+}
+
+/// Client request for removing a query from a subscription.
+#[derive(SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct Unsubscribe {
+    /// An identifier for a client request.
+    pub request_id: u32,
+    /// The ID returned in the [`SubscribeApplied`] message.
+    /// An optimization to avoid reparsing and normalizing the query string.
+    /// TODO: I assume this is just used for debugging?
+    pub query_id: QueryId,
 }
 
 /// A one-off query submission.
@@ -213,6 +261,7 @@ pub const SERVER_MSG_COMPRESSION_TAG_GZIP: u8 = 2;
 #[sats(crate = spacetimedb_lib)]
 pub enum ServerMessage<F: WebsocketFormat> {
     /// Informs of changes to subscribed rows.
+    /// This will be removed when we switch to `SubscribeSingle`.
     InitialSubscription(InitialSubscription<F>),
     /// Upon reducer run.
     TransactionUpdate(TransactionUpdate<F>),
@@ -222,6 +271,97 @@ pub enum ServerMessage<F: WebsocketFormat> {
     IdentityToken(IdentityToken),
     /// Return results to a one off SQL query.
     OneOffQueryResponse(OneOffQueryResponse<F>),
+    /// Sent in response to a `SubscribeSingle` message. This contains the initial matching rows.
+    SubscribeApplied(SubscribeApplied<F>),
+    /// Communicate an error in the subscription lifecycle.
+    SubscriptionError(SubscriptionError),
+    /// Informs of changes to subscribed rows.
+    SubscriptionUpdate(SubscriptionUpdate<F>),
+}
+
+/// The matching rows of a subscription query.
+#[derive(SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct SubscribeRows<F: WebsocketFormat> {
+    /// The table ID of the query.
+    pub table_id: TableId,
+    /// The table name of the query.
+    pub table_name: Box<str>,
+    /// The BSATN row values.
+    pub table_rows: TableUpdate<F>,
+}
+
+/// Response to [`Subscribe`] containing the initial matching rows.
+#[derive(SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct SubscribeApplied<F: WebsocketFormat> {
+    /// An identifier sent by the client in requests.
+    /// The server will include the same request_id in the response.
+    pub request_id: u32,
+    /// The overall time between the server receiving a request and sending the response.
+    pub total_host_execution_duration_micros: u64,
+    /// An identifier for the subscribed query, allocated by the server.
+    pub query_id: QueryId,
+    /// The matching rows for this query.
+    pub rows: SubscribeRows<F>,
+}
+
+/// Server response to a client [`Unsubscribe`] request.
+#[derive(SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct UnsubscribeApplied<F: WebsocketFormat> {
+    /// Provided by the client via the `Subscribe` message.
+    /// TODO: switch to subscription id?
+    pub request_id: u32,
+    /// The overall time between the server receiving a request and sending the response.
+    pub total_host_execution_duration_micros: u64,
+    /// The ID included in the `SubscribeApplied` and `Unsubscribe` messages.
+    pub query_id: QueryId,
+    /// The matching rows for this query.
+    /// TODO: Sending row ids could reduce bandwidth here.
+    pub rows: SubscribeRows<F>,
+}
+
+/// Server response to an error at any point of the subscription lifecycle.
+/// TODO: How are we supposed to handle errors without a request_id?
+/// Should we drop all subscriptions?
+#[derive(SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct SubscriptionError {
+    /// The overall time between the server receiving a request and sending the response.
+    pub total_host_execution_duration_micros: u64,
+    /// Provided by the client via a [`Subscribe`] or [`Unsubscribe`] message.
+    /// [`None`] if this occurred as the result of a [`TransactionUpdate`].
+    pub request_id: Option<u32>,
+    /// The return table of the query in question.
+    /// The server is not required to set this field.
+    /// It has been added to avoid a breaking change post 1.0.
+    ///
+    /// If unset, an error results in the entire subscription being dropped.
+    /// Otherwise only queries of this table type must be dropped.
+    pub table_id: Option<TableId>,
+    /// An error message describing the failure.
+    ///
+    /// This should reference specific fragments of the query where applicable,
+    /// but should not include the full text of the query,
+    /// as the client can retrieve that from the `request_id`.
+    ///
+    /// This is intended for diagnostic purposes.
+    /// It need not have a predictable/parseable format.
+    pub error: Box<str>,
+}
+
+/// Response to [`Subscribe`] containing the initial matching rows.
+#[derive(SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct SubscriptionUpdate<F: WebsocketFormat> {
+    /// A [`DatabaseUpdate`] containing only inserts, the rows which match the subscription queries.
+    pub database_update: DatabaseUpdate<F>,
+    /// An identifier sent by the client in requests.
+    /// The server will include the same request_id in the response.
+    pub request_id: u32,
+    /// The overall time between the server receiving a request and sending the response.
+    pub total_host_execution_duration_micros: u64,
 }
 
 /// Response to [`Subscribe`] containing the initial matching rows.
