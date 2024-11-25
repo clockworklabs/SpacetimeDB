@@ -1,5 +1,5 @@
 use core::ops::RangeBounds;
-use spacetimedb_data_structures::map::{IntMap, IntSet};
+use spacetimedb_data_structures::map::{Entry, IntMap, IntSet};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_table::{
@@ -50,13 +50,13 @@ pub(super) struct TxState {
     /// a separate `Table` containing only the new insertions.
     ///
     /// `RowPointer`s into the `insert_tables` use `SquashedOffset::TX_STATE`.
-    pub(super) insert_tables: BTreeMap<TableId, Table>,
+    pub(super) insert_tables: IntMap<TableId, Table>,
 
     /// For any `TableId` that has had a previously-committed row deleted from it,
     /// a set of the deleted previously-committed rows.
     ///
     /// Any `RowPointer` in this set will have `SquashedOffset::COMMITTED_STATE`.
-    pub(super) delete_tables: BTreeMap<TableId, DeleteTable>,
+    pub(super) delete_tables: IntMap<TableId, DeleteTable>,
 
     /// A blob store for those blobs referred to by the `insert_tables`.
     ///
@@ -77,7 +77,7 @@ pub(super) struct TxState {
     pub(super) index_id_map_removals: Option<Box<RemovedIndexIdSet>>,
 }
 
-static_assert_size!(TxState, 120);
+static_assert_size!(TxState, 136);
 
 impl TxState {
     /// Returns the row count in insert tables
@@ -170,11 +170,11 @@ impl TxState {
         let blob_store = &mut self.blob_store;
         let idx_map = &mut self.index_id_map;
         let tbl = match insert_tables.entry(table_id) {
-            btree_map::Entry::Vacant(e) => {
+            Entry::Vacant(e) => {
                 let new_table = template?.clone_structure(SquashedOffset::TX_STATE);
                 e.insert(new_table)
             }
-            btree_map::Entry::Occupied(e) => e.into_mut(),
+            Entry::Occupied(e) => e.into_mut(),
         };
         Some((tbl, blob_store, idx_map, delete_tables.entry(table_id).or_default()))
     }

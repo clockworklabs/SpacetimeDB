@@ -238,6 +238,97 @@ impl Table {
     /// but internal data structures may be altered in ways that affect performance and fragmentation.
     ///
     /// TODO(error-handling): describe errors from `write_row_to_pages` and return meaningful errors.
+    pub fn insert_2<'a>(
+        &'a mut self,
+        blob_store: &'a mut dyn BlobStore,
+        row: &ProductValue,
+    ) -> Result<RowRef<'a>, InsertError> {
+        // SKIP(perf): update path, no columns with a unique constraints were changed,
+        // so don't check this.
+        /*
+        // Check unique constraints.
+        // This error should take precedence over any other potential failures.
+        self.check_unique_constraints(
+            row,
+            // No need to worry about the committed vs tx state dichotomy here;
+            // just treat all rows in the table as live.
+            |_| false,
+        )?;
+        */
+
+        // Insert the row into the page manager.
+        let ptr = self.insert_internal_2(blob_store, row)?;
+
+        // SAFETY: We just inserted `ptr`, so it must be present.
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+
+        /*
+        // Insert row into indices.
+        for (cols, index) in self.indexes.iter_mut() {
+            index.insert(cols, row_ref).unwrap();
+        }
+        */
+
+        Ok(row_ref)
+    }
+
+    /// Insert a `row` into this table.
+    /// NOTE: This method skips index updating. Use `insert` to insert a row with index updating.
+    pub fn insert_internal_2(
+        &mut self,
+        blob_store: &mut dyn BlobStore,
+        row: &ProductValue,
+    ) -> Result<RowPointer, InsertError> {
+        // Optimistically insert the `row` before checking for set-semantic collisions,
+        // under the assumption that set-semantic collisions are rare.
+        let (row_ref, blob_bytes) = self.insert_internal_allow_duplicate(blob_store, row)?;
+
+        // Ensure row isn't already there.
+        // SAFETY: We just inserted `ptr`, so we know it's valid.
+        //let hash = row_ref.row_hash();
+        // Safety:
+        // We just inserted `ptr` and computed `hash`, so they're valid.
+        // `self` trivially has the same `row_layout` as `self`.
+        let ptr = row_ref.pointer();
+        /*
+        let existing_row = unsafe { Self::find_same_row(self, self, ptr, hash) };
+
+        if let Some(existing_row) = existing_row {
+            // If an equal row was already present,
+            // roll back our optimistic insert to avoid violating set semantics.
+
+            // SAFETY: we just inserted `ptr`, so it must be valid.
+            unsafe {
+                self.inner
+                    .pages
+                    .delete_row(&self.inner.visitor_prog, self.row_size(), ptr, blob_store)
+            };
+            return Err(InsertError::Duplicate(existing_row));
+        }
+        */
+        self.row_count += 1;
+        self.blob_store_bytes += blob_bytes;
+
+        // If the optimistic insertion was correct,
+        // i.e. this is not a set-semantic duplicate,
+        // add it to the `pointer_map`.
+        //self.pointer_map.insert(hash, ptr);
+
+        Ok(ptr)
+    }
+
+    /// Insert a `row` into this table, storing its large var-len members in the `blob_store`.
+    ///
+    /// On success, returns the hash of the newly-inserted row,
+    /// and a `RowRef` referring to the row.
+    ///
+    /// When a row equal to `row` already exists in `self`,
+    /// returns `InsertError::Duplicate(existing_row_pointer)`,
+    /// where `existing_row_pointer` is a `RowPointer` which identifies the existing row.
+    /// In this case, the duplicate is not inserted,
+    /// but internal data structures may be altered in ways that affect performance and fragmentation.
+    ///
+    /// TODO(error-handling): describe errors from `write_row_to_pages` and return meaningful errors.
     pub fn insert<'a>(
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
@@ -284,6 +375,7 @@ impl Table {
         // We just inserted `ptr` and computed `hash`, so they're valid.
         // `self` trivially has the same `row_layout` as `self`.
         let ptr = row_ref.pointer();
+        /*
         let existing_row = unsafe { Self::find_same_row(self, self, ptr, hash) };
 
         if let Some(existing_row) = existing_row {
@@ -298,13 +390,14 @@ impl Table {
             };
             return Err(InsertError::Duplicate(existing_row));
         }
+        */
         self.row_count += 1;
         self.blob_store_bytes += blob_bytes;
 
         // If the optimistic insertion was correct,
         // i.e. this is not a set-semantic duplicate,
         // add it to the `pointer_map`.
-        self.pointer_map.insert(hash, ptr);
+        //self.pointer_map.insert(hash, ptr);
 
         Ok((hash, ptr))
     }

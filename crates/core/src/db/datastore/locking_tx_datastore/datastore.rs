@@ -6,7 +6,7 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::execution_context::Workload;
+use crate::{db::datastore::system_tables::ST_RESERVED_SEQUENCE_RANGE, execution_context::Workload};
 use crate::{
     db::{
         datastore::{
@@ -564,7 +564,11 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         mut row: ProductValue,
     ) -> Result<(AlgebraicValue, RowRef<'a>)> {
-        let (gens, row_ref) = tx.insert(table_id, &mut row)?;
+        let (gens, row_ref) = if table_id.0 <= ST_RESERVED_SEQUENCE_RANGE {
+            tx.insert(table_id, &mut row)?
+        } else {
+            tx.insert_2(table_id, &mut row)?
+        };
         Ok((gens, row_ref.collapse()))
     }
 
