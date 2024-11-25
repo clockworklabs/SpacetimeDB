@@ -7,10 +7,13 @@ namespace SpacetimeDB
 {
     public class NetworkRequestTracker
     {
-        private readonly ConcurrentQueue<(DateTime End, TimeSpan Duration, string Metadata)> _requestDurations = new();
+        private readonly ConcurrentQueue<(DateTime End, (TimeSpan Duration, string Metadata) Request)> _requestDurations = new();
 
         private uint _nextRequestId;
         private readonly Dictionary<uint, (DateTime Start, string Metadata)> _requests = new();
+
+        // Limit the number of request durations we store to prevent memory leaks.
+        public int KeepLastSeconds = 5 * 60;
 
         internal uint StartTrackingRequest(string metadata = "")
         {
@@ -40,9 +43,25 @@ namespace SpacetimeDB
             return true;
         }
 
+        private IEnumerable<(TimeSpan Duration, string Metadata)> GetRequestDurations(int lastSeconds)
+        {
+            var cutoff = DateTime.UtcNow.AddSeconds(-lastSeconds);
+            return _requestDurations.SkipWhile(x => x.End < cutoff).Select(x => x.Request);
+        }
+
         internal void InsertRequest(TimeSpan duration, string metadata)
         {
-            _requestDurations.Enqueue((DateTime.UtcNow, duration, metadata));
+            lock (_requestDurations)
+            {
+                // Remove expired entries, we need to do this atomically.
+                var cutoff = DateTime.UtcNow.AddSeconds(-KeepLastSeconds);
+                var removeCount = _requestDurations.TakeWhile(x => x.End < cutoff).Count();
+                for (var i = 0; i < removeCount; i++)
+                {
+                    _requestDurations.TryDequeue(out _);
+                }
+                _requestDurations.Enqueue((DateTime.UtcNow, (duration, metadata)));
+            }
         }
 
         internal void InsertRequest(DateTime start, string metadata)
@@ -52,8 +71,13 @@ namespace SpacetimeDB
 
         public ((TimeSpan Duration, string Metadata) Min, (TimeSpan Duration, string Metadata) Max)? GetMinMaxTimes(int lastSeconds)
         {
+            if (lastSeconds > KeepLastSeconds)
+            {
+                throw new ArgumentException($"lastSeconds must be less than or equal to KeepLastSeconds = {KeepLastSeconds}", nameof(lastSeconds));
+            }
+
             var cutoff = DateTime.UtcNow.AddSeconds(-lastSeconds);
-            var requestDurations = _requestDurations.Where(x => x.End >= cutoff).Select(x => (x.Duration, x.Metadata));
+            var requestDurations = _requestDurations.SkipWhile(x => x.End < cutoff).Select(x => x.Request);
 
             if (!requestDurations.Any())
             {
@@ -74,5 +98,14 @@ namespace SpacetimeDB
         public readonly NetworkRequestTracker SubscriptionRequestTracker = new();
         public readonly NetworkRequestTracker AllReducersTracker = new();
         public readonly NetworkRequestTracker ParseMessageTracker = new();
+
+        public void KeepLastSeconds(int seconds)
+        {
+            ReducerRequestTracker.KeepLastSeconds = seconds;
+            OneOffRequestTracker.KeepLastSeconds = seconds;
+            SubscriptionRequestTracker.KeepLastSeconds = seconds;
+            AllReducersTracker.KeepLastSeconds = seconds;
+            ParseMessageTracker.KeepLastSeconds = seconds;
+        }
     }
 }

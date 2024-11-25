@@ -56,7 +56,7 @@ static class VerifyInit
             }
 
             if (
-                value.GetMinMaxTimes(int.MaxValue) is
+                value.GetMinMaxTimes(60) is
                 { Min.Metadata: var Min, Max.Metadata: var Max }
             )
             {
