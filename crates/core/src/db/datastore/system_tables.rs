@@ -294,16 +294,16 @@ fn system_module_def() -> ModuleDef {
         .build_table(ST_TABLE_NAME, *st_table_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StTableFields::TableId)
-        .with_unique_constraint(StTableFields::TableName, None);
+        .with_unique_constraint(StTableFields::TableName);
 
     let st_raw_column_type = builder.add_type::<StColumnRow>();
     builder
         .build_table(ST_COLUMN_NAME, *st_raw_column_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(
-            col_list![StColumnFields::TableId.col_id(), StColumnFields::ColPos.col_id()],
-            None,
-        );
+        .with_unique_constraint(col_list![
+            StColumnFields::TableId.col_id(),
+            StColumnFields::ColPos.col_id()
+        ]);
 
     let st_index_type = builder.add_type::<StIndexRow>();
     builder
@@ -334,13 +334,12 @@ fn system_module_def() -> ModuleDef {
         )
         .with_type(TableType::System)
         .with_primary_key(StRowLevelSecurityFields::Sql)
-        .with_unique_constraint(StRowLevelSecurityFields::Sql, None)
+        .with_unique_constraint(StRowLevelSecurityFields::Sql)
         .with_index(
             RawIndexAlgorithm::BTree {
                 columns: StRowLevelSecurityFields::TableId.into(),
             },
             "accessor_name_doesnt_matter",
-            None,
         );
 
     let st_module_type = builder.add_type::<StModuleRow>();
@@ -353,13 +352,13 @@ fn system_module_def() -> ModuleDef {
     builder
         .build_table(ST_CLIENT_NAME, *st_client_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(col_list![StClientFields::Identity, StClientFields::Address], None); // FIXME: this is a noop?
+        .with_unique_constraint(col_list![StClientFields::Identity, StClientFields::Address]); // FIXME: this is a noop?
 
     let st_schedule_type = builder.add_type::<StScheduledRow>();
     builder
         .build_table(ST_SCHEDULED_NAME, *st_schedule_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(StScheduledFields::TableId, None)
+        .with_unique_constraint(StScheduledFields::TableId)
         .with_auto_inc_primary_key(StScheduledFields::ScheduleId);
     // TODO(1.0): unique constraint on name?
 
@@ -367,7 +366,7 @@ fn system_module_def() -> ModuleDef {
     builder
         .build_table(ST_VAR_NAME, *st_var_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(StVarFields::Name, None)
+        .with_unique_constraint(StVarFields::Name)
         .with_primary_key(StVarFields::Name);
 
     let result = builder

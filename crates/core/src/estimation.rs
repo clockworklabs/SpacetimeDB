@@ -95,7 +95,7 @@ mod tests {
     const NDV_S: u64 = 2;
 
     fn create_table_t(db: &RelationalDB, indexed: bool) {
-        let indexes = &[(0.into(), "a")];
+        let indexes = &[0.into()];
         let indexes = if indexed { indexes } else { &[] as &[_] };
         let table_id = db
             .create_table_for_test("T", &["a", "b"].map(|n| (n, AlgebraicType::U64)), indexes)
@@ -112,7 +112,7 @@ mod tests {
     }
 
     fn create_table_s(db: &RelationalDB, indexed: bool) {
-        let indexes = &[(0.into(), "a"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let indexes = if indexed { indexes } else { &[] as &[_] };
         let rhs = db
             .create_table_for_test("S", &["a", "c"].map(|n| (n, AlgebraicType::U64)), indexes)
@@ -128,7 +128,7 @@ mod tests {
     }
 
     fn create_empty_table_r(db: &RelationalDB, indexed: bool) {
-        let indexes = &[(0.into(), "a")];
+        let indexes = &[0.into()];
         let indexes = if indexed { indexes } else { &[] as &[_] };
         db.create_table_for_test("R", &["a", "b"].map(|n| (n, AlgebraicType::U64)), indexes)
             .expect("Failed to create table");

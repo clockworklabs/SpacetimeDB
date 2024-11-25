@@ -660,7 +660,7 @@ pub(crate) mod tests {
         let db = TestDB::durable()?;
 
         let table_id = db
-            .create_table_for_test("test", &[("x", AlgebraicType::I32)], &[(ColId(0), "test_x")])
+            .create_table_for_test("test", &[("x", AlgebraicType::I32)], &[ColId(0)])
             .unwrap();
 
         db.with_auto_commit(Workload::ForTests, |tx| {

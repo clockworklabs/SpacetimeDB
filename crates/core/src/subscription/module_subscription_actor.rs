@@ -321,7 +321,7 @@ mod tests {
         let db = Arc::new(test_db.db.clone());
 
         // Create a public table.
-        let indexes = &[(0.into(), "a")];
+        let indexes = &[0.into()];
         let cols = &[("a", AlgebraicType::U8)];
         let _ = db.create_table_for_test("public", cols, indexes)?;
 

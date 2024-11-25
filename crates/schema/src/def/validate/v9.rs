@@ -128,7 +128,7 @@ struct ModuleValidator<'a> {
     /// It would be nice if we could have span information here, but currently it isn't passed
     /// through the ABI boundary.
     /// We could add it as a `MiscModuleExport` later without breaking the ABI.
-    stored_in_table_def: IdentifierMap<Identifier>,
+    stored_in_table_def: StrMap<Identifier>,
 
     /// Module-scoped type names we have seen so far.
     type_namespace: HashMap<ScopedTypeName, AlgebraicTypeRef>,
@@ -195,7 +195,7 @@ impl ModuleValidator<'_> {
                     .map(|constraint| (constraint.name.clone(), constraint))
             })
             .collect_all_errors()
-            .and_then(|constraints: IdentifierMap<ConstraintDef>| {
+            .and_then(|constraints: StrMap<ConstraintDef>| {
                 table_in_progress.validate_primary_key(constraints, primary_key)
             });
 
@@ -215,6 +215,7 @@ impl ModuleValidator<'_> {
         let name = table_in_progress
             .add_to_global_namespace(raw_table_name.clone())
             .and_then(|name| {
+                let name = identifier(name)?;
                 if table_type != TableType::System && name.starts_with("st_") {
                     Err(ValidationError::TableNameReserved { table: name }.into())
                 } else {
@@ -455,9 +456,9 @@ impl TableValidator<'_, '_> {
 
     fn validate_primary_key(
         &mut self,
-        validated_constraints: IdentifierMap<ConstraintDef>,
+        validated_constraints: StrMap<ConstraintDef>,
         primary_key: ColList,
-    ) -> Result<(IdentifierMap<ConstraintDef>, Option<ColId>)> {
+    ) -> Result<(StrMap<ConstraintDef>, Option<ColId>)> {
         if primary_key.len() > 1 {
             return Err(ValidationError::RepeatedPrimaryKey {
                 table: self.raw_name.clone(),
@@ -487,13 +488,15 @@ impl TableValidator<'_, '_> {
 
     fn validate_sequence_def(&mut self, sequence: RawSequenceDefV9) -> Result<SequenceDef> {
         let RawSequenceDefV9 {
-            name,
             column,
             min_value,
             start,
             max_value,
             increment,
+            name,
         } = sequence;
+
+        let name = name.unwrap_or_else(|| generate_sequence_name(&self.raw_name, self.product_type, column));
 
         // The column for the sequence exists and is an appropriate type.
         let column = self.validate_col_id(&name, column).and_then(|col_id| {
@@ -560,6 +563,8 @@ impl TableValidator<'_, '_> {
             accessor_name,
         } = index;
 
+        let name = name.unwrap_or_else(|| generate_index_name(&self.raw_name, self.product_type, &algorithm));
+
         let algorithm: Result<IndexAlgorithm> = match algorithm {
             RawIndexAlgorithm::BTree { columns } => self
                 .validate_col_ids(&name, columns)
@@ -583,6 +588,9 @@ impl TableValidator<'_, '_> {
         let RawConstraintDefV9 { name, data } = constraint;
 
         if let RawConstraintDataV9::Unique(RawUniqueConstraintDataV9 { columns }) = data {
+            let name =
+                name.unwrap_or_else(|| generate_unique_constraint_name(&self.raw_name, self.product_type, &columns));
+
             let columns: Result<ColList> = self.validate_col_ids(&name, columns);
             let name = self.add_to_global_namespace(name);
 
@@ -600,10 +608,12 @@ impl TableValidator<'_, '_> {
     /// Validate a schedule definition.
     fn validate_schedule_def(&mut self, schedule: RawScheduleDefV9, primary_key: Option<ColId>) -> Result<ScheduleDef> {
         let RawScheduleDefV9 {
-            name,
             reducer_name,
             scheduled_at_column,
+            name,
         } = schedule;
+
+        let name = name.unwrap_or_else(|| generate_schedule_name(&self.raw_name));
 
         // Find the appropriate columns.
         let at_column = self
@@ -612,6 +622,7 @@ impl TableValidator<'_, '_> {
             .get(scheduled_at_column.idx())
             .is_some_and(|ty| ty.algebraic_type.is_schedule_at())
             .then_some(scheduled_at_column);
+
         let id_column = primary_key.filter(|pk| {
             self.product_type
                 .elements
@@ -646,13 +657,11 @@ impl TableValidator<'_, '_> {
     /// If it has already been added, return an error.
     ///
     /// This is not used for all `Def` types.
-    fn add_to_global_namespace(&mut self, name: Box<str>) -> Result<Identifier> {
-        let table_name = identifier(self.raw_name.clone());
-        let name = identifier(name);
+    fn add_to_global_namespace(&mut self, name: Box<str>) -> Result<Box<str>> {
+        let table_name = identifier(self.raw_name.clone())?;
 
         // This may report the table_name as invalid multiple times, but this will be removed
         // when we sort and deduplicate the error stream.
-        let (table_name, name) = (table_name, name).combine_errors()?;
         if self.module_validator.stored_in_table_def.contains_key(&name) {
             Err(ValidationError::DuplicateName { name }.into())
         } else {
@@ -721,6 +730,57 @@ impl TableValidator<'_, '_> {
     }
 }
 
+/// Get the name of a column in the typespace.
+///
+/// Only used for generating names for indexes, sequences, and unique constraints.
+///
+/// Generates `col_{column}` if the column has no name or if the `RawTableDef`'s `table_type_ref`
+/// was initialized incorrectly.
+fn column_name(table_type: &ProductType, column: ColId) -> String {
+    table_type
+        .elements
+        .get(column.idx())
+        .and_then(|column| column.name().map(ToString::to_string))
+        .unwrap_or_else(|| format!("col_{}", column.0))
+}
+
+/// Concatenate a list of column names.
+fn concat_column_names(table_type: &ProductType, selected: &ColList) -> String {
+    selected.iter().map(|col| column_name(table_type, col)).join("_")
+}
+
+/// All indexes have this name format.
+pub fn generate_index_name(table_name: &str, table_type: &ProductType, algorithm: &RawIndexAlgorithm) -> RawIdentifier {
+    let (label, columns) = match algorithm {
+        RawIndexAlgorithm::BTree { columns } => ("btree", columns),
+        RawIndexAlgorithm::Hash { columns } => ("hash", columns),
+        _ => unimplemented!("Unknown index algorithm {:?}", algorithm),
+    };
+    let column_names = concat_column_names(table_type, columns);
+    format!("{table_name}_{column_names}_idx_{label}").into()
+}
+
+/// All sequences have this name format.
+pub fn generate_sequence_name(table_name: &str, table_type: &ProductType, column: ColId) -> RawIdentifier {
+    let column_name = column_name(table_type, column);
+    format!("{table_name}_{column_name}_seq").into()
+}
+
+/// All schedules have this name format.
+pub fn generate_schedule_name(table_name: &str) -> RawIdentifier {
+    format!("{table_name}_sched").into()
+}
+
+/// All unique constraints have this name format.
+pub fn generate_unique_constraint_name(
+    table_name: &str,
+    product_type: &ProductType,
+    columns: &ColList,
+) -> RawIdentifier {
+    let column_names = concat_column_names(product_type, columns);
+    format!("{table_name}_{column_names}_key").into()
+}
+
 /// Helper to create an `Identifier` from a `str` with the appropriate error type.
 /// TODO: memoize this.
 fn identifier(name: Box<str>) -> Result<Identifier> {
@@ -769,14 +829,14 @@ mod tests {
         check_product_type, expect_identifier, expect_raw_type_name, expect_resolve, expect_type_name,
     };
     use crate::def::{validate::Result, ModuleDef};
-    use crate::def::{BTreeAlgorithm, ConstraintData, UniqueConstraintData};
+    use crate::def::{BTreeAlgorithm, ConstraintData, ConstraintDef, IndexDef, SequenceDef, UniqueConstraintData};
     use crate::error::*;
     use crate::type_for_generate::ClientCodegenError;
 
     use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::ScheduleAt;
-    use spacetimedb_primitives::{ColId, ColList};
+    use spacetimedb_primitives::{col_list, ColId, ColList};
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType};
     use v9::{Lifecycle, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess, TableType};
 
@@ -814,9 +874,8 @@ mod tests {
                     columns: ColList::from_iter([1, 2]),
                 },
                 "apples_id",
-                Some("Apples_index".into()),
             )
-            .with_unique_constraint(3, Some("Apples_unique_constraint".into()))
+            .with_unique_constraint(3)
             .finish();
 
         builder
@@ -833,17 +892,16 @@ mod tests {
                 ]),
                 false,
             )
-            .with_column_sequence(0, None)
-            .with_unique_constraint(ColId(0), None)
+            .with_column_sequence(0)
+            .with_unique_constraint(ColId(0))
             .with_primary_key(0)
             .with_access(TableAccess::Private)
-            .with_index(RawIndexAlgorithm::BTree { columns: 0.into() }, "bananas_count", None)
+            .with_index(RawIndexAlgorithm::BTree { columns: 0.into() }, "bananas_count")
             .with_index(
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from_iter([0, 1, 2]),
                 },
                 "bananas_count_id_name",
-                None,
             )
             .finish();
 
@@ -858,7 +916,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
-            .with_schedule("check_deliveries", 1, Some("check_deliveries_schedule".into()))
+            .with_schedule("check_deliveries", 1)
             .with_type(TableType::System)
             .finish();
 
@@ -900,15 +958,15 @@ mod tests {
         assert_eq!(apples_def.primary_key, None);
 
         assert_eq!(apples_def.constraints.len(), 1);
-        let apples_unique_constraint = expect_identifier("Apples_unique_constraint");
+        let apples_unique_constraint = "Apples_type_key";
         assert_eq!(
-            apples_def.constraints[&apples_unique_constraint].data,
+            apples_def.constraints[apples_unique_constraint].data,
             ConstraintData::Unique(UniqueConstraintData {
                 columns: ColId(3).into()
             })
         );
         assert_eq!(
-            apples_def.constraints[&apples_unique_constraint].name,
+            &apples_def.constraints[apples_unique_constraint].name[..],
             apples_unique_constraint
         );
 
@@ -916,7 +974,7 @@ mod tests {
         for index in apples_def.indexes.values() {
             match &index.name[..] {
                 // manually added
-                "Apples_index" => {
+                "Apples_name_count_idx_btree" => {
                     assert_eq!(
                         index.algorithm,
                         BTreeAlgorithm {
@@ -1113,14 +1171,13 @@ mod tests {
                     columns: ColList::from_iter([0, 55]),
                 },
                 "bananas_a_b",
-                Some("Bananas_index".into()),
             )
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::ColumnNotFound { table, def, column } => {
             &table[..] == "Bananas" &&
-            &def[..] == "Bananas_index" &&
+            &def[..] == "Bananas_b_col_55_idx_btree" &&
             column == &55.into()
         });
     }
@@ -1134,13 +1191,13 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
             )
-            .with_unique_constraint(ColId(55), Some("Bananas_unique_constraint".into()))
+            .with_unique_constraint(ColId(55))
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::ColumnNotFound { table, def, column } => {
             &table[..] == "Bananas" &&
-            &def[..] == "Bananas_unique_constraint" &&
+            &def[..] == "Bananas_col_55_key" &&
             column == &55.into()
         });
     }
@@ -1155,13 +1212,13 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
             )
-            .with_column_sequence(55, Some("Bananas_sequence".into()))
+            .with_column_sequence(55)
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::ColumnNotFound { table, def, column } => {
             &table[..] == "Bananas" &&
-            &def[..] == "Bananas_sequence" &&
+            &def[..] == "Bananas_col_55_seq" &&
             column == &55.into()
         });
 
@@ -1173,12 +1230,12 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::String)]),
                 false,
             )
-            .with_column_sequence(1, Some("Bananas_sequence".into()))
+            .with_column_sequence(1)
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::InvalidSequenceColumnType { sequence, column, column_type } => {
-            &sequence[..] == "Bananas_sequence" &&
+            &sequence[..] == "Bananas_a_seq" &&
             column == &RawColumnName::new("Bananas", "a") &&
             column_type.0 == AlgebraicType::String
         });
@@ -1197,14 +1254,13 @@ mod tests {
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from_iter([0, 0]),
                 },
-                "bananas_a_b",
-                Some("Bananas_index".into()),
+                "bananas_b_b",
             )
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::DuplicateColumns{ def, columns } => {
-            &def[..] == "Bananas_index" && columns == &ColList::from_iter([0, 0])
+            &def[..] == "Bananas_b_b_idx_btree" && columns == &ColList::from_iter([0, 0])
         });
     }
 
@@ -1217,12 +1273,12 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
             )
-            .with_unique_constraint(ColList::from_iter([1, 1]), Some("Bananas_unique_constraint".into()))
+            .with_unique_constraint(ColList::from_iter([1, 1]))
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::DuplicateColumns{ def, columns } => {
-            &def[..] == "Bananas_unique_constraint" && columns == &ColList::from_iter([1, 1])
+            &def[..] == "Bananas_a_a_key" && columns == &ColList::from_iter([1, 1])
         });
     }
 
@@ -1281,16 +1337,12 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
             )
-            .with_index(
-                RawIndexAlgorithm::Hash { columns: 0.into() },
-                "bananas_b",
-                Some("Bananas_index".into()),
-            )
+            .with_index(RawIndexAlgorithm::Hash { columns: 0.into() }, "bananas_b")
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::OnlyBtree { index } => {
-            &index[..] == "Bananas_index"
+            &index[..] == "Bananas_b_idx_hash"
         });
     }
 
@@ -1303,8 +1355,8 @@ mod tests {
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
             )
-            .with_column_sequence(1, None)
-            .with_column_sequence(1, None)
+            .with_column_sequence(1)
+            .with_column_sequence(1)
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1400,13 +1452,13 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
-            .with_schedule("check_deliveries", 1, Some("check_deliveries_schedule".into()))
+            .with_schedule("check_deliveries", 1)
             .with_type(TableType::System)
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::MissingScheduledReducer { schedule, reducer } => {
-            schedule == &expect_identifier("check_deliveries_schedule") &&
+            &schedule[..] == "Deliveries_sched" &&
             reducer == &expect_identifier("check_deliveries")
         });
     }
@@ -1426,7 +1478,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(2)
-            .with_schedule("check_deliveries", 1, Some("check_deliveries_schedule".into()))
+            .with_schedule("check_deliveries", 1)
             .with_type(TableType::System)
             .finish();
         builder.add_reducer("check_deliveries", ProductType::from([("a", AlgebraicType::U64)]), None);
@@ -1437,5 +1489,52 @@ mod tests {
             expected.0 == AlgebraicType::product([AlgebraicType::Ref(deliveries_product_type)]) &&
             actual.0 == ProductType::from([("a", AlgebraicType::U64)]).into()
         });
+    }
+
+    #[test]
+    fn wacky_names() {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        let schedule_at_type = builder.add_type::<ScheduleAt>();
+
+        let deliveries_product_type = builder
+            .build_table_with_new_type(
+                "Deliveries",
+                ProductType::from([
+                    ("id", AlgebraicType::U64),
+                    ("scheduled_at", schedule_at_type.clone()),
+                    ("scheduled_id", AlgebraicType::U64),
+                ]),
+                true,
+            )
+            .with_auto_inc_primary_key(2)
+            .with_index(
+                RawIndexAlgorithm::BTree {
+                    columns: col_list![0, 2],
+                },
+                "nice_index_name",
+            )
+            .with_schedule("check_deliveries", 1)
+            .with_type(TableType::System)
+            .finish();
+
+        builder.add_reducer(
+            "check_deliveries",
+            ProductType::from([("a", deliveries_product_type.into())]),
+            None,
+        );
+
+        // Our builder methods ignore the possibility of setting names at the moment.
+        // But, it could be done in the future for some reason.
+        // Check if it works.
+        let mut raw_def = builder.finish();
+        raw_def.tables[0].constraints[0].name = Some("wacky.constraint()".into());
+        raw_def.tables[0].indexes[0].name = Some("wacky.index()".into());
+        raw_def.tables[0].sequences[0].name = Some("wacky.sequence()".into());
+
+        let def: ModuleDef = raw_def.try_into().unwrap();
+        assert!(def.lookup::<ConstraintDef>("wacky.constraint()").is_some());
+        assert!(def.lookup::<IndexDef>("wacky.index()").is_some());
+        assert!(def.lookup::<SequenceDef>("wacky.sequence()").is_some());
     }
 }

@@ -135,7 +135,6 @@ pub trait TableInternal: Sized {
 /// Describe a named index with an index type over a set of columns identified by their IDs.
 #[derive(Clone, Copy)]
 pub struct IndexDesc<'a> {
-    pub name: &'a str,
     pub accessor_name: &'a str,
     pub algo: IndexAlgo<'a>,
 }
@@ -260,19 +259,6 @@ impl MaybeError for AutoIncOverflow {
     fn get() -> Option<AutoIncOverflow> {
         Some(AutoIncOverflow)
     }
-}
-
-/// A trait for types exposing an operation to access their `N`th field.
-///
-/// In other words, a type implementing `FieldAccess<N>` allows
-/// shared projection from `self` to its `N`th field.
-#[doc(hidden)]
-pub trait FieldAccess<const N: u16> {
-    /// The type of the field at the `N`th position.
-    type Field;
-
-    /// Project to the value of the field at position `N`.
-    fn get_field(&self) -> &Self::Field;
 }
 
 pub trait Column {

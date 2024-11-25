@@ -20,7 +20,7 @@ fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
         ("z", AlgebraicType::I32),
         ("dimension", AlgebraicType::U32),
     ];
-    let indexes = &[(0.into(), "entity_id"), (1.into(), "chunk_index")];
+    let indexes = &[0.into(), 1.into()];
 
     // Is necessary to test for both single & multi-column indexes...
     db.create_table_for_test_mix_indexes("location", schema, indexes, col_list![2, 3, 4])
@@ -33,7 +33,7 @@ fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
         ("owner_entity_id", AlgebraicType::U64),
         ("type", footprint),
     ];
-    let indexes = &[(0.into(), "entity_id"), (1.into(), "owner_entity_id")];
+    let indexes = &[0.into(), 1.into()];
     db.create_table_for_test("footprint", schema, indexes)
 }
 
