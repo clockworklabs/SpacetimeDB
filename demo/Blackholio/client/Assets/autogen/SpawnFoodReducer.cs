@@ -13,7 +13,5 @@ namespace SpacetimeDB.Types
 	public partial class SpawnFood : IReducerArgs
 	{
 		string IReducerArgs.ReducerName => "spawn_food";
-
-		public SpacetimeDB.Types.SpawnFoodTimer Timer = new();
 	}
 }

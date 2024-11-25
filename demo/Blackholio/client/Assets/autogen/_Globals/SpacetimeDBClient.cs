@@ -374,42 +374,6 @@ namespace SpacetimeDB.Types
 
 		public readonly PlayerHandle Player = new();
 
-		public class SpawnFoodTimerHandle : RemoteTableHandle<EventContext, SpawnFoodTimer>
-		{
-			private static Dictionary<ulong, SpawnFoodTimer> ScheduledId_Index = new(16);
-
-			public override void InternalInvokeValueInserted(IDatabaseRow row)
-			{
-				var value = (SpawnFoodTimer)row;
-				ScheduledId_Index[value.ScheduledId] = value;
-			}
-
-			public override void InternalInvokeValueDeleted(IDatabaseRow row)
-			{
-				ScheduledId_Index.Remove(((SpawnFoodTimer)row).ScheduledId);
-			}
-
-			public readonly ref struct ScheduledIdUniqueIndex
-			{
-				public SpawnFoodTimer? Find(ulong value)
-				{
-					ScheduledId_Index.TryGetValue(value, out var r);
-					return r;
-				}
-
-			}
-
-			public ScheduledIdUniqueIndex ScheduledId => new();
-
-			internal SpawnFoodTimerHandle()
-			{
-			}
-			public override object GetPrimaryKey(IDatabaseRow row) => ((SpawnFoodTimer)row).ScheduledId;
-
-		}
-
-		public readonly SpawnFoodTimerHandle SpawnFoodTimer = new();
-
 	}
 
 	public sealed class RemoteReducers : RemoteBase<DbConnection>
@@ -466,22 +430,6 @@ namespace SpacetimeDB.Types
 			);
 			return true;
 		}
-		public delegate void PlayerSplitHandler(EventContext ctx);
-		public event PlayerSplitHandler? OnPlayerSplit;
-
-		public void PlayerSplit()
-		{
-			conn.InternalCallReducer(new PlayerSplit {  });
-		}
-
-		public bool InvokePlayerSplit(EventContext ctx, PlayerSplit args)
-		{
-			if (OnPlayerSplit == null) return false;
-			OnPlayerSplit(
-				ctx
-			);
-			return true;
-		}
 		public delegate void RespawnHandler(EventContext ctx);
 		public event RespawnHandler? OnRespawn;
 
@@ -498,29 +446,28 @@ namespace SpacetimeDB.Types
 			);
 			return true;
 		}
-		public delegate void SpawnFoodHandler(EventContext ctx, SpacetimeDB.Types.SpawnFoodTimer timer);
+		public delegate void SpawnFoodHandler(EventContext ctx);
 		public event SpawnFoodHandler? OnSpawnFood;
 
-		public void SpawnFood(SpacetimeDB.Types.SpawnFoodTimer timer)
+		public void SpawnFood()
 		{
-			conn.InternalCallReducer(new SpawnFood { Timer = timer });
+			conn.InternalCallReducer(new SpawnFood {  });
 		}
 
 		public bool InvokeSpawnFood(EventContext ctx, SpawnFood args)
 		{
 			if (OnSpawnFood == null) return false;
 			OnSpawnFood(
-				ctx,
-				args.Timer
+				ctx
 			);
 			return true;
 		}
-		public delegate void UpdatePlayerInputHandler(EventContext ctx, SpacetimeDB.Types.Vector2 direction, float magnitude);
+		public delegate void UpdatePlayerInputHandler(EventContext ctx, SpacetimeDB.Types.Vector2 velocity);
 		public event UpdatePlayerInputHandler? OnUpdatePlayerInput;
 
-		public void UpdatePlayerInput(SpacetimeDB.Types.Vector2 direction, float magnitude)
+		public void UpdatePlayerInput(SpacetimeDB.Types.Vector2 velocity)
 		{
-			conn.InternalCallReducer(new UpdatePlayerInput { Direction = direction, Magnitude = magnitude });
+			conn.InternalCallReducer(new UpdatePlayerInput { Velocity = velocity });
 		}
 
 		public bool InvokeUpdatePlayerInput(EventContext ctx, UpdatePlayerInput args)
@@ -528,8 +475,7 @@ namespace SpacetimeDB.Types
 			if (OnUpdatePlayerInput == null) return false;
 			OnUpdatePlayerInput(
 				ctx,
-				args.Direction,
-				args.Magnitude
+				args.Velocity
 			);
 			return true;
 		}
@@ -552,7 +498,6 @@ namespace SpacetimeDB.Types
 		CircleDecay CircleDecay,
 		CreatePlayer CreatePlayer,
 		MoveAllPlayers MoveAllPlayers,
-		PlayerSplit PlayerSplit,
 		Respawn Respawn,
 		SpawnFood SpawnFood,
 		UpdatePlayerInput UpdatePlayerInput,
@@ -578,7 +523,6 @@ namespace SpacetimeDB.Types
 			clientDB.AddTable<LoggedOutPlayer>("logged_out_player", Db.LoggedOutPlayer);
 			clientDB.AddTable<MoveAllPlayersTimer>("move_all_players_timer", Db.MoveAllPlayersTimer);
 			clientDB.AddTable<Player>("player", Db.Player);
-			clientDB.AddTable<SpawnFoodTimer>("spawn_food_timer", Db.SpawnFoodTimer);
 		}
 
 		protected override Reducer ToReducer(TransactionUpdate update)
@@ -588,7 +532,6 @@ namespace SpacetimeDB.Types
 				"circle_decay" => new Reducer.CircleDecay(BSATNHelpers.Decode<CircleDecay>(encodedArgs)),
 				"create_player" => new Reducer.CreatePlayer(BSATNHelpers.Decode<CreatePlayer>(encodedArgs)),
 				"move_all_players" => new Reducer.MoveAllPlayers(BSATNHelpers.Decode<MoveAllPlayers>(encodedArgs)),
-				"player_split" => new Reducer.PlayerSplit(BSATNHelpers.Decode<PlayerSplit>(encodedArgs)),
 				"respawn" => new Reducer.Respawn(BSATNHelpers.Decode<Respawn>(encodedArgs)),
 				"spawn_food" => new Reducer.SpawnFood(BSATNHelpers.Decode<SpawnFood>(encodedArgs)),
 				"update_player_input" => new Reducer.UpdatePlayerInput(BSATNHelpers.Decode<UpdatePlayerInput>(encodedArgs)),
@@ -610,7 +553,6 @@ namespace SpacetimeDB.Types
 				Reducer.CircleDecay(var args) => Reducers.InvokeCircleDecay(eventContext, args),
 				Reducer.CreatePlayer(var args) => Reducers.InvokeCreatePlayer(eventContext, args),
 				Reducer.MoveAllPlayers(var args) => Reducers.InvokeMoveAllPlayers(eventContext, args),
-				Reducer.PlayerSplit(var args) => Reducers.InvokePlayerSplit(eventContext, args),
 				Reducer.Respawn(var args) => Reducers.InvokeRespawn(eventContext, args),
 				Reducer.SpawnFood(var args) => Reducers.InvokeSpawnFood(eventContext, args),
 				Reducer.UpdatePlayerInput(var args) => Reducers.InvokeUpdatePlayerInput(eventContext, args),

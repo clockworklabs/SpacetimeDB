@@ -30,13 +30,10 @@ pub mod logged_out_player_type;
 pub mod move_all_players_reducer;
 pub mod move_all_players_timer_table;
 pub mod move_all_players_timer_type;
-pub mod player_split_reducer;
 pub mod player_table;
 pub mod player_type;
 pub mod respawn_reducer;
 pub mod spawn_food_reducer;
-pub mod spawn_food_timer_table;
-pub mod spawn_food_timer_type;
 pub mod update_player_input_reducer;
 pub mod vector_2_type;
 
@@ -62,13 +59,10 @@ pub use logged_out_player_type::*;
 pub use move_all_players_reducer::*;
 pub use move_all_players_timer_table::*;
 pub use move_all_players_timer_type::*;
-pub use player_split_reducer::*;
 pub use player_table::*;
 pub use player_type::*;
 pub use respawn_reducer::*;
 pub use spawn_food_reducer::*;
-pub use spawn_food_timer_table::*;
-pub use spawn_food_timer_type::*;
 pub use update_player_input_reducer::*;
 pub use vector_2_type::*;
 
@@ -87,7 +81,6 @@ pub enum Reducer {
     CircleDecay(circle_decay_reducer::CircleDecay),
     CreatePlayer(create_player_reducer::CreatePlayer),
     MoveAllPlayers(move_all_players_reducer::MoveAllPlayers),
-    PlayerSplit(player_split_reducer::PlayerSplit),
     Respawn(respawn_reducer::Respawn),
     SpawnFood(spawn_food_reducer::SpawnFood),
     UpdatePlayerInput(update_player_input_reducer::UpdatePlayerInput),
@@ -106,7 +99,6 @@ impl __sdk::spacetime_module::Reducer for Reducer {
             Reducer::CircleDecay(_) => "circle_decay",
             Reducer::CreatePlayer(_) => "create_player",
             Reducer::MoveAllPlayers(_) => "move_all_players",
-            Reducer::PlayerSplit(_) => "player_split",
             Reducer::Respawn(_) => "respawn",
             Reducer::SpawnFood(_) => "spawn_food",
             Reducer::UpdatePlayerInput(_) => "update_player_input",
@@ -120,7 +112,6 @@ impl __sdk::spacetime_module::Reducer for Reducer {
             Reducer::CircleDecay(args) => args,
             Reducer::CreatePlayer(args) => args,
             Reducer::MoveAllPlayers(args) => args,
-            Reducer::PlayerSplit(args) => args,
             Reducer::Respawn(args) => args,
             Reducer::SpawnFood(args) => args,
             Reducer::UpdatePlayerInput(args) => args,
@@ -153,9 +144,6 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "move_all_players" => Ok(Reducer::MoveAllPlayers(
                 __sdk::spacetime_module::parse_reducer_args("move_all_players", &value.args)?,
             )),
-            "player_split" => Ok(Reducer::PlayerSplit(
-                __sdk::spacetime_module::parse_reducer_args("player_split", &value.args)?,
-            )),
             "respawn" => Ok(Reducer::Respawn(
                 __sdk::spacetime_module::parse_reducer_args("respawn", &value.args)?,
             )),
@@ -186,7 +174,6 @@ pub struct DbUpdate {
     logged_out_player: __sdk::spacetime_module::TableUpdate<LoggedOutPlayer>,
     move_all_players_timer: __sdk::spacetime_module::TableUpdate<MoveAllPlayersTimer>,
     player: __sdk::spacetime_module::TableUpdate<Player>,
-    spawn_food_timer: __sdk::spacetime_module::TableUpdate<SpawnFoodTimer>,
 }
 
 impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
@@ -216,10 +203,6 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                         move_all_players_timer_table::parse_table_update(table_update)?
                 }
                 "player" => db_update.player = player_table::parse_table_update(table_update)?,
-                "spawn_food_timer" => {
-                    db_update.spawn_food_timer =
-                        spawn_food_timer_table::parse_table_update(table_update)?
-                }
 
                 unknown => __anyhow::bail!("Unknown table {unknown:?} in DatabaseUpdate"),
             }
@@ -249,7 +232,6 @@ impl __sdk::spacetime_module::DbUpdate for DbUpdate {
             &self.move_all_players_timer,
         );
         cache.apply_diff_to_table::<Player>("player", &self.player);
-        cache.apply_diff_to_table::<SpawnFoodTimer>("spawn_food_timer", &self.spawn_food_timer);
     }
     fn invoke_row_callbacks(
         &self,
@@ -281,11 +263,6 @@ impl __sdk::spacetime_module::DbUpdate for DbUpdate {
             event,
         );
         callbacks.invoke_table_row_callbacks::<Player>("player", &self.player, event);
-        callbacks.invoke_table_row_callbacks::<SpawnFoodTimer>(
-            "spawn_food_timer",
-            &self.spawn_food_timer,
-            event,
-        );
     }
 }
 

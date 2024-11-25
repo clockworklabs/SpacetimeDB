@@ -13,8 +13,7 @@ use super::vector_2_type::Vector2;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct UpdatePlayerInput {
-    pub direction: Vector2,
-    pub magnitude: f32,
+    pub velocity: Vector2,
 }
 
 impl __sdk::spacetime_module::InModule for UpdatePlayerInput {
@@ -33,7 +32,7 @@ pub trait update_player_input {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_update_player_input`] callbacks.
-    fn update_player_input(&self, direction: Vector2, magnitude: f32) -> __anyhow::Result<()>;
+    fn update_player_input(&self, velocity: Vector2) -> __anyhow::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `update_player_input`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -46,7 +45,7 @@ pub trait update_player_input {
     /// to cancel the callback.
     fn on_update_player_input(
         &self,
-        callback: impl FnMut(&super::EventContext, &Vector2, &f32) + Send + 'static,
+        callback: impl FnMut(&super::EventContext, &Vector2) + Send + 'static,
     ) -> UpdatePlayerInputCallbackId;
     /// Cancel a callback previously registered by [`Self::on_update_player_input`],
     /// causing it not to run in the future.
@@ -54,23 +53,18 @@ pub trait update_player_input {
 }
 
 impl update_player_input for super::RemoteReducers {
-    fn update_player_input(&self, direction: Vector2, magnitude: f32) -> __anyhow::Result<()> {
-        self.imp.call_reducer(
-            "update_player_input",
-            UpdatePlayerInput {
-                direction,
-                magnitude,
-            },
-        )
+    fn update_player_input(&self, velocity: Vector2) -> __anyhow::Result<()> {
+        self.imp
+            .call_reducer("update_player_input", UpdatePlayerInput { velocity })
     }
     fn on_update_player_input(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &Vector2, &f32) + Send + 'static,
+        mut callback: impl FnMut(&super::EventContext, &Vector2) + Send + 'static,
     ) -> UpdatePlayerInputCallbackId {
         UpdatePlayerInputCallbackId(self.imp.on_reducer::<UpdatePlayerInput>(
             "update_player_input",
             Box::new(move |ctx: &super::EventContext, args: &UpdatePlayerInput| {
-                callback(ctx, &args.direction, &args.magnitude)
+                callback(ctx, &args.velocity)
             }),
         ))
     }

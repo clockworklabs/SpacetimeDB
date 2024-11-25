@@ -14,7 +14,6 @@ namespace SpacetimeDB.Types
 	{
 		string IReducerArgs.ReducerName => "update_player_input";
 
-		public SpacetimeDB.Types.Vector2 Direction = new();
-		public float Magnitude;
+		public SpacetimeDB.Types.Vector2 Velocity = new();
 	}
 }

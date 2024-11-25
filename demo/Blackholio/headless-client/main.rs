@@ -75,16 +75,16 @@ fn main() -> anyhow::Result<()> {
     conn.reducers.create_player(name.clone())?;
 
     // randomly stagger on the assumption that we're running many clients in parallel
-    std::thread::sleep(std::time::Duration::from_millis((rand::random::<f32>() * 1000.0) as u64));
+//    std::thread::sleep(std::time::Duration::from_millis((rand::random::<f32>() * 1000.0) as u64));
 
     loop {
-        conn.reducers.update_player_input(
-            Vector2 {
-                x: rand::random::<f32>() - 0.5,
-                y: rand::random::<f32>() - 0.5,
-            },
-            1.0
-        )?;
+//        conn.reducers.update_player_input(
+//            Vector2 {
+//                x: rand::random::<f32>() - 0.5,
+//                y: rand::random::<f32>() - 0.5,
+//            },
+//            1.0
+//        )?;
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
     conn.disconnect().unwrap();

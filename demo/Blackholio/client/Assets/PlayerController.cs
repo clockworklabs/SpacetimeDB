@@ -133,11 +133,6 @@ public class PlayerController : MonoBehaviour
 
     public void Update()
     {
-        if (IsLocalPlayer() && Input.GetKeyDown(KeyCode.Space))
-        {
-            GameManager.conn.Reducers.PlayerSplit();
-        }
-
         if (IsLocalPlayer() && previousCameraSize.HasValue)
         {
         }
@@ -166,11 +161,10 @@ public class PlayerController : MonoBehaviour
             y = Screen.height / 2.0f,
         };
         var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
-        var magnitude = Mathf.Clamp01(direction.magnitude);
         GameManager.conn.Reducers.UpdatePlayerInput(new Vector2
         {
             X = direction.x,
             Y = direction.y,
-        }, magnitude);
+        });
     }
 }

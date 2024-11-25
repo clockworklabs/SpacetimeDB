@@ -15,8 +15,7 @@ use super::vector_2_type::Vector2;
 pub struct Circle {
     pub entity_id: u32,
     pub player_id: u32,
-    pub direction: Vector2,
-    pub magnitude: f32,
+    pub velocity: Vector2,
     pub last_split_time: u64,
 }
 

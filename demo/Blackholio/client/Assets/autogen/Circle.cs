@@ -19,31 +19,27 @@ namespace SpacetimeDB.Types
 		public uint EntityId;
 		[DataMember(Name = "player_id")]
 		public uint PlayerId;
-		[DataMember(Name = "direction")]
-		public SpacetimeDB.Types.Vector2 Direction;
-		[DataMember(Name = "magnitude")]
-		public float Magnitude;
+		[DataMember(Name = "velocity")]
+		public SpacetimeDB.Types.Vector2 Velocity;
 		[DataMember(Name = "last_split_time")]
 		public ulong LastSplitTime;
 
 		public Circle(
 			uint EntityId,
 			uint PlayerId,
-			SpacetimeDB.Types.Vector2 Direction,
-			float Magnitude,
+			SpacetimeDB.Types.Vector2 Velocity,
 			ulong LastSplitTime
 		)
 		{
 			this.EntityId = EntityId;
 			this.PlayerId = PlayerId;
-			this.Direction = Direction;
-			this.Magnitude = Magnitude;
+			this.Velocity = Velocity;
 			this.LastSplitTime = LastSplitTime;
 		}
 
 		public Circle()
 		{
-			this.Direction = new();
+			this.Velocity = new();
 		}
 
 	}

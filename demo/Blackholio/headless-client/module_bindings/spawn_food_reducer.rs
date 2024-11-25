@@ -8,13 +8,9 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
-use super::spawn_food_timer_type::SpawnFoodTimer;
-
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct SpawnFood {
-    pub timer: SpawnFoodTimer,
-}
+pub struct SpawnFood {}
 
 impl __sdk::spacetime_module::InModule for SpawnFood {
     type Module = super::RemoteModule;
@@ -32,7 +28,7 @@ pub trait spawn_food {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_spawn_food`] callbacks.
-    fn spawn_food(&self, timer: SpawnFoodTimer) -> __anyhow::Result<()>;
+    fn spawn_food(&self) -> __anyhow::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `spawn_food`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -45,7 +41,7 @@ pub trait spawn_food {
     /// to cancel the callback.
     fn on_spawn_food(
         &self,
-        callback: impl FnMut(&super::EventContext, &SpawnFoodTimer) + Send + 'static,
+        callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> SpawnFoodCallbackId;
     /// Cancel a callback previously registered by [`Self::on_spawn_food`],
     /// causing it not to run in the future.
@@ -53,16 +49,16 @@ pub trait spawn_food {
 }
 
 impl spawn_food for super::RemoteReducers {
-    fn spawn_food(&self, timer: SpawnFoodTimer) -> __anyhow::Result<()> {
-        self.imp.call_reducer("spawn_food", SpawnFood { timer })
+    fn spawn_food(&self) -> __anyhow::Result<()> {
+        self.imp.call_reducer("spawn_food", SpawnFood {})
     }
     fn on_spawn_food(
         &self,
-        mut callback: impl FnMut(&super::EventContext, &SpawnFoodTimer) + Send + 'static,
+        mut callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> SpawnFoodCallbackId {
         SpawnFoodCallbackId(self.imp.on_reducer::<SpawnFood>(
             "spawn_food",
-            Box::new(move |ctx: &super::EventContext, args: &SpawnFood| callback(ctx, &args.timer)),
+            Box::new(move |ctx: &super::EventContext, args: &SpawnFood| callback(ctx)),
         ))
     }
     fn remove_on_spawn_food(&self, callback: SpawnFoodCallbackId) {
