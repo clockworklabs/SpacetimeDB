@@ -37,12 +37,41 @@ struct ClientInfo {
     legacy_subscriptions: HashSet<QueryHash>,
 }
 
+impl ClientInfo {
+    fn new(outbound_ref: Client) -> Self {
+        Self {
+            outbound_ref,
+            subscriptions: HashMap::default(),
+            query_hash_to_subscriptions: HashMap::default(),
+            legacy_subscriptions: HashSet::default(),
+        }
+    }
+}
 
 #[derive(Debug)]
 struct QueryState {
     query: Query,
     legacy_subscribers: HashSet<ClientId>,
     subscriptions: HashSet<SubscriptionId>,
+}
+
+impl QueryState {
+    fn new(query: Query) -> Self {
+        Self {
+            query,
+            legacy_subscribers: HashSet::default(),
+            subscriptions: HashSet::default(),
+        }
+    }
+    fn has_subscribers(&self) -> bool {
+        !self.subscriptions.is_empty() || !self.legacy_subscribers.is_empty()
+    }
+
+    fn all_clients(&self) -> impl Iterator<Item = &ClientId> {
+        let legacy_iter = self.legacy_subscribers.iter();
+        let subscriptions_iter = self.subscriptions.iter().map(|(client_id, _)| client_id);
+        legacy_iter.chain(subscriptions_iter)
+    }
 }
 
 /// Responsible for the efficient evaluation of subscriptions.
@@ -52,30 +81,28 @@ struct QueryState {
 /// with the results copied to the N receivers.
 #[derive(Debug, Default)]
 pub struct SubscriptionManager {
-    // Subscriber identities and their client connections.
-    clients: HashMap<ClientId, Client>,
-
+    // State for each client.
     clients2: HashMap<ClientId, ClientInfo>,
 
-    
     // Queries for which there is at least one subscriber.
-    queries2: HashMap<QueryHash, QueryState>,
+    queries: HashMap<QueryHash, QueryState>,
 
-    // Queries for which there is at least one subscriber.
-    queries: HashMap<QueryHash, Query>,
     // The subscribers for each query.
     subscribers: HashMap<QueryHash, HashSet<ClientId>>,
+
     // Inverted index from tables to queries that read from them.
     tables: IntMap<TableId, HashSet<QueryHash>>,
 }
 
 impl SubscriptionManager {
     pub fn client(&self, id: &ClientId) -> Client {
-        self.clients[id].clone()
+        self.clients2[id].outbound_ref.clone()
+        //self.clients[id].clone()
     }
 
     pub fn query(&self, hash: &QueryHash) -> Option<Query> {
-        self.queries.get(hash).cloned()
+        self.queries.get(hash).map(|state| state.query.clone())
+        // self.queries.get(hash).cloned()
     }
 
     pub fn num_queries(&self) -> usize {
@@ -88,8 +115,10 @@ impl SubscriptionManager {
     }
 
     #[cfg(test)]
-    fn contains_subscription(&self, subscriber: &ClientId, query: &QueryHash) -> bool {
-        self.subscribers.get(query).is_some_and(|ids| ids.contains(subscriber))
+    fn contains_legacy_subscription(&self, subscriber: &ClientId, query: &QueryHash) -> bool {
+        self.queries
+            .get(query)
+            .is_some_and(|state| state.legacy_subscribers.contains(subscriber))
     }
 
     #[cfg(test)]
@@ -97,39 +126,84 @@ impl SubscriptionManager {
         self.tables.get(table).is_some_and(|queries| queries.contains(query))
     }
 
+    fn remove_legacy_subscriptions(&mut self, client: &ClientId) {
+        if let Some(ci) = self.clients2.get_mut(client) {
+            let mut queries_to_remove = Vec::new();
+            for mut query_hash in ci.legacy_subscriptions.iter() {
+                let query_state = self.queries.get_mut(query_hash);
+                if query_state.is_none() {
+                    tracing::warn!("Query state not found for query hash: {:?}", query_hash);
+                    continue;
+                }
+                let mut query_state = query_state.unwrap();
+                query_state.legacy_subscribers.remove(client);
+                if !query_state.has_subscribers() {
+                    SubscriptionManager::remove_table_query(
+                        &mut self.tables,
+                        query_state.query.return_table(),
+                        query_hash,
+                    );
+                    SubscriptionManager::remove_table_query(
+                        &mut self.tables,
+                        query_state.query.filter_table(),
+                        query_hash,
+                    );
+                    queries_to_remove.push(query_hash.clone());
+                }
+            }
+            ci.legacy_subscriptions.clear();
+            for query_hash in queries_to_remove {
+                self.queries.remove(&query_hash);
+            }
+        }
+    }
+
     /// Adds a client and its queries to the subscription manager.
     /// Sets up the set of subscriptions for the client, replacing any existing legacy subscriptions.
-    /// 
+    ///
     /// If a query is not already indexed,
     /// its table ids added to the inverted index.
-    #[tracing::instrument(skip_all)]
-    pub fn set_legacy_subscription(&mut self, client: Client, queries: impl IntoIterator<Item = Query>) -> Result<(), SubscriptionError> {
+    // #[tracing::instrument(skip_all)]
+    pub fn set_legacy_subscription(
+        &mut self,
+        client: Client,
+        queries: impl IntoIterator<Item = Query>,
+    ) -> Result<(), SubscriptionError> {
         // TODO: Remove existing subscriptions.
-        let id = (client.id.identity, client.id.address);
-        self.clients.insert(id, client);
+        let client_id = (client.id.identity, client.id.address);
+        // First, remove any existing legacy subscriptions.
+        self.remove_legacy_subscriptions(&client_id);
+
+        // Now, add the new subscriptions.
+        let mut ci = self
+            .clients2
+            .entry(client_id)
+            .or_insert_with(|| ClientInfo::new(client.clone()));
         for unit in queries {
             let hash = unit.hash();
+            ci.legacy_subscriptions.insert(hash);
+            let query_state = self
+                .queries
+                .entry(hash)
+                .or_insert_with(|| QueryState::new(unit.clone()));
             self.tables.entry(unit.return_table()).or_default().insert(hash);
             self.tables.entry(unit.filter_table()).or_default().insert(hash);
-            self.subscribers.entry(hash).or_default().insert(id);
-            self.queries.insert(hash, unit);
+            query_state.legacy_subscribers.insert(client_id);
+            // self.subscribers.entry(hash).or_default().insert(id);
+            // self.queries.insert(hash, unit);
         }
         Ok(())
     }
 
-    /// Adds a client and its queries to the subscription manager.
-    /// If a query is not already indexed,
-    /// its table ids added to the inverted index.
-    #[tracing::instrument(skip_all)]
-    pub fn add_subscription(&mut self, client: Client, queries: impl IntoIterator<Item = Query>) {
-        let id = (client.id.identity, client.id.address);
-        self.clients.insert(id, client);
-        for unit in queries {
-            let hash = unit.hash();
-            self.tables.entry(unit.return_table()).or_default().insert(hash);
-            self.tables.entry(unit.filter_table()).or_default().insert(hash);
-            self.subscribers.entry(hash).or_default().insert(id);
-            self.queries.insert(hash, unit);
+    // Remove `hash` from the set of queries for `table_id`.
+    // When the table has no queries, cleanup the map entry altogether.
+    // This takes a ref to the table map instead of `self` to avoid borrowing issues.
+    fn remove_table_query(tables: &mut IntMap<TableId, HashSet<QueryHash>>, table_id: TableId, hash: &QueryHash) {
+        if let Entry::Occupied(mut entry) = tables.entry(table_id) {
+            let hashes = entry.get_mut();
+            if hashes.remove(hash) && hashes.is_empty() {
+                entry.remove();
+            }
         }
     }
 
@@ -138,29 +212,62 @@ impl SubscriptionManager {
     /// it is removed from the index along with its table ids.
     #[tracing::instrument(skip_all)]
     pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
-        // Remove `hash` from the set of queries for `table_id`.
-        // When the table has no queries, cleanup the map entry altogether.
-        let mut remove_table_query = |table_id: TableId, hash: &QueryHash| {
-            if let Entry::Occupied(mut entry) = self.tables.entry(table_id) {
-                let hashes = entry.get_mut();
-                if hashes.remove(hash) && hashes.is_empty() {
-                    entry.remove();
-                }
+        self.remove_legacy_subscriptions(client);
+        let client_info = self.clients2.get(client);
+        if client_info.is_none() {
+            return;
+        }
+        let client_info = client_info.unwrap();
+        debug_assert!(client_info.legacy_subscriptions.is_empty());
+        let mut queries_to_remove = Vec::new();
+        client_info.subscriptions.iter().for_each(|(sub_id, query_hash)| {
+            let query_state = self.queries.get_mut(query_hash);
+            if query_state.is_none() {
+                tracing::warn!("Query state not found for query hash: {:?}", query_hash);
+                return;
             }
-        };
-
-        self.clients.remove(client);
-        self.subscribers.retain(|hash, ids| {
-            ids.remove(client);
-            if ids.is_empty() {
-                if let Some(query) = self.queries.remove(hash) {
-                    remove_table_query(query.return_table(), hash);
-                    remove_table_query(query.filter_table(), hash);
-                }
+            let query_state = query_state.unwrap();
+            query_state.subscriptions.remove(sub_id);
+            // This could happen twice for the same hash if a client has a duplicate, but that's fine. It is idepotent.
+            if !query_state.has_subscribers() {
+                queries_to_remove.push(query_hash.clone());
+                SubscriptionManager::remove_table_query(&mut self.tables, query_state.query.return_table(), query_hash);
+                SubscriptionManager::remove_table_query(&mut self.tables, query_state.query.filter_table(), query_hash);
             }
-            !ids.is_empty()
         });
+        for query_hash in queries_to_remove {
+            self.queries.remove(&query_hash);
+        }
     }
+
+    // /// Removes a client from the subscriber mapping.
+    // /// If a query no longer has any subscribers,
+    // /// it is removed from the index along with its table ids.
+    // #[tracing::instrument(skip_all)]
+    // pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
+    //     // Remove `hash` from the set of queries for `table_id`.
+    //     // When the table has no queries, cleanup the map entry altogether.
+    //     let mut remove_table_query = |table_id: TableId, hash: &QueryHash| {
+    //         if let Entry::Occupied(mut entry) = self.tables.entry(table_id) {
+    //             let hashes = entry.get_mut();
+    //             if hashes.remove(hash) && hashes.is_empty() {
+    //                 entry.remove();
+    //             }
+    //         }
+    //     };
+
+    //     self.clients.remove(client);
+    //     self.subscribers.retain(|hash, ids| {
+    //         ids.remove(client);
+    //         if ids.is_empty() {
+    //             if let Some(query) = self.queries.remove(hash) {
+    //                 remove_table_query(query.return_table(), hash);
+    //                 remove_table_query(query.filter_table(), hash);
+    //             }
+    //         }
+    //         !ids.is_empty()
+    //     });
+    // }
 
     /// This method takes a set of delta tables,
     /// evaluates only the necessary queries for those delta tables,
@@ -197,7 +304,8 @@ impl SubscriptionManager {
             let mut eval = units
                 .par_iter()
                 .filter_map(|(&hash, tables)| {
-                    let unit = self.queries.get(hash)?;
+                    let unit = &self.queries.get(hash)?.query;
+                    // let unit = self.queries.get(hash)?;
                     unit.eval_incr(db, tx, &unit.sql, tables.iter().copied(), slow_query_threshold)
                         .map(|table| (hash, table))
                 })
@@ -226,14 +334,22 @@ impl SubscriptionManager {
                             .clone()
                     }
 
-                    self.subscribers.get(hash).into_iter().flatten().map(move |id| {
-                        let client = &*self.clients[id];
-                        let update = match client.config.protocol {
-                            Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(&delta.updates, client, &mut ops_bin)),
-                            Protocol::Text => Json(memo_encode::<JsonFormat>(&delta.updates, client, &mut ops_json)),
-                        };
-                        (id, table_id, table_name.clone(), update)
-                    })
+                    self.queries
+                        .get(hash)
+                        .into_iter()
+                        .flat_map(|query| query.all_clients())
+                        .map(move |id| {
+                            let client = &self.clients2[id].outbound_ref;
+                            let update = match client.config.protocol {
+                                Protocol::Binary => {
+                                    Bsatn(memo_encode::<BsatnFormat>(&delta.updates, client, &mut ops_bin))
+                                }
+                                Protocol::Text => {
+                                    Json(memo_encode::<JsonFormat>(&delta.updates, client, &mut ops_json))
+                                }
+                            };
+                            (id, table_id, table_name.clone(), update)
+                        })
                 })
                 .collect::<Vec<_>>()
                 .into_iter()
@@ -392,10 +508,10 @@ mod tests {
         let client = Arc::new(client(0));
 
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client, [plan]);
+        subscriptions.set_legacy_subscription(client.clone(), [plan.clone()])?;
 
         assert!(subscriptions.contains_query(&hash));
-        assert!(subscriptions.contains_subscription(&id, &hash));
+        assert!(subscriptions.contains_legacy_subscription(&id, &hash));
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
         Ok(())
@@ -414,11 +530,11 @@ mod tests {
         let client = Arc::new(client(0));
 
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client, [plan]);
+        subscriptions.set_legacy_subscription(client, [plan]);
         subscriptions.remove_all_subscriptions(&id);
 
         assert!(!subscriptions.contains_query(&hash));
-        assert!(!subscriptions.contains_subscription(&id, &hash));
+        assert!(!subscriptions.contains_legacy_subscription(&id, &hash));
         assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
 
         Ok(())
@@ -437,17 +553,17 @@ mod tests {
         let client = Arc::new(client(0));
 
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client.clone(), [plan.clone()]);
-        subscriptions.add_subscription(client.clone(), [plan.clone()]);
+        subscriptions.set_legacy_subscription(client.clone(), [plan.clone()]);
+        subscriptions.set_legacy_subscription(client.clone(), [plan.clone()]);
 
         assert!(subscriptions.contains_query(&hash));
-        assert!(subscriptions.contains_subscription(&id, &hash));
+        assert!(subscriptions.contains_legacy_subscription(&id, &hash));
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
         subscriptions.remove_all_subscriptions(&id);
 
         assert!(!subscriptions.contains_query(&hash));
-        assert!(!subscriptions.contains_subscription(&id, &hash));
+        assert!(!subscriptions.contains_legacy_subscription(&id, &hash));
         assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
 
         Ok(())
@@ -469,21 +585,21 @@ mod tests {
         let client1 = Arc::new(client(1));
 
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client0, [plan.clone()]);
-        subscriptions.add_subscription(client1, [plan.clone()]);
+        subscriptions.set_legacy_subscription(client0, [plan.clone()]);
+        subscriptions.set_legacy_subscription(client1, [plan.clone()]);
 
         assert!(subscriptions.contains_query(&hash));
-        assert!(subscriptions.contains_subscription(&id0, &hash));
-        assert!(subscriptions.contains_subscription(&id1, &hash));
+        assert!(subscriptions.contains_legacy_subscription(&id0, &hash));
+        assert!(subscriptions.contains_legacy_subscription(&id1, &hash));
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
         subscriptions.remove_all_subscriptions(&id0);
 
         assert!(subscriptions.contains_query(&hash));
-        assert!(subscriptions.contains_subscription(&id1, &hash));
+        assert!(subscriptions.contains_legacy_subscription(&id1, &hash));
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
-        assert!(!subscriptions.contains_subscription(&id0, &hash));
+        assert!(!subscriptions.contains_legacy_subscription(&id0, &hash));
 
         Ok(())
     }
@@ -514,18 +630,18 @@ mod tests {
         let client1 = Arc::new(client(1));
 
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client0, [plan_scan.clone(), plan_select0.clone()]);
-        subscriptions.add_subscription(client1, [plan_scan.clone(), plan_select1.clone()]);
+        subscriptions.set_legacy_subscription(client0, [plan_scan.clone(), plan_select0.clone()]);
+        subscriptions.set_legacy_subscription(client1, [plan_scan.clone(), plan_select1.clone()]);
 
         assert!(subscriptions.contains_query(&hash_scan));
         assert!(subscriptions.contains_query(&hash_select0));
         assert!(subscriptions.contains_query(&hash_select1));
 
-        assert!(subscriptions.contains_subscription(&id0, &hash_scan));
-        assert!(subscriptions.contains_subscription(&id0, &hash_select0));
+        assert!(subscriptions.contains_legacy_subscription(&id0, &hash_scan));
+        assert!(subscriptions.contains_legacy_subscription(&id0, &hash_select0));
 
-        assert!(subscriptions.contains_subscription(&id1, &hash_scan));
-        assert!(subscriptions.contains_subscription(&id1, &hash_select1));
+        assert!(subscriptions.contains_legacy_subscription(&id1, &hash_scan));
+        assert!(subscriptions.contains_legacy_subscription(&id1, &hash_select1));
 
         assert!(subscriptions.query_reads_from_table(&hash_scan, &t));
         assert!(subscriptions.query_reads_from_table(&hash_select0, &t));
@@ -541,11 +657,11 @@ mod tests {
         assert!(subscriptions.contains_query(&hash_select1));
         assert!(!subscriptions.contains_query(&hash_select0));
 
-        assert!(subscriptions.contains_subscription(&id1, &hash_scan));
-        assert!(subscriptions.contains_subscription(&id1, &hash_select1));
+        assert!(subscriptions.contains_legacy_subscription(&id1, &hash_scan));
+        assert!(subscriptions.contains_legacy_subscription(&id1, &hash_select1));
 
-        assert!(!subscriptions.contains_subscription(&id0, &hash_scan));
-        assert!(!subscriptions.contains_subscription(&id0, &hash_select0));
+        assert!(!subscriptions.contains_legacy_subscription(&id0, &hash_scan));
+        assert!(!subscriptions.contains_legacy_subscription(&id0, &hash_select0));
 
         assert!(subscriptions.query_reads_from_table(&hash_scan, &t));
         assert!(subscriptions.query_reads_from_table(&hash_select1, &s));
