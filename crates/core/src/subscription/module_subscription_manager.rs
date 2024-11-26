@@ -2,7 +2,6 @@ use super::execution_unit::{ExecutionUnit, QueryHash};
 use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
 use crate::db::relational_db::{RelationalDB, Tx};
-use crate::error::SubscriptionError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use arrayvec::ArrayVec;
@@ -129,13 +128,13 @@ impl SubscriptionManager {
     fn remove_legacy_subscriptions(&mut self, client: &ClientId) {
         if let Some(ci) = self.clients2.get_mut(client) {
             let mut queries_to_remove = Vec::new();
-            for mut query_hash in ci.legacy_subscriptions.iter() {
+            for query_hash in ci.legacy_subscriptions.iter() {
                 let query_state = self.queries.get_mut(query_hash);
                 if query_state.is_none() {
                     tracing::warn!("Query state not found for query hash: {:?}", query_hash);
                     continue;
                 }
-                let mut query_state = query_state.unwrap();
+                let query_state = query_state.unwrap();
                 query_state.legacy_subscribers.remove(client);
                 if !query_state.has_subscribers() {
                     SubscriptionManager::remove_table_query(
@@ -148,7 +147,7 @@ impl SubscriptionManager {
                         query_state.query.filter_table(),
                         query_hash,
                     );
-                    queries_to_remove.push(query_hash.clone());
+                    queries_to_remove.push(*query_hash);
                 }
             }
             ci.legacy_subscriptions.clear();
@@ -168,14 +167,14 @@ impl SubscriptionManager {
         &mut self,
         client: Client,
         queries: impl IntoIterator<Item = Query>,
-    ) -> Result<(), SubscriptionError> {
+    ) {
         // TODO: Remove existing subscriptions.
         let client_id = (client.id.identity, client.id.address);
         // First, remove any existing legacy subscriptions.
         self.remove_legacy_subscriptions(&client_id);
 
         // Now, add the new subscriptions.
-        let mut ci = self
+        let ci = self
             .clients2
             .entry(client_id)
             .or_insert_with(|| ClientInfo::new(client.clone()));
@@ -192,7 +191,6 @@ impl SubscriptionManager {
             // self.subscribers.entry(hash).or_default().insert(id);
             // self.queries.insert(hash, unit);
         }
-        Ok(())
     }
 
     // Remove `hash` from the set of queries for `table_id`.
@@ -230,7 +228,7 @@ impl SubscriptionManager {
             query_state.subscriptions.remove(sub_id);
             // This could happen twice for the same hash if a client has a duplicate, but that's fine. It is idepotent.
             if !query_state.has_subscribers() {
-                queries_to_remove.push(query_hash.clone());
+                queries_to_remove.push(*query_hash);
                 SubscriptionManager::remove_table_query(&mut self.tables, query_state.query.return_table(), query_hash);
                 SubscriptionManager::remove_table_query(&mut self.tables, query_state.query.filter_table(), query_hash);
             }
@@ -508,7 +506,7 @@ mod tests {
         let client = Arc::new(client(0));
 
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.set_legacy_subscription(client.clone(), [plan.clone()])?;
+        subscriptions.set_legacy_subscription(client.clone(), [plan.clone()]);
 
         assert!(subscriptions.contains_query(&hash));
         assert!(subscriptions.contains_legacy_subscription(&id, &hash));
