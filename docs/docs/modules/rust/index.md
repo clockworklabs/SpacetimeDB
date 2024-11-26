@@ -168,8 +168,8 @@ struct Person {
 You can create multiple tables backed by items of the same type by applying it with different names. For example, to store active and archived posts separately and with different privacy rules, you can declare two tables like this:
 
 ```rust
-#[table(name = posts, public)]
-#[table(name = archived_posts)]
+#[table(name = post, public)]
+#[table(name = archived_post)]
 struct Post {
     title: String,
     body: String,
