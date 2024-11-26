@@ -17,24 +17,16 @@ namespace SpacetimeDB.Types
 	{
 		[DataMember(Name = "entity_id")]
 		public uint EntityId;
-		[DataMember(Name = "player_id")]
-		public uint PlayerId;
 		[DataMember(Name = "velocity")]
 		public SpacetimeDB.Types.Vector2 Velocity;
-		[DataMember(Name = "last_split_time")]
-		public ulong LastSplitTime;
 
 		public Circle(
 			uint EntityId,
-			uint PlayerId,
-			SpacetimeDB.Types.Vector2 Velocity,
-			ulong LastSplitTime
+			SpacetimeDB.Types.Vector2 Velocity
 		)
 		{
 			this.EntityId = EntityId;
-			this.PlayerId = PlayerId;
 			this.Velocity = Velocity;
-			this.LastSplitTime = LastSplitTime;
 		}
 
 		public Circle()

@@ -30,9 +30,7 @@ public class CircleController : MonoBehaviour
 
     public void Spawn(Circle circle)
     {
-        var player = GameManager.conn.Db.Player.PlayerId.Find(circle.PlayerId);
         entityId = circle.EntityId;
-        playerIdentity = player.Identity;
 
         var entity = GameManager.conn.Db.Entity.Id.Find(circle.EntityId);
         targetPosition = positionLerp1 = positionLerp2 = transform.position = new UnityEngine.Vector2
@@ -49,7 +47,6 @@ public class CircleController : MonoBehaviour
             z = playerRadius * 2,
         };
         rend.material.SetColor(MainTexProperty, GameManager.GetRandomColor(entity.Id));
-        usernameDisplay.text = player.Name;
     }
 
     public uint GetEntityId() => entityId;

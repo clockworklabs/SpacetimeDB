@@ -14,20 +14,11 @@ public class PlayerController : MonoBehaviour
     public float targetCameraSize = 50;
     public int updatesPerSecond = 20;
 
-    private Identity identity;
-    private uint playerId;
     private float? previousCameraSize;
     private float? lastMovementSendUpdate;
-    public static PlayerController Local;
 
-    public void Spawn(Identity identity)
+    public void Spawn()
     {
-        this.identity = identity;
-        playerId = GameManager.conn.Db.Player.Identity.Find(identity)!.PlayerId;
-        if (IsLocalPlayer())
-        {
-            Local = this;
-        }
     }
 
     private void OnDestroy()
@@ -56,12 +47,6 @@ public class PlayerController : MonoBehaviour
             circlesByEntityId.Remove(deletedCircle.EntityId);
             // If the local player died, show the death screen
             circle.Despawn();
-        }
-
-        // If the player has no more circles remaining, show the death screen
-        if (IsLocalPlayer() && GameManager.conn.Db.Circle.EntityId.Find(playerId) == null)
-        {
-            GameManager.instance.deathScreen.SetActive(true);
         }
     }
 
@@ -95,19 +80,10 @@ public class PlayerController : MonoBehaviour
         return mass;
     }
 
-    public string GetUsername() => GameManager.conn.Db.Player.Identity.Find(identity)!.Name;
-
     private void OnGUI()
     {
-        if (!IsLocalPlayer())
-        {
-            return;
-        }
-
         //GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
     }
-
-    public bool IsLocalPlayer() => GameManager.localIdentity != null && identity == GameManager.localIdentity;
 
     public UnityEngine.Vector2? CenterOfMass()
     {
@@ -133,38 +109,6 @@ public class PlayerController : MonoBehaviour
 
     public void Update()
     {
-        if (IsLocalPlayer() && previousCameraSize.HasValue)
-        {
-        }
-
-        if (!IsLocalPlayer() ||
-            (lastMovementSendUpdate.HasValue && Time.time - lastMovementSendUpdate.Value < 1.0f / updatesPerSecond))
-        {
-            return;
-        }
-
         lastMovementSendUpdate = Time.time;
-
-        var mousePosition = new UnityEngine.Vector2
-        {
-            x = Input.mousePosition.x,
-            y = Input.mousePosition.y,
-        };
-        var screenSize = new UnityEngine.Vector2
-        {
-            x = Screen.width,
-            y = Screen.height,
-        };
-        var centerOfScreen = new UnityEngine.Vector2
-        {
-            x = Screen.width / 2.0f,
-            y = Screen.height / 2.0f,
-        };
-        var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
-        GameManager.conn.Reducers.UpdatePlayerInput(new Vector2
-        {
-            X = direction.x,
-            Y = direction.y,
-        });
     }
 }

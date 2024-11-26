@@ -1,5 +1,5 @@
 use rand::Rng;
-use spacetimedb::{spacetimedb_lib::ScheduleAt, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
+use spacetimedb::{spacetimedb_lib::ScheduleAt, ReducerContext, SpacetimeType, Table};
 use spacetimedb::log;
 use std::time::Duration;
 
@@ -10,10 +10,6 @@ use std::time::Duration;
 // - [ ] Viruses
 // - [ ] Ejecting mass
 // - [ ] Leaderboard
-
-const TARGET_FOOD_COUNT: usize = 0;
-const MINIMUM_SAFE_MASS_RATIO: f32 = 0.85;
-const EATING_ENABLED: bool = true;
 
 #[spacetimedb::table(name = config, public)]
 pub struct Config {
@@ -35,44 +31,7 @@ pub struct Entity {
 pub struct Circle {
     #[primary_key]
     pub entity_id: u32,
-    #[index(btree)]
-    pub player_id: u32,
     pub velocity: Vector2,
-    pub last_split_time: Timestamp,
-}
-
-#[spacetimedb::table(name = player, public)]
-pub struct Player {
-    #[primary_key]
-    identity: Identity,
-    #[unique]
-    #[auto_inc]
-    player_id: u32,
-    name: String,
-}
-
-#[spacetimedb::table(name = logged_out_player, public)]
-pub struct LoggedOutPlayer {
-    #[primary_key]
-    identity: Identity,
-    player: Player,
-}
-
-#[spacetimedb::table(name = logged_out_circle, public)]
-pub struct LoggedOutCircle {
-    #[auto_inc]
-    #[primary_key]
-    logged_out_id: u32,
-    #[index(btree)]
-    player_id: u32,
-    circle: Circle,
-    entity: Entity,
-}
-
-#[spacetimedb::table(name = food, public)]
-pub struct Food {
-    #[primary_key]
-    pub entity_id: u32,
 }
 
 #[derive(SpacetimeType, Debug, Clone, Copy)]
@@ -83,9 +42,6 @@ pub struct Vector2 {
 
 #[spacetimedb::table(name = move_all_players_timer, scheduled(move_all_players))]
 pub struct MoveAllPlayersTimer {}
-
-#[spacetimedb::table(name = circle_decay_timer, scheduled(circle_decay))]
-pub struct CircleDecayTimer {}
 
 impl Vector2 {
     // Function to normalize the vector
@@ -102,92 +58,33 @@ impl Vector2 {
 const START_PLAYER_MASS_MIN: u32 = 20;
 const START_PLAYER_MASS_MAX: u32 = 1000;
 const START_PLAYER_SPEED: u32 = 20;
-const FOOD_MASS_MIN: u32 = 2;
-const FOOD_MASS_MAX: u32 = 3;
+const CIRCLE_COUNT: u32 = 300;
 
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Initializing...");
     ctx.db.config().try_insert(Config { id: 0, world_size: 2000 })?;
-    ctx.db.circle_decay_timer().try_insert(CircleDecayTimer {
-        scheduled_id: 0,
-        scheduled_at: ScheduleAt::Interval(Duration::from_secs(5).as_micros() as u64),
-    })?;
-    spawn_food(ctx)?;
     ctx.db.move_all_players_timer().try_insert(MoveAllPlayersTimer {
         scheduled_id: 0,
         scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).as_micros() as u64),
     })?;
-    Ok(())
-}
-
-#[spacetimedb::reducer(client_disconnected)]
-pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("Player not found")?;
-    for circle in ctx.db.circle().player_id().filter(&player.player_id) {
-        let entity = ctx.db.entity().id().find(&circle.entity_id).ok_or("Could not find circle")?;
-        ctx.db.entity().id().delete(&entity.id);
-        ctx.db.circle().entity_id().delete(&entity.id);
-        ctx.db.logged_out_circle().try_insert(LoggedOutCircle {
-            logged_out_id: 0,
-            player_id: player.player_id,
-            circle,
-            entity,
-        })?;
+    for _ in 0..CIRCLE_COUNT {
+        spawn_circle(ctx)?;
     }
-    ctx.db.logged_out_player().insert(LoggedOutPlayer {
-        identity: player.identity,
-        player,
-    });
-    ctx.db.player().identity().delete(&ctx.sender);
-
     Ok(())
 }
 
-#[spacetimedb::reducer(client_connected)]
-pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx.db.logged_out_player().identity().find(&ctx.sender).ok_or("No player for identity.")?;
-    for logged_out_circle in ctx.db.logged_out_circle().player_id().filter(&player.player.player_id) {
-        ctx.db.circle().try_insert(logged_out_circle.circle)?;
-        ctx.db.entity().try_insert(logged_out_circle.entity)?;
-        ctx.db.logged_out_circle().logged_out_id().delete(&logged_out_circle.logged_out_id);
-    }
-    ctx.db.player().insert(player.player);
-    Ok(())
-}
-
-#[spacetimedb::reducer]
-pub fn create_player(ctx: &ReducerContext, name: String) -> Result<(), String> {
-    log::info!("Creating player with name {}", name);
-    let player = ctx.db.player().try_insert(Player {
-        identity: ctx.sender,
-        player_id: 0,
-        name,
-    })?;
-    spawn_circle(ctx, player.player_id, ctx.timestamp)?;
-
-    Ok(())
-}
-
-#[spacetimedb::reducer]
-pub fn respawn(ctx: &ReducerContext) -> Result<(), String> {
-
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("No such player found")?;
-    spawn_circle(ctx, player.player_id, ctx.timestamp)?;
-    Ok(())
-}
-
-fn spawn_circle(ctx: &ReducerContext, player_id: u32, current_time: Timestamp) -> Result<Entity, String> {
+fn spawn_circle(ctx: &ReducerContext) -> Result<Entity, String> {
     let mut rng = ctx.rng();
     let world_size = ctx.db.config().id().find(&0).ok_or("Config not found")?.world_size;
     let mass = rng.gen_range(START_PLAYER_MASS_MIN..START_PLAYER_MASS_MAX);
     let player_start_radius = mass_to_radius(mass);
     let x = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
     let y = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
-    spawn_circle_at(ctx, player_id, mass, x, y, current_time)
+    spawn_circle_at(ctx, mass, x, y)
 }
 
-fn spawn_circle_at(ctx: &ReducerContext, player_id: u32, mass: u32, x: f32, y: f32, current_time: Timestamp) -> Result<Entity, String> {
+fn spawn_circle_at(ctx: &ReducerContext, mass: u32, x: f32, y: f32) -> Result<Entity, String> {
     let entity = ctx.db.entity().try_insert(Entity {
         id: 0,
         position: Vector2 { x, y },
@@ -198,37 +95,12 @@ fn spawn_circle_at(ctx: &ReducerContext, player_id: u32, mass: u32, x: f32, y: f
 
     ctx.db.circle().try_insert(Circle {
         entity_id: entity.id,
-        player_id,
         velocity: Vector2 {
             x: rng.gen_range(-(START_PLAYER_SPEED as i32)..(START_PLAYER_SPEED as i32)) as f32,
             y: rng.gen_range(-(START_PLAYER_SPEED as i32)..(START_PLAYER_SPEED as i32)) as f32,
         },
-        last_split_time: current_time
     })?;
     Ok(entity)
-}
-
-#[spacetimedb::reducer]
-pub fn update_player_input(ctx: &ReducerContext,
-                           velocity: Vector2) -> Result<(), String> {
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("Player not found")?;
-    for mut circle in ctx.db.circle().player_id().filter(&player.player_id) {
-        circle.velocity = velocity;
-        ctx.db.circle().entity_id().update(circle);
-    }
-    Ok(())
-}
-
-fn is_overlapping(a: &Entity, b: &Entity) -> bool {
-    let dx = a.position.x - b.position.x;
-    let dy = a.position.y - b.position.y;
-    let distance_sq = dx * dx + dy * dy;
-
-    let radius_a = mass_to_radius(a.mass);
-    let radius_b = mass_to_radius(b.mass);
-    let radius_sum = radius_a + radius_b;
-
-    distance_sq <= radius_sum * radius_sum
 }
 
 fn mass_to_radius(mass: u32) -> f32 {
@@ -316,36 +188,5 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
     }
 
 //    span.end();
-    Ok(())
-}
-
-#[spacetimedb::reducer]
-pub fn spawn_food(ctx: &ReducerContext) -> Result<(), String> {
-    // Is there too much food already? Are there no players yet?
-    let mut food_count = ctx.db.food().count();
-    let player_count = ctx.db.player().count();
-
-    while food_count < TARGET_FOOD_COUNT as u64 {
-        let mut rng = ctx.rng();
-        let food_mass = rng.gen_range(FOOD_MASS_MIN..FOOD_MASS_MAX);
-        let world_size = ctx.db.config().id().find(0).ok_or("Config not found")?.world_size;
-        let food_radius = mass_to_radius(food_mass);
-        let x = rng.gen_range(food_radius..world_size as f32 - food_radius);
-        let y = rng.gen_range(food_radius..world_size as f32 - food_radius);
-        let entity = ctx.db.entity().try_insert(Entity {
-            id: 0,
-            position: Vector2 { x, y },
-            mass: food_mass
-        })?;
-        ctx.db.food().try_insert(Food { entity_id: entity.id })?;
-        food_count += 1;
-        log::info!("Spawned food! {}", entity.id);
-    }
-
-    Ok(())
-}
-
-#[spacetimedb::reducer]
-pub fn circle_decay(ctx: &ReducerContext, _timer: CircleDecayTimer) -> Result<(), String> {
     Ok(())
 }

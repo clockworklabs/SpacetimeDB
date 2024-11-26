@@ -11,9 +11,8 @@ using Random = UnityEngine.Random;
 public class GameManager : MonoBehaviour
 {
     public CircleController circlePrefab;
-    public FoodController foodPrefab;
-    public GameObject deathScreen;
     public PlayerController playerPrefab;
+    public GameObject deathScreen;
 
     public static Color[] colorPalette = new[]
     {
@@ -54,9 +53,6 @@ public class GameManager : MonoBehaviour
             conn.Db.Circle.OnInsert += CircleOnInsert;
             conn.Db.Circle.OnDelete += CircleOnDelete;
             conn.Db.Entity.OnUpdate += EntityOnUpdate;
-            conn.Db.Food.OnInsert += FoodOnInsert;
-            conn.Db.Player.OnInsert += PlayerOnInsert;
-            conn.Db.Player.OnDelete += PlayerOnDelete;
 
             // Request all tables
             conn.SubscriptionBuilder().OnApplied(ctx =>
@@ -87,23 +83,6 @@ public class GameManager : MonoBehaviour
         Debug.LogError("There was an error!");
     }
 
-    private void PlayerOnDelete(EventContext context, Player deletedvalue)
-    {
-        if (playerIdToPlayerController.TryGetValue(deletedvalue.PlayerId, out var playerController))
-        {
-            Destroy(playerController.gameObject);
-        }
-    }
-
-    private void PlayerOnInsert(EventContext context, Player insertedPlayer)
-    {
-        if (insertedPlayer.Identity == localIdentity && !conn.Db.Circle.PlayerId.Filter(insertedPlayer.PlayerId).Any())
-        {
-            // We have a player, but no circle, let's respawn
-            Respawn();
-        }
-    }
-
     private void EntityOnUpdate(EventContext context, Entity oldEntity, Entity newEntity)
     {
         var circle = conn.Db.Circle.EntityId.Find(newEntity.Id);
@@ -112,43 +91,34 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        var player = GetOrCreatePlayer(circle.PlayerId);
+        var player = GetOrCreatePlayer(circle.EntityId);
         player.CircleUpdate(oldEntity, newEntity);
     }
 
     private void CircleOnDelete(EventContext context, Circle deletedCircle)
     {
-        var player = GetOrCreatePlayer(deletedCircle.PlayerId);
+        var player = GetOrCreatePlayer(deletedCircle.EntityId);
         player.DespawnCircle(deletedCircle);
     }
 
     private void CircleOnInsert(EventContext context, Circle insertedValue)
     {
-        var player = GetOrCreatePlayer(insertedValue.PlayerId);
+        var player = GetOrCreatePlayer(insertedValue.EntityId);
         // Spawn the new circle
         player.SpawnCircle(insertedValue, circlePrefab);
     }
 
     PlayerController GetOrCreatePlayer(uint playerId)
     {
-        var player = conn.Db.Player.PlayerId.Find(playerId);
         // Get the PlayerController for this circle
         if (!playerIdToPlayerController.TryGetValue(playerId, out var playerController))
         {
             playerController = Instantiate(playerPrefab);
-            playerController.name = "PlayerController - " + player.Name;
             playerIdToPlayerController[playerId] = playerController;
-            playerController.Spawn(player.Identity);
+            playerController.Spawn();
         }
 
         return playerController;
-    }
-
-    private void FoodOnInsert(EventContext context, Food insertedValue)
-    {
-        // Spawn the new food
-        var food = Instantiate(foodPrefab);
-        food.Spawn(insertedValue.EntityId);
     }
 
     public static Color GetRandomColor(uint entityId)
@@ -159,12 +129,6 @@ public class GameManager : MonoBehaviour
     public static float MassToRadius(uint mass)
     {
         return Mathf.Sqrt(mass);
-    }
-
-    public void Respawn()
-    {
-        deathScreen.SetActive(false);
-        conn.Reducers.Respawn();
     }
 
     public void Update()
