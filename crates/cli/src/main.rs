@@ -1,3 +1,5 @@
+use std::process::ExitCode;
+
 use clap::{Arg, Command};
 use mimalloc::MiMalloc;
 use spacetimedb_cli::*;
@@ -8,7 +10,7 @@ use spacetimedb_paths::{RootDir, SpacetimePaths};
 static GLOBAL: MiMalloc = MiMalloc;
 
 #[tokio::main]
-async fn main() -> Result<(), anyhow::Error> {
+async fn main() -> anyhow::Result<ExitCode> {
     // Compute matches before loading the config, because `Config` has an observable `drop` method
     // (which deletes a lockfile),
     // and Clap calls `exit` on parse failure rather than panicing, so destructors never run.
@@ -25,9 +27,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .unwrap_or_else(|| paths.cli_config_dir.cli_toml());
     let config = Config::load(cli_toml)?;
 
-    exec_subcommand(config, &paths, cmd, subcommand_args).await?;
-
-    Ok(())
+    exec_subcommand(config, &paths, cmd, subcommand_args).await
 }
 
 fn get_command() -> Command {
