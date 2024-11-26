@@ -1,20 +1,21 @@
+use std::borrow::BorrowMut;
 use std::path::{Path, PathBuf};
 
-pub(crate) trait PathBufExt {
-    fn joined<P: AsRef<Path>>(self, path: P) -> Self;
-    fn joined_int<I: itoa::Integer>(self, path_seg: I) -> Self;
-}
-
-impl PathBufExt for PathBuf {
+pub(crate) trait PathBufExt: BorrowMut<PathBuf> + Sized {
     fn joined<P: AsRef<Path>>(mut self, path: P) -> Self {
-        self.push(path);
+        self.borrow_mut().push(path);
         self
     }
-
+    fn with_exe_ext(mut self) -> Self {
+        self.borrow_mut().set_extension(std::env::consts::EXE_EXTENSION);
+        self
+    }
     fn joined_int<I: itoa::Integer>(self, path_seg: I) -> Self {
         self.joined(itoa::Buffer::new().format(path_seg))
     }
 }
+
+impl PathBufExt for PathBuf {}
 
 /// Declares a new strongly-typed path newtype.
 ///
@@ -37,8 +38,15 @@ macro_rules! path_type {
         pub struct $name(pub std::path::PathBuf);
 
         impl AsRef<std::path::Path> for $name {
+            #[inline]
             fn as_ref(&self) -> &std::path::Path {
                 &self.0
+            }
+        }
+        impl AsRef<std::ffi::OsStr> for $name {
+            #[inline]
+            fn as_ref(&self) -> &std::ffi::OsStr {
+                self.0.as_ref()
             }
         }
 

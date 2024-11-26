@@ -4775,7 +4775,6 @@ dependencies = [
  "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-schema",
- "spacetimedb-standalone",
  "spacetimedb-testing",
  "syntect",
  "tabled",
@@ -5121,6 +5120,7 @@ dependencies = [
  "dirs",
  "fs2",
  "itoa",
+ "semver",
  "serde",
  "tempfile",
  "thiserror",
@@ -5347,6 +5347,16 @@ dependencies = [
  "tempfile",
  "tokio",
  "wasmbin",
+]
+
+[[package]]
+name = "spacetimedb-update"
+version = "1.0.0-rc2"
+dependencies = [
+ "anyhow",
+ "clap 4.5.20",
+ "semver",
+ "spacetimedb-paths",
 ]
 
 [[package]]
