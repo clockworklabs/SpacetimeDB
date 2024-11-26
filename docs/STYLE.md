@@ -93,6 +93,18 @@ Use first-person pronouns sparingly to draw attention to non-technical informati
 
 > We don't recommend that you use the `ArrayList` class for new development. Instead, we recommend that you use the generic `List<T>` class.
 
+#### *Usually* Avoid Passive Voice
+
+Use active voice rather than passive voice to avoid ambiguity regarding who is doing the action. Active voice directly attributes actions to the subject, making sentences easier to understand. For example:
+
+- Passive voice: "The method was invoked."
+- Active voice: "The user invoked the method."
+
+The second example is more straightforward and clarifies who is performing the action. In most cases, prefer using the active voice to maintain a clear and direct explanation of code behavior.
+
+However, passive voice may be appropriate in certain contexts where the actor is either unknown or irrelevant. In these cases, the emphasis is placed on the action or result rather than the subject performing it. For example:
+
+- "The `Dispose` method is called automatically when the object is garbage collected."
 ### Tables and links
 
 Each reference page should have one or more two-column tables, where the left column are namespace-qualified names or signatures, and the right column are one-sentence descriptions. Headers are optional. If the table contains multiple different kinds of items (e.g. types and functions), the left column should include the kind as a suffix. [For example](https://learn.microsoft.com/en-us/dotnet/api/?view=net-8.0):
