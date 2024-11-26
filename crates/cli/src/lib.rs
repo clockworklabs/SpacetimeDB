@@ -1,6 +1,7 @@
 pub mod api;
 mod common_args;
 mod config;
+pub(crate) mod detect;
 mod edit_distance;
 mod errors;
 mod subcommands;
