@@ -256,8 +256,8 @@ public partial struct Person
 You can create multiple tables backed by items of the same type by applying it with different names. For example, to store active and archived posts separately and with different privacy rules, you can declare two tables like this:
 
 ```csharp
-[SpacetimeDB.Table(Name = "posts", Public = true)]
-[SpacetimeDB.Table(Name = "archived_posts", Public = false)]
+[SpacetimeDB.Table(Name = "Posts", Public = true)]
+[SpacetimeDB.Table(Name = "ArchivedPosts", Public = false)]
 public partial struct Post {
     public string Title;
     public string Body;
