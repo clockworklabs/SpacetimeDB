@@ -210,7 +210,11 @@ If a documentation page ends up with more than 3 layers of nested items, split i
 
 ### Grammars and syntax
 
-TODO: Figure out the best way to format grammars. What's in the SQL ref looks good. Find out how we made the flow chart graphics, and encourage using those.
+Reference documents, particularly for SQL or our serialization formats, will sometimes need to specify grammars. Before doing this, be sure you need to, as a grammar specification is scary and confusing to even moderately technical readers. If you're describing data that obeys some other language that readers will be familiar with, write a definition in or suited to that language instead of defining the grammar. For example, when describing a JSON encoding, consider writing a TypeScript-style type instead of a grammar.
+
+If you really do need to describe a grammar, write an EBNF description inside a triple-backticks code block with the `ebnf` language marker. (I assume that any grammar we need to describe will be context-free.) Start with the "topmost" or "entry" nonterminal, i.e. the syntactic construction that we actually want to parse, and work "downward" towards the terminals. For example, when describing SQL, `statement` is at the top, and `literal` and `ident` are at or near the bottom. You don't have to include trivial rules like those for literals.
+
+Then, write a whole bunch of examples under a subheader "Examples" in another tripple-backtick code block, this one with an appropriate language marker for what you're describing. Include at least one simple example and at least one complicated example. Try to include examples which exercise all of the features your grammar can express.
 
 ## Overview pages
 
