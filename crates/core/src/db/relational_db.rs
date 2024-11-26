@@ -1178,10 +1178,10 @@ struct LockFile {
 impl LockFile {
     pub fn lock(root: &ReplicaDir) -> Result<Self, DBError> {
         root.create()?;
-        let path = root.as_ref().join("db.lock");
+        let path = root.0.join("db.lock");
         let lock = File::create(&path)?;
         lock.try_lock_exclusive()
-            .map_err(|e| DatabaseError::DatabasedOpened(root.as_ref().to_path_buf(), e.into()))?;
+            .map_err(|e| DatabaseError::DatabasedOpened(root.0.clone(), e.into()))?;
 
         Ok(Self {
             path: path.into(),
