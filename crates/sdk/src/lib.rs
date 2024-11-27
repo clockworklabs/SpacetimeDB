@@ -63,4 +63,5 @@ pub mod unstable {
     //!
     //! These may change incompatibly without a major version bump.
     pub use crate::db_connection::set_client_address;
+    pub use spacetimedb_client_api_messages::websocket::CallReducerFlags;
 }

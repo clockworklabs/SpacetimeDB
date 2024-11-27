@@ -2044,9 +2044,9 @@ pub(super) fn parse_table_update(
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct RepeatingTestArg {
-	pub prev_time: u64,
 	pub scheduled_id: u64,
 	pub scheduled_at: __sdk::ScheduleAt,
+	pub prev_time: u64,
 }
 
 

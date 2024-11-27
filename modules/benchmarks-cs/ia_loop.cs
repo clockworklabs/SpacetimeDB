@@ -134,7 +134,7 @@ public static partial class ia_loop
     }
 
     [SpacetimeDB.Reducer]
-    public static void InsertBulkPosition(ReducerContext ctx, uint count)
+    public static void insert_bulk_position(ReducerContext ctx, uint count)
     {
         for (uint id = 0; id < count; id++)
         {
@@ -144,7 +144,7 @@ public static partial class ia_loop
     }
 
     [SpacetimeDB.Reducer]
-    public static void InsertBulkVelocity(ReducerContext ctx, uint count)
+    public static void insert_bulk_velocity(ReducerContext ctx, uint count)
     {
         for (uint id = 0; id < count; id++)
         {
@@ -292,7 +292,7 @@ public static partial class ia_loop
             ?? throw new Exception("GameMobileEntityState Entity ID not found");
         mobile_entity.location_x += 1;
         mobile_entity.location_y += 1;
-        mobile_entity.timestamp = MomentMilliseconds();
+        mobile_entity.timestamp = agent.next_action_timestamp;
 
         ctx.Db.game_enemy_ai_agent_state.entity_id.Update(agent);
 
@@ -334,11 +334,6 @@ public static partial class ia_loop
 
         foreach (GameEnemyAiAgentState agent in ctx.Db.game_enemy_ai_agent_state.Iter())
         {
-            if (agent.next_action_timestamp > current_time_ms)
-            {
-                continue;
-            }
-
             GameTargetableState agent_targetable =
                 ctx.Db.game_targetable_state.entity_id.Find(agent.entity_id)
                 ?? throw new Exception("No TargetableState for AgentState entity");
@@ -364,8 +359,8 @@ public static partial class ia_loop
     {
         Load load = new(initial_load);
 
-        InsertBulkPosition(ctx, load.biggest_table);
-        InsertBulkVelocity(ctx, load.big_table);
+        insert_bulk_position(ctx, load.biggest_table);
+        insert_bulk_velocity(ctx, load.big_table);
         update_position_all(ctx, load.biggest_table);
         update_position_with_velocity(ctx, load.big_table);
 
