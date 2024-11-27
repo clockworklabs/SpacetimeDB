@@ -2165,9 +2165,9 @@ import {
   deepEqual,
 } from "@clockworklabs/spacetimedb-sdk";
 export type RepeatingTestArg = {
-  prevTime: bigint,
   scheduledId: bigint,
   scheduledAt: { tag: "Interval", value: bigint } | { tag: "Time", value: bigint },
+  prevTime: bigint,
 };
 
 /**
@@ -2180,9 +2180,9 @@ export namespace RepeatingTestArg {
   */
   export function getTypeScriptAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement("prevTime", AlgebraicType.createU64Type()),
       new ProductTypeElement("scheduledId", AlgebraicType.createU64Type()),
       new ProductTypeElement("scheduledAt", AlgebraicType.createScheduleAtType()),
+      new ProductTypeElement("prevTime", AlgebraicType.createU64Type()),
     ]);
   }
 

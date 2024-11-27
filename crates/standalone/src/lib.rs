@@ -11,23 +11,20 @@ use anyhow::{ensure, Context};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use energy_monitor::StandaloneEnergyMonitor;
-use openssl::ec::{EcGroup, EcKey};
-use openssl::nid::Nid;
-use openssl::pkey::PKey;
-use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
+use spacetimedb::config::{CertificateAuthority, MetadataFile};
+use spacetimedb::db::relational_db::{self, Durability, Txdata};
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
+use spacetimedb::host::{DiskStorage, DurabilityProvider, ExternalDurability, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
-use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
-use spacetimedb_client_api::auth::LOCALHOST;
+use spacetimedb_client_api::auth::{self, LOCALHOST};
+use spacetimedb_client_api::{Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
-use std::fs::File;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
+use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use std::sync::Arc;
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
@@ -37,26 +34,51 @@ pub struct StandaloneEnv {
     program_store: Arc<DiskStorage>,
     host_controller: HostController,
     client_actor_index: ClientActorIndex,
-    public_key: DecodingKey,
-    private_key: EncodingKey,
-    public_key_bytes: Box<[u8]>,
     metrics_registry: prometheus::Registry,
+    _pid_file: PidFile,
+    auth_provider: auth::DefaultJwtAuthProvider,
 }
 
 impl StandaloneEnv {
-    pub async fn init(config: Config) -> anyhow::Result<Arc<Self>> {
-        let control_db = ControlDb::new().context("failed to initialize control db")?;
-        let energy_monitor = Arc::new(StandaloneEnergyMonitor::new(control_db.clone()));
-        let program_store = Arc::new(DiskStorage::new(stdb_path("control_node/program_bytes")).await?);
+    pub async fn init(
+        config: Config,
+        certs: &CertificateAuthority,
+        data_dir: Arc<ServerDataDir>,
+    ) -> anyhow::Result<Arc<Self>> {
+        let _pid_file = data_dir.pid_file()?;
+        let meta_path = data_dir.metadata_toml();
+        let meta = MetadataFile {
+            version: spacetimedb::config::current_version(),
+            edition: "standalone".to_owned(),
+            client_address: None,
+        };
+        if let Some(existing_meta) = MetadataFile::read(&meta_path).context("failed reading metadata.toml")? {
+            anyhow::ensure!(
+                existing_meta.version_compatible_with(&meta.version) && existing_meta.edition == meta.edition,
+                "metadata.toml indicates that this database is from an incompatible \
+                 version of SpacetimeDB. please run a migration before proceeding."
+            );
+        }
+        meta.write(&meta_path).context("failed writing metadata.toml")?;
 
+        let control_db = ControlDb::new(&data_dir.control_db()).context("failed to initialize control db")?;
+        let energy_monitor = Arc::new(StandaloneEnergyMonitor::new(control_db.clone()));
+        let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
+
+        let durability_provider = Arc::new(StandaloneDurabilityProvider {
+            data_dir: data_dir.clone(),
+        });
         let host_controller = HostController::new(
-            stdb_path("worker_node/replicas").into(),
+            data_dir,
             config,
             program_store.clone(),
             energy_monitor,
+            durability_provider,
         );
         let client_actor_index = ClientActorIndex::new();
-        let (public_key, private_key, public_key_bytes) = get_or_create_keys()?;
+        let jwt_keys = certs.get_or_create_keys()?;
+
+        let auth_env = auth::default_auth_environment(jwt_keys, LOCALHOST.to_owned());
 
         let metrics_registry = prometheus::Registry::new();
         metrics_registry.register(Box::new(&*WORKER_METRICS)).unwrap();
@@ -67,113 +89,68 @@ impl StandaloneEnv {
             program_store,
             host_controller,
             client_actor_index,
-            public_key,
-            private_key,
-            public_key_bytes,
             metrics_registry,
+            _pid_file,
+            auth_provider: auth_env,
         }))
     }
+
+    pub fn data_dir(&self) -> &Arc<ServerDataDir> {
+        &self.host_controller.data_dir
+    }
 }
 
-fn get_or_create_keys() -> anyhow::Result<(DecodingKey, EncodingKey, Box<[u8]>)> {
-    let public_key_path =
-        get_key_path("SPACETIMEDB_JWT_PUB_KEY").expect("SPACETIMEDB_JWT_PUB_KEY must be set to a valid path");
-    let private_key_path =
-        get_key_path("SPACETIMEDB_JWT_PRIV_KEY").expect("SPACETIMEDB_JWT_PRIV_KEY must be set to a valid path");
-
-    let mut public_key_bytes = read_key(&public_key_path).ok();
-    let mut private_key_bytes = read_key(&private_key_path).ok();
-
-    // If both keys are unspecified, create them
-    if public_key_bytes.is_none() && private_key_bytes.is_none() {
-        create_keys(&public_key_path, &private_key_path)?;
-        public_key_bytes = Some(read_key(&public_key_path)?);
-        private_key_bytes = Some(read_key(&private_key_path)?);
-    }
-
-    if public_key_bytes.is_none() {
-        anyhow::bail!("Unable to read public key for JWT token verification");
-    }
-
-    if private_key_bytes.is_none() {
-        anyhow::bail!("Unable to read private key for JWT token signing");
-    }
-
-    let public_key_bytes = Box::<[u8]>::from(public_key_bytes.unwrap());
-
-    let encoding_key = EncodingKey::from_ec_pem(&private_key_bytes.unwrap())?;
-    let decoding_key = DecodingKey::from_ec_pem(&public_key_bytes)?;
-
-    Ok((decoding_key, encoding_key, public_key_bytes))
+struct StandaloneDurabilityProvider {
+    data_dir: Arc<ServerDataDir>,
 }
 
-fn read_key(path: &Path) -> anyhow::Result<Vec<u8>> {
-    std::fs::read(path).with_context(|| format!("couldn't read key from {path:?}"))
-}
-
-fn create_keys(public_key_path: &Path, private_key_path: &Path) -> anyhow::Result<()> {
-    // Create a new EC group from a named curve.
-    let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)?;
-
-    // Create a new EC key with the specified group.
-    let eckey = EcKey::generate(&group)?;
-
-    // Create a new PKey from the EC key.
-    let pkey = PKey::from_ec_key(eckey.clone())?;
-
-    // Get the private key in PKCS#8 PEM format.
-    let private_key = pkey.private_key_to_pem_pkcs8()?;
-
-    // Write the private key to a file.
-    if let Some(parent) = private_key_path.parent() {
-        std::fs::create_dir_all(parent)?;
+#[async_trait]
+impl DurabilityProvider for StandaloneDurabilityProvider {
+    async fn durability(&self, replica_id: u64) -> anyhow::Result<ExternalDurability> {
+        let commitlog_dir = self.data_dir.replica(replica_id).commit_log();
+        relational_db::local_durability(commitlog_dir)
+            .await
+            .map(|(durability, disk_size)| (durability as Arc<dyn Durability<TxData = Txdata>>, disk_size))
+            .map_err(Into::into)
     }
-    let mut priv_file = File::create(private_key_path)?;
-    priv_file.write_all(&private_key)?;
-
-    // Get the public key in PEM format.
-    let public_key = eckey.public_key_to_pem()?;
-
-    // Write the public key to a file.
-    if let Some(parent) = public_key_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut pub_file = File::create(public_key_path)?;
-    pub_file.write_all(&public_key)?;
-    Ok(())
 }
 
-fn get_key_path(env: &str) -> Option<PathBuf> {
-    std::env::var_os(env).map(std::path::PathBuf::from)
-}
-
-impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
+#[async_trait]
+impl NodeDelegate for StandaloneEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         self.metrics_registry.gather()
-    }
-
-    fn host_controller(&self) -> &HostController {
-        &self.host_controller
     }
 
     fn client_actor_index(&self) -> &ClientActorIndex {
         &self.client_actor_index
     }
 
-    fn public_key(&self) -> &DecodingKey {
-        &self.public_key
+    type JwtAuthProviderT = auth::DefaultJwtAuthProvider;
+
+    fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT {
+        &self.auth_provider
     }
 
-    fn local_issuer(&self) -> String {
-        LOCALHOST.to_owned()
-    }
+    async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>> {
+        let leader = match self.control_db.get_leader_replica_by_database(database_id) {
+            Some(leader) => leader,
+            None => return Ok(None),
+        };
 
-    fn public_key_bytes(&self) -> &[u8] {
-        &self.public_key_bytes
-    }
+        let database = self
+            .control_db
+            .get_database_by_id(database_id)?
+            .with_context(|| format!("Database {} not found", database_id))?;
 
-    fn private_key(&self) -> &EncodingKey {
-        &self.private_key
+        self.host_controller
+            .get_or_launch_module_host(database, leader.id)
+            .await
+            .context("failed to get or launch module host")?;
+
+        Ok(Some(Host::new(leader.id, self.host_controller.clone())))
+    }
+    fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
+        self.data_dir().replica(replica_id).module_logs()
     }
 }
 
@@ -223,7 +200,6 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
         self.control_db.get_leader_replica_by_database(database_id)
     }
-
     // Energy
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
         Ok(self.control_db.get_energy_balance(identity)?)
@@ -279,18 +255,17 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 let database_id = database.id;
                 let database_identity = database.database_identity;
 
+                let num_replicas = spec.num_replicas;
                 let leader = self
-                    .control_db
-                    .get_leader_replica_by_database(database_id)
-                    .with_context(|| format!("Not found: leader instance for database `{}`", database_identity))?;
-                let update_result = self
-                    .host_controller
-                    .update_module_host(database, spec.host_type, leader.id, spec.program_bytes.into())
+                    .leader(database_id)
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
+                let update_result = leader
+                    .update(database, spec.host_type, spec.program_bytes.into())
                     .await?;
-
                 if update_result.was_successful() {
                     let replicas = self.control_db.get_replicas_by_database(database_id)?;
-                    let desired_replicas = spec.num_replicas as usize;
+                    let desired_replicas = num_replicas as usize;
                     if desired_replicas == 0 {
                         log::info!("Decommissioning all replicas of database {}", database_identity);
                         for instance in replicas {
@@ -434,10 +409,7 @@ impl StandaloneEnv {
                         instance.database_id, instance.id
                     )
                 })?;
-            self.host_controller
-                .get_or_launch_module_host(database, instance.id)
-                .await
-                .map(drop)?
+            self.leader(database.id).await?;
         }
 
         Ok(())
@@ -466,7 +438,7 @@ fn withdraw_energy(control_db: &ControlDb, identity: &Identity, amount: EnergyQu
 
 pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
-        "start" => start::exec(args).await,
+        "start" => start::exec(None, args).await,
         "version" => version::exec(args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
@@ -474,4 +446,45 @@ pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow:
 
 pub fn get_subcommands() -> Vec<Command> {
     vec![start::cli(ProgramMode::Standalone), version::cli()]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+    use spacetimedb::db::Storage;
+    use spacetimedb_paths::{cli::*, FromPathUnchecked};
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn ensure_init_grabs_lock() -> Result<()> {
+        let tempdir = TempDir::new()?;
+        // Use one subdir for keys and another for the data dir.
+        let keys = tempdir.path().join("keys");
+        let root = tempdir.path().join("data");
+        let data_dir = Arc::new(ServerDataDir::from_path_unchecked(root));
+
+        fs::create_dir(&keys)?;
+        data_dir.create()?;
+
+        let pub_key = PubKeyPath(keys.join("public"));
+        let priv_key = PrivKeyPath(keys.join("private"));
+        let ca = CertificateAuthority {
+            jwt_pub_key_path: pub_key,
+            jwt_priv_key_path: priv_key,
+        };
+
+        // Create the keys.
+        ca.get_or_create_keys()?;
+        let config = Config {
+            storage: Storage::Memory,
+        };
+
+        let _env = StandaloneEnv::init(config, &ca, data_dir.clone()).await?;
+        // Ensure that we have a lock.
+        assert!(StandaloneEnv::init(config, &ca, data_dir.clone()).await.is_err());
+
+        Ok(())
+    }
 }

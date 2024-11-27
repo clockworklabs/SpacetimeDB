@@ -66,13 +66,13 @@ partial struct BTreeViews : SpacetimeDB.Internal.ITable<BTreeViews>
                     Indexes:
                     [
                         new(
-                            "bt_BTreeViews_Location",
+                            "BTreeViews_X_Y_idx_btree",
                             false,
                             SpacetimeDB.Internal.IndexType.BTree,
                             [1, 2]
                         ),
                         new(
-                            "bt_BTreeViews_Faction",
+                            "BTreeViews_Faction_idx_btree",
                             false,
                             SpacetimeDB.Internal.IndexType.BTree,
                             [3]

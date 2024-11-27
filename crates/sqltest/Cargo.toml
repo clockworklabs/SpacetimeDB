@@ -3,6 +3,7 @@ name = "sqltest"
 version.workspace = true
 edition.workspace = true
 description = "Sql integration test for SpacetimeDB"
+license-file = "LICENSE"
 
 [dependencies]
 spacetimedb-lib.workspace = true
