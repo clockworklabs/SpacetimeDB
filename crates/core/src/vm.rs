@@ -436,7 +436,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
 
         let table_access = query.source.table_access();
-        tracing::trace!(table = query.source.table_name());
+        tracing::trace!(table = &**query.source.table_name());
 
         let head = query.head().clone();
         let rows = build_query(self.db, self.tx, query, &mut |id| {

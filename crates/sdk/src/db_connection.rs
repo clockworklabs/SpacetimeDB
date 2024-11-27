@@ -21,19 +21,20 @@
 use crate::{
     callbacks::{CallbackId, DbCallbacks, ReducerCallback, ReducerCallbacks, RowCallback, UpdateCallback},
     client_cache::{ClientCache, ClientCacheView, TableCache, UniqueConstraint},
-    spacetime_module::{DbConnection, DbUpdate, EventContext, InModule, SpacetimeModule},
+    spacetime_module::{DbConnection, DbUpdate, EventContext, InModule, Reducer as _, SpacetimeModule},
     subscription::{OnAppliedCallback, OnErrorCallback, SubscriptionManager},
     websocket::{WsConnection, WsParams},
     ws_messages as ws, Event, ReducerEvent, Status,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use bytes::Bytes;
 use futures::StreamExt;
 use futures_channel::mpsc;
 use http::Uri;
 use spacetimedb_client_api_messages::websocket::{BsatnFormat, CallReducerFlags, Compression};
-use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
 use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address, Identity};
+use spacetimedb_primitives::{ReducerId, TableId};
 use std::{
     sync::{Arc, Mutex as StdMutex, OnceLock},
     time::{Duration, SystemTime},
@@ -109,10 +110,17 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             }
 
             // Initial `IdentityToken` message:
-            // confirm that the received identity and address are what we expect,
-            // store them,
+            // 1. confirm that the received identity and address are what we expect and store them,
+            // 2. construct the mappings between ids and names for tables and reducers.
             // then invoke the on_connect callback.
-            ParsedMessage::IdentityToken(identity, token, addr) => {
+            ParsedMessage::AfterConnecting(
+                ws::IdentityToken {
+                    address,
+                    identity,
+                    token,
+                },
+                ids_to_names,
+            ) => {
                 {
                     // Don't hold the `self.identity` lock while running callbacks.
                     // Callbacks can (will) call [`DbContext::identity`], which acquires that lock,
@@ -123,12 +131,40 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     }
                     *ident_store = Some(identity);
                 }
-                assert_eq!(get_client_address(), addr);
+                assert_eq!(get_client_address(), address);
                 let mut inner = self.inner.lock().unwrap();
+
+                // Handle the `ids_to_names` mappings.
+                inner.reducer_name_to_id = M::Reducer::reducer_names()
+                    .iter()
+                    .copied()
+                    .zip(ids_to_names.reducer_ids.iter().copied())
+                    .collect();
+                // Validate thats reducer and table names for which we have bindings are ⊆ actual ones.
+                // We do not check strict equality as that would preclude sdk users from deleting bindings.
+                // These are `O(n)` checks, but it is only done once per connection for a small set.
+                let check_subset = |got: &[Arc<_>], need: &[&_]| {
+                    let got = got.iter().map(|g| &**g).collect::<HashSet<_>>();
+                    need.iter().all(|n| got.contains(n))
+                };
+                anyhow::ensure!(
+                    check_subset(&ids_to_names.reducer_names, M::Reducer::reducer_names()),
+                    "Missing reducer bindings. Expected reducer names must be ⊆ actual ones",
+                );
+                anyhow::ensure!(
+                    check_subset(&ids_to_names.table_names, M::DbUpdate::table_names()),
+                    "Missing table bindings. Expected table names must be ⊆ actual ones",
+                );
+
+                // Fire the `on_connect` callback, if any.
                 if let Some(on_connect) = inner.on_connect.take() {
                     let ctx = <M::DbConnection as DbConnection>::new(self.clone());
                     on_connect(&ctx, identity, &token);
                 }
+
+                // Handshake processed; now we can process pending mutations.
+                inner.processed_after_connecting = true;
+
                 Ok(())
             }
 
@@ -249,9 +285,14 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             PendingMutation::CallReducer { reducer, args_bsatn } => {
                 let inner = &mut *self.inner.lock().unwrap();
 
+                let reducer_id = inner
+                    .reducer_name_to_id
+                    .get(reducer)
+                    .copied()
+                    .ok_or_else(|| anyhow!("reducer with name `{reducer}` not found"))?;
                 let flags = inner.call_reducer_flags.get_flags(reducer);
                 let msg = ws::ClientMessage::CallReducer(ws::CallReducer {
-                    reducer: reducer.into(),
+                    reducer_id,
                     args: args_bsatn.into(),
                     request_id: 0,
                     flags,
@@ -371,9 +412,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     ///
     /// Called by the autogenerated `DbConnection` method of the same name.
     pub fn advance_one_message(&self) -> Result<bool> {
-        // Apply any pending mutations before processing a WS message,
-        // so that pending callbacks don't get skipped.
-        self.apply_pending_mutations()?;
+        // The `AfterConnecting` incoming message must always come first,
+        // before any pending mutations are processed.
+        if self.inner.lock().unwrap().processed_after_connecting {
+            // Apply any pending mutations before processing a WS message,
+            // so that pending callbacks don't get skipped.
+            self.apply_pending_mutations()?;
+        }
 
         // Deranged behavior: mpsc's `try_next` returns `Ok(None)` when the channel is closed,
         // and `Err(_)` when the channel is open and waiting. This seems exactly backwards.
@@ -399,8 +444,15 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // We call this out as an incorrect and unsupported thing to do.
         #![allow(clippy::await_holding_lock)]
 
-        let mut pending_mutations = self.pending_mutations_recv.lock().await;
         let mut recv = self.recv.lock().await;
+
+        // The `AfterConnecting` incoming message must always come first,
+        // before any pending mutations are processed.
+        if !self.inner.lock().unwrap().processed_after_connecting {
+            return Message::Ws(recv.next().await);
+        }
+
+        let mut pending_mutations = self.pending_mutations_recv.lock().await;
 
         // Always process pending mutations before WS messages, if they're available,
         // so that newly registered callbacks run on messages.
@@ -613,13 +665,17 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     on_disconnect: Option<OnDisconnectCallback<M>>,
 
     call_reducer_flags: CallReducerFlagsMap,
+    reducer_name_to_id: HashMap<&'static str, ReducerId>,
+
+    /// Have we processed `ParsedMessage::AfterConnecting`?
+    ///
+    /// This handshake message must come before processing all pending mutations.
+    processed_after_connecting: bool,
 }
 
 /// Maps reducer names to the flags to use for `.call_reducer(..)`.
 #[derive(Default, Clone)]
 struct CallReducerFlagsMap {
-    // TODO(centril): consider replacing the string with a type-id based map
-    // where each reducer is associated with a marker type.
     map: HashMap<&'static str, CallReducerFlags>,
 }
 
@@ -883,6 +939,8 @@ but you must call one of them, or else the connection will never progress.
             on_connect_error: self.on_connect_error,
             on_disconnect: self.on_disconnect,
             call_reducer_flags: <_>::default(),
+            reducer_name_to_id: <_>::default(),
+            processed_after_connecting: false,
         }));
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
         let ctx_imp = DbContextImpl {
@@ -1028,8 +1086,14 @@ fn enter_or_create_runtime() -> Result<(Option<Runtime>, runtime::Handle)> {
 enum ParsedMessage<M: SpacetimeModule> {
     InitialSubscription { db_update: M::DbUpdate, sub_id: u32 },
     TransactionUpdate(Event<M::Reducer>, Option<M::DbUpdate>),
-    IdentityToken(Identity, Box<str>, Address),
+    AfterConnecting(ws::IdentityToken, IdsToNames),
     Error(anyhow::Error),
+}
+
+struct IdsToNames {
+    reducer_ids: Box<[ReducerId]>,
+    reducer_names: Box<[Arc<str>]>,
+    table_names: Box<[Arc<str>]>,
 }
 
 fn spawn_parse_loop<M: SpacetimeModule>(
@@ -1047,16 +1111,27 @@ async fn parse_loop<M: SpacetimeModule>(
     mut recv: mpsc::UnboundedReceiver<ws::ServerMessage<BsatnFormat>>,
     send: mpsc::UnboundedSender<ParsedMessage<M>>,
 ) {
+    type TableIdMap = IntMap<TableId, &'static str>;
+    let mut known_table_ids: TableIdMap = <_>::default();
+    let get_table_name = |table_ids: &TableIdMap, table_id| {
+        table_ids
+            .get(&table_id)
+            .ok_or_else(|| anyhow!("no table with id {} found", table_id))
+            .copied()
+    };
+
+    let mut known_reducer_ids: IntMap<ReducerId, &'static str> = <_>::default();
+
     while let Some(msg) = recv.next().await {
         send.unbounded_send(match msg {
-            ws::ServerMessage::InitialSubscription(sub) => M::DbUpdate::try_from(sub.database_update)
-                .map(|update| ParsedMessage::InitialSubscription {
-                    db_update: update,
-                    sub_id: sub.request_id,
-                })
-                .unwrap_or_else(|e| {
-                    ParsedMessage::Error(e.context("Failed to parse DbUpdate from InitialSubscription"))
-                }),
+            ws::ServerMessage::InitialSubscription(sub) => {
+                let sub_id = sub.request_id;
+                let get_table_id = &|id| get_table_name(&known_table_ids, id);
+                M::DbUpdate::parse_update(get_table_id, sub.database_update)
+                    .map(|db_update| ParsedMessage::InitialSubscription { db_update, sub_id })
+                    .map_err(|e| e.context("Failed to parse DbUpdate from InitialSubscription"))
+                    .unwrap_or_else(ParsedMessage::Error)
+            }
             ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate {
                 status,
                 timestamp,
@@ -1065,10 +1140,16 @@ async fn parse_loop<M: SpacetimeModule>(
                 reducer_call,
                 energy_quanta_used,
                 ..
-            }) => match Status::parse_status_and_update::<M>(status) {
+            }) => match Status::parse_status_and_update::<M>(&|id| get_table_name(&known_table_ids, id), status) {
                 Err(e) => ParsedMessage::Error(e.context("Failed to parse Status from TransactionUpdate")),
                 Ok((status, db_update)) => {
-                    let event = M::Reducer::try_from(reducer_call)
+                    let get_reducer_name = &|reducer_id| {
+                        known_reducer_ids
+                            .get(&reducer_id)
+                            .ok_or_else(|| anyhow!("no reducer with id {} found", reducer_id))
+                            .copied()
+                    };
+                    let event = M::Reducer::parse_call_info(get_reducer_name, reducer_call)
                         .map(|reducer| {
                             Event::Reducer(ReducerEvent {
                                 caller_address: caller_address.none_if_zero(),
@@ -1086,16 +1167,45 @@ async fn parse_loop<M: SpacetimeModule>(
                 }
             },
             ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { update, request_id: _ }) => {
-                match M::DbUpdate::parse_update(update) {
-                    Err(e) => ParsedMessage::Error(e.context("Failed to parse update from TransactionUpdateLight")),
-                    Ok(db_update) => ParsedMessage::TransactionUpdate(Event::UnknownTransaction, Some(db_update)),
-                }
+                let get_table_id = &|id| get_table_name(&known_table_ids, id);
+                M::DbUpdate::parse_update(get_table_id, update)
+                    .map(|db_update| ParsedMessage::TransactionUpdate(Event::UnknownTransaction, Some(db_update)))
+                    .map_err(|e| e.context("Failed to parse update from TransactionUpdateLight"))
+                    .unwrap_or_else(ParsedMessage::Error)
             }
-            ws::ServerMessage::IdentityToken(ws::IdentityToken {
-                identity,
-                token,
-                address,
-            }) => ParsedMessage::IdentityToken(identity, token, address),
+            ws::ServerMessage::AfterConnecting(ws::AfterConnecting {
+                identity_token,
+                ids_to_names,
+            }) => {
+                let ws::IdsToNames {
+                    table_ids,
+                    table_names,
+                    reducer_ids,
+                    reducer_names,
+                } = ids_to_names;
+                let ids_to_names = IdsToNames {
+                    table_names,
+                    reducer_ids,
+                    reducer_names,
+                };
+
+                // Compute the map of `TableId -> TableName`.
+                // We can use the statically encoded names rather than the provided ones
+                // and will later verify that the static and provided ones actually match.
+                known_table_ids = table_ids
+                    .iter()
+                    .copied()
+                    .zip(M::DbUpdate::table_names().iter().copied())
+                    .collect();
+                // Do the same for `ReducerId -> ReducerName`.
+                known_reducer_ids = ids_to_names
+                    .reducer_ids
+                    .iter()
+                    .copied()
+                    .zip(M::Reducer::reducer_names().iter().copied())
+                    .collect();
+                ParsedMessage::AfterConnecting(identity_token, ids_to_names)
+            }
             ws::ServerMessage::OneOffQueryResponse(_) => {
                 unreachable!("The Rust SDK does not implement one-off queries")
             }

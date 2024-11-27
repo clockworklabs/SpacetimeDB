@@ -898,7 +898,6 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         reader: &mut R,
     ) -> std::result::Result<Self::Row, Self::Error> {
         let schema = self.committed_state.schema_for_table(table_id)?;
-        // TODO: avoid clone
         let table_name = schema.table_name.clone();
         let row = ProductValue::decode(schema.get_row_type(), reader)?;
 

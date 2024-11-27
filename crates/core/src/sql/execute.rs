@@ -48,8 +48,8 @@ pub(crate) fn collect_result(
             None => {}
             Some(update) => {
                 updates.push(DatabaseTableUpdate {
-                    table_name: update.table_name,
                     table_id: update.table_id,
+                    table_name: update.table_name,
                     inserts: update.inserts.into(),
                     deletes: update.deletes.into(),
                 });
@@ -126,7 +126,7 @@ pub fn execute_sql(
                 caller_identity: auth.caller,
                 caller_address: None,
                 function_call: ModuleFunctionCall {
-                    reducer: String::new(),
+                    reducer: "".into(),
                     reducer_id: u32::MAX.into(),
                     args: ArgsTuple::default(),
                 },
