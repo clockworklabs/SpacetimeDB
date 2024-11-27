@@ -131,6 +131,13 @@ impl InstanceEnv {
         Ok(gen_cols)
     }
 
+    pub fn update(&self, table_id: TableId, index_id: IndexId, buffer: &[u8]) -> Result<AlgebraicValue, NodesError> {
+        let stdb = &*self.replica_ctx.relational_db;
+        let tx = &mut *self.get_tx()?;
+        let (gen_cols, _) = stdb.update_bytes_as_row(tx, table_id, index_id, buffer)?;
+        Ok(gen_cols)
+    }
+
     /// Deletes all rows in the table identified by `table_id`
     /// where the column identified by `cols` equates to `value`.
     ///

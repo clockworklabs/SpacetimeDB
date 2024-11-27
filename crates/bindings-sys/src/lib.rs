@@ -326,6 +326,8 @@ pub mod raw {
         /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
         pub fn datastore_insert_bsatn(table_id: TableId, row_ptr: *mut u8, row_len_ptr: *mut usize) -> u16;
 
+        pub fn datastore_update_bsatn(table_id: TableId, index_id: IndexId, row_ptr: *mut u8, row_len_ptr: *mut usize) -> u16;
+
         /// Schedules a reducer to be called asynchronously, nonatomically,
         /// and immediately on a best effort basis.
         ///
@@ -730,6 +732,13 @@ pub fn datastore_insert_bsatn(table_id: TableId, row: &mut [u8]) -> Result<&[u8]
     let row_ptr = row.as_mut_ptr();
     let row_len = &mut row.len();
     cvt(unsafe { raw::datastore_insert_bsatn(table_id, row_ptr, row_len) }).map(|()| &row[..*row_len])
+}
+
+#[inline]
+pub fn datastore_update_bsatn(table_id: TableId, index_id: IndexId, row: &mut [u8]) -> Result<&[u8], Errno> {
+    let row_ptr = row.as_mut_ptr();
+    let row_len = &mut row.len();
+    cvt(unsafe { raw::datastore_update_bsatn(table_id, index_id, row_ptr, row_len) }).map(|()| &row[..*row_len])
 }
 
 /// Deletes those rows, in the table identified by `table_id`,

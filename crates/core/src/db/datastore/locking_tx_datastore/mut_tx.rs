@@ -7,7 +7,9 @@ use super::{
     tx_state::{DeleteTable, IndexIdMap, TxState},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::db::datastore::system_tables::{StRowLevelSecurityFields, StRowLevelSecurityRow, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID};
+use crate::db::datastore::system_tables::{
+    StRowLevelSecurityFields, StRowLevelSecurityRow, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
+};
 use crate::db::datastore::{
     system_tables::{
         StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StFields as _, StIndexFields, StIndexRow,
@@ -540,12 +542,7 @@ impl MutTxId {
             .committed_state_write_lock
             .get_table_and_index_type(table_id, col_list)
         {
-            if self
-                .tx_state
-                .index_id_map_removals
-                .as_ref()
-                .is_some_and(|s| s.contains(&index_id))
-            {
+            if self.tx_state_removed_index(index_id) {
                 return None;
             }
             key_ty
@@ -554,6 +551,13 @@ impl MutTxId {
         };
 
         Some((table_id, col_list, key_ty))
+    }
+
+    fn tx_state_removed_index(&self, index_id: IndexId) -> bool {
+        self.tx_state
+            .index_id_map_removals
+            .as_ref()
+            .is_some_and(|s| s.contains(&index_id))
     }
 
     /// Decode the bounds for a btree scan for an index typed at `key_type`.
@@ -1147,6 +1151,65 @@ impl<'a> Iterator for IndexScanFilterDeleted<'a> {
 }
 
 impl MutTxId {
+    pub(crate) fn update<'a>(
+        &'a mut self,
+        table_id: TableId,
+        index_id: IndexId,
+        row_prime: ProductValue,
+    ) -> Result<(AlgebraicValue, RowRef<'a>)> {
+        let commit_table = self.committed_state_write_lock.get_table(table_id);
+        let commit_idx_cols = self
+            .committed_state_write_lock
+            .index_id_map
+            .get(&index_id)
+            .filter(|_| !self.tx_state_removed_index(index_id))
+            .map(|(_, cols)| cols);
+
+        if let Some((commit_table, commit_row)) = commit_table.zip(commit_idx_cols).and_then(|(commit_table, cols)| {
+            let index_key = row_prime.project(cols).unwrap();
+            let commit_bs = &self.committed_state_write_lock.blob_store;
+            let row = commit_table.index_seek(commit_bs, cols, &index_key)?.next()?;
+            Some((commit_table, row))
+        }) {
+            // Row found by index in committed state.
+            let commit_row_ptr = commit_row.pointer();
+
+            let (tx_ins, tx_bs, _, tx_dels) = self
+                .tx_state
+                .get_table_and_blob_store_or_maybe_create_from(table_id, Some(commit_table))
+                .ok_or(TableError::IdNotFoundState(table_id))?;
+
+            // Mark row as deleted in committed state.
+            // If it already was marked, that's fine, we'll just insert the row again.
+            tx_dels.insert(commit_row_ptr);
+            let tx_row = tx_ins.insert_2(tx_bs, &row_prime).unwrap();
+            Ok((AlgebraicValue::product([]), tx_row))
+        } else {
+            // Row not found in committed state.
+            // Could exist in the tx state so let's try to update it there.
+
+            let (tx_ins, tx_bs, index_id_map, _) = self
+                .tx_state
+                .get_table_and_blob_store_or_maybe_create_from(table_id, commit_table)
+                .ok_or(TableError::IdNotFoundState(table_id))?;
+
+            let (_, cols) = index_id_map
+                .get(&index_id)
+                .ok_or_else(|| IndexError::NotFound(index_id))?;
+            let index_key = row_prime.project(cols).unwrap();
+
+            if let Some(tx_row) = tx_ins.index_seek(tx_bs, cols, &index_key).and_then(|mut i| i.next()) {
+                // Row found by index in tx state, so remove it to make way for the new one.
+                let tx_row_ptr = tx_row.pointer();
+                // TODO(centril): update the row in-place if possible and avoid set-semantic removal.
+                unsafe { tx_ins.delete_unchecked(tx_bs, tx_row_ptr) }
+            }
+
+            let tx_row = tx_ins.insert_2(tx_bs, &row_prime).unwrap();
+            Ok((AlgebraicValue::product([]), tx_row))
+        }
+    }
+
     /// Insert a row into a table.
     ///
     /// Requires:
@@ -1212,7 +1275,11 @@ impl MutTxId {
         Ok(row.project(&cols_to_update)?)
     }
 
-    pub(super) fn insert_row_internal_2(&mut self, table_id: TableId, row: &ProductValue) -> Result<RowRefInsertion<'_>> {
+    pub(super) fn insert_row_internal_2(
+        &mut self,
+        table_id: TableId,
+        row: &ProductValue,
+    ) -> Result<RowRefInsertion<'_>> {
         let commit_table = self.committed_state_write_lock.get_table(table_id);
 
         // NOTE(basics): update path, with a single `#[primary_key]` constraint.

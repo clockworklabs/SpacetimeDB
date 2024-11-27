@@ -262,12 +262,10 @@ impl Table {
         // SAFETY: We just inserted `ptr`, so it must be present.
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
 
-        /*
         // Insert row into indices.
         for (cols, index) in self.indexes.iter_mut() {
             index.insert(cols, row_ref).unwrap();
         }
-        */
 
         Ok(row_ref)
     }
@@ -556,7 +554,7 @@ impl Table {
     /// Deletes the row identified by `ptr` from the table.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_unchecked(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) {
+    pub unsafe fn delete_unchecked(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) {
         // SAFETY: `self.is_row_present(row)` holds.
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
 

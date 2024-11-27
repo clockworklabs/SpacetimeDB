@@ -374,11 +374,8 @@ where
     /// or if either the delete or the insertion would violate a constraint.
     #[track_caller]
     pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row {
-        let (deleted, buf) = self._delete(Col::get_field(&new_row));
-        if !deleted {
-            update_row_didnt_exist(Tbl::TABLE_NAME, Col::COLUMN_NAME)
-        }
-        insert::<Tbl>(new_row, buf).unwrap_or_else(|e| panic!("{e}"))
+        let buf = IterBuf::take();
+        update::<Tbl>(Col::index_id(), new_row, buf).unwrap_or_else(|e| panic!("{e}"))
     }
 }
 
@@ -855,6 +852,36 @@ fn insert<T: Table>(mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInse
         err.unwrap_or_else(|| panic!("unexpected insertion error: {e}"))
     })
 }
+
+
+
+/// Insert a row of type `T` into the table identified by `table_id`.
+#[track_caller]
+fn update<T: Table>(index_id: IndexId, mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInsertError<T>> {
+    let table_id = T::table_id();
+    // Encode the row as bsatn into the buffer `buf`.
+    buf.clear();
+    buf.serialize_into(&row).unwrap();
+
+    // Insert row into table.
+    // When table has an auto-incrementing column, we must re-decode the changed `buf`.
+    let res = sys::datastore_update_bsatn(table_id, index_id, &mut buf).map(|gen_cols| {
+        // Let the caller handle any generated columns written back by `sys::insert` to `buf`.
+        //T::integrate_generated_columns(&mut row, gen_cols);
+        row
+    });
+    res.map_err(|e| {
+        let err = match e {
+            sys::Errno::UNIQUE_ALREADY_EXISTS => {
+                T::UniqueConstraintViolation::get().map(TryInsertError::UniqueConstraintViolation)
+            }
+            // sys::Errno::AUTO_INC_OVERFLOW => Tbl::AutoIncOverflow::get().map(TryInsertError::AutoIncOverflow),
+            _ => None,
+        };
+        err.unwrap_or_else(|| panic!("unexpected insertion error: {e}"))
+    })
+}
+
 
 /// A table iterator which yields values of the `TableType` corresponding to the table.
 struct TableIter<T: DeserializeOwned> {

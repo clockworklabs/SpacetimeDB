@@ -1158,6 +1158,20 @@ impl RelationalDB {
         self.inner.delete_by_rel_mut_tx(tx, table_id, relation)
     }
 
+    pub fn update_bytes_as_row<'a>(
+        &'a self,
+        tx: &'a mut MutTx,
+        table_id: TableId,
+        index_id: IndexId,
+        row_bytes: &[u8],
+    ) -> Result<(AlgebraicValue, RowRef<'a>), DBError> {
+        // Decode the `row_bytes` as a `ProductValue` according to the schema.
+        let ty = self.inner.row_type_for_table_mut_tx(tx, table_id)?;
+        let row = ProductValue::decode(&ty, &mut &row_bytes[..])?;
+
+        self.inner.update(tx, table_id, index_id, row)
+    }
+
     /// Clear all rows from a table without dropping it.
     pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
         let relation = self

@@ -382,6 +382,7 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::row_iter_bsatn_advance,
             "spacetime_10.0"::row_iter_bsatn_close,
             "spacetime_10.0"::datastore_insert_bsatn,
+            "spacetime_10.0"::datastore_update_bsatn,
             "spacetime_10.0"::datastore_delete_all_by_eq_bsatn,
             "spacetime_10.0"::bytes_source_read,
             "spacetime_10.0"::bytes_sink_write,
