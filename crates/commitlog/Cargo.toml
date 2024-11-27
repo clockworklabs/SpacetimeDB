@@ -27,6 +27,7 @@ spacetimedb-fs-utils.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
+spacetimedb-fs-utils.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, optional = true }
