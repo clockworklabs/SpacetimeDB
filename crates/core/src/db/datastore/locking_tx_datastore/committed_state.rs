@@ -491,7 +491,7 @@ impl CommittedState {
         tx_data
     }
 
-    fn merge_apply_deletes(&mut self, tx_data: &mut TxData, delete_tables: BTreeMap<TableId, DeleteTable>) {
+    fn merge_apply_deletes(&mut self, tx_data: &mut TxData, delete_tables: IntMap<TableId, DeleteTable>) {
         for (table_id, row_ptrs) in delete_tables {
             if let Some((table, blob_store)) = self.get_table_and_blob_store(table_id) {
                 let mut deletes = Vec::with_capacity(row_ptrs.len());
@@ -500,7 +500,7 @@ impl CommittedState {
                 // holds only committed rows which should be deleted,
                 // i.e. `RowPointer`s with `SquashedOffset::COMMITTED_STATE`,
                 // so no need to check before applying the deletes.
-                for row_ptr in row_ptrs.iter().copied() {
+                for row_ptr in row_ptrs {
                     debug_assert!(row_ptr.squashed_offset().is_committed_state());
 
                     // TODO: re-write `TxData` to remove `ProductValue`s
@@ -524,7 +524,7 @@ impl CommittedState {
     fn merge_apply_inserts(
         &mut self,
         tx_data: &mut TxData,
-        insert_tables: BTreeMap<TableId, Table>,
+        insert_tables: IntMap<TableId, Table>,
         tx_blob_store: impl BlobStore,
     ) {
         // TODO(perf): Consider moving whole pages from the `insert_tables` into the committed state,

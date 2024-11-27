@@ -688,6 +688,37 @@ impl WasmInstanceEnv {
         })
     }
 
+    #[tracing::instrument(skip_all)]
+    pub fn datastore_update_bsatn(
+        caller: Caller<'_, Self>,
+        table_id: u32,
+        index_id: u32,
+        row_ptr: WasmPtr<u8>,
+        row_len_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt(caller, AbiCall::DatastoreInsertBsatn, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            // Read `row-len`, i.e., the capacity of `row` pointed to by `row_ptr`.
+            let row_len = u32::read_from(mem, row_len_ptr)?;
+            // Get a mutable view to the `row`.
+            let row = mem.deref_slice_mut(row_ptr, row_len)?;
+
+            // Insert the row into the DB.
+            // This will return back the generated column values.
+            let gen_cols = env.instance_env.update(table_id.into(), index_id.into(), row)?;
+
+            // Write back the generated column values to `row`
+            // and the encoded length to `row_len`.
+            let counter = CountWriter::default();
+            let mut writer = TeeWriter::new(counter, row);
+            bsatn::to_writer(&mut writer, &gen_cols).unwrap();
+            let row_len = writer.w1.finish();
+            u32::try_from(row_len).unwrap().write_to(mem, row_len_ptr)?;
+            Ok(())
+        })
+    }
+
     /// Deletes all rows found in the index identified by `index_id`,
     /// according to the:
     /// - `prefix = prefix_ptr[..prefix_len]`,

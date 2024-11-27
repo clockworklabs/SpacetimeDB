@@ -6,7 +6,7 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::execution_context::Workload;
+use crate::{db::datastore::system_tables::ST_RESERVED_SEQUENCE_RANGE, execution_context::Workload};
 use crate::{
     db::{
         datastore::{
@@ -33,7 +33,7 @@ use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
-use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
@@ -564,7 +564,11 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         mut row: ProductValue,
     ) -> Result<(AlgebraicValue, RowRef<'a>)> {
-        let (gens, row_ref) = tx.insert(table_id, &mut row)?;
+        let (gens, row_ref) = if table_id.0 <= ST_RESERVED_SEQUENCE_RANGE {
+            tx.insert(table_id, &mut row)?
+        } else {
+            tx.insert_2(table_id, &mut row)?
+        };
         Ok((gens, row_ref.collapse()))
     }
 
@@ -598,6 +602,12 @@ impl MutTxDatastore for Locking {
             )
             .into()),
         }
+    }
+}
+
+impl Locking {
+    pub(crate) fn update<'a>(&'a self, tx: &'a mut MutTxId, table_id: TableId, index_id: IndexId, row: ProductValue) -> std::result::Result<(AlgebraicValue, RowRef<'_>), DBError> {
+        tx.update(table_id, index_id, row)
     }
 }
 
