@@ -22,7 +22,7 @@ pub type ValidationErrors = ErrorStream<ValidationError>;
 #[non_exhaustive]
 pub enum ValidationError {
     #[error("name `{name}` is used for multiple entities")]
-    DuplicateName { name: Identifier },
+    DuplicateName { name: Box<str> },
     #[error("name `{name}` is used for multiple types")]
     DuplicateTypeName { name: ScopedTypeName },
     #[error("Multiple reducers defined for lifecycle event {lifecycle:?}")]
@@ -101,7 +101,7 @@ pub enum ValidationError {
     #[error("Table {table} should have a type definition for its product_type_element, but does not")]
     TableTypeNameMismatch { table: Identifier },
     #[error("Schedule {schedule} refers to a scheduled reducer {reducer} that does not exist")]
-    MissingScheduledReducer { schedule: Identifier, reducer: Identifier },
+    MissingScheduledReducer { schedule: Box<str>, reducer: Identifier },
     #[error("Scheduled reducer {reducer} expected to have type {expected}, but has type {actual}")]
     IncorrectScheduledReducerParams {
         reducer: RawIdentifier,

@@ -63,7 +63,7 @@ partial struct BTreeMultiColumn : SpacetimeDB.Internal.ITable<BTreeMultiColumn>
                     Indexes:
                     [
                         new(
-                            "bt_BTreeMultiColumn_Location",
+                            "BTreeMultiColumn_X_Y_Z_idx_btree",
                             false,
                             SpacetimeDB.Internal.IndexType.BTree,
                             [0, 1, 2]

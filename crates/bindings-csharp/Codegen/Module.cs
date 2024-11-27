@@ -167,10 +167,24 @@ abstract record ViewIndex
     public string GenerateIndexDef(string viewName, IEnumerable<ColumnDeclaration> columns)
     {
         var cols = Columns.Select(c =>
-            columns.Select((c, i) => (c, i)).First(cd => cd.c.Name == c).i
+            columns.Select((c, i) => (c, i)).First(cd => cd.c.Name == c)
         );
-        return $"new(\"bt_{viewName}_{Name}\", false, SpacetimeDB.Internal.IndexType.{Type}, [{string.Join(", ", cols)}])";
+        var colIndices = cols.Select(col => col.i);
+        var colNames = cols.Select(col => col.c.Name);
+
+        // Note: when updating to v9, you could optionally just pass `null` instead of this string.
+        // The same name will be auto-generated on the host.
+        var standardIndexName = StandardIndexName("btree", viewName, colNames);
+        return $"new(\"{standardIndexName}\", false, SpacetimeDB.Internal.IndexType.{Type}, [{string.Join(", ", colIndices)}])";
     }
+
+    // See: bindings_sys::index_id_from_name for documentation of this format.
+    // Guaranteed not to contain quotes, so does not need to be escaped when embedded in a string.
+    public static string StandardIndexName(
+        string type,
+        string tableName,
+        IEnumerable<string> columnNames
+    ) => $"{tableName}_{string.Join("_", columnNames)}_idx_{type.ToLower()}";
 }
 
 record ViewBTree : ViewIndex
@@ -288,9 +302,15 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             if (f.GetAttrs(viewName).HasFlag(ColumnAttrs.Unique))
             {
                 var iUniqueIndex = $"";
+
+                var standardIndexName = ViewIndex.StandardIndexName(
+                    "btree",
+                    viewName,
+                    [ct.col.Name]
+                );
                 yield return $$"""
                     {{vis}} sealed class {{viewName}}UniqueIndex : UniqueIndex<{{viewName}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
-                        internal {{viewName}}UniqueIndex({{viewName}} handle) : base(handle, "idx_{{viewName}}_{{viewName}}_{{ct.col.Name}}_unique") {}
+                        internal {{viewName}}UniqueIndex({{viewName}} handle) : base(handle, "{{standardIndexName}}") {}
                         // Important: don't move this to the base class.
                         // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                         // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
@@ -309,11 +329,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 continue;
             }
 
-            yield return $$"""
-                    {{vis}} sealed class {{btree.Name}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("bt_{{viewName}}_{{btree.Name}}") {
-                """;
-
             var members = btree.Columns.Select(s => Members.First(x => x.Name == s)).ToArray();
+
+            var standardIndexName = ViewIndex.StandardIndexName(
+                "btree",
+                viewName,
+                members.Select(x => x.Name)
+            );
+
+            yield return $$"""
+                    {{vis}} sealed class {{btree.Name}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("{{standardIndexName}}") {
+                """;
 
             for (var n = 0; n < members.Length; n++)
             {
@@ -458,16 +484,16 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     ],
                     Indexes: [
                         {{string.Join(",\n", BTrees
-                        .Where(b => b.Table == null || b.Table == v.Name)
-                        .Select(b => b.GenerateIndexDef(v.Name, Members)))}}
-                    ],
-                    Constraints: [
+                            .Where(b => b.Table == null || b.Table == v.Name)
+                            .Select(b => b.GenerateIndexDef(v.Name, Members))
+                        )}}
+                    ],Constraints: [
                         {{string.Join(
                             ",\n",
                             GetConstraints(v.Name)
                             .Select(ct =>
                                 $$"""
-                                new (
+                                new(
                                     "{{v.Name}}_{{ct.col.Name}}",
                                     (byte)SpacetimeDB.Internal.ColumnAttrs.{{ct.attr}},
                                     [{{ct.pos}}]

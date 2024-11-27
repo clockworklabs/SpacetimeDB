@@ -23,7 +23,7 @@ prometheus = "0.13.0"
 email_address = "0.2.3"
 tempfile.workspace = true
 async-trait = "0.1.60"
-chrono = { version = "0.4.23", features = ["serde"] }
+chrono = { workspace = true, features = ["serde"] }
 rand = "0.8.5"
 axum.workspace = true
 axum-extra.workspace = true
@@ -38,13 +38,12 @@ bytes = "1"
 tracing.workspace = true
 bytestring = "1"
 tokio-tungstenite.workspace = true
-itoa = "1.0.9"
+itoa.workspace = true
 derive_more = "0.99.17"
 uuid.workspace = true
-blake3.workspace = true
 jsonwebtoken.workspace = true
 scopeguard.workspace = true
+spacetimedb-paths.workspace = true
 
 [dev-dependencies]
-jsonwebkey = { version = "0.3.5", features = ["generate","jwt-convert"] }
 jsonwebtoken.workspace = true

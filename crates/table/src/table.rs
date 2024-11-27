@@ -1233,8 +1233,7 @@ pub(crate) mod test {
     #[test]
     fn unique_violation_error() {
         let table_name = "UniqueIndexed";
-        let constraint_name = "my_unique_constraint";
-        let index_name = "my_index";
+        let index_name = "UniqueIndexed_unique_col_idx_btree";
         let mut builder = RawModuleDefV9Builder::new();
         builder
             .build_table_with_new_type(
@@ -1242,11 +1241,10 @@ pub(crate) mod test {
                 ProductType::from([("unique_col", AlgebraicType::I32), ("other_col", AlgebraicType::I32)]),
                 true,
             )
-            .with_unique_constraint(0, Some(constraint_name.into()))
+            .with_unique_constraint(0)
             .with_index(
                 RawIndexAlgorithm::BTree { columns: col_list![0] },
                 "accessor_name_doesnt_matter",
-                Some(index_name.into()),
             );
 
         let def: ModuleDef = builder.finish().try_into().expect("Failed to build schema");

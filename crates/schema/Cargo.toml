@@ -17,6 +17,7 @@ spacetimedb-data-structures.workspace = true
 spacetimedb-sql-parser.workspace = true
 
 anyhow.workspace = true
+indexmap.workspace = true
 itertools.workspace = true
 lazy_static.workspace = true
 thiserror.workspace = true
@@ -34,4 +35,5 @@ spacetimedb-lib = { workspace = true, features = ["test"] }
 spacetimedb-testing = { path = "../testing" }
 spacetimedb-cli.workspace = true
 
+pretty_assertions.workspace = true
 proptest.workspace = true
