@@ -841,8 +841,9 @@ impl RelationalDB {
         access: StAccess,
     ) -> Result<TableId, DBError> {
         let mut module_def_builder = RawModuleDefV9Builder::new();
+
         let mut table_builder = module_def_builder
-            .build_table_with_new_type(name, ProductType::from_iter(schema.iter().cloned()), true)
+            .build_table_with_new_type_for_tests(name, ProductType::from_iter(schema.iter().cloned()), true)
             .with_access(access.into());
 
         for columns in indexes {
