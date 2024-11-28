@@ -138,6 +138,11 @@ impl StaticBsatnLayout {
     /// either a [`VarLenType`]
     /// or a [`SumTypeLayout`] whose variants do not have the same "live" unpadded length.
     pub(crate) fn for_row_type(row_type: &RowTypeLayout) -> Option<Self> {
+        if !row_type.layout().fixed {
+            // Don't bother computing the static layout if there are variable components.
+            return None;
+        }
+
         let mut builder = LayoutBuilder::new_builder();
         builder.visit_product(row_type.product())?;
         Some(builder.build())

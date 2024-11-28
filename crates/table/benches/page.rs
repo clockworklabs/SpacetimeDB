@@ -13,7 +13,7 @@ use spacetimedb_table::bflatn_to::write_row_to_page;
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::eq::eq_row_in_page;
 use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowHash};
-use spacetimedb_table::layout::{row_size_for_type, RowTypeLayout};
+use spacetimedb_table::layout::{row_size_for_type, HasLayout, RowTypeLayout};
 use spacetimedb_table::page::Page;
 use spacetimedb_table::row_hash::hash_row_in_page;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
@@ -771,6 +771,7 @@ fn eq_in_page_same(c: &mut Criterion) {
                         black_box(offset_0),
                         black_box(offset_1),
                         black_box(&ty),
+                        black_box(ty.layout().fixed),
                     )
                 })
             });

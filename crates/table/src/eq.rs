@@ -30,14 +30,23 @@ pub unsafe fn eq_row_in_page(
     fixed_offset_a: PageOffset,
     fixed_offset_b: PageOffset,
     ty: &RowTypeLayout,
+    only_fixed_parts: bool,
 ) -> bool {
+    // Contexts for rows `a` and `b`.
+    let a = BytesPage::new(page_a, fixed_offset_a, ty);
+    let b = BytesPage::new(page_b, fixed_offset_b, ty);
+
+    // If there are only fixed parts in the layout,
+    // there are no pointers to anywhere,
+    // So it is sound to simply check for byte-wise equality
+    // and we need not do the tree traversal at all.
+    if only_fixed_parts {
+        return a.bytes == b.bytes;
+    }
+
     // Context for the whole comparison.
-    let mut ctx = EqCtx {
-        // Contexts for rows `a` and `b`.
-        a: BytesPage::new(page_a, fixed_offset_a, ty),
-        b: BytesPage::new(page_b, fixed_offset_b, ty),
-        curr_offset: 0,
-    };
+    let mut ctx = EqCtx { a, b, curr_offset: 0 };
+
     // Test for equality!
     // SAFETY:
     // 1. Per requirement 1., rows `a/b` are valid at type `ty` and properly aligned for `ty`.

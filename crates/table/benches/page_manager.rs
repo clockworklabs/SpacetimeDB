@@ -60,6 +60,18 @@ fn as_bytes<T>(t: &T) -> &Bytes {
 unsafe trait Row {
     fn row_type() -> ProductType;
 
+    fn row_type_for_schema() -> ProductType {
+        let mut ty = Self::row_type();
+        // Ensure that we have names for every column,
+        // so that its accepted when used in a `ModuleDef` as a row type.
+        for (idx, elem) in ty.elements.iter_mut().enumerate() {
+            if elem.name.is_none() {
+                elem.name = Some(format!("col_{idx}").into());
+            }
+        }
+        ty
+    }
+
     fn var_len_visitor() -> VarLenVisitorProgram {
         row_type_visitor(&Self::row_type().into())
     }
@@ -459,7 +471,7 @@ fn schema_from_ty(ty: ProductType, name: &str) -> TableSchema {
 
 fn make_table(c: &mut Criterion) {
     fn bench_make_table<R: Row>(group: Group<'_, '_>, name: &str) {
-        let ty = R::row_type();
+        let ty = R::row_type_for_schema();
         let schema = schema_from_ty(ty.clone(), name);
         group.bench_function(name, |b| {
             b.iter_custom(|num_iters| {
@@ -484,7 +496,7 @@ fn make_table(c: &mut Criterion) {
 }
 
 fn make_table_for_row_type<R: Row>(name: &str) -> Table {
-    let ty = R::row_type();
+    let ty = R::row_type_for_schema();
     let schema = schema_from_ty(ty.clone(), name);
     Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
 }
@@ -664,7 +676,7 @@ trait IndexedRow: Row + Sized {
         let name = Self::table_name();
         let mut builder = RawModuleDefV9Builder::new();
         builder
-            .build_table_with_new_type(name.clone(), Self::row_type(), true)
+            .build_table_with_new_type(name.clone(), Self::row_type_for_schema(), true)
             .with_index(
                 RawIndexAlgorithm::BTree {
                     columns: Self::indexed_columns(),
