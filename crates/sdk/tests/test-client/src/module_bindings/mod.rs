@@ -44,6 +44,10 @@ pub mod delete_unique_u_8_reducer;
 pub mod enum_with_payload_type;
 pub mod every_primitive_struct_type;
 pub mod every_vec_struct_type;
+pub mod indexed_table_2_table;
+pub mod indexed_table_2_type;
+pub mod indexed_table_table;
+pub mod indexed_table_type;
 pub mod insert_caller_one_address_reducer;
 pub mod insert_caller_one_identity_reducer;
 pub mod insert_caller_pk_address_reducer;
@@ -236,6 +240,9 @@ pub mod pk_u_64_table;
 pub mod pk_u_64_type;
 pub mod pk_u_8_table;
 pub mod pk_u_8_type;
+pub mod scheduled_table_table;
+pub mod scheduled_table_type;
+pub mod send_scheduled_message_reducer;
 pub mod simple_enum_type;
 pub mod table_holds_table_table;
 pub mod table_holds_table_type;
@@ -389,6 +396,10 @@ pub use delete_unique_u_8_reducer::*;
 pub use enum_with_payload_type::*;
 pub use every_primitive_struct_type::*;
 pub use every_vec_struct_type::*;
+pub use indexed_table_2_table::*;
+pub use indexed_table_2_type::*;
+pub use indexed_table_table::*;
+pub use indexed_table_type::*;
 pub use insert_caller_one_address_reducer::*;
 pub use insert_caller_one_identity_reducer::*;
 pub use insert_caller_pk_address_reducer::*;
@@ -581,6 +592,9 @@ pub use pk_u_64_table::*;
 pub use pk_u_64_type::*;
 pub use pk_u_8_table::*;
 pub use pk_u_8_type::*;
+pub use scheduled_table_table::*;
+pub use scheduled_table_type::*;
+pub use send_scheduled_message_reducer::*;
 pub use simple_enum_type::*;
 pub use table_holds_table_table::*;
 pub use table_holds_table_type::*;
@@ -837,6 +851,7 @@ pub enum Reducer {
     InsertVecU8(insert_vec_u_8_reducer::InsertVecU8),
     InsertVecUnitStruct(insert_vec_unit_struct_reducer::InsertVecUnitStruct),
     NoOpSucceeds(no_op_succeeds_reducer::NoOpSucceeds),
+    SendScheduledMessage(send_scheduled_message_reducer::SendScheduledMessage),
     UpdatePkAddress(update_pk_address_reducer::UpdatePkAddress),
     UpdatePkBool(update_pk_bool_reducer::UpdatePkBool),
     UpdatePkI128(update_pk_i_128_reducer::UpdatePkI128),
@@ -1008,6 +1023,7 @@ impl __sdk::spacetime_module::Reducer for Reducer {
             Reducer::InsertVecU8(_) => "insert_vec_u8",
             Reducer::InsertVecUnitStruct(_) => "insert_vec_unit_struct",
             Reducer::NoOpSucceeds(_) => "no_op_succeeds",
+            Reducer::SendScheduledMessage(_) => "send_scheduled_message",
             Reducer::UpdatePkAddress(_) => "update_pk_address",
             Reducer::UpdatePkBool(_) => "update_pk_bool",
             Reducer::UpdatePkI128(_) => "update_pk_i128",
@@ -1174,6 +1190,7 @@ impl __sdk::spacetime_module::Reducer for Reducer {
             Reducer::InsertVecU8(args) => args,
             Reducer::InsertVecUnitStruct(args) => args,
             Reducer::NoOpSucceeds(args) => args,
+            Reducer::SendScheduledMessage(args) => args,
             Reducer::UpdatePkAddress(args) => args,
             Reducer::UpdatePkBool(args) => args,
             Reducer::UpdatePkI128(args) => args,
@@ -1700,6 +1717,9 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 "no_op_succeeds",
                 &value.args,
             )?)),
+            "send_scheduled_message" => Ok(Reducer::SendScheduledMessage(
+                __sdk::spacetime_module::parse_reducer_args("send_scheduled_message", &value.args)?,
+            )),
             "update_pk_address" => Ok(Reducer::UpdatePkAddress(__sdk::spacetime_module::parse_reducer_args(
                 "update_pk_address",
                 &value.args,
@@ -1834,6 +1854,8 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
+    indexed_table: __sdk::spacetime_module::TableUpdate<IndexedTable>,
+    indexed_table_2: __sdk::spacetime_module::TableUpdate<IndexedTable2>,
     large_table: __sdk::spacetime_module::TableUpdate<LargeTable>,
     one_address: __sdk::spacetime_module::TableUpdate<OneAddress>,
     one_bool: __sdk::spacetime_module::TableUpdate<OneBool>,
@@ -1881,6 +1903,7 @@ pub struct DbUpdate {
     pk_u_32: __sdk::spacetime_module::TableUpdate<PkU32>,
     pk_u_64: __sdk::spacetime_module::TableUpdate<PkU64>,
     pk_u_8: __sdk::spacetime_module::TableUpdate<PkU8>,
+    scheduled_table: __sdk::spacetime_module::TableUpdate<ScheduledTable>,
     table_holds_table: __sdk::spacetime_module::TableUpdate<TableHoldsTable>,
     unique_address: __sdk::spacetime_module::TableUpdate<UniqueAddress>,
     unique_bool: __sdk::spacetime_module::TableUpdate<UniqueBool>,
@@ -1930,6 +1953,10 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
+                "indexed_table" => db_update.indexed_table = indexed_table_table::parse_table_update(table_update)?,
+                "indexed_table_2" => {
+                    db_update.indexed_table_2 = indexed_table_2_table::parse_table_update(table_update)?
+                }
                 "large_table" => db_update.large_table = large_table_table::parse_table_update(table_update)?,
                 "one_address" => db_update.one_address = one_address_table::parse_table_update(table_update)?,
                 "one_bool" => db_update.one_bool = one_bool_table::parse_table_update(table_update)?,
@@ -1999,6 +2026,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "pk_u32" => db_update.pk_u_32 = pk_u_32_table::parse_table_update(table_update)?,
                 "pk_u64" => db_update.pk_u_64 = pk_u_64_table::parse_table_update(table_update)?,
                 "pk_u8" => db_update.pk_u_8 = pk_u_8_table::parse_table_update(table_update)?,
+                "scheduled_table" => {
+                    db_update.scheduled_table = scheduled_table_table::parse_table_update(table_update)?
+                }
                 "table_holds_table" => {
                     db_update.table_holds_table = table_holds_table_table::parse_table_update(table_update)?
                 }
@@ -2071,6 +2101,8 @@ impl __sdk::spacetime_module::InModule for DbUpdate {
 
 impl __sdk::spacetime_module::DbUpdate for DbUpdate {
     fn apply_to_client_cache(&self, cache: &mut __sdk::client_cache::ClientCache<RemoteModule>) {
+        cache.apply_diff_to_table::<IndexedTable>("indexed_table", &self.indexed_table);
+        cache.apply_diff_to_table::<IndexedTable2>("indexed_table_2", &self.indexed_table_2);
         cache.apply_diff_to_table::<LargeTable>("large_table", &self.large_table);
         cache.apply_diff_to_table::<OneAddress>("one_address", &self.one_address);
         cache.apply_diff_to_table::<OneBool>("one_bool", &self.one_bool);
@@ -2124,6 +2156,7 @@ impl __sdk::spacetime_module::DbUpdate for DbUpdate {
         cache.apply_diff_to_table::<PkU32>("pk_u32", &self.pk_u_32);
         cache.apply_diff_to_table::<PkU64>("pk_u64", &self.pk_u_64);
         cache.apply_diff_to_table::<PkU8>("pk_u8", &self.pk_u_8);
+        cache.apply_diff_to_table::<ScheduledTable>("scheduled_table", &self.scheduled_table);
         cache.apply_diff_to_table::<TableHoldsTable>("table_holds_table", &self.table_holds_table);
         cache.apply_diff_to_table::<UniqueAddress>("unique_address", &self.unique_address);
         cache.apply_diff_to_table::<UniqueBool>("unique_bool", &self.unique_bool);
@@ -2170,6 +2203,8 @@ impl __sdk::spacetime_module::DbUpdate for DbUpdate {
         cache.apply_diff_to_table::<VecUnitStruct>("vec_unit_struct", &self.vec_unit_struct);
     }
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::callbacks::DbCallbacks<RemoteModule>) {
+        callbacks.invoke_table_row_callbacks::<IndexedTable>("indexed_table", &self.indexed_table, event);
+        callbacks.invoke_table_row_callbacks::<IndexedTable2>("indexed_table_2", &self.indexed_table_2, event);
         callbacks.invoke_table_row_callbacks::<LargeTable>("large_table", &self.large_table, event);
         callbacks.invoke_table_row_callbacks::<OneAddress>("one_address", &self.one_address, event);
         callbacks.invoke_table_row_callbacks::<OneBool>("one_bool", &self.one_bool, event);
@@ -2237,6 +2272,7 @@ impl __sdk::spacetime_module::DbUpdate for DbUpdate {
         callbacks.invoke_table_row_callbacks::<PkU32>("pk_u32", &self.pk_u_32, event);
         callbacks.invoke_table_row_callbacks::<PkU64>("pk_u64", &self.pk_u_64, event);
         callbacks.invoke_table_row_callbacks::<PkU8>("pk_u8", &self.pk_u_8, event);
+        callbacks.invoke_table_row_callbacks::<ScheduledTable>("scheduled_table", &self.scheduled_table, event);
         callbacks.invoke_table_row_callbacks::<TableHoldsTable>("table_holds_table", &self.table_holds_table, event);
         callbacks.invoke_table_row_callbacks::<UniqueAddress>("unique_address", &self.unique_address, event);
         callbacks.invoke_table_row_callbacks::<UniqueBool>("unique_bool", &self.unique_bool, event);
