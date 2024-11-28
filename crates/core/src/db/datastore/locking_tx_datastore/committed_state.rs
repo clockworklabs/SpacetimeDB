@@ -78,8 +78,8 @@ impl StateView for CommittedState {
     }
 
     fn iter(&self, table_id: TableId) -> Result<Iter<'_>> {
-        if let Some(table_name) = self.table_name(table_id) {
-            return Ok(Iter::new(table_id, table_name, None, self));
+        if self.table_name(table_id).is_some() {
+            return Ok(Iter::new(table_id, None, self));
         }
         Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }

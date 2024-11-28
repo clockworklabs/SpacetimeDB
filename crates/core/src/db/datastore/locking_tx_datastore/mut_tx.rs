@@ -1412,10 +1412,9 @@ impl StateView for MutTxId {
     }
 
     fn iter(&self, table_id: TableId) -> Result<Iter<'_>> {
-        if let Some(table_name) = self.table_name(table_id) {
+        if self.table_name(table_id).is_some() {
             return Ok(Iter::new(
                 table_id,
-                table_name,
                 Some(&self.tx_state),
                 &self.committed_state_write_lock,
             ));
