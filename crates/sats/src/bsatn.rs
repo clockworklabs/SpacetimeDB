@@ -152,7 +152,7 @@ impl ToBsatn for ProductValue {
 
 #[cfg(test)]
 mod tests {
-    use super::to_vec;
+    use super::{to_vec, DecodeError};
     use crate::proptest::generate_typed_value;
     use crate::{meta_type::MetaType, AlgebraicType, AlgebraicValue};
     use proptest::prelude::*;
@@ -178,6 +178,15 @@ mod tests {
             let bytes = to_vec(&val).unwrap();
             let val_decoded = AlgebraicValue::decode(&ty, &mut &bytes[..]).unwrap();
             prop_assert_eq!(val, val_decoded);
+        }
+
+        #[test]
+        fn bsatn_non_zero_one_u8_aint_bool(val in 2u8..) {
+            let bytes = [val];
+            prop_assert_eq!(
+                AlgebraicValue::decode(&AlgebraicType::Bool, &mut &bytes[..]),
+                Err(DecodeError::InvalidBool(val))
+            );
         }
     }
 }
