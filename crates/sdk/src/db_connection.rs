@@ -20,21 +20,22 @@
 
 use crate::{
     callbacks::{CallbackId, DbCallbacks, ReducerCallback, ReducerCallbacks, RowCallback, UpdateCallback},
-    client_cache::{ClientCache, ClientCacheView, TableCache, UniqueConstraint},
+    client_cache::{ClientCache, TableHandle},
     spacetime_module::{DbConnection, DbUpdate, EventContext, InModule, SpacetimeModule},
     subscription::{OnAppliedCallback, OnErrorCallback, SubscriptionManager},
     websocket::{WsConnection, WsParams},
-    ws_messages as ws, Event, ReducerEvent, Status,
+    Event, ReducerEvent, Status,
 };
 use anyhow::{bail, Context, Result};
 use bytes::Bytes;
 use futures::StreamExt;
 use futures_channel::mpsc;
 use http::Uri;
+use spacetimedb_client_api_messages::websocket as ws;
 use spacetimedb_client_api_messages::websocket::{BsatnFormat, CallReducerFlags, Compression};
-use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address, Identity};
 use std::{
+    collections::HashMap,
     sync::{Arc, Mutex as StdMutex, OnceLock},
     time::{Duration, SystemTime},
 };
@@ -56,8 +57,8 @@ pub struct DbContextImpl<M: SpacetimeModule> {
     /// All the state which is safe to hold a lock on while running callbacks.
     pub(crate) inner: SharedCell<DbContextImplInner<M>>,
 
-    /// The most recent client cache state.
-    cache: SharedCell<ClientCacheView<M>>,
+    /// The client cache, which stores subscribed rows.
+    cache: SharedCell<ClientCache<M>>,
 
     /// Receiver channel for WebSocket messages,
     /// which are pre-parsed in the background by [`parse_loop`].
@@ -136,12 +137,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             // set the received state to store all the rows,
             // then invoke the on-applied and row callbacks.
             ParsedMessage::InitialSubscription { db_update, sub_id } => {
-                let prev_cache_view = Arc::clone(&*self.cache.lock().unwrap());
-                let mut new_cache = ClientCache::clone(&*prev_cache_view);
-                // FIXME: delete no-longer-subscribed rows.
-                db_update.apply_to_client_cache(&mut new_cache);
-                let new_cache_view = Arc::new(new_cache);
-                *self.cache.lock().unwrap() = new_cache_view;
+                // Lock the client cache in a restricted scope,
+                // so that it will be unlocked when callbacks run.
+                {
+                    let mut cache = self.cache.lock().unwrap();
+                    // FIXME: delete no-longer-subscribed rows.
+                    db_update.apply_to_client_cache(&mut *cache);
+                }
                 let event_ctx = self.make_event_ctx(Event::SubscribeApplied);
                 let mut inner = self.inner.lock().unwrap();
                 inner.subscriptions.subscription_applied(&event_ctx, sub_id);
@@ -154,11 +156,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             // apply the received diff to the client cache,
             // then invoke on-reducer and row callbacks.
             ParsedMessage::TransactionUpdate(event, Some(update)) => {
-                let prev_cache_view = Arc::clone(&*self.cache.lock().unwrap());
-                let mut new_cache = ClientCache::clone(&*prev_cache_view);
-                update.apply_to_client_cache(&mut new_cache);
-                let new_cache_view = Arc::new(new_cache);
-                *self.cache.lock().unwrap() = new_cache_view;
+                // Lock the client cache in a restricted scope,
+                // so that it will be unlocked when callbacks run.
+                {
+                    let mut cache = self.cache.lock().unwrap();
+                    update.apply_to_client_cache(&mut *cache);
+                }
                 let event_ctx = self.make_event_ctx(event);
                 let mut inner = self.inner.lock().unwrap();
                 if let Event::Reducer(reducer_event) = event_ctx.event() {
@@ -203,7 +206,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             inner.on_disconnect.take()
         };
         if let Some(disconnect_callback) = disconnected_callback {
-            let ctx = M::DbConnection::new(self.clone());
+            let ctx = <M::DbConnection as DbConnection>::new(self.clone());
             disconnect_callback(&ctx, err);
         }
     }
@@ -511,18 +514,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         &self,
         table_name: &'static str,
     ) -> TableHandle<Row> {
-        let table_view = self
-            .cache
-            .lock()
-            .unwrap()
-            .get_table::<Row>(table_name)
-            .cloned()
-            .unwrap_or_else(|| Arc::new(TableCache::default()));
+        let client_cache = Arc::clone(&self.cache);
         let pending_mutations = self.pending_mutations_send.clone();
         TableHandle {
-            table_view,
+            client_cache,
             pending_mutations,
-            table: table_name,
+            table_name,
         }
     }
 
@@ -636,124 +633,6 @@ impl CallReducerFlagsMap {
         } else {
             self.map.insert(reducer_name, flags)
         };
-    }
-}
-
-/// Internal implementation of a generated `TableHandle` struct,
-/// which mediates access to a table in the client cache.
-pub struct TableHandle<Row: InModule> {
-    /// May be `None` if there are no rows in the table cache.
-    table_view: Arc<TableCache<Row>>,
-    /// Handle on the connection's `pending_mutations_send` channel,
-    /// so we can send callback-related [`PendingMutation`] messages.
-    pending_mutations: mpsc::UnboundedSender<PendingMutation<Row::Module>>,
-
-    /// The name of the table.
-    table: &'static str,
-}
-
-impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
-    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
-    pub fn count(&self) -> u64 {
-        self.table_view.entries.len() as u64
-    }
-
-    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
-    pub fn iter(&self) -> impl Iterator<Item = Row> + '_ {
-        self.table_view.entries.values().cloned()
-    }
-
-    /// See [`DbContextImpl::queue_mutation`].
-    fn queue_mutation(&self, mutation: PendingMutation<Row::Module>) {
-        self.pending_mutations.unbounded_send(mutation).unwrap();
-    }
-
-    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
-    pub fn on_insert(
-        &self,
-        mut callback: impl FnMut(&<Row::Module as SpacetimeModule>::EventContext, &Row) + Send + 'static,
-    ) -> CallbackId {
-        let callback_id = CallbackId::get_next();
-        self.queue_mutation(PendingMutation::AddInsertCallback {
-            table: self.table,
-            callback: Box::new(move |ctx, row| {
-                let row = row.downcast_ref::<Row>().unwrap();
-                callback(ctx, row);
-            }),
-            callback_id,
-        });
-        callback_id
-    }
-
-    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
-    pub fn remove_on_insert(&self, callback: CallbackId) {
-        self.queue_mutation(PendingMutation::RemoveInsertCallback {
-            table: self.table,
-            callback_id: callback,
-        });
-    }
-
-    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
-    pub fn on_delete(
-        &self,
-        mut callback: impl FnMut(&<Row::Module as SpacetimeModule>::EventContext, &Row) + Send + 'static,
-    ) -> CallbackId {
-        let callback_id = CallbackId::get_next();
-        self.queue_mutation(PendingMutation::AddDeleteCallback {
-            table: self.table,
-            callback: Box::new(move |ctx, row| {
-                let row = row.downcast_ref::<Row>().unwrap();
-                callback(ctx, row);
-            }),
-            callback_id,
-        });
-        callback_id
-    }
-
-    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
-    pub fn remove_on_delete(&self, callback: CallbackId) {
-        self.queue_mutation(PendingMutation::RemoveDeleteCallback {
-            table: self.table,
-            callback_id: callback,
-        });
-    }
-
-    /// Called by the autogenerated implementation of the [`crate::TableWithPrimaryKey`] method of the same name.
-    pub fn on_update(
-        &self,
-        mut callback: impl FnMut(&<Row::Module as SpacetimeModule>::EventContext, &Row, &Row) + Send + 'static,
-    ) -> CallbackId {
-        let callback_id = CallbackId::get_next();
-        self.queue_mutation(PendingMutation::AddUpdateCallback {
-            table: self.table,
-            callback: Box::new(move |ctx, old, new| {
-                let old = old.downcast_ref::<Row>().unwrap();
-                let new = new.downcast_ref::<Row>().unwrap();
-                callback(ctx, old, new);
-            }),
-            callback_id,
-        });
-        callback_id
-    }
-
-    /// Called by the autogenerated implementation of the [`crate::TableWithPrimaryKey`] method of the same name.
-    pub fn remove_on_update(&self, callback: CallbackId) {
-        self.queue_mutation(PendingMutation::RemoveUpdateCallback {
-            table: self.table,
-            callback_id: callback,
-        });
-    }
-
-    /// Called by autogenerated unique index access methods.
-    pub fn get_unique_constraint<Col>(
-        &self,
-        _constraint_name: &'static str,
-        get_unique_field: fn(&Row) -> &Col,
-    ) -> UniqueConstraint<Row, Col> {
-        UniqueConstraint {
-            table: Arc::clone(&self.table_view),
-            get_unique_field,
-        }
     }
 }
 
@@ -884,11 +763,16 @@ but you must call one of them, or else the connection will never progress.
             on_disconnect: self.on_disconnect,
             call_reducer_flags: <_>::default(),
         }));
+
+        let mut cache = ClientCache::default();
+        M::register_tables(&mut cache);
+        let cache = Arc::new(StdMutex::new(cache));
+
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
         let ctx_imp = DbContextImpl {
             runtime: handle,
             inner,
-            cache: <_>::default(),
+            cache,
             recv: Arc::new(TokioMutex::new(parsed_recv_chan)),
             pending_mutations_send,
             pending_mutations_recv: Arc::new(TokioMutex::new(pending_mutations_recv)),

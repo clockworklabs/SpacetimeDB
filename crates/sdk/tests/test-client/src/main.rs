@@ -7,10 +7,8 @@ use core::fmt::Display;
 use module_bindings::*;
 
 use spacetimedb_sdk::{
-    credentials,
-    sats::{i256, u256},
-    ws_messages::CallReducerFlags,
-    Address, DbConnectionBuilder, DbContext, Event, Identity, ReducerEvent, Status, Table,
+    credentials, i256, u256, unstable::CallReducerFlags, Address, DbConnectionBuilder, DbContext, Event, Identity,
+    ReducerEvent, Status, Table,
 };
 use test_counter::TestCounter;
 
