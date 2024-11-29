@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::message_type::Message;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `message`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.message().on_insert(...)`.
 pub struct MessageTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<Message>,
+    imp: __sdk::TableHandle<Message>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl MessageTableAccess for super::RemoteTables {
     }
 }
 
-pub struct MessageInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct MessageDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct MessageInsertCallbackId(__sdk::CallbackId);
+pub struct MessageDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for MessageTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for MessageTableHandle<'ctx> {
     type Row = Message;
     type EventContext = super::EventContext;
 
@@ -83,9 +82,13 @@ impl<'ctx> __sdk::table::Table for MessageTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<Message>("message");
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<Message>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<Message>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"message\"")
 }

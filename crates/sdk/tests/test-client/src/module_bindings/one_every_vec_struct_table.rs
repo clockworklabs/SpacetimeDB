@@ -4,10 +4,9 @@
 #![allow(unused)]
 use super::every_vec_struct_type::EveryVecStruct;
 use super::one_every_vec_struct_type::OneEveryVecStruct;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `one_every_vec_struct`.
@@ -19,7 +18,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.one_every_vec_struct().on_insert(...)`.
 pub struct OneEveryVecStructTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<OneEveryVecStruct>,
+    imp: __sdk::TableHandle<OneEveryVecStruct>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -42,10 +41,10 @@ impl OneEveryVecStructTableAccess for super::RemoteTables {
     }
 }
 
-pub struct OneEveryVecStructInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct OneEveryVecStructDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct OneEveryVecStructInsertCallbackId(__sdk::CallbackId);
+pub struct OneEveryVecStructDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for OneEveryVecStructTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for OneEveryVecStructTableHandle<'ctx> {
     type Row = OneEveryVecStruct;
     type EventContext = super::EventContext;
 
@@ -84,9 +83,13 @@ impl<'ctx> __sdk::table::Table for OneEveryVecStructTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<OneEveryVecStruct>("one_every_vec_struct");
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneEveryVecStruct>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<OneEveryVecStruct>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"one_every_vec_struct\"")
 }

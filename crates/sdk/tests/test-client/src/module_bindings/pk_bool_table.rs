@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::pk_bool_type::PkBool;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `pk_bool`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.pk_bool().on_insert(...)`.
 pub struct PkBoolTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<PkBool>,
+    imp: __sdk::TableHandle<PkBool>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl PkBoolTableAccess for super::RemoteTables {
     }
 }
 
-pub struct PkBoolInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct PkBoolDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct PkBoolInsertCallbackId(__sdk::CallbackId);
+pub struct PkBoolDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for PkBoolTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for PkBoolTableHandle<'ctx> {
     type Row = PkBool;
     type EventContext = super::EventContext;
 
@@ -82,9 +81,14 @@ impl<'ctx> __sdk::table::Table for PkBoolTableHandle<'ctx> {
     }
 }
 
-pub struct PkBoolUpdateCallbackId(__sdk::callbacks::CallbackId);
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkBool>("pk_bool");
+    _table.add_unique_constraint::<bool>("b", |row| &row.b)
+}
+pub struct PkBoolUpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::TableWithPrimaryKey for PkBoolTableHandle<'ctx> {
+impl<'ctx> __sdk::TableWithPrimaryKey for PkBoolTableHandle<'ctx> {
     type UpdateCallbackId = PkBoolUpdateCallbackId;
 
     fn on_update(
@@ -102,11 +106,9 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkBoolTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<PkBool>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<bool>(raw_updates, |row: &PkBool| {
-        &row.b
-    })
-    .context("Failed to parse table update for table \"pk_bool\"")
+) -> __anyhow::Result<__sdk::TableUpdate<PkBool>> {
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<bool>(raw_updates, |row: &PkBool| &row.b)
+        .context("Failed to parse table update for table \"pk_bool\"")
 }
 
 /// Access to the `b` unique index on the table `pk_bool`,
@@ -117,7 +119,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.pk_bool().b().find(...)`.
 pub struct PkBoolBUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraint<PkBool, bool>,
+    imp: __sdk::UniqueConstraintHandle<PkBool, bool>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -125,7 +127,7 @@ impl<'ctx> PkBoolTableHandle<'ctx> {
     /// Get a handle on the `b` unique index on the table `pk_bool`.
     pub fn b(&self) -> PkBoolBUnique<'ctx> {
         PkBoolBUnique {
-            imp: self.imp.get_unique_constraint::<bool>("b", |row| &row.b),
+            imp: self.imp.get_unique_constraint::<bool>("b"),
             phantom: std::marker::PhantomData,
         }
     }

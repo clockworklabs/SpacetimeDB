@@ -5,9 +5,8 @@ mod module_bindings;
 use module_bindings::*;
 
 use spacetimedb_sdk::{
-    credentials,
-    sats::{i256, u256},
-    Address, DbContext, Event, Identity, ReducerEvent, Status, Table,
+    credentials, i256, u256, Address, DbContext, Event, Identity,
+    ReducerEvent, Status, Table,
 };
 use test_counter::TestCounter;
 

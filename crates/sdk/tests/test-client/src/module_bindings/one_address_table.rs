@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::one_address_type::OneAddress;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `one_address`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.one_address().on_insert(...)`.
 pub struct OneAddressTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<OneAddress>,
+    imp: __sdk::TableHandle<OneAddress>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl OneAddressTableAccess for super::RemoteTables {
     }
 }
 
-pub struct OneAddressInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct OneAddressDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct OneAddressInsertCallbackId(__sdk::CallbackId);
+pub struct OneAddressDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for OneAddressTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for OneAddressTableHandle<'ctx> {
     type Row = OneAddress;
     type EventContext = super::EventContext;
 
@@ -83,9 +82,13 @@ impl<'ctx> __sdk::table::Table for OneAddressTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<OneAddress>("one_address");
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneAddress>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<OneAddress>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"one_address\"")
 }

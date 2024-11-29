@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -14,11 +13,11 @@ pub struct DeleteUniqueAddress {
     pub a: __sdk::Address,
 }
 
-impl __sdk::spacetime_module::InModule for DeleteUniqueAddress {
+impl __sdk::InModule for DeleteUniqueAddress {
     type Module = super::RemoteModule;
 }
 
-pub struct DeleteUniqueAddressCallbackId(__sdk::callbacks::CallbackId);
+pub struct DeleteUniqueAddressCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `delete_unique_address`.
