@@ -20,6 +20,8 @@ pub enum DecodeError {
     InvalidTag { tag: u8, sum_name: Option<String> },
     /// Expected data to be UTF-8 but it wasn't.
     InvalidUtf8,
+    /// Expected the byte to be 0 or 1 to be a valid bool.
+    InvalidBool(u8),
     /// Custom error not in the other variants of `DecodeError`.
     Other(String),
 }
@@ -40,6 +42,7 @@ impl fmt::Display for DecodeError {
                 )
             }
             DecodeError::InvalidUtf8 => f.write_str("invalid utf8"),
+            DecodeError::InvalidBool(byte) => write!(f, "byte {byte} not valid as `bool` (must be 0 or 1)"),
             DecodeError::Other(err) => f.write_str(err),
         }
     }
@@ -158,7 +161,7 @@ pub trait BufReader<'de> {
     /// Reads and returns a byte slice of `.len() = size` advancing the cursor.
     #[inline]
     fn get_slice(&mut self, size: usize) -> Result<&'de [u8], DecodeError> {
-        self.get_chunk(size).ok_or(DecodeError::BufferLength {
+        self.get_chunk(size).ok_or_else(|| DecodeError::BufferLength {
             for_type: "[u8]",
             expected: size,
             given: self.remaining(),
@@ -168,7 +171,7 @@ pub trait BufReader<'de> {
     /// Reads an array of type `[u8; N]` from the input.
     #[inline]
     fn get_array<const N: usize>(&mut self) -> Result<&'de [u8; N], DecodeError> {
-        self.get_array_chunk().ok_or(DecodeError::BufferLength {
+        self.get_array_chunk().ok_or_else(|| DecodeError::BufferLength {
             for_type: "[u8; _]",
             expected: N,
             given: self.remaining(),
