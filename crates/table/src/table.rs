@@ -1,5 +1,3 @@
-use crate::{layout::HasLayout, var_len::VarLenMembers};
-
 use super::{
     bflatn_from::serialize_row_from_page,
     bflatn_to::write_row_to_pages,
@@ -16,7 +14,9 @@ use super::{
     read_column::{ReadColumn, TypeError},
     row_hash::hash_row_in_page,
     row_type_visitor::{row_type_visitor, VarLenVisitorProgram},
-    static_assert_size, MemoryUsage,
+    static_assert_size,
+    var_len::VarLenMembers,
+    MemoryUsage,
 };
 use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
@@ -122,11 +122,6 @@ impl TableInner {
     /// Returns the page and page offset that `ptr` points to.
     fn page_and_offset(&self, ptr: RowPointer) -> (&Page, PageOffset) {
         self.try_page_and_offset(ptr).unwrap()
-    }
-
-    /// Returns true if we know that the row layout only contains fixed size parts.
-    fn has_only_fixed_parts(&self) -> bool {
-        self.row_layout.layout().fixed
     }
 }
 
@@ -376,6 +371,8 @@ impl Table {
                 // `committed_ptr` is in `committed_table.pointer_map`,
                 // so it must be valid and therefore `committed_page` and `committed_offset` are valid.
                 // Our invariants mean `committed_table.row_layout` applies to both tables.
+                // Moreover was `committed_table.inner.static_bsatn_layout`
+                // derived from `committed_table.row_layout`.
                 unsafe {
                     eq_row_in_page(
                         committed_page,
@@ -383,7 +380,7 @@ impl Table {
                         committed_offset,
                         tx_offset,
                         &committed_table.inner.row_layout,
-                        committed_table.inner.has_only_fixed_parts(),
+                        committed_table.inner.static_bsatn_layout.as_ref(),
                     )
                 }
             })
@@ -789,16 +786,6 @@ impl<'a> RowRef<'a> {
         &self.table.row_layout
     }
 
-    /// Returns true if we know that the row layout only contains fixed size parts.
-    ///
-    /// Note that if this method returns `true`,
-    /// you may rely on this, but if it returns `false`, it may return `true` in the future,
-    /// as we currently do not return `true` for e.g., `some(X) | none` for a fixed-only `X`
-    /// even though while the BSATN size is variable, the BFLATN layout is fixed.
-    fn has_only_fixed_parts(&self) -> bool {
-        self.table.has_only_fixed_parts()
-    }
-
     /// Returns the page the row is in and the offset of the row within that page.
     pub fn page_and_offset(&self) -> (&Page, PageOffset) {
         self.table.page_and_offset(self.pointer())
@@ -931,9 +918,10 @@ impl PartialEq for RowRef<'_> {
         }
         let (page_a, offset_a) = self.page_and_offset();
         let (page_b, offset_b) = other.page_and_offset();
-        let fixed_only = self.has_only_fixed_parts();
-        // SAFETY: `offset_a/b` are valid rows in `page_a/b` typed at `a_ty`.
-        unsafe { eq_row_in_page(page_a, page_b, offset_a, offset_b, a_ty, fixed_only) }
+        let static_bsatn_layout = self.table.static_bsatn_layout.as_ref();
+        // SAFETY: `offset_a/b` are valid rows in `page_a/b` typed at `a_ty`
+        // and `static_bsatn_layout` is derived from `a_ty`.
+        unsafe { eq_row_in_page(page_a, page_b, offset_a, offset_b, a_ty, static_bsatn_layout) }
     }
 }
 

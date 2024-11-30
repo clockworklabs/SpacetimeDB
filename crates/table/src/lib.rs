@@ -8,7 +8,7 @@
 
 pub mod bflatn_from;
 pub mod bflatn_to;
-mod bflatn_to_bsatn_fast_path;
+pub mod bflatn_to_bsatn_fast_path;
 pub mod blob_store;
 pub mod btree_index;
 pub mod eq;
