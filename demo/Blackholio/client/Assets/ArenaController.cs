@@ -8,10 +8,7 @@ using UnityEngine;
 
 public class ArenaController : MonoBehaviour
 {
-    public SpriteRenderer backgroundPrefab;
     public float thickness = 10;
-
-    private SpriteRenderer backgroundInstance;
 
     private void Start()
     {
@@ -30,11 +27,6 @@ public class ArenaController : MonoBehaviour
             var west = GameObject.CreatePrimitive(PrimitiveType.Cube);
             west.transform.localScale = new Vector3(thickness, worldSize + thickness * 2.0f, 1);
             west.transform.position = new Vector3(-thickness / 2, worldSize / 2.0f, 1);
-
-            backgroundInstance = Instantiate(backgroundPrefab);
-            var size = worldSize / backgroundInstance.transform.localScale.x;
-            backgroundInstance.size = new UnityEngine.Vector2(size, size);
-            backgroundInstance.transform.position = new Vector3((float)worldSize / 2, (float)worldSize / 2);
         };
 
     }
