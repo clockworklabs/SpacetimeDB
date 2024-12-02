@@ -498,9 +498,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   circlePrefab: {fileID: 5181438745055576688, guid: 3a285dad10ff54d4c9e97322286acb7a, type: 3}
-  foodPrefab: {fileID: -8171957852717026941, guid: 9c1eb5e2fe0d91f4d8067a380246343a, type: 3}
-  deathScreen: {fileID: 369182682}
   playerPrefab: {fileID: 2480194241732775548, guid: f17fb2c34cc6aff4b935207b18c03909, type: 3}
+  deathScreen: {fileID: 369182682}
 --- !u!4 &207278860
 Transform:
   m_ObjectHideFlags: 0
@@ -1693,8 +1692,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fdf6b37246fc5824eb3c4e6888c33a4a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  usernameInputField: {fileID: 380907977}
-  playButton: {fileID: 1670294508}
 --- !u!1 &1005992895
 GameObject:
   m_ObjectHideFlags: 0
@@ -2147,9 +2144,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3b62a4a2893f42b4a90869f7c865907d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  rowPrefab: {fileID: 2116962658430842051, guid: f1b4f231fd01fb2408fd85d1af39a3d2, type: 3}
-  elementsHierarchy: {fileID: 200812880}
-  rowCount: 10
 --- !u!114 &1150883585
 MonoBehaviour:
   m_ObjectHideFlags: 0
