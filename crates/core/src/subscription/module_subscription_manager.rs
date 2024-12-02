@@ -28,6 +28,7 @@ type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::Databa
 type ClientRequestId = u32;
 type SubscriptionId = (ClientId, ClientRequestId);
 
+/// For each client, we hold a handle for sending messages, and we track the queries they are subscribed to.
 #[derive(Debug)]
 struct ClientInfo {
     outbound_ref: Client,
@@ -46,6 +47,7 @@ impl ClientInfo {
     }
 }
 
+/// For each query that has subscribers, we track a set of legacy subscribers and individual subscriptions.
 #[derive(Debug)]
 struct QueryState {
     query: Query,
@@ -65,6 +67,7 @@ impl QueryState {
         !self.subscriptions.is_empty() || !self.legacy_subscribers.is_empty()
     }
 
+    // This returns all of the clients listening to a query. If a client has multiple subscriptions for this query, it will appear twice.
     fn all_clients(&self) -> impl Iterator<Item = &ClientId> {
         let legacy_iter = self.legacy_subscribers.iter();
         let subscriptions_iter = self.subscriptions.iter().map(|(client_id, _)| client_id);
@@ -97,7 +100,6 @@ impl SubscriptionManager {
 
     pub fn query(&self, hash: &QueryHash) -> Option<Query> {
         self.queries.get(hash).map(|state| state.query.clone())
-        // self.queries.get(hash).cloned()
     }
 
     pub fn num_unique_queries(&self) -> usize {

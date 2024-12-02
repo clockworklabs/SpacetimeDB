@@ -173,7 +173,6 @@ impl ModuleSubscriptions {
         timer: Instant,
     ) -> Result<(), DBError> {
         let mut subscriptions = self.subscriptions.write();
-        // subscriptions.remove_subscription(&(sender.id.identity, sender.id.address), request.query_id.into()).unwrap_or(default)
         let query = match subscriptions.remove_subscription((sender.id.identity, sender.id.address), request.request_id)
         {
             Ok(query) => query,
@@ -311,8 +310,6 @@ impl ModuleSubscriptions {
         // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
         subscriptions.set_legacy_subscription(sender.clone(), execution_set.into_iter());
-        // subscriptions.remove_all_subscriptions(&(sender.id.identity, sender.id.address));
-        // subscriptions.add_subscription(sender.clone(), execution_set.into_iter());
         let num_queries = subscriptions.num_unique_queries();
 
         WORKER_METRICS
