@@ -87,7 +87,6 @@ pub enum ClientMessage<Args> {
     /// Request a reducer run.
     CallReducer(CallReducer<Args>),
     /// Register SQL queries on which to receive updates.
-    #[deprecated = "Use `SubscribeSingle` instead."]
     Subscribe(Subscribe),
     /// Send a one-off SQL query without establishing a subscription.
     OneOffQuery(OneOffQuery),
