@@ -4,14 +4,14 @@ use std::{
     ops::Deref,
 };
 
+use super::errors::{ExpectedRelation, InvalidOp};
+use crate::StatementSource;
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sql_parser::ast::BinOp;
 use string_interner::{backend::StringBackend, symbol::SymbolU32, StringInterner};
 use thiserror::Error;
-
-use super::errors::{ExpectedRelation, InvalidOp};
 
 /// When type checking a [super::expr::RelExpr],
 /// types are stored in a typing context [TyCtx].
@@ -181,6 +181,8 @@ pub struct TyCtx {
     types: Vec<Type>,
     /// Interned identifiers
     names: StringInterner<StringBackend>,
+    /// The source of the statement being type checked
+    pub source: StatementSource,
 }
 
 impl Default for TyCtx {
@@ -194,6 +196,8 @@ impl Default for TyCtx {
             types: vec![],
             // Intern identifiers on the fly
             names: StringInterner::new(),
+            // Default to a subscription source, because is more restrictive
+            source: StatementSource::Subscription,
         }
     }
 }
@@ -493,6 +497,18 @@ impl TyCtx {
         self.names.get(name)
     }
 
+    /// Are these rows structurally equivalent?
+    fn eq_row(&self, a: &[(Symbol, TyId)], b: &[(Symbol, TyId)]) -> bool {
+        a.len() == b.len() && {
+            for (i, (name, id)) in a.iter().enumerate() {
+                if name != &b[i].0 || !self.eq(*id, b[i].1).unwrap() {
+                    return false;
+                }
+            }
+            true
+        }
+    }
+
     /// Are these types structurally equivalent?
     pub fn eq(&self, a: TyId, b: TyId) -> Result<bool, InvalidTypeId> {
         if a.0 < TyId::N as u32 || b.0 < TyId::N as u32 {
@@ -500,15 +516,12 @@ impl TyCtx {
         }
         match (&*self.try_resolve(a)?, &*self.try_resolve(b)?) {
             (Type::Alg(a), Type::Alg(b)) => Ok(a == b),
-            (Type::Var(a, _), Type::Var(b, _)) => Ok(a == b),
-            (Type::Row(a), Type::Row(b)) => Ok(a.len() == b.len() && {
-                for (i, (name, id)) in a.iter().enumerate() {
-                    if name != &b[i].0 || !self.eq(*id, b[i].1)? {
-                        return Ok(false);
-                    }
-                }
-                true
-            }),
+            // UNION is not valid for subscriptions
+            (Type::Var(a, row_a), Type::Var(b, row_b)) => match self.source {
+                StatementSource::Subscription => Ok(a == b),
+                StatementSource::Query => Ok(a == b || self.eq_row(row_a, row_b)),
+            },
+            (Type::Row(a), Type::Row(b)) => Ok(self.eq_row(a, b)),
             _ => Ok(false),
         }
     }
