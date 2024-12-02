@@ -74,14 +74,19 @@ fn compile_cross_joins(ctx: &TyCtx, joins: Vec<RelExpr>) -> PhysicalPlan {
         .unwrap()
 }
 
+fn compile_dedup(ctx: &TyCtx, query: RelExpr) -> PhysicalPlan {
+    PhysicalPlan::Dedup(Box::new(compile_rel_expr(ctx, query)))
+}
+
 fn compile_rel_expr(ctx: &TyCtx, ast: RelExpr) -> PhysicalPlan {
     match ast {
         RelExpr::RelVar(table, _ty) => PhysicalPlan::TableScan(table),
         RelExpr::Select(select) => compile_filter(ctx, *select),
         RelExpr::Proj(proj) => compile_project(ctx, *proj),
+        RelExpr::Dedup(query) => compile_dedup(ctx, *query),
         RelExpr::Join(joins, _) => compile_cross_joins(ctx, joins.into_vec()),
-        RelExpr::Union(_, _) | RelExpr::Minus(_, _) | RelExpr::Dedup(_) => {
-            unreachable!("DISTINCT is not implemented")
+        RelExpr::Union(_, _) | RelExpr::Minus(_, _) => {
+            unreachable!("Union|Minus is not implemented")
         }
     }
 }
@@ -147,10 +152,11 @@ mod tests {
         Ok((expr, ctx))
     }
 
-    fn compile_sql_stmt_test(sql: &str) -> ResultTest<StatementCtx> {
+    fn compile_sql_stmt_test(sql: &str) -> ResultTest<(StatementCtx, TyCtx)> {
         let tx = SchemaViewer(module_def());
-        let statement = compile_sql_stmt(sql, &tx)?;
-        Ok(statement)
+        let mut ctx = TyCtx::default();
+        let statement = compile_sql_stmt(&mut ctx, sql, &tx)?;
+        Ok((statement, ctx))
     }
 
     impl PhysicalPlan {
@@ -184,7 +190,7 @@ mod tests {
         let (ast, ctx) = compile_sql_sub_test("SELECT * FROM t")?;
         assert!(matches!(compile(&ctx, ast).plan, PhysicalPlan::TableScan(_)));
 
-        let ast = compile_sql_stmt_test("SELECT u32 FROM t")?;
+        let (ast, ctx) = compile_sql_stmt_test("SELECT u32 FROM t")?;
         assert!(matches!(compile(&ctx, ast).plan, PhysicalPlan::Project(..)));
 
         Ok(())
@@ -234,6 +240,17 @@ mod tests {
         let (lhs, rhs) = input.as_nljoin().unwrap();
         assert!(matches!(lhs, PhysicalPlan::TableScan(_)));
         assert!(matches!(rhs, PhysicalPlan::TableScan(_)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_distinct() -> ResultTest<()> {
+        let (ast, ctx) = compile_sql_stmt_test("SELECT DISTINCT * FROM t")?;
+
+        let ast = compile(&ctx, ast).plan;
+
+        assert!(matches!(ast, PhysicalPlan::Dedup(_)));
 
         Ok(())
     }

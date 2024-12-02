@@ -86,7 +86,7 @@ pub struct Project {
 ///
 /// Relational operators take a single input paramter.
 /// Let variables explicitly destructure the input row.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Let {
     /// The variable definitions for this let expression
     pub vars: Vec<(Symbol, Expr)>,

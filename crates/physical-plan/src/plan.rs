@@ -33,6 +33,8 @@ pub enum PhysicalPlan {
     Filter(Box<PhysicalPlan>, PhysicalExpr),
     /// A tuple-at-a-time projection
     Project(Box<PhysicalPlan>, PhysicalExpr),
+    /// Deduplicate a relation
+    Dedup(Box<PhysicalPlan>),
 }
 
 /// Fetch and return row ids from a btree index

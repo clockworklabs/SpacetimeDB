@@ -3,6 +3,7 @@ use crate::error::{DBError, PlanError};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_expr::check::SchemaView;
 use spacetimedb_expr::statement::compile_sql_stmt;
+use spacetimedb_expr::ty::TyCtx;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::error::RelationError;
 use spacetimedb_lib::identity::AuthCtx;
@@ -952,7 +953,7 @@ pub(crate) fn compile_to_ast<T: TableSchemaView>(
 ) -> Result<Vec<SqlAst>, DBError> {
     // NOTE: The following ensures compliance with the 1.0 sql api.
     // Come 1.0, it will have replaced the current compilation stack.
-    compile_sql_stmt(sql_text, &SchemaViewer::new(db, tx, auth))?;
+    compile_sql_stmt(&mut TyCtx::default(), sql_text, &SchemaViewer::new(db, tx, auth))?;
 
     let dialect = PostgreSqlDialect {};
     let ast = Parser::parse_sql(&dialect, sql_text).map_err(|error| DBError::SqlParser {
