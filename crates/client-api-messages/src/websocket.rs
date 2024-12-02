@@ -197,7 +197,6 @@ impl QueryId {
 /// already in `A`.
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
-#[deprecated = "Use `SubscribeSingle` instead."]
 pub struct Subscribe {
     /// A sequence of SQL queries.
     pub query_strings: Box<[Box<str>]>,
