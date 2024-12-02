@@ -16,18 +16,12 @@ public class GameManager : MonoBehaviour
 
     public static Color[] colorPalette = new[]
     {
-        (Color)new Color32(248, 72, 245, 255),
-        (Color)new Color32(248, 72, 245, 255),
-        (Color)new Color32(170, 67, 247, 255),
-        (Color)new Color32(62, 223, 56, 255),
-        (Color)new Color32(56, 250, 193, 255),
-        (Color)new Color32(56, 225, 68, 255),
-        (Color)new Color32(39, 229, 245, 255),
-        (Color)new Color32(231, 250, 65, 255),
-        (Color)new Color32(0, 140, 247, 255),
-        (Color)new Color32(48, 53, 244, 255),
-        (Color)new Color32(247, 26, 37, 255),
-        (Color)new Color32(253, 121, 43, 255),
+        (Color)new Color32(0x4C, 0xF4, 0x90, 0xFF),
+        (Color)new Color32(0xF4, 0xF6, 0xFC, 0xFF),
+        (Color)new Color32(0xFB, 0xDC, 0x8E, 0xFF),
+        (Color)new Color32(0xA8, 0x80, 0xFF, 0xFF),
+        (Color)new Color32(0xFF, 0x9E, 0x9E, 0xFF),
+        (Color)new Color32(0x02, 0xBE, 0xFA, 0xFF),
     };
 
     public static GameManager instance;
