@@ -4,7 +4,7 @@ use sqlparser::ast::{
     TableFactor, TableWithJoins, Value, WildcardAdditionalOptions,
 };
 
-use crate::ast::{BinOp, Project, ProjectElem, ProjectExpr, RelExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral};
+use crate::ast::{BinOp, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral};
 
 pub mod errors;
 pub mod sql;
@@ -22,7 +22,7 @@ trait RelParser {
     fn parse_query(query: Query) -> SqlParseResult<Self::Ast>;
 
     /// Parse a FROM clause
-    fn parse_from(mut tables: Vec<TableWithJoins>) -> SqlParseResult<SqlFrom<Self::Ast>> {
+    fn parse_from(mut tables: Vec<TableWithJoins>) -> SqlParseResult<SqlFrom> {
         if tables.is_empty() {
             return Err(SqlRequired::From.into());
         }
@@ -30,27 +30,28 @@ trait RelParser {
             return Err(SqlUnsupported::ImplicitJoins.into());
         }
         let TableWithJoins { relation, joins } = tables.swap_remove(0);
-        let (expr, alias) = Self::parse_rel(relation)?;
+        let (name, alias) = Self::parse_relvar(relation)?;
         if joins.is_empty() {
-            return Ok(SqlFrom::Expr(expr, alias));
+            return Ok(SqlFrom::Expr(name, alias));
         }
-        let (expr, alias) = Self::parse_alias((expr, alias))?;
-        Ok(SqlFrom::Join(expr, alias, Self::parse_joins(joins)?))
+        let alias = alias.unwrap_or_else(|| name.clone());
+        Ok(SqlFrom::Join(name, alias, Self::parse_joins(joins)?))
     }
 
     /// Parse a sequence of JOIN clauses
-    fn parse_joins(joins: Vec<Join>) -> SqlParseResult<Vec<SqlJoin<Self::Ast>>> {
+    fn parse_joins(joins: Vec<Join>) -> SqlParseResult<Vec<SqlJoin>> {
         joins.into_iter().map(Self::parse_join).collect()
     }
 
     /// Parse a single JOIN clause
-    fn parse_join(join: Join) -> SqlParseResult<SqlJoin<Self::Ast>> {
-        let (expr, alias) = Self::parse_alias(Self::parse_rel(join.relation)?)?;
+    fn parse_join(join: Join) -> SqlParseResult<SqlJoin> {
+        let (var, alias) = Self::parse_relvar(join.relation)?;
+        let alias = alias.unwrap_or_else(|| var.clone());
         match join.join_operator {
-            JoinOperator::CrossJoin => Ok(SqlJoin { expr, alias, on: None }),
-            JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin { expr, alias, on: None }),
+            JoinOperator::CrossJoin => Ok(SqlJoin { var, alias, on: None }),
+            JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin { var, alias, on: None }),
             JoinOperator::Inner(JoinConstraint::On(on)) => Ok(SqlJoin {
-                expr,
+                var,
                 alias,
                 on: Some(parse_expr(on)?),
             }),
@@ -58,17 +59,8 @@ trait RelParser {
         }
     }
 
-    /// Check optional and required table aliases in a JOIN clause
-    fn parse_alias(item: (RelExpr<Self::Ast>, Option<SqlIdent>)) -> SqlParseResult<(RelExpr<Self::Ast>, SqlIdent)> {
-        match item {
-            (RelExpr::Var(alias), None) => Ok((RelExpr::Var(alias.clone()), alias)),
-            (expr, Some(alias)) => Ok((expr, alias)),
-            _ => Err(SqlRequired::JoinAlias.into()),
-        }
-    }
-
-    /// Parse a relation expression in a FROM clause
-    fn parse_rel(expr: TableFactor) -> SqlParseResult<(RelExpr<Self::Ast>, Option<SqlIdent>)> {
+    /// Parse a table reference in a FROM clause
+    fn parse_relvar(expr: TableFactor) -> SqlParseResult<(SqlIdent, Option<SqlIdent>)> {
         match expr {
             // Relvar no alias
             TableFactor::Table {
@@ -78,7 +70,7 @@ trait RelParser {
                 with_hints,
                 version: None,
                 partitions,
-            } if with_hints.is_empty() && partitions.is_empty() => Ok((RelExpr::Var(parse_ident(name)?), None)),
+            } if with_hints.is_empty() && partitions.is_empty() => Ok((parse_ident(name)?, None)),
             // Relvar with alias
             TableFactor::Table {
                 name,
@@ -88,20 +80,8 @@ trait RelParser {
                 version: None,
                 partitions,
             } if with_hints.is_empty() && partitions.is_empty() && columns.is_empty() => {
-                Ok((RelExpr::Var(parse_ident(name)?), Some(alias.into())))
+                Ok((parse_ident(name)?, Some(alias.into())))
             }
-            // RelExpr no alias
-            TableFactor::Derived {
-                lateral: false,
-                subquery,
-                alias: None,
-            } => Ok((RelExpr::Ast(Box::new(Self::parse_query(*subquery)?)), None)),
-            // RelExpr with alias
-            TableFactor::Derived {
-                lateral: false,
-                subquery,
-                alias: Some(TableAlias { name, columns }),
-            } if columns.is_empty() => Ok((RelExpr::Ast(Box::new(Self::parse_query(*subquery)?)), Some(name.into()))),
             _ => Err(SqlUnsupported::From(expr).into()),
         }
     }

@@ -20,12 +20,6 @@ pub enum RelExpr {
     Proj(Box<Project>),
     /// An n-ary join
     Join(Box<[RelExpr]>, TyId),
-    /// Bag union
-    Union(Box<RelExpr>, Box<RelExpr>),
-    /// Bag difference
-    Minus(Box<RelExpr>, Box<RelExpr>),
-    /// Bag -> set
-    Dedup(Box<RelExpr>),
 }
 
 static_assert_size!(RelExpr, 24);
@@ -47,7 +41,6 @@ impl RelExpr {
             Self::RelVar(_, id) | Self::Join(_, id) => *id,
             Self::Select(op) => op.input.ty_id(),
             Self::Proj(op) => op.expr.exprs[0].ty_id(),
-            Self::Union(input, _) | Self::Minus(input, _) | Self::Dedup(input) => input.ty_id(),
         }
     }
 

@@ -5,7 +5,7 @@ use spacetimedb_primitives::ColId;
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_sql_parser::{
     ast::{
-        sql::{QueryAst, SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlSetOp, SqlShow, SqlUpdate},
+        sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate},
         SqlIdent, SqlLiteral,
     },
     parser::sql::parse_sql,
@@ -15,9 +15,8 @@ use thiserror::Error;
 use crate::ty::TyId;
 
 use super::{
-    assert_eq_types,
     check::{SchemaView, TypeChecker, TypingResult},
-    errors::{InsertFieldsError, InsertValuesError, TypingError, UnexpectedType, Unresolved, Unsupported},
+    errors::{InsertFieldsError, InsertValuesError, TypingError, UnexpectedType, Unresolved},
     expr::{Expr, RelExpr},
     parse,
     ty::{TyCtx, TyEnv},
@@ -265,84 +264,31 @@ pub fn type_show(show: SqlShow) -> TypingResult<ShowVar> {
 struct SqlChecker;
 
 impl TypeChecker for SqlChecker {
-    type Ast = QueryAst;
-    type Set = SqlSetOp;
+    type Ast = SqlSelect;
+    type Set = SqlSelect;
 
     fn type_ast(ctx: &mut TyCtx, ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<RelExpr> {
-        let QueryAst { query, order, limit } = ast;
-        if !order.is_empty() {
-            return Err(Unsupported::OrderBy.into());
-        }
-        if limit.is_some() {
-            return Err(Unsupported::Limit.into());
-        }
-        Self::type_set(ctx, query, tx)
+        Self::type_set(ctx, ast, tx)
     }
 
     fn type_set(ctx: &mut TyCtx, ast: Self::Set, tx: &impl SchemaView) -> TypingResult<RelExpr> {
         match ast {
-            SqlSetOp::Union(a, b, true) => {
-                let a = Self::type_set(ctx, *a, tx)?;
-                let b = Self::type_set(ctx, *b, tx)?;
-                assert_eq_types(ctx, a.ty_id(), b.ty_id())?;
-                Ok(RelExpr::Union(Box::new(a), Box::new(b)))
-            }
-            SqlSetOp::Union(a, b, false) => {
-                let a = Self::type_set(ctx, *a, tx)?;
-                let b = Self::type_set(ctx, *b, tx)?;
-                assert_eq_types(ctx, a.ty_id(), b.ty_id())?;
-                Ok(RelExpr::Dedup(Box::new(RelExpr::Union(Box::new(a), Box::new(b)))))
-            }
-            SqlSetOp::Minus(a, b, true) => {
-                let a = Self::type_set(ctx, *a, tx)?;
-                let b = Self::type_set(ctx, *b, tx)?;
-                assert_eq_types(ctx, a.ty_id(), b.ty_id())?;
-                Ok(RelExpr::Minus(Box::new(a), Box::new(b)))
-            }
-            SqlSetOp::Minus(a, b, false) => {
-                let a = Self::type_set(ctx, *a, tx)?;
-                let b = Self::type_set(ctx, *b, tx)?;
-                assert_eq_types(ctx, a.ty_id(), b.ty_id())?;
-                Ok(RelExpr::Dedup(Box::new(RelExpr::Minus(Box::new(a), Box::new(b)))))
-            }
-            SqlSetOp::Query(ast) => Self::type_ast(ctx, *ast, tx),
-            SqlSetOp::Select(SqlSelect {
+            SqlSelect {
                 project,
-                distinct: false,
                 from,
                 filter: None,
-            }) => {
+            } => {
                 let (input, alias) = Self::type_from(ctx, from, tx)?;
                 type_proj(ctx, input, alias, project)
             }
-            SqlSetOp::Select(SqlSelect {
+            SqlSelect {
                 project,
-                distinct: true,
-                from,
-                filter: None,
-            }) => {
-                let (input, alias) = Self::type_from(ctx, from, tx)?;
-                Ok(RelExpr::Dedup(Box::new(type_proj(ctx, input, alias, project)?)))
-            }
-            SqlSetOp::Select(SqlSelect {
-                project,
-                distinct: false,
                 from,
                 filter: Some(expr),
-            }) => {
+            } => {
                 let (from, alias) = Self::type_from(ctx, from, tx)?;
                 let input = type_select(ctx, from, alias, expr)?;
                 type_proj(ctx, input, alias, project)
-            }
-            SqlSetOp::Select(SqlSelect {
-                project,
-                distinct: true,
-                from,
-                filter: Some(expr),
-            }) => {
-                let (from, alias) = Self::type_from(ctx, from, tx)?;
-                let input = type_select(ctx, from, alias, expr)?;
-                Ok(RelExpr::Dedup(Box::new(type_proj(ctx, input, alias, project)?)))
             }
         }
     }
@@ -353,7 +299,7 @@ fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<Statement
         SqlAst::Insert(insert) => Ok(Statement::Insert(type_insert(&mut TyCtx::default(), insert, tx)?)),
         SqlAst::Delete(delete) => Ok(Statement::Delete(type_delete(&mut TyCtx::default(), delete, tx)?)),
         SqlAst::Update(update) => Ok(Statement::Update(type_update(&mut TyCtx::default(), update, tx)?)),
-        SqlAst::Query(ast) => Ok(Statement::Select(SqlChecker::type_ast(&mut TyCtx::default(), ast, tx)?)),
+        SqlAst::Select(ast) => Ok(Statement::Select(SqlChecker::type_ast(&mut TyCtx::default(), ast, tx)?)),
         SqlAst::Set(set) => Ok(Statement::Set(type_set(&TyCtx::default(), set)?)),
         SqlAst::Show(show) => Ok(Statement::Show(type_show(show)?)),
     }

@@ -5,24 +5,17 @@ use sqlparser::ast::Ident;
 pub mod sql;
 pub mod sub;
 
-/// The FROM clause is either a [RelExpr] or a JOIN
+/// The FROM clause is either a relvar or a JOIN
 #[derive(Debug)]
-pub enum SqlFrom<Ast> {
-    Expr(RelExpr<Ast>, Option<SqlIdent>),
-    Join(RelExpr<Ast>, SqlIdent, Vec<SqlJoin<Ast>>),
-}
-
-/// A RelExpr is an expression that produces a relation
-#[derive(Debug)]
-pub enum RelExpr<Ast> {
-    Var(SqlIdent),
-    Ast(Box<Ast>),
+pub enum SqlFrom {
+    Expr(SqlIdent, Option<SqlIdent>),
+    Join(SqlIdent, SqlIdent, Vec<SqlJoin>),
 }
 
 /// An inner join in a FROM clause
 #[derive(Debug)]
-pub struct SqlJoin<Ast> {
-    pub expr: RelExpr<Ast>,
+pub struct SqlJoin {
+    pub var: SqlIdent,
     pub alias: SqlIdent,
     pub on: Option<SqlExpr>,
 }

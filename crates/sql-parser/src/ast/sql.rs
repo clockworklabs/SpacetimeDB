@@ -3,7 +3,7 @@ use super::{Project, SqlExpr, SqlFrom, SqlIdent, SqlLiteral};
 /// The AST for the SQL DML and query language
 pub enum SqlAst {
     /// SELECT ...
-    Query(QueryAst),
+    Select(SqlSelect),
     /// INSERT INTO ...
     Insert(SqlInsert),
     /// UPDATE ...
@@ -16,35 +16,12 @@ pub enum SqlAst {
     Show(SqlShow),
 }
 
-/// The AST for the SQL query language
-pub struct QueryAst {
-    pub query: SqlSetOp,
-    pub order: Vec<OrderByElem>,
-    pub limit: Option<SqlLiteral>,
-}
-
-/// Set operations in the SQL query language
-pub enum SqlSetOp {
-    /// SELECT
-    Select(SqlSelect),
-    /// ORDER/LIMIT
-    Query(Box<QueryAst>),
-    /// UNION
-    Union(Box<SqlSetOp>, Box<SqlSetOp>, bool),
-    /// EXCEPT
-    Minus(Box<SqlSetOp>, Box<SqlSetOp>, bool),
-}
-
 /// A SELECT statement in the SQL query language
 pub struct SqlSelect {
     pub project: Project,
-    pub distinct: bool,
-    pub from: SqlFrom<QueryAst>,
+    pub from: SqlFrom,
     pub filter: Option<SqlExpr>,
 }
-
-/// ORDER BY cols [ ASC | DESC ]
-pub struct OrderByElem(pub SqlExpr, pub bool);
 
 /// INSERT INTO table cols VALUES literals
 pub struct SqlInsert {

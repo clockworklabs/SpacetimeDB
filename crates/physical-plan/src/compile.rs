@@ -80,9 +80,6 @@ fn compile_rel_expr(ctx: &TyCtx, ast: RelExpr) -> PhysicalPlan {
         RelExpr::Select(select) => compile_filter(ctx, *select),
         RelExpr::Proj(proj) => compile_project(ctx, *proj),
         RelExpr::Join(joins, _) => compile_cross_joins(ctx, joins.into_vec()),
-        RelExpr::Union(_, _) | RelExpr::Minus(_, _) | RelExpr::Dedup(_) => {
-            unreachable!("DISTINCT is not implemented")
-        }
     }
 }
 
