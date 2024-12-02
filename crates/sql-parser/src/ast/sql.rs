@@ -23,6 +23,19 @@ pub struct SqlSelect {
     pub filter: Option<SqlExpr>,
 }
 
+impl SqlSelect {
+    pub fn qualify_vars(self) -> Self {
+        match &self.from {
+            SqlFrom::Expr(alias, None) | SqlFrom::Expr(_, Some(alias)) => Self {
+                project: self.project.qualify_vars(alias.clone()),
+                filter: self.filter.map(|expr| expr.qualify_vars(alias.clone())),
+                from: self.from,
+            },
+            SqlFrom::Join(..) => self,
+        }
+    }
+}
+
 /// INSERT INTO table cols VALUES literals
 pub struct SqlInsert {
     pub table: SqlIdent,

@@ -24,11 +24,27 @@ pub struct SqlJoin {
 #[derive(Debug)]
 pub struct ProjectElem(pub ProjectExpr, pub Option<SqlIdent>);
 
+impl ProjectElem {
+    pub fn qualify_vars(self, with: SqlIdent) -> Self {
+        let Self(expr, alias) = self;
+        Self(expr.qualify_vars(with), alias)
+    }
+}
+
 /// A column projection in a SELECT clause
 #[derive(Debug)]
 pub enum ProjectExpr {
     Var(SqlIdent),
     Field(SqlIdent, SqlIdent),
+}
+
+impl ProjectExpr {
+    pub fn qualify_vars(self, with: SqlIdent) -> Self {
+        match self {
+            Self::Var(name) => Self::Field(with, name),
+            Self::Field(_, _) => self,
+        }
+    }
 }
 
 /// A SQL SELECT clause
@@ -39,6 +55,15 @@ pub enum Project {
     Star(Option<SqlIdent>),
     /// SELECT a, b
     Exprs(Vec<ProjectElem>),
+}
+
+impl Project {
+    pub fn qualify_vars(self, with: SqlIdent) -> Self {
+        match self {
+            Self::Star(..) => self,
+            Self::Exprs(elems) => Self::Exprs(elems.into_iter().map(|elem| elem.qualify_vars(with.clone())).collect()),
+        }
+    }
 }
 
 /// A scalar SQL expression
@@ -52,6 +77,15 @@ pub enum SqlExpr {
     Field(SqlIdent, SqlIdent),
     /// A binary infix expression
     Bin(Box<SqlExpr>, Box<SqlExpr>, BinOp),
+}
+
+impl SqlExpr {
+    pub fn qualify_vars(self, with: SqlIdent) -> Self {
+        match self {
+            Self::Var(name) => Self::Field(with, name),
+            Self::Lit(..) | Self::Field(..) | Self::Bin(..) => self,
+        }
+    }
 }
 
 /// A SQL identifier or named reference.
