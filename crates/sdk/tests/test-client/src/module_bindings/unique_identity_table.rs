@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::unique_identity_type::UniqueIdentity;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `unique_identity`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.unique_identity().on_insert(...)`.
 pub struct UniqueIdentityTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<UniqueIdentity>,
+    imp: __sdk::TableHandle<UniqueIdentity>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl UniqueIdentityTableAccess for super::RemoteTables {
     }
 }
 
-pub struct UniqueIdentityInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct UniqueIdentityDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct UniqueIdentityInsertCallbackId(__sdk::CallbackId);
+pub struct UniqueIdentityDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for UniqueIdentityTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for UniqueIdentityTableHandle<'ctx> {
     type Row = UniqueIdentity;
     type EventContext = super::EventContext;
 
@@ -83,10 +82,15 @@ impl<'ctx> __sdk::table::Table for UniqueIdentityTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueIdentity>("unique_identity");
+    _table.add_unique_constraint::<__sdk::Identity>("i", |row| &row.i)
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueIdentity>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<UniqueIdentity>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"unique_identity\"")
 }
 
@@ -98,7 +102,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.unique_identity().i().find(...)`.
 pub struct UniqueIdentityIUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraint<UniqueIdentity, __sdk::Identity>,
+    imp: __sdk::UniqueConstraintHandle<UniqueIdentity, __sdk::Identity>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -106,7 +110,7 @@ impl<'ctx> UniqueIdentityTableHandle<'ctx> {
     /// Get a handle on the `i` unique index on the table `unique_identity`.
     pub fn i(&self) -> UniqueIdentityIUnique<'ctx> {
         UniqueIdentityIUnique {
-            imp: self.imp.get_unique_constraint::<__sdk::Identity>("i", |row| &row.i),
+            imp: self.imp.get_unique_constraint::<__sdk::Identity>("i"),
             phantom: std::marker::PhantomData,
         }
     }

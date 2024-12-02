@@ -4,10 +4,9 @@
 #![allow(unused)]
 use super::one_simple_enum_type::OneSimpleEnum;
 use super::simple_enum_type::SimpleEnum;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `one_simple_enum`.
@@ -19,7 +18,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.one_simple_enum().on_insert(...)`.
 pub struct OneSimpleEnumTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<OneSimpleEnum>,
+    imp: __sdk::TableHandle<OneSimpleEnum>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -42,10 +41,10 @@ impl OneSimpleEnumTableAccess for super::RemoteTables {
     }
 }
 
-pub struct OneSimpleEnumInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct OneSimpleEnumDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct OneSimpleEnumInsertCallbackId(__sdk::CallbackId);
+pub struct OneSimpleEnumDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for OneSimpleEnumTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for OneSimpleEnumTableHandle<'ctx> {
     type Row = OneSimpleEnum;
     type EventContext = super::EventContext;
 
@@ -84,9 +83,13 @@ impl<'ctx> __sdk::table::Table for OneSimpleEnumTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<OneSimpleEnum>("one_simple_enum");
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneSimpleEnum>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<OneSimpleEnum>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"one_simple_enum\"")
 }

@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::unit_struct_type::UnitStruct;
@@ -16,11 +15,11 @@ pub struct InsertVecUnitStruct {
     pub s: Vec<UnitStruct>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertVecUnitStruct {
+impl __sdk::InModule for InsertVecUnitStruct {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecUnitStructCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertVecUnitStructCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_unit_struct`.
