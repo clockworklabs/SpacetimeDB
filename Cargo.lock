@@ -4909,6 +4909,7 @@ dependencies = [
  "spacetimedb-commitlog",
  "spacetimedb-data-structures",
  "spacetimedb-durability",
+ "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-jwks",

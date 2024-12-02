@@ -53,7 +53,7 @@ pub struct CommittedState {
     pub(crate) tables: IntMap<TableId, Table>,
     pub(crate) blob_store: HashMapBlobStore,
     /// Provides fast lookup for index id -> an index.
-    pub(super) index_id_map: IndexIdMap,
+    pub(crate) index_id_map: IndexIdMap,
 }
 
 impl MemoryUsage for CommittedState {
@@ -411,7 +411,7 @@ impl CommittedState {
         Ok(())
     }
 
-    pub(super) fn index_seek<'a>(
+    pub(crate) fn index_seek<'a>(
         &'a self,
         table_id: TableId,
         cols: &ColList,

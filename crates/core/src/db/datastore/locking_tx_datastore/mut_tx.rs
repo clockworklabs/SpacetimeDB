@@ -58,8 +58,8 @@ type DecodeResult<T> = core::result::Result<T, DecodeError>;
 /// handling can lead to deadlocks. Therefore, it is strongly recommended to use
 /// `Locking::begin_mut_tx()` for instantiation to ensure safe acquisition of locks.
 pub struct MutTxId {
-    pub(super) tx_state: TxState,
-    pub(super) committed_state_write_lock: SharedWriteGuard<CommittedState>,
+    pub(crate) tx_state: TxState,
+    pub(crate) committed_state_write_lock: SharedWriteGuard<CommittedState>,
     pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
     pub(super) lock_wait_time: Duration,
     pub(crate) timer: Instant,

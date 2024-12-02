@@ -1,5 +1,6 @@
 pub mod datastore;
 pub mod db_metrics;
+pub mod query;
 pub mod relational_db;
 pub mod update;
 

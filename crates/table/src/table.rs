@@ -1030,7 +1030,14 @@ impl<'a> Iterator for IndexScanIter<'a> {
     }
 }
 
-impl IndexScanIter<'_> {
+impl<'a> IndexScanIter<'a> {
+    pub fn new(table: &'a Table, blob_store: &'a dyn BlobStore, btree_index_iter: BTreeIndexRangeIter<'a>) -> Self {
+        Self {
+            table,
+            blob_store,
+            btree_index_iter,
+        }
+    }
     /// Returns the current number of pointers the iterator has returned thus far.
     pub fn num_pointers_yielded(&self) -> u64 {
         self.btree_index_iter.num_pointers_yielded()
