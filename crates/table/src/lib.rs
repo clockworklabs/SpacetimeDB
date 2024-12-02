@@ -8,7 +8,6 @@
 
 pub mod bflatn_from;
 pub mod bflatn_to;
-pub mod bflatn_to_bsatn_fast_path;
 pub mod blob_store;
 pub mod btree_index;
 pub mod eq;
@@ -23,6 +22,7 @@ pub mod read_column;
 pub mod row_hash;
 pub mod row_type_visitor;
 pub mod static_bsatn_validator;
+pub mod static_layout;
 pub mod table;
 pub mod var_len;
 

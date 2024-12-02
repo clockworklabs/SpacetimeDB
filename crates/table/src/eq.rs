@@ -4,11 +4,11 @@
 
 use super::{
     bflatn_from::read_tag,
-    bflatn_to_bsatn_fast_path::StaticBsatnLayout,
     indexes::{Bytes, PageOffset},
     layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout},
     page::Page,
     row_hash::read_from_bytes,
+    static_layout::StaticLayout,
     util::range_move,
     var_len::VarLenRef,
 };
@@ -32,7 +32,7 @@ pub unsafe fn eq_row_in_page(
     fixed_offset_a: PageOffset,
     fixed_offset_b: PageOffset,
     ty: &RowTypeLayout,
-    static_bsatn_layout: Option<&StaticBsatnLayout>,
+    static_layout: Option<&StaticLayout>,
 ) -> bool {
     // Contexts for rows `a` and `b`.
     let a = BytesPage::new(page_a, fixed_offset_a, ty);
@@ -41,7 +41,7 @@ pub unsafe fn eq_row_in_page(
     // If there are only fixed parts in the layout,
     // there are no pointers to anywhere,
     // So it is sound to simply check for byte-wise equality while ignoring padding.
-    match static_bsatn_layout {
+    match static_layout {
         None => {
             // Context for the whole comparison.
             let mut ctx = EqCtx { a, b, curr_offset: 0 };
