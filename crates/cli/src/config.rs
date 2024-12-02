@@ -7,6 +7,15 @@ use spacetimedb_paths::cli::CliTomlPath;
 use std::collections::HashMap;
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
+const DEFAULT_SERVER_KEY: &str = "default_server";
+const WEB_SESSION_TOKEN_KEY: &str = "web_session_token";
+const SPACETIMEDB_TOKEN_KEY: &str = "spacetimedb_token";
+const SERVER_CONFIGS_KEY: &str = "server_configs";
+const NICKNAME_KEY: &str = "nickname";
+const HOST_KEY: &str = "host";
+const PROTOCOL_KEY: &str = "protocol";
+const ECDSA_PUBLIC_KEY: &str = "ecdsa_public_key";
+
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
     pub nickname: Option<String>,
@@ -19,19 +28,16 @@ impl ServerConfig {
     /// Generate a new [Table] representing this [ServerConfig].
     pub fn as_table(&self) -> Table {
         let mut table = Table::new();
-        set_table_opt_value(&mut table, "nickname", self.nickname.as_deref());
-        table["host"] = self.host.as_str().into();
-        table["protocol"] = self.protocol.as_str().into();
-        set_table_opt_value(&mut table, "ecdsa_public_key", self.ecdsa_public_key.as_deref());
+        Self::update_table(&mut table, self);
         table
     }
 
     /// Update an existing [Table] with the values of a [ServerConfig].
     pub fn update_table(edit: &mut Table, from: &ServerConfig) {
-        set_table_opt_value(edit, "nickname", from.nickname.as_deref());
-        edit["host"] = from.host.as_str().into();
-        edit["protocol"] = from.protocol.as_str().into();
-        set_table_opt_value(edit, "ecdsa_public_key", from.ecdsa_public_key.as_deref());
+        set_table_opt_value(edit, NICKNAME_KEY, from.nickname.as_deref());
+        edit[HOST_KEY] = from.host.as_str().into();
+        edit[PROTOCOL_KEY] = from.protocol.as_str().into();
+        set_table_opt_value(edit, ECDSA_PUBLIC_KEY, from.ecdsa_public_key.as_deref());
     }
 
     fn nick_or_host(&self) -> &str {
@@ -49,6 +55,25 @@ impl ServerConfig {
         self.nickname.as_deref() == Some(name) || self.host == name || {
             let (host, _) = host_or_url_to_host_and_protocol(name);
             self.host == host
+        }
+    }
+}
+
+impl From<&Table> for ServerConfig {
+    fn from(table: &Table) -> Self {
+        let nickname = table.get(NICKNAME_KEY).and_then(Item::as_str).map(String::from);
+        let host = table.get(HOST_KEY).and_then(Item::as_str).map(String::from).unwrap();
+        let protocol = table
+            .get(PROTOCOL_KEY)
+            .and_then(Item::as_str)
+            .map(String::from)
+            .unwrap();
+        let ecdsa_public_key = table.get(ECDSA_PUBLIC_KEY).and_then(Item::as_str).map(String::from);
+        ServerConfig {
+            nickname,
+            host,
+            protocol,
+            ecdsa_public_key,
         }
     }
 }
@@ -392,29 +417,20 @@ Fetch the server's fingerprint with:
 }
 impl From<&DocumentMut> for RawConfig {
     fn from(value: &DocumentMut) -> Self {
-        let default_server = value.get("default_server").and_then(Item::as_str).map(String::from);
-        let web_session_token = value.get("web_session_token").and_then(Item::as_str).map(String::from);
-        let spacetimedb_token = value.get("spacetimedb_token").and_then(Item::as_str).map(String::from);
+        let default_server = value.get(DEFAULT_SERVER_KEY).and_then(Item::as_str).map(String::from);
+        let web_session_token = value
+            .get(WEB_SESSION_TOKEN_KEY)
+            .and_then(Item::as_str)
+            .map(String::from);
+        let spacetimedb_token = value
+            .get(SPACETIMEDB_TOKEN_KEY)
+            .and_then(Item::as_str)
+            .map(String::from);
 
         let server_configs = value
-            .get("server_configs")
+            .get(SERVER_CONFIGS_KEY)
             .and_then(Item::as_array_of_tables)
-            .map(|arr| {
-                arr.iter()
-                    .map(|table| {
-                        let nickname = table.get("nickname").and_then(Item::as_str).map(String::from);
-                        let host = table.get("host").and_then(Item::as_str).map(String::from).unwrap();
-                        let protocol = table.get("protocol").and_then(Item::as_str).map(String::from).unwrap();
-                        let ecdsa_public_key = table.get("ecdsa_public_key").and_then(Item::as_str).map(String::from);
-                        ServerConfig {
-                            nickname,
-                            host,
-                            protocol,
-                            ecdsa_public_key,
-                        }
-                    })
-                    .collect()
-            })
+            .map(|arr| arr.iter().map(ServerConfig::from).collect())
             .unwrap_or_default();
 
         RawConfig {
@@ -581,21 +597,28 @@ impl Config {
         let mut set_value = |key: &str, value: Option<&str>| {
             set_opt_value(&mut doc, key, value);
         };
-        set_value("default_server", self.home.default_server.as_deref());
-        set_value("web_session_token", self.home.web_session_token.as_deref());
-        set_value("spacetimedb_token", self.home.spacetimedb_token.as_deref());
+        // Intentionally use a destructuring assignment in case the fields change...
+        let RawConfig {
+            default_server,
+            server_configs,
+            web_session_token,
+            spacetimedb_token,
+        } = &self.home;
+
+        set_value(DEFAULT_SERVER_KEY, default_server.as_deref());
+        set_value(WEB_SESSION_TOKEN_KEY, web_session_token.as_deref());
+        set_value(SPACETIMEDB_TOKEN_KEY, spacetimedb_token.as_deref());
 
         // Short-circuit if there are no servers.
-        if self.home.server_configs.is_empty() {
-            doc.remove("server_configs");
+        if server_configs.is_empty() {
+            doc.remove(SERVER_CONFIGS_KEY);
             return doc;
         }
         // ... or if there are no server_configs to edit.
-        let server_configs = if let Some(cfg) = doc.get_mut("server_configs").and_then(Item::as_array_of_tables_mut) {
+        let server_configs = if let Some(cfg) = doc.get_mut(SERVER_CONFIGS_KEY).and_then(Item::as_array_of_tables_mut) {
             cfg
         } else {
-            doc["server_configs"] =
-                Item::ArrayOfTables(self.home.server_configs.iter().map(ServerConfig::as_table).collect());
+            doc[SERVER_CONFIGS_KEY] = Item::ArrayOfTables(server_configs.iter().map(ServerConfig::as_table).collect());
             return doc;
         };
 
@@ -607,11 +630,11 @@ impl Config {
             .collect::<HashMap<_, _>>();
 
         // Update the existing servers.
-        let mut new_vec = Vec::with_capacity(self.home.server_configs.len());
+        let mut new_vec = Vec::with_capacity(server_configs.len());
         for old_config in server_configs.iter_mut() {
             let nick_or_host = old_config
-                .get("nickname")
-                .or_else(|| old_config.get("host"))
+                .get(NICKNAME_KEY)
+                .or_else(|| old_config.get(HOST_KEY))
                 .and_then(|v| v.as_str())
                 .unwrap();
             if let Some(new_config) = new_configs.remove(nick_or_host) {
