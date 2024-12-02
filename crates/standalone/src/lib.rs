@@ -5,7 +5,6 @@ pub mod subcommands;
 pub mod util;
 
 use crate::control_db::ControlDb;
-use crate::subcommands::start::ProgramMode;
 use crate::subcommands::{start, version};
 use anyhow::{ensure, Context};
 use async_trait::async_trait;
@@ -438,14 +437,14 @@ fn withdraw_energy(control_db: &ControlDb, identity: &Identity, amount: EnergyQu
 
 pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
-        "start" => start::exec(None, args).await,
+        "start" => start::exec(args).await,
         "version" => version::exec(args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
 
 pub fn get_subcommands() -> Vec<Command> {
-    vec![start::cli(ProgramMode::Standalone), version::cli()]
+    vec![start::cli(), version::cli()]
 }
 
 #[cfg(test)]
