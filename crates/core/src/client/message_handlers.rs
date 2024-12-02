@@ -80,10 +80,20 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             })
         }
         ClientMessage::SubscribeSingle(subscription) => {
-            todo!("subscribe_single");
+            let res = client.subscribe_single(subscription, timer).await;
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Subscribe, &address, "")
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
         }
-        ClientMessage::Unsubscribe(subscription) => {
-            todo!("subscribe_single");
+        ClientMessage::Unsubscribe(request) => {
+            let res = client.unsubscribe(request, timer).await;
+            WORKER_METRICS
+                .request_round_trip
+                .with_label_values(&WorkloadType::Unsubscribe, &address, "")
+                .observe(timer.elapsed().as_secs_f64());
+            res.map_err(|e| (None, None, e.into()))
         }
         ClientMessage::Subscribe(subscription) => {
             let res = client.subscribe(subscription, timer).await;

@@ -12,7 +12,9 @@ use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
-use spacetimedb_client_api_messages::websocket::{CallReducerFlags, Compression, FormatSwitch};
+use spacetimedb_client_api_messages::websocket::{
+    CallReducerFlags, Compression, FormatSwitch, SubscribeSingle, Unsubscribe,
+};
 use spacetimedb_lib::identity::RequestId;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
@@ -281,6 +283,24 @@ impl ClientConnection {
                 args,
             )
             .await
+    }
+
+    pub async fn subscribe_single(&self, subscription: SubscribeSingle, timer: Instant) -> Result<(), DBError> {
+        let me = self.clone();
+        tokio::task::spawn_blocking(move || {
+            me.module
+                .subscriptions()
+                .add_subscription(me.sender, subscription, timer, None)
+        })
+        .await
+        .unwrap() // TODO: is unwrapping right here?
+    }
+
+    pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<(), DBError> {
+        let me = self.clone();
+        tokio::task::spawn_blocking(move || me.module.subscriptions().remove_subscription(me.sender, request, timer))
+            .await
+            .unwrap() // TODO: is unwrapping right here?
     }
 
     pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
