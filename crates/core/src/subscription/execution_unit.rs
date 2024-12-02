@@ -8,11 +8,12 @@ use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue,
 use crate::messages::websocket::TableUpdate;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, RowListLen as _, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{Compression, QueryId, QueryUpdate, RowListLen as _, WebsocketFormat};
 use spacetimedb_lib::db::error::AuthError;
 use spacetimedb_lib::relation::DbTable;
 use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::u256;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::{AuthAccess, NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;
@@ -39,6 +40,18 @@ use std::time::Duration;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct QueryHash {
     data: [u8; 32],
+}
+
+impl From<QueryHash> for u256 {
+    fn from(hash: QueryHash) -> Self {
+        u256::from_le_bytes(hash.data)
+    }
+}
+
+impl From<QueryHash> for QueryId {
+    fn from(hash: QueryHash) -> Self {
+        QueryId::new(hash.into())
+    }
 }
 
 impl QueryHash {

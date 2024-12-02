@@ -176,6 +176,12 @@ pub struct QueryId {
     pub hash: u256,
 }
 
+impl QueryId {
+    pub fn new(hash: u256) -> Self {
+        Self { hash }
+    }
+}
+
 /// Sent by client to database to register a set of queries, about which the client will
 /// receive `TransactionUpdate`s.
 ///
@@ -273,6 +279,8 @@ pub enum ServerMessage<F: WebsocketFormat> {
     OneOffQueryResponse(OneOffQueryResponse<F>),
     /// Sent in response to a `SubscribeSingle` message. This contains the initial matching rows.
     SubscribeApplied(SubscribeApplied<F>),
+    /// Sent in response to an `Unsubscribe` message. This contains the matching rows.
+    UnsubscribeApplied(UnsubscribeApplied<F>),
     /// Communicate an error in the subscription lifecycle.
     SubscriptionError(SubscriptionError),
     /// Informs of changes to subscribed rows.
@@ -534,6 +542,15 @@ impl<F: WebsocketFormat> TableUpdate<F> {
             table_name,
             num_rows,
             updates: [update].into(),
+        }
+    }
+
+    pub fn empty(table_id: TableId, table_name: Box<str>) -> Self {
+        Self {
+            table_id,
+            table_name,
+            num_rows: 0,
+            updates: SmallVec::new(),
         }
     }
 

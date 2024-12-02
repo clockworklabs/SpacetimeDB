@@ -103,6 +103,9 @@ pub enum SubscriptionError {
     SideEffect(Crud),
     #[error("Unsupported query on subscription: {0:?}")]
     Unsupported(String),
+    // TODO: Is this correct? Check if you can have multiple queries for the same table in a single call.
+    #[error("Subscribing to multiple tables is not supported")]
+    Multiple,
 }
 
 #[derive(Error, Debug)]

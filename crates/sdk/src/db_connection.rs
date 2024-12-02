@@ -1100,6 +1100,7 @@ async fn parse_loop<M: SpacetimeModule>(
                 unreachable!("The Rust SDK does not implement one-off queries")
             }
             ws::ServerMessage::SubscribeApplied(subscribe_applied) => todo!(),
+            ws::ServerMessage::UnsubscribeApplied(unsubscribe_applied) => todo!(),
             ws::ServerMessage::SubscriptionError(subscription_error) => todo!(),
             ws::ServerMessage::SubscriptionUpdate(subscription_update) => todo!(),
         })

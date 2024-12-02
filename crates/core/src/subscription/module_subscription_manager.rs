@@ -100,7 +100,7 @@ impl SubscriptionManager {
         // self.queries.get(hash).cloned()
     }
 
-    pub fn num_queries(&self) -> usize {
+    pub fn num_unique_queries(&self) -> usize {
         self.queries.len()
     }
 
@@ -153,7 +153,7 @@ impl SubscriptionManager {
         }
     }
 
-    pub fn remove_subscription(&mut self, client_id: ClientId, request_id: ClientRequestId) -> Result<(), DBError> {
+    pub fn remove_subscription(&mut self, client_id: ClientId, request_id: ClientRequestId) -> Result<Query, DBError> {
         let subscription_id = (client_id, request_id);
         let ci = if let Some(ci) = self.clients.get_mut(&client_id) {
             ci
@@ -166,12 +166,13 @@ impl SubscriptionManager {
         } else {
             return Err(anyhow::anyhow!("Subscription not found: {:?}", subscription_id).into());
         };
+        let query_state = match self.queries.get_mut(&query_hash) {
+            Some(query_state) => query_state,
+            None => return Err(anyhow::anyhow!("Query state not found for query hash: {:?}", query_hash).into()),
+        };
+        let query = query_state.query.clone();
         // Check if the query has any subscribers left.
         let should_remove = {
-            let query_state = match self.queries.get_mut(&query_hash) {
-                Some(query_state) => query_state,
-                None => return Err(anyhow::anyhow!("Query state not found for query hash: {:?}", query_hash).into()),
-            };
             query_state.subscriptions.remove(&subscription_id);
             if !query_state.has_subscribers() {
                 SubscriptionManager::remove_table_query(
@@ -192,7 +193,7 @@ impl SubscriptionManager {
         if should_remove {
             self.queries.remove(&query_hash);
         }
-        Ok(())
+        Ok(query)
     }
 
     /// Adds a single subscription for a client.

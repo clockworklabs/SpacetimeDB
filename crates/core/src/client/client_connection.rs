@@ -288,7 +288,7 @@ impl ClientConnection {
         tokio::task::spawn_blocking(move || {
             me.module
                 .subscriptions()
-                .add_subscriber(me.sender, subscription, timer, None)
+                .add_legacy_subscriber(me.sender, subscription, timer, None)
         })
         .await
         .unwrap()
