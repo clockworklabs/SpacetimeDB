@@ -3,6 +3,7 @@ name = "spacetimedb-bench"
 version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
+repository.workspace = true
 description = "Bench library/utility for SpacetimeDB"
 
 [[bench]]
