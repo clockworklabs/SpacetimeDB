@@ -22,6 +22,7 @@ pub mod pointer_map;
 pub mod read_column;
 pub mod row_hash;
 pub mod row_type_visitor;
+pub mod static_bsatn_validator;
 pub mod table;
 pub mod var_len;
 
