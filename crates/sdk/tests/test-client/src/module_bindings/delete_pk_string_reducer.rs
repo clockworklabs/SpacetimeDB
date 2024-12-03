@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeletePkString {
+pub(super) struct DeletePkStringArgs {
     pub s: String,
 }
 
-impl __sdk::InModule for DeletePkString {
+impl From<DeletePkStringArgs> for super::Reducer {
+    fn from(args: DeletePkStringArgs) -> Self {
+        Self::DeletePkString { s: args.s }
+    }
+}
+
+impl __sdk::InModule for DeletePkStringArgs {
     type Module = super::RemoteModule;
 }
 
@@ -51,20 +57,32 @@ pub trait delete_pk_string {
 
 impl delete_pk_string for super::RemoteReducers {
     fn delete_pk_string(&self, s: String) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_string", DeletePkString { s })
+        self.imp.call_reducer("delete_pk_string", DeletePkStringArgs { s })
     }
     fn on_delete_pk_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String) + Send + 'static,
     ) -> DeletePkStringCallbackId {
-        DeletePkStringCallbackId(self.imp.on_reducer::<DeletePkString>(
+        DeletePkStringCallbackId(self.imp.on_reducer(
             "delete_pk_string",
-            Box::new(move |ctx: &super::EventContext, args: &DeletePkString| callback(ctx, &args.s)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeletePkString { s },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
+            }),
         ))
     }
     fn remove_on_delete_pk_string(&self, callback: DeletePkStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<DeletePkString>("delete_pk_string", callback.0)
+        self.imp.remove_on_reducer("delete_pk_string", callback.0)
     }
 }
 

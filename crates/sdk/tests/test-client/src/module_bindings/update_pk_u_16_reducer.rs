@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdatePkU16 {
+pub(super) struct UpdatePkU16Args {
     pub n: u16,
     pub data: i32,
 }
 
-impl __sdk::InModule for UpdatePkU16 {
+impl From<UpdatePkU16Args> for super::Reducer {
+    fn from(args: UpdatePkU16Args) -> Self {
+        Self::UpdatePkU16 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdatePkU16Args {
     type Module = super::RemoteModule;
 }
 
@@ -52,19 +61,32 @@ pub trait update_pk_u_16 {
 
 impl update_pk_u_16 for super::RemoteReducers {
     fn update_pk_u_16(&self, n: u16, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_pk_u16", UpdatePkU16 { n, data })
+        self.imp.call_reducer("update_pk_u16", UpdatePkU16Args { n, data })
     }
     fn on_update_pk_u_16(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u16, &i32) + Send + 'static,
     ) -> UpdatePkU16CallbackId {
-        UpdatePkU16CallbackId(self.imp.on_reducer::<UpdatePkU16>(
+        UpdatePkU16CallbackId(self.imp.on_reducer(
             "update_pk_u16",
-            Box::new(move |ctx: &super::EventContext, args: &UpdatePkU16| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdatePkU16 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_update_pk_u_16(&self, callback: UpdatePkU16CallbackId) {
-        self.imp.remove_on_reducer::<UpdatePkU16>("update_pk_u16", callback.0)
+        self.imp.remove_on_reducer("update_pk_u16", callback.0)
     }
 }
 

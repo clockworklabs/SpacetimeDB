@@ -11,7 +11,7 @@ use bytes::Bytes;
 use spacetimedb_client_api_messages::websocket::{self as ws, RowListLen as _};
 use spacetimedb_data_structures::map::{DefaultHashBuilder, HashCollectionExt, HashMap};
 use spacetimedb_lib::{bsatn, de::DeserializeOwned};
-use std::{any::Any, fmt::Debug, hash::Hash};
+use std::{fmt::Debug, hash::Hash};
 
 /// Marker trait for any item defined in a module,
 /// to conveniently get the types of various per-module things.
@@ -107,11 +107,6 @@ where
     ///
     /// Used by [`crate::callbacks::ReducerCallbacks::invoke_on_reducer`] to determine which callback to run.
     fn reducer_name(&self) -> &'static str;
-    /// Get a reference to the reducer argument struct for the variant stored in this instance.
-    ///
-    /// Used by [`crate::callbacks::ReducerCallbacks::invoke_on_reducer`]
-    /// to pass the reducer arguments to the callback.
-    fn reducer_args(&self) -> &dyn Any;
 }
 
 pub trait SubscriptionHandle: InModule + Send + 'static

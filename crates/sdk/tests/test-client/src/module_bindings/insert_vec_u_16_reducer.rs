@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecU16 {
+pub(super) struct InsertVecU16Args {
     pub n: Vec<u16>,
 }
 
-impl __sdk::InModule for InsertVecU16 {
+impl From<InsertVecU16Args> for super::Reducer {
+    fn from(args: InsertVecU16Args) -> Self {
+        Self::InsertVecU16 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for InsertVecU16Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,19 +57,32 @@ pub trait insert_vec_u_16 {
 
 impl insert_vec_u_16 for super::RemoteReducers {
     fn insert_vec_u_16(&self, n: Vec<u16>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_u16", InsertVecU16 { n })
+        self.imp.call_reducer("insert_vec_u16", InsertVecU16Args { n })
     }
     fn on_insert_vec_u_16(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<u16>) + Send + 'static,
     ) -> InsertVecU16CallbackId {
-        InsertVecU16CallbackId(self.imp.on_reducer::<InsertVecU16>(
+        InsertVecU16CallbackId(self.imp.on_reducer(
             "insert_vec_u16",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecU16| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecU16 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_insert_vec_u_16(&self, callback: InsertVecU16CallbackId) {
-        self.imp.remove_on_reducer::<InsertVecU16>("insert_vec_u16", callback.0)
+        self.imp.remove_on_reducer("insert_vec_u16", callback.0)
     }
 }
 

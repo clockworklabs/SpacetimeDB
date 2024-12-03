@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeleteUniqueU32 {
+pub(super) struct DeleteUniqueU32Args {
     pub n: u32,
 }
 
-impl __sdk::InModule for DeleteUniqueU32 {
+impl From<DeleteUniqueU32Args> for super::Reducer {
+    fn from(args: DeleteUniqueU32Args) -> Self {
+        Self::DeleteUniqueU32 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for DeleteUniqueU32Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,20 +57,32 @@ pub trait delete_unique_u_32 {
 
 impl delete_unique_u_32 for super::RemoteReducers {
     fn delete_unique_u_32(&self, n: u32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_u32", DeleteUniqueU32 { n })
+        self.imp.call_reducer("delete_unique_u32", DeleteUniqueU32Args { n })
     }
     fn on_delete_unique_u_32(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u32) + Send + 'static,
     ) -> DeleteUniqueU32CallbackId {
-        DeleteUniqueU32CallbackId(self.imp.on_reducer::<DeleteUniqueU32>(
+        DeleteUniqueU32CallbackId(self.imp.on_reducer(
             "delete_unique_u32",
-            Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueU32| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeleteUniqueU32 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_delete_unique_u_32(&self, callback: DeleteUniqueU32CallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueU32>("delete_unique_u32", callback.0)
+        self.imp.remove_on_reducer("delete_unique_u32", callback.0)
     }
 }
 

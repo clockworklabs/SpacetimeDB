@@ -84,7 +84,7 @@ impl<'ctx> __sdk::Table for PkI256TableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<PkI256>("pk_i256");
-    _table.add_unique_constraint::<__sats::i256>("n", |row| &row.n)
+    _table.add_unique_constraint::<__sats::i256>("n", |row| &row.n);
 }
 pub struct PkI256UpdateCallbackId(__sdk::CallbackId);
 

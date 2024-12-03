@@ -11,11 +11,17 @@ use super::simple_enum_type::SimpleEnum;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneSimpleEnum {
+pub(super) struct InsertOneSimpleEnumArgs {
     pub e: SimpleEnum,
 }
 
-impl __sdk::InModule for InsertOneSimpleEnum {
+impl From<InsertOneSimpleEnumArgs> for super::Reducer {
+    fn from(args: InsertOneSimpleEnumArgs) -> Self {
+        Self::InsertOneSimpleEnum { e: args.e }
+    }
+}
+
+impl __sdk::InModule for InsertOneSimpleEnumArgs {
     type Module = super::RemoteModule;
 }
 
@@ -54,20 +60,32 @@ pub trait insert_one_simple_enum {
 impl insert_one_simple_enum for super::RemoteReducers {
     fn insert_one_simple_enum(&self, e: SimpleEnum) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_one_simple_enum", InsertOneSimpleEnum { e })
+            .call_reducer("insert_one_simple_enum", InsertOneSimpleEnumArgs { e })
     }
     fn on_insert_one_simple_enum(
         &self,
         mut callback: impl FnMut(&super::EventContext, &SimpleEnum) + Send + 'static,
     ) -> InsertOneSimpleEnumCallbackId {
-        InsertOneSimpleEnumCallbackId(self.imp.on_reducer::<InsertOneSimpleEnum>(
+        InsertOneSimpleEnumCallbackId(self.imp.on_reducer(
             "insert_one_simple_enum",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneSimpleEnum| callback(ctx, &args.e)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneSimpleEnum { e },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, e)
+            }),
         ))
     }
     fn remove_on_insert_one_simple_enum(&self, callback: InsertOneSimpleEnumCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneSimpleEnum>("insert_one_simple_enum", callback.0)
+        self.imp.remove_on_reducer("insert_one_simple_enum", callback.0)
     }
 }
 

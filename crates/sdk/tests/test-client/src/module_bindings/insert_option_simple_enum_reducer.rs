@@ -11,11 +11,17 @@ use super::simple_enum_type::SimpleEnum;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOptionSimpleEnum {
+pub(super) struct InsertOptionSimpleEnumArgs {
     pub e: Option<SimpleEnum>,
 }
 
-impl __sdk::InModule for InsertOptionSimpleEnum {
+impl From<InsertOptionSimpleEnumArgs> for super::Reducer {
+    fn from(args: InsertOptionSimpleEnumArgs) -> Self {
+        Self::InsertOptionSimpleEnum { e: args.e }
+    }
+}
+
+impl __sdk::InModule for InsertOptionSimpleEnumArgs {
     type Module = super::RemoteModule;
 }
 
@@ -54,20 +60,32 @@ pub trait insert_option_simple_enum {
 impl insert_option_simple_enum for super::RemoteReducers {
     fn insert_option_simple_enum(&self, e: Option<SimpleEnum>) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_option_simple_enum", InsertOptionSimpleEnum { e })
+            .call_reducer("insert_option_simple_enum", InsertOptionSimpleEnumArgs { e })
     }
     fn on_insert_option_simple_enum(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Option<SimpleEnum>) + Send + 'static,
     ) -> InsertOptionSimpleEnumCallbackId {
-        InsertOptionSimpleEnumCallbackId(self.imp.on_reducer::<InsertOptionSimpleEnum>(
+        InsertOptionSimpleEnumCallbackId(self.imp.on_reducer(
             "insert_option_simple_enum",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOptionSimpleEnum| callback(ctx, &args.e)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOptionSimpleEnum { e },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, e)
+            }),
         ))
     }
     fn remove_on_insert_option_simple_enum(&self, callback: InsertOptionSimpleEnumCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOptionSimpleEnum>("insert_option_simple_enum", callback.0)
+        self.imp.remove_on_reducer("insert_option_simple_enum", callback.0)
     }
 }
 

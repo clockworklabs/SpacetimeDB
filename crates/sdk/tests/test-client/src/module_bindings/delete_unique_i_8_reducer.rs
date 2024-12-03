@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeleteUniqueI8 {
+pub(super) struct DeleteUniqueI8Args {
     pub n: i8,
 }
 
-impl __sdk::InModule for DeleteUniqueI8 {
+impl From<DeleteUniqueI8Args> for super::Reducer {
+    fn from(args: DeleteUniqueI8Args) -> Self {
+        Self::DeleteUniqueI8 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for DeleteUniqueI8Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,20 +57,32 @@ pub trait delete_unique_i_8 {
 
 impl delete_unique_i_8 for super::RemoteReducers {
     fn delete_unique_i_8(&self, n: i8) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_i8", DeleteUniqueI8 { n })
+        self.imp.call_reducer("delete_unique_i8", DeleteUniqueI8Args { n })
     }
     fn on_delete_unique_i_8(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i8) + Send + 'static,
     ) -> DeleteUniqueI8CallbackId {
-        DeleteUniqueI8CallbackId(self.imp.on_reducer::<DeleteUniqueI8>(
+        DeleteUniqueI8CallbackId(self.imp.on_reducer(
             "delete_unique_i8",
-            Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueI8| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeleteUniqueI8 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_delete_unique_i_8(&self, callback: DeleteUniqueI8CallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueI8>("delete_unique_i8", callback.0)
+        self.imp.remove_on_reducer("delete_unique_i8", callback.0)
     }
 }
 

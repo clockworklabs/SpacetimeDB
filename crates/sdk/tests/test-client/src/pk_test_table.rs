@@ -161,13 +161,13 @@ macro_rules! impl_pk_test_table {
             }
 
             fn is_insert_reducer_event(event: &Reducer) -> bool {
-                matches!(event, Reducer::$insert_reducer_event(_))
+                matches!(event, Reducer::$insert_reducer_event { .. })
             }
             fn is_delete_reducer_event(event: &Reducer) -> bool {
-                matches!(event, Reducer::$delete_reducer_event(_))
+                matches!(event, Reducer::$delete_reducer_event { .. })
             }
             fn is_update_reducer_event(event: &Reducer) -> bool {
-                matches!(event, Reducer::$update_reducer_event(_))
+                matches!(event, Reducer::$update_reducer_event { .. })
             }
 
             fn insert(ctx: &impl RemoteDbContext, key: Self::PrimaryKey, value: i32) {

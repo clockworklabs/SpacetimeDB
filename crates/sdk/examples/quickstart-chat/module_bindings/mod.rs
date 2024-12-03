@@ -17,18 +17,21 @@ pub mod set_name_reducer;
 pub mod user_table;
 pub mod user_type;
 
-pub use identity_connected_reducer::*;
-pub use identity_disconnected_reducer::*;
-pub use init_reducer::*;
+pub use identity_connected_reducer::{
+    identity_connected, set_flags_for_identity_connected, IdentityConnectedCallbackId,
+};
+pub use identity_disconnected_reducer::{
+    identity_disconnected, set_flags_for_identity_disconnected, IdentityDisconnectedCallbackId,
+};
+pub use init_reducer::{init, set_flags_for_init, InitCallbackId};
 pub use message_table::*;
-pub use message_type::*;
-pub use send_message_reducer::*;
-pub use set_name_reducer::*;
+pub use message_type::Message;
+pub use send_message_reducer::{send_message, set_flags_for_send_message, SendMessageCallbackId};
+pub use set_name_reducer::{set_flags_for_set_name, set_name, SetNameCallbackId};
 pub use user_table::*;
-pub use user_type::*;
+pub use user_type::User;
 
-#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
-#[sats(crate = __lib)]
+#[derive(Clone, PartialEq, Debug)]
 
 /// One of the reducers defined by this module.
 ///
@@ -36,11 +39,11 @@ pub use user_type::*;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
-    IdentityConnected(identity_connected_reducer::IdentityConnected),
-    IdentityDisconnected(identity_disconnected_reducer::IdentityDisconnected),
-    Init(init_reducer::Init),
-    SendMessage(send_message_reducer::SendMessage),
-    SetName(set_name_reducer::SetName),
+    IdentityConnected,
+    IdentityDisconnected,
+    Init,
+    SendMessage { text: String },
+    SetName { name: String },
 }
 
 impl __sdk::InModule for Reducer {
@@ -50,20 +53,11 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
-            Reducer::IdentityConnected(_) => "__identity_connected__",
-            Reducer::IdentityDisconnected(_) => "__identity_disconnected__",
-            Reducer::Init(_) => "__init__",
-            Reducer::SendMessage(_) => "send_message",
-            Reducer::SetName(_) => "set_name",
-        }
-    }
-    fn reducer_args(&self) -> &dyn std::any::Any {
-        match self {
-            Reducer::IdentityConnected(args) => args,
-            Reducer::IdentityDisconnected(args) => args,
-            Reducer::Init(args) => args,
-            Reducer::SendMessage(args) => args,
-            Reducer::SetName(args) => args,
+            Reducer::IdentityConnected => "__identity_connected__",
+            Reducer::IdentityDisconnected => "__identity_disconnected__",
+            Reducer::Init => "__init__",
+            Reducer::SendMessage { .. } => "send_message",
+            Reducer::SetName { .. } => "set_name",
         }
     }
 }
@@ -71,20 +65,23 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
     type Error = __anyhow::Error;
     fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {
         match &value.reducer_name[..] {
-            "__identity_connected__" => Ok(Reducer::IdentityConnected(__sdk::parse_reducer_args(
-                "__identity_connected__",
-                &value.args,
-            )?)),
-            "__identity_disconnected__" => Ok(Reducer::IdentityDisconnected(__sdk::parse_reducer_args(
-                "__identity_disconnected__",
-                &value.args,
-            )?)),
-            "__init__" => Ok(Reducer::Init(__sdk::parse_reducer_args("__init__", &value.args)?)),
-            "send_message" => Ok(Reducer::SendMessage(__sdk::parse_reducer_args(
+            "__identity_connected__" => Ok(__sdk::parse_reducer_args::<
+                identity_connected_reducer::IdentityConnectedArgs,
+            >("__identity_connected__", &value.args)?
+            .into()),
+            "__identity_disconnected__" => Ok(__sdk::parse_reducer_args::<
+                identity_disconnected_reducer::IdentityDisconnectedArgs,
+            >("__identity_disconnected__", &value.args)?
+            .into()),
+            "__init__" => Ok(__sdk::parse_reducer_args::<init_reducer::InitArgs>("__init__", &value.args)?.into()),
+            "send_message" => Ok(__sdk::parse_reducer_args::<send_message_reducer::SendMessageArgs>(
                 "send_message",
                 &value.args,
-            )?)),
-            "set_name" => Ok(Reducer::SetName(__sdk::parse_reducer_args("set_name", &value.args)?)),
+            )?
+            .into()),
+            "set_name" => {
+                Ok(__sdk::parse_reducer_args::<set_name_reducer::SetNameArgs>("set_name", &value.args)?.into())
+            }
             _ => Err(__anyhow::anyhow!("Unknown reducer {:?}", value.reducer_name)),
         }
     }

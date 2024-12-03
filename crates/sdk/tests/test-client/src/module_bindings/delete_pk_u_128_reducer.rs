@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeletePkU128 {
+pub(super) struct DeletePkU128Args {
     pub n: u128,
 }
 
-impl __sdk::InModule for DeletePkU128 {
+impl From<DeletePkU128Args> for super::Reducer {
+    fn from(args: DeletePkU128Args) -> Self {
+        Self::DeletePkU128 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for DeletePkU128Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,19 +57,32 @@ pub trait delete_pk_u_128 {
 
 impl delete_pk_u_128 for super::RemoteReducers {
     fn delete_pk_u_128(&self, n: u128) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_u128", DeletePkU128 { n })
+        self.imp.call_reducer("delete_pk_u128", DeletePkU128Args { n })
     }
     fn on_delete_pk_u_128(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u128) + Send + 'static,
     ) -> DeletePkU128CallbackId {
-        DeletePkU128CallbackId(self.imp.on_reducer::<DeletePkU128>(
+        DeletePkU128CallbackId(self.imp.on_reducer(
             "delete_pk_u128",
-            Box::new(move |ctx: &super::EventContext, args: &DeletePkU128| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeletePkU128 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_delete_pk_u_128(&self, callback: DeletePkU128CallbackId) {
-        self.imp.remove_on_reducer::<DeletePkU128>("delete_pk_u128", callback.0)
+        self.imp.remove_on_reducer("delete_pk_u128", callback.0)
     }
 }
 

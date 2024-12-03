@@ -84,7 +84,7 @@ impl<'ctx> __sdk::Table for UserTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<User>("user");
-    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity)
+    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
 }
 pub struct UserUpdateCallbackId(__sdk::CallbackId);
 

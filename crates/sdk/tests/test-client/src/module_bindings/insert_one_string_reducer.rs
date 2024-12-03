@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneString {
+pub(super) struct InsertOneStringArgs {
     pub s: String,
 }
 
-impl __sdk::InModule for InsertOneString {
+impl From<InsertOneStringArgs> for super::Reducer {
+    fn from(args: InsertOneStringArgs) -> Self {
+        Self::InsertOneString { s: args.s }
+    }
+}
+
+impl __sdk::InModule for InsertOneStringArgs {
     type Module = super::RemoteModule;
 }
 
@@ -51,20 +57,32 @@ pub trait insert_one_string {
 
 impl insert_one_string for super::RemoteReducers {
     fn insert_one_string(&self, s: String) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_string", InsertOneString { s })
+        self.imp.call_reducer("insert_one_string", InsertOneStringArgs { s })
     }
     fn on_insert_one_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String) + Send + 'static,
     ) -> InsertOneStringCallbackId {
-        InsertOneStringCallbackId(self.imp.on_reducer::<InsertOneString>(
+        InsertOneStringCallbackId(self.imp.on_reducer(
             "insert_one_string",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneString| callback(ctx, &args.s)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneString { s },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
+            }),
         ))
     }
     fn remove_on_insert_one_string(&self, callback: InsertOneStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneString>("insert_one_string", callback.0)
+        self.imp.remove_on_reducer("insert_one_string", callback.0)
     }
 }
 

@@ -9,9 +9,15 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertCallerOneAddress {}
+pub(super) struct InsertCallerOneAddressArgs {}
 
-impl __sdk::InModule for InsertCallerOneAddress {
+impl From<InsertCallerOneAddressArgs> for super::Reducer {
+    fn from(args: InsertCallerOneAddressArgs) -> Self {
+        Self::InsertCallerOneAddress
+    }
+}
+
+impl __sdk::InModule for InsertCallerOneAddressArgs {
     type Module = super::RemoteModule;
 }
 
@@ -50,20 +56,32 @@ pub trait insert_caller_one_address {
 impl insert_caller_one_address for super::RemoteReducers {
     fn insert_caller_one_address(&self) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_caller_one_address", InsertCallerOneAddress {})
+            .call_reducer("insert_caller_one_address", InsertCallerOneAddressArgs {})
     }
     fn on_insert_caller_one_address(
         &self,
         mut callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> InsertCallerOneAddressCallbackId {
-        InsertCallerOneAddressCallbackId(self.imp.on_reducer::<InsertCallerOneAddress>(
+        InsertCallerOneAddressCallbackId(self.imp.on_reducer(
             "insert_caller_one_address",
-            Box::new(move |ctx: &super::EventContext, args: &InsertCallerOneAddress| callback(ctx)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertCallerOneAddress {},
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx)
+            }),
         ))
     }
     fn remove_on_insert_caller_one_address(&self, callback: InsertCallerOneAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertCallerOneAddress>("insert_caller_one_address", callback.0)
+        self.imp.remove_on_reducer("insert_caller_one_address", callback.0)
     }
 }
 

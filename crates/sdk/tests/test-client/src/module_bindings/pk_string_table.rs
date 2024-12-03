@@ -84,7 +84,7 @@ impl<'ctx> __sdk::Table for PkStringTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<PkString>("pk_string");
-    _table.add_unique_constraint::<String>("s", |row| &row.s)
+    _table.add_unique_constraint::<String>("s", |row| &row.s);
 }
 pub struct PkStringUpdateCallbackId(__sdk::CallbackId);
 
