@@ -19,17 +19,21 @@ namespace SpacetimeDB.Types
 		public uint Id;
 		[DataMember(Name = "position")]
 		public SpacetimeDB.Types.Vector2 Position;
+		[DataMember(Name = "radius")]
+		public float Radius;
 		[DataMember(Name = "mass")]
 		public uint Mass;
 
 		public Entity(
 			uint Id,
 			SpacetimeDB.Types.Vector2 Position,
+			float Radius,
 			uint Mass
 		)
 		{
 			this.Id = Id;
 			this.Position = Position;
+			this.Radius = Radius;
 			this.Mass = Mass;
 		}
 

@@ -24,6 +24,7 @@ pub struct Entity {
     #[primary_key]
     pub id: u32,
     pub position: Vector2,
+    pub radius: f32,
     pub mass: u32,
 }
 
@@ -78,16 +79,17 @@ fn spawn_circle(ctx: &ReducerContext) -> Result<Entity, String> {
     let mut rng = ctx.rng();
     let world_size = ctx.db.config().id().find(&0).ok_or("Config not found")?.world_size;
     let mass = rng.gen_range(START_PLAYER_MASS_MIN..START_PLAYER_MASS_MAX);
-    let player_start_radius = mass_to_radius(mass);
+    let player_start_radius = (mass as f32).sqrt();
     let x = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
     let y = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
-    spawn_circle_at(ctx, mass, x, y)
+    spawn_circle_at(ctx, player_start_radius, mass, x, y)
 }
 
-fn spawn_circle_at(ctx: &ReducerContext, mass: u32, x: f32, y: f32) -> Result<Entity, String> {
+fn spawn_circle_at(ctx: &ReducerContext, radius: f32, mass: u32, x: f32, y: f32) -> Result<Entity, String> {
     let entity = ctx.db.entity().try_insert(Entity {
         id: 0,
         position: Vector2 { x, y },
+        radius,
         mass,
     })?;
 
@@ -101,10 +103,6 @@ fn spawn_circle_at(ctx: &ReducerContext, mass: u32, x: f32, y: f32) -> Result<En
         },
     })?;
     Ok(entity)
-}
-
-fn mass_to_radius(mass: u32) -> f32 {
-    (mass as f32).sqrt()
 }
 
 fn elastic(v1: Vector2, v2: Vector2, m1: f32, m2: f32) -> (Vector2, Vector2) {
@@ -131,7 +129,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         let Some(mut circle_entity) = ctx.db.entity().id().find(&circle.entity_id) else {
             continue;
         };
-        let circle_radius = mass_to_radius(circle_entity.mass);
+        let circle_radius = circle_entity.radius;
         let x = circle_entity.position.x + circle.velocity.x;
         let y = circle_entity.position.y + circle.velocity.y;
         circle_entity.position.x = x.clamp(circle_radius, world_size as f32 - circle_radius);
@@ -164,7 +162,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
                     x: circle_entity.position.x - other_entity.position.x,
                     y: circle_entity.position.y - other_entity.position.y,
                 };
-                let overlap_length = mass_to_radius(circle_entity.mass) + mass_to_radius(other_entity.mass) - (overlap_vector.x*overlap_vector.x + overlap_vector.y*overlap_vector.y).sqrt();
+                let overlap_length = circle_entity.radius + other_entity.radius - (overlap_vector.x*overlap_vector.x + overlap_vector.y*overlap_vector.y).sqrt();
                 if overlap_length <= 0.0 {
                     continue;
                 }
