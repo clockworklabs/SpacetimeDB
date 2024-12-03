@@ -281,8 +281,6 @@ pub enum ServerMessage<F: WebsocketFormat> {
     UnsubscribeApplied(UnsubscribeApplied<F>),
     /// Communicate an error in the subscription lifecycle.
     SubscriptionError(SubscriptionError),
-    /// Informs of changes to subscribed rows.
-    SubscriptionUpdate(SubscriptionUpdate<F>),
 }
 
 /// The matching rows of a subscription query.

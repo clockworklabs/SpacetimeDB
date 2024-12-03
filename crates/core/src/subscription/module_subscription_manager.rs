@@ -95,7 +95,6 @@ pub struct SubscriptionManager {
 impl SubscriptionManager {
     pub fn client(&self, id: &ClientId) -> Client {
         self.clients[id].outbound_ref.clone()
-        //self.clients[id].clone()
     }
 
     pub fn query(&self, hash: &QueryHash) -> Option<Query> {
@@ -213,7 +212,7 @@ impl SubscriptionManager {
         let subscription_id = (client_id, request_id);
         let hash = query.hash();
 
-        if let Err(OccupiedError { value, .. }) = ci.subscriptions.try_insert(subscription_id, hash) {
+        if let Err(OccupiedError { .. }) = ci.subscriptions.try_insert(subscription_id, hash) {
             return Err(anyhow::anyhow!(
                 "Subscription with id {:?} already exists for client: {:?}",
                 request_id,
@@ -573,7 +572,6 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let id = id(0);
         let client = Arc::new(client(0));
 
         let request_id: ClientRequestId = 1;
@@ -593,7 +591,6 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let id = id(0);
         let client = Arc::new(client(0));
 
         let request_id: ClientRequestId = 1;
@@ -612,12 +609,10 @@ mod tests {
     fn test_unsubscribe_with_unknown_request_id_fails() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let table_id = create_table(&db, "T")?;
+        create_table(&db, "T")?;
         let sql = "select * from T";
         let plan = compile_plan(&db, sql)?;
-        let hash = plan.hash();
 
-        let id = id(0);
         let client = Arc::new(client(0));
 
         let request_id: ClientRequestId = 1;
@@ -639,7 +634,6 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let id = id(0);
         let client = Arc::new(client(0));
 
         let request_id: ClientRequestId = 1;
@@ -659,12 +653,10 @@ mod tests {
     fn test_subscribe_fails_with_duplicate_request_id() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let table_id = create_table(&db, "T")?;
+        create_table(&db, "T")?;
         let sql = "select * from T";
         let plan = compile_plan(&db, sql)?;
-        let hash = plan.hash();
 
-        let id = id(0);
         let client = Arc::new(client(0));
 
         let request_id: ClientRequestId = 1;
