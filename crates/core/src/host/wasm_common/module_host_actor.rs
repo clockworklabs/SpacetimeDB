@@ -306,14 +306,13 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             Some(reducer_id) => {
                 self.system_logger().info("Invoking `init` reducer");
                 let caller_identity = self.replica_context().database.owner_identity;
-                let client = None;
                 Some(self.call_reducer_with_tx(
                     Some(tx),
                     CallReducerParams {
                         timestamp,
                         caller_identity,
                         caller_address: Address::__DUMMY,
-                        client,
+                        client: None,
                         request_id: None,
                         timer: None,
                         reducer_id,

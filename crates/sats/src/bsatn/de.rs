@@ -60,7 +60,12 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
     }
 
     fn deserialize_bool(self) -> Result<bool, Self::Error> {
-        self.reader.get_u8().map(|x| x != 0)
+        let byte = self.reader.get_u8()?;
+        match byte {
+            0 => Ok(false),
+            1 => Ok(true),
+            b => Err(DecodeError::InvalidBool(b)),
+        }
     }
     fn deserialize_u8(self) -> Result<u8, DecodeError> {
         self.reader.get_u8()

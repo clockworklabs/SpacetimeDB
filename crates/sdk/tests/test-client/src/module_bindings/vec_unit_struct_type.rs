@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::unit_struct_type::UnitStruct;
@@ -16,6 +15,6 @@ pub struct VecUnitStruct {
     pub s: Vec<UnitStruct>,
 }
 
-impl __sdk::spacetime_module::InModule for VecUnitStruct {
+impl __sdk::InModule for VecUnitStruct {
     type Module = super::RemoteModule;
 }

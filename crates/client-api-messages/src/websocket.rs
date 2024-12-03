@@ -28,9 +28,10 @@ use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
-    de::Deserialize,
+    de::{Deserialize, Error},
+    impl_deserialize, impl_serialize, impl_st,
     ser::{serde::SerializeWrapper, Serialize},
-    SpacetimeType,
+    AlgebraicType, SpacetimeType,
 };
 use std::{
     io::{self, Read as _, Write as _},
@@ -98,10 +99,12 @@ impl<Args> ClientMessage<Args> {
                 reducer,
                 args,
                 request_id,
+                flags,
             }) => ClientMessage::CallReducer(CallReducer {
                 reducer,
                 args: f(args),
                 request_id,
+                flags,
             }),
             ClientMessage::Subscribe(x) => ClientMessage::Subscribe(x),
             ClientMessage::OneOffQuery(x) => ClientMessage::OneOffQuery(x),
@@ -126,7 +129,38 @@ pub struct CallReducer<Args> {
     ///
     /// The server will include the same ID in the response [`TransactionUpdate`].
     pub request_id: u32,
+    /// Assorted flags that can be passed when calling a reducer.
+    ///
+    /// Currently accepts 0 or 1 where the latter means
+    /// that the caller does not want to be notified about the reducer
+    /// without being subscribed to any relevant queries.
+    pub flags: CallReducerFlags,
 }
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum CallReducerFlags {
+    /// The reducer's caller does want to be notified about the reducer completing successfully
+    /// regardless of whether the caller had subscribed to a relevant query.
+    ///
+    /// Note that updates to a reducer's caller are always sent as full updates
+    /// whether subscribed to a relevant query or not.
+    /// That is, the light tx mode setting does not apply to the reducer's caller.
+    ///
+    /// This is the default flag.
+    #[default]
+    FullUpdate,
+    /// The reducer's caller does not want to be notified about the reducer completing successfully
+    /// without having subscribed to any of the relevant queries.
+    NoSuccessNotify,
+}
+
+impl_st!([] CallReducerFlags, AlgebraicType::U8);
+impl_serialize!([] CallReducerFlags, (self, ser) => ser.serialize_u8(*self as u8));
+impl_deserialize!([] CallReducerFlags, de => match de.deserialize_u8()? {
+    0 => Ok(Self::FullUpdate),
+    1 => Ok(Self::NoSuccessNotify),
+    x => Err(D::Error::custom(format_args!("invalid call reducer flag {x}"))),
+});
 
 /// Sent by client to database to register a set of queries, about which the client will
 /// receive `TransactionUpdate`s.
@@ -182,6 +216,8 @@ pub enum ServerMessage<F: WebsocketFormat> {
     InitialSubscription(InitialSubscription<F>),
     /// Upon reducer run.
     TransactionUpdate(TransactionUpdate<F>),
+    /// Upon reducer run, but limited to just the table updates.
+    TransactionUpdateLight(TransactionUpdateLight<F>),
     /// After connecting, to inform client of its identity.
     IdentityToken(IdentityToken),
     /// Return results to a one off SQL query.
@@ -250,6 +286,22 @@ pub struct TransactionUpdate<F: WebsocketFormat> {
     pub energy_quanta_used: EnergyQuanta,
     /// How long the reducer took to run.
     pub host_execution_duration_micros: u64,
+}
+
+/// Received by client from database upon a reducer run.
+///
+/// Clients receive `TransactionUpdateLight`s only for reducers
+/// which update at least one of their subscribed rows.
+/// Failed reducers result in full [`TransactionUpdate`]s
+#[derive(SpacetimeType, Debug)]
+#[sats(crate = spacetimedb_lib)]
+pub struct TransactionUpdateLight<F: WebsocketFormat> {
+    /// An identifier for a client request
+    pub request_id: u32,
+
+    /// The reducer ran successfully and its changes were committed to the database.
+    /// The rows altered in the database/ are recorded in this `DatabaseUpdate`.
+    pub update: DatabaseUpdate<F>,
 }
 
 /// Contained in a [`TransactionUpdate`], metadata about a reducer invocation.

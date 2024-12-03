@@ -17,6 +17,7 @@ use spacetimedb_table::layout::{row_size_for_type, RowTypeLayout};
 use spacetimedb_table::page::Page;
 use spacetimedb_table::row_hash::hash_row_in_page;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
+use spacetimedb_table::static_layout::StaticLayout;
 use spacetimedb_table::var_len::{AlignedVarLenOffsets, NullVarLenVisitor, VarLenGranule, VarLenMembers, VarLenRef};
 
 fn time<R>(acc: &mut Duration, body: impl FnOnce() -> R) -> R {
@@ -758,6 +759,7 @@ fn eq_in_page_same(c: &mut Criterion) {
     let mut group = c.benchmark_group("eq_in_page");
     for (name, ty, value, _null_visitor, _aligned_offsets_visitor) in product_value_test_cases() {
         let (ty, mut page, visitor) = ty_page_visitor(ty);
+        let static_bsatn_layout = StaticLayout::for_row_type(&ty);
 
         let (offset_0, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
         let (offset_1, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
@@ -771,6 +773,7 @@ fn eq_in_page_same(c: &mut Criterion) {
                         black_box(offset_0),
                         black_box(offset_1),
                         black_box(&ty),
+                        black_box(static_bsatn_layout.as_ref()),
                     )
                 })
             });

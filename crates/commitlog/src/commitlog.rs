@@ -55,11 +55,11 @@ impl<R: Repo, T> Generic<R, T> {
             debug!("resuming last segment: {last}");
             repo::resume_segment_writer(&repo, opts, last)?.or_else(|meta| {
                 tail.push(meta.tx_range.start);
-                repo::create_segment_writer(&repo, opts, meta.tx_range.end)
+                repo::create_segment_writer(&repo, opts, meta.max_epoch, meta.tx_range.end)
             })?
         } else {
             debug!("starting fresh log");
-            repo::create_segment_writer(&repo, opts, 0)?
+            repo::create_segment_writer(&repo, opts, Commit::DEFAULT_EPOCH, 0)?
         };
 
         Ok(Self {
@@ -70,6 +70,43 @@ impl<R: Repo, T> Generic<R, T> {
             _record: PhantomData,
             panicked: false,
         })
+    }
+
+    /// Get the current epoch.
+    ///
+    /// See also: [`Commit::epoch`].
+    pub fn epoch(&self) -> u64 {
+        self.head.commit.epoch
+    }
+
+    /// Update the current epoch.
+    ///
+    /// Calls [`Self::commit`] to flush all data of the previous epoch, and
+    /// returns the result.
+    ///
+    /// Does nothing if the given `epoch` is equal to the current epoch.
+    ///
+    /// # Errors
+    ///
+    /// If `epoch` is smaller than the current epoch, an error of kind
+    /// [`io::ErrorKind::InvalidInput`] is returned.
+    ///
+    /// Also see [`Self::commit`].
+    pub fn set_epoch(&mut self, epoch: u64) -> io::Result<Option<Committed>> {
+        use std::cmp::Ordering::*;
+
+        match epoch.cmp(&self.head.epoch()) {
+            Less => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "new epoch is smaller than current epoch",
+            )),
+            Equal => Ok(None),
+            Greater => {
+                let res = self.commit()?;
+                self.head.set_epoch(epoch);
+                Ok(res)
+            }
+        }
     }
 
     /// Write the currently buffered data to storage and rotate segments as
@@ -254,7 +291,7 @@ impl<R: Repo, T> Generic<R, T> {
             self.head.next_tx_offset(),
             self.head.min_tx_offset()
         );
-        let new = repo::create_segment_writer(&self.repo, self.opts, self.head.next_tx_offset())?;
+        let new = repo::create_segment_writer(&self.repo, self.opts, self.head.epoch(), self.head.next_tx_offset())?;
         let old = mem::replace(&mut self.head, new);
         self.tail.push(old.min_tx_offset());
         self.head.commit = old.commit;
@@ -665,6 +702,8 @@ impl<R: Repo> Iterator for CommitsWithVersion<R> {
 mod tests {
     use std::{cell::Cell, iter::repeat};
 
+    use pretty_assertions::assert_matches;
+
     use super::*;
     use crate::{
         payload::{ArrayDecodeError, ArrayDecoder},
@@ -821,6 +860,7 @@ mod tests {
             min_tx_offset: 0,
             n: 1,
             records: [43; 32].to_vec(),
+            epoch: 0,
         };
         log.commit().unwrap();
 
@@ -979,5 +1019,34 @@ mod tests {
             total_txs,
             log.transactions_from(0, &ArrayDecoder).map(Result::unwrap).count()
         );
+    }
+
+    #[test]
+    fn set_same_epoch_does_nothing() {
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(), <_>::default()).unwrap();
+        assert_eq!(log.epoch(), Commit::DEFAULT_EPOCH);
+        let committed = log.set_epoch(Commit::DEFAULT_EPOCH).unwrap();
+        assert_eq!(committed, None);
+    }
+
+    #[test]
+    fn set_new_epoch_commits() {
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(), <_>::default()).unwrap();
+        assert_eq!(log.epoch(), Commit::DEFAULT_EPOCH);
+        log.append(<_>::default()).unwrap();
+        let committed = log
+            .set_epoch(42)
+            .unwrap()
+            .expect("should have committed the pending transaction");
+        assert_eq!(log.epoch(), 42);
+        assert_eq!(committed.tx_range.start, 0);
+    }
+
+    #[test]
+    fn set_lower_epoch_returns_error() {
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(), <_>::default()).unwrap();
+        log.set_epoch(42).unwrap();
+        assert_eq!(log.epoch(), 42);
+        assert_matches!(log.set_epoch(7), Err(e) if e.kind() == io::ErrorKind::InvalidInput)
     }
 }

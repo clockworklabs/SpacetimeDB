@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::unique_i_256_type::UniqueI256;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `unique_i256`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.unique_i_256().on_insert(...)`.
 pub struct UniqueI256TableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<UniqueI256>,
+    imp: __sdk::TableHandle<UniqueI256>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl UniqueI256TableAccess for super::RemoteTables {
     }
 }
 
-pub struct UniqueI256InsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct UniqueI256DeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct UniqueI256InsertCallbackId(__sdk::CallbackId);
+pub struct UniqueI256DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for UniqueI256TableHandle<'ctx> {
+impl<'ctx> __sdk::Table for UniqueI256TableHandle<'ctx> {
     type Row = UniqueI256;
     type EventContext = super::EventContext;
 
@@ -83,10 +82,15 @@ impl<'ctx> __sdk::table::Table for UniqueI256TableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueI256>("unique_i256");
+    _table.add_unique_constraint::<__sats::i256>("n", |row| &row.n)
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueI256>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<UniqueI256>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"unique_i256\"")
 }
 
@@ -98,7 +102,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.unique_i_256().n().find(...)`.
 pub struct UniqueI256NUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraint<UniqueI256, __sats::i256>,
+    imp: __sdk::UniqueConstraintHandle<UniqueI256, __sats::i256>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -106,7 +110,7 @@ impl<'ctx> UniqueI256TableHandle<'ctx> {
     /// Get a handle on the `n` unique index on the table `unique_i256`.
     pub fn n(&self) -> UniqueI256NUnique<'ctx> {
         UniqueI256NUnique {
-            imp: self.imp.get_unique_constraint::<__sats::i256>("n", |row| &row.n),
+            imp: self.imp.get_unique_constraint::<__sats::i256>("n"),
             phantom: std::marker::PhantomData,
         }
     }

@@ -2,18 +2,14 @@ use crate::util::{contains_protocol, host_or_url_to_host_and_protocol};
 use anyhow::Context;
 use jsonwebtoken::DecodingKey;
 use serde::{Deserialize, Serialize};
-use spacetimedb_fs_utils::{atomic_write, create_parent_dir};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use spacetimedb_fs_utils::atomic_write;
+use spacetimedb_paths::cli::CliTomlPath;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ServerConfig {
     pub nickname: Option<String>,
     pub host: String,
     pub protocol: String,
-    pub default_identity: Option<String>,
     pub ecdsa_public_key: Option<String>,
 }
 
@@ -29,29 +25,11 @@ impl ServerConfig {
         format!("{}://{}", self.protocol, self.host)
     }
 
-    pub fn set_default_identity(&mut self, default_identity: String) {
-        self.default_identity = Some(default_identity);
-        // TODO: verify the identity exists and its token conforms to the server's `ecdsa_public_key`
-    }
-
     pub fn nick_or_host_or_url_is(&self, name: &str) -> bool {
         self.nickname.as_deref() == Some(name) || self.host == name || {
             let (host, _) = host_or_url_to_host_and_protocol(name);
             self.host == host
         }
-    }
-
-    fn default_identity(&self) -> anyhow::Result<&str> {
-        self.default_identity.as_deref().ok_or_else(|| {
-            let server = self.nick_or_host();
-            anyhow::anyhow!(
-                "No default identity for server: {server}
-Set the default identity with:
-\tspacetime identity set-default -s {server} <identity>
-Or initialize a default identity with:
-\tspacetime identity init-default -s {server}"
-            )
-        })
     }
 }
 
@@ -69,12 +47,8 @@ pub struct RawConfig {
 #[derive(Debug, Clone)]
 pub struct Config {
     home: RawConfig,
+    home_path: CliTomlPath,
 }
-
-const HOME_CONFIG_DIR: &str = ".spacetime";
-const CONFIG_FILENAME: &str = "config.toml";
-const SPACETIME_FILENAME: &str = "spacetime.toml";
-const DOT_SPACETIME_FILENAME: &str = ".spacetime.toml";
 
 const NO_DEFAULT_SERVER_ERROR_MESSAGE: &str = "No default server configuration.
 Set an existing server as the default with:
@@ -97,14 +71,12 @@ fn hanging_default_server_context(server: &str) -> String {
 impl RawConfig {
     fn new_with_localhost() -> Self {
         let local = ServerConfig {
-            default_identity: None,
             host: "127.0.0.1:3000".to_string(),
             protocol: "http".to_string(),
             nickname: Some("local".to_string()),
             ecdsa_public_key: None,
         };
         let testnet = ServerConfig {
-            default_identity: None,
             host: "testnet.spacetimedb.com".to_string(),
             protocol: "https".to_string(),
             nickname: Some("testnet".to_string()),
@@ -187,7 +159,6 @@ impl RawConfig {
             host,
             protocol,
             ecdsa_public_key,
-            default_identity: None,
         });
         Ok(())
     }
@@ -212,33 +183,6 @@ impl RawConfig {
         self.default_server()
             .with_context(|| "Cannot find protocol for default server")
             .map(|cfg| cfg.protocol.as_ref())
-    }
-
-    fn default_identity(&self, server: &str) -> anyhow::Result<&str> {
-        self.find_server(server).and_then(ServerConfig::default_identity)
-    }
-
-    fn default_server_default_identity(&self) -> anyhow::Result<&str> {
-        self.default_server().and_then(ServerConfig::default_identity)
-    }
-
-    fn set_server_default_identity(&mut self, server: &str, default_identity: String) -> anyhow::Result<()> {
-        let cfg = self.find_server_mut(server)?;
-        // TODO: create the server config if it doesn't already exist
-        // TODO: fetch the server's fingerprint to check if it has changed
-        cfg.default_identity = Some(default_identity);
-        Ok(())
-    }
-
-    fn set_default_server_default_identity(&mut self, default_identity: String) -> anyhow::Result<()> {
-        if let Some(default_server) = &self.default_server {
-            // Unfortunate clone,
-            // because `set_server_default_identity` needs a unique ref to `self`.
-            let def = default_server.to_string();
-            self.set_server_default_identity(&def, default_identity)
-        } else {
-            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
-        }
     }
 
     fn set_default_server(&mut self, server: &str) -> anyhow::Result<()> {
@@ -541,88 +485,39 @@ impl Config {
         }
     }
 
-    pub fn default_identity(&self, server: Option<&str>) -> anyhow::Result<&str> {
-        if let Some(server) = server {
-            let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.home.default_identity(host)
-        } else {
-            self.home.default_server_default_identity()
-        }
-    }
-
-    /// Set the default identity for `server` in the home configuration.
-    ///
-    /// Does not validate that `default_identity` applies to `server`.
-    ///
-    /// Returns an `Err` if:
-    /// - `server` is `Some`, but does not refer to any server
-    ///   in the home configuration.
-    /// - `server` is `None`, but the home configuration
-    ///   does not have a default server.
-    pub fn set_default_identity(&mut self, default_identity: String, server: Option<&str>) -> anyhow::Result<()> {
-        if let Some(server) = server {
-            let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.home.set_server_default_identity(host, default_identity)
-        } else {
-            self.home.set_default_server_default_identity(default_identity)
-        }
-    }
-
     pub fn server_configs(&self) -> &[ServerConfig] {
         &self.home.server_configs
     }
 
-    fn find_config_path(config_dir: &Path) -> Option<PathBuf> {
-        [DOT_SPACETIME_FILENAME, SPACETIME_FILENAME, CONFIG_FILENAME]
-            .iter()
-            .map(|filename| config_dir.join(filename))
-            .find(|path| path.exists())
-    }
-
-    fn system_config_path() -> PathBuf {
-        if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
-            config_path.into()
-        } else {
-            let mut config_path = dirs::home_dir().unwrap();
-            config_path.push(HOME_CONFIG_DIR);
-            Self::find_config_path(&config_path).unwrap_or_else(|| config_path.join(CONFIG_FILENAME))
-        }
-    }
-
-    fn load_from_file(config_path: &Path) -> anyhow::Result<RawConfig> {
-        let text = fs::read_to_string(config_path)?;
-        Ok(toml::from_str(&text)?)
-    }
-
-    pub fn load() -> anyhow::Result<Self> {
-        let home_path = Self::system_config_path();
-        let config = if home_path.exists() {
-            Self {
-                home: Self::load_from_file(&home_path)
-                    .inspect_err(|e| eprintln!("config file {home_path:?} is invalid: {e:#?}"))?,
+    pub fn load(home_path: CliTomlPath) -> anyhow::Result<Self> {
+        let home = spacetimedb::config::parse_config::<RawConfig>(home_path.as_ref())
+            .with_context(|| format!("config file {} is invalid", home_path.display()))?;
+        Ok(match home {
+            Some(home) => Self { home, home_path },
+            None => {
+                let config = Self {
+                    home: RawConfig::new_with_localhost(),
+                    home_path,
+                };
+                config.save();
+                config
             }
-        } else {
-            let config = Self {
-                home: RawConfig::new_with_localhost(),
-            };
-            config.save();
-            config
-        };
-        Ok(config)
+        })
     }
 
     #[doc(hidden)]
     /// Used in tests.
-    pub fn new_with_localhost() -> Self {
+    pub fn new_with_localhost(home_path: CliTomlPath) -> Self {
         Self {
             home: RawConfig::new_with_localhost(),
+            home_path,
         }
     }
 
     pub fn save(&self) {
-        let home_path = Self::system_config_path();
+        let home_path = &self.home_path;
         // If the `home_path` is in a directory, ensure it exists.
-        create_parent_dir(home_path.as_ref()).unwrap();
+        home_path.create_parent().unwrap();
 
         let config = toml::to_string_pretty(&self.home).unwrap();
 
@@ -637,7 +532,7 @@ impl Config {
         //
         // We should address this issue, but we currently don't expect it to arise very frequently
         // (see https://github.com/clockworklabs/SpacetimeDB/pull/1341#issuecomment-2150857432).
-        if let Err(e) = atomic_write(&home_path, config) {
+        if let Err(e) = atomic_write(&home_path.0, config) {
             eprintln!("Could not save config file: {e}")
         }
     }

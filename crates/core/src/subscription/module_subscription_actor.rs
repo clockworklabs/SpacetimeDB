@@ -15,7 +15,7 @@ use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use spacetimedb_client_api_messages::websocket::FormatSwitch;
-use spacetimedb_expr::check::parse_and_type_sub;
+use spacetimedb_expr::check::compile_sql_sub;
 use spacetimedb_expr::ty::TyCtx;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
@@ -88,7 +88,7 @@ impl ModuleSubscriptions {
             } else {
                 // NOTE: The following ensures compliance with the 1.0 sql api.
                 // Come 1.0, it will have replaced the current compilation stack.
-                parse_and_type_sub(
+                compile_sql_sub(
                     &mut TyCtx::default(),
                     sql,
                     &SchemaViewer::new(&self.relational_db, &*tx, &auth),
@@ -122,18 +122,18 @@ impl ModuleSubscriptions {
         )?;
 
         let slow_query_threshold = StVarTable::sub_limit(&self.relational_db, &tx)?.map(Duration::from_millis);
-        let database_update = match sender.protocol {
+        let database_update = match sender.config.protocol {
             Protocol::Text => FormatSwitch::Json(execution_set.eval(
                 &self.relational_db,
                 &tx,
                 slow_query_threshold,
-                sender.compression,
+                sender.config.compression,
             )),
             Protocol::Binary => FormatSwitch::Bsatn(execution_set.eval(
                 &self.relational_db,
                 &tx,
                 slow_query_threshold,
-                sender.compression,
+                sender.config.compression,
             )),
         };
 
@@ -179,7 +179,7 @@ impl ModuleSubscriptions {
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
     pub fn commit_and_broadcast_event(
         &self,
-        client: Option<&ClientConnectionSender>,
+        caller: Option<&ClientConnectionSender>,
         mut event: ModuleEvent,
         tx: MutTx,
     ) -> Result<Result<Arc<ModuleEvent>, WriteConflict>, DBError> {
@@ -211,13 +211,13 @@ impl ModuleSubscriptions {
         match &event.status {
             EventStatus::Committed(_) => {
                 let slow_query_threshold = StVarTable::incr_limit(stdb, &read_tx)?.map(Duration::from_millis);
-                subscriptions.eval_updates(stdb, &read_tx, event.clone(), client, slow_query_threshold)
+                subscriptions.eval_updates(stdb, &read_tx, event.clone(), caller, slow_query_threshold)
             }
             EventStatus::Failed(_) => {
-                if let Some(client) = client {
+                if let Some(client) = caller {
                     let message = TransactionUpdateMessage {
-                        event: event.clone(),
-                        database_update: SubscriptionUpdateMessage::default_for_protocol(client.protocol, None),
+                        event: Some(event.clone()),
+                        database_update: SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, None),
                     };
                     let _ = client.send_message(message);
                 } else {
@@ -236,7 +236,7 @@ pub struct WriteConflict;
 #[cfg(test)]
 mod tests {
     use super::{AssertTxFn, ModuleSubscriptions};
-    use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
+    use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender};
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
@@ -253,7 +253,8 @@ mod tests {
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         let owner = Identity::from_byte_array([1; 32]);
         let client = ClientActorId::for_test(Identity::ZERO);
-        let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let config = ClientConfig::for_test();
+        let sender = Arc::new(ClientConnectionSender::dummy(client, config));
         let module_subscriptions = ModuleSubscriptions::new(db.clone(), owner);
 
         let subscribe = Subscribe {
@@ -320,7 +321,7 @@ mod tests {
         let db = Arc::new(test_db.db.clone());
 
         // Create a public table.
-        let indexes = &[(0.into(), "a")];
+        let indexes = &[0.into()];
         let cols = &[("a", AlgebraicType::U8)];
         let _ = db.create_table_for_test("public", cols, indexes)?;
 

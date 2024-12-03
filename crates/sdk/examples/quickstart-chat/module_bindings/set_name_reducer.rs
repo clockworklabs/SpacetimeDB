@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -14,11 +13,11 @@ pub struct SetName {
     pub name: String,
 }
 
-impl __sdk::spacetime_module::InModule for SetName {
+impl __sdk::InModule for SetName {
     type Module = super::RemoteModule;
 }
 
-pub struct SetNameCallbackId(__sdk::callbacks::CallbackId);
+pub struct SetNameCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `set_name`.
@@ -62,5 +61,25 @@ impl set_name for super::RemoteReducers {
     }
     fn remove_on_set_name(&self, callback: SetNameCallbackId) {
         self.imp.remove_on_reducer::<SetName>("set_name", callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `set_name`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_set_name {
+    /// Set the call-reducer flags for the reducer `set_name` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn set_name(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_set_name for super::SetReducerFlags {
+    fn set_name(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("set_name", flags);
     }
 }

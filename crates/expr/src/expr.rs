@@ -86,7 +86,7 @@ pub struct Project {
 ///
 /// Relational operators take a single input paramter.
 /// Let variables explicitly destructure the input row.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Let {
     /// The variable definitions for this let expression
     pub vars: Vec<(Symbol, Expr)>,
@@ -94,8 +94,21 @@ pub struct Let {
     pub exprs: Vec<Expr>,
 }
 
+/// A let context for variable resolution
+pub struct LetCtx<'a> {
+    pub vars: &'a [(Symbol, Expr)],
+}
+
+impl<'a> LetCtx<'a> {
+    pub fn get_var(&self, sym: Symbol) -> Option<&Expr> {
+        self.vars
+            .iter()
+            .find_map(|(s, e)| if *s == sym { Some(e) } else { None })
+    }
+}
+
 /// A typed scalar expression
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     /// A binary expression
     Bin(BinOp, Box<Expr>, Box<Expr>),
