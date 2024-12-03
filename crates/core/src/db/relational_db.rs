@@ -12,7 +12,6 @@ use super::datastore::{
     traits::TxData,
 };
 use super::db_metrics::DB_METRICS;
-use super::relational_operators::Relation;
 use crate::db::datastore::system_tables::{StModuleRow, WASM_MODULE};
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::{ReducerContext, Workload};
@@ -24,11 +23,13 @@ use futures::channel::mpsc;
 use futures::StreamExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
-use spacetimedb_durability::{self as durability, Durability, TxOffset};
+pub use spacetimedb_durability::Durability;
+use spacetimedb_durability::{self as durability, TxOffset};
 use spacetimedb_lib::address::Address;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::Identity;
+use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef};
@@ -40,7 +41,7 @@ use spacetimedb_table::MemoryUsage;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io;
 use std::ops::RangeBounds;
 use std::path::Path;
@@ -96,6 +97,7 @@ pub struct RelationalDB {
     // DO NOT ADD FIELDS AFTER THIS.
     // By default, fields are dropped in declaration order.
     // We want to release the file lock last.
+    // TODO(noa): is this lockfile still necessary now that we have data-dir?
     _lock: LockFile,
 }
 
@@ -196,7 +198,6 @@ impl RelationalDB {
 
             row_count_fn: default_row_count_fn(database_identity),
             disk_size_fn,
-
             _lock: lock,
         }
     }
@@ -281,7 +282,7 @@ impl RelationalDB {
     ///
     /// [ModuleHost]: crate::host::module_host::ModuleHost
     pub fn open(
-        root: &Path,
+        root: &ReplicaDir,
         database_identity: Identity,
         owner_identity: Identity,
         history: impl durability::History<TxData = Txdata>,
@@ -836,7 +837,7 @@ impl RelationalDB {
         &self,
         name: &str,
         schema: &[(&str, AlgebraicType)],
-        indexes: &[(ColList, &str)],
+        indexes: &[ColList],
         access: StAccess,
     ) -> Result<TableId, DBError> {
         let mut module_def_builder = RawModuleDefV9Builder::new();
@@ -844,13 +845,12 @@ impl RelationalDB {
             .build_table_with_new_type(name, ProductType::from_iter(schema.iter().cloned()), true)
             .with_access(access.into());
 
-        for (columns, name) in indexes {
+        for columns in indexes {
             table_builder = table_builder.with_index(
                 RawIndexAlgorithm::BTree {
                     columns: columns.clone(),
                 },
                 "accessor_name_doesnt_matter",
-                Some((*name).into()),
             );
         }
         table_builder.finish();
@@ -869,13 +869,10 @@ impl RelationalDB {
         &self,
         name: &str,
         schema: &[(&str, AlgebraicType)],
-        indexes: &[(ColId, &str)],
+        indexes: &[ColId],
         access: StAccess,
     ) -> Result<TableId, DBError> {
-        let indexes: Vec<(ColList, &str)> = indexes
-            .iter()
-            .map(|(col_id, index_name)| ((*col_id).into(), *index_name))
-            .collect();
+        let indexes: Vec<ColList> = indexes.iter().map(|col_id| (*col_id).into()).collect();
         self.create_table_for_test_with_the_works(name, schema, &indexes[..], access)
     }
 
@@ -883,7 +880,7 @@ impl RelationalDB {
         &self,
         name: &str,
         schema: &[(&str, AlgebraicType)],
-        indexes: &[(ColId, &str)],
+        indexes: &[ColId],
     ) -> Result<TableId, DBError> {
         self.create_table_for_test_with_access(name, schema, indexes, StAccess::Public)
     }
@@ -894,20 +891,20 @@ impl RelationalDB {
         schema: &[(&str, AlgebraicType)],
         idx_cols: ColList,
     ) -> Result<TableId, DBError> {
-        self.create_table_for_test_with_the_works(name, schema, &[(idx_cols, "the_index")], StAccess::Public)
+        self.create_table_for_test_with_the_works(name, schema, &[idx_cols], StAccess::Public)
     }
 
     pub fn create_table_for_test_mix_indexes(
         &self,
         name: &str,
         schema: &[(&str, AlgebraicType)],
-        idx_cols_single: &[(ColId, &str)],
+        idx_cols_single: &[ColId],
         idx_cols_multi: ColList,
     ) -> Result<TableId, DBError> {
-        let indexes: Vec<(ColList, &str)> = idx_cols_single
+        let indexes: Vec<ColList> = idx_cols_single
             .iter()
-            .map(|(col_id, name)| ((*col_id).into(), *name))
-            .chain(std::iter::once((idx_cols_multi, "the_only_multi_index")))
+            .map(|col_id| (*col_id).into())
+            .chain(std::iter::once(idx_cols_multi))
             .collect();
 
         self.create_table_for_test_with_the_works(name, schema, &indexes[..], StAccess::Public)
@@ -1148,7 +1145,12 @@ impl RelationalDB {
         self.inner.delete_mut_tx(tx, table_id, row_ids)
     }
 
-    pub fn delete_by_rel<R: Relation>(&self, tx: &mut MutTx, table_id: TableId, relation: R) -> u32 {
+    pub fn delete_by_rel<R: IntoIterator<Item = ProductValue>>(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        relation: R,
+    ) -> u32 {
         self.inner.delete_by_rel_mut_tx(tx, table_id, relation)
     }
 
@@ -1190,8 +1192,8 @@ struct LockFile {
 }
 
 impl LockFile {
-    pub fn lock(root: impl AsRef<Path>) -> Result<Self, DBError> {
-        fs::create_dir_all(&root)?;
+    pub fn lock(root: &ReplicaDir) -> Result<Self, DBError> {
+        root.create()?;
         let path = root.as_ref().join("db.lock");
         let lock = File::create(&path)?;
         lock.try_lock_exclusive()
@@ -1255,15 +1257,14 @@ where
     Ok(())
 }
 
+pub type LocalDurability = Arc<durability::Local<ProductValue>>;
 /// Initialize local durability with the default parameters.
 ///
 /// Also returned is a [`DiskSizeFn`] as required by [`RelationalDB::open`].
 ///
 /// Note that this operation can be expensive, as it needs to traverse a suffix
 /// of the commitlog.
-pub async fn local_durability(db_path: &Path) -> io::Result<(Arc<durability::Local<ProductValue>>, DiskSizeFn)> {
-    let commitlog_dir = db_path.join("clog");
-    tokio::fs::create_dir_all(&commitlog_dir).await?;
+pub async fn local_durability(commitlog_dir: CommitLogDir) -> io::Result<(LocalDurability, DiskSizeFn)> {
     let rt = tokio::runtime::Handle::current();
     // TODO: Should this better be spawn_blocking?
     let local = spawn_rayon(move || {
@@ -1292,13 +1293,12 @@ pub async fn local_durability(db_path: &Path) -> io::Result<(Arc<durability::Loc
 /// Open a [`SnapshotRepository`] at `db_path/snapshots`,
 /// configured to store snapshots of the database `database_address`/`replica_id`.
 pub fn open_snapshot_repo(
-    db_path: &Path,
+    path: SnapshotsPath,
     database_identity: Identity,
     replica_id: u64,
 ) -> Result<Arc<SnapshotRepository>, Box<SnapshotError>> {
-    let snapshot_dir = db_path.join("snapshots");
-    std::fs::create_dir_all(&snapshot_dir).map_err(|e| Box::new(SnapshotError::from(e)))?;
-    SnapshotRepository::open(snapshot_dir, database_identity, replica_id)
+    path.create().map_err(SnapshotError::from)?;
+    SnapshotRepository::open(path, database_identity, replica_id)
         .map(Arc::new)
         .map_err(Box::new)
 }
@@ -1317,6 +1317,7 @@ pub mod tests_utils {
     use super::*;
     use core::ops::Deref;
     use durability::EmptyHistory;
+    use spacetimedb_paths::FromPathUnchecked;
     use tempfile::TempDir;
 
     /// A [`RelationalDB`] in a temporary directory.
@@ -1337,7 +1338,26 @@ pub mod tests_utils {
 
         // nb: drop order is declaration order
         durable: Option<DurableState>,
-        tmp_dir: TempDir,
+        tmp_dir: TempReplicaDir,
+    }
+
+    pub struct TempReplicaDir(ReplicaDir);
+    impl TempReplicaDir {
+        fn new() -> io::Result<Self> {
+            let dir = TempDir::with_prefix("stdb_test")?;
+            Ok(Self(ReplicaDir::from_path_unchecked(dir.into_path())))
+        }
+    }
+    impl Deref for TempReplicaDir {
+        type Target = ReplicaDir;
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+    impl Drop for TempReplicaDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     struct DurableState {
@@ -1352,8 +1372,8 @@ pub mod tests_utils {
 
         /// Create a [`TestDB`] which does not store data on disk.
         pub fn in_memory() -> Result<Self, DBError> {
-            let dir = TempDir::with_prefix("stdb_test")?;
-            let db = Self::in_memory_internal(dir.path())?;
+            let dir = TempReplicaDir::new()?;
+            let db = Self::in_memory_internal(&dir)?;
             Ok(Self {
                 db,
 
@@ -1368,11 +1388,11 @@ pub mod tests_utils {
         /// ensures all data has been flushed to disk before re-opening the
         /// database.
         pub fn durable() -> Result<Self, DBError> {
-            let dir = TempDir::with_prefix("stdb_test")?;
+            let dir = TempReplicaDir::new()?;
             let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
             // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
             let _rt = rt.enter();
-            let (db, handle) = Self::durable_internal(dir.path(), rt.handle().clone())?;
+            let (db, handle) = Self::durable_internal(&dir, rt.handle().clone())?;
             let durable = DurableState { handle, rt };
 
             Ok(Self {
@@ -1395,7 +1415,7 @@ pub mod tests_utils {
 
                 // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
                 let _rt = rt.enter();
-                let (db, handle) = Self::durable_internal(self.tmp_dir.path(), rt.handle().clone())?;
+                let (db, handle) = Self::durable_internal(&self.tmp_dir, rt.handle().clone())?;
                 let durable = DurableState { handle, rt };
 
                 Ok(Self {
@@ -1404,7 +1424,7 @@ pub mod tests_utils {
                     ..self
                 })
             } else {
-                let db = Self::in_memory_internal(self.tmp_dir.path())?;
+                let db = Self::in_memory_internal(&self.tmp_dir)?;
                 Ok(Self { db, ..self })
             }
         }
@@ -1435,8 +1455,8 @@ pub mod tests_utils {
         }
 
         /// The root path of the (temporary) database directory.
-        pub fn path(&self) -> &Path {
-            self.tmp_dir.path()
+        pub fn path(&self) -> &ReplicaDir {
+            &self.tmp_dir
         }
 
         /// Handle to the tokio runtime, available if [`Self::durable`] was used
@@ -1453,7 +1473,7 @@ pub mod tests_utils {
             RelationalDB,
             Option<Arc<durability::Local<ProductValue>>>,
             Option<tokio::runtime::Runtime>,
-            TempDir,
+            TempReplicaDir,
         ) {
             let Self { db, durable, tmp_dir } = self;
             let (durability, rt) = durable
@@ -1462,25 +1482,25 @@ pub mod tests_utils {
             (db, durability, rt, tmp_dir)
         }
 
-        fn in_memory_internal(root: &Path) -> Result<RelationalDB, DBError> {
+        fn in_memory_internal(root: &ReplicaDir) -> Result<RelationalDB, DBError> {
             Self::open_db(root, EmptyHistory::new(), None, None)
         }
 
         fn durable_internal(
-            root: &Path,
+            root: &ReplicaDir,
             rt: tokio::runtime::Handle,
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
-            let (local, disk_size_fn) = rt.block_on(local_durability(root))?;
+            let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log()))?;
             let history = local.clone();
             let durability = local.clone() as Arc<dyn Durability<TxData = Txdata>>;
-            let snapshot_repo = open_snapshot_repo(root, Identity::ZERO, 0)?;
+            let snapshot_repo = open_snapshot_repo(root.snapshots(), Identity::ZERO, 0)?;
             let db = Self::open_db(root, history, Some((durability, disk_size_fn)), Some(snapshot_repo))?;
 
             Ok((db, local))
         }
 
         fn open_db(
-            root: &Path,
+            root: &ReplicaDir,
             history: impl durability::History<TxData = Txdata>,
             durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
             snapshot_repo: Option<Arc<SnapshotRepository>>,
@@ -1572,8 +1592,8 @@ mod tests {
             |builder| {
                 builder
                     .with_primary_key(0)
-                    .with_column_sequence(0, None)
-                    .with_unique_constraint(0, None)
+                    .with_column_sequence(0)
+                    .with_unique_constraint(0)
             },
         )
     }
@@ -1586,11 +1606,10 @@ mod tests {
                 let builder = builder.with_index(
                     RawIndexAlgorithm::BTree { columns: 0.into() },
                     "accessor_name_doesnt_matter",
-                    None,
                 );
 
                 if is_unique {
-                    builder.with_unique_constraint(col_list![0], None)
+                    builder.with_unique_constraint(col_list![0])
                 } else {
                     builder
                 }
@@ -1813,7 +1832,7 @@ mod tests {
         let schema = table_auto_inc();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![0i64])?;
@@ -1831,7 +1850,7 @@ mod tests {
         let schema = table_auto_inc();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![5i64])?;
@@ -1856,7 +1875,7 @@ mod tests {
 
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![0i64])?;
@@ -1884,7 +1903,7 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         assert!(
-            stdb.index_id_from_name(&tx, "idx_MyTable_btree_my_col")?.is_some(),
+            stdb.index_id_from_name(&tx, "MyTable_my_col_idx_btree")?.is_some(),
             "Index not created"
         );
 
@@ -1953,7 +1972,7 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema).expect("stdb.create_table failed");
 
         assert!(
-            stdb.index_id_from_name(&tx, "idx_MyTable_btree_my_col")
+            stdb.index_id_from_name(&tx, "MyTable_my_col_idx_btree")
                 .expect("index_id_from_name failed")
                 .is_some(),
             "Index not created"
@@ -1987,17 +2006,17 @@ mod tests {
         let schema = table(
             "MyTable",
             ProductType::from([("my_col", AlgebraicType::I64)]),
-            |builder| builder.with_column_sequence(0, None).with_unique_constraint(0, None),
+            |builder| builder.with_column_sequence(0).with_unique_constraint(0),
         );
 
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         assert!(
-            stdb.index_id_from_name(&tx, "idx_MyTable_my_col_unique")?.is_some(),
+            stdb.index_id_from_name(&tx, "MyTable_my_col_idx_btree")?.is_some(),
             "Index not created"
         );
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![0i64])?;
@@ -2023,25 +2042,13 @@ mod tests {
             ]),
             |builder| {
                 builder
-                    .with_index(
-                        RawIndexAlgorithm::BTree { columns: col_list![0] },
-                        "MyTable_col1_idx",
-                        None,
-                    )
-                    .with_index(
-                        RawIndexAlgorithm::BTree { columns: col_list![2] },
-                        "MyTable_col3_idx",
-                        None,
-                    )
-                    .with_index(
-                        RawIndexAlgorithm::BTree { columns: col_list![3] },
-                        "MyTable_col4_idx",
-                        None,
-                    )
-                    .with_unique_constraint(0, None)
-                    .with_unique_constraint(1, None)
-                    .with_unique_constraint(3, None)
-                    .with_column_sequence(0, None)
+                    .with_index(RawIndexAlgorithm::BTree { columns: col_list![0] }, "MyTable_col1_idx")
+                    .with_index(RawIndexAlgorithm::BTree { columns: col_list![2] }, "MyTable_col3_idx")
+                    .with_index(RawIndexAlgorithm::BTree { columns: col_list![3] }, "MyTable_col4_idx")
+                    .with_unique_constraint(0)
+                    .with_unique_constraint(1)
+                    .with_unique_constraint(3)
+                    .with_column_sequence(0)
             },
         );
 
@@ -2134,7 +2141,6 @@ mod tests {
                     columns: col_list![0, 1],
                 },
                 "accessor_name_doesnt_matter",
-                None,
             )
         });
 
@@ -2392,8 +2398,7 @@ mod tests {
             row_ty,
         }));
         {
-            let clog =
-                Commitlog::<()>::open(dir.path().join("clog"), Default::default()).expect("failed to open commitlog");
+            let clog = Commitlog::<()>::open(dir.commit_log(), Default::default()).expect("failed to open commitlog");
             let decoder = Decoder(Rc::clone(&inputs));
             clog.fold_transactions(decoder).unwrap();
         }

@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::unique_address_type::UniqueAddress;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `unique_address`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.unique_address().on_insert(...)`.
 pub struct UniqueAddressTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<UniqueAddress>,
+    imp: __sdk::TableHandle<UniqueAddress>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl UniqueAddressTableAccess for super::RemoteTables {
     }
 }
 
-pub struct UniqueAddressInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct UniqueAddressDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct UniqueAddressInsertCallbackId(__sdk::CallbackId);
+pub struct UniqueAddressDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for UniqueAddressTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for UniqueAddressTableHandle<'ctx> {
     type Row = UniqueAddress;
     type EventContext = super::EventContext;
 
@@ -83,10 +82,15 @@ impl<'ctx> __sdk::table::Table for UniqueAddressTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueAddress>("unique_address");
+    _table.add_unique_constraint::<__sdk::Address>("a", |row| &row.a)
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueAddress>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<UniqueAddress>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"unique_address\"")
 }
 
@@ -98,7 +102,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.unique_address().a().find(...)`.
 pub struct UniqueAddressAUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraint<UniqueAddress, __sdk::Address>,
+    imp: __sdk::UniqueConstraintHandle<UniqueAddress, __sdk::Address>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -106,7 +110,7 @@ impl<'ctx> UniqueAddressTableHandle<'ctx> {
     /// Get a handle on the `a` unique index on the table `unique_address`.
     pub fn a(&self) -> UniqueAddressAUnique<'ctx> {
         UniqueAddressAUnique {
-            imp: self.imp.get_unique_constraint::<__sdk::Address>("a", |row| &row.a),
+            imp: self.imp.get_unique_constraint::<__sdk::Address>("a"),
             phantom: std::marker::PhantomData,
         }
     }

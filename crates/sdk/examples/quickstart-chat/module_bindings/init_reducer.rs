@@ -2,21 +2,20 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Init {}
 
-impl __sdk::spacetime_module::InModule for Init {
+impl __sdk::InModule for Init {
     type Module = super::RemoteModule;
 }
 
-pub struct InitCallbackId(__sdk::callbacks::CallbackId);
+pub struct InitCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `__init__`.
@@ -57,5 +56,25 @@ impl init for super::RemoteReducers {
     }
     fn remove_on_init(&self, callback: InitCallbackId) {
         self.imp.remove_on_reducer::<Init>("__init__", callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `__init__`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_init {
+    /// Set the call-reducer flags for the reducer `__init__` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn init(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_init for super::SetReducerFlags {
+    fn init(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("__init__", flags);
     }
 }

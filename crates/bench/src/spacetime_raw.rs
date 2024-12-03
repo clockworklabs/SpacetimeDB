@@ -21,12 +21,12 @@ pub struct SpacetimeRaw {
 }
 
 impl BenchDatabase for SpacetimeRaw {
-    fn name() -> &'static str {
-        "stdb_raw"
+    fn name() -> String {
+        "stdb_raw".to_owned()
     }
     type TableId = TableId;
 
-    fn build(in_memory: bool, _fsync: bool) -> ResultBench<Self>
+    fn build(in_memory: bool) -> ResultBench<Self>
     where
         Self: Sized,
     {

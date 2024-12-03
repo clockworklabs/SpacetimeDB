@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -14,11 +13,11 @@ pub struct InsertOneF64 {
     pub f: f64,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOneF64 {
+impl __sdk::InModule for InsertOneF64 {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOneF64CallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOneF64CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_one_f64`.
@@ -65,5 +64,25 @@ impl insert_one_f_64 for super::RemoteReducers {
     }
     fn remove_on_insert_one_f_64(&self, callback: InsertOneF64CallbackId) {
         self.imp.remove_on_reducer::<InsertOneF64>("insert_one_f64", callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_one_f64`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_one_f_64 {
+    /// Set the call-reducer flags for the reducer `insert_one_f64` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_one_f_64(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_one_f_64 for super::SetReducerFlags {
+    fn insert_one_f_64(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_one_f64", flags);
     }
 }

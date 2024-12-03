@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
@@ -16,11 +15,11 @@ pub struct InsertOptionEveryPrimitiveStruct {
     pub s: Option<EveryPrimitiveStruct>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOptionEveryPrimitiveStruct {
+impl __sdk::InModule for InsertOptionEveryPrimitiveStruct {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOptionEveryPrimitiveStructCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOptionEveryPrimitiveStructCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_option_every_primitive_struct`.
@@ -71,5 +70,26 @@ impl insert_option_every_primitive_struct for super::RemoteReducers {
     fn remove_on_insert_option_every_primitive_struct(&self, callback: InsertOptionEveryPrimitiveStructCallbackId) {
         self.imp
             .remove_on_reducer::<InsertOptionEveryPrimitiveStruct>("insert_option_every_primitive_struct", callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_option_every_primitive_struct`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_option_every_primitive_struct {
+    /// Set the call-reducer flags for the reducer `insert_option_every_primitive_struct` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_option_every_primitive_struct(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_option_every_primitive_struct for super::SetReducerFlags {
+    fn insert_option_every_primitive_struct(&self, flags: __ws::CallReducerFlags) {
+        self.imp
+            .set_call_reducer_flags("insert_option_every_primitive_struct", flags);
     }
 }

@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -14,11 +13,11 @@ pub struct InsertVecBool {
     pub b: Vec<bool>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertVecBool {
+impl __sdk::InModule for InsertVecBool {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecBoolCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertVecBoolCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_bool`.
@@ -66,5 +65,25 @@ impl insert_vec_bool for super::RemoteReducers {
     fn remove_on_insert_vec_bool(&self, callback: InsertVecBoolCallbackId) {
         self.imp
             .remove_on_reducer::<InsertVecBool>("insert_vec_bool", callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_vec_bool`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_vec_bool {
+    /// Set the call-reducer flags for the reducer `insert_vec_bool` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_vec_bool(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_vec_bool for super::SetReducerFlags {
+    fn insert_vec_bool(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_vec_bool", flags);
     }
 }

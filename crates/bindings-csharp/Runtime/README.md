@@ -14,3 +14,11 @@ While not really documented, it allows to build raw WebAssembly modules with cus
 - Finally, `bindings.c` implements no-op shims for all the WASI APIs so that they're linked internally and not attempted to be imported from the runtime itself.
 
 The result is a WebAssembly module FFI-compatible with SpacetimeDB and with no WASI imports, which is what we need.
+
+## Regenerating RawModuleDef
+To regenenerate the `Autogen` folder, run:
+
+```sh
+cd ../../cli
+cargo run --example regen-csharp-moduledef
+```

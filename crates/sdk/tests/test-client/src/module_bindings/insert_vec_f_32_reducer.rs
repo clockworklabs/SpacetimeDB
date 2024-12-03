@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -14,11 +13,11 @@ pub struct InsertVecF32 {
     pub f: Vec<f32>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertVecF32 {
+impl __sdk::InModule for InsertVecF32 {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecF32CallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertVecF32CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_f32`.
@@ -65,5 +64,25 @@ impl insert_vec_f_32 for super::RemoteReducers {
     }
     fn remove_on_insert_vec_f_32(&self, callback: InsertVecF32CallbackId) {
         self.imp.remove_on_reducer::<InsertVecF32>("insert_vec_f32", callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_vec_f32`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_vec_f_32 {
+    /// Set the call-reducer flags for the reducer `insert_vec_f32` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_vec_f_32(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_vec_f_32 for super::SetReducerFlags {
+    fn insert_vec_f_32(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_vec_f32", flags);
     }
 }

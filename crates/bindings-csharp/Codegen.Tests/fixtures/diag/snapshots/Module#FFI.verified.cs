@@ -87,10 +87,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestAutoIncNotIntegerUniqueIndex(TestAutoIncNotInteger handle)
-                    : base(
-                        handle,
-                        "idx_TestAutoIncNotInteger_TestAutoIncNotInteger_IdentityField_unique"
-                    ) { }
+                    : base(handle, "TestAutoIncNotInteger_IdentityField_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -197,10 +194,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestIncompatibleSchedule1UniqueIndex(TestIncompatibleSchedule1 handle)
-                    : base(
-                        handle,
-                        "idx_TestIncompatibleSchedule1_TestIncompatibleSchedule1_ScheduledId_unique"
-                    ) { }
+                    : base(handle, "TestIncompatibleSchedule1_ScheduledId_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -268,10 +262,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestIncompatibleSchedule2UniqueIndex(TestIncompatibleSchedule2 handle)
-                    : base(
-                        handle,
-                        "idx_TestIncompatibleSchedule2_TestIncompatibleSchedule2_ScheduledId_unique"
-                    ) { }
+                    : base(handle, "TestIncompatibleSchedule2_ScheduledId_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -369,10 +360,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle)
-                    : base(
-                        handle,
-                        "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique"
-                    ) { }
+                    : base(handle, "TestUniqueNotEquatable_UniqueField_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
@@ -395,10 +383,7 @@ namespace SpacetimeDB
                 >
             {
                 internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle)
-                    : base(
-                        handle,
-                        "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique"
-                    ) { }
+                    : base(handle, "TestUniqueNotEquatable_PrimaryKeyField_idx_btree") { }
 
                 // Important: don't move this to the base class.
                 // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based

@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::simple_enum_type::SimpleEnum;
@@ -16,11 +15,11 @@ pub struct InsertOptionSimpleEnum {
     pub e: Option<SimpleEnum>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOptionSimpleEnum {
+impl __sdk::InModule for InsertOptionSimpleEnum {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOptionSimpleEnumCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOptionSimpleEnumCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_option_simple_enum`.
@@ -69,5 +68,25 @@ impl insert_option_simple_enum for super::RemoteReducers {
     fn remove_on_insert_option_simple_enum(&self, callback: InsertOptionSimpleEnumCallbackId) {
         self.imp
             .remove_on_reducer::<InsertOptionSimpleEnum>("insert_option_simple_enum", callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_option_simple_enum`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_option_simple_enum {
+    /// Set the call-reducer flags for the reducer `insert_option_simple_enum` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_option_simple_enum(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_option_simple_enum for super::SetReducerFlags {
+    fn insert_option_simple_enum(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_option_simple_enum", flags);
     }
 }

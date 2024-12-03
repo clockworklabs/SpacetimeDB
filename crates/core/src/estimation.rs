@@ -95,7 +95,7 @@ mod tests {
     const NDV_S: u64 = 2;
 
     fn create_table_t(db: &RelationalDB, indexed: bool) {
-        let indexes = &[(0.into(), "a")];
+        let indexes = &[0.into()];
         let indexes = if indexed { indexes } else { &[] as &[_] };
         let table_id = db
             .create_table_for_test("T", &["a", "b"].map(|n| (n, AlgebraicType::U64)), indexes)
@@ -112,7 +112,7 @@ mod tests {
     }
 
     fn create_table_s(db: &RelationalDB, indexed: bool) {
-        let indexes = &[(0.into(), "a"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let indexes = if indexed { indexes } else { &[] as &[_] };
         let rhs = db
             .create_table_for_test("S", &["a", "c"].map(|n| (n, AlgebraicType::U64)), indexes)
@@ -127,6 +127,13 @@ mod tests {
         .expect("failed to insert into table");
     }
 
+    fn create_empty_table_r(db: &RelationalDB, indexed: bool) {
+        let indexes = &[0.into()];
+        let indexes = if indexed { indexes } else { &[] as &[_] };
+        db.create_table_for_test("R", &["a", "b"].map(|n| (n, AlgebraicType::U64)), indexes)
+            .expect("Failed to create table");
+    }
+
     /// Cardinality estimation for an index lookup depends only on
     /// (1) the total number of rows,
     /// (2) the number of distinct values.
@@ -135,6 +142,13 @@ mod tests {
         let db = in_mem_db();
         create_table_t(&db, true);
         assert_eq!(NUM_T_ROWS / NDV_T, num_rows_for(&db, "select * from T where a = 0"));
+    }
+
+    #[test]
+    fn cardinality_estimation_0_ndv() {
+        let db = in_mem_db();
+        create_empty_table_r(&db, true);
+        assert_eq!(0, num_rows_for(&db, "select * from R where a = 0"));
     }
 
     /// We estimate an index range to return all input rows.

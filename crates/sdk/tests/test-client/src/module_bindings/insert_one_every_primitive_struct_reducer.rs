@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
@@ -16,11 +15,11 @@ pub struct InsertOneEveryPrimitiveStruct {
     pub s: EveryPrimitiveStruct,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOneEveryPrimitiveStruct {
+impl __sdk::InModule for InsertOneEveryPrimitiveStruct {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOneEveryPrimitiveStructCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOneEveryPrimitiveStructCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_one_every_primitive_struct`.
@@ -69,5 +68,26 @@ impl insert_one_every_primitive_struct for super::RemoteReducers {
     fn remove_on_insert_one_every_primitive_struct(&self, callback: InsertOneEveryPrimitiveStructCallbackId) {
         self.imp
             .remove_on_reducer::<InsertOneEveryPrimitiveStruct>("insert_one_every_primitive_struct", callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_one_every_primitive_struct`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_one_every_primitive_struct {
+    /// Set the call-reducer flags for the reducer `insert_one_every_primitive_struct` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_one_every_primitive_struct(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_one_every_primitive_struct for super::SetReducerFlags {
+    fn insert_one_every_primitive_struct(&self, flags: __ws::CallReducerFlags) {
+        self.imp
+            .set_call_reducer_flags("insert_one_every_primitive_struct", flags);
     }
 }

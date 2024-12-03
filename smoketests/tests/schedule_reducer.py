@@ -25,6 +25,11 @@ fn init(ctx: &ReducerContext) {
 
 #[spacetimedb::table(name = scheduled_reducer_args, public, scheduled(reducer))]
 pub struct ScheduledReducerArgs {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    #[scheduled_at]
+    scheduled_at: spacetimedb::ScheduleAt,
     num: i32,
 }
 
@@ -53,6 +58,11 @@ use spacetimedb::{log, duration, ReducerContext, Table, Timestamp};
 
 #[spacetimedb::table(name = scheduled_table, public, scheduled(my_reducer))]
 pub struct ScheduledTable {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    #[scheduled_at]
+    scheduled_at: spacetimedb::ScheduleAt,
     prev: Timestamp,
 }
 

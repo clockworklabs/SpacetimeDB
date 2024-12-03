@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::every_vec_struct_type::EveryVecStruct;
@@ -16,11 +15,11 @@ pub struct InsertVecEveryVecStruct {
     pub s: Vec<EveryVecStruct>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertVecEveryVecStruct {
+impl __sdk::InModule for InsertVecEveryVecStruct {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecEveryVecStructCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertVecEveryVecStructCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_every_vec_struct`.
@@ -69,5 +68,25 @@ impl insert_vec_every_vec_struct for super::RemoteReducers {
     fn remove_on_insert_vec_every_vec_struct(&self, callback: InsertVecEveryVecStructCallbackId) {
         self.imp
             .remove_on_reducer::<InsertVecEveryVecStruct>("insert_vec_every_vec_struct", callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_vec_every_vec_struct`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_vec_every_vec_struct {
+    /// Set the call-reducer flags for the reducer `insert_vec_every_vec_struct` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_vec_every_vec_struct(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_vec_every_vec_struct for super::SetReducerFlags {
+    fn insert_vec_every_vec_struct(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_vec_every_vec_struct", flags);
     }
 }

@@ -1,22 +1,8 @@
-use std::path::{Path, PathBuf};
-
-use once_cell::sync::Lazy;
-
 extern crate core;
 
 pub mod energy;
 pub mod json;
 pub mod sql;
-
-pub static STDB_PATH: Lazy<PathBuf> =
-    Lazy::new(|| PathBuf::from(std::env::var_os("STDB_PATH").expect("STDB_PATH must be set")));
-
-pub fn stdb_path<S>(s: &S) -> PathBuf
-where
-    S: AsRef<Path> + ?Sized,
-{
-    STDB_PATH.join(s)
-}
 
 pub mod address {
     pub use spacetimedb_lib::Address;
