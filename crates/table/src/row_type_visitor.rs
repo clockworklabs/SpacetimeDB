@@ -46,6 +46,11 @@ use std::sync::Arc;
 /// This is a potentially expensive operation,
 /// so the resulting `VarLenVisitorProgram` should be stored and re-used.
 pub fn row_type_visitor(ty: &RowTypeLayout) -> VarLenVisitorProgram {
+    if ty.layout().fixed {
+        // Fast-path: The row type doesn't contain var-len members, so quit early.
+        return VarLenVisitorProgram { insns: [].into() };
+    }
+
     let rose_tree = product_type_to_rose_tree(ty.product(), &mut 0);
 
     rose_tree_to_visitor_program(&rose_tree)

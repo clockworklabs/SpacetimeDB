@@ -55,6 +55,9 @@ pub struct Layout {
     pub size: u16,
     /// The alignment of the object / expected object in bytes.
     pub align: u16,
+    /// Whether this is the layout of a fixed object
+    /// and not the layout of a var-len type's fixed component.
+    pub fixed: bool,
 }
 
 impl MemoryUsage for Layout {}
@@ -329,12 +332,36 @@ impl MemoryUsage for PrimitiveType {}
 impl HasLayout for PrimitiveType {
     fn layout(&self) -> &'static Layout {
         match self {
-            Self::Bool | Self::I8 | Self::U8 => &Layout { size: 1, align: 1 },
-            Self::I16 | Self::U16 => &Layout { size: 2, align: 2 },
-            Self::I32 | Self::U32 | Self::F32 => &Layout { size: 4, align: 4 },
-            Self::I64 | Self::U64 | Self::F64 => &Layout { size: 8, align: 8 },
-            Self::I128 | Self::U128 => &Layout { size: 16, align: 16 },
-            Self::I256 | Self::U256 => &Layout { size: 32, align: 32 },
+            Self::Bool | Self::I8 | Self::U8 => &Layout {
+                size: 1,
+                align: 1,
+                fixed: true,
+            },
+            Self::I16 | Self::U16 => &Layout {
+                size: 2,
+                align: 2,
+                fixed: true,
+            },
+            Self::I32 | Self::U32 | Self::F32 => &Layout {
+                size: 4,
+                align: 4,
+                fixed: true,
+            },
+            Self::I64 | Self::U64 | Self::F64 => &Layout {
+                size: 8,
+                align: 8,
+                fixed: true,
+            },
+            Self::I128 | Self::U128 => &Layout {
+                size: 16,
+                align: 16,
+                fixed: true,
+            },
+            Self::I256 | Self::U256 => &Layout {
+                size: 32,
+                align: 32,
+                fixed: true,
+            },
         }
     }
 }
@@ -362,7 +389,11 @@ impl MemoryUsage for VarLenType {
 }
 
 /// The layout of var-len objects. Aligned at a `u16` which it has 2 of.
-const VAR_LEN_REF_LAYOUT: Layout = Layout { size: 4, align: 2 };
+const VAR_LEN_REF_LAYOUT: Layout = Layout {
+    size: 4,
+    align: 2,
+    fixed: false,
+};
 const _: () = assert!(VAR_LEN_REF_LAYOUT.size as usize == mem::size_of::<VarLenRef>());
 const _: () = assert!(VAR_LEN_REF_LAYOUT.align as usize == mem::align_of::<VarLenRef>());
 
@@ -412,10 +443,12 @@ impl From<ProductType> for ProductTypeLayout {
         // This is consistent with Rust.
         let mut max_child_align = 1;
 
+        let mut fixed = true;
         let elements = Vec::from(ty.elements)
             .into_iter()
             .map(|elem| {
                 let layout_type: AlgebraicTypeLayout = elem.algebraic_type.into();
+                fixed &= layout_type.layout().fixed;
                 let this_offset = align_to(current_offset, layout_type.align());
                 max_child_align = usize::max(max_child_align, layout_type.align());
 
@@ -433,6 +466,7 @@ impl From<ProductType> for ProductTypeLayout {
         let layout = Layout {
             align: max_child_align as u16,
             size: align_to(current_offset, max_child_align) as u16,
+            fixed,
         };
 
         Self { layout, elements }
@@ -447,10 +481,12 @@ impl From<SumType> for SumTypeLayout {
         // This is consistent with Rust.
         let mut max_child_align = 0;
 
+        let mut fixed = true;
         let variants = Vec::from(ty.variants)
             .into_iter()
             .map(|variant| {
                 let layout_type: AlgebraicTypeLayout = variant.algebraic_type.into();
+                fixed &= layout_type.layout().fixed;
 
                 max_child_align = usize::max(max_child_align, layout_type.align());
                 max_child_size = usize::max(max_child_size, layout_type.size());
@@ -478,7 +514,7 @@ impl From<SumType> for SumTypeLayout {
         // [tag | pad to align | payload]
         let size = align + payload_size as u16;
         let payload_offset = align;
-        let layout = Layout { align, size };
+        let layout = Layout { align, size, fixed };
         Self {
             layout,
             payload_offset,

@@ -30,13 +30,13 @@ use super::{
     },
     util::range_move,
 };
-use core::mem::MaybeUninit;
 use core::ptr;
+use core::{mem::MaybeUninit, ops::Range};
 
 /// A precomputed BSATN layout for a type whose encoded length is a known constant,
 /// enabling fast BFLATN -> BSATN conversion.
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub(crate) struct StaticBsatnLayout {
+pub struct StaticBsatnLayout {
     /// The length of the encoded BSATN representation of a row of this type,
     /// in bytes.
     ///
@@ -132,12 +132,35 @@ impl StaticBsatnLayout {
         unsafe { buf.set_len(start + len) }
     }
 
+    /// Compares `row_a` for equality against `row_b`.
+    ///
+    /// # Safety
+    ///
+    /// - `row` must store a valid, initialized instance of the BFLATN row type
+    ///   for which `self` was computed.
+    ///   As a consequence of this, for every `field` in `self.fields`,
+    ///   `row[field.bflatn_offset .. field.bflatn_offset + field.length]` will be initialized.
+    pub(crate) unsafe fn eq(&self, row_a: &Bytes, row_b: &Bytes) -> bool {
+        // No need to check the lengths.
+        // We assume they are of the same length.
+        self.fields.iter().all(|field| {
+            // SAFETY: The consequence of what the caller promised is that
+            // `row_(a/b).len() >= field.bflatn_offset + field.length >= field.bflatn_offset`.
+            unsafe { field.eq(row_a, row_b) }
+        })
+    }
+
     /// Construct a `StaticBsatnLayout` for converting BFLATN rows of `row_type` into BSATN.
     ///
     /// Returns `None` if `row_type` contains a column which does not have a constant length in BSATN,
     /// either a [`VarLenType`]
     /// or a [`SumTypeLayout`] whose variants do not have the same "live" unpadded length.
-    pub(crate) fn for_row_type(row_type: &RowTypeLayout) -> Option<Self> {
+    pub fn for_row_type(row_type: &RowTypeLayout) -> Option<Self> {
+        if !row_type.layout().fixed {
+            // Don't bother computing the static layout if there are variable components.
+            return None;
+        }
+
         let mut builder = LayoutBuilder::new_builder();
         builder.visit_product(row_type.product())?;
         Some(builder.build())
@@ -168,20 +191,48 @@ struct MemcpyField {
 impl MemoryUsage for MemcpyField {}
 
 impl MemcpyField {
-    /// Copies the bytes at `row[self.bflatn_offset .. self.bflatn_offset + self.length]`
-    /// into `buf[self.bsatn_offset + self.length]`.
+    /// Returns the range for this field in a BFLATN byte array.
+    fn bflatn_range(&self) -> Range<usize> {
+        range_move(0..self.length as usize, self.bflatn_offset as usize)
+    }
+
+    /// Returns the range for this field in a BSATN byte array.
+    fn bsatn_range(&self) -> Range<usize> {
+        range_move(0..self.length as usize, self.bsatn_offset as usize)
+    }
+
+    /// Compares `row_a` and `row_b` for equality in this field.
     ///
     /// # Safety
     ///
-    /// - `buf` must be exactly `self.bsatn_offset + self.length` long.
-    /// - `row` must be exactly `self.bflatn_offset + self.length` long.
+    /// - `row_a.len() >= self.bflatn_offset + self.length`
+    /// - `row_b.len() >= self.bflatn_offset + self.length`
+    unsafe fn eq(&self, row_a: &Bytes, row_b: &Bytes) -> bool {
+        let range = self.bflatn_range();
+        let range2 = range.clone();
+        // SAFETY: The `range` is in bounds as
+        // `row_a.len() >= self.bflatn_offset + self.length >= self.bflatn_offset`.
+        let row_a_field = unsafe { row_a.get_unchecked(range) };
+        // SAFETY: The `range` is in bounds as
+        // `row_b.len() >= self.bflatn_offset + self.length >= self.bflatn_offset`.
+        let row_b_field = unsafe { row_b.get_unchecked(range2) };
+        row_a_field == row_b_field
+    }
+
+    /// Copies the bytes at `row[self.bflatn_offset .. self.bflatn_offset + self.length]`
+    /// into `buf[self.bsatn_offset .. self.bsatn_offset + self.length]`.
+    ///
+    /// # Safety
+    ///
+    /// - `buf.len() >= self.bsatn_offset + self.length`.
+    /// - `row.len() >= self.bflatn_offset + self.length`
     unsafe fn copy(&self, buf: &mut [MaybeUninit<Byte>], row: &Bytes) {
         let len = self.length as usize;
         // SAFETY: forward caller requirement #1.
-        let to = unsafe { buf.get_unchecked_mut(range_move(0..len, self.bsatn_offset as usize)) };
+        let to = unsafe { buf.get_unchecked_mut(self.bsatn_range()) };
         let dst = to.as_mut_ptr().cast();
         // SAFETY: forward caller requirement #2.
-        let from = unsafe { row.get_unchecked(range_move(0..len, self.bflatn_offset as usize)) };
+        let from = unsafe { row.get_unchecked(self.bflatn_range()) };
         let src = from.as_ptr();
 
         // SAFETY:

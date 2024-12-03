@@ -1,5 +1,3 @@
-use crate::var_len::VarLenMembers;
-
 use super::{
     bflatn_from::serialize_row_from_page,
     bflatn_to::write_row_to_pages,
@@ -16,7 +14,9 @@ use super::{
     read_column::{ReadColumn, TypeError},
     row_hash::hash_row_in_page,
     row_type_visitor::{row_type_visitor, VarLenVisitorProgram},
-    static_assert_size, MemoryUsage,
+    static_assert_size,
+    var_len::VarLenMembers,
+    MemoryUsage,
 };
 use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
@@ -371,6 +371,8 @@ impl Table {
                 // `committed_ptr` is in `committed_table.pointer_map`,
                 // so it must be valid and therefore `committed_page` and `committed_offset` are valid.
                 // Our invariants mean `committed_table.row_layout` applies to both tables.
+                // Moreover was `committed_table.inner.static_bsatn_layout`
+                // derived from `committed_table.row_layout`.
                 unsafe {
                     eq_row_in_page(
                         committed_page,
@@ -378,6 +380,7 @@ impl Table {
                         committed_offset,
                         tx_offset,
                         &committed_table.inner.row_layout,
+                        committed_table.inner.static_bsatn_layout.as_ref(),
                     )
                 }
             })
@@ -915,8 +918,10 @@ impl PartialEq for RowRef<'_> {
         }
         let (page_a, offset_a) = self.page_and_offset();
         let (page_b, offset_b) = other.page_and_offset();
-        // SAFETY: `offset_a/b` are valid rows in `page_a/b` typed at `a_ty`.
-        unsafe { eq_row_in_page(page_a, page_b, offset_a, offset_b, a_ty) }
+        let static_bsatn_layout = self.table.static_bsatn_layout.as_ref();
+        // SAFETY: `offset_a/b` are valid rows in `page_a/b` typed at `a_ty`
+        // and `static_bsatn_layout` is derived from `a_ty`.
+        unsafe { eq_row_in_page(page_a, page_b, offset_a, offset_b, a_ty, static_bsatn_layout) }
     }
 }
 
