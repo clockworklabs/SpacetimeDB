@@ -5,7 +5,7 @@ import logging
 
 class AddTableAutoMigration(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table, SpacetimeType};
+use spacetimedb::{log, ReducerContext, Table, SpacetimeType};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -20,7 +20,7 @@ pub fn add_person(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     for person in ctx.db.person().iter() {
-        println!("{}: {}", prefix, person.name);
+        log::info!("{}: {}", prefix, person.name);
     }
 }
 
@@ -56,7 +56,7 @@ pub fn add_book(ctx: &ReducerContext, isbn: String) {
 #[spacetimedb::reducer]
 pub fn print_books(ctx: &ReducerContext, prefix: String) {
     for book in ctx.db.book().iter() {
-        println!("{}: {}", prefix, book.isbn);
+        log::info!("{}: {}", prefix, book.isbn);
     }
 }
 
@@ -127,7 +127,7 @@ spacetimedb::filter!("SELECT * FROM book");
 
 class RejectTableChanges(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -142,13 +142,13 @@ pub fn add_person(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     for person in ctx.db.person().iter() {
-        println!("{}: {}", prefix, person.name);
+        log::info!("{}: {}", prefix, person.name);
     }
 }
 """
 
     MODULE_CODE_UPDATED = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -164,7 +164,7 @@ pub fn add_person(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     for person in ctx.db.person().iter() {
-        println!("{}: {}", prefix, person.name);
+        log::info!("{}: {}", prefix, person.name);
     }
 }
 """
