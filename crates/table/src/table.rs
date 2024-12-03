@@ -1,7 +1,6 @@
 use super::{
     bflatn_from::serialize_row_from_page,
     bflatn_to::write_row_to_pages,
-    bflatn_to_bsatn_fast_path::StaticBsatnLayout,
     blob_store::{BlobStore, NullBlobStore},
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     eq::eq_row_in_page,
@@ -15,6 +14,7 @@ use super::{
     row_hash::hash_row_in_page,
     row_type_visitor::{row_type_visitor, VarLenVisitorProgram},
     static_assert_size,
+    static_layout::StaticLayout,
     var_len::VarLenMembers,
     MemoryUsage,
 };
@@ -79,9 +79,9 @@ pub struct Table {
 pub(crate) struct TableInner {
     /// The type of rows this table stores, with layout information included.
     row_layout: RowTypeLayout,
-    /// A [`StaticBsatnLayout`] for fast BFLATN -> BSATN serialization,
+    /// A [`StaticLayout`] for fast BFLATN <-> BSATN conversion,
     /// if the [`RowTypeLayout`] has a static BSATN length and layout.
-    static_bsatn_layout: Option<StaticBsatnLayout>,
+    static_layout: Option<StaticLayout>,
     /// The visitor program for `row_layout`.
     ///
     /// Must be in the `TableInner` so that [`RowRef::blob_store_bytes`] can use it.
@@ -152,11 +152,11 @@ impl MemoryUsage for TableInner {
     fn heap_usage(&self) -> usize {
         let Self {
             row_layout,
-            static_bsatn_layout,
+            static_layout,
             visitor_prog,
             pages,
         } = self;
-        row_layout.heap_usage() + static_bsatn_layout.heap_usage() + visitor_prog.heap_usage() + pages.heap_usage()
+        row_layout.heap_usage() + static_layout.heap_usage() + visitor_prog.heap_usage() + pages.heap_usage()
     }
 }
 
@@ -191,16 +191,9 @@ impl Table {
     /// Creates a new empty table with the given `schema` and `squashed_offset`.
     pub fn new(schema: Arc<TableSchema>, squashed_offset: SquashedOffset) -> Self {
         let row_layout: RowTypeLayout = schema.get_row_type().clone().into();
-        let static_bsatn_layout = StaticBsatnLayout::for_row_type(&row_layout);
+        let static_layout = StaticLayout::for_row_type(&row_layout);
         let visitor_prog = row_type_visitor(&row_layout);
-        Self::new_with_indexes_capacity(
-            schema,
-            row_layout,
-            static_bsatn_layout,
-            visitor_prog,
-            squashed_offset,
-            0,
-        )
+        Self::new_with_indexes_capacity(schema, row_layout, static_layout, visitor_prog, squashed_offset, 0)
     }
 
     /// Check if the `row` conflicts with any unique index on `self`,
@@ -371,7 +364,7 @@ impl Table {
                 // `committed_ptr` is in `committed_table.pointer_map`,
                 // so it must be valid and therefore `committed_page` and `committed_offset` are valid.
                 // Our invariants mean `committed_table.row_layout` applies to both tables.
-                // Moreover was `committed_table.inner.static_bsatn_layout`
+                // Moreover was `committed_table.inner.static_layout`
                 // derived from `committed_table.row_layout`.
                 unsafe {
                     eq_row_in_page(
@@ -380,7 +373,7 @@ impl Table {
                         committed_offset,
                         tx_offset,
                         &committed_table.inner.row_layout,
-                        committed_table.inner.static_bsatn_layout.as_ref(),
+                        committed_table.inner.static_layout.as_ref(),
                     )
                 }
             })
@@ -634,7 +627,7 @@ impl Table {
     pub fn clone_structure(&self, squashed_offset: SquashedOffset) -> Self {
         let schema = self.schema.clone();
         let layout = self.row_layout().clone();
-        let sbl = self.static_bsatn_layout().cloned();
+        let sbl = self.static_layout().cloned();
         let visitor = self.inner.visitor_prog.clone();
         let mut new =
             Table::new_with_indexes_capacity(schema, layout, sbl, visitor, squashed_offset, self.indexes.len());
@@ -807,7 +800,7 @@ impl<'a> RowRef<'a> {
     /// Only available for rows whose types have a static BSATN layout.
     /// Returns `None` for rows of other types, e.g. rows containing strings.
     pub fn bsatn_length(&self) -> Option<usize> {
-        self.table.static_bsatn_layout.as_ref().map(|s| s.bsatn_length as usize)
+        self.table.static_layout.as_ref().map(|s| s.bsatn_length as usize)
     }
 
     /// Encode the row referred to by `self` into a `Vec<u8>` using BSATN and then deserialize it.
@@ -861,16 +854,16 @@ impl Serialize for RowRef<'_> {
 impl ToBsatn for RowRef<'_> {
     /// BSATN-encode the row referred to by `self` into a freshly-allocated `Vec<u8>`.
     ///
-    /// This method will use a [`StaticBsatnLayout`] if one is available,
+    /// This method will use a [`StaticLayout`] if one is available,
     /// and may therefore be faster than calling [`bsatn::to_vec`].
     fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
-        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
+        if let Some(static_layout) = &self.table.static_layout {
             // Use fast path, by first fetching the row data and then using the static layout.
             let row = self.get_row_data();
             // SAFETY:
             // - Existence of a `RowRef` treated as proof
             //   of row's validity and type information's correctness.
-            Ok(unsafe { static_bsatn_layout.serialize_row_into_vec(row) })
+            Ok(unsafe { static_layout.serialize_row_into_vec(row) })
         } else {
             bsatn::to_vec(self)
         }
@@ -879,17 +872,17 @@ impl ToBsatn for RowRef<'_> {
     /// BSATN-encode the row referred to by `self` into `buf`,
     /// pushing `self`'s bytes onto the end of `buf`, similar to [`Vec::extend`].
     ///
-    /// This method will use a [`StaticBsatnLayout`] if one is available,
+    /// This method will use a [`StaticLayout`] if one is available,
     /// and may therefore be faster than calling [`bsatn::to_writer`].
     fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
-        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
+        if let Some(static_layout) = &self.table.static_layout {
             // Use fast path, by first fetching the row data and then using the static layout.
             let row = self.get_row_data();
             // SAFETY:
             // - Existence of a `RowRef` treated as proof
             //   of row's validity and type information's correctness.
             unsafe {
-                static_bsatn_layout.serialize_row_extend(buf, row);
+                static_layout.serialize_row_extend(buf, row);
             }
             Ok(())
         } else {
@@ -899,7 +892,7 @@ impl ToBsatn for RowRef<'_> {
     }
 
     fn static_bsatn_size(&self) -> Option<u16> {
-        self.table.static_bsatn_layout.as_ref().map(|sbl| sbl.bsatn_length)
+        self.table.static_layout.as_ref().map(|sbl| sbl.bsatn_length)
     }
 }
 
@@ -918,10 +911,10 @@ impl PartialEq for RowRef<'_> {
         }
         let (page_a, offset_a) = self.page_and_offset();
         let (page_b, offset_b) = other.page_and_offset();
-        let static_bsatn_layout = self.table.static_bsatn_layout.as_ref();
+        let static_layout = self.table.static_layout.as_ref();
         // SAFETY: `offset_a/b` are valid rows in `page_a/b` typed at `a_ty`
         // and `static_bsatn_layout` is derived from `a_ty`.
-        unsafe { eq_row_in_page(page_a, page_b, offset_a, offset_b, a_ty, static_bsatn_layout) }
+        unsafe { eq_row_in_page(page_a, page_b, offset_a, offset_b, a_ty, static_layout) }
     }
 }
 
@@ -1089,12 +1082,12 @@ impl Table {
         }
     }
 
-    /// Returns a new empty table with the given `schema`, `row_layout`, and `static_bsatn_layout`s
+    /// Returns a new empty table with the given `schema`, `row_layout`, and `static_layout`s
     /// and with a specified capacity for the `indexes` of the table.
     fn new_with_indexes_capacity(
         schema: Arc<TableSchema>,
         row_layout: RowTypeLayout,
-        static_bsatn_layout: Option<StaticBsatnLayout>,
+        static_layout: Option<StaticLayout>,
         visitor_prog: VarLenVisitorProgram,
         squashed_offset: SquashedOffset,
         indexes_capacity: usize,
@@ -1102,7 +1095,7 @@ impl Table {
         Self {
             inner: TableInner {
                 row_layout,
-                static_bsatn_layout,
+                static_layout,
                 visitor_prog,
                 pages: Pages::default(),
             },
@@ -1174,9 +1167,9 @@ impl Table {
         self.inner.pages.len()
     }
 
-    /// Returns the [`StaticBsatnLayout`] for this table,
-    pub(crate) fn static_bsatn_layout(&self) -> Option<&StaticBsatnLayout> {
-        self.inner.static_bsatn_layout.as_ref()
+    /// Returns the [`StaticLayout`] for this table,
+    pub(crate) fn static_layout(&self) -> Option<&StaticLayout> {
+        self.inner.static_layout.as_ref()
     }
 
     /// Rebuild the [`PointerMap`] by iterating over all the rows in `self` and inserting them.

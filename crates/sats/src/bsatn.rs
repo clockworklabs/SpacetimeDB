@@ -108,7 +108,7 @@ codec_funcs!(val: crate::SumValue);
 /// Types that can be encoded to BSATN.
 ///
 /// Implementations of this trait may be more efficient than directly calling [`bsatn::to_vec`].
-/// In particular, for [`RowRef`], this method will use a [`StaticBsatnLayout`] if one is available,
+/// In particular, for [`RowRef`], this method will use a [`StaticLayout`] if one is available,
 /// avoiding expensive runtime type dispatch.
 pub trait ToBsatn {
     /// BSATN-encode the row referred to by `self` into a freshly-allocated `Vec<u8>`.
@@ -120,7 +120,7 @@ pub trait ToBsatn {
 
     /// Returns the static size of the type of this object.
     ///
-    /// When this returns `Some(_)` there is also a `StaticBsatnLayout`.
+    /// When this returns `Some(_)` there is also a `StaticLayout`.
     fn static_bsatn_size(&self) -> Option<u16>;
 }
 

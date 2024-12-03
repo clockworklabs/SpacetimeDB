@@ -1,5 +1,5 @@
 //! To efficiently implement a fast-path BSATN -> BFLATN,
-//! we use a `StaticBsatnLayout` but in reverse of the read path.
+//! we use a `StaticLayout` but in reverse of the read path.
 //! This however leaves us with no way to validate
 //! that the BSATN satisfies the row type of a given table.
 //!
@@ -21,8 +21,8 @@
 #![allow(unused)]
 
 use super::{
-    bflatn_to_bsatn_fast_path::StaticBsatnLayout,
     layout::{AlgebraicTypeLayout, HasLayout as _, ProductTypeLayout, RowTypeLayout},
+    static_layout::StaticLayout,
     MemoryUsage,
 };
 use itertools::{repeat_n, Itertools as _};
@@ -32,7 +32,7 @@ use std::sync::Arc;
 
 /// Constructs a validator for a row encoded in BSATN
 /// that checks that the row satisfies the type `ty`
-/// when `ty` has `StaticBsatnLayout`.
+/// when `ty` has `StaticLayout`.
 ///
 /// This is a potentially expensive operation,
 /// so the resulting `StaticBsatnValidator` should be stored and re-used.
@@ -313,19 +313,19 @@ unsafe fn check_tag(bytes: &[u8], check: CheckTag) -> Result<u8, DecodeError> {
 
 /// Validates that `bytes`, encoded in BSATN,
 /// is valid according to the validation `program`
-/// and a corresponding `static_bsatn_layout`,
+/// and a corresponding `static_layout`,
 ///
 /// # Safety
 ///
 /// The caller must guarantee that
-/// all offsets in `program` are `< static_bsatn_layout.bsatn_length`.
+/// all offsets in `program` are `< static_layout.bsatn_length`.
 pub(crate) unsafe fn validate_bsatn(
     program: &StaticBsatnValidator,
-    static_bsatn_layout: &StaticBsatnLayout,
+    static_layout: &StaticLayout,
     bytes: &[u8],
 ) -> Result<(), DecodeError> {
     // Validate length of BSATN `bytes` against the expected length.
-    let expected = static_bsatn_layout.bsatn_length as usize;
+    let expected = static_layout.bsatn_length as usize;
     let given = bytes.len();
     if expected != given {
         return Err(DecodeError::InvalidLen { expected, given });
@@ -388,15 +388,14 @@ pub mod test {
         #[test]
         fn validation_same_as_write_row_to_pages((ty, val) in generate_typed_row()) {
             let ty: RowTypeLayout = ty.into();
-            let Some(static_bsatn_layout) = StaticBsatnLayout::for_row_type(&ty) else {
+            let Some(static_layout) = StaticLayout::for_row_type(&ty) else {
                 // `ty` has a var-len member or a sum with different payload lengths,
                 // so the fast path doesn't apply.
                 return Err(TestCaseError::reject("Var-length type"));
             };
             let validator = static_bsatn_validator(&ty);
             let bsatn = to_vec(&val).unwrap();
-            let res_validate = unsafe { validate_bsatn(&validator, &static_bsatn_layout, &bsatn) };
-
+            let res_validate = unsafe { validate_bsatn(&validator, &static_layout, &bsatn) };
 
             let mut page = Page::new(ty.size());
             let visitor = row_type_visitor(&ty);
@@ -409,11 +408,11 @@ pub mod test {
         #[test]
         fn bad_bool_validates_to_error(byte in 2u8..) {
             let ty: RowTypeLayout = ProductType::from([AlgebraicType::Bool]).into();
-            let static_bsatn_layout = StaticBsatnLayout::for_row_type(&ty).unwrap();
+            let static_layout = StaticLayout::for_row_type(&ty).unwrap();
             let validator = static_bsatn_validator(&ty);
 
             let bsatn = [byte];
-            let res_validate = unsafe { validate_bsatn(&validator, &static_bsatn_layout, &bsatn) };
+            let res_validate = unsafe { validate_bsatn(&validator, &static_layout, &bsatn) };
             prop_assert_eq!(res_validate, Err(DecodeError::InvalidBool(byte)));
         }
     }

@@ -10,7 +10,6 @@ use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue};
 use spacetimedb_table::bflatn_from::serialize_row_from_page;
 use spacetimedb_table::bflatn_to::write_row_to_page;
-use spacetimedb_table::bflatn_to_bsatn_fast_path::StaticBsatnLayout;
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::eq::eq_row_in_page;
 use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowHash};
@@ -18,6 +17,7 @@ use spacetimedb_table::layout::{row_size_for_type, RowTypeLayout};
 use spacetimedb_table::page::Page;
 use spacetimedb_table::row_hash::hash_row_in_page;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
+use spacetimedb_table::static_layout::StaticLayout;
 use spacetimedb_table::var_len::{AlignedVarLenOffsets, NullVarLenVisitor, VarLenGranule, VarLenMembers, VarLenRef};
 
 fn time<R>(acc: &mut Duration, body: impl FnOnce() -> R) -> R {
@@ -759,7 +759,7 @@ fn eq_in_page_same(c: &mut Criterion) {
     let mut group = c.benchmark_group("eq_in_page");
     for (name, ty, value, _null_visitor, _aligned_offsets_visitor) in product_value_test_cases() {
         let (ty, mut page, visitor) = ty_page_visitor(ty);
-        let static_bsatn_layout = StaticBsatnLayout::for_row_type(&ty);
+        let static_bsatn_layout = StaticLayout::for_row_type(&ty);
 
         let (offset_0, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
         let (offset_1, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
