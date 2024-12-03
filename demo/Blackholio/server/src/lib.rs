@@ -19,6 +19,7 @@ pub struct Config {
 }
 
 #[spacetimedb::table(name = entity, public)]
+#[derive(Clone)]
 pub struct Entity {
     #[auto_inc]
     #[primary_key]
@@ -29,6 +30,7 @@ pub struct Entity {
 }
 
 #[spacetimedb::table(name = circle, public)]
+#[derive(Clone)]
 pub struct Circle {
     #[primary_key]
     pub entity_id: u32,
@@ -153,11 +155,17 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
 
     {
         let span = spacetimedb::log_stopwatch::LogStopwatch::new("collisions");
-        for (idx, mut circle) in ctx.db.circle().iter().enumerate() {
-            let Some(mut circle_entity) = ctx.db.entity().id().find(&circle.entity_id) else { continue; };
+        let mut circles =
+            ctx.db.circle().iter().map(|circle| {
+                let entity = ctx.db.entity().id().find(&circle.entity_id);
+                (circle, entity, false)
+            })
+            .collect::<Vec<_>>();
+        for idx in 0 .. circles.len() {
+            let (mut circle, Some(mut circle_entity), _) = circles[idx].clone() else { continue; };
             // Check collisions
-            for mut other_circle in ctx.db.circle().iter().skip(idx+1) {
-                let Some(mut other_entity) = ctx.db.entity().id().find(&other_circle.entity_id) else { continue; };
+            for other_idx in idx+1 .. circles.len() {
+                let (mut other_circle, Some(mut other_entity), _) = circles[other_idx].clone() else { continue; };
                 let overlap_vector = Vector2 {
                     x: circle_entity.position.x - other_entity.position.x,
                     y: circle_entity.position.y - other_entity.position.y,
@@ -176,14 +184,18 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
                 let (circle_velocity, other_circle_velocity) = elastic(circle.velocity, other_circle.velocity, circle_entity.mass as f32, other_entity.mass as f32);
                 circle.velocity = circle_velocity;
                 other_circle.velocity = other_circle_velocity;
-
-                ctx.db.circle().entity_id().update(other_circle);
-                ctx.db.entity().id().update(other_entity);
-
+                circles[other_idx] = (other_circle, Some(other_entity), true);
             }
-            ctx.db.circle().entity_id().update(circle);
-            ctx.db.entity().id().update(circle_entity);
+            circles[idx] = (circle, Some(circle_entity), true);
         }
+
+        for (circle, entity, modified) in circles.into_iter() {
+            if modified {
+                ctx.db.circle().entity_id().update(circle);
+                ctx.db.entity().id().update(entity.unwrap());
+            }
+        }
+
         span.end();
     }
 
