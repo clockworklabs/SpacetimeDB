@@ -20,32 +20,11 @@ pub enum PhysicalPlan {
     /// Fetch row ids from an index
     IxScan(IxScan),
     /// Join a relation to a table using an index
-    ///
-    ///     x
-    ///    / \
-    ///   x   c
-    ///  / \
-    /// a   b
     IxJoin(IxJoin),
     /// An index join + projection
-    ///
-    ///  p(a)
-    ///   |
-    ///   x
-    ///  / \
-    /// a   b
     IxSemiJoin(IxSemiJoin),
     /// A Nested Loop Join.
     /// Equivalent to a cross product.
-    ///
-    /// For implementing bushy joins:
-    ///
-    ///      x
-    ///     / \
-    ///    /   \
-    ///   x     x
-    ///  / \   / \
-    /// a   b c   d
     ///
     /// 1) If the lhs relation has `n` tuples
     /// 2) If the rhs relation has `m` tuples
@@ -351,26 +330,6 @@ impl RewriteRule for IxSemiJoinRule {
 
 /// Push projections down towards the leaves.
 /// Required for semijoin rewrites.
-///
-///    p(c)
-///     |
-///     x
-///    / \
-///   x   c
-///  / \
-/// a   b
-///
-/// ... to ...
-///
-///    p(c)
-///     |
-///     x
-///    / \
-///  p(b) c
-///   |
-///   x
-///  / \
-/// a   b
 pub struct PushProjection;
 
 impl RewriteRule for PushProjection {
