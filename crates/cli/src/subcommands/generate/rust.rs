@@ -357,6 +357,16 @@ Requested namespace: {namespace}",
         let args_type = reducer_args_type_name(&reducer.name);
         let enum_variant_name = reducer_variant_name(&reducer.name);
 
+        // Define an "args struct" for the reducer.
+        // This is not user-facing (note the `pub(super)` visibility);
+        // it is an internal helper for serialization and deserialization.
+        // We actually want to ser/de instances of `enum Reducer`, but:
+        // - `Reducer` will have struct-like variants, which SATS ser/de does not support.
+        // - The WS format does not contain a BSATN-serialized `Reducer` instance;
+        //   it holds the reducer name or ID separately from the argument bytes.
+        //   We could work up some magic with `DeserializeSeed`
+        //   and/or custom `Serializer` and `Deserializer` types
+        //   to account for this, but it's much easier to just use an intermediate struct per reducer.
         define_struct_for_product(
             module,
             out,
@@ -942,7 +952,11 @@ impl __sdk::InModule for Reducer {{
                                 write!(out, "Reducer::{}", reducer_variant_name(&reducer.name));
                                 if !reducer.params_for_generate.elements.is_empty() {
                                     // Because we're emitting unit variants when the payload is empty,
-                                    // we have to emit different patterns for empty vs non-empty variants.
+                                    // we will emit different patterns for empty vs non-empty variants.
+                                    // This is not strictly required;
+                                    // Rust allows matching a struct-like pattern
+                                    // against a unit-like enum variant,
+                                    // but we prefer the clarity of not including the braces for unit variants.
                                     write!(out, " {{ .. }}");
                                 }
                                 writeln!(out, " => {:?},", reducer.name.deref());
@@ -961,6 +975,21 @@ impl __sdk::InModule for Reducer {{
         "impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {",
         |out| {
             writeln!(out, "type Error = __anyhow::Error;");
+            // We define an "args struct" for each reducer in `generate_reducer`.
+            // This is not user-facing, and is not exported past the "root" `mod.rs`;
+            // it is an internal helper for serialization and deserialization.
+            // We actually want to ser/de instances of `enum Reducer`, but:
+            //
+            // - `Reducer` will have struct-like variants, which SATS ser/de does not support.
+            // - The WS format does not contain a BSATN-serialized `Reducer` instance;
+            //   it holds the reducer name or ID separately from the argument bytes.
+            //   We could work up some magic with `DeserializeSeed`
+            //   and/or custom `Serializer` and `Deserializer` types
+            //   to account for this, but it's much easier to just use an intermediate struct per reducer.
+            //
+            // As such, we deserialize from the `value.args` bytes into that "args struct,"
+            // then convert it into a `Reducer` variant via `Into::into`,
+            // which we also implement in `generate_reducer`.
             out.delimited_block(
                 "fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {",
                 |out| {
