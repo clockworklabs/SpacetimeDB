@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecI128 {
+pub(super) struct InsertVecI128Args {
     pub n: Vec<i128>,
 }
 
-impl __sdk::InModule for InsertVecI128 {
+impl From<InsertVecI128Args> for super::Reducer {
+    fn from(args: InsertVecI128Args) -> Self {
+        Self::InsertVecI128 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for InsertVecI128Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,20 +57,32 @@ pub trait insert_vec_i_128 {
 
 impl insert_vec_i_128 for super::RemoteReducers {
     fn insert_vec_i_128(&self, n: Vec<i128>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_i128", InsertVecI128 { n })
+        self.imp.call_reducer("insert_vec_i128", InsertVecI128Args { n })
     }
     fn on_insert_vec_i_128(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<i128>) + Send + 'static,
     ) -> InsertVecI128CallbackId {
-        InsertVecI128CallbackId(self.imp.on_reducer::<InsertVecI128>(
+        InsertVecI128CallbackId(self.imp.on_reducer(
             "insert_vec_i128",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecI128| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecI128 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_insert_vec_i_128(&self, callback: InsertVecI128CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecI128>("insert_vec_i128", callback.0)
+        self.imp.remove_on_reducer("insert_vec_i128", callback.0)
     }
 }
 

@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdatePkI64 {
+pub(super) struct UpdatePkI64Args {
     pub n: i64,
     pub data: i32,
 }
 
-impl __sdk::InModule for UpdatePkI64 {
+impl From<UpdatePkI64Args> for super::Reducer {
+    fn from(args: UpdatePkI64Args) -> Self {
+        Self::UpdatePkI64 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdatePkI64Args {
     type Module = super::RemoteModule;
 }
 
@@ -52,19 +61,32 @@ pub trait update_pk_i_64 {
 
 impl update_pk_i_64 for super::RemoteReducers {
     fn update_pk_i_64(&self, n: i64, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_pk_i64", UpdatePkI64 { n, data })
+        self.imp.call_reducer("update_pk_i64", UpdatePkI64Args { n, data })
     }
     fn on_update_pk_i_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i64, &i32) + Send + 'static,
     ) -> UpdatePkI64CallbackId {
-        UpdatePkI64CallbackId(self.imp.on_reducer::<UpdatePkI64>(
+        UpdatePkI64CallbackId(self.imp.on_reducer(
             "update_pk_i64",
-            Box::new(move |ctx: &super::EventContext, args: &UpdatePkI64| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdatePkI64 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_update_pk_i_64(&self, callback: UpdatePkI64CallbackId) {
-        self.imp.remove_on_reducer::<UpdatePkI64>("update_pk_i64", callback.0)
+        self.imp.remove_on_reducer("update_pk_i64", callback.0)
     }
 }
 

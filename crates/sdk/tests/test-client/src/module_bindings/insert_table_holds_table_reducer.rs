@@ -12,12 +12,18 @@ use super::vec_u_8_type::VecU8;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertTableHoldsTable {
+pub(super) struct InsertTableHoldsTableArgs {
     pub a: OneU8,
     pub b: VecU8,
 }
 
-impl __sdk::InModule for InsertTableHoldsTable {
+impl From<InsertTableHoldsTableArgs> for super::Reducer {
+    fn from(args: InsertTableHoldsTableArgs) -> Self {
+        Self::InsertTableHoldsTable { a: args.a, b: args.b }
+    }
+}
+
+impl __sdk::InModule for InsertTableHoldsTableArgs {
     type Module = super::RemoteModule;
 }
 
@@ -56,20 +62,32 @@ pub trait insert_table_holds_table {
 impl insert_table_holds_table for super::RemoteReducers {
     fn insert_table_holds_table(&self, a: OneU8, b: VecU8) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_table_holds_table", InsertTableHoldsTable { a, b })
+            .call_reducer("insert_table_holds_table", InsertTableHoldsTableArgs { a, b })
     }
     fn on_insert_table_holds_table(
         &self,
         mut callback: impl FnMut(&super::EventContext, &OneU8, &VecU8) + Send + 'static,
     ) -> InsertTableHoldsTableCallbackId {
-        InsertTableHoldsTableCallbackId(self.imp.on_reducer::<InsertTableHoldsTable>(
+        InsertTableHoldsTableCallbackId(self.imp.on_reducer(
             "insert_table_holds_table",
-            Box::new(move |ctx: &super::EventContext, args: &InsertTableHoldsTable| callback(ctx, &args.a, &args.b)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertTableHoldsTable { a, b },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, a, b)
+            }),
         ))
     }
     fn remove_on_insert_table_holds_table(&self, callback: InsertTableHoldsTableCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertTableHoldsTable>("insert_table_holds_table", callback.0)
+        self.imp.remove_on_reducer("insert_table_holds_table", callback.0)
     }
 }
 

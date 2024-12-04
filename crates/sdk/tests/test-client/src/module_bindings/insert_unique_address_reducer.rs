@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertUniqueAddress {
+pub(super) struct InsertUniqueAddressArgs {
     pub a: __sdk::Address,
     pub data: i32,
 }
 
-impl __sdk::InModule for InsertUniqueAddress {
+impl From<InsertUniqueAddressArgs> for super::Reducer {
+    fn from(args: InsertUniqueAddressArgs) -> Self {
+        Self::InsertUniqueAddress {
+            a: args.a,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertUniqueAddressArgs {
     type Module = super::RemoteModule;
 }
 
@@ -53,20 +62,32 @@ pub trait insert_unique_address {
 impl insert_unique_address for super::RemoteReducers {
     fn insert_unique_address(&self, a: __sdk::Address, data: i32) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_unique_address", InsertUniqueAddress { a, data })
+            .call_reducer("insert_unique_address", InsertUniqueAddressArgs { a, data })
     }
     fn on_insert_unique_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Address, &i32) + Send + 'static,
     ) -> InsertUniqueAddressCallbackId {
-        InsertUniqueAddressCallbackId(self.imp.on_reducer::<InsertUniqueAddress>(
+        InsertUniqueAddressCallbackId(self.imp.on_reducer(
             "insert_unique_address",
-            Box::new(move |ctx: &super::EventContext, args: &InsertUniqueAddress| callback(ctx, &args.a, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertUniqueAddress { a, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, a, data)
+            }),
         ))
     }
     fn remove_on_insert_unique_address(&self, callback: InsertUniqueAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueAddress>("insert_unique_address", callback.0)
+        self.imp.remove_on_reducer("insert_unique_address", callback.0)
     }
 }
 

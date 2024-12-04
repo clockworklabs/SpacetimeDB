@@ -17,12 +17,19 @@ expression: outfiles
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct AddPlayer {
+pub(super) struct AddPlayerArgs {
 	pub name: String,
 }
 
+impl From<AddPlayerArgs> for super::Reducer {
+	fn from(args: AddPlayerArgs) -> Self {
+		Self::AddPlayer {
+			name: args.name,
+}
+}
+}
 
-impl __sdk::InModule for AddPlayer {
+impl __sdk::InModule for AddPlayerArgs {
     type Module = super::RemoteModule;
 }
 
@@ -59,19 +66,30 @@ pub trait add_player {
 impl add_player for super::RemoteReducers {
     fn add_player(&self, name: String,
 ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("add_player", AddPlayer { name,  })
+        self.imp.call_reducer("add_player", AddPlayerArgs { name,  })
     }
     fn on_add_player(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static,
     ) -> AddPlayerCallbackId {
-        AddPlayerCallbackId(self.imp.on_reducer::<AddPlayer>(
+        AddPlayerCallbackId(self.imp.on_reducer(
             "add_player",
-            Box::new(move |ctx: &super::EventContext, args: &AddPlayer| callback(ctx, &args.name, )),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        reducer: super::Reducer::AddPlayer {
+                            name, 
+                        },
+                        ..
+                    }),
+                    ..
+                } = ctx else { unreachable!() };
+                callback(ctx, name, )
+            }),
         ))
     }
     fn remove_on_add_player(&self, callback: AddPlayerCallbackId) {
-        self.imp.remove_on_reducer::<AddPlayer>("add_player", callback.0)
+        self.imp.remove_on_reducer("add_player", callback.0)
     }
 }
 
@@ -111,12 +129,19 @@ impl set_flags_for_add_player for super::SetReducerFlags {
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct AddPrivate {
+pub(super) struct AddPrivateArgs {
 	pub name: String,
 }
 
+impl From<AddPrivateArgs> for super::Reducer {
+	fn from(args: AddPrivateArgs) -> Self {
+		Self::AddPrivate {
+			name: args.name,
+}
+}
+}
 
-impl __sdk::InModule for AddPrivate {
+impl __sdk::InModule for AddPrivateArgs {
     type Module = super::RemoteModule;
 }
 
@@ -153,19 +178,30 @@ pub trait add_private {
 impl add_private for super::RemoteReducers {
     fn add_private(&self, name: String,
 ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("add_private", AddPrivate { name,  })
+        self.imp.call_reducer("add_private", AddPrivateArgs { name,  })
     }
     fn on_add_private(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static,
     ) -> AddPrivateCallbackId {
-        AddPrivateCallbackId(self.imp.on_reducer::<AddPrivate>(
+        AddPrivateCallbackId(self.imp.on_reducer(
             "add_private",
-            Box::new(move |ctx: &super::EventContext, args: &AddPrivate| callback(ctx, &args.name, )),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        reducer: super::Reducer::AddPrivate {
+                            name, 
+                        },
+                        ..
+                    }),
+                    ..
+                } = ctx else { unreachable!() };
+                callback(ctx, name, )
+            }),
         ))
     }
     fn remove_on_add_private(&self, callback: AddPrivateCallbackId) {
-        self.imp.remove_on_reducer::<AddPrivate>("add_private", callback.0)
+        self.imp.remove_on_reducer("add_private", callback.0)
     }
 }
 
@@ -230,12 +266,19 @@ impl __sdk::InModule for Baz {
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeletePlayer {
+pub(super) struct DeletePlayerArgs {
 	pub id: u64,
 }
 
+impl From<DeletePlayerArgs> for super::Reducer {
+	fn from(args: DeletePlayerArgs) -> Self {
+		Self::DeletePlayer {
+			id: args.id,
+}
+}
+}
 
-impl __sdk::InModule for DeletePlayer {
+impl __sdk::InModule for DeletePlayerArgs {
     type Module = super::RemoteModule;
 }
 
@@ -272,19 +315,30 @@ pub trait delete_player {
 impl delete_player for super::RemoteReducers {
     fn delete_player(&self, id: u64,
 ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_player", DeletePlayer { id,  })
+        self.imp.call_reducer("delete_player", DeletePlayerArgs { id,  })
     }
     fn on_delete_player(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u64, ) + Send + 'static,
     ) -> DeletePlayerCallbackId {
-        DeletePlayerCallbackId(self.imp.on_reducer::<DeletePlayer>(
+        DeletePlayerCallbackId(self.imp.on_reducer(
             "delete_player",
-            Box::new(move |ctx: &super::EventContext, args: &DeletePlayer| callback(ctx, &args.id, )),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        reducer: super::Reducer::DeletePlayer {
+                            id, 
+                        },
+                        ..
+                    }),
+                    ..
+                } = ctx else { unreachable!() };
+                callback(ctx, id, )
+            }),
         ))
     }
     fn remove_on_delete_player(&self, callback: DeletePlayerCallbackId) {
-        self.imp.remove_on_reducer::<DeletePlayer>("delete_player", callback.0)
+        self.imp.remove_on_reducer("delete_player", callback.0)
     }
 }
 
@@ -324,12 +378,19 @@ impl set_flags_for_delete_player for super::SetReducerFlags {
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeletePlayersByName {
+pub(super) struct DeletePlayersByNameArgs {
 	pub name: String,
 }
 
+impl From<DeletePlayersByNameArgs> for super::Reducer {
+	fn from(args: DeletePlayersByNameArgs) -> Self {
+		Self::DeletePlayersByName {
+			name: args.name,
+}
+}
+}
 
-impl __sdk::InModule for DeletePlayersByName {
+impl __sdk::InModule for DeletePlayersByNameArgs {
     type Module = super::RemoteModule;
 }
 
@@ -366,19 +427,30 @@ pub trait delete_players_by_name {
 impl delete_players_by_name for super::RemoteReducers {
     fn delete_players_by_name(&self, name: String,
 ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_players_by_name", DeletePlayersByName { name,  })
+        self.imp.call_reducer("delete_players_by_name", DeletePlayersByNameArgs { name,  })
     }
     fn on_delete_players_by_name(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static,
     ) -> DeletePlayersByNameCallbackId {
-        DeletePlayersByNameCallbackId(self.imp.on_reducer::<DeletePlayersByName>(
+        DeletePlayersByNameCallbackId(self.imp.on_reducer(
             "delete_players_by_name",
-            Box::new(move |ctx: &super::EventContext, args: &DeletePlayersByName| callback(ctx, &args.name, )),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        reducer: super::Reducer::DeletePlayersByName {
+                            name, 
+                        },
+                        ..
+                    }),
+                    ..
+                } = ctx else { unreachable!() };
+                callback(ctx, name, )
+            }),
         ))
     }
     fn remove_on_delete_players_by_name(&self, callback: DeletePlayersByNameCallbackId) {
-        self.imp.remove_on_reducer::<DeletePlayersByName>("delete_players_by_name", callback.0)
+        self.imp.remove_on_reducer("delete_players_by_name", callback.0)
     }
 }
 
@@ -571,11 +643,16 @@ impl __sdk::InModule for HasSpecialStuff {
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct IdentityConnected {
+pub(super) struct IdentityConnectedArgs {
 	}
 
+impl From<IdentityConnectedArgs> for super::Reducer {
+	fn from(args: IdentityConnectedArgs) -> Self {
+		Self::IdentityConnected
+}
+}
 
-impl __sdk::InModule for IdentityConnected {
+impl __sdk::InModule for IdentityConnectedArgs {
     type Module = super::RemoteModule;
 }
 
@@ -610,19 +687,30 @@ pub trait identity_connected {
 
 impl identity_connected for super::RemoteReducers {
     fn identity_connected(&self, ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("__identity_connected__", IdentityConnected {  })
+        self.imp.call_reducer("__identity_connected__", IdentityConnectedArgs {  })
     }
     fn on_identity_connected(
         &self,
         mut callback: impl FnMut(&super::EventContext, ) + Send + 'static,
     ) -> IdentityConnectedCallbackId {
-        IdentityConnectedCallbackId(self.imp.on_reducer::<IdentityConnected>(
+        IdentityConnectedCallbackId(self.imp.on_reducer(
             "__identity_connected__",
-            Box::new(move |ctx: &super::EventContext, args: &IdentityConnected| callback(ctx, )),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        reducer: super::Reducer::IdentityConnected {
+                            
+                        },
+                        ..
+                    }),
+                    ..
+                } = ctx else { unreachable!() };
+                callback(ctx, )
+            }),
         ))
     }
     fn remove_on_identity_connected(&self, callback: IdentityConnectedCallbackId) {
-        self.imp.remove_on_reducer::<IdentityConnected>("__identity_connected__", callback.0)
+        self.imp.remove_on_reducer("__identity_connected__", callback.0)
     }
 }
 
@@ -662,11 +750,16 @@ impl set_flags_for_identity_connected for super::SetReducerFlags {
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct Init {
+pub(super) struct InitArgs {
 	}
 
+impl From<InitArgs> for super::Reducer {
+	fn from(args: InitArgs) -> Self {
+		Self::Init
+}
+}
 
-impl __sdk::InModule for Init {
+impl __sdk::InModule for InitArgs {
     type Module = super::RemoteModule;
 }
 
@@ -701,19 +794,30 @@ pub trait init {
 
 impl init for super::RemoteReducers {
     fn init(&self, ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("__init__", Init {  })
+        self.imp.call_reducer("__init__", InitArgs {  })
     }
     fn on_init(
         &self,
         mut callback: impl FnMut(&super::EventContext, ) + Send + 'static,
     ) -> InitCallbackId {
-        InitCallbackId(self.imp.on_reducer::<Init>(
+        InitCallbackId(self.imp.on_reducer(
             "__init__",
-            Box::new(move |ctx: &super::EventContext, args: &Init| callback(ctx, )),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        reducer: super::Reducer::Init {
+                            
+                        },
+                        ..
+                    }),
+                    ..
+                } = ctx else { unreachable!() };
+                callback(ctx, )
+            }),
         ))
     }
     fn remove_on_init(&self, callback: InitCallbackId) {
-        self.imp.remove_on_reducer::<Init>("__init__", callback.0)
+        self.imp.remove_on_reducer("__init__", callback.0)
     }
 }
 
@@ -784,30 +888,20 @@ pub mod test_d_table;
 pub mod test_e_table;
 pub mod test_f_table;
 
-pub use baz_type::*;
-pub use foobar_type::*;
-pub use has_special_stuff_type::*;
-pub use namespace_test_c_type::*;
-pub use namespace_test_f_type::*;
-pub use pk_multi_identity_type::*;
-pub use point_type::*;
-pub use private_type::*;
-pub use repeating_test_arg_type::*;
-pub use test_a_type::*;
-pub use test_b_type::*;
-pub use test_d_type::*;
-pub use test_e_type::*;
-pub use test_foobar_type::*;
-pub use add_player_reducer::*;
-pub use add_private_reducer::*;
-pub use delete_player_reducer::*;
-pub use delete_players_by_name_reducer::*;
-pub use identity_connected_reducer::*;
-pub use init_reducer::*;
-pub use query_private_reducer::*;
-pub use repeating_test_reducer::*;
-pub use test_btree_index_args_reducer::*;
-pub use test_reducer::*;
+pub use baz_type::Baz;
+pub use foobar_type::Foobar;
+pub use has_special_stuff_type::HasSpecialStuff;
+pub use pk_multi_identity_type::PkMultiIdentity;
+pub use point_type::Point;
+pub use private_type::Private;
+pub use repeating_test_arg_type::RepeatingTestArg;
+pub use test_a_type::TestA;
+pub use test_b_type::TestB;
+pub use test_d_type::TestD;
+pub use test_e_type::TestE;
+pub use test_foobar_type::TestFoobar;
+pub use namespace_test_c_type::NamespaceTestC;
+pub use namespace_test_f_type::NamespaceTestF;
 pub use has_special_stuff_table::*;
 pub use pk_multi_identity_table::*;
 pub use points_table::*;
@@ -817,9 +911,18 @@ pub use test_a_table::*;
 pub use test_d_table::*;
 pub use test_e_table::*;
 pub use test_f_table::*;
+pub use identity_connected_reducer::{identity_connected, set_flags_for_identity_connected, IdentityConnectedCallbackId};
+pub use init_reducer::{init, set_flags_for_init, InitCallbackId};
+pub use add_player_reducer::{add_player, set_flags_for_add_player, AddPlayerCallbackId};
+pub use add_private_reducer::{add_private, set_flags_for_add_private, AddPrivateCallbackId};
+pub use delete_player_reducer::{delete_player, set_flags_for_delete_player, DeletePlayerCallbackId};
+pub use delete_players_by_name_reducer::{delete_players_by_name, set_flags_for_delete_players_by_name, DeletePlayersByNameCallbackId};
+pub use query_private_reducer::{query_private, set_flags_for_query_private, QueryPrivateCallbackId};
+pub use repeating_test_reducer::{repeating_test, set_flags_for_repeating_test, RepeatingTestCallbackId};
+pub use test_reducer::{test, set_flags_for_test, TestCallbackId};
+pub use test_btree_index_args_reducer::{test_btree_index_args, set_flags_for_test_btree_index_args, TestBtreeIndexArgsCallbackId};
 
-#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
-#[sats(crate = __lib)]
+#[derive(Clone, PartialEq, Debug)]
 
 /// One of the reducers defined by this module.
 ///
@@ -827,16 +930,31 @@ pub use test_f_table::*;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
-		IdentityConnected(identity_connected_reducer::IdentityConnected),
-	Init(init_reducer::Init),
-	AddPlayer(add_player_reducer::AddPlayer),
-	AddPrivate(add_private_reducer::AddPrivate),
-	DeletePlayer(delete_player_reducer::DeletePlayer),
-	DeletePlayersByName(delete_players_by_name_reducer::DeletePlayersByName),
-	QueryPrivate(query_private_reducer::QueryPrivate),
-	RepeatingTest(repeating_test_reducer::RepeatingTest),
-	Test(test_reducer::Test),
-	TestBtreeIndexArgs(test_btree_index_args_reducer::TestBtreeIndexArgs),
+		IdentityConnected ,
+	Init ,
+	AddPlayer {
+		name: String,
+}	,
+	AddPrivate {
+		name: String,
+}	,
+	DeletePlayer {
+		id: u64,
+}	,
+	DeletePlayersByName {
+		name: String,
+}	,
+	QueryPrivate ,
+	RepeatingTest {
+		arg: RepeatingTestArg,
+}	,
+	Test {
+		arg: TestA,
+		arg_2: TestB,
+		arg_3: NamespaceTestC,
+		arg_4: NamespaceTestF,
+}	,
+	TestBtreeIndexArgs ,
 }
 
 
@@ -847,30 +965,16 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
 	fn reducer_name(&self) -> &'static str {
 		match self {
-						Reducer::IdentityConnected(_) => "__identity_connected__",
-			Reducer::Init(_) => "__init__",
-			Reducer::AddPlayer(_) => "add_player",
-			Reducer::AddPrivate(_) => "add_private",
-			Reducer::DeletePlayer(_) => "delete_player",
-			Reducer::DeletePlayersByName(_) => "delete_players_by_name",
-			Reducer::QueryPrivate(_) => "query_private",
-			Reducer::RepeatingTest(_) => "repeating_test",
-			Reducer::Test(_) => "test",
-			Reducer::TestBtreeIndexArgs(_) => "test_btree_index_args",
-}
-}
-fn reducer_args(&self) -> &dyn std::any::Any {
-		match self {
-						Reducer::IdentityConnected(args) => args,
-			Reducer::Init(args) => args,
-			Reducer::AddPlayer(args) => args,
-			Reducer::AddPrivate(args) => args,
-			Reducer::DeletePlayer(args) => args,
-			Reducer::DeletePlayersByName(args) => args,
-			Reducer::QueryPrivate(args) => args,
-			Reducer::RepeatingTest(args) => args,
-			Reducer::Test(args) => args,
-			Reducer::TestBtreeIndexArgs(args) => args,
+						Reducer::IdentityConnected => "__identity_connected__",
+			Reducer::Init => "__init__",
+			Reducer::AddPlayer { .. } => "add_player",
+			Reducer::AddPrivate { .. } => "add_private",
+			Reducer::DeletePlayer { .. } => "delete_player",
+			Reducer::DeletePlayersByName { .. } => "delete_players_by_name",
+			Reducer::QueryPrivate => "query_private",
+			Reducer::RepeatingTest { .. } => "repeating_test",
+			Reducer::Test { .. } => "test",
+			Reducer::TestBtreeIndexArgs => "test_btree_index_args",
 }
 }
 }
@@ -878,16 +982,16 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
 		type Error = __anyhow::Error;
 fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {
 		match &value.reducer_name[..] {
-						"__identity_connected__" => Ok(Reducer::IdentityConnected(__sdk::parse_reducer_args("__identity_connected__", &value.args)?)),
-			"__init__" => Ok(Reducer::Init(__sdk::parse_reducer_args("__init__", &value.args)?)),
-			"add_player" => Ok(Reducer::AddPlayer(__sdk::parse_reducer_args("add_player", &value.args)?)),
-			"add_private" => Ok(Reducer::AddPrivate(__sdk::parse_reducer_args("add_private", &value.args)?)),
-			"delete_player" => Ok(Reducer::DeletePlayer(__sdk::parse_reducer_args("delete_player", &value.args)?)),
-			"delete_players_by_name" => Ok(Reducer::DeletePlayersByName(__sdk::parse_reducer_args("delete_players_by_name", &value.args)?)),
-			"query_private" => Ok(Reducer::QueryPrivate(__sdk::parse_reducer_args("query_private", &value.args)?)),
-			"repeating_test" => Ok(Reducer::RepeatingTest(__sdk::parse_reducer_args("repeating_test", &value.args)?)),
-			"test" => Ok(Reducer::Test(__sdk::parse_reducer_args("test", &value.args)?)),
-			"test_btree_index_args" => Ok(Reducer::TestBtreeIndexArgs(__sdk::parse_reducer_args("test_btree_index_args", &value.args)?)),
+						"__identity_connected__" => Ok(__sdk::parse_reducer_args::<identity_connected_reducer::IdentityConnectedArgs>("__identity_connected__", &value.args)?.into()),
+			"__init__" => Ok(__sdk::parse_reducer_args::<init_reducer::InitArgs>("__init__", &value.args)?.into()),
+			"add_player" => Ok(__sdk::parse_reducer_args::<add_player_reducer::AddPlayerArgs>("add_player", &value.args)?.into()),
+			"add_private" => Ok(__sdk::parse_reducer_args::<add_private_reducer::AddPrivateArgs>("add_private", &value.args)?.into()),
+			"delete_player" => Ok(__sdk::parse_reducer_args::<delete_player_reducer::DeletePlayerArgs>("delete_player", &value.args)?.into()),
+			"delete_players_by_name" => Ok(__sdk::parse_reducer_args::<delete_players_by_name_reducer::DeletePlayersByNameArgs>("delete_players_by_name", &value.args)?.into()),
+			"query_private" => Ok(__sdk::parse_reducer_args::<query_private_reducer::QueryPrivateArgs>("query_private", &value.args)?.into()),
+			"repeating_test" => Ok(__sdk::parse_reducer_args::<repeating_test_reducer::RepeatingTestArgs>("repeating_test", &value.args)?.into()),
+			"test" => Ok(__sdk::parse_reducer_args::<test_reducer::TestArgs>("test", &value.args)?.into()),
+			"test_btree_index_args" => Ok(__sdk::parse_reducer_args::<test_btree_index_args_reducer::TestBtreeIndexArgsArgs>("test_btree_index_args", &value.args)?.into()),
 			_ => Err(__anyhow::anyhow!("Unknown reducer {:?}", value.reducer_name)),
 }
 }
@@ -1807,11 +1911,16 @@ impl __sdk::InModule for Private {
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct QueryPrivate {
+pub(super) struct QueryPrivateArgs {
 	}
 
+impl From<QueryPrivateArgs> for super::Reducer {
+	fn from(args: QueryPrivateArgs) -> Self {
+		Self::QueryPrivate
+}
+}
 
-impl __sdk::InModule for QueryPrivate {
+impl __sdk::InModule for QueryPrivateArgs {
     type Module = super::RemoteModule;
 }
 
@@ -1846,19 +1955,30 @@ pub trait query_private {
 
 impl query_private for super::RemoteReducers {
     fn query_private(&self, ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("query_private", QueryPrivate {  })
+        self.imp.call_reducer("query_private", QueryPrivateArgs {  })
     }
     fn on_query_private(
         &self,
         mut callback: impl FnMut(&super::EventContext, ) + Send + 'static,
     ) -> QueryPrivateCallbackId {
-        QueryPrivateCallbackId(self.imp.on_reducer::<QueryPrivate>(
+        QueryPrivateCallbackId(self.imp.on_reducer(
             "query_private",
-            Box::new(move |ctx: &super::EventContext, args: &QueryPrivate| callback(ctx, )),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        reducer: super::Reducer::QueryPrivate {
+                            
+                        },
+                        ..
+                    }),
+                    ..
+                } = ctx else { unreachable!() };
+                callback(ctx, )
+            }),
         ))
     }
     fn remove_on_query_private(&self, callback: QueryPrivateCallbackId) {
-        self.imp.remove_on_reducer::<QueryPrivate>("query_private", callback.0)
+        self.imp.remove_on_reducer("query_private", callback.0)
     }
 }
 
@@ -2071,12 +2191,19 @@ use super::repeating_test_arg_type::RepeatingTestArg;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct RepeatingTest {
+pub(super) struct RepeatingTestArgs {
 	pub arg: RepeatingTestArg,
 }
 
+impl From<RepeatingTestArgs> for super::Reducer {
+	fn from(args: RepeatingTestArgs) -> Self {
+		Self::RepeatingTest {
+			arg: args.arg,
+}
+}
+}
 
-impl __sdk::InModule for RepeatingTest {
+impl __sdk::InModule for RepeatingTestArgs {
     type Module = super::RemoteModule;
 }
 
@@ -2113,19 +2240,30 @@ pub trait repeating_test {
 impl repeating_test for super::RemoteReducers {
     fn repeating_test(&self, arg: RepeatingTestArg,
 ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("repeating_test", RepeatingTest { arg,  })
+        self.imp.call_reducer("repeating_test", RepeatingTestArgs { arg,  })
     }
     fn on_repeating_test(
         &self,
         mut callback: impl FnMut(&super::EventContext, &RepeatingTestArg, ) + Send + 'static,
     ) -> RepeatingTestCallbackId {
-        RepeatingTestCallbackId(self.imp.on_reducer::<RepeatingTest>(
+        RepeatingTestCallbackId(self.imp.on_reducer(
             "repeating_test",
-            Box::new(move |ctx: &super::EventContext, args: &RepeatingTest| callback(ctx, &args.arg, )),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        reducer: super::Reducer::RepeatingTest {
+                            arg, 
+                        },
+                        ..
+                    }),
+                    ..
+                } = ctx else { unreachable!() };
+                callback(ctx, arg, )
+            }),
         ))
     }
     fn remove_on_repeating_test(&self, callback: RepeatingTestCallbackId) {
-        self.imp.remove_on_reducer::<RepeatingTest>("repeating_test", callback.0)
+        self.imp.remove_on_reducer("repeating_test", callback.0)
     }
 }
 
@@ -2312,11 +2450,16 @@ impl __sdk::InModule for TestB {
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct TestBtreeIndexArgs {
+pub(super) struct TestBtreeIndexArgsArgs {
 	}
 
+impl From<TestBtreeIndexArgsArgs> for super::Reducer {
+	fn from(args: TestBtreeIndexArgsArgs) -> Self {
+		Self::TestBtreeIndexArgs
+}
+}
 
-impl __sdk::InModule for TestBtreeIndexArgs {
+impl __sdk::InModule for TestBtreeIndexArgsArgs {
     type Module = super::RemoteModule;
 }
 
@@ -2351,19 +2494,30 @@ pub trait test_btree_index_args {
 
 impl test_btree_index_args for super::RemoteReducers {
     fn test_btree_index_args(&self, ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("test_btree_index_args", TestBtreeIndexArgs {  })
+        self.imp.call_reducer("test_btree_index_args", TestBtreeIndexArgsArgs {  })
     }
     fn on_test_btree_index_args(
         &self,
         mut callback: impl FnMut(&super::EventContext, ) + Send + 'static,
     ) -> TestBtreeIndexArgsCallbackId {
-        TestBtreeIndexArgsCallbackId(self.imp.on_reducer::<TestBtreeIndexArgs>(
+        TestBtreeIndexArgsCallbackId(self.imp.on_reducer(
             "test_btree_index_args",
-            Box::new(move |ctx: &super::EventContext, args: &TestBtreeIndexArgs| callback(ctx, )),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        reducer: super::Reducer::TestBtreeIndexArgs {
+                            
+                        },
+                        ..
+                    }),
+                    ..
+                } = ctx else { unreachable!() };
+                callback(ctx, )
+            }),
         ))
     }
     fn remove_on_test_btree_index_args(&self, callback: TestBtreeIndexArgsCallbackId) {
-        self.imp.remove_on_reducer::<TestBtreeIndexArgs>("test_btree_index_args", callback.0)
+        self.imp.remove_on_reducer("test_btree_index_args", callback.0)
     }
 }
 
@@ -2822,15 +2976,25 @@ use super::namespace_test_f_type::NamespaceTestF;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct Test {
+pub(super) struct TestArgs {
 	pub arg: TestA,
 	pub arg_2: TestB,
 	pub arg_3: NamespaceTestC,
 	pub arg_4: NamespaceTestF,
 }
 
+impl From<TestArgs> for super::Reducer {
+	fn from(args: TestArgs) -> Self {
+		Self::Test {
+			arg: args.arg,
+			arg_2: args.arg_2,
+			arg_3: args.arg_3,
+			arg_4: args.arg_4,
+}
+}
+}
 
-impl __sdk::InModule for Test {
+impl __sdk::InModule for TestArgs {
     type Module = super::RemoteModule;
 }
 
@@ -2873,19 +3037,30 @@ arg_2: TestB,
 arg_3: NamespaceTestC,
 arg_4: NamespaceTestF,
 ) -> __anyhow::Result<()> {
-        self.imp.call_reducer("test", Test { arg, arg_2, arg_3, arg_4,  })
+        self.imp.call_reducer("test", TestArgs { arg, arg_2, arg_3, arg_4,  })
     }
     fn on_test(
         &self,
         mut callback: impl FnMut(&super::EventContext, &TestA, &TestB, &NamespaceTestC, &NamespaceTestF, ) + Send + 'static,
     ) -> TestCallbackId {
-        TestCallbackId(self.imp.on_reducer::<Test>(
+        TestCallbackId(self.imp.on_reducer(
             "test",
-            Box::new(move |ctx: &super::EventContext, args: &Test| callback(ctx, &args.arg, &args.arg_2, &args.arg_3, &args.arg_4, )),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event: __sdk::Event::Reducer(__sdk::ReducerEvent {
+                        reducer: super::Reducer::Test {
+                            arg, arg_2, arg_3, arg_4, 
+                        },
+                        ..
+                    }),
+                    ..
+                } = ctx else { unreachable!() };
+                callback(ctx, arg, arg_2, arg_3, arg_4, )
+            }),
         ))
     }
     fn remove_on_test(&self, callback: TestCallbackId) {
-        self.imp.remove_on_reducer::<Test>("test", callback.0)
+        self.imp.remove_on_reducer("test", callback.0)
     }
 }
 

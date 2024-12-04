@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneI8 {
+pub(super) struct InsertOneI8Args {
     pub n: i8,
 }
 
-impl __sdk::InModule for InsertOneI8 {
+impl From<InsertOneI8Args> for super::Reducer {
+    fn from(args: InsertOneI8Args) -> Self {
+        Self::InsertOneI8 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for InsertOneI8Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,19 +57,32 @@ pub trait insert_one_i_8 {
 
 impl insert_one_i_8 for super::RemoteReducers {
     fn insert_one_i_8(&self, n: i8) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_i8", InsertOneI8 { n })
+        self.imp.call_reducer("insert_one_i8", InsertOneI8Args { n })
     }
     fn on_insert_one_i_8(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i8) + Send + 'static,
     ) -> InsertOneI8CallbackId {
-        InsertOneI8CallbackId(self.imp.on_reducer::<InsertOneI8>(
+        InsertOneI8CallbackId(self.imp.on_reducer(
             "insert_one_i8",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneI8| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneI8 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_insert_one_i_8(&self, callback: InsertOneI8CallbackId) {
-        self.imp.remove_on_reducer::<InsertOneI8>("insert_one_i8", callback.0)
+        self.imp.remove_on_reducer("insert_one_i8", callback.0)
     }
 }
 

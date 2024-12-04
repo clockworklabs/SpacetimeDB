@@ -497,7 +497,7 @@ fn exec_insert_caller_identity() {
         move |ctx| {
             subscribe_all_then(ctx, move |ctx| {
                 on_insert_one::<OneIdentity>(ctx, &test_counter, ctx.identity(), |event| {
-                    matches!(event, Reducer::InsertCallerOneIdentity(_))
+                    matches!(event, Reducer::InsertCallerOneIdentity)
                 });
                 ctx.reducers.insert_caller_one_identity().unwrap();
 
@@ -582,7 +582,7 @@ fn exec_insert_caller_address() {
         move |ctx| {
             subscribe_all_then(ctx, move |ctx| {
                 on_insert_one::<OneAddress>(ctx, &test_counter, ctx.address(), |event| {
-                    matches!(event, Reducer::InsertCallerOneAddress(_))
+                    matches!(event, Reducer::InsertCallerOneAddress)
                 });
                 ctx.reducers.insert_caller_one_address().unwrap();
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
@@ -682,7 +682,7 @@ fn exec_on_reducer() {
                     reducer_event.status
                 );
             }
-            let expected_reducer = Reducer::InsertOneU8(InsertOneU8 { n: value });
+            let expected_reducer = Reducer::InsertOneU8 { n: value };
             if reducer_event.reducer != expected_reducer {
                 anyhow::bail!(
                     "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
@@ -765,10 +765,10 @@ fn exec_fail_reducer() {
                         reducer_event.status
                     );
                 }
-                let expected_reducer = Reducer::InsertPkU8(InsertPkU8 {
+                let expected_reducer = Reducer::InsertPkU8 {
                     n: key,
                     data: initial_data,
-                });
+                };
                 if reducer_event.reducer != expected_reducer {
                     anyhow::bail!(
                         "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
@@ -831,10 +831,10 @@ fn exec_fail_reducer() {
                         reducer_event.status
                     );
                 }
-                let expected_reducer = Reducer::InsertPkU8(InsertPkU8 {
+                let expected_reducer = Reducer::InsertPkU8 {
                     n: key,
                     data: fail_data,
-                });
+                };
                 if reducer_event.reducer != expected_reducer {
                     anyhow::bail!(
                         "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
@@ -1191,7 +1191,7 @@ fn exec_insert_long_table() {
                         if !matches!(
                             ctx.event,
                             Event::Reducer(ReducerEvent {
-                                reducer: Reducer::InsertLargeTable(_),
+                                reducer: Reducer::InsertLargeTable { .. },
                                 ..
                             })
                         ) {
@@ -1278,7 +1278,7 @@ fn exec_insert_primitives_as_strings() {
                             ctx.event,
                             Event::Reducer(ReducerEvent {
                                 status: Status::Committed,
-                                reducer: Reducer::InsertPrimitivesAsStrings(_),
+                                reducer: Reducer::InsertPrimitivesAsStrings { .. },
                                 ..
                             })
                         ) {
@@ -1535,7 +1535,7 @@ fn exec_caller_always_notified() {
         (no_op_result.take().unwrap())(match ctx.event {
             Event::Reducer(ReducerEvent {
                 status: Status::Committed,
-                reducer: Reducer::NoOpSucceeds(_),
+                reducer: Reducer::NoOpSucceeds,
                 ..
             }) => Ok(()),
             _ => Err(anyhow::anyhow!(

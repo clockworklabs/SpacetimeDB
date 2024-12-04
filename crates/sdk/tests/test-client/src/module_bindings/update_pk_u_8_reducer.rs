@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdatePkU8 {
+pub(super) struct UpdatePkU8Args {
     pub n: u8,
     pub data: i32,
 }
 
-impl __sdk::InModule for UpdatePkU8 {
+impl From<UpdatePkU8Args> for super::Reducer {
+    fn from(args: UpdatePkU8Args) -> Self {
+        Self::UpdatePkU8 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdatePkU8Args {
     type Module = super::RemoteModule;
 }
 
@@ -52,19 +61,32 @@ pub trait update_pk_u_8 {
 
 impl update_pk_u_8 for super::RemoteReducers {
     fn update_pk_u_8(&self, n: u8, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_pk_u8", UpdatePkU8 { n, data })
+        self.imp.call_reducer("update_pk_u8", UpdatePkU8Args { n, data })
     }
     fn on_update_pk_u_8(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u8, &i32) + Send + 'static,
     ) -> UpdatePkU8CallbackId {
-        UpdatePkU8CallbackId(self.imp.on_reducer::<UpdatePkU8>(
+        UpdatePkU8CallbackId(self.imp.on_reducer(
             "update_pk_u8",
-            Box::new(move |ctx: &super::EventContext, args: &UpdatePkU8| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdatePkU8 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_update_pk_u_8(&self, callback: UpdatePkU8CallbackId) {
-        self.imp.remove_on_reducer::<UpdatePkU8>("update_pk_u8", callback.0)
+        self.imp.remove_on_reducer("update_pk_u8", callback.0)
     }
 }
 

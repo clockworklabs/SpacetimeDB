@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertUniqueI8 {
+pub(super) struct InsertUniqueI8Args {
     pub n: i8,
     pub data: i32,
 }
 
-impl __sdk::InModule for InsertUniqueI8 {
+impl From<InsertUniqueI8Args> for super::Reducer {
+    fn from(args: InsertUniqueI8Args) -> Self {
+        Self::InsertUniqueI8 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertUniqueI8Args {
     type Module = super::RemoteModule;
 }
 
@@ -52,20 +61,33 @@ pub trait insert_unique_i_8 {
 
 impl insert_unique_i_8 for super::RemoteReducers {
     fn insert_unique_i_8(&self, n: i8, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_unique_i8", InsertUniqueI8 { n, data })
+        self.imp
+            .call_reducer("insert_unique_i8", InsertUniqueI8Args { n, data })
     }
     fn on_insert_unique_i_8(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i8, &i32) + Send + 'static,
     ) -> InsertUniqueI8CallbackId {
-        InsertUniqueI8CallbackId(self.imp.on_reducer::<InsertUniqueI8>(
+        InsertUniqueI8CallbackId(self.imp.on_reducer(
             "insert_unique_i8",
-            Box::new(move |ctx: &super::EventContext, args: &InsertUniqueI8| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertUniqueI8 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_insert_unique_i_8(&self, callback: InsertUniqueI8CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueI8>("insert_unique_i8", callback.0)
+        self.imp.remove_on_reducer("insert_unique_i8", callback.0)
     }
 }
 

@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeleteUniqueI16 {
+pub(super) struct DeleteUniqueI16Args {
     pub n: i16,
 }
 
-impl __sdk::InModule for DeleteUniqueI16 {
+impl From<DeleteUniqueI16Args> for super::Reducer {
+    fn from(args: DeleteUniqueI16Args) -> Self {
+        Self::DeleteUniqueI16 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for DeleteUniqueI16Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,20 +57,32 @@ pub trait delete_unique_i_16 {
 
 impl delete_unique_i_16 for super::RemoteReducers {
     fn delete_unique_i_16(&self, n: i16) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_i16", DeleteUniqueI16 { n })
+        self.imp.call_reducer("delete_unique_i16", DeleteUniqueI16Args { n })
     }
     fn on_delete_unique_i_16(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i16) + Send + 'static,
     ) -> DeleteUniqueI16CallbackId {
-        DeleteUniqueI16CallbackId(self.imp.on_reducer::<DeleteUniqueI16>(
+        DeleteUniqueI16CallbackId(self.imp.on_reducer(
             "delete_unique_i16",
-            Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueI16| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeleteUniqueI16 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_delete_unique_i_16(&self, callback: DeleteUniqueI16CallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueI16>("delete_unique_i16", callback.0)
+        self.imp.remove_on_reducer("delete_unique_i16", callback.0)
     }
 }
 

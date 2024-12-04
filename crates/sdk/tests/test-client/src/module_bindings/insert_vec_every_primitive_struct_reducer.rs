@@ -11,11 +11,17 @@ use super::every_primitive_struct_type::EveryPrimitiveStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecEveryPrimitiveStruct {
+pub(super) struct InsertVecEveryPrimitiveStructArgs {
     pub s: Vec<EveryPrimitiveStruct>,
 }
 
-impl __sdk::InModule for InsertVecEveryPrimitiveStruct {
+impl From<InsertVecEveryPrimitiveStructArgs> for super::Reducer {
+    fn from(args: InsertVecEveryPrimitiveStructArgs) -> Self {
+        Self::InsertVecEveryPrimitiveStruct { s: args.s }
+    }
+}
+
+impl __sdk::InModule for InsertVecEveryPrimitiveStructArgs {
     type Module = super::RemoteModule;
 }
 
@@ -53,21 +59,36 @@ pub trait insert_vec_every_primitive_struct {
 
 impl insert_vec_every_primitive_struct for super::RemoteReducers {
     fn insert_vec_every_primitive_struct(&self, s: Vec<EveryPrimitiveStruct>) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_vec_every_primitive_struct", InsertVecEveryPrimitiveStruct { s })
+        self.imp.call_reducer(
+            "insert_vec_every_primitive_struct",
+            InsertVecEveryPrimitiveStructArgs { s },
+        )
     }
     fn on_insert_vec_every_primitive_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<EveryPrimitiveStruct>) + Send + 'static,
     ) -> InsertVecEveryPrimitiveStructCallbackId {
-        InsertVecEveryPrimitiveStructCallbackId(self.imp.on_reducer::<InsertVecEveryPrimitiveStruct>(
+        InsertVecEveryPrimitiveStructCallbackId(self.imp.on_reducer(
             "insert_vec_every_primitive_struct",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecEveryPrimitiveStruct| callback(ctx, &args.s)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecEveryPrimitiveStruct { s },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
+            }),
         ))
     }
     fn remove_on_insert_vec_every_primitive_struct(&self, callback: InsertVecEveryPrimitiveStructCallbackId) {
         self.imp
-            .remove_on_reducer::<InsertVecEveryPrimitiveStruct>("insert_vec_every_primitive_struct", callback.0)
+            .remove_on_reducer("insert_vec_every_primitive_struct", callback.0)
     }
 }
 

@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeletePkAddress {
+pub(super) struct DeletePkAddressArgs {
     pub a: __sdk::Address,
 }
 
-impl __sdk::InModule for DeletePkAddress {
+impl From<DeletePkAddressArgs> for super::Reducer {
+    fn from(args: DeletePkAddressArgs) -> Self {
+        Self::DeletePkAddress { a: args.a }
+    }
+}
+
+impl __sdk::InModule for DeletePkAddressArgs {
     type Module = super::RemoteModule;
 }
 
@@ -51,20 +57,32 @@ pub trait delete_pk_address {
 
 impl delete_pk_address for super::RemoteReducers {
     fn delete_pk_address(&self, a: __sdk::Address) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_address", DeletePkAddress { a })
+        self.imp.call_reducer("delete_pk_address", DeletePkAddressArgs { a })
     }
     fn on_delete_pk_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Address) + Send + 'static,
     ) -> DeletePkAddressCallbackId {
-        DeletePkAddressCallbackId(self.imp.on_reducer::<DeletePkAddress>(
+        DeletePkAddressCallbackId(self.imp.on_reducer(
             "delete_pk_address",
-            Box::new(move |ctx: &super::EventContext, args: &DeletePkAddress| callback(ctx, &args.a)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeletePkAddress { a },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, a)
+            }),
         ))
     }
     fn remove_on_delete_pk_address(&self, callback: DeletePkAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<DeletePkAddress>("delete_pk_address", callback.0)
+        self.imp.remove_on_reducer("delete_pk_address", callback.0)
     }
 }
 

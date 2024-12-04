@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertUniqueU64 {
+pub(super) struct InsertUniqueU64Args {
     pub n: u64,
     pub data: i32,
 }
 
-impl __sdk::InModule for InsertUniqueU64 {
+impl From<InsertUniqueU64Args> for super::Reducer {
+    fn from(args: InsertUniqueU64Args) -> Self {
+        Self::InsertUniqueU64 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertUniqueU64Args {
     type Module = super::RemoteModule;
 }
 
@@ -52,20 +61,33 @@ pub trait insert_unique_u_64 {
 
 impl insert_unique_u_64 for super::RemoteReducers {
     fn insert_unique_u_64(&self, n: u64, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_unique_u64", InsertUniqueU64 { n, data })
+        self.imp
+            .call_reducer("insert_unique_u64", InsertUniqueU64Args { n, data })
     }
     fn on_insert_unique_u_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u64, &i32) + Send + 'static,
     ) -> InsertUniqueU64CallbackId {
-        InsertUniqueU64CallbackId(self.imp.on_reducer::<InsertUniqueU64>(
+        InsertUniqueU64CallbackId(self.imp.on_reducer(
             "insert_unique_u64",
-            Box::new(move |ctx: &super::EventContext, args: &InsertUniqueU64| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertUniqueU64 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_insert_unique_u_64(&self, callback: InsertUniqueU64CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueU64>("insert_unique_u64", callback.0)
+        self.imp.remove_on_reducer("insert_unique_u64", callback.0)
     }
 }
 

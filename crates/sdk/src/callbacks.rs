@@ -201,10 +201,10 @@ impl<M: SpacetimeModule> TableCallbacks<M> {
 
 /// A reducer callback for a reducer defined by the module `M`.
 ///
-/// Reducer arguments are passed to callbacks as `&dyn Any` to the argument product,
-/// and a wrapper inserted by the SDK will downcast and unpack the arguments
+/// Reducer arguments are passed to callbacks within the `EventContext`,
+/// and a wrapper inserted by the SDK will destructure the contained `Event`
 /// before invoking the user-supplied function.
-pub(crate) type ReducerCallback<M> = Box<dyn FnMut(&<M as SpacetimeModule>::EventContext, &dyn Any) + Send + 'static>;
+pub(crate) type ReducerCallback<M> = Box<dyn FnMut(&<M as SpacetimeModule>::EventContext) + Send + 'static>;
 
 type ReducerCallbackMap<M> = HashMap<CallbackId, ReducerCallback<M>>;
 
@@ -228,10 +228,9 @@ impl<M: SpacetimeModule> Default for ReducerCallbacks<M> {
 impl<M: SpacetimeModule> ReducerCallbacks<M> {
     pub(crate) fn invoke_on_reducer(&mut self, ctx: &M::EventContext, reducer: &M::Reducer) {
         let name = reducer.reducer_name();
-        let args = reducer.reducer_args();
         if let Some(callbacks) = self.callbacks.get_mut(name) {
             for callback in callbacks.values_mut() {
-                callback(ctx, args);
+                callback(ctx);
             }
         }
     }

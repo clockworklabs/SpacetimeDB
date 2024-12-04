@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertPkU128 {
+pub(super) struct InsertPkU128Args {
     pub n: u128,
     pub data: i32,
 }
 
-impl __sdk::InModule for InsertPkU128 {
+impl From<InsertPkU128Args> for super::Reducer {
+    fn from(args: InsertPkU128Args) -> Self {
+        Self::InsertPkU128 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertPkU128Args {
     type Module = super::RemoteModule;
 }
 
@@ -52,19 +61,32 @@ pub trait insert_pk_u_128 {
 
 impl insert_pk_u_128 for super::RemoteReducers {
     fn insert_pk_u_128(&self, n: u128, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_pk_u128", InsertPkU128 { n, data })
+        self.imp.call_reducer("insert_pk_u128", InsertPkU128Args { n, data })
     }
     fn on_insert_pk_u_128(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u128, &i32) + Send + 'static,
     ) -> InsertPkU128CallbackId {
-        InsertPkU128CallbackId(self.imp.on_reducer::<InsertPkU128>(
+        InsertPkU128CallbackId(self.imp.on_reducer(
             "insert_pk_u128",
-            Box::new(move |ctx: &super::EventContext, args: &InsertPkU128| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertPkU128 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_insert_pk_u_128(&self, callback: InsertPkU128CallbackId) {
-        self.imp.remove_on_reducer::<InsertPkU128>("insert_pk_u128", callback.0)
+        self.imp.remove_on_reducer("insert_pk_u128", callback.0)
     }
 }
 

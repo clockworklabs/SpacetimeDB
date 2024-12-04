@@ -9,9 +9,15 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct Init {}
+pub(super) struct InitArgs {}
 
-impl __sdk::InModule for Init {
+impl From<InitArgs> for super::Reducer {
+    fn from(args: InitArgs) -> Self {
+        Self::Init
+    }
+}
+
+impl __sdk::InModule for InitArgs {
     type Module = super::RemoteModule;
 }
 
@@ -46,16 +52,29 @@ pub trait init {
 
 impl init for super::RemoteReducers {
     fn init(&self) -> __anyhow::Result<()> {
-        self.imp.call_reducer("__init__", Init {})
+        self.imp.call_reducer("__init__", InitArgs {})
     }
     fn on_init(&self, mut callback: impl FnMut(&super::EventContext) + Send + 'static) -> InitCallbackId {
-        InitCallbackId(self.imp.on_reducer::<Init>(
+        InitCallbackId(self.imp.on_reducer(
             "__init__",
-            Box::new(move |ctx: &super::EventContext, args: &Init| callback(ctx)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::Init {},
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx)
+            }),
         ))
     }
     fn remove_on_init(&self, callback: InitCallbackId) {
-        self.imp.remove_on_reducer::<Init>("__init__", callback.0)
+        self.imp.remove_on_reducer("__init__", callback.0)
     }
 }
 

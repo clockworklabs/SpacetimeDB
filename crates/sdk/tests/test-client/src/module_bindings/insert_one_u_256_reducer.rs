@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneU256 {
+pub(super) struct InsertOneU256Args {
     pub n: __sats::u256,
 }
 
-impl __sdk::InModule for InsertOneU256 {
+impl From<InsertOneU256Args> for super::Reducer {
+    fn from(args: InsertOneU256Args) -> Self {
+        Self::InsertOneU256 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for InsertOneU256Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,20 +57,32 @@ pub trait insert_one_u_256 {
 
 impl insert_one_u_256 for super::RemoteReducers {
     fn insert_one_u_256(&self, n: __sats::u256) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_u256", InsertOneU256 { n })
+        self.imp.call_reducer("insert_one_u256", InsertOneU256Args { n })
     }
     fn on_insert_one_u_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::u256) + Send + 'static,
     ) -> InsertOneU256CallbackId {
-        InsertOneU256CallbackId(self.imp.on_reducer::<InsertOneU256>(
+        InsertOneU256CallbackId(self.imp.on_reducer(
             "insert_one_u256",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneU256| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneU256 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_insert_one_u_256(&self, callback: InsertOneU256CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneU256>("insert_one_u256", callback.0)
+        self.imp.remove_on_reducer("insert_one_u256", callback.0)
     }
 }
 

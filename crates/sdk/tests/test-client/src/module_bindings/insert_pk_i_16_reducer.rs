@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertPkI16 {
+pub(super) struct InsertPkI16Args {
     pub n: i16,
     pub data: i32,
 }
 
-impl __sdk::InModule for InsertPkI16 {
+impl From<InsertPkI16Args> for super::Reducer {
+    fn from(args: InsertPkI16Args) -> Self {
+        Self::InsertPkI16 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertPkI16Args {
     type Module = super::RemoteModule;
 }
 
@@ -52,19 +61,32 @@ pub trait insert_pk_i_16 {
 
 impl insert_pk_i_16 for super::RemoteReducers {
     fn insert_pk_i_16(&self, n: i16, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_pk_i16", InsertPkI16 { n, data })
+        self.imp.call_reducer("insert_pk_i16", InsertPkI16Args { n, data })
     }
     fn on_insert_pk_i_16(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i16, &i32) + Send + 'static,
     ) -> InsertPkI16CallbackId {
-        InsertPkI16CallbackId(self.imp.on_reducer::<InsertPkI16>(
+        InsertPkI16CallbackId(self.imp.on_reducer(
             "insert_pk_i16",
-            Box::new(move |ctx: &super::EventContext, args: &InsertPkI16| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertPkI16 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_insert_pk_i_16(&self, callback: InsertPkI16CallbackId) {
-        self.imp.remove_on_reducer::<InsertPkI16>("insert_pk_i16", callback.0)
+        self.imp.remove_on_reducer("insert_pk_i16", callback.0)
     }
 }
 

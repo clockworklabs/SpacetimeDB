@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeleteUniqueI64 {
+pub(super) struct DeleteUniqueI64Args {
     pub n: i64,
 }
 
-impl __sdk::InModule for DeleteUniqueI64 {
+impl From<DeleteUniqueI64Args> for super::Reducer {
+    fn from(args: DeleteUniqueI64Args) -> Self {
+        Self::DeleteUniqueI64 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for DeleteUniqueI64Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,20 +57,32 @@ pub trait delete_unique_i_64 {
 
 impl delete_unique_i_64 for super::RemoteReducers {
     fn delete_unique_i_64(&self, n: i64) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_i64", DeleteUniqueI64 { n })
+        self.imp.call_reducer("delete_unique_i64", DeleteUniqueI64Args { n })
     }
     fn on_delete_unique_i_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i64) + Send + 'static,
     ) -> DeleteUniqueI64CallbackId {
-        DeleteUniqueI64CallbackId(self.imp.on_reducer::<DeleteUniqueI64>(
+        DeleteUniqueI64CallbackId(self.imp.on_reducer(
             "delete_unique_i64",
-            Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueI64| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeleteUniqueI64 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_delete_unique_i_64(&self, callback: DeleteUniqueI64CallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueI64>("delete_unique_i64", callback.0)
+        self.imp.remove_on_reducer("delete_unique_i64", callback.0)
     }
 }
 

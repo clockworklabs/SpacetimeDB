@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeleteUniqueI128 {
+pub(super) struct DeleteUniqueI128Args {
     pub n: i128,
 }
 
-impl __sdk::InModule for DeleteUniqueI128 {
+impl From<DeleteUniqueI128Args> for super::Reducer {
+    fn from(args: DeleteUniqueI128Args) -> Self {
+        Self::DeleteUniqueI128 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for DeleteUniqueI128Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,20 +57,32 @@ pub trait delete_unique_i_128 {
 
 impl delete_unique_i_128 for super::RemoteReducers {
     fn delete_unique_i_128(&self, n: i128) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_i128", DeleteUniqueI128 { n })
+        self.imp.call_reducer("delete_unique_i128", DeleteUniqueI128Args { n })
     }
     fn on_delete_unique_i_128(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i128) + Send + 'static,
     ) -> DeleteUniqueI128CallbackId {
-        DeleteUniqueI128CallbackId(self.imp.on_reducer::<DeleteUniqueI128>(
+        DeleteUniqueI128CallbackId(self.imp.on_reducer(
             "delete_unique_i128",
-            Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueI128| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeleteUniqueI128 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_delete_unique_i_128(&self, callback: DeleteUniqueI128CallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueI128>("delete_unique_i128", callback.0)
+        self.imp.remove_on_reducer("delete_unique_i128", callback.0)
     }
 }
 
