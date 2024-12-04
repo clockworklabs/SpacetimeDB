@@ -14,16 +14,6 @@ public class GameManager : MonoBehaviour
     public PlayerController playerPrefab;
     public GameObject deathScreen;
 
-    public static Color[] colorPalette = new[]
-    {
-        (Color)new Color32(0x4C, 0xF4, 0x90, 0xFF),
-        (Color)new Color32(0xF4, 0xF6, 0xFC, 0xFF),
-        (Color)new Color32(0xFB, 0xDC, 0x8E, 0xFF),
-        (Color)new Color32(0xA8, 0x80, 0xFF, 0xFF),
-        (Color)new Color32(0xFF, 0x9E, 0x9E, 0xFF),
-        (Color)new Color32(0x02, 0xBE, 0xFA, 0xFF),
-    };
-
     public static GameManager instance;
     public static Camera localCamera;
     public static Dictionary<uint, PlayerController> playerIdToPlayerController =
@@ -113,11 +103,6 @@ public class GameManager : MonoBehaviour
         }
 
         return playerController;
-    }
-
-    public static Color GetRandomColor(uint entityId)
-    {
-        return colorPalette[entityId % colorPalette.Length];
     }
 
     public static float MassToRadius(uint mass)

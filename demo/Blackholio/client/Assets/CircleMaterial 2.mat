@@ -20,14 +20,12 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: CircleMaterial
+  m_Name: CircleMaterial 2
   m_Shader: {fileID: 10755, guid: 0000000000000000f000000000000000, type: 0}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
-  m_InvalidKeywords:
-  - _GLOSSYREFLECTIONS_OFF
-  - _SPECULARHIGHLIGHTS_OFF
+  m_InvalidKeywords: []
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
@@ -95,15 +93,15 @@ Material:
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
     - _GlossMapScale: 1
-    - _Glossiness: 1
-    - _GlossyReflections: 0
+    - _Glossiness: 0
+    - _GlossyReflections: 1
     - _Metallic: 0
     - _Mode: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.02
     - _Radius: 0.5
     - _SmoothnessTextureChannel: 0
-    - _SpecularHighlights: 0
+    - _SpecularHighlights: 1
     - _SrcBlend: 1
     - _UVSec: 0
     - _Wavyness: 0.005
@@ -111,7 +109,7 @@ Material:
     - _ZWrite: 1
     m_Colors:
     - _CircleColor: {r: 0.5943396, g: 0.17101276, b: 0.17101276, a: 0}
-    - _Color: {r: 0.29803923, g: 0.95686275, b: 0.5647059, a: 1}
+    - _Color: {r: 0.9843137, g: 0.8627451, b: 0.5568628, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
-    - _MainTex: {r: 0.29803923, g: 0.95686275, b: 0.5647059, a: 1}
+    - _MainTex: {r: 0.95686275, g: 0.9647059, b: 0.9882353, a: 1}
   m_BuildTextureStacks: []

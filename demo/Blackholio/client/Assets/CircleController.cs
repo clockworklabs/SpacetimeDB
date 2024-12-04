@@ -26,7 +26,7 @@ public class CircleController : MonoBehaviour
 
     private uint entityId;
 
-    private static readonly int MainTexProperty = Shader.PropertyToID("_MainTex");
+    public Material[] materialPalette;
 
     public void Spawn(Circle circle)
     {
@@ -46,7 +46,7 @@ public class CircleController : MonoBehaviour
             y = playerRadius * 2,
             z = playerRadius * 2,
         };
-        rend.material.SetColor(MainTexProperty, GameManager.GetRandomColor(entity.Id));
+        rend.material = materialPalette[entityId % materialPalette.Length];
     }
 
     public uint GetEntityId() => entityId;
