@@ -20,7 +20,6 @@ use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, T
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use std::fs;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use wasmtime::{Caller, StoreContextMut};
 
@@ -367,11 +366,7 @@ impl GenItem {
                 }
                 _ => todo!(),
             },
-            GenItem::Reducer(reducer) => {
-                let code = csharp::autogen_csharp_reducer(ctx, reducer, namespace);
-                let pascalcase = reducer.name.deref().to_case(Case::Pascal);
-                Some((pascalcase + "Reducer.cs", code))
-            }
+            GenItem::Reducer(_) => None,
         }
     }
 }
