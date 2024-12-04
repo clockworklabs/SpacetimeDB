@@ -59,9 +59,9 @@ impl Vector2 {
 }
 
 const START_PLAYER_MASS_MIN: u32 = 20;
-const START_PLAYER_MASS_MAX: u32 = 1000;
+const START_PLAYER_MASS_MAX: u32 = 400;
 const START_PLAYER_SPEED: u32 = 20;
-const CIRCLE_COUNT: u32 = 300;
+const CIRCLE_COUNT: u32 = 1000;
 
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) -> Result<(), String> {
