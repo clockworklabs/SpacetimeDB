@@ -8,7 +8,7 @@ pub mod sub;
 /// The FROM clause is either a relvar or a JOIN
 #[derive(Debug)]
 pub enum SqlFrom {
-    Expr(SqlIdent, Option<SqlIdent>),
+    Expr(SqlIdent, SqlIdent),
     Join(SqlIdent, SqlIdent, Vec<SqlJoin>),
 }
 
@@ -22,7 +22,7 @@ pub struct SqlJoin {
 
 /// A projection expression in a SELECT clause
 #[derive(Debug)]
-pub struct ProjectElem(pub ProjectExpr, pub Option<SqlIdent>);
+pub struct ProjectElem(pub ProjectExpr, pub SqlIdent);
 
 impl ProjectElem {
     pub fn qualify_vars(self, with: SqlIdent) -> Self {
@@ -36,6 +36,15 @@ impl ProjectElem {
 pub enum ProjectExpr {
     Var(SqlIdent),
     Field(SqlIdent, SqlIdent),
+}
+
+impl From<ProjectExpr> for SqlExpr {
+    fn from(value: ProjectExpr) -> Self {
+        match value {
+            ProjectExpr::Var(name) => Self::Var(name),
+            ProjectExpr::Field(table, field) => Self::Field(table, field),
+        }
+    }
 }
 
 impl ProjectExpr {
@@ -83,7 +92,12 @@ impl SqlExpr {
     pub fn qualify_vars(self, with: SqlIdent) -> Self {
         match self {
             Self::Var(name) => Self::Field(with, name),
-            Self::Lit(..) | Self::Field(..) | Self::Bin(..) => self,
+            Self::Lit(..) | Self::Field(..) => self,
+            Self::Bin(a, b, op) => Self::Bin(
+                Box::new(a.qualify_vars(with.clone())),
+                Box::new(b.qualify_vars(with)),
+                op,
+            ),
         }
     }
 }

@@ -72,7 +72,7 @@ pub fn parse_subscription(sql: &str) -> SqlParseResult<SqlSelect> {
     if stmts.len() > 1 {
         return Err(SqlUnsupported::MultiStatement.into());
     }
-    parse_statement(stmts.swap_remove(0))
+    parse_statement(stmts.swap_remove(0)).map(|ast| ast.qualify_vars())
 }
 
 /// Parse a SQL query

@@ -3,11 +3,26 @@ use std::{
     sync::Arc,
 };
 
-use spacetimedb_expr::{ty::Symbol, StatementSource};
+use derive_more::From;
+use spacetimedb_expr::StatementSource;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColId, ColList, IndexId};
 use spacetimedb_schema::{def::ConstraintData, schema::TableSchema};
 use spacetimedb_sql_parser::ast::BinOp;
+
+/// Names are replaced with ids in the physical plan
+#[derive(Debug, Clone, Copy, PartialEq, Eq, From)]
+pub struct NameId(pub usize);
+
+/// Physical query plans always terminate with a projection
+pub enum PhysicalProjPlan {
+    NoProj(PhysicalPlan),
+    Relvar(PhysicalPlan, NameId),
+    Fields(PhysicalPlan, Vec<(Box<str>, PhysFieldProj)>),
+}
+
+#[derive(Debug)]
+pub struct PhysFieldProj(pub NameId, pub usize);
 
 /// A physical plan is a concrete evaluation strategy.
 /// As such, we can reason about its energy consumption.
@@ -16,9 +31,9 @@ use spacetimedb_sql_parser::ast::BinOp;
 /// rather than made explicit as for the logical plan.
 pub enum PhysicalPlan {
     /// Scan a table row by row, returning row ids
-    TableScan(Arc<TableSchema>),
+    TableScan(Arc<TableSchema>, NameId),
     /// Fetch row ids from an index
-    IxScan(IxScan),
+    IxScan(IxScan, NameId),
     /// Join a relation to a table using an index
     IxJoin(IxJoin),
     /// An index join + projection
@@ -36,7 +51,7 @@ pub enum PhysicalPlan {
     Filter(Box<PhysicalPlan>, PhysicalExpr),
     /// A tuple-at-a-time projection
     Project(Box<PhysicalPlan>, PhysicalExpr),
-    Proj(Box<PhysicalPlan>, Symbol),
+    Proj(Box<PhysicalPlan>, NameId),
 }
 
 impl PhysicalPlan {
@@ -143,8 +158,8 @@ pub struct IxJoin {
     pub lhs: Box<PhysicalPlan>,
     /// The rhs indexed table
     pub rhs: Arc<TableSchema>,
-    /// The rhs field name
-    pub rhs_label: Symbol,
+    /// The rhs relvar name
+    pub var: NameId,
     /// The index id
     pub index_id: IndexId,
     /// The index fields
@@ -186,7 +201,7 @@ impl IxSemiJoin {
         let IxJoin {
             lhs,
             rhs,
-            rhs_label: _,
+            var: _,
             index_id,
             index_cols,
             unique,
@@ -215,31 +230,20 @@ pub enum SemiJoinProj {
 ///
 /// Types are encoded in the structure of the plan,
 /// rather than made explicit as for the logical plan.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum PhysicalExpr {
     /// A binary expression
     BinOp(BinOp, Box<PhysicalExpr>, Box<PhysicalExpr>),
     /// A constant algebraic value.
     /// Type already encoded in value.
     Value(AlgebraicValue),
-    /// A tuple constructor
-    Tuple(Vec<PhysicalExpr>),
     /// A field projection expression.
-    Field(Box<PhysicalExpr>, usize),
-    /// A pointer to a row in a table.
-    /// A base element for a field projection.
-    Ptr,
-    /// A reference to a product value.
-    /// A base element for a field projection.
-    Ref,
-    /// A temporary tuple value.
-    /// A base element for a field projection.
-    Tup,
+    Field(PhysFieldProj),
 }
 
 /// A physical context for the result of a query compilation.
 pub struct PhysicalCtx<'a> {
-    pub plan: PhysicalPlan,
+    pub plan: PhysicalProjPlan,
     pub sql: &'a str,
     pub source: StatementSource,
 }
@@ -314,10 +318,10 @@ impl RewriteRule for IxSemiJoinRule {
 
     fn rewrite(plan: PhysicalPlan) -> PhysicalPlan {
         if let PhysicalPlan::Proj(join, field) = plan {
-            if let PhysicalPlan::IxJoin(join @ IxJoin { rhs_label, .. }) = *join {
+            if let PhysicalPlan::IxJoin(join @ IxJoin { var, .. }) = *join {
                 return PhysicalPlan::IxSemiJoin(IxSemiJoin::from(
                     join,
-                    if field == rhs_label {
+                    if field == var {
                         SemiJoinProj::Rhs
                     } else {
                         SemiJoinProj::Lhs

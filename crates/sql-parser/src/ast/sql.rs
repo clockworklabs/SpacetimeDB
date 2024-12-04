@@ -16,6 +16,28 @@ pub enum SqlAst {
     Show(SqlShow),
 }
 
+impl SqlAst {
+    pub fn qualify_vars(self) -> Self {
+        match self {
+            Self::Select(select) => Self::Select(select.qualify_vars()),
+            Self::Update(SqlUpdate {
+                table: with,
+                assignments,
+                filter,
+            }) => Self::Update(SqlUpdate {
+                table: with.clone(),
+                filter: filter.map(|expr| expr.qualify_vars(with)),
+                assignments,
+            }),
+            Self::Delete(SqlDelete { table: with, filter }) => Self::Delete(SqlDelete {
+                table: with.clone(),
+                filter: filter.map(|expr| expr.qualify_vars(with)),
+            }),
+            _ => self,
+        }
+    }
+}
+
 /// A SELECT statement in the SQL query language
 pub struct SqlSelect {
     pub project: Project,
@@ -26,7 +48,7 @@ pub struct SqlSelect {
 impl SqlSelect {
     pub fn qualify_vars(self) -> Self {
         match &self.from {
-            SqlFrom::Expr(alias, None) | SqlFrom::Expr(_, Some(alias)) => Self {
+            SqlFrom::Expr(_, alias) => Self {
                 project: self.project.qualify_vars(alias.clone()),
                 filter: self.filter.map(|expr| expr.qualify_vars(alias.clone())),
                 from: self.from,

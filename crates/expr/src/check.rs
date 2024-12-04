@@ -1,8 +1,12 @@
+use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use crate::statement::Statement;
-use crate::ty::TyId;
-use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
+use crate::expr::{Expr, Project};
+use crate::{expr::LeftDeepJoin, statement::Statement};
+use spacetimedb_lib::AlgebraicType;
+use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::{
     ast::{sub::SqlSelect, SqlFrom, SqlIdent, SqlJoin},
     parser::sub::parse_subscription,
@@ -10,103 +14,95 @@ use spacetimedb_sql_parser::{
 
 use super::{
     errors::{DuplicateName, TypingError, Unresolved, Unsupported},
-    expr::{Expr, Let, RelExpr},
-    ty::{Symbol, TyCtx, TyEnv},
+    expr::RelExpr,
     type_expr, type_proj, type_select, StatementCtx, StatementSource,
 };
 
 /// The result of type checking and name resolution
 pub type TypingResult<T> = core::result::Result<T, TypingError>;
 
+/// A view of the database schema
 pub trait SchemaView {
     fn schema(&self, name: &str) -> Option<Arc<TableSchema>>;
+}
+
+#[derive(Default)]
+pub struct Relvars(HashMap<Box<str>, Arc<TableSchema>>);
+
+impl Deref for Relvars {
+    type Target = HashMap<Box<str>, Arc<TableSchema>>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Relvars {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }
 
 pub trait TypeChecker {
     type Ast;
     type Set;
 
-    fn type_ast(ctx: &mut TyCtx, ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<RelExpr>;
+    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<Project>;
 
-    fn type_set(ctx: &mut TyCtx, ast: Self::Set, tx: &impl SchemaView) -> TypingResult<RelExpr>;
+    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<Project>;
 
-    fn type_from(ctx: &mut TyCtx, from: SqlFrom, tx: &impl SchemaView) -> TypingResult<(RelExpr, Option<Symbol>)> {
+    fn type_from(from: SqlFrom, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<RelExpr> {
         match from {
-            SqlFrom::Expr(name, None) => Self::type_relvar(ctx, name, tx),
-            SqlFrom::Expr(name, Some(SqlIdent(alias))) => {
-                let (expr, _) = Self::type_relvar(ctx, name, tx)?;
-                let symbol = ctx.gen_symbol(alias);
-                Ok((expr, Some(symbol)))
+            SqlFrom::Expr(SqlIdent(name), SqlIdent(alias)) => {
+                let schema = Self::type_relvar(tx, &name)?;
+                vars.insert(alias.clone(), schema.clone());
+                Ok(RelExpr::RelVar(schema, alias))
             }
-            SqlFrom::Join(r, SqlIdent(alias), joins) => {
-                // The type environment with which to type the join expressions
-                let mut env = TyEnv::default();
-                // The lowered inputs to the join operator
-                let mut inputs = Vec::new();
-                // The join expressions or predicates
-                let mut exprs = Vec::new();
-                // The types of the join variables or aliases
-                let mut types = Vec::new();
-
-                let input = Self::type_relvar(ctx, r, tx)?.0;
-                let ty = input.ty_id();
-                let name = ctx.gen_symbol(alias);
-
-                env.add(name, ty);
-                inputs.push(input);
-                types.push((name, ty));
+            SqlFrom::Join(SqlIdent(name), SqlIdent(alias), joins) => {
+                let schema = Self::type_relvar(tx, &name)?;
+                vars.insert(alias.clone(), schema.clone());
+                let mut join = RelExpr::RelVar(schema, alias);
 
                 for SqlJoin {
-                    var,
+                    var: SqlIdent(name),
                     alias: SqlIdent(alias),
                     on,
                 } in joins
                 {
-                    let input = Self::type_relvar(ctx, var, tx)?.0;
-                    let ty = input.ty_id();
-                    let name = ctx.gen_symbol(&alias);
-
-                    // New join variable is now in scope
-                    if env.add(name, ty).is_some() {
+                    // Check for duplicate aliases
+                    if vars.contains_key(&alias) {
                         return Err(DuplicateName(alias.into_string()).into());
                     }
 
-                    inputs.push(input);
-                    types.push((name, ty));
+                    let rhs = Self::type_relvar(tx, &name)?;
+                    let lhs = Box::new(join);
+                    let var = alias;
 
-                    // Type check join expression with current type environment
+                    vars.insert(var.clone(), rhs.clone());
+
                     if let Some(on) = on {
-                        exprs.push(type_expr(ctx, &env, on, Some(TyId::BOOL))?);
+                        if let Expr::BinOp(BinOp::Eq, a, b) = type_expr(vars, on, Some(&AlgebraicType::Bool))? {
+                            if let Expr::Field(a) = *a {
+                                if let Expr::Field(b) = *b {
+                                    join = RelExpr::EqJoin(LeftDeepJoin { lhs, rhs, var }, a, b);
+                                    continue;
+                                }
+                            }
+                        }
+                        unreachable!("Unreachability guaranteed by parser")
                     }
+
+                    join = RelExpr::LeftDeepJoin(LeftDeepJoin { lhs, rhs, var });
                 }
 
-                let ty = ctx.add_row_type(types.clone());
-                let input = RelExpr::Join(inputs.into(), ty);
-                let vars = types
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, (name, ty))| (name, Expr::Field(Box::new(Expr::Input(input.ty_id())), i, ty)))
-                    .collect();
-                Ok((RelExpr::select(input, Let { vars, exprs }), None))
+                Ok(join)
             }
         }
     }
 
-    fn type_relvar(ctx: &mut TyCtx, name: SqlIdent, tx: &impl SchemaView) -> TypingResult<(RelExpr, Option<Symbol>)> {
-        let SqlIdent(var) = name;
-        let schema = tx
-            .schema(&var)
-            .ok_or_else(|| Unresolved::table(&var))
-            .map_err(TypingError::from)?;
-        let mut types = Vec::new();
-        for ColumnSchema { col_name, col_type, .. } in schema.columns() {
-            let id = ctx.add_algebraic_type(col_type);
-            let name = ctx.gen_symbol(col_name);
-            types.push((name, id));
-        }
-        let id = ctx.add_var_type(schema.table_id, types);
-        let symbol = ctx.gen_symbol(var);
-        Ok((RelExpr::RelVar(schema, id), Some(symbol)))
+    fn type_relvar(tx: &impl SchemaView, name: &str) -> TypingResult<Arc<TableSchema>> {
+        tx.schema(name)
+            .ok_or_else(|| Unresolved::table(name))
+            .map_err(TypingError::from)
     }
 }
 
@@ -117,42 +113,40 @@ impl TypeChecker for SubChecker {
     type Ast = SqlSelect;
     type Set = SqlSelect;
 
-    fn type_ast(ctx: &mut TyCtx, ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<RelExpr> {
-        Self::type_set(ctx, ast, tx)
+    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<Project> {
+        Self::type_set(ast, &mut Relvars::default(), tx)
     }
 
-    fn type_set(ctx: &mut TyCtx, ast: Self::Set, tx: &impl SchemaView) -> TypingResult<RelExpr> {
+    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<Project> {
         match ast {
             SqlSelect {
                 project,
                 from,
                 filter: None,
             } => {
-                let (input, alias) = Self::type_from(ctx, from, tx)?;
-                type_proj(ctx, input, alias, project)
+                let input = Self::type_from(from, vars, tx)?;
+                type_proj(input, project, vars)
             }
             SqlSelect {
                 project,
                 from,
                 filter: Some(expr),
             } => {
-                let (from, alias) = Self::type_from(ctx, from, tx)?;
-                let input = type_select(ctx, from, alias, expr)?;
-                type_proj(ctx, input, alias, project)
+                let input = Self::type_from(from, vars, tx)?;
+                type_proj(type_select(input, expr, vars)?, project, vars)
             }
         }
     }
 }
 
 /// Parse and type check a subscription query
-pub fn parse_and_type_sub(ctx: &mut TyCtx, sql: &str, tx: &impl SchemaView) -> TypingResult<RelExpr> {
-    let expr = SubChecker::type_ast(ctx, parse_subscription(sql)?, tx)?;
-    expect_table_type(ctx, expr)
+pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<Project> {
+    expect_table_type(SubChecker::type_ast(parse_subscription(sql)?, tx)?)
 }
 
 /// Parse and type check a *subscription* query into a `StatementCtx`
-pub fn compile_sql_sub<'a>(ctx: &mut TyCtx, sql: &'a str, tx: &impl SchemaView) -> TypingResult<StatementCtx<'a>> {
-    let expr = parse_and_type_sub(ctx, sql, tx)?;
+pub fn compile_sql_sub<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<StatementCtx<'a>> {
+    let expr = parse_and_type_sub(sql, tx)?;
     Ok(StatementCtx {
         statement: Statement::Select(expr),
         sql,
@@ -161,8 +155,10 @@ pub fn compile_sql_sub<'a>(ctx: &mut TyCtx, sql: &'a str, tx: &impl SchemaView) 
 }
 
 /// Returns an error if the input type is not a table type or relvar
-fn expect_table_type(ctx: &TyCtx, expr: RelExpr) -> TypingResult<RelExpr> {
-    let _ = expr.ty(ctx)?.expect_relvar().map_err(|_| Unsupported::ReturnType)?;
+fn expect_table_type(expr: Project) -> TypingResult<Project> {
+    if let Project::Fields(..) = expr {
+        return Err(Unsupported::ReturnType.into());
+    }
     Ok(expr)
 }
 
@@ -204,7 +200,6 @@ pub mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::check::test_utils::{build_module_def, SchemaViewer};
-    use crate::ty::TyCtx;
     use spacetimedb_lib::{AlgebraicType, ProductType};
     use spacetimedb_schema::def::ModuleDef;
 
@@ -249,7 +244,7 @@ mod tests {
             "select t.* from t join s join s as r where t.u32 = s.u32 and s.u32 = r.u32",
             "select t.* from t join s on t.u32 = s.u32 where t.f32 = 0.1",
         ] {
-            let result = parse_and_type_sub(&mut TyCtx::default(), sql, &tx);
+            let result = parse_and_type_sub(sql, &tx);
             assert!(result.is_ok());
         }
     }
@@ -282,7 +277,7 @@ mod tests {
             // Alias r is not in scope when it is referenced
             "select t.* from t join s on t.u32 = r.u32 join s as r",
         ] {
-            let result = parse_and_type_sub(&mut TyCtx::default(), sql, &tx);
+            let result = parse_and_type_sub(sql, &tx);
             assert!(result.is_err());
         }
     }

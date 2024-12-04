@@ -34,7 +34,6 @@ trait RelParser {
         if joins.is_empty() {
             return Ok(SqlFrom::Expr(name, alias));
         }
-        let alias = alias.unwrap_or_else(|| name.clone());
         Ok(SqlFrom::Join(name, alias, Self::parse_joins(joins)?))
     }
 
@@ -46,21 +45,32 @@ trait RelParser {
     /// Parse a single JOIN clause
     fn parse_join(join: Join) -> SqlParseResult<SqlJoin> {
         let (var, alias) = Self::parse_relvar(join.relation)?;
-        let alias = alias.unwrap_or_else(|| var.clone());
         match join.join_operator {
             JoinOperator::CrossJoin => Ok(SqlJoin { var, alias, on: None }),
             JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin { var, alias, on: None }),
-            JoinOperator::Inner(JoinConstraint::On(on)) => Ok(SqlJoin {
-                var,
-                alias,
-                on: Some(parse_expr(on)?),
-            }),
+            JoinOperator::Inner(JoinConstraint::On(Expr::BinaryOp {
+                left,
+                op: BinaryOperator::Eq,
+                right,
+            })) if matches!(*left, Expr::Identifier(..) | Expr::CompoundIdentifier(..))
+                && matches!(*right, Expr::Identifier(..) | Expr::CompoundIdentifier(..)) =>
+            {
+                Ok(SqlJoin {
+                    var,
+                    alias,
+                    on: Some(parse_expr(Expr::BinaryOp {
+                        left,
+                        op: BinaryOperator::Eq,
+                        right,
+                    })?),
+                })
+            }
             _ => Err(SqlUnsupported::JoinType.into()),
         }
     }
 
     /// Parse a table reference in a FROM clause
-    fn parse_relvar(expr: TableFactor) -> SqlParseResult<(SqlIdent, Option<SqlIdent>)> {
+    fn parse_relvar(expr: TableFactor) -> SqlParseResult<(SqlIdent, SqlIdent)> {
         match expr {
             // Relvar no alias
             TableFactor::Table {
@@ -70,7 +80,11 @@ trait RelParser {
                 with_hints,
                 version: None,
                 partitions,
-            } if with_hints.is_empty() && partitions.is_empty() => Ok((parse_ident(name)?, None)),
+            } if with_hints.is_empty() && partitions.is_empty() => {
+                let name = parse_ident(name)?;
+                let alias = name.clone();
+                Ok((name, alias))
+            }
             // Relvar with alias
             TableFactor::Table {
                 name,
@@ -80,7 +94,7 @@ trait RelParser {
                 version: None,
                 partitions,
             } if with_hints.is_empty() && partitions.is_empty() && columns.is_empty() => {
-                Ok((parse_ident(name)?, Some(alias.into())))
+                Ok((parse_ident(name)?, alias.into()))
             }
             _ => Err(SqlUnsupported::From(expr).into()),
         }
@@ -130,8 +144,11 @@ pub(crate) fn parse_project_elem(item: SelectItem) -> SqlParseResult<ProjectElem
     match item {
         SelectItem::Wildcard(_) => Err(SqlUnsupported::MixedWildcardProject.into()),
         SelectItem::QualifiedWildcard(..) => Err(SqlUnsupported::MixedWildcardProject.into()),
-        SelectItem::UnnamedExpr(expr) => Ok(ProjectElem(parse_proj(expr)?, None)),
-        SelectItem::ExprWithAlias { expr, alias } => Ok(ProjectElem(parse_proj(expr)?, Some(alias.into()))),
+        SelectItem::UnnamedExpr(expr) => match parse_proj(expr)? {
+            ProjectExpr::Var(name) => Ok(ProjectElem(ProjectExpr::Var(name.clone()), name)),
+            ProjectExpr::Field(name, field) => Ok(ProjectElem(ProjectExpr::Field(name, field.clone()), field)),
+        },
+        SelectItem::ExprWithAlias { expr, alias } => Ok(ProjectElem(parse_proj(expr)?, alias.into())),
     }
 }
 
