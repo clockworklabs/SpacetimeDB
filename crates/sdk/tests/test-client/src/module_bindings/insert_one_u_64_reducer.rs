@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneU64 {
+pub(super) struct InsertOneU64Args {
     pub n: u64,
 }
 
-impl __sdk::InModule for InsertOneU64 {
+impl From<InsertOneU64Args> for super::Reducer {
+    fn from(args: InsertOneU64Args) -> Self {
+        Self::InsertOneU64 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for InsertOneU64Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,19 +57,32 @@ pub trait insert_one_u_64 {
 
 impl insert_one_u_64 for super::RemoteReducers {
     fn insert_one_u_64(&self, n: u64) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_u64", InsertOneU64 { n })
+        self.imp.call_reducer("insert_one_u64", InsertOneU64Args { n })
     }
     fn on_insert_one_u_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u64) + Send + 'static,
     ) -> InsertOneU64CallbackId {
-        InsertOneU64CallbackId(self.imp.on_reducer::<InsertOneU64>(
+        InsertOneU64CallbackId(self.imp.on_reducer(
             "insert_one_u64",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneU64| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneU64 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_insert_one_u_64(&self, callback: InsertOneU64CallbackId) {
-        self.imp.remove_on_reducer::<InsertOneU64>("insert_one_u64", callback.0)
+        self.imp.remove_on_reducer("insert_one_u64", callback.0)
     }
 }
 

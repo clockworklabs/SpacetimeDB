@@ -84,7 +84,7 @@ impl<'ctx> __sdk::Table for UniqueIdentityTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<UniqueIdentity>("unique_identity");
-    _table.add_unique_constraint::<__sdk::Identity>("i", |row| &row.i)
+    _table.add_unique_constraint::<__sdk::Identity>("i", |row| &row.i);
 }
 #[doc(hidden)]
 pub(super) fn parse_table_update(

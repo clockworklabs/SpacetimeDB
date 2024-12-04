@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdateUniqueString {
+pub(super) struct UpdateUniqueStringArgs {
     pub s: String,
     pub data: i32,
 }
 
-impl __sdk::InModule for UpdateUniqueString {
+impl From<UpdateUniqueStringArgs> for super::Reducer {
+    fn from(args: UpdateUniqueStringArgs) -> Self {
+        Self::UpdateUniqueString {
+            s: args.s,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdateUniqueStringArgs {
     type Module = super::RemoteModule;
 }
 
@@ -53,20 +62,32 @@ pub trait update_unique_string {
 impl update_unique_string for super::RemoteReducers {
     fn update_unique_string(&self, s: String, data: i32) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("update_unique_string", UpdateUniqueString { s, data })
+            .call_reducer("update_unique_string", UpdateUniqueStringArgs { s, data })
     }
     fn on_update_unique_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String, &i32) + Send + 'static,
     ) -> UpdateUniqueStringCallbackId {
-        UpdateUniqueStringCallbackId(self.imp.on_reducer::<UpdateUniqueString>(
+        UpdateUniqueStringCallbackId(self.imp.on_reducer(
             "update_unique_string",
-            Box::new(move |ctx: &super::EventContext, args: &UpdateUniqueString| callback(ctx, &args.s, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdateUniqueString { s, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s, data)
+            }),
         ))
     }
     fn remove_on_update_unique_string(&self, callback: UpdateUniqueStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdateUniqueString>("update_unique_string", callback.0)
+        self.imp.remove_on_reducer("update_unique_string", callback.0)
     }
 }
 

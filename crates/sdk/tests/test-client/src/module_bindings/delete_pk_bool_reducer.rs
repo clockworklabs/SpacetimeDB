@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeletePkBool {
+pub(super) struct DeletePkBoolArgs {
     pub b: bool,
 }
 
-impl __sdk::InModule for DeletePkBool {
+impl From<DeletePkBoolArgs> for super::Reducer {
+    fn from(args: DeletePkBoolArgs) -> Self {
+        Self::DeletePkBool { b: args.b }
+    }
+}
+
+impl __sdk::InModule for DeletePkBoolArgs {
     type Module = super::RemoteModule;
 }
 
@@ -51,19 +57,32 @@ pub trait delete_pk_bool {
 
 impl delete_pk_bool for super::RemoteReducers {
     fn delete_pk_bool(&self, b: bool) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_bool", DeletePkBool { b })
+        self.imp.call_reducer("delete_pk_bool", DeletePkBoolArgs { b })
     }
     fn on_delete_pk_bool(
         &self,
         mut callback: impl FnMut(&super::EventContext, &bool) + Send + 'static,
     ) -> DeletePkBoolCallbackId {
-        DeletePkBoolCallbackId(self.imp.on_reducer::<DeletePkBool>(
+        DeletePkBoolCallbackId(self.imp.on_reducer(
             "delete_pk_bool",
-            Box::new(move |ctx: &super::EventContext, args: &DeletePkBool| callback(ctx, &args.b)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeletePkBool { b },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, b)
+            }),
         ))
     }
     fn remove_on_delete_pk_bool(&self, callback: DeletePkBoolCallbackId) {
-        self.imp.remove_on_reducer::<DeletePkBool>("delete_pk_bool", callback.0)
+        self.imp.remove_on_reducer("delete_pk_bool", callback.0)
     }
 }
 

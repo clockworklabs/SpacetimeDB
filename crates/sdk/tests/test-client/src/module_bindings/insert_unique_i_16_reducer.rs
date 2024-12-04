@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertUniqueI16 {
+pub(super) struct InsertUniqueI16Args {
     pub n: i16,
     pub data: i32,
 }
 
-impl __sdk::InModule for InsertUniqueI16 {
+impl From<InsertUniqueI16Args> for super::Reducer {
+    fn from(args: InsertUniqueI16Args) -> Self {
+        Self::InsertUniqueI16 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertUniqueI16Args {
     type Module = super::RemoteModule;
 }
 
@@ -52,20 +61,33 @@ pub trait insert_unique_i_16 {
 
 impl insert_unique_i_16 for super::RemoteReducers {
     fn insert_unique_i_16(&self, n: i16, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_unique_i16", InsertUniqueI16 { n, data })
+        self.imp
+            .call_reducer("insert_unique_i16", InsertUniqueI16Args { n, data })
     }
     fn on_insert_unique_i_16(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i16, &i32) + Send + 'static,
     ) -> InsertUniqueI16CallbackId {
-        InsertUniqueI16CallbackId(self.imp.on_reducer::<InsertUniqueI16>(
+        InsertUniqueI16CallbackId(self.imp.on_reducer(
             "insert_unique_i16",
-            Box::new(move |ctx: &super::EventContext, args: &InsertUniqueI16| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertUniqueI16 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_insert_unique_i_16(&self, callback: InsertUniqueI16CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueI16>("insert_unique_i16", callback.0)
+        self.imp.remove_on_reducer("insert_unique_i16", callback.0)
     }
 }
 

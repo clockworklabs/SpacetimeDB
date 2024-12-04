@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdatePkI256 {
+pub(super) struct UpdatePkI256Args {
     pub n: __sats::i256,
     pub data: i32,
 }
 
-impl __sdk::InModule for UpdatePkI256 {
+impl From<UpdatePkI256Args> for super::Reducer {
+    fn from(args: UpdatePkI256Args) -> Self {
+        Self::UpdatePkI256 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdatePkI256Args {
     type Module = super::RemoteModule;
 }
 
@@ -52,19 +61,32 @@ pub trait update_pk_i_256 {
 
 impl update_pk_i_256 for super::RemoteReducers {
     fn update_pk_i_256(&self, n: __sats::i256, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_pk_i256", UpdatePkI256 { n, data })
+        self.imp.call_reducer("update_pk_i256", UpdatePkI256Args { n, data })
     }
     fn on_update_pk_i_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::i256, &i32) + Send + 'static,
     ) -> UpdatePkI256CallbackId {
-        UpdatePkI256CallbackId(self.imp.on_reducer::<UpdatePkI256>(
+        UpdatePkI256CallbackId(self.imp.on_reducer(
             "update_pk_i256",
-            Box::new(move |ctx: &super::EventContext, args: &UpdatePkI256| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdatePkI256 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_update_pk_i_256(&self, callback: UpdatePkI256CallbackId) {
-        self.imp.remove_on_reducer::<UpdatePkI256>("update_pk_i256", callback.0)
+        self.imp.remove_on_reducer("update_pk_i256", callback.0)
     }
 }
 

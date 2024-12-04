@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct SetName {
+pub(super) struct SetNameArgs {
     pub name: String,
 }
 
-impl __sdk::InModule for SetName {
+impl From<SetNameArgs> for super::Reducer {
+    fn from(args: SetNameArgs) -> Self {
+        Self::SetName { name: args.name }
+    }
+}
+
+impl __sdk::InModule for SetNameArgs {
     type Module = super::RemoteModule;
 }
 
@@ -48,19 +54,32 @@ pub trait set_name {
 
 impl set_name for super::RemoteReducers {
     fn set_name(&self, name: String) -> __anyhow::Result<()> {
-        self.imp.call_reducer("set_name", SetName { name })
+        self.imp.call_reducer("set_name", SetNameArgs { name })
     }
     fn on_set_name(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String) + Send + 'static,
     ) -> SetNameCallbackId {
-        SetNameCallbackId(self.imp.on_reducer::<SetName>(
+        SetNameCallbackId(self.imp.on_reducer(
             "set_name",
-            Box::new(move |ctx: &super::EventContext, args: &SetName| callback(ctx, &args.name)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::SetName { name },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, name)
+            }),
         ))
     }
     fn remove_on_set_name(&self, callback: SetNameCallbackId) {
-        self.imp.remove_on_reducer::<SetName>("set_name", callback.0)
+        self.imp.remove_on_reducer("set_name", callback.0)
     }
 }
 

@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneF64 {
+pub(super) struct InsertOneF64Args {
     pub f: f64,
 }
 
-impl __sdk::InModule for InsertOneF64 {
+impl From<InsertOneF64Args> for super::Reducer {
+    fn from(args: InsertOneF64Args) -> Self {
+        Self::InsertOneF64 { f: args.f }
+    }
+}
+
+impl __sdk::InModule for InsertOneF64Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,19 +57,32 @@ pub trait insert_one_f_64 {
 
 impl insert_one_f_64 for super::RemoteReducers {
     fn insert_one_f_64(&self, f: f64) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_f64", InsertOneF64 { f })
+        self.imp.call_reducer("insert_one_f64", InsertOneF64Args { f })
     }
     fn on_insert_one_f_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &f64) + Send + 'static,
     ) -> InsertOneF64CallbackId {
-        InsertOneF64CallbackId(self.imp.on_reducer::<InsertOneF64>(
+        InsertOneF64CallbackId(self.imp.on_reducer(
             "insert_one_f64",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneF64| callback(ctx, &args.f)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneF64 { f },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, f)
+            }),
         ))
     }
     fn remove_on_insert_one_f_64(&self, callback: InsertOneF64CallbackId) {
-        self.imp.remove_on_reducer::<InsertOneF64>("insert_one_f64", callback.0)
+        self.imp.remove_on_reducer("insert_one_f64", callback.0)
     }
 }
 

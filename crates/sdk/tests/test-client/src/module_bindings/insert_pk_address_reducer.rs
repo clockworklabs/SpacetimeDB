@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertPkAddress {
+pub(super) struct InsertPkAddressArgs {
     pub a: __sdk::Address,
     pub data: i32,
 }
 
-impl __sdk::InModule for InsertPkAddress {
+impl From<InsertPkAddressArgs> for super::Reducer {
+    fn from(args: InsertPkAddressArgs) -> Self {
+        Self::InsertPkAddress {
+            a: args.a,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertPkAddressArgs {
     type Module = super::RemoteModule;
 }
 
@@ -52,20 +61,33 @@ pub trait insert_pk_address {
 
 impl insert_pk_address for super::RemoteReducers {
     fn insert_pk_address(&self, a: __sdk::Address, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_pk_address", InsertPkAddress { a, data })
+        self.imp
+            .call_reducer("insert_pk_address", InsertPkAddressArgs { a, data })
     }
     fn on_insert_pk_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Address, &i32) + Send + 'static,
     ) -> InsertPkAddressCallbackId {
-        InsertPkAddressCallbackId(self.imp.on_reducer::<InsertPkAddress>(
+        InsertPkAddressCallbackId(self.imp.on_reducer(
             "insert_pk_address",
-            Box::new(move |ctx: &super::EventContext, args: &InsertPkAddress| callback(ctx, &args.a, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertPkAddress { a, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, a, data)
+            }),
         ))
     }
     fn remove_on_insert_pk_address(&self, callback: InsertPkAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertPkAddress>("insert_pk_address", callback.0)
+        self.imp.remove_on_reducer("insert_pk_address", callback.0)
     }
 }
 

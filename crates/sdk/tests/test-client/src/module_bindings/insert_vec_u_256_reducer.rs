@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecU256 {
+pub(super) struct InsertVecU256Args {
     pub n: Vec<__sats::u256>,
 }
 
-impl __sdk::InModule for InsertVecU256 {
+impl From<InsertVecU256Args> for super::Reducer {
+    fn from(args: InsertVecU256Args) -> Self {
+        Self::InsertVecU256 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for InsertVecU256Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,20 +57,32 @@ pub trait insert_vec_u_256 {
 
 impl insert_vec_u_256 for super::RemoteReducers {
     fn insert_vec_u_256(&self, n: Vec<__sats::u256>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_u256", InsertVecU256 { n })
+        self.imp.call_reducer("insert_vec_u256", InsertVecU256Args { n })
     }
     fn on_insert_vec_u_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<__sats::u256>) + Send + 'static,
     ) -> InsertVecU256CallbackId {
-        InsertVecU256CallbackId(self.imp.on_reducer::<InsertVecU256>(
+        InsertVecU256CallbackId(self.imp.on_reducer(
             "insert_vec_u256",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecU256| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecU256 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_insert_vec_u_256(&self, callback: InsertVecU256CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecU256>("insert_vec_u256", callback.0)
+        self.imp.remove_on_reducer("insert_vec_u256", callback.0)
     }
 }
 

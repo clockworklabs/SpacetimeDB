@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct SendMessage {
+pub(super) struct SendMessageArgs {
     pub text: String,
 }
 
-impl __sdk::InModule for SendMessage {
+impl From<SendMessageArgs> for super::Reducer {
+    fn from(args: SendMessageArgs) -> Self {
+        Self::SendMessage { text: args.text }
+    }
+}
+
+impl __sdk::InModule for SendMessageArgs {
     type Module = super::RemoteModule;
 }
 
@@ -51,19 +57,32 @@ pub trait send_message {
 
 impl send_message for super::RemoteReducers {
     fn send_message(&self, text: String) -> __anyhow::Result<()> {
-        self.imp.call_reducer("send_message", SendMessage { text })
+        self.imp.call_reducer("send_message", SendMessageArgs { text })
     }
     fn on_send_message(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String) + Send + 'static,
     ) -> SendMessageCallbackId {
-        SendMessageCallbackId(self.imp.on_reducer::<SendMessage>(
+        SendMessageCallbackId(self.imp.on_reducer(
             "send_message",
-            Box::new(move |ctx: &super::EventContext, args: &SendMessage| callback(ctx, &args.text)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::SendMessage { text },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, text)
+            }),
         ))
     }
     fn remove_on_send_message(&self, callback: SendMessageCallbackId) {
-        self.imp.remove_on_reducer::<SendMessage>("send_message", callback.0)
+        self.imp.remove_on_reducer("send_message", callback.0)
     }
 }
 

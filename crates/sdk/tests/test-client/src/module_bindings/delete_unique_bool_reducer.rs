@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeleteUniqueBool {
+pub(super) struct DeleteUniqueBoolArgs {
     pub b: bool,
 }
 
-impl __sdk::InModule for DeleteUniqueBool {
+impl From<DeleteUniqueBoolArgs> for super::Reducer {
+    fn from(args: DeleteUniqueBoolArgs) -> Self {
+        Self::DeleteUniqueBool { b: args.b }
+    }
+}
+
+impl __sdk::InModule for DeleteUniqueBoolArgs {
     type Module = super::RemoteModule;
 }
 
@@ -51,20 +57,32 @@ pub trait delete_unique_bool {
 
 impl delete_unique_bool for super::RemoteReducers {
     fn delete_unique_bool(&self, b: bool) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_bool", DeleteUniqueBool { b })
+        self.imp.call_reducer("delete_unique_bool", DeleteUniqueBoolArgs { b })
     }
     fn on_delete_unique_bool(
         &self,
         mut callback: impl FnMut(&super::EventContext, &bool) + Send + 'static,
     ) -> DeleteUniqueBoolCallbackId {
-        DeleteUniqueBoolCallbackId(self.imp.on_reducer::<DeleteUniqueBool>(
+        DeleteUniqueBoolCallbackId(self.imp.on_reducer(
             "delete_unique_bool",
-            Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueBool| callback(ctx, &args.b)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeleteUniqueBool { b },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, b)
+            }),
         ))
     }
     fn remove_on_delete_unique_bool(&self, callback: DeleteUniqueBoolCallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueBool>("delete_unique_bool", callback.0)
+        self.imp.remove_on_reducer("delete_unique_bool", callback.0)
     }
 }
 
