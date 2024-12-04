@@ -127,10 +127,15 @@ fn elastic(v1: Vector2, v2: Vector2, m1: f32, m2: f32) -> (Vector2, Vector2) {
 pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Result<(), String> {
     let span = spacetimedb::log_stopwatch::LogStopwatch::new("tick");
     let world_size = ctx.db.config().id().find(0).ok_or("Config not found")?.world_size;
-    for mut circle in ctx.db.circle().iter() {
-        let Some(mut circle_entity) = ctx.db.entity().id().find(&circle.entity_id) else {
-            continue;
-        };
+
+    let mut circles =
+        ctx.db.circle().iter().map(|circle| {
+            let entity = ctx.db.entity().id().find(&circle.entity_id);
+            (circle, entity, false)
+        })
+        .collect::<Vec<_>>();
+    for idx in 0 .. circles.len() {
+        let (mut circle, Some(mut circle_entity), _) = circles[idx].clone() else { continue; };
         let circle_radius = circle_entity.radius;
         let x = circle_entity.position.x + circle.velocity.x;
         let y = circle_entity.position.y + circle.velocity.y;
@@ -149,18 +154,11 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
             circle.velocity.y = -circle.velocity.y;
         }
 
-        ctx.db.circle().entity_id().update(circle);
-        ctx.db.entity().id().update(circle_entity);
+        circles[idx] = (circle, Some(circle_entity), true);
     }
 
     {
         let span = spacetimedb::log_stopwatch::LogStopwatch::new("collisions");
-        let mut circles =
-            ctx.db.circle().iter().map(|circle| {
-                let entity = ctx.db.entity().id().find(&circle.entity_id);
-                (circle, entity, false)
-            })
-            .collect::<Vec<_>>();
         for idx in 0 .. circles.len() {
             let (mut circle, Some(mut circle_entity), _) = circles[idx].clone() else { continue; };
             // Check collisions
@@ -189,14 +187,14 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
             circles[idx] = (circle, Some(circle_entity), true);
         }
 
-        for (circle, entity, modified) in circles.into_iter() {
-            if modified {
-                ctx.db.circle().entity_id().update(circle);
-                ctx.db.entity().id().update(entity.unwrap());
-            }
-        }
-
         span.end();
+    }
+
+    for (circle, entity, modified) in circles.into_iter() {
+        if modified {
+            ctx.db.circle().entity_id().update(circle);
+            ctx.db.entity().id().update(entity.unwrap());
+        }
     }
 
     span.end();
