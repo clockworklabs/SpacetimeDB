@@ -2779,6 +2779,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lz4_flex"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75761162ae2b0e580d7e7c390558127e5f01b4194debd6221fd8c207fc80e3f5"
+dependencies = [
+ "twox-hash",
+]
+
+[[package]]
 name = "mach2"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4597,6 +4606,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "snap"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b6b67fb9a61334225b5b790716f609cd58395f895b3fe8b328786812a40bc3b"
+
+[[package]]
 name = "socket2"
 version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4658,11 +4673,13 @@ dependencies = [
  "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-data-structures",
+ "spacetimedb-fs-utils",
  "spacetimedb-lib",
  "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-schema",
+ "spacetimedb-snapshot",
  "spacetimedb-standalone",
  "spacetimedb-table",
  "spacetimedb-testing",
@@ -4832,6 +4849,7 @@ dependencies = [
  "proptest-derive",
  "rand 0.8.5",
  "serde",
+ "spacetimedb-fs-utils",
  "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-sats",
@@ -4910,6 +4928,7 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-durability",
  "spacetimedb-expr",
+ "spacetimedb-fs-utils",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-jwks",
  "spacetimedb-lib",
@@ -4999,9 +5018,12 @@ version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
  "hex",
+ "lz4_flex",
  "rand 0.8.5",
+ "snap",
  "tempdir",
  "thiserror",
+ "zstd",
 ]
 
 [[package]]
@@ -5430,6 +5452,12 @@ name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
+
+[[package]]
+name = "static_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "str-buf"
@@ -6250,6 +6278,16 @@ dependencies = [
  "thiserror",
  "url",
  "utf-8",
+]
+
+[[package]]
+name = "twox-hash"
+version = "1.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
+dependencies = [
+ "cfg-if",
+ "static_assertions",
 ]
 
 [[package]]
