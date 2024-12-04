@@ -1602,7 +1602,7 @@ mod tests {
     fn table_indexed(is_unique: bool) -> TableSchema {
         table(
             "MyTable",
-            ProductType::from([("my_col", AlgebraicType::I64)]),
+            ProductType::from([("my_col", AlgebraicType::I64), ("other_col", AlgebraicType::I64)]),
             |builder| {
                 let builder = builder.with_index(
                     RawIndexAlgorithm::BTree { columns: 0.into() },
@@ -1908,8 +1908,8 @@ mod tests {
             "Index not created"
         );
 
-        stdb.insert(&mut tx, table_id, product![1i64])?;
-        stdb.insert(&mut tx, table_id, product![1i64])?;
+        stdb.insert(&mut tx, table_id, product![1i64, 1i64])?;
+        stdb.insert(&mut tx, table_id, product![1i64, 1i64])?;
 
         assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1]);
         Ok(())
@@ -1979,21 +1979,12 @@ mod tests {
             "Index not created"
         );
 
-        stdb.insert(&mut tx, table_id, product![1i64])
+        stdb.insert(&mut tx, table_id, product![1i64, 0i64])
             .expect("stdb.insert failed");
-        match stdb.insert(&mut tx, table_id, product![1i64]) {
-            Ok(_) => {
-                panic!("Allow to insert duplicate row")
-            }
-            Err(DBError::Index(err)) => match err {
-                IndexError::UniqueConstraintViolation { .. } => {}
-                err => {
-                    panic!("Expected error `UniqueConstraintViolation`, got {err}")
-                }
-            },
-            err => {
-                panic!("Expected error `UniqueConstraintViolation`, got {err:?}")
-            }
+        match stdb.insert(&mut tx, table_id, product![1i64, 1i64]) {
+            Ok(_) => panic!("Allow to insert duplicate row"),
+            Err(DBError::Index(IndexError::UniqueConstraintViolation { .. })) => {}
+            Err(err) => panic!("Expected error `UniqueConstraintViolation`, got {err}"),
         }
 
         Ok(())
