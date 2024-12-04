@@ -457,7 +457,7 @@ impl MutTxId {
         idx_map.remove(&index_id);
         self.tx_state
             .index_id_map_removals
-            .get_or_insert_with(Default::default)
+            .get_or_insert_default()
             .insert(index_id);
 
         log::trace!("INDEX DROPPED: {}", index_id);
@@ -966,7 +966,7 @@ impl MutTxId {
                 &sql.clone().into(),
             )?
             .next()
-            .ok_or_else(|| TableError::RawSqlNotFound(SystemTable::st_row_level_security, sql))?;
+            .ok_or(TableError::RawSqlNotFound(SystemTable::st_row_level_security, sql))?;
         self.delete(ST_ROW_LEVEL_SECURITY_ID, st_rls_ref.pointer())?;
 
         Ok(())
@@ -1296,7 +1296,7 @@ impl MutTxId {
                 let (table, blob_store) = self
                     .tx_state
                     .get_table_and_blob_store(table_id)
-                    .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
+                    .ok_or(TableError::IdNotFoundState(table_id))?;
                 Ok(table.delete(blob_store, row_pointer, |_| ()).is_some())
             }
             SquashedOffset::COMMITTED_STATE => {

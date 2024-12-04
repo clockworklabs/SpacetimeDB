@@ -31,7 +31,7 @@ pub enum TxMode<'a> {
     Tx(&'a Tx),
 }
 
-impl<'a> TxMode<'a> {
+impl TxMode<'_> {
     /// Unwraps `self`, ensuring we are in a mutable tx.
     fn unwrap_mut(&mut self) -> &mut MutTx {
         match self {

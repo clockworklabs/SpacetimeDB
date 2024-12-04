@@ -411,6 +411,7 @@ impl WasmInstanceEnv {
     /// - `prefix = prefix_ptr[..prefix_len]`,
     /// - `rstart = rstart_ptr[..rstart_len]`,
     /// - `rend = rend_ptr[..rend_len]`,
+    ///
     /// in WASM memory.
     ///
     /// The index itself has a schema/type.
@@ -693,6 +694,7 @@ impl WasmInstanceEnv {
     /// - `prefix = prefix_ptr[..prefix_len]`,
     /// - `rstart = rstart_ptr[..rstart_len]`,
     /// - `rend = rend_ptr[..rend_len]`,
+    ///
     /// in WASM memory.
     ///
     /// This syscall will delete all the rows found by
