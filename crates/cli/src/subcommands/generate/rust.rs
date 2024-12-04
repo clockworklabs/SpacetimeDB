@@ -400,6 +400,9 @@ Requested namespace: {namespace}",
                     |out| {
                         write!(out, "Self::{enum_variant_name}");
                         if !reducer.params_for_generate.elements.is_empty() {
+                            // We generate "struct variants" for reducers with arguments,
+                            // but "unit variants" for reducers of no arguments.
+                            // These use different constructor syntax.
                             out.delimited_block(
                                 " {",
                                 |out| {
@@ -905,9 +908,10 @@ fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {
             for reducer in iter_reducers(module) {
                 write!(out, "{} ", reducer_variant_name(&reducer.name));
                 if !reducer.params_for_generate.elements.is_empty() {
-                    // If the reducer has any arguments, generate a "struct variant."
-                    // If it doesn't, generate a "unit variant" instead.
-                    // For some reason, Rust prohibits empty struct variants.
+                    // If the reducer has any arguments, generate a "struct variant,"
+                    // like `Foo { bar: Baz, }`.
+                    // If it doesn't, generate a "unit variant" instead,
+                    // like `Foo,`.
                     write_struct_type_fields_in_braces(module, out, &reducer.params_for_generate.elements, false);
                 }
                 writeln!(out, ",");
@@ -937,7 +941,7 @@ impl __sdk::InModule for Reducer {{
                             for reducer in iter_reducers(module) {
                                 write!(out, "Reducer::{}", reducer_variant_name(&reducer.name));
                                 if !reducer.params_for_generate.elements.is_empty() {
-                                    // Because Rust prohibits empty struct variants,
+                                    // Because we're emitting unit variants when the payload is empty,
                                     // we have to emit different patterns for empty vs non-empty variants.
                                     write!(out, " {{ .. }}");
                                 }
