@@ -12,7 +12,6 @@ public class GameManager : MonoBehaviour
 {
     public CircleController circlePrefab;
     public PlayerController playerPrefab;
-    public GameObject deathScreen;
 
     public static GameManager instance;
     public static Camera localCamera;
@@ -43,11 +42,11 @@ public class GameManager : MonoBehaviour
             {
                 Debug.Log("Subscription applied!");
             }).Subscribe("SELECT * FROM *");
-        }).OnConnectError((status, message) =>
+        }).OnConnectError((message) =>
         {
             // Called when we have an error connecting to SpacetimeDB
-            Debug.LogError($"Connection error: {status} {message}");
-        }).OnDisconnect((_conn, closeStatus, error) =>
+            Debug.LogError($"Connection error: {message}");
+        }).OnDisconnect((_conn, error) =>
         {
             // Called when we are disconnected from SpacetimeDB
             Debug.Log("Disconnected.");

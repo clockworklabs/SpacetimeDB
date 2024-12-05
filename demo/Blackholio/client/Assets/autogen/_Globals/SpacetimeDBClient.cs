@@ -15,30 +15,30 @@ namespace SpacetimeDB.Types
 	{
 		public class CircleHandle : RemoteTableHandle<EventContext, Circle>
 		{
-			private static Dictionary<uint, Circle> EntityId_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (Circle)row;
-				EntityId_Index[value.EntityId] = value;
+				EntityId.Cache[value.EntityId] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				EntityId_Index.Remove(((Circle)row).EntityId);
+				EntityId.Cache.Remove(((Circle)row).EntityId);
 			}
 
-			public readonly ref struct EntityIdUniqueIndex
+			public class EntityIdUniqueIndex
 			{
+				internal readonly Dictionary<uint, Circle> Cache = new(16);
 				public Circle? Find(uint value)
 				{
-					EntityId_Index.TryGetValue(value, out var r);
+					Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public EntityIdUniqueIndex EntityId => new();
+			public EntityIdUniqueIndex EntityId = new();
 
 			internal CircleHandle()
 			{
@@ -51,30 +51,30 @@ namespace SpacetimeDB.Types
 
 		public class ConfigHandle : RemoteTableHandle<EventContext, Config>
 		{
-			private static Dictionary<uint, Config> Id_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (Config)row;
-				Id_Index[value.Id] = value;
+				Id.Cache[value.Id] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				Id_Index.Remove(((Config)row).Id);
+				Id.Cache.Remove(((Config)row).Id);
 			}
 
-			public readonly ref struct IdUniqueIndex
+			public class IdUniqueIndex
 			{
+				internal readonly Dictionary<uint, Config> Cache = new(16);
 				public Config? Find(uint value)
 				{
-					Id_Index.TryGetValue(value, out var r);
+					Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public IdUniqueIndex Id => new();
+			public IdUniqueIndex Id = new();
 
 			internal ConfigHandle()
 			{
@@ -87,30 +87,30 @@ namespace SpacetimeDB.Types
 
 		public class EntityHandle : RemoteTableHandle<EventContext, Entity>
 		{
-			private static Dictionary<uint, Entity> Id_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (Entity)row;
-				Id_Index[value.Id] = value;
+				Id.Cache[value.Id] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				Id_Index.Remove(((Entity)row).Id);
+				Id.Cache.Remove(((Entity)row).Id);
 			}
 
-			public readonly ref struct IdUniqueIndex
+			public class IdUniqueIndex
 			{
+				internal readonly Dictionary<uint, Entity> Cache = new(16);
 				public Entity? Find(uint value)
 				{
-					Id_Index.TryGetValue(value, out var r);
+					Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public IdUniqueIndex Id => new();
+			public IdUniqueIndex Id = new();
 
 			internal EntityHandle()
 			{
@@ -123,30 +123,30 @@ namespace SpacetimeDB.Types
 
 		public class MoveAllPlayersTimerHandle : RemoteTableHandle<EventContext, MoveAllPlayersTimer>
 		{
-			private static Dictionary<ulong, MoveAllPlayersTimer> ScheduledId_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (MoveAllPlayersTimer)row;
-				ScheduledId_Index[value.ScheduledId] = value;
+				ScheduledId.Cache[value.ScheduledId] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				ScheduledId_Index.Remove(((MoveAllPlayersTimer)row).ScheduledId);
+				ScheduledId.Cache.Remove(((MoveAllPlayersTimer)row).ScheduledId);
 			}
 
-			public readonly ref struct ScheduledIdUniqueIndex
+			public class ScheduledIdUniqueIndex
 			{
+				internal readonly Dictionary<ulong, MoveAllPlayersTimer> Cache = new(16);
 				public MoveAllPlayersTimer? Find(ulong value)
 				{
-					ScheduledId_Index.TryGetValue(value, out var r);
+					Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public ScheduledIdUniqueIndex ScheduledId => new();
+			public ScheduledIdUniqueIndex ScheduledId = new();
 
 			internal MoveAllPlayersTimerHandle()
 			{
@@ -161,13 +161,14 @@ namespace SpacetimeDB.Types
 
 	public sealed class RemoteReducers : RemoteBase<DbConnection>
 	{
-		internal RemoteReducers(DbConnection conn) : base(conn) {}
+		internal RemoteReducers(DbConnection conn, SetReducerFlags SetReducerFlags) : base(conn) { this.SetCallReducerFlags = SetReducerFlags; }
+		internal readonly SetReducerFlags SetCallReducerFlags;
 		public delegate void MoveAllPlayersHandler(EventContext ctx, SpacetimeDB.Types.MoveAllPlayersTimer timer);
 		public event MoveAllPlayersHandler? OnMoveAllPlayers;
 
 		public void MoveAllPlayers(SpacetimeDB.Types.MoveAllPlayersTimer timer)
 		{
-			conn.InternalCallReducer(new MoveAllPlayers { Timer = timer });
+			conn.InternalCallReducer(new MoveAllPlayers { Timer = timer }, this.SetCallReducerFlags.MoveAllPlayersFlags);
 		}
 
 		public bool InvokeMoveAllPlayers(EventContext ctx, MoveAllPlayers args)
@@ -181,14 +182,23 @@ namespace SpacetimeDB.Types
 		}
 	}
 
+	public sealed class SetReducerFlags
+	{
+		internal SetReducerFlags() { }
+		internal CallReducerFlags MoveAllPlayersFlags;
+		public void MoveAllPlayers(CallReducerFlags flags) { this.MoveAllPlayersFlags = flags; }
+	}
+
 	public partial record EventContext : DbContext<RemoteTables>, IEventContext
 	{
 		public readonly RemoteReducers Reducers;
+		public readonly SetReducerFlags SetReducerFlags;
 		public readonly Event<Reducer> Event;
 
 		internal EventContext(DbConnection conn, Event<Reducer> reducerEvent) : base(conn.Db)
 		{
 			Reducers = conn.Reducers;
+			SetReducerFlags = conn.SetReducerFlags;
 			Event = reducerEvent;
 		}
 	}
@@ -204,10 +214,12 @@ namespace SpacetimeDB.Types
 	{
 		public readonly RemoteTables Db = new();
 		public readonly RemoteReducers Reducers;
+		public readonly SetReducerFlags SetReducerFlags;
 
 		public DbConnection()
 		{
-			Reducers = new(this);
+			SetReducerFlags = new();
+			Reducers = new(this, this.SetReducerFlags);
 
 			clientDB.AddTable<Circle>("circle", Db.Circle);
 			clientDB.AddTable<Config>("config", Db.Config);
