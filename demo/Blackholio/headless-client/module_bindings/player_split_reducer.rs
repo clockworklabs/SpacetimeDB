@@ -66,3 +66,23 @@ impl player_split for super::RemoteReducers {
             .remove_on_reducer::<PlayerSplit>("player_split", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `player_split`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_player_split {
+    /// Set the call-reducer flags for the reducer `player_split` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn player_split(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_player_split for super::SetReducerFlags {
+    fn player_split(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("player_split", flags);
+    }
+}

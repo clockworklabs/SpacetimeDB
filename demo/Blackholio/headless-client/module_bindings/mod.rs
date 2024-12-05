@@ -302,6 +302,7 @@ impl __sdk::spacetime_module::SpacetimeModule for RemoteModule {
     type Reducer = Reducer;
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
+    type SetReducerFlags = SetReducerFlags;
     type DbUpdate = DbUpdate;
     type SubscriptionHandle = SubscriptionHandle;
 }
@@ -313,6 +314,20 @@ pub struct RemoteReducers {
 }
 
 impl __sdk::spacetime_module::InModule for RemoteReducers {
+    type Module = RemoteModule;
+}
+
+#[doc(hidden)]
+/// The `set_reducer_flags` field of [`DbConnection`],
+/// with methods provided by extension traits for each reducer defined by the module.
+/// Each method sets the flags for the reducer with the same name.
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub struct SetReducerFlags {
+    imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
+}
+
+impl __sdk::spacetime_module::InModule for SetReducerFlags {
     type Module = RemoteModule;
 }
 
@@ -347,6 +362,12 @@ pub struct DbConnection {
     pub db: RemoteTables,
     /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
+    #[doc(hidden)]
+    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
+    /// via extension traits implemented for [`SetReducerFlags`].
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    pub set_reducer_flags: SetReducerFlags,
 
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
 }
@@ -358,12 +379,16 @@ impl __sdk::spacetime_module::InModule for DbConnection {
 impl __sdk::db_context::DbContext for DbConnection {
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
+    type SetReducerFlags = SetReducerFlags;
 
     fn db(&self) -> &Self::DbView {
         &self.db
     }
     fn reducers(&self) -> &Self::Reducers {
         &self.reducers
+    }
+    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
+        &self.set_reducer_flags
     }
 
     fn is_active(&self) -> bool {
@@ -464,6 +489,7 @@ impl __sdk::spacetime_module::DbConnection for DbConnection {
         Self {
             db: RemoteTables { imp: imp.clone() },
             reducers: RemoteReducers { imp: imp.clone() },
+            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
             imp,
         }
     }
@@ -476,6 +502,11 @@ pub struct EventContext {
     pub db: RemoteTables,
     /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
+    /// Access to setting the call-flags of each reducer defined for each reducer defined by the module
+    /// via extension traits implemented for [`SetReducerFlags`].
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    pub set_reducer_flags: SetReducerFlags,
     /// The event which caused these callbacks to run.
     pub event: __sdk::event::Event<Reducer>,
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
@@ -488,12 +519,16 @@ impl __sdk::spacetime_module::InModule for EventContext {
 impl __sdk::db_context::DbContext for EventContext {
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
+    type SetReducerFlags = SetReducerFlags;
 
     fn db(&self) -> &Self::DbView {
         &self.db
     }
     fn reducers(&self) -> &Self::Reducers {
         &self.reducers
+    }
+    fn set_reducer_flags(&self) -> &Self::SetReducerFlags {
+        &self.set_reducer_flags
     }
 
     fn is_active(&self) -> bool {
@@ -529,6 +564,7 @@ impl __sdk::spacetime_module::EventContext for EventContext {
         Self {
             db: RemoteTables { imp: imp.clone() },
             reducers: RemoteReducers { imp: imp.clone() },
+            set_reducer_flags: SetReducerFlags { imp: imp.clone() },
             event,
             imp,
         }
@@ -560,6 +596,7 @@ pub trait RemoteDbContext:
     __sdk::DbContext<
     DbView = RemoteTables,
     Reducers = RemoteReducers,
+    SetReducerFlags = SetReducerFlags,
     SubscriptionBuilder = __sdk::subscription::SubscriptionBuilder<RemoteModule>,
 >
 {
@@ -568,6 +605,7 @@ impl<
         Ctx: __sdk::DbContext<
             DbView = RemoteTables,
             Reducers = RemoteReducers,
+            SetReducerFlags = SetReducerFlags,
             SubscriptionBuilder = __sdk::subscription::SubscriptionBuilder<RemoteModule>,
         >,
     > RemoteDbContext for Ctx

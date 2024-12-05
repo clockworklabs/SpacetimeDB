@@ -72,3 +72,23 @@ impl circle_decay for super::RemoteReducers {
             .remove_on_reducer::<CircleDecay>("circle_decay", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `circle_decay`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_circle_decay {
+    /// Set the call-reducer flags for the reducer `circle_decay` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn circle_decay(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_circle_decay for super::SetReducerFlags {
+    fn circle_decay(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("circle_decay", flags);
+    }
+}

@@ -65,3 +65,23 @@ impl respawn for super::RemoteReducers {
         self.imp.remove_on_reducer::<Respawn>("respawn", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `respawn`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_respawn {
+    /// Set the call-reducer flags for the reducer `respawn` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn respawn(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_respawn for super::SetReducerFlags {
+    fn respawn(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("respawn", flags);
+    }
+}

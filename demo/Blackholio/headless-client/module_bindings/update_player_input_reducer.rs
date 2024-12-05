@@ -79,3 +79,24 @@ impl update_player_input for super::RemoteReducers {
             .remove_on_reducer::<UpdatePlayerInput>("update_player_input", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `update_player_input`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_update_player_input {
+    /// Set the call-reducer flags for the reducer `update_player_input` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn update_player_input(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_update_player_input for super::SetReducerFlags {
+    fn update_player_input(&self, flags: __ws::CallReducerFlags) {
+        self.imp
+            .set_call_reducer_flags("update_player_input", flags);
+    }
+}

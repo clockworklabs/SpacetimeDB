@@ -70,3 +70,23 @@ impl spawn_food for super::RemoteReducers {
             .remove_on_reducer::<SpawnFood>("spawn_food", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `spawn_food`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_spawn_food {
+    /// Set the call-reducer flags for the reducer `spawn_food` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn spawn_food(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_spawn_food for super::SetReducerFlags {
+    fn spawn_food(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("spawn_food", flags);
+    }
+}

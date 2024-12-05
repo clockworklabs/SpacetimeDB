@@ -73,3 +73,23 @@ impl move_all_players for super::RemoteReducers {
             .remove_on_reducer::<MoveAllPlayers>("move_all_players", callback.0)
     }
 }
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `move_all_players`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_move_all_players {
+    /// Set the call-reducer flags for the reducer `move_all_players` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn move_all_players(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_move_all_players for super::SetReducerFlags {
+    fn move_all_players(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("move_all_players", flags);
+    }
+}
