@@ -9,7 +9,7 @@ use arrayvec::ArrayVec;
 use hashbrown::hash_map::OccupiedError;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryUpdate, WebsocketFormat,
+    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, HashCollectionExt, HashMap, HashSet, IntMap};
 use spacetimedb_lib::{Address, Identity};
@@ -25,8 +25,10 @@ type Query = Arc<ExecutionUnit>;
 type Client = Arc<ClientConnectionSender>;
 type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
 
-type ClientRequestId = u32;
-type SubscriptionId = (ClientId, ClientRequestId);
+/// ClientQueryId is an identifier for a query set by the client.
+type ClientQueryId = QueryId;
+/// SubscriptionId is a globally unique identifier for a subscription.
+type SubscriptionId = (ClientId, ClientQueryId);
 
 /// For each client, we hold a handle for sending messages, and we track the queries they are subscribed to.
 #[derive(Debug)]
@@ -154,8 +156,8 @@ impl SubscriptionManager {
         }
     }
 
-    pub fn remove_subscription(&mut self, client_id: ClientId, request_id: ClientRequestId) -> Result<Query, DBError> {
-        let subscription_id = (client_id, request_id);
+    pub fn remove_subscription(&mut self, client_id: ClientId, query_id: ClientQueryId) -> Result<Query, DBError> {
+        let subscription_id = (client_id, query_id);
         let ci = if let Some(ci) = self.clients.get_mut(&client_id) {
             ci
         } else {
@@ -198,24 +200,19 @@ impl SubscriptionManager {
     }
 
     /// Adds a single subscription for a client.
-    pub fn add_subscription(
-        &mut self,
-        client: Client,
-        query: Query,
-        request_id: ClientRequestId,
-    ) -> Result<(), DBError> {
+    pub fn add_subscription(&mut self, client: Client, query: Query, query_id: ClientQueryId) -> Result<(), DBError> {
         let client_id = (client.id.identity, client.id.address);
         let ci = self
             .clients
             .entry(client_id)
             .or_insert_with(|| ClientInfo::new(client.clone()));
-        let subscription_id = (client_id, request_id);
+        let subscription_id = (client_id, query_id);
         let hash = query.hash();
 
         if let Err(OccupiedError { .. }) = ci.subscriptions.try_insert(subscription_id, hash) {
             return Err(anyhow::anyhow!(
                 "Subscription with id {:?} already exists for client: {:?}",
-                request_id,
+                query_id,
                 client_id
             )
             .into());
@@ -485,13 +482,14 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use spacetimedb_client_api_messages::timestamp::Timestamp;
+    use spacetimedb_client_api_messages::websocket::QueryId;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, Address, AlgebraicType, Identity};
     use spacetimedb_primitives::TableId;
     use spacetimedb_vm::expr::CrudExpr;
 
     use super::SubscriptionManager;
     use crate::execution_context::Workload;
-    use crate::subscription::module_subscription_manager::ClientRequestId;
+    use crate::subscription::module_subscription_manager::ClientQueryId;
     use crate::{
         client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName},
         db::relational_db::{tests_utils::TestDB, RelationalDB},
@@ -574,9 +572,9 @@ mod tests {
 
         let client = Arc::new(client(0));
 
-        let request_id: ClientRequestId = 1;
+        let query_id: ClientQueryId = QueryId::new(1);
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client.clone(), plan.clone(), request_id)?;
+        subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
         Ok(())
@@ -593,20 +591,20 @@ mod tests {
 
         let client = Arc::new(client(0));
 
-        let request_id: ClientRequestId = 1;
+        let query_id: ClientQueryId = QueryId::new(1);
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client.clone(), plan.clone(), request_id)?;
+        subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
         let client_id = (client.id.identity, client.id.address);
-        subscriptions.remove_subscription(client_id, request_id)?;
+        subscriptions.remove_subscription(client_id, query_id)?;
         assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
 
         Ok(())
     }
 
     #[test]
-    fn test_unsubscribe_with_unknown_request_id_fails() -> ResultTest<()> {
+    fn test_unsubscribe_with_unknown_query_id_fails() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
         create_table(&db, "T")?;
@@ -615,12 +613,12 @@ mod tests {
 
         let client = Arc::new(client(0));
 
-        let request_id: ClientRequestId = 1;
+        let query_id: ClientQueryId = QueryId::new(1);
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client.clone(), plan.clone(), request_id)?;
+        subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
 
         let client_id = (client.id.identity, client.id.address);
-        assert!(subscriptions.remove_subscription(client_id, 2).is_err());
+        assert!(subscriptions.remove_subscription(client_id, QueryId::new(2)).is_err());
 
         Ok(())
     }
@@ -636,13 +634,13 @@ mod tests {
 
         let client = Arc::new(client(0));
 
-        let request_id: ClientRequestId = 1;
+        let query_id: ClientQueryId = QueryId::new(1);
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client.clone(), plan.clone(), request_id)?;
-        subscriptions.add_subscription(client.clone(), plan.clone(), request_id + 1)?;
+        subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
+        subscriptions.add_subscription(client.clone(), plan.clone(), QueryId::new(2))?;
 
         let client_id = (client.id.identity, client.id.address);
-        subscriptions.remove_subscription(client_id, request_id)?;
+        subscriptions.remove_subscription(client_id, query_id)?;
 
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
@@ -659,12 +657,12 @@ mod tests {
 
         let client = Arc::new(client(0));
 
-        let request_id: ClientRequestId = 1;
+        let query_id: ClientQueryId = QueryId::new(1);
         let mut subscriptions = SubscriptionManager::default();
-        subscriptions.add_subscription(client.clone(), plan.clone(), request_id)?;
+        subscriptions.add_subscription(client.clone(), plan.clone(), query_id)?;
 
         assert!(subscriptions
-            .add_subscription(client.clone(), plan.clone(), request_id)
+            .add_subscription(client.clone(), plan.clone(), query_id)
             .is_err());
 
         Ok(())

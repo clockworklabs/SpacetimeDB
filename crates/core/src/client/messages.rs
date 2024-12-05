@@ -12,7 +12,7 @@ use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::{bsatn, u256};
+use spacetimedb_sats::bsatn;
 use spacetimedb_vm::relation::MemTable;
 use std::sync::Arc;
 use std::time::Instant;
@@ -319,7 +319,7 @@ impl ToProtocol for SubscriptionMessage {
     type Encoded = SwitchedServerMessage;
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
         let request_id = self.request_id.unwrap_or(0);
-        let query_id = self.query_id.unwrap_or(ws::QueryId { hash: u256::ZERO });
+        let query_id = self.query_id.unwrap_or(ws::QueryId::new(0));
         let total_host_execution_duration_micros = self.timer.map_or(0, |t| t.elapsed().as_micros() as u64);
 
         match self.result {

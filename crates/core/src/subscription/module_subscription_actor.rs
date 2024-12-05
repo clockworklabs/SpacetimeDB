@@ -19,7 +19,7 @@ use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, FormatSwitch, JsonFormat, QueryId, SubscribeSingle, TableUpdate, Unsubscribe,
+    BsatnFormat, FormatSwitch, JsonFormat, SubscribeSingle, TableUpdate, Unsubscribe,
 };
 use spacetimedb_expr::check::compile_sql_sub;
 use spacetimedb_expr::ty::TyCtx;
@@ -108,7 +108,6 @@ impl ModuleSubscriptions {
         let tx = scopeguard::guard(self.relational_db.begin_tx(Workload::Subscribe), |tx| {
             self.relational_db.release_tx(tx);
         });
-        let request_id = request.request_id;
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let guard = self.subscriptions.read();
         let query = super::query::WHITESPACE.replace_all(&request.query, " ");
@@ -137,7 +136,7 @@ impl ModuleSubscriptions {
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
         let mut subscriptions = self.subscriptions.write();
-        subscriptions.add_subscription(sender.clone(), query.clone(), request.request_id)?;
+        subscriptions.add_subscription(sender.clone(), query.clone(), request.query_id)?;
 
         WORKER_METRICS
             .subscription_queries
@@ -154,8 +153,8 @@ impl ModuleSubscriptions {
         // spawn in another thread messages will need to be buffered until the state is sent out
         // on the wire
         let _ = sender.send_message(SubscriptionMessage {
-            request_id: Some(request_id),
-            query_id: Some(query.hash().into()),
+            request_id: Some(request.request_id),
+            query_id: Some(request.query_id),
             timer: Some(timer),
             result: SubscriptionResult::Subscribe(SubscriptionRows {
                 table_id: query.return_table(),
@@ -173,8 +172,7 @@ impl ModuleSubscriptions {
         timer: Instant,
     ) -> Result<(), DBError> {
         let mut subscriptions = self.subscriptions.write();
-        let query = match subscriptions.remove_subscription((sender.id.identity, sender.id.address), request.request_id)
-        {
+        let query = match subscriptions.remove_subscription((sender.id.identity, sender.id.address), request.query_id) {
             Ok(query) => query,
             Err(error) => {
                 // Apparently we ignore errors sending messages.
@@ -202,7 +200,7 @@ impl ModuleSubscriptions {
             .set(subscriptions.num_unique_queries() as i64);
         let _ = sender.send_message(SubscriptionMessage {
             request_id: Some(request.request_id),
-            query_id: Some(QueryId::new(query.hash().into())),
+            query_id: Some(request.query_id),
             timer: Some(timer),
             result: SubscriptionResult::Unsubscribe(SubscriptionRows {
                 table_id: query.return_table(),
