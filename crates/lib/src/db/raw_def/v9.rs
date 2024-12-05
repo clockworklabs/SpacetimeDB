@@ -479,9 +479,59 @@ impl RawModuleDefV9Builder {
         custom_ordering: bool,
     ) -> RawTableDefBuilder {
         let table_name = table_name.into();
+
         let product_type_ref = self.add_algebraic_type([], table_name.clone(), product_type.into(), custom_ordering);
 
         self.build_table(table_name, product_type_ref)
+    }
+
+    /// Build a new table with a product type, for testing.
+    /// Adds the type to the module.
+    pub fn build_table_with_new_type_for_tests(
+        &mut self,
+        table_name: impl Into<RawIdentifier>,
+        mut product_type: spacetimedb_sats::ProductType,
+        custom_ordering: bool,
+    ) -> RawTableDefBuilder {
+        self.add_expand_product_type_for_tests(&mut 0, &mut product_type);
+
+        self.build_table_with_new_type(table_name, product_type, custom_ordering)
+    }
+
+    fn add_expand_type_for_tests(&mut self, name_gen: &mut usize, ty: &mut AlgebraicType) {
+        if ty.is_valid_for_client_type_use() {
+            return;
+        }
+
+        match ty {
+            AlgebraicType::Product(prod_ty) => self.add_expand_product_type_for_tests(name_gen, prod_ty),
+            AlgebraicType::Sum(sum_type) => {
+                if let Some(wrapped) = sum_type.as_option_mut() {
+                    self.add_expand_type_for_tests(name_gen, wrapped);
+                } else {
+                    for elem in sum_type.variants.iter_mut() {
+                        self.add_expand_type_for_tests(name_gen, &mut elem.algebraic_type);
+                    }
+                }
+            }
+            AlgebraicType::Array(ty) => {
+                self.add_expand_type_for_tests(name_gen, &mut ty.elem_ty);
+                return;
+            }
+            _ => return,
+        }
+
+        // Make the type into a ref.
+        let name = *name_gen;
+        let add_ty = core::mem::replace(ty, AlgebraicType::U8);
+        *ty = AlgebraicType::Ref(self.add_algebraic_type([], format!("gen_{name}"), add_ty, true));
+        *name_gen += 1;
+    }
+
+    fn add_expand_product_type_for_tests(&mut self, name_gen: &mut usize, ty: &mut ProductType) {
+        for elem in ty.elements.iter_mut() {
+            self.add_expand_type_for_tests(name_gen, &mut elem.algebraic_type);
+        }
     }
 
     /// Add a type to the typespace, along with a type alias declaring its name.
