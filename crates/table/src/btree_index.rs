@@ -84,25 +84,13 @@ impl Iterator for TypedMultiMapRangeIter<'_> {
 pub struct BTreeIndexRangeIter<'a> {
     /// The iterator seeking for matching values.
     iter: TypedMultiMapRangeIter<'a>,
-    /// The number of pointers yielded thus far.
-    num_pointers_yielded: u64,
 }
 
 impl Iterator for BTreeIndexRangeIter<'_> {
     type Item = RowPointer;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|ptr| {
-            self.num_pointers_yielded += 1;
-            ptr
-        })
-    }
-}
-
-impl BTreeIndexRangeIter<'_> {
-    /// Returns the current number of pointers the iterator has returned thus far.
-    pub fn num_pointers_yielded(&self) -> u64 {
-        self.num_pointers_yielded
+        self.iter.next()
     }
 }
 
@@ -491,7 +479,6 @@ impl BTreeIndex {
     pub fn seek(&self, range: &impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter<'_> {
         BTreeIndexRangeIter {
             iter: self.idx.values_in_range(range),
-            num_pointers_yielded: 0,
         }
     }
 
