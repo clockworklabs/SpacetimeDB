@@ -275,6 +275,7 @@ impl RewriteRule for UniqueIxJoinRule {
                         // For the index columns?
                         data.columns.deref() == index_cols
                     }
+                    _ => false,
                 }),
             _ => false,
         }

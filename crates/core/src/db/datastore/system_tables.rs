@@ -719,6 +719,7 @@ impl From<ConstraintData> for StConstraintData {
     fn from(data: ConstraintData) -> Self {
         match data {
             ConstraintData::Unique(UniqueConstraintData { columns }) => StConstraintData::Unique { columns },
+            _ => unimplemented!(),
         }
     }
 }
