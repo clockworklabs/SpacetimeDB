@@ -186,11 +186,57 @@ impl TypedIndex {
             Self::String(this) => insert_at_type(this, cols, row_ref),
 
             Self::AlgebraicValue(this) => {
-                let key = row_ref.project_not_empty(cols)?;
+                let key = row_ref.project(cols)?;
                 this.insert(key, row_ref.pointer());
                 Ok(())
             }
         }
+    }
+
+    /// Add the row referred to by `row_ref` to the index `self`,
+    /// which must be keyed at `cols`.
+    ///
+    /// If `cols` is inconsistent with `self`,
+    /// or the `row_ref` has a row type other than that used for `self`,
+    /// this will behave oddly; it may return an error,
+    /// or may insert a nonsense value into the index.
+    /// Note, however, that it will not invoke undefined behavior.
+    ///
+    /// Assumes that this is a unique constraint
+    /// and returns `Ok(Some(existing_row))` if it's violated.
+    /// The index is not inserted to in that case.
+    fn insert_unique(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<Option<RowPointer>, InvalidFieldError> {
+        fn insert_at_type<T: Ord + ReadColumn>(
+            this: &mut Index<T>,
+            cols: &ColList,
+            row_ref: RowRef<'_>,
+        ) -> Result<Option<RowPointer>, InvalidFieldError> {
+            let col_pos = cols.as_singleton().unwrap();
+            let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
+            Ok(this.insert_unique(key, row_ref.pointer()).copied())
+        }
+        let unique_violation = match self {
+            Self::Bool(this) => insert_at_type(this, cols, row_ref),
+            Self::U8(this) => insert_at_type(this, cols, row_ref),
+            Self::I8(this) => insert_at_type(this, cols, row_ref),
+            Self::U16(this) => insert_at_type(this, cols, row_ref),
+            Self::I16(this) => insert_at_type(this, cols, row_ref),
+            Self::U32(this) => insert_at_type(this, cols, row_ref),
+            Self::I32(this) => insert_at_type(this, cols, row_ref),
+            Self::U64(this) => insert_at_type(this, cols, row_ref),
+            Self::I64(this) => insert_at_type(this, cols, row_ref),
+            Self::U128(this) => insert_at_type(this, cols, row_ref),
+            Self::I128(this) => insert_at_type(this, cols, row_ref),
+            Self::U256(this) => insert_at_type(this, cols, row_ref),
+            Self::I256(this) => insert_at_type(this, cols, row_ref),
+            Self::String(this) => insert_at_type(this, cols, row_ref),
+
+            Self::AlgebraicValue(this) => {
+                let key = row_ref.project(cols)?;
+                Ok(this.insert_unique(key, row_ref.pointer()).copied())
+            }
+        }?;
+        Ok(unique_violation)
     }
 
     /// Remove the row referred to by `row_ref` from the index `self`,
@@ -229,7 +275,7 @@ impl TypedIndex {
             Self::String(this) => delete_at_type(this, cols, row_ref),
 
             Self::AlgebraicValue(this) => {
-                let key = row_ref.project_not_empty(cols)?;
+                let key = row_ref.project(cols)?;
                 Ok(this.delete(&key, &row_ref.pointer()))
             }
         }
@@ -407,10 +453,25 @@ impl BTreeIndex {
 
     /// Inserts `ptr` with the value `row` to this index.
     /// This index will extract the necessary values from `row` based on `self.cols`.
-    ///
-    /// Return false if `ptr` was already indexed prior to this call.
     pub fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<(), InvalidFieldError> {
         self.idx.insert(cols, row_ref)
+    }
+
+    /// Inserts `ptr` with the value `row` to this index.
+    /// This index will extract the necessary values from `row` based on `self.cols`.
+    ///
+    /// Returns `Ok(Some(existing_row))` if this insertion would violate a unique constraint.
+    pub fn check_and_insert(
+        &mut self,
+        cols: &ColList,
+        row_ref: RowRef<'_>,
+    ) -> Result<Option<RowPointer>, InvalidFieldError> {
+        if self.is_unique {
+            self.idx.insert_unique(cols, row_ref)
+        } else {
+            self.idx.insert(cols, row_ref)?;
+            Ok(None)
+        }
     }
 
     /// Deletes `ptr` with its indexed value `col_value` from this index.
@@ -418,16 +479,6 @@ impl BTreeIndex {
     /// Returns whether `ptr` was present.
     pub fn delete(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
         self.idx.delete(cols, row_ref)
-    }
-
-    /// Returns an iterator over the rows that would violate the unique constraint of this index,
-    /// if `row` were inserted,
-    /// or `None`, if this index doesn't have a unique constraint.
-    pub fn get_rows_that_violate_unique_constraint<'a>(
-        &'a self,
-        row: &'a AlgebraicValue,
-    ) -> Option<BTreeIndexRangeIter<'a>> {
-        self.is_unique.then(|| self.seek(row))
     }
 
     /// Returns whether `value` is in this index.
@@ -445,12 +496,13 @@ impl BTreeIndex {
     }
 
     /// Extends [`BTreeIndex`] with `rows`.
-    /// Returns whether every element in `rows` was inserted.
     pub fn build_from_rows<'table>(
         &mut self,
         cols: &ColList,
         rows: impl IntoIterator<Item = RowRef<'table>>,
     ) -> Result<(), InvalidFieldError> {
+        // TODO(centril, correctness): consider `self.is_unique`.
+        //   Should not be able to add an index which would cause unique constraint violations.
         for row_ref in rows {
             self.insert(cols, row_ref)?;
         }
@@ -516,6 +568,16 @@ mod test {
         !index.is_unique || index.contains_any(&get_fields(cols, row))
     }
 
+    /// Returns an iterator over the rows that would violate the unique constraint of this index,
+    /// if `row` were inserted,
+    /// or `None`, if this index doesn't have a unique constraint.
+    fn get_rows_that_violate_unique_constraint<'a>(
+        index: &'a BTreeIndex,
+        row: &'a AlgebraicValue,
+    ) -> Option<BTreeIndexRangeIter<'a>> {
+        index.is_unique.then(|| index.seek(row))
+    }
+
     proptest! {
         #[test]
         fn remove_nonexistent_noop(((ty, cols, pv), is_unique) in (gen_row_and_cols(), any::<bool>())) {
@@ -538,7 +600,7 @@ mod test {
             prop_assert_eq!(index.idx.len(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
 
-            index.insert(&cols, row_ref).unwrap();
+            prop_assert_eq!(index.check_and_insert(&cols, row_ref).unwrap(), None);
             prop_assert_eq!(index.idx.len(), 1);
             prop_assert_eq!(index.contains_any(&value), true);
 
@@ -559,20 +621,21 @@ mod test {
             prop_assert_eq!(index.idx.len(), 0);
             prop_assert_eq!(violates_unique_constraint(&index, &cols, &pv), false);
             prop_assert_eq!(
-                index.get_rows_that_violate_unique_constraint(&value).unwrap().collect::<Vec<_>>(),
+                get_rows_that_violate_unique_constraint(&index, &value).unwrap().collect::<Vec<_>>(),
                 []
             );
 
             // Insert.
-            index.insert(&cols, row_ref).unwrap();
+            prop_assert_eq!(index.check_and_insert(&cols, row_ref).unwrap(), None);
 
             // Inserting again would be a problem.
             prop_assert_eq!(index.idx.len(), 1);
             prop_assert_eq!(violates_unique_constraint(&index, &cols, &pv), true);
             prop_assert_eq!(
-                index.get_rows_that_violate_unique_constraint(&value).unwrap().collect::<Vec<_>>(),
+                get_rows_that_violate_unique_constraint(&index, &value).unwrap().collect::<Vec<_>>(),
                 [row_ref.pointer()]
             );
+            prop_assert_eq!(index.check_and_insert(&cols, row_ref).unwrap(), Some(row_ref.pointer()));
         }
 
         #[test]
@@ -596,7 +659,7 @@ mod test {
                 let row = product![x];
                 let row_ref = table.insert(&mut blob_store, &row).unwrap().1;
                 val_to_ptr.insert(x, row_ref.pointer());
-                index.insert(&cols, row_ref).unwrap();
+                prop_assert_eq!(index.check_and_insert(&cols, row_ref).unwrap(), None);
             }
 
             fn test_seek(index: &BTreeIndex, val_to_ptr: &HashMap<u64, RowPointer>, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {

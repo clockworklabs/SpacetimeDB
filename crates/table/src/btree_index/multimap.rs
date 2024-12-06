@@ -37,6 +37,21 @@ impl<K: Ord, V: Ord> MultiMap<K, V> {
         self.map.entry(key).or_default().push(val);
     }
 
+    /// Inserts the relation `key -> val` to this multimap.
+    ///
+    /// If `key` was already present in the map, does not add an association with `val`.
+    /// Returns the existing associated value instead.
+    pub fn insert_unique(&mut self, key: K, val: V) -> Option<&V> {
+        // TODO(perf, centril): don't use a multimap at all for unique indices.
+        let vals = self.map.entry(key).or_default();
+        if vals.is_empty() {
+            vals.push(val);
+            None
+        } else {
+            Some(&vals[0])
+        }
+    }
+
     /// Deletes `key -> val` from this multimap.
     ///
     /// Returns whether `key -> val` was present.

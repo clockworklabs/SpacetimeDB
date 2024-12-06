@@ -205,15 +205,13 @@ impl Table {
     /// `MutTxId::insert` will ignore rows which are listed in the delete table.
     pub fn check_unique_constraints(
         &self,
-        row: &ProductValue,
+        row: RowRef<'_>,
         mut is_deleted: impl FnMut(RowPointer) -> bool,
     ) -> Result<(), UniqueConstraintViolation> {
         for (cols, index) in self.indexes.iter().filter(|(_, index)| index.is_unique) {
             let value = row.project(cols).unwrap();
-            if let Some(mut conflicts) = index.get_rows_that_violate_unique_constraint(&value) {
-                if conflicts.any(|ptr| !is_deleted(ptr)) {
-                    return Err(self.build_error_unique(index, cols, value));
-                }
+            if index.seek(&value).next().is_some_and(|ptr| !is_deleted(ptr)) {
+                return Err(self.build_error_unique(index, cols, value));
             }
         }
         Ok(())
@@ -236,27 +234,54 @@ impl Table {
         blob_store: &'a mut dyn BlobStore,
         row: &ProductValue,
     ) -> Result<(RowHash, RowRef<'a>), InsertError> {
-        // Check unique constraints.
-        // This error should take precedence over any other potential failures.
-        self.check_unique_constraints(
-            row,
-            // No need to worry about the committed vs tx state dichotomy here;
-            // just treat all rows in the table as live.
-            |_| false,
-        )?;
-
         // Insert the row into the page manager.
         let (hash, ptr) = self.insert_internal(blob_store, row)?;
 
+        // Insert row into indices and check unique constraints.
         // SAFETY: We just inserted `ptr`, so it must be present.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
-
-        // Insert row into indices.
-        for (cols, index) in self.indexes.iter_mut() {
-            index.insert(cols, row_ref).unwrap();
+        unsafe {
+            self.insert_into_indices(blob_store, ptr)?;
         }
 
+        // SAFETY: We just inserted `ptr`,
+        // and `insert_into_indices` didn't remove it,
+        // so it must be present.
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
         Ok((hash, row_ref))
+    }
+
+    /// Insert row identified by `ptr` into indices.
+    /// This also checks unique constraints.
+    /// Deletes the row if there were any violations.
+    ///
+    /// SAFETY: `self.is_row_present(row)` must hold.
+    /// Post-condition: If this method returns `Ok(_)`, the row still exists.
+    unsafe fn insert_into_indices<'a>(
+        &'a mut self,
+        blob_store: &'a mut dyn BlobStore,
+        ptr: RowPointer,
+    ) -> Result<(), InsertError> {
+        let mut index_error = None;
+        for (cols, index) in self.indexes.iter_mut() {
+            // SAFETY: We just inserted `ptr`, so it must be present.
+            let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+            if index.check_and_insert(cols, row_ref).unwrap().is_some() {
+                let value = row_ref.project(cols).unwrap();
+                let error = InsertError::IndexError(UniqueConstraintViolation::build(&self.schema, index, cols, value));
+                index_error = Some(error);
+                break;
+            }
+        }
+        if let Some(err) = index_error {
+            // Found unique constraint violation.
+            // Undo the insertion.
+            // SAFETY: We just inserted `ptr`, so it must be present.
+            unsafe {
+                self.delete_unchecked(blob_store, ptr);
+            }
+            return Err(err);
+        }
+        Ok(())
     }
 
     /// Insert a `row` into this table.
@@ -467,8 +492,7 @@ impl Table {
         // Do this before the actual deletion, as `index.delete` needs a `RowRef`
         // so it can extract the appropriate value.
         for (cols, index) in self.indexes.iter_mut() {
-            let deleted = index.delete(cols, row_ref).unwrap();
-            debug_assert!(deleted);
+            index.delete(cols, row_ref).unwrap();
         }
 
         // SAFETY: We've checked above that `self.is_row_present(ptr)`.
@@ -745,7 +769,7 @@ impl<'a> RowRef<'a> {
     ///
     /// If `cols` contains zero or more than one column, the values of the projected columns are wrapped in a [`ProductValue`].
     /// If `cols` is a single column, the value of that column is returned without wrapping in a `ProductValue`.
-    pub fn project_not_empty(self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
+    pub fn project(self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
         if let Some(head) = cols.as_singleton() {
             return self.read_col(head).map_err(|_| head.into());
         }
@@ -1044,18 +1068,10 @@ pub struct UniqueConstraintViolation {
     pub value: AlgebraicValue,
 }
 
-// Private API:
-impl Table {
+impl UniqueConstraintViolation {
     /// Returns a unique constraint violation error for the given `index`
     /// and the `value` that would have been duplicated.
-    fn build_error_unique(
-        &self,
-        index: &BTreeIndex,
-        cols: &ColList,
-        value: AlgebraicValue,
-    ) -> UniqueConstraintViolation {
-        let schema = self.get_schema();
-
+    fn build(schema: &TableSchema, index: &BTreeIndex, cols: &ColList, value: AlgebraicValue) -> Self {
         // Fetch the table name.
         let table_name = schema.table_name.clone();
 
@@ -1074,12 +1090,27 @@ impl Table {
             .index_name
             .clone();
 
-        UniqueConstraintViolation {
+        Self {
             constraint_name,
             table_name,
             cols,
             value,
         }
+    }
+}
+
+// Private API:
+impl Table {
+    /// Returns a unique constraint violation error for the given `index`
+    /// and the `value` that would have been duplicated.
+    fn build_error_unique(
+        &self,
+        index: &BTreeIndex,
+        cols: &ColList,
+        value: AlgebraicValue,
+    ) -> UniqueConstraintViolation {
+        let schema = self.get_schema();
+        UniqueConstraintViolation::build(schema, index, cols, value)
     }
 
     /// Returns a new empty table with the given `schema`, `row_layout`, and `static_layout`s
@@ -1287,8 +1318,9 @@ pub(crate) mod test {
             Err(e) => panic!("Expected UniqueConstraintViolation but found {:?}", e),
         }
 
-        // Second insert did not clear the hash as we had a constraint violation.
-        assert_eq!(hash_post_ins, *table.inner.pages[pi].unmodified_hash().unwrap());
+        // Second insert did clear the hash while we had a constraint violation,
+        // as constraint checking is done after insertion and then rolled back.
+        assert_eq!(table.inner.pages[pi].unmodified_hash(), None);
     }
 
     fn insert_retrieve_body(ty: impl Into<ProductType>, val: impl Into<ProductValue>) -> TestCaseResult {
