@@ -1,17 +1,21 @@
 use super::{Project, SqlExpr, SqlFrom};
 
-/// The AST for the SQL subscription language
-pub enum SqlAst {
-    Select(SqlSelect),
-    /// UNION ALL
-    Union(Box<SqlAst>, Box<SqlAst>),
-    /// EXCEPT ALL
-    Minus(Box<SqlAst>, Box<SqlAst>),
-}
-
 /// A SELECT statement in the SQL subscription language
 pub struct SqlSelect {
     pub project: Project,
-    pub from: SqlFrom<SqlAst>,
+    pub from: SqlFrom,
     pub filter: Option<SqlExpr>,
+}
+
+impl SqlSelect {
+    pub fn qualify_vars(self) -> Self {
+        match &self.from {
+            SqlFrom::Expr(_, alias) => Self {
+                project: self.project.qualify_vars(alias.clone()),
+                filter: self.filter.map(|expr| expr.qualify_vars(alias.clone())),
+                from: self.from,
+            },
+            SqlFrom::Join(..) => self,
+        }
+    }
 }
