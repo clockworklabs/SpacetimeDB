@@ -202,7 +202,9 @@ impl TypedIndex {
     /// or may insert a nonsense value into the index.
     /// Note, however, that it will not invoke undefined behavior.
     ///
-    /// Assumes that this is a unique constraint and returns `Ok(Some(existing_row))` if it's violated.
+    /// Assumes that this is a unique constraint
+    /// and returns `Ok(Some(existing_row))` if it's violated.
+    /// The index is not inserted to in that case.
     fn insert_unique(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<Option<RowPointer>, InvalidFieldError> {
         fn insert_at_type<T: Ord + ReadColumn>(
             this: &mut Index<T>,

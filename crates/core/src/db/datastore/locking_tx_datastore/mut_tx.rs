@@ -1261,7 +1261,8 @@ impl MutTxId {
                     }
 
                     // Pacify the borrow checker.
-                    // SAFETY: `ptr` came from `tx_table.insert` just now without any interleaving calls.
+                    // SAFETY: `tx_row_ptr` came from `tx_table.insert` just now
+                    // without any interleaving `&mut` calls that could invalidate the pointer.
                     let tx_row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
 
                     // (2) The `tx_row_ref` did not violate a unique constraint *within* the `tx_table`,
