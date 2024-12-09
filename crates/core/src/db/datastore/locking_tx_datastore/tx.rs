@@ -46,12 +46,7 @@ impl StateView for TxId {
         range: R,
     ) -> Result<IterByColRange<'_, R>> {
         match self.committed_state_shared_lock.index_seek(table_id, &cols, &range) {
-            Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter::new(
-                table_id,
-                None,
-                &self.committed_state_shared_lock,
-                committed_rows,
-            ))),
+            Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter::tx(committed_rows))),
             None => self
                 .committed_state_shared_lock
                 .iter_by_col_range(table_id, cols, range),

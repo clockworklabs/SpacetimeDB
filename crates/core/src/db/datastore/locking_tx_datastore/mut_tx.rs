@@ -1424,11 +1424,7 @@ impl StateView for MutTxId {
 
     fn iter(&self, table_id: TableId) -> Result<Iter<'_>> {
         if self.table_name(table_id).is_some() {
-            return Ok(Iter::new(
-                table_id,
-                Some(&self.tx_state),
-                &self.committed_state_write_lock,
-            ));
+            return Ok(Iter::mut_tx(table_id, &self.tx_state, &self.committed_state_write_lock));
         }
         Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
@@ -1463,10 +1459,9 @@ impl StateView for MutTxId {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
             match self.committed_state_write_lock.index_seek(table_id, &cols, &range) {
-                Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter::new(
+                Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter::mut_tx(
                     table_id,
-                    Some(&self.tx_state),
-                    &self.committed_state_write_lock,
+                    &self.tx_state,
                     committed_rows,
                 ))),
                 None => {
