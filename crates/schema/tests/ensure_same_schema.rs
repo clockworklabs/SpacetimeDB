@@ -1,8 +1,8 @@
+use serial_test::serial;
 use spacetimedb_cli::generate::extract_descriptions;
 use spacetimedb_schema::auto_migrate::{ponder_auto_migrate, AutoMigrateStep};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
-use serial_test::serial;
 
 fn get_normalized_schema(module_name: &str) -> ModuleDef {
     let module = CompiledModule::compile(module_name, CompilationMode::Debug);
