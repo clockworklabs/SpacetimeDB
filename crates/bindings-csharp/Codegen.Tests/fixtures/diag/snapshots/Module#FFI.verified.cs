@@ -65,28 +65,29 @@ namespace SpacetimeDB
                     PrimaryKey: [],
                     Indexes:
                     [
-                        new(null, null, new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1]))
+                        new(
+                            Name: null,
+                            AccessorName: "IdentityField",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                        )
                     ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
                             TestAutoIncNotInteger,
                             global::TestAutoIncNotInteger
-                        >.MakeUniqueConstraint(
-                            1,
-                            nameof(global::TestAutoIncNotInteger.IdentityField)
-                        )
+                        >.MakeUniqueConstraint(1)
                     ],
                     Sequences:
                     [
                         SpacetimeDB.Internal.ITableView<
                             TestAutoIncNotInteger,
                             global::TestAutoIncNotInteger
-                        >.MakeSequence(0, nameof(global::TestAutoIncNotInteger.AutoIncField)),
+                        >.MakeSequence(0),
                         SpacetimeDB.Internal.ITableView<
                             TestAutoIncNotInteger,
                             global::TestAutoIncNotInteger
-                        >.MakeSequence(1, nameof(global::TestAutoIncNotInteger.IdentityField))
+                        >.MakeSequence(1)
                     ],
                     Schedule: null,
                     TableType: SpacetimeDB.Internal.TableType.User,
@@ -230,24 +231,25 @@ namespace SpacetimeDB
                     PrimaryKey: [0],
                     Indexes:
                     [
-                        new(null, null, new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0]))
+                        new(
+                            Name: null,
+                            AccessorName: "ScheduledId",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        )
                     ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
                             TestIncompatibleSchedule1,
                             global::TestIncompatibleSchedule
-                        >.MakeUniqueConstraint(
-                            0,
-                            nameof(global::TestIncompatibleSchedule.ScheduledId)
-                        )
+                        >.MakeUniqueConstraint(0)
                     ],
                     Sequences:
                     [
                         SpacetimeDB.Internal.ITableView<
                             TestIncompatibleSchedule1,
                             global::TestIncompatibleSchedule
-                        >.MakeSequence(0, nameof(global::TestIncompatibleSchedule.ScheduledId))
+                        >.MakeSequence(0)
                     ],
                     Schedule: SpacetimeDB.Internal.ITableView<
                         TestIncompatibleSchedule1,
@@ -338,24 +340,25 @@ namespace SpacetimeDB
                     PrimaryKey: [0],
                     Indexes:
                     [
-                        new(null, null, new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0]))
+                        new(
+                            Name: null,
+                            AccessorName: "ScheduledId",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        )
                     ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
                             TestIncompatibleSchedule2,
                             global::TestIncompatibleSchedule
-                        >.MakeUniqueConstraint(
-                            0,
-                            nameof(global::TestIncompatibleSchedule.ScheduledId)
-                        )
+                        >.MakeUniqueConstraint(0)
                     ],
                     Sequences:
                     [
                         SpacetimeDB.Internal.ITableView<
                             TestIncompatibleSchedule2,
                             global::TestIncompatibleSchedule
-                        >.MakeSequence(0, nameof(global::TestIncompatibleSchedule.ScheduledId))
+                        >.MakeSequence(0)
                     ],
                     Schedule: null,
                     TableType: SpacetimeDB.Internal.TableType.User,
@@ -435,25 +438,27 @@ namespace SpacetimeDB
                     PrimaryKey: [1],
                     Indexes:
                     [
-                        new(null, null, new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])),
-                        new(null, null, new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1]))
+                        new(
+                            Name: null,
+                            AccessorName: "UniqueField",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        ),
+                        new(
+                            Name: null,
+                            AccessorName: "PrimaryKeyField",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                        )
                     ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
                             TestUniqueNotEquatable,
                             global::TestUniqueNotEquatable
-                        >.MakeUniqueConstraint(
-                            0,
-                            nameof(global::TestUniqueNotEquatable.UniqueField)
-                        ),
+                        >.MakeUniqueConstraint(0),
                         SpacetimeDB.Internal.ITableView<
                             TestUniqueNotEquatable,
                             global::TestUniqueNotEquatable
-                        >.MakeUniqueConstraint(
-                            1,
-                            nameof(global::TestUniqueNotEquatable.PrimaryKeyField)
-                        )
+                        >.MakeUniqueConstraint(1)
                     ],
                     Sequences: [],
                     Schedule: null,

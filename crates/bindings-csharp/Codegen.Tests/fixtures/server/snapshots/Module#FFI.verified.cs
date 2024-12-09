@@ -53,7 +53,11 @@ namespace SpacetimeDB
                     PrimaryKey: [],
                     Indexes:
                     [
-                        new(null, null, new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0, 1, 2]))
+                        new(
+                            Name: null,
+                            AccessorName: "Location",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0, 1, 2])
+                        )
                     ],
                     Constraints: [],
                     Sequences: [],
@@ -227,16 +231,28 @@ namespace SpacetimeDB
                     PrimaryKey: [0],
                     Indexes:
                     [
-                        new(null, null, new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])),
-                        new(null, null, new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1, 2])),
-                        new(null, null, new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([3]))
+                        new(
+                            Name: null,
+                            AccessorName: "Id",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        ),
+                        new(
+                            Name: null,
+                            AccessorName: "Location",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1, 2])
+                        ),
+                        new(
+                            Name: null,
+                            AccessorName: "Faction",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([3])
+                        )
                     ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
                             BTreeViews,
                             global::BTreeViews
-                        >.MakeUniqueConstraint(0, nameof(global::BTreeViews.Id))
+                        >.MakeUniqueConstraint(0)
                     ],
                     Sequences: [],
                     Schedule: null,
@@ -405,22 +421,30 @@ namespace SpacetimeDB
                     PrimaryKey: [1],
                     Indexes:
                     [
-                        new(null, null, new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])),
-                        new(null, null, new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0]))
+                        new(
+                            Name: null,
+                            AccessorName: "Foo",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                        ),
+                        new(
+                            Name: null,
+                            AccessorName: "Name",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        )
                     ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
                             MultiTable1,
                             global::MultiTableRow
-                        >.MakeUniqueConstraint(1, nameof(global::MultiTableRow.Foo))
+                        >.MakeUniqueConstraint(1)
                     ],
                     Sequences:
                     [
                         SpacetimeDB.Internal.ITableView<
                             MultiTable1,
                             global::MultiTableRow
-                        >.MakeSequence(1, nameof(global::MultiTableRow.Foo))
+                        >.MakeSequence(1)
                     ],
                     Schedule: null,
                     TableType: SpacetimeDB.Internal.TableType.User,
@@ -519,21 +543,25 @@ namespace SpacetimeDB
                     PrimaryKey: [],
                     Indexes:
                     [
-                        new(null, null, new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([2]))
+                        new(
+                            Name: null,
+                            AccessorName: "Bar",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([2])
+                        )
                     ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
                             MultiTable2,
                             global::MultiTableRow
-                        >.MakeUniqueConstraint(2, nameof(global::MultiTableRow.Bar))
+                        >.MakeUniqueConstraint(2)
                     ],
                     Sequences:
                     [
                         SpacetimeDB.Internal.ITableView<
                             MultiTable2,
                             global::MultiTableRow
-                        >.MakeSequence(1, nameof(global::MultiTableRow.Foo))
+                        >.MakeSequence(1)
                     ],
                     Schedule: null,
                     TableType: SpacetimeDB.Internal.TableType.User,
@@ -637,21 +665,25 @@ namespace SpacetimeDB
                     PrimaryKey: [0],
                     Indexes:
                     [
-                        new(null, null, new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0]))
+                        new(
+                            Name: null,
+                            AccessorName: "Id",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        )
                     ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
                             PublicTable,
                             global::PublicTable
-                        >.MakeUniqueConstraint(0, nameof(global::PublicTable.Id))
+                        >.MakeUniqueConstraint(0)
                     ],
                     Sequences:
                     [
                         SpacetimeDB.Internal.ITableView<
                             PublicTable,
                             global::PublicTable
-                        >.MakeSequence(0, nameof(global::PublicTable.Id))
+                        >.MakeSequence(0)
                     ],
                     Schedule: null,
                     TableType: SpacetimeDB.Internal.TableType.User,
@@ -718,24 +750,25 @@ namespace SpacetimeDB
                     PrimaryKey: [1],
                     Indexes:
                     [
-                        new(null, null, new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1]))
+                        new(
+                            Name: null,
+                            AccessorName: "ScheduledId",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                        )
                     ],
                     Constraints:
                     [
                         SpacetimeDB.Internal.ITableView<
                             SendMessageTimer,
                             global::Timers.SendMessageTimer
-                        >.MakeUniqueConstraint(
-                            1,
-                            nameof(global::Timers.SendMessageTimer.ScheduledId)
-                        )
+                        >.MakeUniqueConstraint(1)
                     ],
                     Sequences:
                     [
                         SpacetimeDB.Internal.ITableView<
                             SendMessageTimer,
                             global::Timers.SendMessageTimer
-                        >.MakeSequence(1, nameof(global::Timers.SendMessageTimer.ScheduledId))
+                        >.MakeSequence(1)
                     ],
                     Schedule: SpacetimeDB.Internal.ITableView<
                         SendMessageTimer,
