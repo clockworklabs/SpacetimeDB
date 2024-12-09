@@ -1,12 +1,12 @@
-use spacetimedb::energy;
+use anyhow::Context;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, EnergyBalance, Node, Replica};
+use spacetimedb::{energy, stdb_path};
 
 use spacetimedb_client_api_messages::name::{
     DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, Tld, TldRef,
 };
 use spacetimedb_lib::bsatn;
-use spacetimedb_paths::standalone::ControlDbDir;
 
 #[cfg(test)]
 mod tests;
@@ -37,6 +37,8 @@ pub enum Error {
     DomainRegistrationFailure(DomainName),
     #[error("failed to decode data")]
     Decoding(#[from] bsatn::DecodeError),
+    #[error("failed to encode data")]
+    Encoding(#[from] bsatn::EncodeError),
     #[error(transparent)]
     DomainParsing(#[from] DomainParsingError),
     #[error(transparent)]
@@ -57,9 +59,9 @@ impl From<sled::Error> for Error {
 }
 
 impl ControlDb {
-    pub fn new(path: &ControlDbDir) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let config = sled::Config::default()
-            .path(path)
+            .path(stdb_path("control_node/control_db"))
             .flush_every_ms(Some(50))
             .mode(sled::Mode::HighThroughput);
         let db = config.open()?;
@@ -77,12 +79,23 @@ impl ControlDb {
     }
 }
 
+/// A helper to convert a `sled::IVec` into an `Identity`.
+/// This expects the identity to be in LITTLE_ENDIAN format.
+/// This fails if the `sled::IVec` is not 32 bytes long.
+fn identity_from_le_ivec(ivec: &sled::IVec) -> Result<Identity> {
+    let identity_bytes: [u8; 32] = ivec
+        .as_ref()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("invalid size for identity: {}", ivec.len()))?;
+    Ok(Identity::from_byte_array(identity_bytes))
+}
+
 impl ControlDb {
     pub fn spacetime_dns(&self, domain: &DomainName) -> Result<Option<Identity>> {
         let tree = self.db.open_tree("dns")?;
         let value = tree.get(domain.to_lowercase().as_bytes())?;
         if let Some(value) = value {
-            return Ok(Some(Identity::from_slice(&value[..])));
+            return Ok(Some(identity_from_le_ivec(&value)?));
         }
         Ok(None)
     }
@@ -178,7 +191,9 @@ impl ControlDb {
         let current_owner = tree.get(&key)?;
         match current_owner {
             Some(owner) => {
-                if Identity::from_slice(&owner[..]) == owner_identity {
+                let current_owner =
+                    identity_from_le_ivec(&owner).context("Invalid current owner in top_level_domains")?;
+                if current_owner == owner_identity {
                     Ok(RegisterTldResult::AlreadyRegistered { domain: tld })
                 } else {
                     Ok(RegisterTldResult::Unauthorized { domain: tld })
@@ -198,7 +213,7 @@ impl ControlDb {
     pub fn spacetime_lookup_tld(&self, domain: impl AsRef<TldRef>) -> Result<Option<Identity>> {
         let tree = self.db.open_tree("top_level_domains")?;
         match tree.get(domain.as_ref().to_lowercase().as_bytes())? {
-            Some(owner) => Ok(Some(Identity::from_slice(&owner[..]))),
+            Some(owner) => Ok(Some(identity_from_le_ivec(&owner)?)),
             None => Ok(None),
         }
     }
@@ -209,7 +224,7 @@ impl ControlDb {
         let scan_key: &[u8] = b"";
         for result in tree.range(scan_key..) {
             let (_key, value) = result?;
-            let database = compat::Database::from_slice(&value).unwrap().into();
+            let database = compat::Database::from_slice(&value)?.into();
             databases.push(database);
         }
         Ok(databases)
@@ -229,7 +244,7 @@ impl ControlDb {
         let key = identity.to_be_byte_array();
         let value = tree.get(&key[..])?;
         if let Some(value) = value {
-            let database = compat::Database::from_slice(&value[..]).unwrap().into();
+            let database = compat::Database::from_slice(&value[..])?.into();
             return Ok(Some(database));
         }
         Ok(None)
@@ -246,7 +261,7 @@ impl ControlDb {
 
         database.id = id;
 
-        let buf = sled::IVec::from(compat::Database::from(database).to_vec().unwrap());
+        let buf = sled::IVec::from(compat::Database::from(database).to_vec()?);
 
         tree.insert(key, buf.clone())?;
 
@@ -278,7 +293,7 @@ impl ControlDb {
         let scan_key: &[u8] = b"";
         for result in tree.range(scan_key..) {
             let (_key, value) = result?;
-            let replica = bsatn::from_slice(&value[..]).unwrap();
+            let replica = bsatn::from_slice(&value[..])?;
             replicas.push(replica);
         }
         Ok(replicas)
@@ -378,7 +393,7 @@ impl ControlDb {
     pub fn _update_node(&self, node: Node) -> Result<()> {
         let tree = self.db.open_tree("node")?;
 
-        let buf = bsatn::to_vec(&node).unwrap();
+        let buf = bsatn::to_vec(&node)?;
 
         tree.insert(node.id.to_be_bytes(), buf)?;
         Ok(())
@@ -405,15 +420,13 @@ impl ControlDb {
                 }
             };
             let arr = <[u8; 16]>::try_from(balance_entry.1.as_ref()).map_err(|_| bsatn::DecodeError::BufferLength {
-                for_type: "balance_entry",
+                for_type: "balance_entry".into(),
                 expected: 16,
                 given: balance_entry.1.len(),
             })?;
             let balance = i128::from_be_bytes(arr);
-            let energy_balance = EnergyBalance {
-                identity: Identity::from_slice(balance_entry.0.iter().as_slice()),
-                balance,
-            };
+            let identity = identity_from_le_ivec(&balance_entry.0).context("invalid identity in energy_budget")?;
+            let energy_balance = EnergyBalance { identity, balance };
             balances.push(energy_balance);
         }
         Ok(balances)
@@ -427,7 +440,7 @@ impl ControlDb {
         let value = tree.get(identity.to_byte_array())?;
         if let Some(value) = value {
             let arr = <[u8; 16]>::try_from(value.as_ref()).map_err(|_| bsatn::DecodeError::BufferLength {
-                for_type: "Identity",
+                for_type: "Identity".into(),
                 expected: 16,
                 given: value.as_ref().len(),
             })?;
