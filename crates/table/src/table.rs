@@ -1,7 +1,7 @@
 use super::{
     bflatn_from::serialize_row_from_page,
     bflatn_to::write_row_to_pages,
-    blob_store::{BlobStore, NullBlobStore},
+    blob_store::BlobStore,
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     eq::eq_row_in_page,
     eq_to_pv::eq_row_in_page_to_pv,
@@ -208,7 +208,7 @@ impl Table {
         row: RowRef<'_>,
         mut is_deleted: impl FnMut(RowPointer) -> bool,
     ) -> Result<(), UniqueConstraintViolation> {
-        for (cols, index) in self.indexes.iter().filter(|(_, index)| index.is_unique) {
+        for (cols, index) in self.indexes.iter().filter(|(_, index)| index.is_unique()) {
             let value = row.project(cols).unwrap();
             if index.seek(&value).next().is_some_and(|ptr| !is_deleted(ptr)) {
                 return Err(self.build_error_unique(index, cols, value));
@@ -607,9 +607,16 @@ impl Table {
     /// Inserts a new `index` into the table.
     ///
     /// The index will be populated using the rows of the table.
+    ///
+    /// # Panics
+    ///
     /// Panics if `cols` has some column that is out of bounds of the table's row layout.
+    /// Also panics if any row would violate `index`'s unique constraint, if it has one.
     pub fn insert_index(&mut self, blob_store: &dyn BlobStore, cols: ColList, mut index: BTreeIndex) {
-        index.build_from_rows(&cols, self.scan_rows(blob_store)).unwrap();
+        index
+            .build_from_rows(&cols, self.scan_rows(blob_store))
+            .expect("`cols` should consist of valid columns for this table")
+            .inspect(|ptr| panic!("adding `index` should cause no unique constraint violations, but {ptr:?} would"));
         self.indexes.insert(cols, index);
     }
 
@@ -656,11 +663,9 @@ impl Table {
         let mut new =
             Table::new_with_indexes_capacity(schema, layout, sbl, visitor, squashed_offset, self.indexes.len());
 
+        // Clone the index structure. The table is empty, so no need to `build_from_rows`.
         for (cols, index) in self.indexes.iter() {
-            // `new` is known to be empty (we just constructed it!),
-            // so no need for an actual blob store here.
-            let index = new.new_index(index.index_id, cols, index.is_unique).unwrap();
-            new.insert_index(&NullBlobStore, cols.clone(), index);
+            new.indexes.insert(cols.clone(), index.clone_structure());
         }
         new
     }
@@ -1096,7 +1101,7 @@ impl UniqueConstraintViolation {
 impl Table {
     /// Returns a unique constraint violation error for the given `index`
     /// and the `value` that would have been duplicated.
-    fn build_error_unique(
+    pub fn build_error_unique(
         &self,
         index: &BTreeIndex,
         cols: &ColList,
@@ -1231,7 +1236,7 @@ impl Table {
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
-    use crate::blob_store::HashMapBlobStore;
+    use crate::blob_store::{HashMapBlobStore, NullBlobStore};
     use crate::page::tests::hash_unmodified_save_get;
     use crate::var_len::VarLenGranule;
     use proptest::prelude::*;

@@ -721,12 +721,12 @@ impl IndexedRow for Box<str> {
     }
 }
 
-fn make_table_with_indexes<R: IndexedRow>() -> Table {
+fn make_table_with_indexes<R: IndexedRow>(unique: bool) -> Table {
     let schema = R::make_schema();
     let mut tbl = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
 
     let cols = R::indexed_columns();
-    let idx = tbl.new_index(IndexId::SENTINEL, &cols, false).unwrap();
+    let idx = tbl.new_index(IndexId::SENTINEL, &cols, unique).unwrap();
     tbl.insert_index(&NullBlobStore, cols, idx);
 
     tbl
@@ -774,10 +774,10 @@ fn clear_all_same<R: IndexedRow>(tbl: &mut Table, val_same: u64) {
     }
 }
 
-fn bench_id_for_index(name: &str, num_rows: u64, same_ratio: f64, num_same: usize) -> BenchmarkId {
+fn bench_id_for_index(name: &str, num_rows: u64, same_ratio: f64, num_same: usize, unique: bool) -> BenchmarkId {
     BenchmarkId::new(
         name,
-        format_args!("(rows = {num_rows}, sratio = {same_ratio}, snum = {num_same})"),
+        format_args!("(rows = {num_rows}, sratio = {same_ratio}, snum = {num_same}, unique = {unique})"),
     )
 }
 
@@ -785,11 +785,16 @@ fn make_table_with_same_ratio<R: IndexedRow>(
     mut make_row: impl FnMut(u64) -> R,
     num_rows: u64,
     same_ratio: f64,
+    unique: bool,
 ) -> (Table, usize, u64) {
-    let mut tbl = make_table_with_indexes::<R>();
+    let mut tbl = make_table_with_indexes::<R>(unique);
 
-    let num_same = (num_rows as f64 * same_ratio) as usize;
-    let num_same = num_same.max(1);
+    let num_same = if unique {
+        1
+    } else {
+        let num_same = (num_rows as f64 * same_ratio) as usize;
+        num_same.max(1)
+    };
     let num_diff = num_rows / num_same as u64;
 
     for i in 0..num_diff {
@@ -808,11 +813,11 @@ fn index_insert(c: &mut Criterion) {
         same_ratio: f64,
     ) {
         let make_row_move = &mut make_row;
-        let (tbl, num_same, _) = make_table_with_same_ratio::<R>(make_row_move, num_rows, same_ratio);
+        let (tbl, num_same, _) = make_table_with_same_ratio::<R>(make_row_move, num_rows, same_ratio, false);
         let mut ctx = (tbl, NullBlobStore);
 
         group.bench_with_input(
-            bench_id_for_index(name, num_rows, same_ratio, num_same),
+            bench_id_for_index(name, num_rows, same_ratio, num_same, false),
             &num_rows,
             |b, &num_rows| {
                 let pre = |_, (tbl, _): &mut (Table, NullBlobStore)| {
@@ -859,12 +864,13 @@ fn index_seek(c: &mut Criterion) {
         name: &str,
         num_rows: u64,
         same_ratio: f64,
+        unique: bool,
     ) {
         let make_row_move = &mut make_row;
-        let (tbl, num_same, num_diff) = make_table_with_same_ratio::<R>(make_row_move, num_rows, same_ratio);
+        let (tbl, num_same, num_diff) = make_table_with_same_ratio::<R>(make_row_move, num_rows, same_ratio, unique);
 
         group.bench_with_input(
-            bench_id_for_index(name, num_rows, same_ratio, num_same),
+            bench_id_for_index(name, num_rows, same_ratio, num_same, unique),
             &num_diff,
             |b, &num_diff| {
                 let col_to_seek = black_box(R::column_value_from_u64(num_diff / 2));
@@ -896,25 +902,27 @@ fn index_seek(c: &mut Criterion) {
         group: Group<'_, '_>,
         name: &str,
         same_ratio: f64,
+        unique: bool,
     ) {
         group.throughput(Throughput::Elements(1));
         for num_rows in powers(TABLE_SIZE_POWERS) {
-            bench_index_seek(&mut make_row, group, name, num_rows, same_ratio);
+            bench_index_seek(&mut make_row, group, name, num_rows, same_ratio, unique);
         }
     }
 
     let mut group = c.benchmark_group("index_seek");
 
-    bench_many_table_sizes::<u64>(FixedLenRow::from_u64, &mut group, "u64", 0.0);
-    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.00);
-    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.01);
-    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.05);
-    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.10);
-    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.25);
-    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.50);
-    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 1.00);
-    bench_many_table_sizes::<U32x64>(FixedLenRow::from_u64, &mut group, "U32x64", 0.0);
-    bench_many_table_sizes::<Box<str>>(|i| i.to_string().into(), &mut group, "String", 0.0);
+    bench_many_table_sizes::<u64>(FixedLenRow::from_u64, &mut group, "u64", 0.0, false);
+    bench_many_table_sizes::<u64>(FixedLenRow::from_u64, &mut group, "u64", 0.0, true);
+    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.00, false);
+    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.01, false);
+    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.05, false);
+    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.10, false);
+    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.25, false);
+    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 0.50, false);
+    bench_many_table_sizes::<U32x8>(FixedLenRow::from_u64, &mut group, "U32x8", 1.00, false);
+    bench_many_table_sizes::<U32x64>(FixedLenRow::from_u64, &mut group, "U32x64", 0.0, false);
+    bench_many_table_sizes::<Box<str>>(|i| i.to_string().into(), &mut group, "String", 0.0, false);
 }
 
 fn index_delete(c: &mut Criterion) {
@@ -926,10 +934,10 @@ fn index_delete(c: &mut Criterion) {
         same_ratio: f64,
     ) {
         let make_row_move = &mut make_row;
-        let (mut tbl, num_same, _) = make_table_with_same_ratio::<R>(make_row_move, num_rows, same_ratio);
+        let (mut tbl, num_same, _) = make_table_with_same_ratio::<R>(make_row_move, num_rows, same_ratio, false);
 
         group.bench_with_input(
-            bench_id_for_index(name, num_rows, same_ratio, num_same),
+            bench_id_for_index(name, num_rows, same_ratio, num_same, false),
             &num_rows,
             |b, &num_rows| {
                 let pre = |_, tbl: &mut Table| {

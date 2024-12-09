@@ -399,15 +399,35 @@ impl MutTxId {
             _ => unimplemented!(),
         };
         // Create and build the index.
+        //
+        // Ensure adding the index does not cause a unique constraint violation due to
+        // the existing rows having the same value for some column(s).
         let mut insert_index = table.new_index(index.index_id, &columns, is_unique)?;
-        insert_index.build_from_rows(&columns, table.scan_rows(blob_store))?;
+        let mut build_from_rows = |table: &Table, bs: &dyn BlobStore| -> Result<()> {
+            if let Some(violation) = insert_index.build_from_rows(&columns, table.scan_rows(bs))? {
+                let violation = table
+                    .get_row_ref(bs, violation)
+                    .expect("row came from scanning the table")
+                    .project(&columns)
+                    .expect("`cols` should consist of valid columns for this table");
+                return Err(IndexError::from(table.build_error_unique(&insert_index, &columns, violation)).into());
+            }
+            Ok(())
+        };
+        build_from_rows(table, blob_store)?;
         // NOTE: Also add all the rows in the already committed table to the index.
+        //
         // FIXME: Is this correct? Index scan iterators (incl. the existing `Locking` versions)
         // appear to assume that a table's index refers only to rows within that table,
         // and does not handle the case where a `TxState` index refers to `CommittedState` rows.
-        if let Some(committed_table) = commit_table {
-            insert_index.build_from_rows(&columns, committed_table.scan_rows(commit_blob_store))?;
+        //
+        // TODO(centril): An alternative here is to actually add this index to `CommittedState`,
+        // pretending that it was already committed, and recording this pretense.
+        // Then, we can roll that back on a failed tx.
+        if let Some(commit_table) = commit_table {
+            build_from_rows(commit_table, commit_blob_store)?;
         }
+
         table.indexes.insert(columns.clone(), insert_index);
         // Associate `index_id -> (table_id, col_list)` for fast lookup.
         idx_map.insert(index_id, (table_id, columns.clone()));
