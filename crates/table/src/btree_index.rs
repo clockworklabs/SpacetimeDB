@@ -92,10 +92,7 @@ impl Iterator for BTreeIndexRangeIter<'_> {
     type Item = RowPointer;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|ptr| {
-            self.num_pointers_yielded += 1;
-            ptr
-        })
+        self.iter.next().inspect(|_| self.num_pointers_yielded += 1)
     }
 }
 

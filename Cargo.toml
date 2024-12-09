@@ -86,7 +86,7 @@ debug = true
 version = "1.0.0-rc2"
 edition = "2021"
 # update rust-toolchain.toml too!
-rust-version = "1.78.0"
+rust-version = "1.83.0"
 
 [workspace.dependencies]
 spacetimedb = { path = "crates/bindings", version = "1.0.0-rc2" }
@@ -191,7 +191,7 @@ pretty_assertions = "1.4"
 proc-macro2 = "1.0"
 prometheus = "0.13.0"
 proptest = "1.4"
-proptest-derive = "0.4"
+proptest-derive = "0.5"
 quick-junit = { version = "0.3.2" }
 quote = "1.0.8"
 rand = "0.8.5"

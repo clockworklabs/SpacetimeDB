@@ -160,7 +160,7 @@ impl IndexArg {
         Ok(IndexArg { kind, name })
     }
 
-    fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'_>> {
+    fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
         let find_column = |ident| {
             cols.iter()
                 .find(|col| col.field.ident == Some(ident))

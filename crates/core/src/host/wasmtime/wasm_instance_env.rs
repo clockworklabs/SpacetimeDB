@@ -411,6 +411,7 @@ impl WasmInstanceEnv {
     /// - `prefix = prefix_ptr[..prefix_len]`,
     /// - `rstart = rstart_ptr[..rstart_len]`,
     /// - `rend = rend_ptr[..rend_len]`,
+    ///
     /// in WASM memory.
     ///
     /// The index itself has a schema/type.
@@ -562,8 +563,7 @@ impl WasmInstanceEnv {
             let mut written = 0;
             // Fill the buffer as much as possible.
             while let Some(chunk) = iter.as_slice().first() {
-                // TODO(Centril): refactor using `split_at_mut_checked`.
-                let Some(buf_chunk) = buffer.get_mut(..chunk.len()) else {
+                let Some((buf_chunk, rest)) = buffer.split_at_mut_checked(chunk.len()) else {
                     // Cannot fit chunk into the buffer,
                     // either because we already filled it too much,
                     // or because it is too small.
@@ -571,7 +571,7 @@ impl WasmInstanceEnv {
                 };
                 buf_chunk.copy_from_slice(chunk);
                 written += chunk.len();
-                buffer = &mut buffer[chunk.len()..];
+                buffer = rest;
 
                 // Advance the iterator, as we used a chunk.
                 // TODO(Centril): consider putting these into a pool for reuse
@@ -693,6 +693,7 @@ impl WasmInstanceEnv {
     /// - `prefix = prefix_ptr[..prefix_len]`,
     /// - `rstart = rstart_ptr[..rstart_len]`,
     /// - `rend = rend_ptr[..rend_len]`,
+    ///
     /// in WASM memory.
     ///
     /// This syscall will delete all the rows found by
