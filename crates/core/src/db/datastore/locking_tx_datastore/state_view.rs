@@ -149,35 +149,43 @@ pub trait StateView {
     }
 }
 
-pub struct Iter<'a> {
-    table_id: TableId,
-    tx_state_del: Option<&'a DeleteTable>,
+pub struct IterMutTx<'a> {
     tx_state_ins: Option<(&'a Table, &'a HashMapBlobStore)>,
-    committed_state: &'a CommittedState,
     stage: ScanStage<'a>,
 }
 
-impl<'a> Iter<'a> {
-    pub(super) fn new(table_id: TableId, tx_state: Option<&'a TxState>, committed_state: &'a CommittedState) -> Self {
-        let tx_state_ins = tx_state.and_then(|tx| {
-            let ins = tx.insert_tables.get(&table_id)?;
-            let bs = &tx.blob_store;
-            Some((ins, bs))
-        });
-        let tx_state_del = tx_state.and_then(|tx| tx.delete_tables.get(&table_id));
-        Self {
-            table_id,
-            tx_state_ins,
-            tx_state_del,
-            committed_state,
-            stage: ScanStage::Start,
-        }
+impl<'a> IterMutTx<'a> {
+    pub(super) fn new(table_id: TableId, tx_state: &'a TxState, committed_state: &'a CommittedState) -> Self {
+        let tx_state_ins = tx_state
+            .insert_tables
+            .get(&table_id)
+            .map(|table| (table, &tx_state.blob_store));
+
+        let tx_state_del = tx_state.delete_tables.get(&table_id);
+
+        let stage = if let Some(table) = committed_state.tables.get(&table_id) {
+            // The committed state has changes for this table.
+            let iter = table.scan_rows(&committed_state.blob_store);
+            if let Some(del_tables) = tx_state_del.and_then(|del| if del.is_empty() { None } else { Some(del) }) {
+                // There are deletes in the tx state
+                // so we must exclude those (1b).
+                ScanStage::CommittedWithTxDeletes { iter, del_tables }
+            } else {
+                // There are no deletes in the tx state
+                // so we don't need to care about those (1a).
+                ScanStage::CommittedNoTxDeletes { iter }
+            }
+        } else {
+            ScanStage::Continue
+        };
+
+        Self { tx_state_ins, stage }
     }
 }
 
 enum ScanStage<'a> {
-    /// We haven't decided yet where to yield from.
-    Start,
+    /// Continue to the next stage.
+    Continue,
     /// Yielding rows from the current tx.
     CurrentTx { iter: TableScanIter<'a> },
     /// Yielding rows from the committed state
@@ -186,18 +194,20 @@ enum ScanStage<'a> {
     /// Yielding rows from the committed state
     /// but there are deleted rows in the tx state,
     /// so we must check against those.
-    CommittedWithTxDeletes { iter: TableScanIter<'a> },
+    CommittedWithTxDeletes {
+        iter: TableScanIter<'a>,
+        del_tables: &'a DeleteTable,
+    },
 }
 
-impl<'a> Iterator for Iter<'a> {
+impl<'a> Iterator for IterMutTx<'a> {
     type Item = RowRef<'a>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let table_id = self.table_id;
-
         // The finite state machine goes:
         //
-        //     Start
+        //     Continue
         //       |
         //       |--> CurrentTx -------------------------------\
         //       |        ^                                    |
@@ -209,22 +219,7 @@ impl<'a> Iterator for Iter<'a> {
 
         loop {
             match &mut self.stage {
-                ScanStage::Start => {
-                    if let Some(table) = self.committed_state.tables.get(&table_id) {
-                        // The committed state has changes for this table.
-                        let iter = table.scan_rows(&self.committed_state.blob_store);
-                        self.stage = if self.tx_state_del.is_some() {
-                            // There are no deletes in the tx state
-                            // so we don't need to care about those (1a).
-                            ScanStage::CommittedWithTxDeletes { iter }
-                        } else {
-                            // There are deletes in the tx state
-                            // so we must exclude those (1b).
-                            ScanStage::CommittedNoTxDeletes { iter }
-                        };
-                        continue;
-                    }
-                }
+                ScanStage::Continue => {}
                 ScanStage::CommittedNoTxDeletes { iter } => {
                     // (1a) Go through the committed state for this table
                     // but do not consider deleted rows.
@@ -232,7 +227,7 @@ impl<'a> Iterator for Iter<'a> {
                         return next;
                     }
                 }
-                ScanStage::CommittedWithTxDeletes { iter } => {
+                ScanStage::CommittedWithTxDeletes { iter, del_tables } => {
                     // (1b) Check the committed row's state in the current tx.
                     // If it's been deleted, skip it.
                     // If it's still present, yield it.
@@ -259,7 +254,6 @@ impl<'a> Iterator for Iter<'a> {
                     //
                     // As a result, in MVCC, this branch will need to check if the `row_ref`
                     // also exists in the `tx_state.insert_tables` and ensure it is yielded only once.
-                    let del_tables = unsafe { self.tx_state_del.unwrap_unchecked() };
                     if let next @ Some(_) = iter.find(|row_ref| !del_tables.contains(&row_ref.pointer())) {
                         return next;
                     }
@@ -275,6 +269,56 @@ impl<'a> Iterator for Iter<'a> {
             let (insert_table, blob_store) = self.tx_state_ins?;
             let iter = insert_table.scan_rows(blob_store);
             self.stage = ScanStage::CurrentTx { iter };
+        }
+    }
+}
+
+pub struct IterTx<'a> {
+    iter: TableScanIter<'a>,
+}
+
+impl<'a> IterTx<'a> {
+    pub(super) fn new(table_id: TableId, committed_state: &'a CommittedState) -> Self {
+        // The table_id was validated to exist in the committed state.
+        let table = committed_state
+            .tables
+            .get(&table_id)
+            .expect("table_id must exist in committed state");
+        let iter = table.scan_rows(&committed_state.blob_store);
+        Self { iter }
+    }
+}
+
+impl<'a> Iterator for IterTx<'a> {
+    type Item = RowRef<'a>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+pub enum Iter<'a> {
+    Tx(IterTx<'a>),
+    MutTx(IterMutTx<'a>),
+}
+
+impl<'a> Iter<'a> {
+    pub(super) fn tx(table_id: TableId, committed_state: &'a CommittedState) -> Self {
+        Iter::Tx(IterTx::new(table_id, committed_state))
+    }
+    pub(super) fn mut_tx(table_id: TableId, tx_state: &'a TxState, committed_state: &'a CommittedState) -> Self {
+        Iter::MutTx(IterMutTx::new(table_id, tx_state, committed_state))
+    }
+}
+
+impl<'a> Iterator for Iter<'a> {
+    type Item = RowRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Iter::Tx(iter) => iter.next(),
+            Iter::MutTx(iter) => iter.next(),
         }
     }
 }
