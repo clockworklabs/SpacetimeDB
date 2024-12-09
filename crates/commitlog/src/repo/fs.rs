@@ -1,10 +1,10 @@
 use std::fs::{self, File};
-use std::io;
+use std::io::{self, Seek};
 
 use log::{debug, warn};
 use spacetimedb_paths::server::{CommitLogDir, SegmentFile};
 
-use super::{Repo, TxOffset, TxOffsetIndex, TxOffsetIndexMut};
+use super::{Repo, Segment, TxOffset, TxOffsetIndex, TxOffsetIndexMut};
 
 const SEGMENT_FILE_EXT: &str = ".stdb.log";
 
@@ -54,6 +54,19 @@ impl Fs {
         }
 
         Ok(sz)
+    }
+}
+
+impl Segment for File {
+    fn segment_len(&mut self) -> io::Result<u64> {
+        let old_pos = self.stream_position()?;
+        let len = self.seek(io::SeekFrom::End(0))?;
+        // If we're already at the end of the file, avoid seeking.
+        if old_pos != len {
+            self.seek(io::SeekFrom::Start(old_pos))?;
+        }
+
+        Ok(len)
     }
 }
 
