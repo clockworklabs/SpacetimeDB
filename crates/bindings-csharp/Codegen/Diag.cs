@@ -100,4 +100,16 @@ internal static class ErrorDescriptor
                 $"Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.",
             table => table.SyntaxTree.GetLocation(table.AttributeLists.Span)
         );
+
+    public static readonly ErrorDescriptor<(
+        ReducerKind kind,
+        IEnumerable<string> fullNames
+    )> DuplicateSpecialReducer =
+        new(
+            group,
+            "Multiple reducers of the same kind",
+            ctx =>
+                $"Several reducers are assigned to the same lifecycle kind {ctx.kind}: {string.Join(", ", ctx.fullNames)}",
+            ctx => Location.None
+        );
 }
