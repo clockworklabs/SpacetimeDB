@@ -79,7 +79,7 @@ impl StateView for CommittedState {
 
     fn iter(&self, table_id: TableId) -> Result<Iter<'_>> {
         if self.table_name(table_id).is_some() {
-            return Ok(Iter::new(table_id, None, self));
+            return Ok(Iter::tx(table_id, self));
         }
         Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
@@ -94,6 +94,7 @@ impl StateView for CommittedState {
     ) -> Result<IterByColRange<'_, R>> {
         // TODO: Why does this unconditionally return a `Scan` iter,
         // instead of trying to return a `CommittedIndex` iter?
+        // Answer: Because CommittedIndexIter::tx_state: Option<&'a TxState> need to be Some to read after reopen
         Ok(IterByColRange::Scan(ScanIterByColRange::new(
             self.iter(table_id)?,
             cols,
@@ -628,29 +629,18 @@ impl CommittedState {
     }
 }
 
-pub struct CommittedIndexIter<'a> {
-    table_id: TableId,
-    tx_state: Option<&'a TxState>,
-    #[allow(dead_code)]
-    committed_state: &'a CommittedState,
-    committed_rows: IndexScanIter<'a>,
-    num_committed_rows_fetched: u64,
+pub enum CommittedIndexIter<'a> {
+    Tx(CommittedIndexIterTx<'a>),
+    MutTx(CommittedIndexIterMutTx<'a>),
 }
 
 impl<'a> CommittedIndexIter<'a> {
-    pub(super) fn new(
-        table_id: TableId,
-        tx_state: Option<&'a TxState>,
-        committed_state: &'a CommittedState,
-        committed_rows: IndexScanIter<'a>,
-    ) -> Self {
-        Self {
-            table_id,
-            tx_state,
-            committed_state,
-            committed_rows,
-            num_committed_rows_fetched: 0,
-        }
+    pub(super) fn tx(committed_rows: IndexScanIter<'a>) -> Self {
+        Self::Tx(CommittedIndexIterTx::new(committed_rows))
+    }
+
+    pub(super) fn mut_tx(table_id: TableId, tx_state: &'a TxState, committed_rows: IndexScanIter<'a>) -> Self {
+        Self::MutTx(CommittedIndexIterMutTx::new(table_id, tx_state, committed_rows))
     }
 }
 
@@ -658,12 +648,68 @@ impl<'a> Iterator for CommittedIndexIter<'a> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(row_ref) = self.committed_rows.find(|row_ref| {
-            !self
-                .tx_state
-                .map(|tx_state| tx_state.is_deleted(self.table_id, row_ref.pointer()))
-                .unwrap_or(false)
-        }) {
+        match self {
+            Self::Tx(iter) => iter.next(),
+            Self::MutTx(iter) => iter.next(),
+        }
+    }
+}
+
+pub struct CommittedIndexIterTx<'a> {
+    committed_rows: IndexScanIter<'a>,
+    num_committed_rows_fetched: u64,
+}
+
+impl<'a> CommittedIndexIterTx<'a> {
+    pub(super) fn new(committed_rows: IndexScanIter<'a>) -> Self {
+        Self {
+            committed_rows,
+            num_committed_rows_fetched: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for CommittedIndexIterTx<'a> {
+    type Item = RowRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(row_ref) = self.committed_rows.next() {
+            // TODO(metrics): This doesn't actually fetch a row.
+            // Move this counter to `RowRef::read_row`.
+            self.num_committed_rows_fetched += 1;
+            return Some(row_ref);
+        }
+
+        None
+    }
+}
+
+pub struct CommittedIndexIterMutTx<'a> {
+    table_id: TableId,
+    tx_state: &'a TxState,
+    committed_rows: IndexScanIter<'a>,
+    num_committed_rows_fetched: u64,
+}
+
+impl<'a> CommittedIndexIterMutTx<'a> {
+    pub(super) fn new(table_id: TableId, tx_state: &'a TxState, committed_rows: IndexScanIter<'a>) -> Self {
+        Self {
+            table_id,
+            tx_state,
+            committed_rows,
+            num_committed_rows_fetched: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for CommittedIndexIterMutTx<'a> {
+    type Item = RowRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(row_ref) = self
+            .committed_rows
+            .find(|row_ref| !self.tx_state.is_deleted(self.table_id, row_ref.pointer()))
+        {
             // TODO(metrics): This doesn't actually fetch a row.
             // Move this counter to `RowRef::read_row`.
             self.num_committed_rows_fetched += 1;
