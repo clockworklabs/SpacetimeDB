@@ -16,7 +16,15 @@ use core::mem;
 use core::ops::Index;
 use enum_as_inner::EnumAsInner;
 use spacetimedb_sats::{
-    bsatn, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant,
+    bsatn,
+    de::{
+        Deserialize, DeserializeSeed, Deserializer, Error, NamedProductAccess, ProductVisitor, SeqProductAccess,
+        SumAccess, SumVisitor, ValidNames, VariantAccess as _, VariantVisitor,
+    },
+    i256,
+    sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG},
+    u256, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant,
+    SumValue, WithTypespace,
 };
 pub use spacetimedb_schema::type_for_generate::PrimitiveType;
 
@@ -602,6 +610,16 @@ impl SumTypeVariantLayout {
             name: self.name.clone(),
         }
     }
+
+    /// Returns whether the variant has the given name.
+    pub fn has_name(&self, name: &str) -> bool {
+        self.name.as_deref() == Some(name)
+    }
+
+    /// Returns whether this is a unit variant.
+    pub fn is_unit(&self) -> bool {
+        self.ty.as_product().is_some_and(|ty| ty.elements.is_empty())
+    }
 }
 
 // # Inspecting layout
@@ -670,6 +688,136 @@ pub fn bsatn_len(val: &AlgebraicValue) -> usize {
     // but we don't actually need that byte blob in this calculation,
     // instead, we can just count them as a serialization format.
     bsatn::to_len(val).unwrap()
+}
+
+impl<'de> DeserializeSeed<'de> for &AlgebraicTypeLayout {
+    type Output = AlgebraicValue;
+
+    fn deserialize<D: Deserializer<'de>>(self, de: D) -> Result<Self::Output, D::Error> {
+        match self {
+            AlgebraicTypeLayout::Sum(ty) => ty.deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Product(ty) => ty.deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::Bool) => bool::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::I8) => i8::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::U8) => u8::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::I16) => i16::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::U16) => u16::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::I32) => i32::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::U32) => u32::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::I64) => i64::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::U64) => u64::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::I128) => i128::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::U128) => u128::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::I256) => i256::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::U256) => u256::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::F32) => f32::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::Primitive(PrimitiveType::F64) => f64::deserialize(de).map(Into::into),
+            AlgebraicTypeLayout::VarLen(VarLenType::Array(ty)) => WithTypespace::empty(&**ty).deserialize(de),
+            AlgebraicTypeLayout::VarLen(VarLenType::String) => <Box<str>>::deserialize(de).map(Into::into),
+            /*
+            AlgebraicType::Sum(sum) => self.with(sum).deserialize(de).map(Into::into),
+            */
+        }
+    }
+}
+
+impl<'de> DeserializeSeed<'de> for &ProductTypeLayout {
+    type Output = ProductValue;
+
+    fn deserialize<D: Deserializer<'de>>(self, de: D) -> Result<Self::Output, D::Error> {
+        de.deserialize_product(self)
+    }
+}
+
+impl<'de> ProductVisitor<'de> for &ProductTypeLayout {
+    type Output = ProductValue;
+
+    fn product_name(&self) -> Option<&str> {
+        None
+    }
+    fn product_len(&self) -> usize {
+        self.elements.len()
+    }
+
+    fn visit_seq_product<A: SeqProductAccess<'de>>(self, mut tup: A) -> Result<Self::Output, A::Error> {
+        let mut elems: Vec<AlgebraicValue> = Vec::with_capacity(self.product_len());
+        for (i, elem_ty) in self.elements.iter().enumerate() {
+            let Some(elem_val) = tup.next_element_seed(&elem_ty.ty)? else {
+                return Err(A::Error::invalid_product_length(i, &self));
+            };
+            elems.push(elem_val);
+        }
+        Ok(elems.into())
+    }
+
+    fn visit_named_product<A: NamedProductAccess<'de>>(self, _: A) -> Result<Self::Output, A::Error> {
+        unreachable!()
+    }
+}
+
+impl<'de> DeserializeSeed<'de> for &SumTypeLayout {
+    type Output = SumValue;
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
+        deserializer.deserialize_sum(self)
+    }
+}
+
+impl<'de> SumVisitor<'de> for &SumTypeLayout {
+    type Output = SumValue;
+
+    fn sum_name(&self) -> Option<&str> {
+        None
+    }
+
+    fn is_option(&self) -> bool {
+        match &*self.variants {
+            [first, second]
+                if second.is_unit() // Done first to avoid pointer indirection when it doesn't matter.
+                    && first.has_name(OPTION_SOME_TAG)
+                    && second.has_name(OPTION_NONE_TAG) =>
+            {
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn visit_sum<A: SumAccess<'de>>(self, data: A) -> Result<Self::Output, A::Error> {
+        let (tag, data) = data.variant(self)?;
+        // Find the variant type by `tag`.
+        let variant_ty = &self.variants[tag as usize].ty;
+
+        let value = Box::new(data.deserialize_seed(variant_ty)?);
+        Ok(SumValue { tag, value })
+    }
+}
+
+impl VariantVisitor for &SumTypeLayout {
+    type Output = u8;
+
+    fn variant_names(&self, names: &mut dyn ValidNames) {
+        // Provide the names known from the `SumType`.
+        names.extend(self.variants.iter().filter_map(|v| v.name.as_deref()));
+    }
+
+    fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
+        // Verify that tag identifies a valid variant in `SumType`.
+        self.variants
+            .get(tag as usize)
+            .ok_or_else(|| E::unknown_variant_tag(tag, &self))?;
+
+        Ok(tag)
+    }
+
+    fn visit_name<E: Error>(self, name: &str) -> Result<Self::Output, E> {
+        // Translate the variant `name` to its tag.
+        self.variants
+            .iter()
+            .position(|var| var.has_name(name))
+            .map(|pos| pos as u8)
+            .ok_or_else(|| E::unknown_variant_name(name, &self))
+    }
 }
 
 #[cfg(test)]
