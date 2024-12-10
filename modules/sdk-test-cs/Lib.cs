@@ -1713,7 +1713,8 @@ public static partial class Module
         EveryVecStruct v
     )
     {
-        ctx.Db.large_table.Insert(new LargeTable {
+        ctx.Db.large_table.Insert(new LargeTable
+        {
             a = a,
             b = b,
             c = c,
@@ -1742,7 +1743,8 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_primitives_as_strings(ReducerContext ctx, EveryPrimitiveStruct s)
     {
-        ctx.Db.vec_string.Insert(new VecString {
+        ctx.Db.vec_string.Insert(new VecString
+        {
             s = typeof(EveryPrimitiveStruct)
                 .GetFields()
                 .Select(f => f.GetValue(s)!.ToString()!.ToLowerInvariant())
@@ -1765,4 +1767,33 @@ public static partial class Module
 
     [SpacetimeDB.Reducer]
     public static void no_op_succeeds(ReducerContext ctx) { }
+
+    [SpacetimeDB.Table(Name = "scheduled_table", Scheduled = nameof(send_scheduled_message))]
+    public partial struct ScheduledTable
+    {
+        public string text;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void send_scheduled_message(ReducerContext ctx, ScheduledTable arg)
+    {
+        ulong id = arg.ScheduledId;
+        SpacetimeDB.ScheduleAt scheduleAt = arg.ScheduledAt;
+        string text = arg.text;
+    }
+
+    [SpacetimeDB.Table(Name = "indexed_table")]
+    [SpacetimeDB.Index(Name = "player_id_index", BTree = [nameof(player_id)])]
+    public partial struct IndexedTable
+    {
+        uint player_id;
+    }
+
+    [SpacetimeDB.Table(Name = "indexed_table_2")]
+    [SpacetimeDB.Index(Name = "player_id_snazz_index", BTree = [nameof(player_id), nameof(player_snazz)])]
+    public partial struct IndexedTable2
+    {
+        uint player_id;
+        float player_snazz;
+    }
 }
