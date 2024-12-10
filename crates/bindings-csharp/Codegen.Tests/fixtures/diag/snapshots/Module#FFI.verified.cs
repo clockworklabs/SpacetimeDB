@@ -546,59 +546,6 @@ namespace SpacetimeDB
             public TestScheduleWithWrongScheduleAtTypeUniqueIndex IdCorrectType => new(this);
         }
 
-        public readonly struct TestTableTaggedEnum
-            : SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>
-        {
-            static global::TestTableTaggedEnum SpacetimeDB.Internal.ITableView<
-                TestTableTaggedEnum,
-                global::TestTableTaggedEnum
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestTableTaggedEnum row)
-            {
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
-                TestTableTaggedEnum,
-                global::TestTableTaggedEnum
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(TestTableTaggedEnum),
-                    ProductTypeRef: (uint)
-                        new global::TestTableTaggedEnum.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [],
-                    Indexes: [],
-                    Constraints: [],
-                    Sequences: [],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                SpacetimeDB.Internal.ITableView<
-                    TestTableTaggedEnum,
-                    global::TestTableTaggedEnum
-                >.DoCount();
-
-            public IEnumerable<global::TestTableTaggedEnum> Iter() =>
-                SpacetimeDB.Internal.ITableView<
-                    TestTableTaggedEnum,
-                    global::TestTableTaggedEnum
-                >.DoIter();
-
-            public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) =>
-                SpacetimeDB.Internal.ITableView<
-                    TestTableTaggedEnum,
-                    global::TestTableTaggedEnum
-                >.DoInsert(row);
-
-            public bool Delete(global::TestTableTaggedEnum row) =>
-                SpacetimeDB.Internal.ITableView<
-                    TestTableTaggedEnum,
-                    global::TestTableTaggedEnum
-                >.DoDelete(row);
-        }
-
         public readonly struct TestUniqueNotEquatable
             : SpacetimeDB.Internal.ITableView<
                 TestUniqueNotEquatable,
@@ -675,52 +622,6 @@ namespace SpacetimeDB
                     TestUniqueNotEquatable,
                     global::TestUniqueNotEquatable
                 >.DoDelete(row);
-
-            public sealed class TestUniqueNotEquatableUniqueIndex
-                : UniqueIndex<
-                    TestUniqueNotEquatable,
-                    global::TestUniqueNotEquatable,
-                    int?,
-                    SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>
-                >
-            {
-                internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle)
-                    : base(handle, "TestUniqueNotEquatable_UniqueField_idx_btree") { }
-
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::TestUniqueNotEquatable? Find(int? key) =>
-                    DoFilter(key).Cast<global::TestUniqueNotEquatable?>().SingleOrDefault();
-
-                public bool Update(global::TestUniqueNotEquatable row) =>
-                    DoUpdate(row.UniqueField, row);
-            }
-
-            public TestUniqueNotEquatableUniqueIndex UniqueField => new(this);
-
-            public sealed class TestUniqueNotEquatableUniqueIndex
-                : UniqueIndex<
-                    TestUniqueNotEquatable,
-                    global::TestUniqueNotEquatable,
-                    TestEnumWithExplicitValues,
-                    SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>
-                >
-            {
-                internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle)
-                    : base(handle, "TestUniqueNotEquatable_PrimaryKeyField_idx_btree") { }
-
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::TestUniqueNotEquatable? Find(TestEnumWithExplicitValues key) =>
-                    DoFilter(key).Cast<global::TestUniqueNotEquatable?>().SingleOrDefault();
-
-                public bool Update(global::TestUniqueNotEquatable row) =>
-                    DoUpdate(row.PrimaryKeyField, row);
-            }
-
-            public TestUniqueNotEquatableUniqueIndex PrimaryKeyField => new(this);
         }
     }
 
@@ -736,7 +637,6 @@ namespace SpacetimeDB
             new();
         public Internal.TableHandles.TestScheduleWithWrongScheduleAtType TestScheduleWithWrongScheduleAtType =>
             new();
-        public Internal.TableHandles.TestTableTaggedEnum TestTableTaggedEnum => new();
         public Internal.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable => new();
     }
 }
@@ -845,7 +745,7 @@ static class ModuleRegistration
 
         public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
-            Reducers.TestReducerWithoutContext((SpacetimeDB.ReducerContext)ctx);
+            throw new System.InvalidOperationException();
         }
     }
 
@@ -898,10 +798,6 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterTable<
             global::TestScheduleIssues,
             SpacetimeDB.Internal.TableHandles.TestScheduleWithWrongScheduleAtType
-        >();
-        SpacetimeDB.Internal.Module.RegisterTable<
-            global::TestTableTaggedEnum,
-            SpacetimeDB.Internal.TableHandles.TestTableTaggedEnum
         >();
         SpacetimeDB.Internal.Module.RegisterTable<
             global::TestUniqueNotEquatable,
