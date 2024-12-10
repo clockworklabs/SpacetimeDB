@@ -41,7 +41,7 @@ pub use timestamp::Timestamp;
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;
 
-/// A context that any reducer is provided with.
+/// The context that any reducer is provided with.
 #[non_exhaustive]
 pub struct ReducerContext {
     /// The `Identity` of the client that invoked the reducer.
