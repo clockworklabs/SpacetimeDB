@@ -38,6 +38,9 @@ use std::{
     sync::Arc,
 };
 
+pub const TEXT_PROTOCOL: &str = "v1.json.spacetimedb";
+pub const BIN_PROTOCOL: &str = "v1.bsatn.spacetimedb";
+
 pub trait RowListLen {
     /// Returns the length of the list.
     fn len(&self) -> usize;
