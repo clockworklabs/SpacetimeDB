@@ -108,8 +108,8 @@ codec_funcs!(val: crate::SumValue);
 
 /// Types that can be encoded to BSATN.
 ///
-/// Implementations of this trait may be more efficient than directly calling [`bsatn::to_vec`].
-/// In particular, for [`RowRef`], this method will use a [`StaticLayout`] if one is available,
+/// Implementations of this trait may be more efficient than directly calling [`to_vec`].
+/// In particular, for `spacetimedb_table::table::RowRef`, this method will use a `StaticLayout` if one is available,
 /// avoiding expensive runtime type dispatch.
 pub trait ToBsatn {
     /// BSATN-encode the row referred to by `self` into a freshly-allocated `Vec<u8>`.

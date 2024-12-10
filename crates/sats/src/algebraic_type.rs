@@ -39,16 +39,18 @@ pub enum AlgebraicType {
     /// Another name is [coproduct (category theory)](https://ncatlab.org/nlab/show/coproduct).
     ///
     /// These structures are known as sum types because the number of possible values a sum
-    /// ```ignore
+    /// ```text
     /// { N_0(T_0), N_1(T_1), ..., N_n(T_n) }
     /// ```
     /// is:
-    /// ```ignore
+    /// ```text
     /// Σ (i ∈ 0..n). values(T_i)
     /// ```
     /// so for example, `values({ A(U64), B(Bool) }) = values(U64) + values(Bool)`.
     ///
-    /// See also: https://ncatlab.org/nlab/show/sum+type.
+    /// See also: 
+    /// - <https://en.wikipedia.org/wiki/Tagged_union>
+    /// - <https://ncatlab.org/nlab/show/sum+type>
     ///
     /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
     Sum(SumType),
@@ -62,14 +64,16 @@ pub enum AlgebraicType {
     /// e.g., the names of its fields and their types in the case of a record.
     /// The name "product" comes from category theory.
     ///
-    /// See also: https://ncatlab.org/nlab/show/product+type.
+    /// See also:
+    /// - <https://en.wikipedia.org/wiki/Record_(computer_science)>
+    /// - <https://ncatlab.org/nlab/show/product+type>
     ///
     /// These structures are known as product types because the number of possible values in product
-    /// ```ignore
+    /// ```text
     /// { N_0: T_0, N_1: T_1, ..., N_n: T_n }
     /// ```
     /// is:
-    /// ```ignore
+    /// ```text
     /// Π (i ∈ 0..n). values(T_i)
     /// ```
     /// so for example, `values({ A: U64, B: Bool }) = values(U64) * values(Bool)`.
@@ -393,7 +397,7 @@ impl AlgebraicType {
     /// in a `SpacetimeDB` client module.
     ///
     /// Such a type must be a non-special sum or product type.
-    /// All of the elements of the type must be [`valid_for_client_type_use`](AlgebraicType::valid_for_client_type_use).
+    /// All of the elements of the type must satisfy [`AlgebraicType::is_valid_for_client_type_use`].
     ///
     /// This method does not actually follow `Ref`s to check the types they point to,
     /// it only checks the structure of this type.
@@ -422,7 +426,7 @@ impl AlgebraicType {
     /// - a reference
     /// - a special, known type
     /// - a non-compound type like `U8`, `I32`, `F64`, etc.
-    /// - or a map, array, or option built from types that are [`valid_for_client_type_use`](AlgebraicType::valid_for_client_type_use).
+    /// - or a map, array, or option built from types that satisfy [`AlgebraicType::is_valid_for_client_type_use`]
     ///
     /// This method does not actually follow `Ref`s to check the types they point to,
     /// it only checks the structure of the type.
