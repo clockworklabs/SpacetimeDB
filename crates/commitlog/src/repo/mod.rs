@@ -22,13 +22,28 @@ pub type TxOffset = u64;
 pub type TxOffsetIndexMut = IndexFileMut<TxOffset>;
 pub type TxOffsetIndex = IndexFile<TxOffset>;
 
+pub trait Segment: FileLike + io::Read + io::Write + io::Seek + Send + Sync {
+    /// Determine the length in bytes of the segment.
+    ///
+    /// This method does not rely on metadata `fsync`, and may use up to three
+    /// `seek` operations.
+    ///
+    /// If the method returns successfully, the seek position before the call is
+    /// restored. However, if it returns an error, the seek position is
+    /// unspecified.
+    //
+    // TODO: Replace with `Seek::stream_len` if / when stabilized:
+    // https://github.com/rust-lang/rust/issues/59359
+    fn segment_len(&mut self) -> io::Result<u64>;
+}
+
 /// A repository of log segments.
 ///
 /// This is mainly an internal trait to allow testing against an in-memory
 /// representation.
 pub trait Repo: Clone {
     /// The type of log segments managed by this repo, which must behave like a file.
-    type Segment: io::Read + io::Write + FileLike + io::Seek + Send + Sync + 'static;
+    type Segment: Segment + 'static;
 
     /// Create a new segment with the minimum transaction offset `offset`.
     ///
