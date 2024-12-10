@@ -312,6 +312,8 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 /// [`TableType`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.TableType.html
 /// [`Table`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Table.html
 /// [`ReducerContext`]: https://docs.rs/spacetimedb/latest/spacetimedb/struct.ReducerContext.html
+/// [`UniqueColumn`]: https://docs.rs/spacetimedb/latest/spacetimedb/struct.UniqueColumn.html
+/// [`BTreeIndex`]: https://docs.rs/spacetimedb/latest/spacetimedb/struct.BTreeIndex.html
 #[proc_macro_attribute]
 pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     // put this on the struct so we don't get unknown attribute errors
