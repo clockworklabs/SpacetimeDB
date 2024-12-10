@@ -9,7 +9,7 @@
 use anyhow::{Context, Result};
 use spacetimedb::{
     sats::{i256, u256},
-    Address, Identity, ReducerContext, ScheduleAt, SpacetimeType, Table,
+    Address, Identity, ReducerContext, SpacetimeType, Table,
 };
 
 #[derive(SpacetimeType)]
@@ -650,11 +650,6 @@ pub struct ScheduledTable {
     #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
     text: String,
-    #[primary_key]
-    #[auto_inc]
-    scheduled_id: u64,
-    #[scheduled_at]
-    scheduled_at: ScheduleAt,
 }
 
 #[spacetimedb::reducer]
