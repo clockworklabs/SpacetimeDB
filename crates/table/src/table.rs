@@ -250,6 +250,56 @@ impl Table {
         Ok((hash, row_ref))
     }
 
+    /// Insert a `row` into this table.
+    /// NOTE: This method skips index updating. Use `insert` to insert a row with index updating.
+    pub fn insert_internal(
+        &mut self,
+        blob_store: &mut dyn BlobStore,
+        row: &ProductValue,
+    ) -> Result<(RowHash, RowPointer), InsertError> {
+        // Optimistically insert the `row` before checking for set-semantic collisions,
+        // under the assumption that set-semantic collisions are rare.
+        let (row_ref, blob_bytes) = self.insert_internal_allow_duplicate(blob_store, row)?;
+
+        let hash = row_ref.row_hash();
+        let ptr = row_ref.pointer();
+        // SAFETY: `ptr` was derived from `row_ref` without interleaving calls, so it must be valid.
+        unsafe { self.insert_into_pointer_map(blob_store, ptr, hash) }?;
+
+        self.row_count += 1;
+        self.blob_store_bytes += blob_bytes;
+
+        Ok((hash, ptr))
+    }
+
+    /// Physically inserts `row` into the page
+    /// without inserting it logically into the pointer map.
+    ///
+    /// This is useful when we need to insert a row temporarily to get back a `RowPointer`.
+    /// A call to this method should be followed by a call to [`delete_internal_skip_pointer_map`].
+    pub fn insert_internal_allow_duplicate<'a>(
+        &'a mut self,
+        blob_store: &'a mut dyn BlobStore,
+        row: &ProductValue,
+    ) -> Result<(RowRef<'a>, BlobNumBytes), InsertError> {
+        // SAFETY: `self.pages` is known to be specialized for `self.row_layout`,
+        // as `self.pages` was constructed from `self.row_layout` in `Table::new`.
+        let (ptr, blob_bytes) = unsafe {
+            write_row_to_pages(
+                &mut self.inner.pages,
+                &self.inner.visitor_prog,
+                blob_store,
+                &self.inner.row_layout,
+                row,
+                self.squashed_offset,
+            )
+        }?;
+        // SAFETY: We just inserted `ptr`, so it must be present.
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+
+        Ok((row_ref, blob_bytes))
+    }
+
     /// Insert row identified by `ptr` into indices.
     /// This also checks unique constraints.
     /// Deletes the row if there were any violations.
@@ -284,31 +334,28 @@ impl Table {
         Ok(())
     }
 
-    /// Insert a `row` into this table.
-    /// NOTE: This method skips index updating. Use `insert` to insert a row with index updating.
-    pub fn insert_internal(
-        &mut self,
-        blob_store: &mut dyn BlobStore,
-        row: &ProductValue,
-    ) -> Result<(RowHash, RowPointer), InsertError> {
-        // Optimistically insert the `row` before checking for set-semantic collisions,
-        // under the assumption that set-semantic collisions are rare.
-        let (row_ref, blob_bytes) = self.insert_internal_allow_duplicate(blob_store, row)?;
-
-        // Ensure row isn't already there.
-        // SAFETY: We just inserted `ptr`, so we know it's valid.
-        let hash = row_ref.row_hash();
-        // Safety:
-        // We just inserted `ptr` and computed `hash`, so they're valid.
-        // `self` trivially has the same `row_layout` as `self`.
-        let ptr = row_ref.pointer();
+    /// Insert row identified by `ptr` into the pointer map.
+    /// This checks for set semantic violations.
+    /// Deletes the row and returns an error if there were any violations.
+    ///
+    /// SAFETY: `self.is_row_present(row)` must hold.
+    /// Post-condition: If this method returns `Ok(_)`, the row still exists.
+    unsafe fn insert_into_pointer_map<'a>(
+        &'a mut self,
+        blob_store: &'a mut dyn BlobStore,
+        ptr: RowPointer,
+        hash: RowHash,
+    ) -> Result<(), InsertError> {
+        // SAFETY:
+        // - `self` trivially has the same `row_layout` as `self`.
+        // - Caller promised that `ptr` is a valid row in `self`.
         let existing_row = unsafe { Self::find_same_row(self, self, ptr, hash) };
 
         if let Some(existing_row) = existing_row {
             // If an equal row was already present,
             // roll back our optimistic insert to avoid violating set semantics.
 
-            // SAFETY: we just inserted `ptr`, so it must be valid.
+            // SAFETY: Caller promised that `ptr` is a valid row in `self`.
             unsafe {
                 self.inner
                     .pages
@@ -316,43 +363,13 @@ impl Table {
             };
             return Err(InsertError::Duplicate(existing_row));
         }
-        self.row_count += 1;
-        self.blob_store_bytes += blob_bytes;
 
         // If the optimistic insertion was correct,
         // i.e. this is not a set-semantic duplicate,
         // add it to the `pointer_map`.
         self.pointer_map.insert(hash, ptr);
 
-        Ok((hash, ptr))
-    }
-
-    /// Physically inserts `row` into the page
-    /// without inserting it logically into the pointer map.
-    ///
-    /// This is useful when we need to insert a row temporarily to get back a `RowPointer`.
-    /// A call to this method should be followed by a call to [`delete_internal_skip_pointer_map`].
-    pub fn insert_internal_allow_duplicate<'a>(
-        &'a mut self,
-        blob_store: &'a mut dyn BlobStore,
-        row: &ProductValue,
-    ) -> Result<(RowRef<'a>, BlobNumBytes), InsertError> {
-        // SAFETY: `self.pages` is known to be specialized for `self.row_layout`,
-        // as `self.pages` was constructed from `self.row_layout` in `Table::new`.
-        let (ptr, blob_bytes) = unsafe {
-            write_row_to_pages(
-                &mut self.inner.pages,
-                &self.inner.visitor_prog,
-                blob_store,
-                &self.inner.row_layout,
-                row,
-                self.squashed_offset,
-            )
-        }?;
-        // SAFETY: We just inserted `ptr`, so it must be present.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
-
-        Ok((row_ref, blob_bytes))
+        Ok(())
     }
 
     /// Finds the [`RowPointer`] to the row in `committed_table`
