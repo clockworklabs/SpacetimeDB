@@ -322,6 +322,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         foreach (var ct in GetConstraints(view, ColumnAttrs.Unique))
         {
             var f = ct.col;
+            if (!f.IsEquatable)
+            {
+                // Skip - we already emitted diagnostic for this during parsing, and generated code would
+                // only produce a lot of noisy typechecking errors.
+                continue;
+            }
             var standardIndexName = new ViewIndex(ct.col).StandardIndexName(view);
             yield return $$"""
                 {{vis}} sealed class {{view.Name}}UniqueIndex : UniqueIndex<{{view.Name}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
@@ -394,6 +400,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
     public IEnumerable<View> GenerateViews()
     {
+        // Don't try to generate views if this table is a sum type.
+        // We already emitted a diagnostic, and attempting to generate views will only result in more noisy errors.
+        if (Kind is TypeKind.Sum)
+        {
+            yield break;
+        }
         foreach (var v in Views)
         {
             var autoIncFields = Members
@@ -502,6 +514,7 @@ record ReducerDeclaration
     public readonly string FullName;
     public readonly EquatableArray<MemberDeclaration> Args;
     public readonly Scope Scope;
+    private readonly bool HasWrongSignature;
 
     public ReducerDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
@@ -520,6 +533,7 @@ record ReducerDeclaration
         )
         {
             diag.Report(ErrorDescriptor.ReducerContextParam, methodSyntax);
+            HasWrongSignature = true;
         }
 
         Name = method.Name;
@@ -545,10 +559,13 @@ record ReducerDeclaration
 
     public string GenerateClass()
     {
-        var args = string.Join(
-            ", ",
-            Args.Select(a => $"{a.Name}.Read(reader)").Prepend("(SpacetimeDB.ReducerContext)ctx")
-        );
+        var invocation = HasWrongSignature
+            ? "throw new System.InvalidOperationException()"
+            : $"{FullName}({string.Join(
+                ", ",
+                Args.Select(a => $"{a.Name}.Read(reader)").Prepend("(SpacetimeDB.ReducerContext)ctx")
+            )})";
+
         return $$"""
             class {{Name}}: SpacetimeDB.Internal.IReducer {
                 {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
@@ -565,7 +582,7 @@ record ReducerDeclaration
                 );
 
                 public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
-                    {{FullName}}({{args}});
+                    {{invocation}};
                 }
             }
             """;
