@@ -199,13 +199,13 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 ///     // for getting a corresponding `spacetimedb::BTreeIndex`.
 ///     let by_id_and_username: spacetimedb::BTreeIndex<_, (u32, String), _> =
 ///         users.id_and_username();
-///     by_id_and_username.delete((57, "Billy".to_string()));
+///     by_id_and_username.delete((&57, &"Billy".to_string()));
 ///
 ///     // For every `#[unique]` or `#[primary_key]` field,
 ///     // the table has a method that allows getting a
 ///     // corresponding `spacetimedb::UniqueColumn`.
 ///     let by_username: spacetimedb::UniqueColumn<_, String, _> = users.id();
-///     by_username.delete("test_user");
+///     by_username.delete(&"test_user".to_string());
 ///
 // }
 /// ```
