@@ -542,6 +542,52 @@ namespace SpacetimeDB
                     TestUniqueNotEquatable,
                     global::TestUniqueNotEquatable
                 >.DoDelete(row);
+
+            public sealed class TestUniqueNotEquatableUniqueIndex
+                : UniqueIndex<
+                    TestUniqueNotEquatable,
+                    global::TestUniqueNotEquatable,
+                    int?,
+                    SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>
+                >
+            {
+                internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle)
+                    : base(handle, "TestUniqueNotEquatable_UniqueField_idx_btree") { }
+
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::TestUniqueNotEquatable? Find(int? key) =>
+                    DoFilter(key).Cast<global::TestUniqueNotEquatable?>().SingleOrDefault();
+
+                public bool Update(global::TestUniqueNotEquatable row) =>
+                    DoUpdate(row.UniqueField, row);
+            }
+
+            public TestUniqueNotEquatableUniqueIndex UniqueField => new(this);
+
+            public sealed class TestUniqueNotEquatableUniqueIndex
+                : UniqueIndex<
+                    TestUniqueNotEquatable,
+                    global::TestUniqueNotEquatable,
+                    TestEnumWithExplicitValues,
+                    SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>
+                >
+            {
+                internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle)
+                    : base(handle, "TestUniqueNotEquatable_PrimaryKeyField_idx_btree") { }
+
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::TestUniqueNotEquatable? Find(TestEnumWithExplicitValues key) =>
+                    DoFilter(key).Cast<global::TestUniqueNotEquatable?>().SingleOrDefault();
+
+                public bool Update(global::TestUniqueNotEquatable row) =>
+                    DoUpdate(row.PrimaryKeyField, row);
+            }
+
+            public TestUniqueNotEquatableUniqueIndex PrimaryKeyField => new(this);
         }
     }
 

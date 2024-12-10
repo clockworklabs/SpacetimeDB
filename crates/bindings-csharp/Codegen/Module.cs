@@ -315,12 +315,6 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         foreach (var ct in GetConstraints(view, ColumnAttrs.Unique))
         {
             var f = ct.col;
-            if (!f.IsEquatable)
-            {
-                // Skip - we already emitted diagnostic for this during parsing, and generated code would
-                // only produce a lot of noisy typechecking errors.
-                continue;
-            }
             var standardIndexName = new ViewIndex(ct.col).StandardIndexName(view);
             yield return $$"""
                 {{vis}} sealed class {{view.Name}}UniqueIndex : UniqueIndex<{{view.Name}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
