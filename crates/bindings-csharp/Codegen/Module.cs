@@ -393,13 +393,6 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
     public IEnumerable<View> GenerateViews()
     {
-        // Don't try to generate views if this table is a sum type.
-        // We already emitted a diagnostic, and attempting to generate views will only result in more noisy errors.
-        if (Kind is TypeKind.Sum)
-        {
-            yield break;
-        }
-
         foreach (var v in Views)
         {
             var autoIncFields = Members

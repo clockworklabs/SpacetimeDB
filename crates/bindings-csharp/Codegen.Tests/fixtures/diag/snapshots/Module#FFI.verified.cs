@@ -413,6 +413,59 @@ namespace SpacetimeDB
             public TestIncompatibleSchedule2UniqueIndex ScheduledId => new(this);
         }
 
+        public readonly struct TestTableTaggedEnum
+            : SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>
+        {
+            static global::TestTableTaggedEnum SpacetimeDB.Internal.ITableView<
+                TestTableTaggedEnum,
+                global::TestTableTaggedEnum
+            >.ReadGenFields(System.IO.BinaryReader reader, global::TestTableTaggedEnum row)
+            {
+                return row;
+            }
+
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                TestTableTaggedEnum,
+                global::TestTableTaggedEnum
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(TestTableTaggedEnum),
+                    ProductTypeRef: (uint)
+                        new global::TestTableTaggedEnum.BSATN().GetAlgebraicType(registrar).Ref_,
+                    PrimaryKey: [],
+                    Indexes: [],
+                    Constraints: [],
+                    Sequences: [],
+                    Schedule: null,
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
+
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<
+                    TestTableTaggedEnum,
+                    global::TestTableTaggedEnum
+                >.DoCount();
+
+            public IEnumerable<global::TestTableTaggedEnum> Iter() =>
+                SpacetimeDB.Internal.ITableView<
+                    TestTableTaggedEnum,
+                    global::TestTableTaggedEnum
+                >.DoIter();
+
+            public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) =>
+                SpacetimeDB.Internal.ITableView<
+                    TestTableTaggedEnum,
+                    global::TestTableTaggedEnum
+                >.DoInsert(row);
+
+            public bool Delete(global::TestTableTaggedEnum row) =>
+                SpacetimeDB.Internal.ITableView<
+                    TestTableTaggedEnum,
+                    global::TestTableTaggedEnum
+                >.DoDelete(row);
+        }
+
         public readonly struct TestUniqueNotEquatable
             : SpacetimeDB.Internal.ITableView<
                 TestUniqueNotEquatable,
@@ -498,6 +551,7 @@ namespace SpacetimeDB
         public Internal.TableHandles.TestDuplicateTableName TestDuplicateTableName => new();
         public Internal.TableHandles.TestIncompatibleSchedule1 TestIncompatibleSchedule1 => new();
         public Internal.TableHandles.TestIncompatibleSchedule2 TestIncompatibleSchedule2 => new();
+        public Internal.TableHandles.TestTableTaggedEnum TestTableTaggedEnum => new();
         public Internal.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable => new();
     }
 }
@@ -651,6 +705,10 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterTable<
             global::TestIncompatibleSchedule,
             SpacetimeDB.Internal.TableHandles.TestIncompatibleSchedule2
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::TestTableTaggedEnum,
+            SpacetimeDB.Internal.TableHandles.TestTableTaggedEnum
         >();
         SpacetimeDB.Internal.Module.RegisterTable<
             global::TestUniqueNotEquatable,
