@@ -28,7 +28,6 @@ pub struct ScheduledReducerArgs {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
     num: i32,
 }
@@ -56,24 +55,23 @@ class SubscribeScheduledTable(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{log, duration, ReducerContext, Table, Timestamp};
 
-#[spacetimedb::table(name = scheduled_table, public, scheduled(my_reducer))]
+#[spacetimedb::table(name = scheduled_table, public, scheduled(my_reducer, at = sched_at))]
 pub struct ScheduledTable {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
-    scheduled_at: spacetimedb::ScheduleAt,
+    sched_at: spacetimedb::ScheduleAt,
     prev: Timestamp,
 }
 
 #[spacetimedb::reducer]
 fn schedule_reducer(ctx: &ReducerContext) {
-    ctx.db.scheduled_table().insert(ScheduledTable { prev: Timestamp::from_micros_since_epoch(0), scheduled_id: 2, scheduled_at: Timestamp::from_micros_since_epoch(0).into(), });
+    ctx.db.scheduled_table().insert(ScheduledTable { prev: Timestamp::from_micros_since_epoch(0), scheduled_id: 2, sched_at: Timestamp::from_micros_since_epoch(0).into(), });
 }
 
 #[spacetimedb::reducer]
 fn schedule_repeated_reducer(ctx: &ReducerContext) {
-    ctx.db.scheduled_table().insert(ScheduledTable { prev: Timestamp::from_micros_since_epoch(0), scheduled_id: 1, scheduled_at: duration!(100ms).into(), });
+    ctx.db.scheduled_table().insert(ScheduledTable { prev: Timestamp::from_micros_since_epoch(0), scheduled_id: 1, sched_at: duration!(100ms).into(), });
 }
 
 #[spacetimedb::reducer]
@@ -93,7 +91,7 @@ pub fn my_reducer(_ctx: &ReducerContext, arg: ScheduledTable) {
         # scheduled reducer should be ran by now
         self.assertEqual(lines, 1)
 
-        row_entry = {'prev': 0, 'scheduled_id': 2, 'scheduled_at': {'Time': 0}}
+        row_entry = {'prev': 0, 'scheduled_id': 2, 'sched_at': {'Time': 0}}
         # subscription should have 2 updates, first for row insert in scheduled table and second for row deletion.
         self.assertEqual(sub(), [{'scheduled_table': {'deletes': [], 'inserts': [row_entry]}}, {'scheduled_table': {'deletes': [row_entry], 'inserts': []}}])
 
@@ -114,8 +112,8 @@ pub fn my_reducer(_ctx: &ReducerContext, arg: ScheduledTable) {
         # scheduling repeated reducer again just to get 2nd subscription update.
         self.call("schedule_reducer")
 
-        repeated_row_entry = {'prev': 0, 'scheduled_id': 1, 'scheduled_at': {'Interval': 100000}}
-        row_entry = {'prev': 0, 'scheduled_id': 2, 'scheduled_at': {'Time': 0}}
+        repeated_row_entry = {'prev': 0, 'scheduled_id': 1, 'sched_at': {'Interval': 100000}}
+        row_entry = {'prev': 0, 'scheduled_id': 2, 'sched_at': {'Time': 0}}
 
         # subscription should have 2 updates and should not have any deletes
         self.assertEqual(sub(), [{'scheduled_table': {'deletes': [], 'inserts': [repeated_row_entry]}}, {'scheduled_table': {'deletes': [], 'inserts': [row_entry]}}])
