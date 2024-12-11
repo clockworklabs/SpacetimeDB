@@ -62,6 +62,8 @@ pub enum SqlUnsupported {
     MultiStatement,
     #[error("Multi-table DELETE is not supported")]
     MultiTableDelete,
+    #[error("Empty SQL query")]
+    Empty,
 }
 
 impl SqlUnsupported {
