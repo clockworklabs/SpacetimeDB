@@ -6,7 +6,7 @@ mod mut_tx;
 pub use mut_tx::MutTxId;
 mod sequence;
 pub mod state_view;
-pub use state_view::{Iter, IterByColEq, IterByColRange};
+pub use state_view::{IterByColEq, IterTxByColRange};
 pub(crate) mod tx;
 mod tx_state;
 

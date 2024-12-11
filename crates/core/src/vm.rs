@@ -1,7 +1,8 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 
+use crate::db::datastore::locking_tx_datastore::state_view::IterMutTxByColRange;
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
-use crate::db::datastore::locking_tx_datastore::IterByColRange;
+use crate::db::datastore::locking_tx_datastore::IterTxByColRange;
 use crate::db::datastore::system_tables::{st_var_schema, StVarName, StVarRow, StVarTable};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
@@ -17,7 +18,7 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_table::static_assert_size;
 use spacetimedb_table::table::RowRef;
 use spacetimedb_vm::errors::ErrorVm;
-use spacetimedb_vm::eval::{build_project, build_select, join_inner, IterRows};
+use spacetimedb_vm::eval::{box_iter, build_project, build_select, join_inner, IterRows};
 use spacetimedb_vm::expr::*;
 use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::{ProgramVm, Sources};
@@ -184,26 +185,9 @@ pub fn build_query<'a>(
                 let index_table = index_side.table_id().unwrap();
 
                 if *return_index_rows {
-                    Box::new(IndexSemiJoinLeft {
-                        db,
-                        tx,
-                        probe_side,
-                        probe_col: *probe_col,
-                        index_select,
-                        index_table,
-                        index_col: *index_col,
-                        index_iter: None,
-                    }) as Box<IterRows<'_>>
+                    index_semi_join_left(db, tx, probe_side, *probe_col, index_select, index_table, *index_col)
                 } else {
-                    Box::new(IndexSemiJoinRight {
-                        db,
-                        tx,
-                        probe_side,
-                        probe_col: *probe_col,
-                        index_select,
-                        index_table,
-                        index_col: *index_col,
-                    })
+                    index_semi_join_right(db, tx, probe_side, *probe_col, index_select, index_table, *index_col)
                 }
             }
             Query::Select(cmp) => build_select(result_or_base(sources, &mut result), cmp),
@@ -246,8 +230,8 @@ fn get_table<'a>(
                 .into_iter(),
         ),
         SourceExpr::DbTable(db_table) => build_iter_from_db(match tx {
-            TxMode::MutTx(tx) => stdb.iter_mut(tx, db_table.table_id),
-            TxMode::Tx(tx) => stdb.iter(tx, db_table.table_id),
+            TxMode::MutTx(tx) => stdb.iter_mut(tx, db_table.table_id).map(box_iter),
+            TxMode::Tx(tx) => stdb.iter(tx, db_table.table_id).map(box_iter),
         }),
     }
 }
@@ -260,8 +244,10 @@ fn iter_by_col_range<'a>(
     range: impl RangeBounds<AlgebraicValue> + 'a,
 ) -> Box<IterRows<'a>> {
     build_iter_from_db(match tx {
-        TxMode::MutTx(tx) => db.iter_by_col_range_mut(tx, table.table_id, columns, range),
-        TxMode::Tx(tx) => db.iter_by_col_range(tx, table.table_id, columns, range),
+        TxMode::MutTx(tx) => db
+            .iter_by_col_range_mut(tx, table.table_id, columns, range)
+            .map(box_iter),
+        TxMode::Tx(tx) => db.iter_by_col_range(tx, table.table_id, columns, range).map(box_iter),
     })
 }
 
@@ -276,36 +262,38 @@ fn build_iter<'a>(iter: impl 'a + Iterator<Item = RelValue<'a>>) -> Box<IterRows
 const TABLE_ID_EXPECTED_VALID: &str = "all `table_id`s in compiled query should be valid";
 
 /// An index join operator that returns matching rows from the index side.
-pub struct IndexSemiJoinLeft<'a, 'c, Rhs: RelOps<'a>> {
+pub struct IndexSemiJoinLeft<'c, Rhs, IndexIter, F> {
     /// An iterator for the probe side.
     /// The values returned will be used to probe the index.
-    pub probe_side: Rhs,
+    probe_side: Rhs,
     /// The column whose value will be used to probe the index.
-    pub probe_col: ColId,
+    probe_col: ColId,
     /// An optional predicate to evaluate over the matching rows of the index.
-    pub index_select: &'c Option<ColumnOp>,
-    /// The table id on which the index is defined.
-    pub index_table: TableId,
-    /// The column id for which the index is defined.
-    pub index_col: ColId,
+    index_select: &'c Option<ColumnOp>,
     /// An iterator for the index side.
     /// A new iterator will be instantiated for each row on the probe side.
-    pub index_iter: Option<IterByColRange<'a, AlgebraicValue>>,
-    /// A reference to the database.
-    pub db: &'a RelationalDB,
-    /// A reference to the current transaction.
-    pub tx: &'a TxMode<'a>,
+    index_iter: Option<IndexIter>,
+    /// The function that returns an iterator for the index side.
+    index_function: F,
 }
 
-static_assert_size!(IndexSemiJoinLeft<Box<IterRows<'static>>>, 264);
-
-impl<'a, Rhs: RelOps<'a>> IndexSemiJoinLeft<'a, '_, Rhs> {
+impl<'a, 'c, Rhs, IndexIter, F> IndexSemiJoinLeft<'c, Rhs, IndexIter, F>
+where
+    F: Fn(AlgebraicValue) -> Result<IndexIter, DBError>,
+    IndexIter: Iterator<Item = RowRef<'a>>,
+    Rhs: RelOps<'a>,
+{
     fn filter(&self, index_row: &RelValue<'_>) -> bool {
         self.index_select.as_ref().map_or(true, |op| op.eval_bool(index_row))
     }
 }
 
-impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoinLeft<'a, '_, Rhs> {
+impl<'a, 'c, Rhs, IndexIter, F> RelOps<'a> for IndexSemiJoinLeft<'c, Rhs, IndexIter, F>
+where
+    F: Fn(AlgebraicValue) -> Result<IndexIter, DBError>,
+    IndexIter: Iterator<Item = RowRef<'a>>,
+    Rhs: RelOps<'a>,
+{
     fn next(&mut self) -> Option<RelValue<'a>> {
         // Return a value from the current index iterator, if not exhausted.
         while let Some(index_row) = self.index_iter.as_mut().and_then(|iter| iter.next()).map(RelValue::Row) {
@@ -315,16 +303,10 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoinLeft<'a, '_, Rhs> {
         }
 
         // Otherwise probe the index with a row from the probe side.
-        let table_id = self.index_table;
-        let index_col = self.index_col;
         let probe_col = self.probe_col.idx();
         while let Some(mut row) = self.probe_side.next() {
             if let Some(value) = row.read_or_take_column(probe_col) {
-                let index_iter = match self.tx {
-                    TxMode::MutTx(tx) => self.db.iter_by_col_range_mut(tx, table_id, index_col, value),
-                    TxMode::Tx(tx) => self.db.iter_by_col_range(tx, table_id, index_col, value),
-                };
-                let mut index_iter = index_iter.expect(TABLE_ID_EXPECTED_VALID);
+                let mut index_iter = (self.index_function)(value).expect(TABLE_ID_EXPECTED_VALID);
                 while let Some(index_row) = index_iter.next().map(RelValue::Row) {
                     if self.filter(&index_row) {
                         self.index_iter = Some(index_iter);
@@ -337,47 +319,85 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoinLeft<'a, '_, Rhs> {
     }
 }
 
-/// An index join operator that returns matching rows from the probe side.
-pub struct IndexSemiJoinRight<'a, 'c, Rhs: RelOps<'a>> {
-    /// An iterator for the probe side.
-    /// The values returned will be used to probe the index.
-    pub probe_side: Rhs,
-    /// The column whose value will be used to probe the index.
-    pub probe_col: ColId,
-    /// An optional predicate to evaluate over the matching rows of the index.
-    pub index_select: &'c Option<ColumnOp>,
-    /// The table id on which the index is defined.
-    pub index_table: TableId,
-    /// The column id for which the index is defined.
-    pub index_col: ColId,
-    /// A reference to the database.
-    pub db: &'a RelationalDB,
-    /// A reference to the current transaction.
-    pub tx: &'a TxMode<'a>,
+/// Return an iterator index join operator that returns matching rows from the index side.
+pub fn index_semi_join_left<'a>(
+    db: &'a RelationalDB,
+    tx: &'a TxMode<'a>,
+    probe_side: Box<IterRows<'a>>,
+    probe_col: ColId,
+    index_select: &'a Option<ColumnOp>,
+    index_table: TableId,
+    index_col: ColId,
+) -> Box<IterRows<'a>> {
+    match tx {
+        TxMode::MutTx(tx) => Box::new(IndexSemiJoinLeft {
+            probe_side,
+            probe_col,
+            index_select,
+            index_iter: None,
+            index_function: move |value| db.iter_by_col_range_mut(tx, index_table, index_col, value),
+        }),
+        TxMode::Tx(tx) => Box::new(IndexSemiJoinLeft {
+            probe_side,
+            probe_col,
+            index_select,
+            index_iter: None,
+            index_function: move |value| db.iter_by_col_range(tx, index_table, index_col, value),
+        }),
+    }
 }
 
-static_assert_size!(IndexSemiJoinRight<Box<IterRows<'static>>>, 48);
+static_assert_size!(
+    IndexSemiJoinLeft<
+        Box<IterRows<'static>>,
+        fn(AlgebraicValue) -> Result<IterTxByColRange<'static, AlgebraicValue>, DBError>,
+        IterTxByColRange<'static, AlgebraicValue>,
+    >,
+    256
+);
+static_assert_size!(
+    IndexSemiJoinLeft<
+        Box<IterRows<'static>>,
+        fn(AlgebraicValue) -> Result<IterMutTxByColRange<'static, AlgebraicValue>, DBError>,
+        IterMutTxByColRange<'static, AlgebraicValue>,
+    >,
+    256
+);
 
-impl<'a, Rhs: RelOps<'a>> IndexSemiJoinRight<'a, '_, Rhs> {
+/// An index join operator that returns matching rows from the probe side.
+pub struct IndexSemiJoinRight<'c, Rhs: RelOps<'c>, F> {
+    /// An iterator for the probe side.
+    /// The values returned will be useSd to probe the index.
+    probe_side: Rhs,
+    /// The column whose value will be used to probe the index.
+    probe_col: ColId,
+    /// An optional predicate to evaluate over the matching rows of the index.
+    index_select: &'c Option<ColumnOp>,
+    /// A function that returns an iterator for the index side.
+    index_function: F,
+}
+
+impl<'a, Rhs: RelOps<'a>, F, IndexIter> IndexSemiJoinRight<'a, Rhs, F>
+where
+    F: Fn(AlgebraicValue) -> Result<IndexIter, DBError>,
+    IndexIter: Iterator<Item = RowRef<'a>>,
+{
     fn filter(&self, index_row: &RelValue<'_>) -> bool {
         self.index_select.as_ref().map_or(true, |op| op.eval_bool(index_row))
     }
 }
 
-impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoinRight<'a, '_, Rhs> {
+impl<'a, Rhs: RelOps<'a>, F, IndexIter> RelOps<'a> for IndexSemiJoinRight<'a, Rhs, F>
+where
+    F: Fn(AlgebraicValue) -> Result<IndexIter, DBError>,
+    IndexIter: Iterator<Item = RowRef<'a>>,
+{
     fn next(&mut self) -> Option<RelValue<'a>> {
         // Otherwise probe the index with a row from the probe side.
-        let table_id = self.index_table;
-        let index_col = self.index_col;
         let probe_col = self.probe_col.idx();
-        while let Some(row) = self.probe_side.next() {
-            if let Some(value) = row.read_column(probe_col) {
-                let value = &*value;
-                let index_iter = match self.tx {
-                    TxMode::MutTx(tx) => self.db.iter_by_col_range_mut(tx, table_id, index_col, value),
-                    TxMode::Tx(tx) => self.db.iter_by_col_range(tx, table_id, index_col, value),
-                };
-                let mut index_iter = index_iter.expect(TABLE_ID_EXPECTED_VALID);
+        while let Some(mut row) = self.probe_side.next() {
+            if let Some(value) = row.read_or_take_column(probe_col) {
+                let mut index_iter = (self.index_function)(value).expect(TABLE_ID_EXPECTED_VALID);
                 while let Some(index_row) = index_iter.next().map(RelValue::Row) {
                     if self.filter(&index_row) {
                         return Some(row);
@@ -388,6 +408,46 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoinRight<'a, '_, Rhs> {
         None
     }
 }
+
+/// Return an iterator index join operator that returns matching rows from the probe side.
+pub fn index_semi_join_right<'a>(
+    db: &'a RelationalDB,
+    tx: &'a TxMode<'a>,
+    probe_side: Box<IterRows<'a>>,
+    probe_col: ColId,
+    index_select: &'a Option<ColumnOp>,
+    index_table: TableId,
+    index_col: ColId,
+) -> Box<IterRows<'a>> {
+    match tx {
+        TxMode::MutTx(tx) => Box::new(IndexSemiJoinRight {
+            probe_side,
+            probe_col,
+            index_select,
+            index_function: move |value| db.iter_by_col_range_mut(tx, index_table, index_col, value),
+        }),
+        TxMode::Tx(tx) => Box::new(IndexSemiJoinRight {
+            probe_side,
+            probe_col,
+            index_select,
+            index_function: move |value| db.iter_by_col_range(tx, index_table, index_col, value),
+        }),
+    }
+}
+static_assert_size!(
+    IndexSemiJoinRight<
+        Box<IterRows<'static>>,
+        fn(AlgebraicValue) -> Result<IterTxByColRange<'static, AlgebraicValue>, DBError>,
+    >,
+    40
+);
+static_assert_size!(
+    IndexSemiJoinRight<
+        Box<IterRows<'static>>,
+        fn(AlgebraicValue) -> Result<IterMutTxByColRange<'static, AlgebraicValue>, DBError>,
+    >,
+    40
+);
 
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
 /// query execution

@@ -1,5 +1,7 @@
 use super::datastore::locking_tx_datastore::committed_state::CommittedState;
-use super::datastore::locking_tx_datastore::state_view::StateView;
+use super::datastore::locking_tx_datastore::state_view::{
+    IterMutTx, IterMutTxByColEq, IterMutTxByColRange, IterTx, StateView,
+};
 use super::datastore::system_tables::ST_MODULE_ID;
 use super::datastore::traits::{
     IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
@@ -7,7 +9,7 @@ use super::datastore::traits::{
 use super::datastore::{
     locking_tx_datastore::{
         datastore::Locking,
-        state_view::{Iter, IterByColEq, IterByColRange},
+        state_view::{IterByColEq, IterTxByColRange},
     },
     traits::TxData,
 };
@@ -1044,11 +1046,11 @@ impl RelationalDB {
 
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`.
-    pub fn iter_mut<'a>(&'a self, tx: &'a MutTx, table_id: TableId) -> Result<Iter<'a>, DBError> {
+    pub fn iter_mut<'a>(&'a self, tx: &'a MutTx, table_id: TableId) -> Result<IterMutTx<'a>, DBError> {
         self.inner.iter_mut_tx(tx, table_id)
     }
 
-    pub fn iter<'a>(&'a self, tx: &'a Tx, table_id: TableId) -> Result<Iter<'a>, DBError> {
+    pub fn iter<'a>(&'a self, tx: &'a Tx, table_id: TableId) -> Result<IterTx<'a>, DBError> {
         self.inner.iter_tx(tx, table_id)
     }
 
@@ -1063,7 +1065,7 @@ impl RelationalDB {
         table_id: impl Into<TableId>,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<IterByColEq<'a, 'r>, DBError> {
+    ) -> Result<IterMutTxByColEq<'a, 'r>, DBError> {
         self.inner.iter_by_col_eq_mut_tx(tx, table_id.into(), cols, value)
     }
 
@@ -1088,7 +1090,7 @@ impl RelationalDB {
         table_id: impl Into<TableId>,
         cols: impl Into<ColList>,
         range: R,
-    ) -> Result<IterByColRange<'a, R>, DBError> {
+    ) -> Result<IterMutTxByColRange<'a, R>, DBError> {
         self.inner.iter_by_col_range_mut_tx(tx, table_id.into(), cols, range)
     }
 
@@ -1103,7 +1105,7 @@ impl RelationalDB {
         table_id: impl Into<TableId>,
         cols: impl Into<ColList>,
         range: R,
-    ) -> Result<IterByColRange<'a, R>, DBError> {
+    ) -> Result<IterTxByColRange<'a, R>, DBError> {
         self.inner.iter_by_col_range_tx(tx, table_id.into(), cols, range)
     }
 
@@ -2146,7 +2148,7 @@ mod tests {
         let cols = col_list![0, 1];
         let value = product![0u64, 1u64].into();
 
-        let IterByColEq::Index(mut iter) = stdb.iter_by_col_eq_mut(&tx, table_id, cols, &value)? else {
+        let IterMutTxByColEq::Index(mut iter) = stdb.iter_by_col_eq_mut(&tx, table_id, cols, &value)? else {
             panic!("expected index iterator");
         };
 

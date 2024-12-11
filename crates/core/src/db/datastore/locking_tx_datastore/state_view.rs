@@ -1,8 +1,9 @@
 use super::{
-    committed_state::{CommittedIndexIter, CommittedState},
+    committed_state::CommittedState,
     datastore::Result,
     tx_state::{DeleteTable, TxState},
 };
+use crate::db::datastore::locking_tx_datastore::committed_state::{CommittedIndexIterMutTx, CommittedIndexIterTx};
 use crate::{
     db::datastore::system_tables::{
         StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields,
@@ -24,6 +25,16 @@ use std::sync::Arc;
 // StateView trait, is designed to define the behavior of viewing internal datastore states.
 // Currently, it applies to: CommittedState, MutTxId, and TxId.
 pub trait StateView {
+    type Iter<'a>: Iterator<Item = RowRef<'a>>
+    where
+        Self: 'a;
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = RowRef<'a>>
+    where
+        Self: 'a;
+    type IterByColEq<'a, 'r>: Iterator<Item = RowRef<'a>>
+    where
+        Self: 'a;
+
     fn get_schema(&self, table_id: TableId) -> Option<&Arc<TableSchema>>;
 
     fn table_id_from_name(&self, table_name: &str) -> Result<Option<TableId>> {
@@ -35,7 +46,7 @@ pub trait StateView {
     /// Returns the number of rows in the table identified by `table_id`.
     fn table_row_count(&self, table_id: TableId) -> Option<u64>;
 
-    fn iter(&self, table_id: TableId) -> Result<Iter<'_>>;
+    fn iter(&self, table_id: TableId) -> Result<Self::Iter<'_>>;
 
     fn table_name(&self, table_id: TableId) -> Option<&str> {
         self.get_schema(table_id).map(|s| &*s.table_name)
@@ -49,16 +60,14 @@ pub trait StateView {
         table_id: TableId,
         cols: ColList,
         range: R,
-    ) -> Result<IterByColRange<'_, R>>;
+    ) -> Result<Self::IterByColRange<'_, R>>;
 
     fn iter_by_col_eq<'a, 'r>(
         &'a self,
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<IterByColEq<'a, 'r>> {
-        self.iter_by_col_range(table_id, cols.into(), value)
-    }
+    ) -> Result<Self::IterByColEq<'a, 'r>>;
 
     /// Reads the schema information for the specified `table_id` directly from the database.
     fn schema_for_table_raw(&self, table_id: TableId) -> Result<TableSchema> {
@@ -298,31 +307,6 @@ impl<'a> Iterator for IterTx<'a> {
     }
 }
 
-pub enum Iter<'a> {
-    Tx(IterTx<'a>),
-    MutTx(IterMutTx<'a>),
-}
-
-impl<'a> Iter<'a> {
-    pub(super) fn tx(table_id: TableId, committed_state: &'a CommittedState) -> Self {
-        Iter::Tx(IterTx::new(table_id, committed_state))
-    }
-    pub(super) fn mut_tx(table_id: TableId, tx_state: &'a TxState, committed_state: &'a CommittedState) -> Self {
-        Iter::MutTx(IterMutTx::new(table_id, tx_state, committed_state))
-    }
-}
-
-impl<'a> Iterator for Iter<'a> {
-    type Item = RowRef<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Iter::Tx(iter) => iter.next(),
-            Iter::MutTx(iter) => iter.next(),
-        }
-    }
-}
-
 pub struct IndexSeekIterMutTxId<'a> {
     pub(super) table_id: TableId,
     pub(super) tx_state: &'a TxState,
@@ -374,13 +358,15 @@ impl<'a> Iterator for IndexSeekIterMutTxId<'a> {
     }
 }
 
-/// An [IterByColRange] for an individual column value.
-pub type IterByColEq<'a, 'r> = IterByColRange<'a, &'r AlgebraicValue>;
+/// An [IterTxByColRange] for an individual column value.
+pub type IterByColEq<'a, 'r> = IterTxByColRange<'a, &'r AlgebraicValue>;
+/// An [IterMutTxByColRange] for an individual column value.
+pub type IterMutTxByColEq<'a, 'r> = IterMutTxByColRange<'a, &'r AlgebraicValue>;
 
 /// An iterator for a range of values in a column.
-pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
+pub enum IterTxByColRange<'a, R: RangeBounds<AlgebraicValue>> {
     /// When the column in question does not have an index.
-    Scan(ScanIterByColRange<'a, R>),
+    Scan(ScanIterTxByColRange<'a, R>),
 
     /// When the column has an index, and the table
     /// has been modified this transaction.
@@ -388,34 +374,87 @@ pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
 
     /// When the column has an index, and the table
     /// has not been modified in this transaction.
-    CommittedIndex(CommittedIndexIter<'a>),
+    CommittedIndex(CommittedIndexIterTx<'a>),
 }
 
-impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'a, R> {
+impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterTxByColRange<'a, R> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            IterByColRange::Scan(range) => range.next(),
-            IterByColRange::Index(range) => range.next(),
-            IterByColRange::CommittedIndex(seek) => seek.next(),
+            IterTxByColRange::Scan(range) => range.next(),
+            IterTxByColRange::Index(range) => range.next(),
+            IterTxByColRange::CommittedIndex(seek) => seek.next(),
         }
     }
 }
 
-pub struct ScanIterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
-    scan_iter: Iter<'a>,
+/// An iterator for a range of values in a column.
+pub enum IterMutTxByColRange<'a, R: RangeBounds<AlgebraicValue>> {
+    /// When the column in question does not have an index.
+    Scan(ScanIterMutTxByColRange<'a, R>),
+
+    /// When the column has an index, and the table
+    /// has been modified this transaction.
+    Index(IndexSeekIterMutTxId<'a>),
+
+    /// When the column has an index, and the table
+    /// has not been modified in this transaction.
+    CommittedIndex(CommittedIndexIterMutTx<'a>),
+}
+
+impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterMutTxByColRange<'a, R> {
+    type Item = RowRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            IterMutTxByColRange::Scan(range) => range.next(),
+            IterMutTxByColRange::Index(range) => range.next(),
+            IterMutTxByColRange::CommittedIndex(seek) => seek.next(),
+        }
+    }
+}
+
+pub struct ScanIterTxByColRange<'a, R: RangeBounds<AlgebraicValue>> {
+    scan_iter: IterTx<'a>,
     cols: ColList,
     range: R,
 }
 
-impl<'a, R: RangeBounds<AlgebraicValue>> ScanIterByColRange<'a, R> {
-    pub(super) fn new(scan_iter: Iter<'a>, cols: ColList, range: R) -> Self {
+impl<'a, R: RangeBounds<AlgebraicValue>> ScanIterTxByColRange<'a, R> {
+    pub(super) fn new(scan_iter: IterTx<'a>, cols: ColList, range: R) -> Self {
         Self { scan_iter, cols, range }
     }
 }
 
-impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'a, R> {
+impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterTxByColRange<'a, R> {
+    type Item = RowRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for row_ref in &mut self.scan_iter {
+            let value = row_ref.project(&self.cols).unwrap();
+            if self.range.contains(&value) {
+                return Some(row_ref);
+            }
+        }
+
+        None
+    }
+}
+
+pub struct ScanIterMutTxByColRange<'a, R: RangeBounds<AlgebraicValue>> {
+    scan_iter: IterMutTx<'a>,
+    cols: ColList,
+    range: R,
+}
+
+impl<'a, R: RangeBounds<AlgebraicValue>> ScanIterMutTxByColRange<'a, R> {
+    pub(super) fn new(scan_iter: IterMutTx<'a>, cols: ColList, range: R) -> Self {
+        Self { scan_iter, cols, range }
+    }
+}
+
+impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterMutTxByColRange<'a, R> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
