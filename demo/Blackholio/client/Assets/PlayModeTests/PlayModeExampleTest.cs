@@ -54,7 +54,7 @@ public class PlayModeExampleTest
 
         PlayerPrefs.DeleteAll();
         SceneManager.LoadScene("Scenes/Main");
-        while(UIUsernameChooser.instance == null)
+        while (UIUsernameChooser.instance == null)
             yield return null;
         var playerCreated = false;
 
@@ -90,7 +90,7 @@ public class PlayModeExampleTest
 
         // Standing still should decay a bit
         PlayerController.Local.EnableTestInput();
-        while(foodEaten < 200)
+        while (foodEaten < 200)
         {
             Debug.Assert(circle != null, nameof(circle) + " != null");
             var ourEntity = GameManager.conn.Db.Entity.Id.Find(circle.EntityId);
@@ -173,8 +173,8 @@ public class PlayModeExampleTest
         UIUsernameChooser.instance.PlayPressed();
         while (!playerCreated) yield return null;
 
-        var task = GameManager.conn.OneOffQuery<Player>(
-            $"SELECT * FROM player WHERE identity=0x{GameManager.localIdentity}");
+        var task = GameManager.conn.Db.Player.RemoteQuery(
+            $"WHERE identity=0x{GameManager.localIdentity}");
         Task.Run(() => task.RunSynchronously());
         while (!task.IsCompleted) yield return null;
         var players = task.Result;
@@ -244,7 +244,7 @@ public class PlayModeExampleTest
         Debug.Log("Initial scene load!");
         PlayerPrefs.DeleteAll();
         SceneManager.LoadScene("Scenes/Main");
-        while(UIUsernameChooser.instance == null)
+        while (UIUsernameChooser.instance == null)
             yield return null;
         var playerCreated = false;
 
@@ -274,7 +274,7 @@ public class PlayModeExampleTest
         // Reload
         SceneManager.LoadScene("Scenes/Main");
 
-        while(!connected || !subscribed) yield return null;
+        while (!connected || !subscribed) yield return null;
         var newPlayer = GameManager.conn.Db.Player.Identity.Find(GameManager.localIdentity);
         Debug.Assert(player.PlayerId == newPlayer.PlayerId, "PlayerIds should match!");
         var newCircle = GameManager.conn.Db.Circle.Iter().FirstOrDefault(a => a.PlayerId == newPlayer.PlayerId);

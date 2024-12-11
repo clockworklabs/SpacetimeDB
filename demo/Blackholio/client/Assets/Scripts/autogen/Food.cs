@@ -18,9 +18,7 @@ namespace SpacetimeDB.Types
 		[DataMember(Name = "entity_id")]
 		public uint EntityId;
 
-		public Food(
-			uint EntityId
-		)
+		public Food(uint EntityId)
 		{
 			this.EntityId = EntityId;
 		}
