@@ -4,7 +4,7 @@
 
 partial class InAnotherNamespace
 {
-    partial struct TestDuplicateTableName : SpacetimeDB.Internal.ITable<TestDuplicateTableName>
+    partial struct TestDuplicateTableName : SpacetimeDB.BSATN.IStructuralReadWrite
     {
         public void ReadFields(System.IO.BinaryReader reader) { }
 
@@ -26,7 +26,7 @@ partial class InAnotherNamespace
                 value.WriteFields(writer);
             }
 
-            public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
+            public SpacetimeDB.BSATN.AlgebraicType.Ref GetAlgebraicType(
                 SpacetimeDB.BSATN.ITypeRegistrar registrar
             ) =>
                 registrar.RegisterType<InAnotherNamespace.TestDuplicateTableName>(
@@ -34,31 +34,10 @@ partial class InAnotherNamespace
                         new SpacetimeDB.BSATN.AggregateElement[] { }
                     )
                 );
-        }
 
-        static IEnumerable<SpacetimeDB.Internal.TableDesc> SpacetimeDB.Internal.ITable<TestDuplicateTableName>.MakeTableDesc(
-            SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) =>
-            [
-                new(
-                    new(
-                        TableName: nameof(SpacetimeDB.Local.TestDuplicateTableName),
-                        Columns: [],
-                        Indexes: [],
-                        Constraints: [],
-                        Sequences: [],
-                        // "system" | "user"
-                        TableType: "user",
-                        // "public" | "private"
-                        TableAccess: "private",
-                        Scheduled: null
-                    ),
-                    (uint)
-                        (
-                            (SpacetimeDB.BSATN.AlgebraicType.Ref)
-                                new BSATN().GetAlgebraicType(registrar)
-                        ).Ref_
-                ),
-            ];
+            SpacetimeDB.BSATN.AlgebraicType SpacetimeDB.BSATN.IReadWrite<InAnotherNamespace.TestDuplicateTableName>.GetAlgebraicType(
+                SpacetimeDB.BSATN.ITypeRegistrar registrar
+            ) => GetAlgebraicType(registrar);
+        }
     } // TestDuplicateTableName
 } // InAnotherNamespace

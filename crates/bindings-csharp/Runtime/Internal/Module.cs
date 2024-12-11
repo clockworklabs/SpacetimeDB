@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
 
-partial class RawModuleDefV8
+partial class RawModuleDefV9
 {
     // Note: this intends to generate a valid identifier, but it's not guaranteed to be unique as it's not proper mangling.
     // Fix it up to a different mangling scheme if it causes problems.
@@ -16,9 +16,8 @@ partial class RawModuleDefV8
 
     private void RegisterTypeName<T>(AlgebraicType.Ref typeRef)
     {
-        MiscExports.Add(
-            new MiscModuleExport.TypeAlias(new(GetFriendlyName(typeof(T)), (uint)typeRef.Ref_))
-        );
+        var scopedName = new RawScopedTypeNameV9([], GetFriendlyName(typeof(T)));
+        Types.Add(new(scopedName, (uint)typeRef.Ref_, CustomOrdering: true));
     }
 
     internal AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
@@ -33,14 +32,14 @@ partial class RawModuleDefV8
         return typeRef;
     }
 
-    internal void RegisterReducer(ReducerDef reducer) => Reducers.Add(reducer);
+    internal void RegisterReducer(RawReducerDefV9 reducer) => Reducers.Add(reducer);
 
-    internal void RegisterTable(TableDesc table) => Tables.Add(table);
+    internal void RegisterTable(RawTableDefV9 table) => Tables.Add(table);
 }
 
 public static class Module
 {
-    private static readonly RawModuleDefV8 moduleDef = new();
+    private static readonly RawModuleDefV9 moduleDef = new();
     private static readonly List<IReducer> reducers = [];
 
     private static Func<Identity, Address?, Random, DateTimeOffset, IReducerContext>? newContext =
@@ -89,13 +88,11 @@ public static class Module
         moduleDef.RegisterReducer(reducer.MakeReducerDef(typeRegistrar));
     }
 
-    public static void RegisterTable<T>()
-        where T : ITable<T>, new()
+    public static void RegisterTable<T, View>()
+        where T : IStructuralReadWrite, new()
+        where View : ITableView<View, T>, new()
     {
-        foreach (var t in T.MakeTableDesc(typeRegistrar))
-        {
-            moduleDef.RegisterTable(t);
-        }
+        moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar));
     }
 
     private static byte[] Consume(this BytesSource source)
@@ -154,12 +151,10 @@ public static class Module
 
     public static void __describe_module__(BytesSink description)
     {
-        // replace `module` with a temporary internal module that will register RawModuleDefV8, AlgebraicType and other internal types
-        // during the RawModuleDefV8.GetSatsTypeInfo() instead of exposing them via user's module.
         try
         {
             // We need this explicit cast here to make `ToBytes` understand the types correctly.
-            RawModuleDef versioned = new RawModuleDef.V8BackCompat(moduleDef);
+            RawModuleDef versioned = new RawModuleDef.V9(moduleDef);
             var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
             description.Write(moduleBytes);
         }

@@ -222,12 +222,12 @@ public partial struct TestIndexWithEmptyColumns { }
     },
     {
       Location: ,
-      Message: Reducer with the same export name __init__ is registered in multiple places: Reducers.TestDuplicateReducerKind1, Reducers.TestDuplicateReducerKind2,
+      Message: Several reducers are assigned to the same lifecycle kind Init: Reducers.TestDuplicateReducerKind1, Reducers.TestDuplicateReducerKind2,
       Severity: Error,
       Descriptor: {
-        Id: STDB0007,
-        Title: Duplicate exports,
-        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
+        Id: STDB0011,
+        Title: Multiple reducers of the same kind,
+        MessageFormat: Several reducers are assigned to the same lifecycle kind {0}: {1},
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
