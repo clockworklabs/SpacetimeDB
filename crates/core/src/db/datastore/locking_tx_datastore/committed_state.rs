@@ -299,7 +299,7 @@ impl CommittedState {
         let table = self
             .tables
             .get_mut(&table_id)
-            .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
+            .ok_or(TableError::IdNotFoundState(table_id))?;
         let blob_store = &mut self.blob_store;
         let skip_index_update = true;
         table

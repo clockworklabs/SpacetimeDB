@@ -424,12 +424,16 @@ impl<'a> AlignedVarLenOffsets<'a> {
 
 // SAFETY: `visit_var_len` and `visit_var_len_mut` are only different
 // in that they yield `&` vs. `&mut` and are otherwise identical.
-unsafe impl<'a> VarLenMembers for AlignedVarLenOffsets<'a> {
-    type Iter<'this, 'row> = AlignedVarLenOffsetsIter<'this, 'row>
-        where Self: 'this;
+unsafe impl VarLenMembers for AlignedVarLenOffsets<'_> {
+    type Iter<'this, 'row>
+        = AlignedVarLenOffsetsIter<'this, 'row>
+    where
+        Self: 'this;
 
-    type IterMut<'this, 'row> = AlignedVarLenOffsetsIterMut<'this, 'row>
-        where Self: 'this;
+    type IterMut<'this, 'row>
+        = AlignedVarLenOffsetsIterMut<'this, 'row>
+    where
+        Self: 'this;
 
     /// # Safety
     ///
@@ -483,7 +487,7 @@ pub struct AlignedVarLenOffsetsIter<'offsets, 'row> {
     next_offset_idx: usize,
 }
 
-impl<'offsets, 'row> Iterator for AlignedVarLenOffsetsIter<'offsets, 'row> {
+impl<'row> Iterator for AlignedVarLenOffsetsIter<'_, 'row> {
     type Item = &'row VarLenRef;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -519,7 +523,7 @@ pub struct AlignedVarLenOffsetsIterMut<'offsets, 'row> {
     next_offset_idx: usize,
 }
 
-impl<'offsets, 'row> Iterator for AlignedVarLenOffsetsIterMut<'offsets, 'row> {
+impl<'row> Iterator for AlignedVarLenOffsetsIterMut<'_, 'row> {
     type Item = &'row mut VarLenRef;
 
     fn next(&mut self) -> Option<Self::Item> {

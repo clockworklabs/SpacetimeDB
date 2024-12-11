@@ -100,7 +100,7 @@ impl<E: fmt::Display> IntoReducerResult for Result<(), E> {
 
 #[diagnostic::on_unimplemented(
     message = "the first argument of a reducer must be `&ReducerContext`",
-    note = "all reducers must take `&ReducerContext` as their first argument"
+    label = "first argument must be `&ReducerContext`"
 )]
 pub trait ReducerContextArg {
     // a little hack used in the macro to make error messages nicer. it generates <T as ReducerContextArg>::_ITEM

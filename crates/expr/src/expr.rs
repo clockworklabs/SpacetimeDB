@@ -100,7 +100,7 @@ pub struct LetCtx<'a> {
 }
 
 impl<'a> LetCtx<'a> {
-    pub fn get_var(&self, sym: Symbol) -> Option<&Expr> {
+    pub fn get_var(&self, sym: Symbol) -> Option<&'a Expr> {
         self.vars
             .iter()
             .find_map(|(s, e)| if *s == sym { Some(e) } else { None })
