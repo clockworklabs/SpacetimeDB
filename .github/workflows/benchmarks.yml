@@ -92,6 +92,9 @@ jobs:
         env:
           DOTNET_INSTALL_DIR: ~/.dotnet
 
+      - name: Install C# Wasi workload
+        run: dotnet workload install wasi-experimental
+
       - name: Build
         working-directory: crates/bench/
         run: |
