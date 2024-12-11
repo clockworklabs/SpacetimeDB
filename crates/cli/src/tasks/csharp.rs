@@ -8,6 +8,15 @@ fn parse_major_version(version: &str) -> Option<u8> {
 }
 
 pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Result<PathBuf> {
+    println!("PATH:");
+    println!("{}", std::env::var("PATH").unwrap_or_default());
+
+    println!("DOTNET WORKLOAD LIST:");
+    cmd!("dotnet", "workload", "list").run()?;
+
+    println!("DOTNET INFO:");
+    cmd!("dotnet", "--info").run()?;
+
     // Check if the `wasi-experimental` workload is installed. Unfortunately, we
     // have to do this by inspecting the human-readable output. There is a
     // hidden `--machine-readable` flag but it also mixes in human-readable
