@@ -11,6 +11,9 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
     println!("PATH:");
     println!("{}", std::env::var("PATH").unwrap_or_default());
 
+    // this is dumb, but
+    cmd!("dotnet", "workload", "uninstall", "wasi-experimental").run()?;
+
     println!("DOTNET WORKLOAD LIST:");
     cmd!("dotnet", "workload", "list").run()?;
 
