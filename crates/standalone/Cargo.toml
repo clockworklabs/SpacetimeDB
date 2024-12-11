@@ -6,7 +6,7 @@ license-file = "LICENSE"
 description = "An executable for running a single SpacetimeDB standalone instance"
 
 [[bin]]
-name = "spacetimedb"   # The name of the target.
+name = "spacetimedb-standalone"   # The name of the target.
 path = "src/main.rs"   # The source file of the target.
 test = true            # Is tested by default.
 bench = false          # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
