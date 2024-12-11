@@ -69,10 +69,11 @@ use super::{
 /// Parse a SQL string
 pub fn parse_subscription(sql: &str) -> SqlParseResult<SqlAst> {
     let mut stmts = Parser::parse_sql(&PostgreSqlDialect {}, sql)?;
-    if stmts.len() > 1 {
-        return Err(SqlUnsupported::MultiStatement.into());
+    match stmts.len() {
+        0 => Err(SqlUnsupported::Empty.into()),
+        1 => parse_statement(stmts.swap_remove(0)),
+        _ => Err(SqlUnsupported::MultiStatement.into()),
     }
-    parse_statement(stmts.swap_remove(0))
 }
 
 /// Parse a SQL query
@@ -174,6 +175,8 @@ mod tests {
     fn unsupported() {
         for sql in [
             "delete from t",
+            " ",
+            "",
             "select distinct a from t",
             "select * from (select * from t) join (select * from s) on a = b",
         ] {

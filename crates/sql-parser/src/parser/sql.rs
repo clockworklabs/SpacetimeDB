@@ -154,6 +154,9 @@ pub fn parse_sql(sql: &str) -> SqlParseResult<SqlAst> {
     if stmts.len() > 1 {
         return Err(SqlUnsupported::MultiStatement.into());
     }
+    if stmts.is_empty() {
+        return Err(SqlUnsupported::Empty.into());
+    }
     parse_statement(stmts.swap_remove(0))
 }
 
@@ -519,6 +522,9 @@ mod tests {
             "select a from t where",
             // Empty GROUP BY
             "select a, count(*) from t group by",
+            // Empty statement
+            "",
+            " ",
         ] {
             assert!(parse_sql(sql).is_err());
         }
