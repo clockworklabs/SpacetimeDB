@@ -159,11 +159,16 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     })
 }
 
-/// Generates code for treating a struct type as a table.
+/// Generates code for treating a struct type as a row of a table.
 ///
-/// This derives `Serialize`, `Deserialize`, and `SpacetimeType` for the type.
-/// It registers a table with the given *name* in the containing module, and generates a trait
-/// that allows looking up this table in a `ReducerContext`.
+/// This derives `Serialize`, `Deserialize`, `SpacetimeType`, and `Debug` for the type.
+///
+/// Elements of the struct type are NOT automatically inserted into any global table. They are regular structs,
+/// with no special behavior. In particular, modifying them does not automatically modify the database!
+///
+/// Instead, a struct implementing `Table<Row = Self>` is generated. This can be looked up in a `ReducerContext`
+/// using `ctx.db().table_name()`. This struct represents a handle to a database table, and can be used to
+/// iterate and modify the table's elements.
 ///
 /// # Example
 ///
@@ -187,7 +192,7 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 ///     // Use the *name* of the table to get a struct
 ///     // implementing `spacetimedb::Table<Row = User>`.
 ///     let users = ctx.db().users();
-///     
+///
 ///     // You can use methods from `spacetimedb::Table`
 ///     // on the table.
 ///     debug!("User count: {}", users.count());
@@ -195,18 +200,17 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 ///         debug!("{:?}", user);
 ///     }
 ///
-///     // For every named `index`, the table has a method
+///     // For every named `index`, the table has an extra method
 ///     // for getting a corresponding `spacetimedb::BTreeIndex`.
 ///     let by_id_and_username: spacetimedb::BTreeIndex<_, (u32, String), _> =
 ///         users.id_and_username();
 ///     by_id_and_username.delete((&57, &"Billy".to_string()));
 ///
 ///     // For every `#[unique]` or `#[primary_key]` field,
-///     // the table has a method that allows getting a
+///     // the table has an extra method that allows getting a
 ///     // corresponding `spacetimedb::UniqueColumn`.
 ///     let by_username: spacetimedb::UniqueColumn<_, String, _> = users.id();
 ///     by_username.delete(&"test_user".to_string());
-///
 // }
 /// ```
 ///
@@ -235,6 +239,39 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 ///    a single-column attribute; see column attributes below.
 ///    Multiple indexes are permitted.
 ///
+/// * `scheduled(reducer_name)`
+///
+///    Scheduled [reducers](crate::reducer) need a table storing scheduling information.
+///    The rows of this table store all information needed when invoking a scheduled reducer.
+///    This can be any information you want, but we require that the tables store at least an
+///    invocation ID field and timestamp field.
+///
+///    The corresponding reducer should accept a single argument
+///
+///    These can be declared like so:
+///
+/// ```ignore
+/// #[table(name = train_schedule, scheduled(run_train))]
+/// pub struct TrainSchedule {
+///     // Required fields.
+///     #[primary_key]
+///     #[auto_inc]
+///     scheduled_id: u64,
+///     #[scheduled_at]
+///     scheduled_at: spacetimedb::ScheduleAt,
+///
+///     // Any other fields needed.
+///     train: TrainID,
+///     source_station: StationID,
+///     target_station: StationID
+/// }
+///
+/// #[reducer]
+/// pub fn run_train(ctx: &ReducerCtx, schedule: TrainSchedule) {
+///     /* ... */
+/// }
+/// ```
+///
 /// # Column (field) attributes
 ///
 /// * `#[auto_inc]`
@@ -259,6 +296,12 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 /// * `#[index(btree)]`
 ///
 ///    Creates a single-column index with the specified algorithm.
+///
+/// * `#[scheduled_at]`
+///    Used in scheduled reducer tables, see above.
+///
+/// * `#[scheduled_id]`
+///    Used in scheduled reducer tables, see above.
 ///
 /// # Generated code
 ///
@@ -311,6 +354,7 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 /// [`SpacetimeType`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.SpacetimeType.html
 /// [`TableType`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.TableType.html
 /// [`Table`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Table.html
+/// [`Table<Row = Self>`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Table.html
 /// [`ReducerContext`]: https://docs.rs/spacetimedb/latest/spacetimedb/struct.ReducerContext.html
 /// [`UniqueColumn`]: https://docs.rs/spacetimedb/latest/spacetimedb/struct.UniqueColumn.html
 /// [`BTreeIndex`]: https://docs.rs/spacetimedb/latest/spacetimedb/struct.BTreeIndex.html
