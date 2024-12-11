@@ -1,12 +1,14 @@
 use super::{
-    committed_state::{CommittedIndexIter, CommittedState},
+    committed_state::CommittedState,
     datastore::{record_metrics, Result},
     sequence::{Sequence, SequencesState},
-    state_view::{IndexSeekIterMutTxId, Iter, IterByColRange, ScanIterByColRange, StateView},
+    state_view::{IndexSeekIterMutTxId, ScanIterMutTxByColRange, StateView},
     tx::TxId,
     tx_state::{DeleteTable, IndexIdMap, TxState},
     SharedMutexGuard, SharedWriteGuard,
 };
+use crate::db::datastore::locking_tx_datastore::committed_state::CommittedIndexIterMutTx;
+use crate::db::datastore::locking_tx_datastore::state_view::{IterMutTx, IterMutTxByColEq, IterMutTxByColRange};
 use crate::db::datastore::system_tables::{StRowLevelSecurityFields, StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
 use crate::db::datastore::{
     system_tables::{
@@ -1419,6 +1421,12 @@ impl MutTxId {
 }
 
 impl StateView for MutTxId {
+    type Iter<'a> = IterMutTx<'a>;
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterMutTxByColRange<'a, R>;
+    type IterByColEq<'a, 'r> = IterMutTxByColEq<'a, 'r>
+    where
+        Self: 'a;
+
     fn get_schema(&self, table_id: TableId) -> Option<&Arc<TableSchema>> {
         // TODO(bikeshedding, docs): should this also check if the schema is in the system tables,
         // but the table hasn't been constructed yet?
@@ -1442,9 +1450,13 @@ impl StateView for MutTxId {
         }
     }
 
-    fn iter(&self, table_id: TableId) -> Result<Iter<'_>> {
+    fn iter(&self, table_id: TableId) -> Result<Self::Iter<'_>> {
         if self.table_name(table_id).is_some() {
-            return Ok(Iter::mut_tx(table_id, &self.tx_state, &self.committed_state_write_lock));
+            return Ok(IterMutTx::new(
+                table_id,
+                &self.tx_state,
+                &self.committed_state_write_lock,
+            ));
         }
         Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
@@ -1454,7 +1466,7 @@ impl StateView for MutTxId {
         table_id: TableId,
         cols: ColList,
         range: R,
-    ) -> Result<IterByColRange<'_, R>> {
+    ) -> Result<Self::IterByColRange<'_, R>> {
         // We have to index_seek in both the committed state and the current tx state.
         // First, we will check modifications in the current tx. It may be that the table
         // has not been modified yet in the current tx, in which case we will only search
@@ -1468,7 +1480,7 @@ impl StateView for MutTxId {
         // rolling it back will leave the index in place.
         if let Some(inserted_rows) = self.tx_state.index_seek(table_id, &cols, &range) {
             // The current transaction has modified this table, and the table is indexed.
-            Ok(IterByColRange::Index(IndexSeekIterMutTxId {
+            Ok(IterMutTxByColRange::Index(IndexSeekIterMutTxId {
                 table_id,
                 tx_state: &self.tx_state,
                 inserted_rows,
@@ -1479,7 +1491,7 @@ impl StateView for MutTxId {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
             match self.committed_state_write_lock.index_seek(table_id, &cols, &range) {
-                Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter::mut_tx(
+                Some(committed_rows) => Ok(IterMutTxByColRange::CommittedIndex(CommittedIndexIterMutTx::new(
                     table_id,
                     &self.tx_state,
                     committed_rows,
@@ -1513,7 +1525,7 @@ impl StateView for MutTxId {
                         }
                     }
 
-                    Ok(IterByColRange::Scan(ScanIterByColRange::new(
+                    Ok(IterMutTxByColRange::Scan(ScanIterMutTxByColRange::new(
                         self.iter(table_id)?,
                         cols,
                         range,
@@ -1521,5 +1533,14 @@ impl StateView for MutTxId {
                 }
             }
         }
+    }
+
+    fn iter_by_col_eq<'a, 'r>(
+        &'a self,
+        table_id: TableId,
+        cols: impl Into<ColList>,
+        value: &'r AlgebraicValue,
+    ) -> Result<Self::IterByColEq<'a, 'r>> {
+        self.iter_by_col_range(table_id, cols.into(), value)
     }
 }

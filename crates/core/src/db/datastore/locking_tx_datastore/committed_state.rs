@@ -1,9 +1,11 @@
 use super::{
     datastore::Result,
     sequence::{Sequence, SequencesState},
-    state_view::{Iter, IterByColRange, ScanIterByColRange, StateView},
+    state_view::{IterTxByColRange, StateView},
     tx_state::{DeleteTable, IndexIdMap, RemovedIndexIdSet, TxState},
+    IterByColEq,
 };
+use crate::db::datastore::locking_tx_datastore::state_view::{IterTx, ScanIterTxByColRange};
 use crate::{
     db::{
         datastore::{
@@ -69,6 +71,12 @@ impl MemoryUsage for CommittedState {
 }
 
 impl StateView for CommittedState {
+    type Iter<'a> = IterTx<'a>;
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterTxByColRange<'a, R>;
+    type IterByColEq<'a, 'r> = IterByColEq<'a, 'r>
+    where
+        Self: 'a;
+
     fn get_schema(&self, table_id: TableId) -> Option<&Arc<TableSchema>> {
         self.tables.get(&table_id).map(|table| table.get_schema())
     }
@@ -77,9 +85,9 @@ impl StateView for CommittedState {
         self.get_table(table_id).map(|table| table.row_count)
     }
 
-    fn iter(&self, table_id: TableId) -> Result<Iter<'_>> {
+    fn iter(&self, table_id: TableId) -> Result<Self::Iter<'_>> {
         if self.table_name(table_id).is_some() {
-            return Ok(Iter::tx(table_id, self));
+            return Ok(IterTx::new(table_id, self));
         }
         Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
@@ -91,15 +99,24 @@ impl StateView for CommittedState {
         table_id: TableId,
         cols: ColList,
         range: R,
-    ) -> Result<IterByColRange<'_, R>> {
+    ) -> Result<Self::IterByColRange<'_, R>> {
         // TODO: Why does this unconditionally return a `Scan` iter,
         // instead of trying to return a `CommittedIndex` iter?
         // Answer: Because CommittedIndexIter::tx_state: Option<&'a TxState> need to be Some to read after reopen
-        Ok(IterByColRange::Scan(ScanIterByColRange::new(
+        Ok(IterTxByColRange::Scan(ScanIterTxByColRange::new(
             self.iter(table_id)?,
             cols,
             range,
         )))
+    }
+
+    fn iter_by_col_eq<'a, 'r>(
+        &'a self,
+        table_id: TableId,
+        cols: impl Into<ColList>,
+        value: &'r AlgebraicValue,
+    ) -> Result<Self::IterByColEq<'a, 'r>> {
+        self.iter_by_col_range(table_id, cols.into(), value)
     }
 }
 
@@ -626,32 +643,6 @@ impl CommittedState {
         let table = self.tables.get(&table_id)?;
         let index = table.indexes.get(col_list)?;
         Some(&index.key_type)
-    }
-}
-
-pub enum CommittedIndexIter<'a> {
-    Tx(CommittedIndexIterTx<'a>),
-    MutTx(CommittedIndexIterMutTx<'a>),
-}
-
-impl<'a> CommittedIndexIter<'a> {
-    pub(super) fn tx(committed_rows: IndexScanIter<'a>) -> Self {
-        Self::Tx(CommittedIndexIterTx::new(committed_rows))
-    }
-
-    pub(super) fn mut_tx(table_id: TableId, tx_state: &'a TxState, committed_rows: IndexScanIter<'a>) -> Self {
-        Self::MutTx(CommittedIndexIterMutTx::new(table_id, tx_state, committed_rows))
-    }
-}
-
-impl<'a> Iterator for CommittedIndexIter<'a> {
-    type Item = RowRef<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Tx(iter) => iter.next(),
-            Self::MutTx(iter) => iter.next(),
-        }
     }
 }
 
