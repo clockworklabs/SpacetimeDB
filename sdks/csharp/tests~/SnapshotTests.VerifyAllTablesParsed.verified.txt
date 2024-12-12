@@ -9,7 +9,9 @@
       eventContext: {
         Reducers: {Scrubbed},
         SetReducerFlags: {},
-        Event: {},
+        Event: {
+          $type: Event<Reducer>.SubscribeApplied
+        },
         Db: {Scrubbed}
       },
       user: {
@@ -23,13 +25,18 @@
         Reducers: {Scrubbed},
         SetReducerFlags: {},
         Event: {
+          $type: Event<Reducer>.Reducer,
           ReducerEvent: {
             Timestamp: DateTimeOffset_1,
-            Status: {},
+            Status: {
+              $type: Status.Committed
+            },
             CallerIdentity: Identity_2,
             CallerAddress: Guid_1,
             EnergyConsumed: {},
-            Reducer: {}
+            Reducer: {
+              $type: Reducer.StdbIdentityConnected
+            }
           }
         },
         Db: {Scrubbed}
@@ -44,16 +51,18 @@
         Reducers: {Scrubbed},
         SetReducerFlags: {},
         Event: {
+          $type: Event<Reducer>.Reducer,
           ReducerEvent: {
             Timestamp: DateTimeOffset_2,
-            Status: {},
+            Status: {
+              $type: Status.Committed
+            },
             CallerIdentity: Identity_1,
             CallerAddress: Guid_2,
             EnergyConsumed: {},
             Reducer: {
-              SetName_: {
-                Name: A
-              }
+              $type: Reducer.SetName,
+              name: A
             }
           }
         },
@@ -73,16 +82,18 @@
       Reducers: {Scrubbed},
       SetReducerFlags: {},
       Event: {
+        $type: Event<Reducer>.Reducer,
         ReducerEvent: {
           Timestamp: DateTimeOffset_2,
-          Status: {},
+          Status: {
+            $type: Status.Committed
+          },
           CallerIdentity: Identity_1,
           CallerAddress: Guid_2,
           EnergyConsumed: {},
           Reducer: {
-            SetName_: {
-              Name: A
-            }
+            $type: Reducer.SetName,
+            name: A
           }
         }
       },
@@ -93,16 +104,18 @@
         Reducers: {Scrubbed},
         SetReducerFlags: {},
         Event: {
+          $type: Event<Reducer>.Reducer,
           ReducerEvent: {
             Timestamp: DateTimeOffset_3,
-            Status: {},
+            Status: {
+              $type: Status.Committed
+            },
             CallerIdentity: Identity_2,
             CallerAddress: Guid_1,
             EnergyConsumed: {},
             Reducer: {
-              SendMessage_: {
-                Text: Hello, A!
-              }
+              $type: Reducer.SendMessage,
+              text: Hello, A!
             }
           }
         },
@@ -118,16 +131,18 @@
       Reducers: {Scrubbed},
       SetReducerFlags: {},
       Event: {
+        $type: Event<Reducer>.Reducer,
         ReducerEvent: {
           Timestamp: DateTimeOffset_3,
-          Status: {},
+          Status: {
+            $type: Status.Committed
+          },
           CallerIdentity: Identity_2,
           CallerAddress: Guid_1,
           EnergyConsumed: {},
           Reducer: {
-            SendMessage_: {
-              Text: Hello, A!
-            }
+            $type: Reducer.SendMessage,
+            text: Hello, A!
           }
         }
       },
@@ -138,16 +153,18 @@
         Reducers: {Scrubbed},
         SetReducerFlags: {},
         Event: {
+          $type: Event<Reducer>.Reducer,
           ReducerEvent: {
             Timestamp: DateTimeOffset_4,
-            Status: {},
+            Status: {
+              $type: Status.Committed
+            },
             CallerIdentity: Identity_2,
             CallerAddress: Guid_1,
             EnergyConsumed: {},
             Reducer: {
-              SetName_: {
-                Name: B
-              }
+              $type: Reducer.SetName,
+              name: B
             }
           }
         },
@@ -167,16 +184,18 @@
       Reducers: {Scrubbed},
       SetReducerFlags: {},
       Event: {
+        $type: Event<Reducer>.Reducer,
         ReducerEvent: {
           Timestamp: DateTimeOffset_4,
-          Status: {},
+          Status: {
+            $type: Status.Committed
+          },
           CallerIdentity: Identity_2,
           CallerAddress: Guid_1,
           EnergyConsumed: {},
           Reducer: {
-            SetName_: {
-              Name: B
-            }
+            $type: Reducer.SetName,
+            name: B
           }
         }
       },
@@ -187,16 +206,18 @@
         Reducers: {Scrubbed},
         SetReducerFlags: {},
         Event: {
+          $type: Event<Reducer>.Reducer,
           ReducerEvent: {
             Timestamp: DateTimeOffset_5,
-            Status: {},
+            Status: {
+              $type: Status.Committed
+            },
             CallerIdentity: Identity_1,
             CallerAddress: Guid_2,
             EnergyConsumed: {},
             Reducer: {
-              SendMessage_: {
-                Text: Hello, B!
-              }
+              $type: Reducer.SendMessage,
+              text: Hello, B!
             }
           }
         },
@@ -212,16 +233,18 @@
       Reducers: {Scrubbed},
       SetReducerFlags: {},
       Event: {
+        $type: Event<Reducer>.Reducer,
         ReducerEvent: {
           Timestamp: DateTimeOffset_5,
-          Status: {},
+          Status: {
+            $type: Status.Committed
+          },
           CallerIdentity: Identity_1,
           CallerAddress: Guid_2,
           EnergyConsumed: {},
           Reducer: {
-            SendMessage_: {
-              Text: Hello, B!
-            }
+            $type: Reducer.SendMessage,
+            text: Hello, B!
           }
         }
       },
@@ -232,16 +255,18 @@
         Reducers: {Scrubbed},
         SetReducerFlags: {},
         Event: {
+          $type: Event<Reducer>.Reducer,
           ReducerEvent: {
             Timestamp: DateTimeOffset_6,
-            Status: {},
+            Status: {
+              $type: Status.Committed
+            },
             CallerIdentity: Identity_2,
             CallerAddress: Guid_1,
             EnergyConsumed: {},
             Reducer: {
-              SendMessage_: {
-                Text: Goodbye!
-              }
+              $type: Reducer.SendMessage,
+              text: Goodbye!
             }
           }
         },
@@ -257,16 +282,18 @@
       Reducers: {Scrubbed},
       SetReducerFlags: {},
       Event: {
+        $type: Event<Reducer>.Reducer,
         ReducerEvent: {
           Timestamp: DateTimeOffset_6,
-          Status: {},
+          Status: {
+            $type: Status.Committed
+          },
           CallerIdentity: Identity_2,
           CallerAddress: Guid_1,
           EnergyConsumed: {},
           Reducer: {
-            SendMessage_: {
-              Text: Goodbye!
-            }
+            $type: Reducer.SendMessage,
+            text: Goodbye!
           }
         }
       },
@@ -277,13 +304,18 @@
         Reducers: {Scrubbed},
         SetReducerFlags: {},
         Event: {
+          $type: Event<Reducer>.Reducer,
           ReducerEvent: {
             Timestamp: DateTimeOffset_7,
-            Status: {},
+            Status: {
+              $type: Status.Committed
+            },
             CallerIdentity: Identity_2,
             CallerAddress: Guid_1,
             EnergyConsumed: {},
-            Reducer: {}
+            Reducer: {
+              $type: Reducer.StdbIdentityDisconnected
+            }
           }
         },
         Db: {Scrubbed}
@@ -304,16 +336,18 @@
         Reducers: {Scrubbed},
         SetReducerFlags: {},
         Event: {
+          $type: Event<Reducer>.Reducer,
           ReducerEvent: {
             Timestamp: DateTimeOffset_8,
-            Status: {},
+            Status: {
+              $type: Status.Committed
+            },
             CallerIdentity: Identity_1,
             CallerAddress: Guid_2,
             EnergyConsumed: {},
             Reducer: {
-              SendMessage_: {
-                Text: Goodbye!
-              }
+              $type: Reducer.SendMessage,
+              text: Goodbye!
             }
           }
         },
@@ -329,16 +363,18 @@
       Reducers: {Scrubbed},
       SetReducerFlags: {},
       Event: {
+        $type: Event<Reducer>.Reducer,
         ReducerEvent: {
           Timestamp: DateTimeOffset_8,
-          Status: {},
+          Status: {
+            $type: Status.Committed
+          },
           CallerIdentity: Identity_1,
           CallerAddress: Guid_2,
           EnergyConsumed: {},
           Reducer: {
-            SendMessage_: {
-              Text: Goodbye!
-            }
+            $type: Reducer.SendMessage,
+            text: Goodbye!
           }
         }
       },

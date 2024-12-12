@@ -1,6 +1,7 @@
 namespace SpacetimeDB.Tests;
 
 using System.Runtime.CompilerServices;
+using Argon;
 using SpacetimeDB.Types;
 
 static class VerifyInit
@@ -73,13 +74,15 @@ static class VerifyInit
         Environment.SetEnvironmentVariable("DiffEngine_TargetOnLeft", "true");
 
         VerifierSettings.AddExtraSettings(settings =>
+        {
             settings.Converters.AddRange(
                 [
                     new IdentityConverter(),
                     new AddressConverter(),
                     new NetworkRequestTrackerConverter()
                 ]
-            )
-        );
+            );
+            settings.TypeNameHandling = TypeNameHandling.Auto;
+        });
     }
 }
