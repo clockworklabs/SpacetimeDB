@@ -11,7 +11,7 @@
 *List any PRs here that are required for this SDK change to work*
 
 ## Testsuite
-*If you would like to run against a specific SpacetimeDB branch in the testsuite, specify that here. This can be a branch name or a link to a PR.*
+*If you would like to run the your SDK changes in this PR against a specific SpacetimeDB branch, specify that here. This can be a branch name or a link to a PR.*
 
 SpacetimeDB branch name: master
 
