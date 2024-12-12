@@ -422,10 +422,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     Indexes: [
                         {{string.Join(
                             ",\n",
-                            GetConstraints(v, ColumnAttrs.Unique)
-                            .Select(c => new ViewIndex(c.col))
-                            .Concat(GetIndexes(v))
-                            .Select(b => b.GenerateIndexDef(Members))
+                            GetIndexes(v).Select(b => b.GenerateIndexDef(Members))
                         )}}
                     ],
                     Constraints: {{GenConstraintList(v, ColumnAttrs.Unique, $"{iTable}.MakeUniqueConstraint")}},
