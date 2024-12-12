@@ -16,6 +16,11 @@ public class GameManager : MonoBehaviour
     public GameObject deathScreen;
     public PlayerController playerPrefab;
 
+    public delegate void CallbackDelegate();
+
+    public static event CallbackDelegate OnConnect;
+    public static event CallbackDelegate OnSubscriptionApplied;
+
     public static Color[] colorPalette = new[]
     {
         (Color)new Color32(248, 72, 245, 255),
@@ -65,11 +70,13 @@ public class GameManager : MonoBehaviour
                 Debug.Log("Subscription applied!");
                 OnSubscriptionApplied?.Invoke();
             }).Subscribe("SELECT * FROM *");
-        }).OnConnectError((message) =>
+
+            OnConnect?.Invoke();
+        }).OnConnectError((ex) =>
         {
             // Called when we have an error connecting to SpacetimeDB
-            Debug.LogError($"Connection error: {message}");
-        }).OnDisconnect((_conn, error) =>
+            Debug.LogError($"Connection error: {ex}");
+        }).OnDisconnect((_conn, ex) =>
         {
             // Called when we are disconnected from SpacetimeDB
             Debug.Log("Disconnected.");
