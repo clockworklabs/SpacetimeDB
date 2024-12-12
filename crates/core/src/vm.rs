@@ -1,8 +1,8 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 
-use crate::db::datastore::locking_tx_datastore::state_view::IterMutTxByColRange;
+use crate::db::datastore::locking_tx_datastore::state_view::IterByColRangeMutTx;
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
-use crate::db::datastore::locking_tx_datastore::IterTxByColRange;
+use crate::db::datastore::locking_tx_datastore::IterByColRangeTx;
 use crate::db::datastore::system_tables::{st_var_schema, StVarName, StVarRow, StVarTable};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
@@ -350,24 +350,24 @@ pub fn index_semi_join_left<'a>(
 static_assert_size!(
     IndexSemiJoinLeft<
         Box<IterRows<'static>>,
-        fn(AlgebraicValue) -> Result<IterTxByColRange<'static, AlgebraicValue>, DBError>,
-        IterTxByColRange<'static, AlgebraicValue>,
+        fn(AlgebraicValue) -> Result<IterByColRangeTx<'static, AlgebraicValue>, DBError>,
+        IterByColRangeTx<'static, AlgebraicValue>,
     >,
-    256
+    232
 );
 static_assert_size!(
     IndexSemiJoinLeft<
         Box<IterRows<'static>>,
-        fn(AlgebraicValue) -> Result<IterMutTxByColRange<'static, AlgebraicValue>, DBError>,
-        IterMutTxByColRange<'static, AlgebraicValue>,
+        fn(AlgebraicValue) -> Result<IterByColRangeMutTx<'static, AlgebraicValue>, DBError>,
+        IterByColRangeMutTx<'static, AlgebraicValue>,
     >,
-    256
+    240
 );
 
 /// An index join operator that returns matching rows from the probe side.
 pub struct IndexSemiJoinRight<'c, Rhs: RelOps<'c>, F> {
     /// An iterator for the probe side.
-    /// The values returned will be useSd to probe the index.
+    /// The values returned will be used to probe the index.
     probe_side: Rhs,
     /// The column whose value will be used to probe the index.
     probe_col: ColId,
@@ -437,14 +437,14 @@ pub fn index_semi_join_right<'a>(
 static_assert_size!(
     IndexSemiJoinRight<
         Box<IterRows<'static>>,
-        fn(AlgebraicValue) -> Result<IterTxByColRange<'static, AlgebraicValue>, DBError>,
+        fn(AlgebraicValue) -> Result<IterByColRangeTx<'static, AlgebraicValue>, DBError>,
     >,
     40
 );
 static_assert_size!(
     IndexSemiJoinRight<
         Box<IterRows<'static>>,
-        fn(AlgebraicValue) -> Result<IterMutTxByColRange<'static, AlgebraicValue>, DBError>,
+        fn(AlgebraicValue) -> Result<IterByColRangeMutTx<'static, AlgebraicValue>, DBError>,
     >,
     40
 );

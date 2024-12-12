@@ -1,11 +1,11 @@
 use super::{
     datastore::Result,
     sequence::{Sequence, SequencesState},
-    state_view::{IterTxByColRange, StateView},
+    state_view::{IterByColRangeTx, StateView},
     tx_state::{DeleteTable, IndexIdMap, RemovedIndexIdSet, TxState},
-    IterByColEq,
+    IterByColEqTx,
 };
-use crate::db::datastore::locking_tx_datastore::state_view::{IterTx, ScanIterTxByColRange};
+use crate::db::datastore::locking_tx_datastore::state_view::{IterTx, ScanIterByColRangeTx};
 use crate::{
     db::{
         datastore::{
@@ -41,7 +41,7 @@ use spacetimedb_table::{
     table::{IndexScanIter, InsertError, RowRef, Table},
     MemoryUsage,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 /// Contains the live, in-memory snapshot of a database. This structure
@@ -72,8 +72,8 @@ impl MemoryUsage for CommittedState {
 
 impl StateView for CommittedState {
     type Iter<'a> = IterTx<'a>;
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterTxByColRange<'a, R>;
-    type IterByColEq<'a, 'r> = IterByColEq<'a, 'r>
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeTx<'a, R>;
+    type IterByColEq<'a, 'r> = IterByColEqTx<'a, 'r>
     where
         Self: 'a;
 
@@ -103,7 +103,7 @@ impl StateView for CommittedState {
         // TODO: Why does this unconditionally return a `Scan` iter,
         // instead of trying to return a `CommittedIndex` iter?
         // Answer: Because CommittedIndexIter::tx_state: Option<&'a TxState> need to be Some to read after reopen
-        Ok(IterTxByColRange::Scan(ScanIterTxByColRange::new(
+        Ok(IterByColRangeTx::Scan(ScanIterByColRangeTx::new(
             self.iter(table_id)?,
             cols,
             range,
@@ -646,67 +646,25 @@ impl CommittedState {
     }
 }
 
-pub struct CommittedIndexIterTx<'a> {
+pub struct CommittedIndexIterWithDeletedMutTx<'a> {
     committed_rows: IndexScanIter<'a>,
-    num_committed_rows_fetched: u64,
+    del_table: &'a DeleteTable,
 }
 
-impl<'a> CommittedIndexIterTx<'a> {
-    pub(super) fn new(committed_rows: IndexScanIter<'a>) -> Self {
+impl<'a> CommittedIndexIterWithDeletedMutTx<'a> {
+    pub(super) fn new(committed_rows: IndexScanIter<'a>, del_table: &'a BTreeSet<RowPointer>) -> Self {
         Self {
             committed_rows,
-            num_committed_rows_fetched: 0,
+            del_table,
         }
     }
 }
 
-impl<'a> Iterator for CommittedIndexIterTx<'a> {
+impl<'a> Iterator for CommittedIndexIterWithDeletedMutTx<'a> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(row_ref) = self.committed_rows.next() {
-            // TODO(metrics): This doesn't actually fetch a row.
-            // Move this counter to `RowRef::read_row`.
-            self.num_committed_rows_fetched += 1;
-            return Some(row_ref);
-        }
-
-        None
-    }
-}
-
-pub struct CommittedIndexIterMutTx<'a> {
-    table_id: TableId,
-    tx_state: &'a TxState,
-    committed_rows: IndexScanIter<'a>,
-    num_committed_rows_fetched: u64,
-}
-
-impl<'a> CommittedIndexIterMutTx<'a> {
-    pub(super) fn new(table_id: TableId, tx_state: &'a TxState, committed_rows: IndexScanIter<'a>) -> Self {
-        Self {
-            table_id,
-            tx_state,
-            committed_rows,
-            num_committed_rows_fetched: 0,
-        }
-    }
-}
-
-impl<'a> Iterator for CommittedIndexIterMutTx<'a> {
-    type Item = RowRef<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(row_ref) = self
-            .committed_rows
-            .find(|row_ref| !self.tx_state.is_deleted(self.table_id, row_ref.pointer()))
-        {
-            // TODO(metrics): This doesn't actually fetch a row.
-            // Move this counter to `RowRef::read_row`.
-            self.num_committed_rows_fetched += 1;
-            return Some(row_ref);
-        }
-
-        None
+        self.committed_rows
+            .find(|row_ref| !self.del_table.contains(&row_ref.pointer()))
     }
 }

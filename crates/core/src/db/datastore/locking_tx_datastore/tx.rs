@@ -2,10 +2,9 @@ use super::datastore::record_metrics;
 use super::{
     committed_state::CommittedState,
     datastore::Result,
-    state_view::{IterTxByColRange, StateView},
-    IterByColEq, SharedReadGuard,
+    state_view::{IterByColRangeTx, StateView},
+    IterByColEqTx, SharedReadGuard,
 };
-use crate::db::datastore::locking_tx_datastore::committed_state::CommittedIndexIterTx;
 use crate::db::datastore::locking_tx_datastore::state_view::IterTx;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_primitives::{ColList, TableId};
@@ -27,8 +26,8 @@ pub struct TxId {
 
 impl StateView for TxId {
     type Iter<'a> = IterTx<'a>;
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterTxByColRange<'a, R>;
-    type IterByColEq<'a, 'r> = IterByColEq<'a, 'r>
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeTx<'a, R>;
+    type IterByColEq<'a, 'r> = IterByColEqTx<'a, 'r>
     where
         Self: 'a;
 
@@ -54,9 +53,7 @@ impl StateView for TxId {
         range: R,
     ) -> Result<Self::IterByColRange<'_, R>> {
         match self.committed_state_shared_lock.index_seek(table_id, &cols, &range) {
-            Some(committed_rows) => Ok(IterTxByColRange::CommittedIndex(CommittedIndexIterTx::new(
-                committed_rows,
-            ))),
+            Some(committed_rows) => Ok(IterByColRangeTx::CommittedIndex(committed_rows)),
             None => self
                 .committed_state_shared_lock
                 .iter_by_col_range(table_id, cols, range),
