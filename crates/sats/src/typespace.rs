@@ -266,15 +266,18 @@ pub trait GroundSpacetimeType {
 /// - `Option<T> where T: SpacetimeType`
 /// - `Vec<T> where T: SpacetimeType`
 ///
-/// (Storing collections in database tables is a form of [denormalization](https://en.wikipedia.org/wiki/Denormalization).)
+/// (Storing collections in database tables is a form of [denormalization](https://en.wikipedia.org/wiki/Denormalization), which is supported by SpacetimeDB.)
+///
 /// All `#[table(..)]` types automatically derive `SpacetimeType`.
 ///
 /// This trait makes types self-describing, allowing them to automatically register their structure
 /// with SpacetimeDB. This is used to tell SpacetimeDB about the structure of a module's tables and
 /// reducers.
 ///
-/// Deriving this trait also derives [`Serialize`](crate::ser::Serialize), [`Deseserialize`](crate::de::Deserialize),
-/// and [`Debug`](std::fmt::Debug). This is not currently documented via trait bounds.
+/// Deriving this trait also derives [`Serialize`](crate::ser::Serialize), [`Deserialize`](crate::de::Deserialize),
+/// and [`Debug`](std::fmt::Debug). (There are currently no trait bounds on `SpacetimeType` documenting this fact.)
+///
+/// The `Serialize` and `Deserialize` traits are used to convert Rust data structures to other formats, suitable for storing on disk or passing over the network. `Debug` is simply for debugging convenience.
 ///
 /// Do not manually implement this trait unless you know what you are doing.
 /// Incorrect implementations are safe, but can result in data loss.
@@ -285,7 +288,8 @@ pub trait GroundSpacetimeType {
 #[diagnostic::on_unimplemented(note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition")]
 pub trait SpacetimeType {
     /// Returns an `AlgebraicType` representing the type for `Self` in SATS
-    /// and in the typing context in `typespace`.
+    /// and in the typing context in `typespace`. This is used by the
+    /// automatic type registration system in Rust modules.
     ///
     /// The resulting `AlgebraicType` may contain `Ref`s that only make sense
     /// within the context of this particular `typespace`.
