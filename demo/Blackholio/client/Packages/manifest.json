@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "com.clockworklabs.spacetimedbsdk": "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git",
+    "com.clockworklabs.spacetimedbsdk": "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git#v1.0.0-rc1-hotfix2",
     "com.unity.collab-proxy": "2.3.1",
     "com.unity.feature.2d": "2.0.1",
     "com.unity.ide.rider": "3.0.28",
@@ -11,6 +11,7 @@
     "com.unity.testtools.codecoverage": "1.2.6",
     "com.unity.textmeshpro": "3.0.6",
     "com.unity.timeline": "1.7.6",
+    "com.unity.toolchain.linux-x86_64": "2.0.10",
     "com.unity.toolchain.macos-arm64-linux-x86_64": "2.0.3",
     "com.unity.toolchain.win-x86_64-linux-x86_64": "2.0.6",
     "com.unity.ugui": "1.0.0",

@@ -235,7 +235,6 @@ public class PlayModeExampleTest
         GameManager.OnConnect += () =>
         {
             connected = true;
-
         };
         GameManager.OnSubscriptionApplied += () =>
         {
