@@ -64,7 +64,7 @@ pub async fn exec_subcommand(
         "list" => list::exec(config, args).await,
         "init" => init::exec(config, args).await,
         "build" => build::exec(config, args).await.map(drop),
-        "server" => server::exec(config, args).await,
+        "server" => server::exec(config, paths, args).await,
         "subscribe" => subscribe::exec(config, args).await,
         #[cfg(feature = "standalone")]
         "start" => start::exec(Some(paths), args).await,

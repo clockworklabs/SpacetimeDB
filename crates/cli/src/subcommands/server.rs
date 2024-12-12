@@ -5,8 +5,7 @@ use crate::{
 };
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use spacetimedb_standalone::subcommands::start::default_data_dir;
-use std::path::PathBuf;
+use spacetimedb_paths::{server::ServerDataDir, SpacetimePaths};
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
     Table, Tabled,
@@ -105,20 +104,24 @@ fn get_subcommands() -> Vec<Command> {
                 Arg::new("data_dir")
                     .long("data-dir")
                     .help("The path to the data directory for the database")
-                    .default_value(default_data_dir().into_os_string())
-                    .value_parser(clap::value_parser!(PathBuf)),
+                    .value_parser(clap::value_parser!(ServerDataDir)),
             )
             .arg(common_args::yes()),
         // TODO: set-name, set-protocol, set-host, set-url
     ]
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, paths: &SpacetimePaths, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let (cmd, subcommand_args) = args.subcommand().expect("Subcommand required");
-    exec_subcommand(config, cmd, subcommand_args).await
+    exec_subcommand(config, paths, cmd, subcommand_args).await
 }
 
-async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_subcommand(
+    config: Config,
+    paths: &SpacetimePaths,
+    cmd: &str,
+    args: &ArgMatches,
+) -> Result<(), anyhow::Error> {
     match cmd {
         "list" => exec_list(config, args).await,
         "set-default" => exec_set_default(config, args).await,
@@ -127,7 +130,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
         "fingerprint" => exec_fingerprint(config, args).await,
         "ping" => exec_ping(config, args).await,
         "edit" => exec_edit(config, args).await,
-        "clear" => exec_clear(config, args).await,
+        "clear" => exec_clear(config, paths, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
@@ -357,11 +360,11 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
     Ok(())
 }
 
-async fn exec_clear(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_clear(_config: Config, paths: &SpacetimePaths, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let force = args.get_flag("force");
-    let data_dir = args.get_one::<PathBuf>("data_dir").unwrap();
+    let data_dir = args.get_one::<ServerDataDir>("data_dir").unwrap_or(&paths.data_dir);
 
-    if data_dir.exists() {
+    if data_dir.0.exists() {
         println!("Database path: {}", data_dir.display());
 
         if !y_or_n(
