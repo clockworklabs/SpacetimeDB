@@ -8,6 +8,7 @@
     "com.unity.nuget.newtonsoft-json": "3.2.1",
     "com.unity.render-pipelines.universal": "14.0.11",
     "com.unity.test-framework": "1.1.33",
+    "com.unity.testtools.codecoverage": "1.2.6",
     "com.unity.textmeshpro": "3.0.6",
     "com.unity.timeline": "1.7.6",
     "com.unity.toolchain.macos-arm64-linux-x86_64": "2.0.3",

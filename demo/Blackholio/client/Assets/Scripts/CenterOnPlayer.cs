@@ -4,10 +4,11 @@ using UnityEngine;
 
 public class CenterOnPlayer : MonoBehaviour
 {
+    
     // Update is called once per frame
     void LateUpdate()
     {
-        if (PlayerController.Local == null)
+        if (PlayerController.Local == null || !GameManager.IsConnected())
         {
             return;
         }

@@ -13,8 +13,11 @@ public class UIUsernameChooser : MonoBehaviour
 
     private bool sentCreatePlayer;
 
+    public static UIUsernameChooser instance;
+    
     private void Start()
     {
+        instance = this;
         GameManager.conn.Db.Player.OnInsert += (ctx, newPlayer) =>
         {
             if (newPlayer.Identity == GameManager.localIdentity)

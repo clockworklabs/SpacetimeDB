@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 using UnityEngine;
@@ -14,6 +15,11 @@ public class GameManager : MonoBehaviour
     public FoodController foodPrefab;
     public GameObject deathScreen;
     public PlayerController playerPrefab;
+
+    public delegate void CallbackDelegate();
+
+    public static event CallbackDelegate OnConnect;
+    public static event CallbackDelegate OnSubscriptionApplied;
     
     public static Color[] colorPalette = new[]
     {
@@ -36,7 +42,7 @@ public class GameManager : MonoBehaviour
     public static Dictionary<uint, PlayerController> playerIdToPlayerController =
         new Dictionary<uint, PlayerController>();
 
-    public static Identity? localIdentity;
+    public static Identity localIdentity = default;
     public static DbConnection conn;
     
     private void Start()
@@ -50,7 +56,7 @@ public class GameManager : MonoBehaviour
             Debug.Log("Connected.");
             AuthToken.SaveToken(token);
             localIdentity = identity;
-
+            
             conn.Db.Circle.OnInsert += CircleOnInsert;
             conn.Db.Circle.OnDelete += CircleOnDelete;
             conn.Db.Entity.OnUpdate += EntityOnUpdate;
@@ -62,17 +68,25 @@ public class GameManager : MonoBehaviour
             conn.SubscriptionBuilder().OnApplied(ctx =>
             {
                 Debug.Log("Subscription applied!");
+                OnSubscriptionApplied?.Invoke();
             }).Subscribe("SELECT * FROM *");
-        }).OnConnectError((status, message) =>
+            
+            OnConnect?.Invoke();
+        }).OnConnectError(ex =>
         {
             // Called when we have an error connecting to SpacetimeDB
-            Debug.LogError($"Connection error: {status} {message}");
-        }).OnDisconnect((_conn, closeStatus, error) =>
+            Debug.LogException(ex);
+        }).OnDisconnect((_conn, ex) =>
         {
             // Called when we are disconnected from SpacetimeDB
             Debug.Log("Disconnected.");
-        }).WithUri("http://localhost:3000")
+            if (ex != null)
+            {
+                Debug.LogException(ex);
+            }
+        }).WithUri("http://127.0.0.1:3000")
             .WithModuleName("untitled-circle-game")
+            // .WithCredentials((localIdentity.Value, PlayerPrefs.GetString(AuthToken.GetTokenKey())))
             .Build();
         
 #pragma warning disable CS0612 // Type or member is obsolete
@@ -165,5 +179,16 @@ public class GameManager : MonoBehaviour
     {
         deathScreen.SetActive(false);
         conn.Reducers.Respawn();
+    }
+
+    public void Disconnect()
+    {
+        conn.Disconnect();
+        conn = null;
+    }
+
+    public static bool IsConnected()
+    {
+        return conn != null && conn.IsActive;
     }
 }

@@ -38,7 +38,10 @@ public class FoodController : MonoBehaviour
 
     private void OnDestroy()
     {
-        GameManager.conn.Db.Food.OnDelete -= OnDelete;
+        if (GameManager.IsConnected())
+        {
+            GameManager.conn.Db.Food.OnDelete -= OnDelete;        
+        }
     }
 
     private void OnDelete(EventContext context, Food food)
