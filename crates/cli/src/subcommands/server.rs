@@ -103,7 +103,7 @@ fn get_subcommands() -> Vec<Command> {
             .arg(
                 Arg::new("data_dir")
                     .long("data-dir")
-                    .help("The path to the data directory for the database")
+                    .help("The path to the server data directory to clear [default: that of the selected spacetime instance]")
                     .value_parser(clap::value_parser!(ServerDataDir)),
             )
             .arg(common_args::yes()),
