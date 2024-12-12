@@ -14,7 +14,8 @@ use core::marker::PhantomData;
 use smallvec::SmallVec;
 use std::borrow::Borrow;
 
-/// A **data format** that can deserialize any data structure supported by SATS.
+/// A **data format** that can deserialize any data structure supported by
+/// the SpacetimeDB Algebraic Type System.
 ///
 /// The `Deserializer` trait in SATS performs the same function as [`serde::Deserializer`] in [`serde`].
 /// See the documentation of [`serde::Deserializer`] for more information of the data model.
@@ -26,6 +27,9 @@ use std::borrow::Borrow;
 /// but rather, this functionality is split up into more targeted traits such as `SumVisitor<'de>`.
 ///
 /// The lifetime `'de` allows us to deserialize lifetime-generic types in a zero-copy fashion.
+///
+/// Do not manually implement this trait unless you know what you are doing.
+/// Incorrect implementations are safe, but can result in data loss.
 ///
 /// [`serde::Deserializer`]: ::serde::Deserializer
 /// [`serde`]: https://crates.io/crates/serde

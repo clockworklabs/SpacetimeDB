@@ -161,12 +161,12 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 
 /// Generates code for treating a struct type as a row of a table.
 ///
-/// This derives `Serialize`, `Deserialize`, `SpacetimeType`, and `Debug` for the type.
+/// This derives [`Serialize`], [`Deserialize`], [`SpacetimeType`], and [`Debug`] for the type.
 ///
 /// Elements of the struct type are NOT automatically inserted into any global table. They are regular structs,
 /// with no special behavior. In particular, modifying them does not automatically modify the database!
 ///
-/// Instead, a struct implementing `Table<Row = Self>` is generated. This can be looked up in a `ReducerContext`
+/// Instead, a struct implementing [`Table<Row = Self>`] is generated. This can be looked up in a [`ReducerContext`]
 /// using `ctx.db().table_name()`. This struct represents a handle to a database table, and can be used to
 /// iterate and modify the table's elements.
 ///
@@ -177,7 +177,7 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 /// use log::debug;
 ///
 /// #[table(name = users, public,
-///         index(name = id_and_username, btree(id, username))]
+///         index(name = id_and_username, btree(id, username)))]
 /// pub struct User {
 ///     #[auto_inc]
 ///     #[primary_key]
@@ -211,7 +211,7 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 ///     // corresponding `spacetimedb::UniqueColumn`.
 ///     let by_username: spacetimedb::UniqueColumn<_, String, _> = users.id();
 ///     by_username.delete(&"test_user".to_string());
-// }
+/// }
 /// ```
 ///
 /// # Macro arguments
@@ -241,7 +241,7 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 ///
 /// * `scheduled(reducer_name)`
 ///
-///    Scheduled [reducers](crate::reducer) need a table storing scheduling information.
+///    Scheduled [reducers](macro@crate::reducer) need a table storing scheduling information.
 ///    The rows of this table store all information needed when invoking a scheduled reducer.
 ///    This can be any information you want, but we require that the tables store at least an
 ///    invocation ID field and timestamp field.
