@@ -129,23 +129,21 @@
 
 use sqlparser::{
     ast::{
-        Assignment, Distinct, Expr, GroupByExpr, ObjectName, OrderByExpr, Query, Select, SetExpr, SetOperator,
-        SetQuantifier, Statement, TableFactor, TableWithJoins, Values,
+        Assignment, Expr, GroupByExpr, ObjectName, Query, Select, SetExpr, Statement, TableFactor, TableWithJoins,
+        Values,
     },
     dialect::PostgreSqlDialect,
     parser::Parser,
 };
 
 use crate::ast::{
-    sql::{
-        OrderByElem, QueryAst, SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlSetOp, SqlShow, SqlUpdate, SqlValues,
-    },
-    SqlIdent, SqlLiteral,
+    sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate, SqlValues},
+    SqlIdent,
 };
 
 use super::{
-    errors::SqlUnsupported, parse_expr, parse_expr_opt, parse_ident, parse_literal, parse_parts, parse_projection,
-    RelParser, SqlParseResult,
+    errors::SqlUnsupported, parse_expr_opt, parse_ident, parse_literal, parse_parts, parse_projection, RelParser,
+    SqlParseResult,
 };
 
 /// Parse a SQL string
@@ -157,13 +155,13 @@ pub fn parse_sql(sql: &str) -> SqlParseResult<SqlAst> {
     if stmts.is_empty() {
         return Err(SqlUnsupported::Empty.into());
     }
-    parse_statement(stmts.swap_remove(0))
+    parse_statement(stmts.swap_remove(0)).map(|ast| ast.qualify_vars())
 }
 
 /// Parse a SQL statement
 fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
     match stmt {
-        Statement::Query(query) => Ok(SqlAst::Query(SqlParser::parse_query(*query)?)),
+        Statement::Query(query) => Ok(SqlAst::Select(SqlParser::parse_query(*query)?)),
         Statement::Insert {
             or: None,
             table_name,
@@ -332,7 +330,7 @@ fn parse_set_var(variable: ObjectName, mut value: Vec<Expr>) -> SqlParseResult<S
 struct SqlParser;
 
 impl RelParser for SqlParser {
-    type Ast = QueryAst;
+    type Ast = SqlSelect;
 
     fn parse_query(query: Query) -> SqlParseResult<Self::Ast> {
         match query {
@@ -340,90 +338,20 @@ impl RelParser for SqlParser {
                 with: None,
                 body,
                 order_by,
-                limit,
+                limit: None,
                 offset: None,
                 fetch: None,
                 locks,
-            } if locks.is_empty() => Ok(QueryAst {
-                query: parse_set_op(*body)?,
-                order: parse_order_by(order_by)?,
-                limit: parse_limit(limit)?,
-            }),
+            } if order_by.is_empty() && locks.is_empty() => parse_set_op(*body),
             _ => Err(SqlUnsupported::feature(query).into()),
         }
     }
 }
 
-/// Parse ORDER BY
-fn parse_order_by(items: Vec<OrderByExpr>) -> SqlParseResult<Vec<OrderByElem>> {
-    let mut elems = Vec::new();
-    for item in items {
-        elems.push(OrderByElem(
-            parse_expr(item.expr)?,
-            matches!(item.asc, Some(true)) || item.asc.is_none(),
-        ));
-    }
-    Ok(elems)
-}
-
-/// Parse LIMIT
-fn parse_limit(limit: Option<Expr>) -> SqlParseResult<Option<SqlLiteral>> {
-    limit
-        .map(|expr| {
-            if let Expr::Value(v) = expr {
-                parse_literal(v)
-            } else {
-                Err(SqlUnsupported::Limit(expr).into())
-            }
-        })
-        .transpose()
-}
-
 /// Parse a set operation
-fn parse_set_op(expr: SetExpr) -> SqlParseResult<SqlSetOp> {
+fn parse_set_op(expr: SetExpr) -> SqlParseResult<SqlSelect> {
     match expr {
-        SetExpr::Query(query) => Ok(SqlSetOp::Query(Box::new(SqlParser::parse_query(*query)?))),
-        SetExpr::Select(select) => Ok(SqlSetOp::Select(parse_select(*select)?)),
-        SetExpr::SetOperation {
-            op: SetOperator::Union,
-            set_quantifier: SetQuantifier::All,
-            left,
-            right,
-        } => Ok(SqlSetOp::Union(
-            Box::new(parse_set_op(*left)?),
-            Box::new(parse_set_op(*right)?),
-            true,
-        )),
-        SetExpr::SetOperation {
-            op: SetOperator::Union,
-            set_quantifier: SetQuantifier::None,
-            left,
-            right,
-        } => Ok(SqlSetOp::Union(
-            Box::new(parse_set_op(*left)?),
-            Box::new(parse_set_op(*right)?),
-            false,
-        )),
-        SetExpr::SetOperation {
-            op: SetOperator::Except,
-            set_quantifier: SetQuantifier::All,
-            left,
-            right,
-        } => Ok(SqlSetOp::Minus(
-            Box::new(parse_set_op(*left)?),
-            Box::new(parse_set_op(*right)?),
-            true,
-        )),
-        SetExpr::SetOperation {
-            op: SetOperator::Except,
-            set_quantifier: SetQuantifier::None,
-            left,
-            right,
-        } => Ok(SqlSetOp::Minus(
-            Box::new(parse_set_op(*left)?),
-            Box::new(parse_set_op(*right)?),
-            false,
-        )),
+        SetExpr::Select(select) => parse_select(*select).map(SqlSelect::qualify_vars),
         _ => Err(SqlUnsupported::feature(expr).into()),
     }
 }
@@ -432,7 +360,7 @@ fn parse_set_op(expr: SetExpr) -> SqlParseResult<SqlSetOp> {
 fn parse_select(select: Select) -> SqlParseResult<SqlSelect> {
     match select {
         Select {
-            distinct,
+            distinct: None,
             top: None,
             projection,
             into: None,
@@ -455,7 +383,6 @@ fn parse_select(select: Select) -> SqlParseResult<SqlSelect> {
         {
             Ok(SqlSelect {
                 project: parse_projection(projection)?,
-                distinct: matches!(distinct, Some(Distinct::Distinct)),
                 from: SqlParser::parse_from(from)?,
                 filter: parse_expr_opt(selection)?,
             })
@@ -498,9 +425,6 @@ mod tests {
     fn supported() {
         for sql in [
             "select a from t",
-            "select distinct a from t",
-            "select * from t order by a limit 5",
-            "select * from t where a = 1 union select * from t where a = 2",
             "insert into t values (1, 2)",
             "delete from t",
             "delete from t where a = 1",
