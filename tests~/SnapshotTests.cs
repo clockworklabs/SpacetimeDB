@@ -238,27 +238,27 @@ public class SnapshotTests
         SampleTransactionUpdate(
             1718487768057579, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
             1, "set_name", 4345615, 70, [SampleUserUpdate("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, "A", true, true)],
-            Encode(new SetName { Name = "A" })
+            Encode(new Reducer.SetName { Name = "A" })
         ),
         SampleTransactionUpdate(
             1718487775346381, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
             1, "send_message", 2779615, 57, [SampleMessage("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", 1718487775346381, "Hello, A!")],
-            Encode(new SendMessage { Text = "Hello, A!" })
+            Encode(new Reducer.SendMessage { Text = "Hello, A!" })
         ),
         SampleTransactionUpdate(
             1718487777307855, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
             2, "set_name", 4268615, 98, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, "B", true, true)],
-            Encode(new SetName { Name = "B" })
+            Encode(new Reducer.SetName { Name = "B" })
         ),
         SampleTransactionUpdate(
             1718487783175083, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
             2, "send_message", 2677615, 40, [SampleMessage("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", 1718487783175083, "Hello, B!")],
-            Encode(new SendMessage { Text = "Hello, B!" })
+            Encode(new Reducer.SendMessage { Text = "Hello, B!" })
         ),
         SampleTransactionUpdate(
             1718487787645364, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
             3, "send_message", 2636615, 28, [SampleMessage("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", 1718487787645364, "Goodbye!")],
-            Encode(new SendMessage { Text = "Goodbye!" })
+            Encode(new Reducer.SendMessage { Text = "Goodbye!" })
         ),
         SampleTransactionUpdate(
             1718487791901504, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
@@ -268,7 +268,7 @@ public class SnapshotTests
         SampleTransactionUpdate(
             1718487794937841, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
             3, "send_message", 2636615, 34, [SampleMessage("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", 1718487794937841, "Goodbye!")],
-            Encode(new SendMessage { Text = "Goodbye!" })
+            Encode(new Reducer.SendMessage { Text = "Goodbye!" })
         ),
     ];
 

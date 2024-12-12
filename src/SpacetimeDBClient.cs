@@ -39,7 +39,7 @@ namespace SpacetimeDB
 #if UNITY_5_3_OR_NEWER
             if (SpacetimeDBNetworkManager._instance != null)
             {
-                SpacetimeDBNetworkManager._instance.AddConnection(conn);    
+                SpacetimeDBNetworkManager._instance.AddConnection(conn);
             }
 #endif
             return conn;
@@ -177,8 +177,8 @@ namespace SpacetimeDB
             {
                 if (SpacetimeDBNetworkManager._instance != null)
                 {
-                    SpacetimeDBNetworkManager._instance.RemoveConnection(this); 
-                }  
+                    SpacetimeDBNetworkManager._instance.RemoveConnection(this);
+                }
             };
 #endif
 
@@ -903,7 +903,7 @@ namespace SpacetimeDB
         }
 
         /// Usage: SpacetimeDBClientBase.instance.OneOffQuery<Message>("SELECT * FROM table WHERE sender = \"bob\"");
-        [Obsolete("This is replaced by ctx.Db.TableName.OneOffQuery(\"WHERE ...\")", false)]
+        [Obsolete("This is replaced by ctx.Db.TableName.RemoteQuery(\"WHERE ...\")", false)]
         public Task<T[]> OneOffQuery<T>(string query) where T : IDatabaseRow, new() =>
             ((IDbConnection)this).RemoteQuery<T>(query);
 

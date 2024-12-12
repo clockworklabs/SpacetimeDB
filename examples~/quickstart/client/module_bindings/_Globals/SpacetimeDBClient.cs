@@ -8,6 +8,7 @@ using System;
 using SpacetimeDB;
 using SpacetimeDB.ClientApi;
 using System.Collections.Generic;
+using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
@@ -25,30 +26,30 @@ namespace SpacetimeDB.Types
 
 		public class UserHandle : RemoteTableHandle<EventContext, User>
 		{
-			private static Dictionary<SpacetimeDB.Identity, User> Identity_Index = new(16);
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (User)row;
-				Identity_Index[value.Identity] = value;
+				Identity.Cache[value.Identity] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				Identity_Index.Remove(((User)row).Identity);
+				Identity.Cache.Remove(((User)row).Identity);
 			}
 
-			public readonly ref struct IdentityUniqueIndex
+			public class IdentityUniqueIndex
 			{
+				internal readonly Dictionary<SpacetimeDB.Identity, User> Cache = new(16);
 				public User? Find(SpacetimeDB.Identity value)
 				{
-					Identity_Index.TryGetValue(value, out var r);
+					Cache.TryGetValue(value, out var r);
 					return r;
 				}
 
 			}
 
-			public IdentityUniqueIndex Identity => new();
+			public IdentityUniqueIndex Identity = new();
 
 			internal UserHandle()
 			{
@@ -70,10 +71,10 @@ namespace SpacetimeDB.Types
 
 		public void SendMessage(string text)
 		{
-			conn.InternalCallReducer(new SendMessage { Text = text }, this.SetCallReducerFlags.SendMessageFlags);
+			conn.InternalCallReducer(new Reducer.SendMessage(text), this.SetCallReducerFlags.SendMessageFlags);
 		}
 
-		public bool InvokeSendMessage(EventContext ctx, SendMessage args)
+		public bool InvokeSendMessage(EventContext ctx, Reducer.SendMessage args)
 		{
 			if (OnSendMessage == null) return false;
 			OnSendMessage(
@@ -87,10 +88,10 @@ namespace SpacetimeDB.Types
 
 		public void SetName(string name)
 		{
-			conn.InternalCallReducer(new SetName { Name = name }, this.SetCallReducerFlags.SetNameFlags);
+			conn.InternalCallReducer(new Reducer.SetName(name), this.SetCallReducerFlags.SetNameFlags);
 		}
 
-		public bool InvokeSetName(EventContext ctx, SetName args)
+		public bool InvokeSetName(EventContext ctx, Reducer.SetName args)
 		{
 			if (OnSetName == null) return false;
 			OnSetName(
@@ -124,14 +125,55 @@ namespace SpacetimeDB.Types
 		}
 	}
 
-	[Type]
-	public partial record Reducer : TaggedEnum<(
-		SendMessage SendMessage,
-		SetName SetName,
-		Unit StdbNone,
-		Unit StdbIdentityConnected,
-		Unit StdbIdentityDisconnected
-	)>;
+	public abstract partial class Reducer
+	{
+		private Reducer() { }
+
+		[SpacetimeDB.Type]
+		[DataContract]
+		public partial class SendMessage : Reducer, IReducerArgs
+		{
+			[DataMember(Name = "text")]
+			public string Text;
+
+			public SendMessage(string Text)
+			{
+				this.Text = Text;
+			}
+
+			public SendMessage()
+			{
+				this.Text = "";
+			}
+
+			string IReducerArgs.ReducerName => "send_message";
+		}
+
+		[SpacetimeDB.Type]
+		[DataContract]
+		public partial class SetName : Reducer, IReducerArgs
+		{
+			[DataMember(Name = "name")]
+			public string Name;
+
+			public SetName(string Name)
+			{
+				this.Name = Name;
+			}
+
+			public SetName()
+			{
+				this.Name = "";
+			}
+
+			string IReducerArgs.ReducerName => "set_name";
+		}
+
+		public class StdbNone : Reducer {}
+		public class StdbIdentityConnected : Reducer {}
+		public class StdbIdentityDisconnected : Reducer {}
+	}
+
 	public class DbConnection : DbConnectionBase<DbConnection, Reducer>
 	{
 		public readonly RemoteTables Db = new();
@@ -150,14 +192,13 @@ namespace SpacetimeDB.Types
 		protected override Reducer ToReducer(TransactionUpdate update)
 		{
 			var encodedArgs = update.ReducerCall.Args;
-			return update.ReducerCall.ReducerName switch
-			{
-				"send_message" => new Reducer.SendMessage(BSATNHelpers.Decode<SendMessage>(encodedArgs)),
-				"set_name" => new Reducer.SetName(BSATNHelpers.Decode<SetName>(encodedArgs)),
-				"<none>" => new Reducer.StdbNone(default),
-				"__identity_connected__" => new Reducer.StdbIdentityConnected(default),
-				"__identity_disconnected__" => new Reducer.StdbIdentityDisconnected(default),
-				"" => new Reducer.StdbNone(default),
+			return update.ReducerCall.ReducerName switch {
+				"send_message" => BSATNHelpers.Decode<Reducer.SendMessage>(encodedArgs),
+				"set_name" => BSATNHelpers.Decode<Reducer.SetName>(encodedArgs),
+				"<none>" => new Reducer.StdbNone(),
+				"__identity_connected__" => new Reducer.StdbIdentityConnected(),
+				"__identity_disconnected__" => new Reducer.StdbIdentityDisconnected(),
+				"" => new Reducer.StdbNone(),
 				var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
 			};
 		}
@@ -168,10 +209,9 @@ namespace SpacetimeDB.Types
 		protected override bool Dispatch(IEventContext context, Reducer reducer)
 		{
 			var eventContext = (EventContext)context;
-			return reducer switch
-			{
-				Reducer.SendMessage(var args) => Reducers.InvokeSendMessage(eventContext, args),
-				Reducer.SetName(var args) => Reducers.InvokeSetName(eventContext, args),
+			return reducer switch {
+				Reducer.SendMessage args => Reducers.InvokeSendMessage(eventContext, args),
+				Reducer.SetName args => Reducers.InvokeSetName(eventContext, args),
 				Reducer.StdbNone or
 				Reducer.StdbIdentityConnected or
 				Reducer.StdbIdentityDisconnected => true,
