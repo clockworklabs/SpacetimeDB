@@ -1,6 +1,6 @@
 use super::datastore::locking_tx_datastore::committed_state::CommittedState;
 use super::datastore::locking_tx_datastore::state_view::{
-    IterMutTx, IterMutTxByColEq, IterMutTxByColRange, IterTx, StateView,
+    IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
 use super::datastore::system_tables::ST_MODULE_ID;
 use super::datastore::traits::{
@@ -9,7 +9,7 @@ use super::datastore::traits::{
 use super::datastore::{
     locking_tx_datastore::{
         datastore::Locking,
-        state_view::{IterByColEq, IterTxByColRange},
+        state_view::{IterByColEqTx, IterByColRangeTx},
     },
     traits::TxData,
 };
@@ -1065,7 +1065,7 @@ impl RelationalDB {
         table_id: impl Into<TableId>,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<IterMutTxByColEq<'a, 'r>, DBError> {
+    ) -> Result<IterByColEqMutTx<'a, 'r>, DBError> {
         self.inner.iter_by_col_eq_mut_tx(tx, table_id.into(), cols, value)
     }
 
@@ -1075,7 +1075,7 @@ impl RelationalDB {
         table_id: impl Into<TableId>,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<IterByColEq<'a, 'r>, DBError> {
+    ) -> Result<IterByColEqTx<'a, 'r>, DBError> {
         self.inner.iter_by_col_eq_tx(tx, table_id.into(), cols, value)
     }
 
@@ -1090,7 +1090,7 @@ impl RelationalDB {
         table_id: impl Into<TableId>,
         cols: impl Into<ColList>,
         range: R,
-    ) -> Result<IterMutTxByColRange<'a, R>, DBError> {
+    ) -> Result<IterByColRangeMutTx<'a, R>, DBError> {
         self.inner.iter_by_col_range_mut_tx(tx, table_id.into(), cols, range)
     }
 
@@ -1105,7 +1105,7 @@ impl RelationalDB {
         table_id: impl Into<TableId>,
         cols: impl Into<ColList>,
         range: R,
-    ) -> Result<IterTxByColRange<'a, R>, DBError> {
+    ) -> Result<IterByColRangeTx<'a, R>, DBError> {
         self.inner.iter_by_col_range_tx(tx, table_id.into(), cols, range)
     }
 
@@ -2148,7 +2148,7 @@ mod tests {
         let cols = col_list![0, 1];
         let value = product![0u64, 1u64].into();
 
-        let IterMutTxByColEq::Index(mut iter) = stdb.iter_by_col_eq_mut(&tx, table_id, cols, &value)? else {
+        let IterByColEqMutTx::Index(mut iter) = stdb.iter_by_col_eq_mut(&tx, table_id, cols, &value)? else {
             panic!("expected index iterator");
         };
 

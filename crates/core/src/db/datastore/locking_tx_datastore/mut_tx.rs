@@ -2,13 +2,15 @@ use super::{
     committed_state::CommittedState,
     datastore::{record_metrics, Result},
     sequence::{Sequence, SequencesState},
-    state_view::{IndexSeekIterMutTxId, ScanIterMutTxByColRange, StateView},
+    state_view::{IndexSeekIterIdMutTx, ScanIterByColRangeMutTx, StateView},
     tx::TxId,
     tx_state::{DeleteTable, IndexIdMap, TxState},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::db::datastore::locking_tx_datastore::committed_state::CommittedIndexIterMutTx;
-use crate::db::datastore::locking_tx_datastore::state_view::{IterMutTx, IterMutTxByColEq, IterMutTxByColRange};
+use crate::db::datastore::locking_tx_datastore::committed_state::CommittedIndexIterWithDeletedMutTx;
+use crate::db::datastore::locking_tx_datastore::state_view::{
+    IndexSeekIterIdWithDeletedMutTx, IterByColEqMutTx, IterByColRangeMutTx, IterMutTx,
+};
 use crate::db::datastore::system_tables::{StRowLevelSecurityFields, StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
 use crate::db::datastore::{
     system_tables::{
@@ -1422,8 +1424,8 @@ impl MutTxId {
 
 impl StateView for MutTxId {
     type Iter<'a> = IterMutTx<'a>;
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterMutTxByColRange<'a, R>;
-    type IterByColEq<'a, 'r> = IterMutTxByColEq<'a, 'r>
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeMutTx<'a, R>;
+    type IterByColEq<'a, 'r> = IterByColEqMutTx<'a, 'r>
     where
         Self: 'a;
 
@@ -1480,22 +1482,34 @@ impl StateView for MutTxId {
         // rolling it back will leave the index in place.
         if let Some(inserted_rows) = self.tx_state.index_seek(table_id, &cols, &range) {
             // The current transaction has modified this table, and the table is indexed.
-            Ok(IterMutTxByColRange::Index(IndexSeekIterMutTxId {
-                table_id,
-                tx_state: &self.tx_state,
-                inserted_rows,
-                committed_rows: self.committed_state_write_lock.index_seek(table_id, &cols, &range),
-                num_committed_rows_fetched: 0,
-            }))
+            Ok(
+                if let Some(del_table) = self.tx_state.delete_tables.get(&table_id).filter(|x| !x.is_empty()) {
+                    IterByColRangeMutTx::IndexWithDeletes(IndexSeekIterIdWithDeletedMutTx {
+                        inserted_rows,
+                        committed_rows: self.committed_state_write_lock.index_seek(table_id, &cols, &range),
+                        del_table,
+                    })
+                } else {
+                    IterByColRangeMutTx::Index(IndexSeekIterIdMutTx {
+                        inserted_rows,
+                        committed_rows: self.committed_state_write_lock.index_seek(table_id, &cols, &range),
+                    })
+                },
+            )
         } else {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
             match self.committed_state_write_lock.index_seek(table_id, &cols, &range) {
-                Some(committed_rows) => Ok(IterMutTxByColRange::CommittedIndex(CommittedIndexIterMutTx::new(
-                    table_id,
-                    &self.tx_state,
-                    committed_rows,
-                ))),
+                Some(committed_rows) => Ok(
+                    if let Some(del_table) = self.tx_state.delete_tables.get(&table_id).filter(|x| !x.is_empty()) {
+                        IterByColRangeMutTx::CommittedIndexWithDeletes(CommittedIndexIterWithDeletedMutTx::new(
+                            committed_rows,
+                            del_table,
+                        ))
+                    } else {
+                        IterByColRangeMutTx::CommittedIndex(committed_rows)
+                    },
+                ),
                 None => {
                     #[cfg(feature = "unindexed_iter_by_col_range_warn")]
                     match self.table_row_count(table_id) {
@@ -1525,7 +1539,7 @@ impl StateView for MutTxId {
                         }
                     }
 
-                    Ok(IterMutTxByColRange::Scan(ScanIterMutTxByColRange::new(
+                    Ok(IterByColRangeMutTx::Scan(ScanIterByColRangeMutTx::new(
                         self.iter(table_id)?,
                         cols,
                         range,
