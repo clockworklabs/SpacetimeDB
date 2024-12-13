@@ -8,6 +8,7 @@ using System;
 using SpacetimeDB;
 using SpacetimeDB.ClientApi;
 using System.Collections.Generic;
+using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
@@ -421,10 +422,10 @@ namespace SpacetimeDB.Types
 
 		public void CircleDecay(SpacetimeDB.Types.CircleDecayTimer timer)
 		{
-			conn.InternalCallReducer(new CircleDecay { Timer = timer }, this.SetCallReducerFlags.CircleDecayFlags);
+			conn.InternalCallReducer(new Reducer.CircleDecay(timer), this.SetCallReducerFlags.CircleDecayFlags);
 		}
 
-		public bool InvokeCircleDecay(EventContext ctx, CircleDecay args)
+		public bool InvokeCircleDecay(EventContext ctx, Reducer.CircleDecay args)
 		{
 			if (OnCircleDecay == null) return false;
 			OnCircleDecay(
@@ -438,10 +439,10 @@ namespace SpacetimeDB.Types
 
 		public void CreatePlayer(string name)
 		{
-			conn.InternalCallReducer(new CreatePlayer { Name = name }, this.SetCallReducerFlags.CreatePlayerFlags);
+			conn.InternalCallReducer(new Reducer.CreatePlayer(name), this.SetCallReducerFlags.CreatePlayerFlags);
 		}
 
-		public bool InvokeCreatePlayer(EventContext ctx, CreatePlayer args)
+		public bool InvokeCreatePlayer(EventContext ctx, Reducer.CreatePlayer args)
 		{
 			if (OnCreatePlayer == null) return false;
 			OnCreatePlayer(
@@ -455,10 +456,10 @@ namespace SpacetimeDB.Types
 
 		public void MoveAllPlayers(SpacetimeDB.Types.MoveAllPlayersTimer timer)
 		{
-			conn.InternalCallReducer(new MoveAllPlayers { Timer = timer }, this.SetCallReducerFlags.MoveAllPlayersFlags);
+			conn.InternalCallReducer(new Reducer.MoveAllPlayers(timer), this.SetCallReducerFlags.MoveAllPlayersFlags);
 		}
 
-		public bool InvokeMoveAllPlayers(EventContext ctx, MoveAllPlayers args)
+		public bool InvokeMoveAllPlayers(EventContext ctx, Reducer.MoveAllPlayers args)
 		{
 			if (OnMoveAllPlayers == null) return false;
 			OnMoveAllPlayers(
@@ -472,10 +473,10 @@ namespace SpacetimeDB.Types
 
 		public void PlayerSplit()
 		{
-			conn.InternalCallReducer(new PlayerSplit {  }, this.SetCallReducerFlags.PlayerSplitFlags);
+			conn.InternalCallReducer(new Reducer.PlayerSplit(), this.SetCallReducerFlags.PlayerSplitFlags);
 		}
 
-		public bool InvokePlayerSplit(EventContext ctx, PlayerSplit args)
+		public bool InvokePlayerSplit(EventContext ctx, Reducer.PlayerSplit args)
 		{
 			if (OnPlayerSplit == null) return false;
 			OnPlayerSplit(
@@ -488,10 +489,10 @@ namespace SpacetimeDB.Types
 
 		public void Respawn()
 		{
-			conn.InternalCallReducer(new Respawn {  }, this.SetCallReducerFlags.RespawnFlags);
+			conn.InternalCallReducer(new Reducer.Respawn(), this.SetCallReducerFlags.RespawnFlags);
 		}
 
-		public bool InvokeRespawn(EventContext ctx, Respawn args)
+		public bool InvokeRespawn(EventContext ctx, Reducer.Respawn args)
 		{
 			if (OnRespawn == null) return false;
 			OnRespawn(
@@ -504,10 +505,10 @@ namespace SpacetimeDB.Types
 
 		public void SpawnFood(SpacetimeDB.Types.SpawnFoodTimer timer)
 		{
-			conn.InternalCallReducer(new SpawnFood { Timer = timer }, this.SetCallReducerFlags.SpawnFoodFlags);
+			conn.InternalCallReducer(new Reducer.SpawnFood(timer), this.SetCallReducerFlags.SpawnFoodFlags);
 		}
 
-		public bool InvokeSpawnFood(EventContext ctx, SpawnFood args)
+		public bool InvokeSpawnFood(EventContext ctx, Reducer.SpawnFood args)
 		{
 			if (OnSpawnFood == null) return false;
 			OnSpawnFood(
@@ -521,10 +522,10 @@ namespace SpacetimeDB.Types
 
 		public void UpdatePlayerInput(SpacetimeDB.Types.Vector2 direction, float magnitude)
 		{
-			conn.InternalCallReducer(new UpdatePlayerInput { Direction = direction, Magnitude = magnitude }, this.SetCallReducerFlags.UpdatePlayerInputFlags);
+			conn.InternalCallReducer(new Reducer.UpdatePlayerInput(direction, magnitude), this.SetCallReducerFlags.UpdatePlayerInputFlags);
 		}
 
-		public bool InvokeUpdatePlayerInput(EventContext ctx, UpdatePlayerInput args)
+		public bool InvokeUpdatePlayerInput(EventContext ctx, Reducer.UpdatePlayerInput args)
 		{
 			if (OnUpdatePlayerInput == null) return false;
 			OnUpdatePlayerInput(
@@ -569,19 +570,135 @@ namespace SpacetimeDB.Types
 		}
 	}
 
-	[Type]
-	public partial record Reducer : TaggedEnum<(
-		CircleDecay CircleDecay,
-		CreatePlayer CreatePlayer,
-		MoveAllPlayers MoveAllPlayers,
-		PlayerSplit PlayerSplit,
-		Respawn Respawn,
-		SpawnFood SpawnFood,
-		UpdatePlayerInput UpdatePlayerInput,
-		Unit StdbNone,
-		Unit StdbIdentityConnected,
-		Unit StdbIdentityDisconnected
-	)>;
+	public abstract partial class Reducer
+	{
+		private Reducer() { }
+
+		[SpacetimeDB.Type]
+		[DataContract]
+		public partial class CircleDecay : Reducer, IReducerArgs
+		{
+			[DataMember(Name = "_timer")]
+			public SpacetimeDB.Types.CircleDecayTimer Timer;
+
+			public CircleDecay(SpacetimeDB.Types.CircleDecayTimer Timer)
+			{
+				this.Timer = Timer;
+			}
+
+			public CircleDecay()
+			{
+				this.Timer = new();
+			}
+
+			string IReducerArgs.ReducerName => "circle_decay";
+		}
+
+		[SpacetimeDB.Type]
+		[DataContract]
+		public partial class CreatePlayer : Reducer, IReducerArgs
+		{
+			[DataMember(Name = "name")]
+			public string Name;
+
+			public CreatePlayer(string Name)
+			{
+				this.Name = Name;
+			}
+
+			public CreatePlayer()
+			{
+				this.Name = "";
+			}
+
+			string IReducerArgs.ReducerName => "create_player";
+		}
+
+		[SpacetimeDB.Type]
+		[DataContract]
+		public partial class MoveAllPlayers : Reducer, IReducerArgs
+		{
+			[DataMember(Name = "_timer")]
+			public SpacetimeDB.Types.MoveAllPlayersTimer Timer;
+
+			public MoveAllPlayers(SpacetimeDB.Types.MoveAllPlayersTimer Timer)
+			{
+				this.Timer = Timer;
+			}
+
+			public MoveAllPlayers()
+			{
+				this.Timer = new();
+			}
+
+			string IReducerArgs.ReducerName => "move_all_players";
+		}
+
+		[SpacetimeDB.Type]
+		[DataContract]
+		public partial class PlayerSplit : Reducer, IReducerArgs
+		{
+			string IReducerArgs.ReducerName => "player_split";
+		}
+
+		[SpacetimeDB.Type]
+		[DataContract]
+		public partial class Respawn : Reducer, IReducerArgs
+		{
+			string IReducerArgs.ReducerName => "respawn";
+		}
+
+		[SpacetimeDB.Type]
+		[DataContract]
+		public partial class SpawnFood : Reducer, IReducerArgs
+		{
+			[DataMember(Name = "_timer")]
+			public SpacetimeDB.Types.SpawnFoodTimer Timer;
+
+			public SpawnFood(SpacetimeDB.Types.SpawnFoodTimer Timer)
+			{
+				this.Timer = Timer;
+			}
+
+			public SpawnFood()
+			{
+				this.Timer = new();
+			}
+
+			string IReducerArgs.ReducerName => "spawn_food";
+		}
+
+		[SpacetimeDB.Type]
+		[DataContract]
+		public partial class UpdatePlayerInput : Reducer, IReducerArgs
+		{
+			[DataMember(Name = "direction")]
+			public SpacetimeDB.Types.Vector2 Direction;
+			[DataMember(Name = "magnitude")]
+			public float Magnitude;
+
+			public UpdatePlayerInput(
+				SpacetimeDB.Types.Vector2 Direction,
+				float Magnitude
+			)
+			{
+				this.Direction = Direction;
+				this.Magnitude = Magnitude;
+			}
+
+			public UpdatePlayerInput()
+			{
+				this.Direction = new();
+			}
+
+			string IReducerArgs.ReducerName => "update_player_input";
+		}
+
+		public class StdbNone : Reducer {}
+		public class StdbIdentityConnected : Reducer {}
+		public class StdbIdentityDisconnected : Reducer {}
+	}
+
 	public class DbConnection : DbConnectionBase<DbConnection, Reducer>
 	{
 		public readonly RemoteTables Db = new();
@@ -609,17 +726,17 @@ namespace SpacetimeDB.Types
 		{
 			var encodedArgs = update.ReducerCall.Args;
 			return update.ReducerCall.ReducerName switch {
-				"circle_decay" => new Reducer.CircleDecay(BSATNHelpers.Decode<CircleDecay>(encodedArgs)),
-				"create_player" => new Reducer.CreatePlayer(BSATNHelpers.Decode<CreatePlayer>(encodedArgs)),
-				"move_all_players" => new Reducer.MoveAllPlayers(BSATNHelpers.Decode<MoveAllPlayers>(encodedArgs)),
-				"player_split" => new Reducer.PlayerSplit(BSATNHelpers.Decode<PlayerSplit>(encodedArgs)),
-				"respawn" => new Reducer.Respawn(BSATNHelpers.Decode<Respawn>(encodedArgs)),
-				"spawn_food" => new Reducer.SpawnFood(BSATNHelpers.Decode<SpawnFood>(encodedArgs)),
-				"update_player_input" => new Reducer.UpdatePlayerInput(BSATNHelpers.Decode<UpdatePlayerInput>(encodedArgs)),
-				"<none>" => new Reducer.StdbNone(default),
-				"__identity_connected__" => new Reducer.StdbIdentityConnected(default),
-				"__identity_disconnected__" => new Reducer.StdbIdentityDisconnected(default),
-				"" => new Reducer.StdbNone(default),
+				"circle_decay" => BSATNHelpers.Decode<Reducer.CircleDecay>(encodedArgs),
+				"create_player" => BSATNHelpers.Decode<Reducer.CreatePlayer>(encodedArgs),
+				"move_all_players" => BSATNHelpers.Decode<Reducer.MoveAllPlayers>(encodedArgs),
+				"player_split" => BSATNHelpers.Decode<Reducer.PlayerSplit>(encodedArgs),
+				"respawn" => BSATNHelpers.Decode<Reducer.Respawn>(encodedArgs),
+				"spawn_food" => BSATNHelpers.Decode<Reducer.SpawnFood>(encodedArgs),
+				"update_player_input" => BSATNHelpers.Decode<Reducer.UpdatePlayerInput>(encodedArgs),
+				"<none>" => new Reducer.StdbNone(),
+				"__identity_connected__" => new Reducer.StdbIdentityConnected(),
+				"__identity_disconnected__" => new Reducer.StdbIdentityDisconnected(),
+				"" => new Reducer.StdbNone(),
 				var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
 			};
 		}
@@ -631,13 +748,13 @@ namespace SpacetimeDB.Types
 		{
 			var eventContext = (EventContext)context;
 			return reducer switch {
-				Reducer.CircleDecay(var args) => Reducers.InvokeCircleDecay(eventContext, args),
-				Reducer.CreatePlayer(var args) => Reducers.InvokeCreatePlayer(eventContext, args),
-				Reducer.MoveAllPlayers(var args) => Reducers.InvokeMoveAllPlayers(eventContext, args),
-				Reducer.PlayerSplit(var args) => Reducers.InvokePlayerSplit(eventContext, args),
-				Reducer.Respawn(var args) => Reducers.InvokeRespawn(eventContext, args),
-				Reducer.SpawnFood(var args) => Reducers.InvokeSpawnFood(eventContext, args),
-				Reducer.UpdatePlayerInput(var args) => Reducers.InvokeUpdatePlayerInput(eventContext, args),
+				Reducer.CircleDecay args => Reducers.InvokeCircleDecay(eventContext, args),
+				Reducer.CreatePlayer args => Reducers.InvokeCreatePlayer(eventContext, args),
+				Reducer.MoveAllPlayers args => Reducers.InvokeMoveAllPlayers(eventContext, args),
+				Reducer.PlayerSplit args => Reducers.InvokePlayerSplit(eventContext, args),
+				Reducer.Respawn args => Reducers.InvokeRespawn(eventContext, args),
+				Reducer.SpawnFood args => Reducers.InvokeSpawnFood(eventContext, args),
+				Reducer.UpdatePlayerInput args => Reducers.InvokeUpdatePlayerInput(eventContext, args),
 				Reducer.StdbNone or
 				Reducer.StdbIdentityConnected or
 				Reducer.StdbIdentityDisconnected => true,

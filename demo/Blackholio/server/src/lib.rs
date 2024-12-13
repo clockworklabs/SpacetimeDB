@@ -1,5 +1,7 @@
 use rand::Rng;
-use spacetimedb::{spacetimedb_lib::ScheduleAt, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
+use spacetimedb::{
+    spacetimedb_lib::ScheduleAt, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
+};
 use std::time::Duration;
 
 // TODO:
@@ -81,20 +83,41 @@ pub struct Vector2 {
 }
 
 #[spacetimedb::table(name = move_all_players_timer, scheduled(move_all_players))]
-pub struct MoveAllPlayersTimer {}
+pub struct MoveAllPlayersTimer {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    #[scheduled_at]
+    scheduled_at: spacetimedb::ScheduleAt,
+}
 
 #[spacetimedb::table(name = spawn_food_timer, scheduled(spawn_food))]
-pub struct SpawnFoodTimer {}
+pub struct SpawnFoodTimer {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    #[scheduled_at]
+    scheduled_at: spacetimedb::ScheduleAt,
+}
 
 #[spacetimedb::table(name = circle_decay_timer, scheduled(circle_decay))]
-pub struct CircleDecayTimer {}
+pub struct CircleDecayTimer {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    #[scheduled_at]
+    scheduled_at: spacetimedb::ScheduleAt,
+}
 
 impl Vector2 {
     // Function to normalize the vector
     fn normalize(&self) -> Vector2 {
         let mag = (self.x * self.x + self.y * self.y).sqrt();
         if mag != 0.0 {
-            Vector2 { x: self.x / mag, y: self.y / mag, }
+            Vector2 {
+                x: self.x / mag,
+                y: self.y / mag,
+            }
         } else {
             Vector2 { x: 0.0, y: 0.0 }
         }
@@ -109,7 +132,10 @@ const FOOD_MASS_MAX: u32 = 4;
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Initializing...");
-    ctx.db.config().try_insert(Config { id: 0, world_size: 1000 })?;
+    ctx.db.config().try_insert(Config {
+        id: 0,
+        world_size: 1000,
+    })?;
     ctx.db.circle_decay_timer().try_insert(CircleDecayTimer {
         scheduled_id: 0,
         scheduled_at: ScheduleAt::Interval(Duration::from_secs(5).as_micros() as u64),
@@ -118,18 +144,30 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
         scheduled_id: 0,
         scheduled_at: ScheduleAt::Interval(Duration::from_millis(500).as_micros() as u64),
     })?;
-    ctx.db.move_all_players_timer().try_insert(MoveAllPlayersTimer {
-        scheduled_id: 0,
-        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).as_micros() as u64),
-    })?;
+    ctx.db
+        .move_all_players_timer()
+        .try_insert(MoveAllPlayersTimer {
+            scheduled_id: 0,
+            scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).as_micros() as u64),
+        })?;
     Ok(())
 }
 
 #[spacetimedb::reducer(client_disconnected)]
 pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("Player not found")?;
+    let player = ctx
+        .db
+        .player()
+        .identity()
+        .find(&ctx.sender)
+        .ok_or("Player not found")?;
     for circle in ctx.db.circle().player_id().filter(&player.player_id) {
-        let entity = ctx.db.entity().id().find(&circle.entity_id).ok_or("Could not find circle")?;
+        let entity = ctx
+            .db
+            .entity()
+            .id()
+            .find(&circle.entity_id)
+            .ok_or("Could not find circle")?;
         ctx.db.entity().id().delete(&entity.id);
         ctx.db.circle().entity_id().delete(&entity.id);
         ctx.db.logged_out_circle().try_insert(LoggedOutCircle {
@@ -150,11 +188,24 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
 
 #[spacetimedb::reducer(client_connected)]
 pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx.db.logged_out_player().identity().find(&ctx.sender).ok_or("No player for identity.")?;
-    for logged_out_circle in ctx.db.logged_out_circle().player_id().filter(&player.player.player_id) {
+    let player = ctx
+        .db
+        .logged_out_player()
+        .identity()
+        .find(&ctx.sender)
+        .ok_or("No player for identity.")?;
+    for logged_out_circle in ctx
+        .db
+        .logged_out_circle()
+        .player_id()
+        .filter(&player.player.player_id)
+    {
         ctx.db.circle().try_insert(logged_out_circle.circle)?;
         ctx.db.entity().try_insert(logged_out_circle.entity)?;
-        ctx.db.logged_out_circle().logged_out_id().delete(&logged_out_circle.logged_out_id);
+        ctx.db
+            .logged_out_circle()
+            .logged_out_id()
+            .delete(&logged_out_circle.logged_out_id);
     }
     ctx.db.player().insert(player.player);
     Ok(())
@@ -175,22 +226,43 @@ pub fn create_player(ctx: &ReducerContext, name: String) -> Result<(), String> {
 
 #[spacetimedb::reducer]
 pub fn respawn(ctx: &ReducerContext) -> Result<(), String> {
-
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("No such player found")?;
+    let player = ctx
+        .db
+        .player()
+        .identity()
+        .find(&ctx.sender)
+        .ok_or("No such player found")?;
     spawn_circle(ctx, player.player_id, ctx.timestamp)?;
     Ok(())
 }
 
-fn spawn_circle(ctx: &ReducerContext, player_id: u32, current_time: Timestamp) -> Result<Entity, String> {
+fn spawn_circle(
+    ctx: &ReducerContext,
+    player_id: u32,
+    current_time: Timestamp,
+) -> Result<Entity, String> {
     let mut rng = ctx.rng();
-    let world_size = ctx.db.config().id().find(&0).ok_or("Config not found")?.world_size;
+    let world_size = ctx
+        .db
+        .config()
+        .id()
+        .find(&0)
+        .ok_or("Config not found")?
+        .world_size;
     let player_start_radius = mass_to_radius(START_PLAYER_MASS);
     let x = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
     let y = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
     spawn_circle_at(ctx, player_id, START_PLAYER_MASS, x, y, current_time)
 }
 
-fn spawn_circle_at(ctx: &ReducerContext, player_id: u32, mass: u32, x: f32, y: f32, current_time: Timestamp) -> Result<Entity, String> {
+fn spawn_circle_at(
+    ctx: &ReducerContext,
+    player_id: u32,
+    mass: u32,
+    x: f32,
+    y: f32,
+    current_time: Timestamp,
+) -> Result<Entity, String> {
     let entity = ctx.db.entity().try_insert(Entity {
         id: 0,
         position: Vector2 { x, y },
@@ -202,15 +274,23 @@ fn spawn_circle_at(ctx: &ReducerContext, player_id: u32, mass: u32, x: f32, y: f
         player_id,
         direction: Vector2 { x: 0.0, y: 1.0 },
         magnitude: 0.0,
-        last_split_time: current_time
+        last_split_time: current_time,
     })?;
     Ok(entity)
 }
 
 #[spacetimedb::reducer]
-pub fn update_player_input(ctx: &ReducerContext,
-                           direction: Vector2, magnitude: f32) -> Result<(), String> {
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("Player not found")?;
+pub fn update_player_input(
+    ctx: &ReducerContext,
+    direction: Vector2,
+    magnitude: f32,
+) -> Result<(), String> {
+    let player = ctx
+        .db
+        .player()
+        .identity()
+        .find(&ctx.sender)
+        .ok_or("Player not found")?;
     for mut circle in ctx.db.circle().player_id().filter(&player.player_id) {
         circle.direction = direction.normalize();
         circle.magnitude = magnitude.clamp(0.0, 1.0);
@@ -242,14 +322,22 @@ fn mass_to_max_move_speed(mass: u32) -> f32 {
 #[spacetimedb::reducer]
 pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Result<(), String> {
     let span = spacetimedb::log_stopwatch::LogStopwatch::new("tick");
-    let world_size = ctx.db.config().id().find(0).ok_or("Config not found")?.world_size;
+    let world_size = ctx
+        .db
+        .config()
+        .id()
+        .find(0)
+        .ok_or("Config not found")?
+        .world_size;
     for circle in ctx.db.circle().iter() {
         let Some(mut circle_entity) = ctx.db.entity().id().find(&circle.entity_id) else {
             continue;
         };
         let circle_radius = mass_to_radius(circle_entity.mass);
-        let x = circle_entity.position.x + circle.direction.x * circle.magnitude * mass_to_max_move_speed(circle_entity.mass);
-        let y = circle_entity.position.y + circle.direction.y * circle.magnitude * mass_to_max_move_speed(circle_entity.mass);
+        let x = circle_entity.position.x
+            + circle.direction.x * circle.magnitude * mass_to_max_move_speed(circle_entity.mass);
+        let y = circle_entity.position.y
+            + circle.direction.y * circle.magnitude * mass_to_max_move_speed(circle_entity.mass);
         circle_entity.position.x = x.clamp(circle_radius, world_size as f32 - circle_radius);
         circle_entity.position.y = y.clamp(circle_radius, world_size as f32 - circle_radius);
 
@@ -292,14 +380,30 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
 
 #[spacetimedb::reducer]
 pub fn player_split(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx.db.player().identity().find(&ctx.sender).ok_or("Sender has no player")?;
+    let player = ctx
+        .db
+        .player()
+        .identity()
+        .find(&ctx.sender)
+        .ok_or("Sender has no player")?;
     for mut circle in ctx.db.circle().player_id().filter(&player.player_id) {
-        let mut circle_entity = ctx.db.entity().id().find(&circle.entity_id).ok_or("Circle has no entity")?;
+        let mut circle_entity = ctx
+            .db
+            .entity()
+            .id()
+            .find(&circle.entity_id)
+            .ok_or("Circle has no entity")?;
         if circle_entity.mass >= START_PLAYER_MASS * 2 {
             let half_mass = circle_entity.mass / 2;
             let extra_mass = circle_entity.mass % 2;
-            spawn_circle_at(ctx, circle.player_id, half_mass, circle_entity.position.x,
-                                                   circle_entity.position.y, ctx.timestamp)?;
+            spawn_circle_at(
+                ctx,
+                circle.player_id,
+                half_mass,
+                circle_entity.position.x,
+                circle_entity.position.y,
+                ctx.timestamp,
+            )?;
             circle_entity.mass = half_mass + extra_mass;
             circle.last_split_time = ctx.timestamp;
             ctx.db.circle().entity_id().update(circle);
@@ -321,16 +425,24 @@ pub fn spawn_food(ctx: &ReducerContext, _timer: SpawnFoodTimer) -> Result<(), St
     while food_count < TARGET_FOOD_COUNT as u64 && player_count > 0 {
         let mut rng = ctx.rng();
         let food_mass = rng.gen_range(FOOD_MASS_MIN..FOOD_MASS_MAX);
-        let world_size = ctx.db.config().id().find(0).ok_or("Config not found")?.world_size;
+        let world_size = ctx
+            .db
+            .config()
+            .id()
+            .find(0)
+            .ok_or("Config not found")?
+            .world_size;
         let food_radius = mass_to_radius(food_mass);
         let x = rng.gen_range(food_radius..world_size as f32 - food_radius);
         let y = rng.gen_range(food_radius..world_size as f32 - food_radius);
         let entity = ctx.db.entity().try_insert(Entity {
             id: 0,
             position: Vector2 { x, y },
-            mass: food_mass
+            mass: food_mass,
         })?;
-        ctx.db.food().try_insert(Food { entity_id: entity.id })?;
+        ctx.db.food().try_insert(Food {
+            entity_id: entity.id,
+        })?;
         food_count += 1;
         log::info!("Spawned food! {}", entity.id);
     }
@@ -341,7 +453,12 @@ pub fn spawn_food(ctx: &ReducerContext, _timer: SpawnFoodTimer) -> Result<(), St
 #[spacetimedb::reducer]
 pub fn circle_decay(ctx: &ReducerContext, _timer: CircleDecayTimer) -> Result<(), String> {
     for circle in ctx.db.circle().iter() {
-        let mut circle_entity = ctx.db.entity().id().find(&circle.entity_id).ok_or("Entity not found")?;
+        let mut circle_entity = ctx
+            .db
+            .entity()
+            .id()
+            .find(&circle.entity_id)
+            .ok_or("Entity not found")?;
         if circle_entity.mass <= START_PLAYER_MASS {
             continue;
         }
