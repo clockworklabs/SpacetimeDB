@@ -528,7 +528,7 @@ impl MutTxId {
         // but don't yield rows deleted in the tx state.
         use itertools::Either::*;
         use BTreeScanInner::*;
-        let commit_iter = commit_iter.map(|iter| match self.tx_state.delete_tables.get(&table_id) {
+        let commit_iter = commit_iter.map(|iter| match self.tx_state.get_delete_table(table_id) {
             None => Left(iter),
             Some(deletes) => Right(IndexScanFilterDeleted { iter, deletes }),
         });
@@ -1481,35 +1481,32 @@ impl StateView for MutTxId {
         // yet. In particular, I don't know if creating an index in a transaction and
         // rolling it back will leave the index in place.
         if let Some(inserted_rows) = self.tx_state.index_seek(table_id, &cols, &range) {
+            let committed_rows = self.committed_state_write_lock.index_seek(table_id, &cols, &range);
             // The current transaction has modified this table, and the table is indexed.
-            Ok(
-                if let Some(del_table) = self.tx_state.delete_tables.get(&table_id).filter(|x| !x.is_empty()) {
-                    IterByColRangeMutTx::IndexWithDeletes(IndexSeekIterIdWithDeletedMutTx {
-                        inserted_rows,
-                        committed_rows: self.committed_state_write_lock.index_seek(table_id, &cols, &range),
-                        del_table,
-                    })
-                } else {
-                    IterByColRangeMutTx::Index(IndexSeekIterIdMutTx {
-                        inserted_rows,
-                        committed_rows: self.committed_state_write_lock.index_seek(table_id, &cols, &range),
-                    })
-                },
-            )
+            Ok(if let Some(del_table) = self.tx_state.get_delete_table(table_id) {
+                IterByColRangeMutTx::IndexWithDeletes(IndexSeekIterIdWithDeletedMutTx {
+                    inserted_rows,
+                    committed_rows,
+                    del_table,
+                })
+            } else {
+                IterByColRangeMutTx::Index(IndexSeekIterIdMutTx {
+                    inserted_rows,
+                    committed_rows,
+                })
+            })
         } else {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
             match self.committed_state_write_lock.index_seek(table_id, &cols, &range) {
-                Some(committed_rows) => Ok(
-                    if let Some(del_table) = self.tx_state.delete_tables.get(&table_id).filter(|x| !x.is_empty()) {
-                        IterByColRangeMutTx::CommittedIndexWithDeletes(CommittedIndexIterWithDeletedMutTx::new(
-                            committed_rows,
-                            del_table,
-                        ))
-                    } else {
-                        IterByColRangeMutTx::CommittedIndex(committed_rows)
-                    },
-                ),
+                Some(committed_rows) => Ok(if let Some(del_table) = self.tx_state.get_delete_table(table_id) {
+                    IterByColRangeMutTx::CommittedIndexWithDeletes(CommittedIndexIterWithDeletedMutTx::new(
+                        committed_rows,
+                        del_table,
+                    ))
+                } else {
+                    IterByColRangeMutTx::CommittedIndex(committed_rows)
+                }),
                 None => {
                     #[cfg(feature = "unindexed_iter_by_col_range_warn")]
                     match self.table_row_count(table_id) {
