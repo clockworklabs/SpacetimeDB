@@ -1,5 +1,5 @@
 [package]
-name = "spacetimedb-schema"
+name = "spacetimedb-schema-2"
 version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
@@ -32,6 +32,6 @@ enum-as-inner.workspace = true
 spacetimedb-lib = { workspace = true, features = ["test"] }
 # these are circular dependencies, but only in tests, so it's fine
 spacetimedb-testing = { path = "../testing" }
-spacetimedb-cli.workspace = true
+# spacetimedb-cli.workspace = true
 
 proptest.workspace = true

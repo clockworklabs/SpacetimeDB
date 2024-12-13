@@ -4819,7 +4819,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
- "spacetimedb-schema",
+ "spacetimedb-schema-2",
  "spacetimedb-standalone",
  "spacetimedb-table",
  "spacetimedb-testing",
@@ -4839,7 +4839,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "spacetimedb-primitives",
- "spacetimedb-sql-parser",
+ "spacetimedb-sql-parser-2",
  "syn 2.0.82",
 ]
 
@@ -4888,7 +4888,7 @@ dependencies = [
  "spacetimedb-fs-utils",
  "spacetimedb-lib",
  "spacetimedb-primitives",
- "spacetimedb-schema",
+ "spacetimedb-schema-2",
  "spacetimedb-standalone",
  "spacetimedb-testing",
  "syntect",
@@ -4940,7 +4940,7 @@ dependencies = [
  "spacetimedb-core",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
- "spacetimedb-schema",
+ "spacetimedb-schema-2",
  "tempfile",
  "tokio",
  "tokio-stream",
@@ -5071,7 +5071,7 @@ dependencies = [
  "spacetimedb-metrics",
  "spacetimedb-primitives",
  "spacetimedb-sats",
- "spacetimedb-schema",
+ "spacetimedb-schema-2",
  "spacetimedb-snapshot",
  "spacetimedb-table",
  "spacetimedb-vm",
@@ -5140,8 +5140,8 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
- "spacetimedb-schema",
- "spacetimedb-sql-parser",
+ "spacetimedb-schema-2",
+ "spacetimedb-sql-parser-2",
  "string-interner",
  "thiserror",
 ]
@@ -5201,8 +5201,8 @@ dependencies = [
  "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-primitives",
- "spacetimedb-schema",
- "spacetimedb-sql-parser",
+ "spacetimedb-schema-2",
+ "spacetimedb-sql-parser-2",
 ]
 
 [[package]]
@@ -5255,7 +5255,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spacetimedb-schema"
+name = "spacetimedb-schema-2"
 version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
@@ -5267,12 +5267,11 @@ dependencies = [
  "proptest",
  "serde_json",
  "smallvec",
- "spacetimedb-cli",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
- "spacetimedb-sql-parser",
+ "spacetimedb-sql-parser-2",
  "spacetimedb-testing",
  "thiserror",
  "unicode-ident",
@@ -5322,7 +5321,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spacetimedb-sql-parser"
+name = "spacetimedb-sql-parser-2"
 version = "1.0.0-rc2"
 dependencies = [
  "derive_more",
@@ -5380,7 +5379,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
- "spacetimedb-schema",
+ "spacetimedb-schema-2",
  "thiserror",
 ]
 
@@ -5423,7 +5422,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
- "spacetimedb-schema",
+ "spacetimedb-schema-2",
  "spacetimedb-table",
  "tempfile",
  "thiserror",

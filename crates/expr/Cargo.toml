@@ -1,5 +1,5 @@
 [package]
-name = "spacetimedb-expr"
+name = "spacetimedb-expr-2"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
