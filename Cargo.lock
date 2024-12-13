@@ -5125,7 +5125,6 @@ dependencies = [
  "futures",
  "http 1.1.0",
  "indicatif",
- "insta",
  "is-terminal",
  "itertools 0.12.1",
  "mimalloc",
@@ -5139,6 +5138,7 @@ dependencies = [
  "slab",
  "spacetimedb-auth",
  "spacetimedb-client-api-messages",
+ "spacetimedb-codegen",
  "spacetimedb-data-structures",
  "spacetimedb-fs-utils",
  "spacetimedb-jsonwebtoken",
@@ -5146,7 +5146,6 @@ dependencies = [
  "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-schema",
- "spacetimedb-testing",
  "syntect",
  "tabled",
  "tar",
@@ -5162,7 +5161,6 @@ dependencies = [
  "tracing",
  "walkdir",
  "wasmbin",
- "wasmtime",
  "webbrowser",
  "windows-sys 0.59.0",
 ]
@@ -5238,6 +5236,24 @@ dependencies = [
  "spacetimedb-sats",
  "strum",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-codegen"
+version = "1.1.0"
+dependencies = [
+ "anyhow",
+ "convert_case 0.6.0",
+ "fs-err",
+ "insta",
+ "itertools 0.12.1",
+ "regex",
+ "spacetimedb-data-structures",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-schema",
+ "spacetimedb-testing",
+ "wasmtime",
 ]
 
 [[package]]
@@ -5632,7 +5648,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "smallvec",
- "spacetimedb-cli",
+ "spacetimedb-codegen",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-primitives",

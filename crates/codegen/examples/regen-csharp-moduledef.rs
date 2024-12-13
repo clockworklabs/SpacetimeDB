@@ -3,8 +3,9 @@
 
 use fs_err as fs;
 use regex::Regex;
-use spacetimedb_cli::generate::{csharp, generate};
+use spacetimedb_codegen::{csharp, generate};
 use spacetimedb_lib::{RawModuleDef, RawModuleDefV8};
+use spacetimedb_schema::def::ModuleDef;
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -30,12 +31,13 @@ fn main() -> anyhow::Result<()> {
     fs::remove_dir_all(dir)?;
     fs::create_dir(dir)?;
 
+    let module: ModuleDef = module.try_into()?;
     generate(
-        RawModuleDef::V8BackCompat(module),
+        &module,
         &csharp::Csharp {
             namespace: "SpacetimeDB.Internal",
         },
-    )?
+    )
     .into_iter()
     .try_for_each(|(filename, code)| {
         // Skip anything but raw types (in particular, this will skip top-level SpacetimeDBClient.g.cs which we don't need).

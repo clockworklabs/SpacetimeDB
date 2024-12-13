@@ -1,11 +1,8 @@
 use super::code_indenter::{CodeIndenter, Indenter};
 use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
-use crate::detect::{has_rust_fmt, has_rust_up};
-use crate::generate::util::{iter_tables, iter_types, iter_unique_cols, print_auto_generated_file_comment};
-use anyhow::Context;
+use crate::util::{iter_tables, iter_types, iter_unique_cols, print_auto_generated_file_comment};
 use convert_case::{Case, Casing};
-use duct::cmd;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
@@ -14,7 +11,6 @@ use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, 
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
 use std::ops::Deref;
-use std::path::PathBuf;
 
 /// Pairs of (module_name, TypeName).
 type Imports = BTreeSet<AlgebraicTypeRef>;
@@ -38,25 +34,6 @@ impl Lang for Rust {
 
     fn reducer_filename(&self, reducer_name: &Identifier) -> String {
         reducer_module_name(reducer_name) + ".rs"
-    }
-
-    fn format_files(&self, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
-        if !has_rust_fmt() {
-            if has_rust_up() {
-                cmd!("rustup", "component", "add", "rustfmt")
-                    .run()
-                    .context("Failed to install rustfmt with Rustup")?;
-            } else {
-                anyhow::bail!("rustfmt is not installed. Please install it.");
-            }
-        }
-        cmd!("rustfmt", "--edition", "2021")
-            .before_spawn(move |cmd| {
-                cmd.args(&generated_files);
-                Ok(())
-            })
-            .run()?;
-        Ok(())
     }
 
     fn generate_type(&self, module: &ModuleDef, typ: &TypeDef) -> String {
@@ -557,10 +534,6 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
         print_impl_spacetime_module(module, out);
 
         vec![("mod.rs".to_string(), (output.into_inner()))]
-    }
-
-    fn clap_value() -> clap::builder::PossibleValue {
-        clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"])
     }
 }
 

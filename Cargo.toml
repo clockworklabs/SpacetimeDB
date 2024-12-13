@@ -43,7 +43,7 @@ members = [
   "crates/sdk/tests/test-client",
   "crates/sdk/tests/test-counter",
   "crates/sdk/tests/connect_disconnect_client",
-  "tools/upgrade-version",
+  "tools/upgrade-version", "crates/codegen",
 ]
 default-members = ["crates/cli", "crates/standalone", "crates/update"]
 # cargo feature graph resolver. v3 is default in edition2024 but workspace
@@ -100,6 +100,7 @@ spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "1.1.0" }
 spacetimedb-cli = { path = "crates/cli", version = "1.1.0" }
 spacetimedb-client-api = { path = "crates/client-api", version = "1.1.0" }
 spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "1.1.0" }
+spacetimedb-codegen = { path = "crates/codegen", version = "1.1.0" }
 spacetimedb-commitlog = { path = "crates/commitlog", version = "1.1.0" }
 spacetimedb-core = { path = "crates/core", version = "1.1.0" }
 spacetimedb-data-structures = { path = "crates/data-structures", version = "1.1.0" }
