@@ -173,7 +173,7 @@ impl<'a> IterMutTx<'a> {
         let stage = if let Some(table) = committed_state.tables.get(&table_id) {
             // The committed state has changes for this table.
             let iter = table.scan_rows(&committed_state.blob_store);
-            if let Some(del_tables) = tx_state.delete_tables.get(&table_id).filter(|del| !del.is_empty()) {
+            if let Some(del_tables) = tx_state.get_delete_table(table_id) {
                 // There are deletes in the tx state
                 // so we must exclude those (1b).
                 ScanStage::CommittedWithTxDeletes { iter, del_tables }
