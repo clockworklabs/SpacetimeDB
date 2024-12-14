@@ -99,15 +99,15 @@ spacetimedb-core = { path = "crates/core", version = "1.0.0-rc2" }
 spacetimedb-data-structures = { path = "crates/data-structures", version = "1.0.0-rc2" }
 spacetimedb-durability = { path = "crates/durability", version = "1.0.0-rc2" }
 spacetimedb-execution = { path = "crates/execution", version = "1.0.0-rc2" }
-spacetimedb-expr = { package = "spacetimedb-expr-2", path = "crates/expr", version = "1.0.0-rc2" }
+spacetimedb-expr = { path = "crates/expr", version = "1.0.0-rc2" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "1.0.0-rc2" }
 spacetimedb-metrics = { path = "crates/metrics", version = "1.0.0-rc2" }
 spacetimedb-physical-plan = { path = "crates/physical-plan", version = "1.0.0-rc2" }
 spacetimedb-primitives = { path = "crates/primitives", version = "1.0.0-rc2" }
 spacetimedb-sats = { path = "crates/sats", version = "1.0.0-rc2" }
-spacetimedb-schema = { package = "spacetimedb-schema-2", path = "crates/schema", version = "1.0.0-rc2" }
+spacetimedb-schema = { path = "crates/schema", version = "1.0.0-rc2" }
 spacetimedb-standalone = { path = "crates/standalone", version = "1.0.0-rc2" }
-spacetimedb-sql-parser = { package = "spacetimedb-sql-parser-2", path = "crates/sql-parser", version = "1.0.0-rc2" }
+spacetimedb-sql-parser = { path = "crates/sql-parser", version = "1.0.0-rc2" }
 spacetimedb-table = { path = "crates/table", version = "1.0.0-rc2" }
 spacetimedb-vm = { path = "crates/vm", version = "1.0.0-rc2" }
 spacetimedb-fs-utils = { path = "crates/fs-utils", version = "1.0.0-rc2" }

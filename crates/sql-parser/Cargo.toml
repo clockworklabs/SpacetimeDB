@@ -1,5 +1,5 @@
 [package]
-name = "spacetimedb-sql-parser-2"
+name = "spacetimedb-sql-parser"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
