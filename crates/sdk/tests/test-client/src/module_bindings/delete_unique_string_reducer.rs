@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeleteUniqueString {
+pub(super) struct DeleteUniqueStringArgs {
     pub s: String,
 }
 
-impl __sdk::spacetime_module::InModule for DeleteUniqueString {
+impl From<DeleteUniqueStringArgs> for super::Reducer {
+    fn from(args: DeleteUniqueStringArgs) -> Self {
+        Self::DeleteUniqueString { s: args.s }
+    }
+}
+
+impl __sdk::InModule for DeleteUniqueStringArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct DeleteUniqueStringCallbackId(__sdk::callbacks::CallbackId);
+pub struct DeleteUniqueStringCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `delete_unique_string`.
@@ -52,20 +57,33 @@ pub trait delete_unique_string {
 
 impl delete_unique_string for super::RemoteReducers {
     fn delete_unique_string(&self, s: String) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_string", DeleteUniqueString { s })
+        self.imp
+            .call_reducer("delete_unique_string", DeleteUniqueStringArgs { s })
     }
     fn on_delete_unique_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String) + Send + 'static,
     ) -> DeleteUniqueStringCallbackId {
-        DeleteUniqueStringCallbackId(self.imp.on_reducer::<DeleteUniqueString>(
+        DeleteUniqueStringCallbackId(self.imp.on_reducer(
             "delete_unique_string",
-            Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueString| callback(ctx, &args.s)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeleteUniqueString { s },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
+            }),
         ))
     }
     fn remove_on_delete_unique_string(&self, callback: DeleteUniqueStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueString>("delete_unique_string", callback.0)
+        self.imp.remove_on_reducer("delete_unique_string", callback.0)
     }
 }
 

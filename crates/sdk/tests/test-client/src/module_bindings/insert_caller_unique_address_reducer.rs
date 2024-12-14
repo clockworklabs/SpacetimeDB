@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertCallerUniqueAddress {
+pub(super) struct InsertCallerUniqueAddressArgs {
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for InsertCallerUniqueAddress {
+impl From<InsertCallerUniqueAddressArgs> for super::Reducer {
+    fn from(args: InsertCallerUniqueAddressArgs) -> Self {
+        Self::InsertCallerUniqueAddress { data: args.data }
+    }
+}
+
+impl __sdk::InModule for InsertCallerUniqueAddressArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertCallerUniqueAddressCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertCallerUniqueAddressCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_caller_unique_address`.
@@ -53,20 +58,32 @@ pub trait insert_caller_unique_address {
 impl insert_caller_unique_address for super::RemoteReducers {
     fn insert_caller_unique_address(&self, data: i32) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_caller_unique_address", InsertCallerUniqueAddress { data })
+            .call_reducer("insert_caller_unique_address", InsertCallerUniqueAddressArgs { data })
     }
     fn on_insert_caller_unique_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i32) + Send + 'static,
     ) -> InsertCallerUniqueAddressCallbackId {
-        InsertCallerUniqueAddressCallbackId(self.imp.on_reducer::<InsertCallerUniqueAddress>(
+        InsertCallerUniqueAddressCallbackId(self.imp.on_reducer(
             "insert_caller_unique_address",
-            Box::new(move |ctx: &super::EventContext, args: &InsertCallerUniqueAddress| callback(ctx, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertCallerUniqueAddress { data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, data)
+            }),
         ))
     }
     fn remove_on_insert_caller_unique_address(&self, callback: InsertCallerUniqueAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertCallerUniqueAddress>("insert_caller_unique_address", callback.0)
+        self.imp.remove_on_reducer("insert_caller_unique_address", callback.0)
     }
 }
 

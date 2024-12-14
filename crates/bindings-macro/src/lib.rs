@@ -45,6 +45,7 @@ mod sym {
     symbol!(public);
     symbol!(sats);
     symbol!(scheduled);
+    symbol!(scheduled_at);
     symbol!(unique);
     symbol!(update);
 
@@ -154,7 +155,7 @@ mod sym {
 pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
         let args = reducer::ReducerArgs::parse(args)?;
-        reducer::reducer_impl(args, &original_function)
+        reducer::reducer_impl(args, original_function)
     })
 }
 
@@ -241,7 +242,7 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 
 /// Provides helper attributes for `#[spacetimedb::table]`, so that we don't get unknown attribute errors.
 #[doc(hidden)]
-#[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index))]
+#[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index, scheduled_at))]
 pub fn table_helper(_input: StdTokenStream) -> StdTokenStream {
     Default::default()
 }

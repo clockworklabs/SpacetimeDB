@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecIdentity {
+pub(super) struct InsertVecIdentityArgs {
     pub i: Vec<__sdk::Identity>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertVecIdentity {
+impl From<InsertVecIdentityArgs> for super::Reducer {
+    fn from(args: InsertVecIdentityArgs) -> Self {
+        Self::InsertVecIdentity { i: args.i }
+    }
+}
+
+impl __sdk::InModule for InsertVecIdentityArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecIdentityCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertVecIdentityCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_identity`.
@@ -52,20 +57,33 @@ pub trait insert_vec_identity {
 
 impl insert_vec_identity for super::RemoteReducers {
     fn insert_vec_identity(&self, i: Vec<__sdk::Identity>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_identity", InsertVecIdentity { i })
+        self.imp
+            .call_reducer("insert_vec_identity", InsertVecIdentityArgs { i })
     }
     fn on_insert_vec_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<__sdk::Identity>) + Send + 'static,
     ) -> InsertVecIdentityCallbackId {
-        InsertVecIdentityCallbackId(self.imp.on_reducer::<InsertVecIdentity>(
+        InsertVecIdentityCallbackId(self.imp.on_reducer(
             "insert_vec_identity",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecIdentity| callback(ctx, &args.i)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecIdentity { i },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, i)
+            }),
         ))
     }
     fn remove_on_insert_vec_identity(&self, callback: InsertVecIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecIdentity>("insert_vec_identity", callback.0)
+        self.imp.remove_on_reducer("insert_vec_identity", callback.0)
     }
 }
 

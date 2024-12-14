@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeleteUniqueU256 {
+pub(super) struct DeleteUniqueU256Args {
     pub n: __sats::u256,
 }
 
-impl __sdk::spacetime_module::InModule for DeleteUniqueU256 {
+impl From<DeleteUniqueU256Args> for super::Reducer {
+    fn from(args: DeleteUniqueU256Args) -> Self {
+        Self::DeleteUniqueU256 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for DeleteUniqueU256Args {
     type Module = super::RemoteModule;
 }
 
-pub struct DeleteUniqueU256CallbackId(__sdk::callbacks::CallbackId);
+pub struct DeleteUniqueU256CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `delete_unique_u256`.
@@ -52,20 +57,32 @@ pub trait delete_unique_u_256 {
 
 impl delete_unique_u_256 for super::RemoteReducers {
     fn delete_unique_u_256(&self, n: __sats::u256) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_u256", DeleteUniqueU256 { n })
+        self.imp.call_reducer("delete_unique_u256", DeleteUniqueU256Args { n })
     }
     fn on_delete_unique_u_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::u256) + Send + 'static,
     ) -> DeleteUniqueU256CallbackId {
-        DeleteUniqueU256CallbackId(self.imp.on_reducer::<DeleteUniqueU256>(
+        DeleteUniqueU256CallbackId(self.imp.on_reducer(
             "delete_unique_u256",
-            Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueU256| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeleteUniqueU256 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_delete_unique_u_256(&self, callback: DeleteUniqueU256CallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueU256>("delete_unique_u256", callback.0)
+        self.imp.remove_on_reducer("delete_unique_u256", callback.0)
     }
 }
 

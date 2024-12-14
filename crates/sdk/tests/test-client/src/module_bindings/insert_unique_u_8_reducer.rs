@@ -2,24 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertUniqueU8 {
+pub(super) struct InsertUniqueU8Args {
     pub n: u8,
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for InsertUniqueU8 {
+impl From<InsertUniqueU8Args> for super::Reducer {
+    fn from(args: InsertUniqueU8Args) -> Self {
+        Self::InsertUniqueU8 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertUniqueU8Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertUniqueU8CallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertUniqueU8CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_unique_u8`.
@@ -53,20 +61,33 @@ pub trait insert_unique_u_8 {
 
 impl insert_unique_u_8 for super::RemoteReducers {
     fn insert_unique_u_8(&self, n: u8, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_unique_u8", InsertUniqueU8 { n, data })
+        self.imp
+            .call_reducer("insert_unique_u8", InsertUniqueU8Args { n, data })
     }
     fn on_insert_unique_u_8(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u8, &i32) + Send + 'static,
     ) -> InsertUniqueU8CallbackId {
-        InsertUniqueU8CallbackId(self.imp.on_reducer::<InsertUniqueU8>(
+        InsertUniqueU8CallbackId(self.imp.on_reducer(
             "insert_unique_u8",
-            Box::new(move |ctx: &super::EventContext, args: &InsertUniqueU8| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertUniqueU8 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_insert_unique_u_8(&self, callback: InsertUniqueU8CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueU8>("insert_unique_u8", callback.0)
+        self.imp.remove_on_reducer("insert_unique_u8", callback.0)
     }
 }
 

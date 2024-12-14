@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneU128 {
+pub(super) struct InsertOneU128Args {
     pub n: u128,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOneU128 {
+impl From<InsertOneU128Args> for super::Reducer {
+    fn from(args: InsertOneU128Args) -> Self {
+        Self::InsertOneU128 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for InsertOneU128Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOneU128CallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOneU128CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_one_u128`.
@@ -52,20 +57,32 @@ pub trait insert_one_u_128 {
 
 impl insert_one_u_128 for super::RemoteReducers {
     fn insert_one_u_128(&self, n: u128) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_u128", InsertOneU128 { n })
+        self.imp.call_reducer("insert_one_u128", InsertOneU128Args { n })
     }
     fn on_insert_one_u_128(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u128) + Send + 'static,
     ) -> InsertOneU128CallbackId {
-        InsertOneU128CallbackId(self.imp.on_reducer::<InsertOneU128>(
+        InsertOneU128CallbackId(self.imp.on_reducer(
             "insert_one_u128",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneU128| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneU128 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_insert_one_u_128(&self, callback: InsertOneU128CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneU128>("insert_one_u128", callback.0)
+        self.imp.remove_on_reducer("insert_one_u128", callback.0)
     }
 }
 

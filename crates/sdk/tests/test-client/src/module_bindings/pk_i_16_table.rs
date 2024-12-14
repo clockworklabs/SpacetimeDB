@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::pk_i_16_type::PkI16;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `pk_i16`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.pk_i_16().on_insert(...)`.
 pub struct PkI16TableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<PkI16>,
+    imp: __sdk::TableHandle<PkI16>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl PkI16TableAccess for super::RemoteTables {
     }
 }
 
-pub struct PkI16InsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct PkI16DeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct PkI16InsertCallbackId(__sdk::CallbackId);
+pub struct PkI16DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for PkI16TableHandle<'ctx> {
+impl<'ctx> __sdk::Table for PkI16TableHandle<'ctx> {
     type Row = PkI16;
     type EventContext = super::EventContext;
 
@@ -82,9 +81,14 @@ impl<'ctx> __sdk::table::Table for PkI16TableHandle<'ctx> {
     }
 }
 
-pub struct PkI16UpdateCallbackId(__sdk::callbacks::CallbackId);
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkI16>("pk_i16");
+    _table.add_unique_constraint::<i16>("n", |row| &row.n);
+}
+pub struct PkI16UpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::TableWithPrimaryKey for PkI16TableHandle<'ctx> {
+impl<'ctx> __sdk::TableWithPrimaryKey for PkI16TableHandle<'ctx> {
     type UpdateCallbackId = PkI16UpdateCallbackId;
 
     fn on_update(
@@ -102,8 +106,8 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkI16TableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<PkI16>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<i16>(raw_updates, |row: &PkI16| &row.n)
+) -> __anyhow::Result<__sdk::TableUpdate<PkI16>> {
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<i16>(raw_updates, |row: &PkI16| &row.n)
         .context("Failed to parse table update for table \"pk_i16\"")
 }
 
@@ -115,7 +119,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.pk_i_16().n().find(...)`.
 pub struct PkI16NUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraint<PkI16, i16>,
+    imp: __sdk::UniqueConstraintHandle<PkI16, i16>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -123,7 +127,7 @@ impl<'ctx> PkI16TableHandle<'ctx> {
     /// Get a handle on the `n` unique index on the table `pk_i16`.
     pub fn n(&self) -> PkI16NUnique<'ctx> {
         PkI16NUnique {
-            imp: self.imp.get_unique_constraint::<i16>("n", |row| &row.n),
+            imp: self.imp.get_unique_constraint::<i16>("n"),
             phantom: std::marker::PhantomData,
         }
     }

@@ -4,10 +4,9 @@
 #![allow(unused)]
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 use super::one_every_primitive_struct_type::OneEveryPrimitiveStruct;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `one_every_primitive_struct`.
@@ -19,7 +18,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.one_every_primitive_struct().on_insert(...)`.
 pub struct OneEveryPrimitiveStructTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<OneEveryPrimitiveStruct>,
+    imp: __sdk::TableHandle<OneEveryPrimitiveStruct>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -44,10 +43,10 @@ impl OneEveryPrimitiveStructTableAccess for super::RemoteTables {
     }
 }
 
-pub struct OneEveryPrimitiveStructInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct OneEveryPrimitiveStructDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct OneEveryPrimitiveStructInsertCallbackId(__sdk::CallbackId);
+pub struct OneEveryPrimitiveStructDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for OneEveryPrimitiveStructTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for OneEveryPrimitiveStructTableHandle<'ctx> {
     type Row = OneEveryPrimitiveStruct;
     type EventContext = super::EventContext;
 
@@ -86,9 +85,13 @@ impl<'ctx> __sdk::table::Table for OneEveryPrimitiveStructTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<OneEveryPrimitiveStruct>("one_every_primitive_struct");
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneEveryPrimitiveStruct>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<OneEveryPrimitiveStruct>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"one_every_primitive_struct\"")
 }

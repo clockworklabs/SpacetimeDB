@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 pub mod byte_struct_type;
@@ -44,6 +43,10 @@ pub mod delete_unique_u_8_reducer;
 pub mod enum_with_payload_type;
 pub mod every_primitive_struct_type;
 pub mod every_vec_struct_type;
+pub mod indexed_table_2_table;
+pub mod indexed_table_2_type;
+pub mod indexed_table_table;
+pub mod indexed_table_type;
 pub mod insert_caller_one_address_reducer;
 pub mod insert_caller_one_identity_reducer;
 pub mod insert_caller_pk_address_reducer;
@@ -236,6 +239,9 @@ pub mod pk_u_64_table;
 pub mod pk_u_64_type;
 pub mod pk_u_8_table;
 pub mod pk_u_8_type;
+pub mod scheduled_table_table;
+pub mod scheduled_table_type;
+pub mod send_scheduled_message_reducer;
 pub mod simple_enum_type;
 pub mod table_holds_table_table;
 pub mod table_holds_table_type;
@@ -353,353 +359,482 @@ pub mod vec_u_8_type;
 pub mod vec_unit_struct_table;
 pub mod vec_unit_struct_type;
 
-pub use byte_struct_type::*;
-pub use delete_pk_address_reducer::*;
-pub use delete_pk_bool_reducer::*;
-pub use delete_pk_i_128_reducer::*;
-pub use delete_pk_i_16_reducer::*;
-pub use delete_pk_i_256_reducer::*;
-pub use delete_pk_i_32_reducer::*;
-pub use delete_pk_i_64_reducer::*;
-pub use delete_pk_i_8_reducer::*;
-pub use delete_pk_identity_reducer::*;
-pub use delete_pk_string_reducer::*;
-pub use delete_pk_u_128_reducer::*;
-pub use delete_pk_u_16_reducer::*;
-pub use delete_pk_u_256_reducer::*;
-pub use delete_pk_u_32_reducer::*;
-pub use delete_pk_u_64_reducer::*;
-pub use delete_pk_u_8_reducer::*;
-pub use delete_unique_address_reducer::*;
-pub use delete_unique_bool_reducer::*;
-pub use delete_unique_i_128_reducer::*;
-pub use delete_unique_i_16_reducer::*;
-pub use delete_unique_i_256_reducer::*;
-pub use delete_unique_i_32_reducer::*;
-pub use delete_unique_i_64_reducer::*;
-pub use delete_unique_i_8_reducer::*;
-pub use delete_unique_identity_reducer::*;
-pub use delete_unique_string_reducer::*;
-pub use delete_unique_u_128_reducer::*;
-pub use delete_unique_u_16_reducer::*;
-pub use delete_unique_u_256_reducer::*;
-pub use delete_unique_u_32_reducer::*;
-pub use delete_unique_u_64_reducer::*;
-pub use delete_unique_u_8_reducer::*;
-pub use enum_with_payload_type::*;
-pub use every_primitive_struct_type::*;
-pub use every_vec_struct_type::*;
-pub use insert_caller_one_address_reducer::*;
-pub use insert_caller_one_identity_reducer::*;
-pub use insert_caller_pk_address_reducer::*;
-pub use insert_caller_pk_identity_reducer::*;
-pub use insert_caller_unique_address_reducer::*;
-pub use insert_caller_unique_identity_reducer::*;
-pub use insert_caller_vec_address_reducer::*;
-pub use insert_caller_vec_identity_reducer::*;
-pub use insert_large_table_reducer::*;
-pub use insert_one_address_reducer::*;
-pub use insert_one_bool_reducer::*;
-pub use insert_one_byte_struct_reducer::*;
-pub use insert_one_enum_with_payload_reducer::*;
-pub use insert_one_every_primitive_struct_reducer::*;
-pub use insert_one_every_vec_struct_reducer::*;
-pub use insert_one_f_32_reducer::*;
-pub use insert_one_f_64_reducer::*;
-pub use insert_one_i_128_reducer::*;
-pub use insert_one_i_16_reducer::*;
-pub use insert_one_i_256_reducer::*;
-pub use insert_one_i_32_reducer::*;
-pub use insert_one_i_64_reducer::*;
-pub use insert_one_i_8_reducer::*;
-pub use insert_one_identity_reducer::*;
-pub use insert_one_simple_enum_reducer::*;
-pub use insert_one_string_reducer::*;
-pub use insert_one_u_128_reducer::*;
-pub use insert_one_u_16_reducer::*;
-pub use insert_one_u_256_reducer::*;
-pub use insert_one_u_32_reducer::*;
-pub use insert_one_u_64_reducer::*;
-pub use insert_one_u_8_reducer::*;
-pub use insert_one_unit_struct_reducer::*;
-pub use insert_option_every_primitive_struct_reducer::*;
-pub use insert_option_i_32_reducer::*;
-pub use insert_option_identity_reducer::*;
-pub use insert_option_simple_enum_reducer::*;
-pub use insert_option_string_reducer::*;
-pub use insert_option_vec_option_i_32_reducer::*;
-pub use insert_pk_address_reducer::*;
-pub use insert_pk_bool_reducer::*;
-pub use insert_pk_i_128_reducer::*;
-pub use insert_pk_i_16_reducer::*;
-pub use insert_pk_i_256_reducer::*;
-pub use insert_pk_i_32_reducer::*;
-pub use insert_pk_i_64_reducer::*;
-pub use insert_pk_i_8_reducer::*;
-pub use insert_pk_identity_reducer::*;
-pub use insert_pk_string_reducer::*;
-pub use insert_pk_u_128_reducer::*;
-pub use insert_pk_u_16_reducer::*;
-pub use insert_pk_u_256_reducer::*;
-pub use insert_pk_u_32_reducer::*;
-pub use insert_pk_u_64_reducer::*;
-pub use insert_pk_u_8_reducer::*;
-pub use insert_primitives_as_strings_reducer::*;
-pub use insert_table_holds_table_reducer::*;
-pub use insert_unique_address_reducer::*;
-pub use insert_unique_bool_reducer::*;
-pub use insert_unique_i_128_reducer::*;
-pub use insert_unique_i_16_reducer::*;
-pub use insert_unique_i_256_reducer::*;
-pub use insert_unique_i_32_reducer::*;
-pub use insert_unique_i_64_reducer::*;
-pub use insert_unique_i_8_reducer::*;
-pub use insert_unique_identity_reducer::*;
-pub use insert_unique_string_reducer::*;
-pub use insert_unique_u_128_reducer::*;
-pub use insert_unique_u_16_reducer::*;
-pub use insert_unique_u_256_reducer::*;
-pub use insert_unique_u_32_reducer::*;
-pub use insert_unique_u_64_reducer::*;
-pub use insert_unique_u_8_reducer::*;
-pub use insert_vec_address_reducer::*;
-pub use insert_vec_bool_reducer::*;
-pub use insert_vec_byte_struct_reducer::*;
-pub use insert_vec_enum_with_payload_reducer::*;
-pub use insert_vec_every_primitive_struct_reducer::*;
-pub use insert_vec_every_vec_struct_reducer::*;
-pub use insert_vec_f_32_reducer::*;
-pub use insert_vec_f_64_reducer::*;
-pub use insert_vec_i_128_reducer::*;
-pub use insert_vec_i_16_reducer::*;
-pub use insert_vec_i_256_reducer::*;
-pub use insert_vec_i_32_reducer::*;
-pub use insert_vec_i_64_reducer::*;
-pub use insert_vec_i_8_reducer::*;
-pub use insert_vec_identity_reducer::*;
-pub use insert_vec_simple_enum_reducer::*;
-pub use insert_vec_string_reducer::*;
-pub use insert_vec_u_128_reducer::*;
-pub use insert_vec_u_16_reducer::*;
-pub use insert_vec_u_256_reducer::*;
-pub use insert_vec_u_32_reducer::*;
-pub use insert_vec_u_64_reducer::*;
-pub use insert_vec_u_8_reducer::*;
-pub use insert_vec_unit_struct_reducer::*;
+pub use byte_struct_type::ByteStruct;
+pub use delete_pk_address_reducer::{delete_pk_address, set_flags_for_delete_pk_address, DeletePkAddressCallbackId};
+pub use delete_pk_bool_reducer::{delete_pk_bool, set_flags_for_delete_pk_bool, DeletePkBoolCallbackId};
+pub use delete_pk_i_128_reducer::{delete_pk_i_128, set_flags_for_delete_pk_i_128, DeletePkI128CallbackId};
+pub use delete_pk_i_16_reducer::{delete_pk_i_16, set_flags_for_delete_pk_i_16, DeletePkI16CallbackId};
+pub use delete_pk_i_256_reducer::{delete_pk_i_256, set_flags_for_delete_pk_i_256, DeletePkI256CallbackId};
+pub use delete_pk_i_32_reducer::{delete_pk_i_32, set_flags_for_delete_pk_i_32, DeletePkI32CallbackId};
+pub use delete_pk_i_64_reducer::{delete_pk_i_64, set_flags_for_delete_pk_i_64, DeletePkI64CallbackId};
+pub use delete_pk_i_8_reducer::{delete_pk_i_8, set_flags_for_delete_pk_i_8, DeletePkI8CallbackId};
+pub use delete_pk_identity_reducer::{
+    delete_pk_identity, set_flags_for_delete_pk_identity, DeletePkIdentityCallbackId,
+};
+pub use delete_pk_string_reducer::{delete_pk_string, set_flags_for_delete_pk_string, DeletePkStringCallbackId};
+pub use delete_pk_u_128_reducer::{delete_pk_u_128, set_flags_for_delete_pk_u_128, DeletePkU128CallbackId};
+pub use delete_pk_u_16_reducer::{delete_pk_u_16, set_flags_for_delete_pk_u_16, DeletePkU16CallbackId};
+pub use delete_pk_u_256_reducer::{delete_pk_u_256, set_flags_for_delete_pk_u_256, DeletePkU256CallbackId};
+pub use delete_pk_u_32_reducer::{delete_pk_u_32, set_flags_for_delete_pk_u_32, DeletePkU32CallbackId};
+pub use delete_pk_u_64_reducer::{delete_pk_u_64, set_flags_for_delete_pk_u_64, DeletePkU64CallbackId};
+pub use delete_pk_u_8_reducer::{delete_pk_u_8, set_flags_for_delete_pk_u_8, DeletePkU8CallbackId};
+pub use delete_unique_address_reducer::{
+    delete_unique_address, set_flags_for_delete_unique_address, DeleteUniqueAddressCallbackId,
+};
+pub use delete_unique_bool_reducer::{
+    delete_unique_bool, set_flags_for_delete_unique_bool, DeleteUniqueBoolCallbackId,
+};
+pub use delete_unique_i_128_reducer::{
+    delete_unique_i_128, set_flags_for_delete_unique_i_128, DeleteUniqueI128CallbackId,
+};
+pub use delete_unique_i_16_reducer::{delete_unique_i_16, set_flags_for_delete_unique_i_16, DeleteUniqueI16CallbackId};
+pub use delete_unique_i_256_reducer::{
+    delete_unique_i_256, set_flags_for_delete_unique_i_256, DeleteUniqueI256CallbackId,
+};
+pub use delete_unique_i_32_reducer::{delete_unique_i_32, set_flags_for_delete_unique_i_32, DeleteUniqueI32CallbackId};
+pub use delete_unique_i_64_reducer::{delete_unique_i_64, set_flags_for_delete_unique_i_64, DeleteUniqueI64CallbackId};
+pub use delete_unique_i_8_reducer::{delete_unique_i_8, set_flags_for_delete_unique_i_8, DeleteUniqueI8CallbackId};
+pub use delete_unique_identity_reducer::{
+    delete_unique_identity, set_flags_for_delete_unique_identity, DeleteUniqueIdentityCallbackId,
+};
+pub use delete_unique_string_reducer::{
+    delete_unique_string, set_flags_for_delete_unique_string, DeleteUniqueStringCallbackId,
+};
+pub use delete_unique_u_128_reducer::{
+    delete_unique_u_128, set_flags_for_delete_unique_u_128, DeleteUniqueU128CallbackId,
+};
+pub use delete_unique_u_16_reducer::{delete_unique_u_16, set_flags_for_delete_unique_u_16, DeleteUniqueU16CallbackId};
+pub use delete_unique_u_256_reducer::{
+    delete_unique_u_256, set_flags_for_delete_unique_u_256, DeleteUniqueU256CallbackId,
+};
+pub use delete_unique_u_32_reducer::{delete_unique_u_32, set_flags_for_delete_unique_u_32, DeleteUniqueU32CallbackId};
+pub use delete_unique_u_64_reducer::{delete_unique_u_64, set_flags_for_delete_unique_u_64, DeleteUniqueU64CallbackId};
+pub use delete_unique_u_8_reducer::{delete_unique_u_8, set_flags_for_delete_unique_u_8, DeleteUniqueU8CallbackId};
+pub use enum_with_payload_type::EnumWithPayload;
+pub use every_primitive_struct_type::EveryPrimitiveStruct;
+pub use every_vec_struct_type::EveryVecStruct;
+pub use indexed_table_2_table::*;
+pub use indexed_table_2_type::IndexedTable2;
+pub use indexed_table_table::*;
+pub use indexed_table_type::IndexedTable;
+pub use insert_caller_one_address_reducer::{
+    insert_caller_one_address, set_flags_for_insert_caller_one_address, InsertCallerOneAddressCallbackId,
+};
+pub use insert_caller_one_identity_reducer::{
+    insert_caller_one_identity, set_flags_for_insert_caller_one_identity, InsertCallerOneIdentityCallbackId,
+};
+pub use insert_caller_pk_address_reducer::{
+    insert_caller_pk_address, set_flags_for_insert_caller_pk_address, InsertCallerPkAddressCallbackId,
+};
+pub use insert_caller_pk_identity_reducer::{
+    insert_caller_pk_identity, set_flags_for_insert_caller_pk_identity, InsertCallerPkIdentityCallbackId,
+};
+pub use insert_caller_unique_address_reducer::{
+    insert_caller_unique_address, set_flags_for_insert_caller_unique_address, InsertCallerUniqueAddressCallbackId,
+};
+pub use insert_caller_unique_identity_reducer::{
+    insert_caller_unique_identity, set_flags_for_insert_caller_unique_identity, InsertCallerUniqueIdentityCallbackId,
+};
+pub use insert_caller_vec_address_reducer::{
+    insert_caller_vec_address, set_flags_for_insert_caller_vec_address, InsertCallerVecAddressCallbackId,
+};
+pub use insert_caller_vec_identity_reducer::{
+    insert_caller_vec_identity, set_flags_for_insert_caller_vec_identity, InsertCallerVecIdentityCallbackId,
+};
+pub use insert_large_table_reducer::{
+    insert_large_table, set_flags_for_insert_large_table, InsertLargeTableCallbackId,
+};
+pub use insert_one_address_reducer::{
+    insert_one_address, set_flags_for_insert_one_address, InsertOneAddressCallbackId,
+};
+pub use insert_one_bool_reducer::{insert_one_bool, set_flags_for_insert_one_bool, InsertOneBoolCallbackId};
+pub use insert_one_byte_struct_reducer::{
+    insert_one_byte_struct, set_flags_for_insert_one_byte_struct, InsertOneByteStructCallbackId,
+};
+pub use insert_one_enum_with_payload_reducer::{
+    insert_one_enum_with_payload, set_flags_for_insert_one_enum_with_payload, InsertOneEnumWithPayloadCallbackId,
+};
+pub use insert_one_every_primitive_struct_reducer::{
+    insert_one_every_primitive_struct, set_flags_for_insert_one_every_primitive_struct,
+    InsertOneEveryPrimitiveStructCallbackId,
+};
+pub use insert_one_every_vec_struct_reducer::{
+    insert_one_every_vec_struct, set_flags_for_insert_one_every_vec_struct, InsertOneEveryVecStructCallbackId,
+};
+pub use insert_one_f_32_reducer::{insert_one_f_32, set_flags_for_insert_one_f_32, InsertOneF32CallbackId};
+pub use insert_one_f_64_reducer::{insert_one_f_64, set_flags_for_insert_one_f_64, InsertOneF64CallbackId};
+pub use insert_one_i_128_reducer::{insert_one_i_128, set_flags_for_insert_one_i_128, InsertOneI128CallbackId};
+pub use insert_one_i_16_reducer::{insert_one_i_16, set_flags_for_insert_one_i_16, InsertOneI16CallbackId};
+pub use insert_one_i_256_reducer::{insert_one_i_256, set_flags_for_insert_one_i_256, InsertOneI256CallbackId};
+pub use insert_one_i_32_reducer::{insert_one_i_32, set_flags_for_insert_one_i_32, InsertOneI32CallbackId};
+pub use insert_one_i_64_reducer::{insert_one_i_64, set_flags_for_insert_one_i_64, InsertOneI64CallbackId};
+pub use insert_one_i_8_reducer::{insert_one_i_8, set_flags_for_insert_one_i_8, InsertOneI8CallbackId};
+pub use insert_one_identity_reducer::{
+    insert_one_identity, set_flags_for_insert_one_identity, InsertOneIdentityCallbackId,
+};
+pub use insert_one_simple_enum_reducer::{
+    insert_one_simple_enum, set_flags_for_insert_one_simple_enum, InsertOneSimpleEnumCallbackId,
+};
+pub use insert_one_string_reducer::{insert_one_string, set_flags_for_insert_one_string, InsertOneStringCallbackId};
+pub use insert_one_u_128_reducer::{insert_one_u_128, set_flags_for_insert_one_u_128, InsertOneU128CallbackId};
+pub use insert_one_u_16_reducer::{insert_one_u_16, set_flags_for_insert_one_u_16, InsertOneU16CallbackId};
+pub use insert_one_u_256_reducer::{insert_one_u_256, set_flags_for_insert_one_u_256, InsertOneU256CallbackId};
+pub use insert_one_u_32_reducer::{insert_one_u_32, set_flags_for_insert_one_u_32, InsertOneU32CallbackId};
+pub use insert_one_u_64_reducer::{insert_one_u_64, set_flags_for_insert_one_u_64, InsertOneU64CallbackId};
+pub use insert_one_u_8_reducer::{insert_one_u_8, set_flags_for_insert_one_u_8, InsertOneU8CallbackId};
+pub use insert_one_unit_struct_reducer::{
+    insert_one_unit_struct, set_flags_for_insert_one_unit_struct, InsertOneUnitStructCallbackId,
+};
+pub use insert_option_every_primitive_struct_reducer::{
+    insert_option_every_primitive_struct, set_flags_for_insert_option_every_primitive_struct,
+    InsertOptionEveryPrimitiveStructCallbackId,
+};
+pub use insert_option_i_32_reducer::{insert_option_i_32, set_flags_for_insert_option_i_32, InsertOptionI32CallbackId};
+pub use insert_option_identity_reducer::{
+    insert_option_identity, set_flags_for_insert_option_identity, InsertOptionIdentityCallbackId,
+};
+pub use insert_option_simple_enum_reducer::{
+    insert_option_simple_enum, set_flags_for_insert_option_simple_enum, InsertOptionSimpleEnumCallbackId,
+};
+pub use insert_option_string_reducer::{
+    insert_option_string, set_flags_for_insert_option_string, InsertOptionStringCallbackId,
+};
+pub use insert_option_vec_option_i_32_reducer::{
+    insert_option_vec_option_i_32, set_flags_for_insert_option_vec_option_i_32, InsertOptionVecOptionI32CallbackId,
+};
+pub use insert_pk_address_reducer::{insert_pk_address, set_flags_for_insert_pk_address, InsertPkAddressCallbackId};
+pub use insert_pk_bool_reducer::{insert_pk_bool, set_flags_for_insert_pk_bool, InsertPkBoolCallbackId};
+pub use insert_pk_i_128_reducer::{insert_pk_i_128, set_flags_for_insert_pk_i_128, InsertPkI128CallbackId};
+pub use insert_pk_i_16_reducer::{insert_pk_i_16, set_flags_for_insert_pk_i_16, InsertPkI16CallbackId};
+pub use insert_pk_i_256_reducer::{insert_pk_i_256, set_flags_for_insert_pk_i_256, InsertPkI256CallbackId};
+pub use insert_pk_i_32_reducer::{insert_pk_i_32, set_flags_for_insert_pk_i_32, InsertPkI32CallbackId};
+pub use insert_pk_i_64_reducer::{insert_pk_i_64, set_flags_for_insert_pk_i_64, InsertPkI64CallbackId};
+pub use insert_pk_i_8_reducer::{insert_pk_i_8, set_flags_for_insert_pk_i_8, InsertPkI8CallbackId};
+pub use insert_pk_identity_reducer::{
+    insert_pk_identity, set_flags_for_insert_pk_identity, InsertPkIdentityCallbackId,
+};
+pub use insert_pk_string_reducer::{insert_pk_string, set_flags_for_insert_pk_string, InsertPkStringCallbackId};
+pub use insert_pk_u_128_reducer::{insert_pk_u_128, set_flags_for_insert_pk_u_128, InsertPkU128CallbackId};
+pub use insert_pk_u_16_reducer::{insert_pk_u_16, set_flags_for_insert_pk_u_16, InsertPkU16CallbackId};
+pub use insert_pk_u_256_reducer::{insert_pk_u_256, set_flags_for_insert_pk_u_256, InsertPkU256CallbackId};
+pub use insert_pk_u_32_reducer::{insert_pk_u_32, set_flags_for_insert_pk_u_32, InsertPkU32CallbackId};
+pub use insert_pk_u_64_reducer::{insert_pk_u_64, set_flags_for_insert_pk_u_64, InsertPkU64CallbackId};
+pub use insert_pk_u_8_reducer::{insert_pk_u_8, set_flags_for_insert_pk_u_8, InsertPkU8CallbackId};
+pub use insert_primitives_as_strings_reducer::{
+    insert_primitives_as_strings, set_flags_for_insert_primitives_as_strings, InsertPrimitivesAsStringsCallbackId,
+};
+pub use insert_table_holds_table_reducer::{
+    insert_table_holds_table, set_flags_for_insert_table_holds_table, InsertTableHoldsTableCallbackId,
+};
+pub use insert_unique_address_reducer::{
+    insert_unique_address, set_flags_for_insert_unique_address, InsertUniqueAddressCallbackId,
+};
+pub use insert_unique_bool_reducer::{
+    insert_unique_bool, set_flags_for_insert_unique_bool, InsertUniqueBoolCallbackId,
+};
+pub use insert_unique_i_128_reducer::{
+    insert_unique_i_128, set_flags_for_insert_unique_i_128, InsertUniqueI128CallbackId,
+};
+pub use insert_unique_i_16_reducer::{insert_unique_i_16, set_flags_for_insert_unique_i_16, InsertUniqueI16CallbackId};
+pub use insert_unique_i_256_reducer::{
+    insert_unique_i_256, set_flags_for_insert_unique_i_256, InsertUniqueI256CallbackId,
+};
+pub use insert_unique_i_32_reducer::{insert_unique_i_32, set_flags_for_insert_unique_i_32, InsertUniqueI32CallbackId};
+pub use insert_unique_i_64_reducer::{insert_unique_i_64, set_flags_for_insert_unique_i_64, InsertUniqueI64CallbackId};
+pub use insert_unique_i_8_reducer::{insert_unique_i_8, set_flags_for_insert_unique_i_8, InsertUniqueI8CallbackId};
+pub use insert_unique_identity_reducer::{
+    insert_unique_identity, set_flags_for_insert_unique_identity, InsertUniqueIdentityCallbackId,
+};
+pub use insert_unique_string_reducer::{
+    insert_unique_string, set_flags_for_insert_unique_string, InsertUniqueStringCallbackId,
+};
+pub use insert_unique_u_128_reducer::{
+    insert_unique_u_128, set_flags_for_insert_unique_u_128, InsertUniqueU128CallbackId,
+};
+pub use insert_unique_u_16_reducer::{insert_unique_u_16, set_flags_for_insert_unique_u_16, InsertUniqueU16CallbackId};
+pub use insert_unique_u_256_reducer::{
+    insert_unique_u_256, set_flags_for_insert_unique_u_256, InsertUniqueU256CallbackId,
+};
+pub use insert_unique_u_32_reducer::{insert_unique_u_32, set_flags_for_insert_unique_u_32, InsertUniqueU32CallbackId};
+pub use insert_unique_u_64_reducer::{insert_unique_u_64, set_flags_for_insert_unique_u_64, InsertUniqueU64CallbackId};
+pub use insert_unique_u_8_reducer::{insert_unique_u_8, set_flags_for_insert_unique_u_8, InsertUniqueU8CallbackId};
+pub use insert_vec_address_reducer::{
+    insert_vec_address, set_flags_for_insert_vec_address, InsertVecAddressCallbackId,
+};
+pub use insert_vec_bool_reducer::{insert_vec_bool, set_flags_for_insert_vec_bool, InsertVecBoolCallbackId};
+pub use insert_vec_byte_struct_reducer::{
+    insert_vec_byte_struct, set_flags_for_insert_vec_byte_struct, InsertVecByteStructCallbackId,
+};
+pub use insert_vec_enum_with_payload_reducer::{
+    insert_vec_enum_with_payload, set_flags_for_insert_vec_enum_with_payload, InsertVecEnumWithPayloadCallbackId,
+};
+pub use insert_vec_every_primitive_struct_reducer::{
+    insert_vec_every_primitive_struct, set_flags_for_insert_vec_every_primitive_struct,
+    InsertVecEveryPrimitiveStructCallbackId,
+};
+pub use insert_vec_every_vec_struct_reducer::{
+    insert_vec_every_vec_struct, set_flags_for_insert_vec_every_vec_struct, InsertVecEveryVecStructCallbackId,
+};
+pub use insert_vec_f_32_reducer::{insert_vec_f_32, set_flags_for_insert_vec_f_32, InsertVecF32CallbackId};
+pub use insert_vec_f_64_reducer::{insert_vec_f_64, set_flags_for_insert_vec_f_64, InsertVecF64CallbackId};
+pub use insert_vec_i_128_reducer::{insert_vec_i_128, set_flags_for_insert_vec_i_128, InsertVecI128CallbackId};
+pub use insert_vec_i_16_reducer::{insert_vec_i_16, set_flags_for_insert_vec_i_16, InsertVecI16CallbackId};
+pub use insert_vec_i_256_reducer::{insert_vec_i_256, set_flags_for_insert_vec_i_256, InsertVecI256CallbackId};
+pub use insert_vec_i_32_reducer::{insert_vec_i_32, set_flags_for_insert_vec_i_32, InsertVecI32CallbackId};
+pub use insert_vec_i_64_reducer::{insert_vec_i_64, set_flags_for_insert_vec_i_64, InsertVecI64CallbackId};
+pub use insert_vec_i_8_reducer::{insert_vec_i_8, set_flags_for_insert_vec_i_8, InsertVecI8CallbackId};
+pub use insert_vec_identity_reducer::{
+    insert_vec_identity, set_flags_for_insert_vec_identity, InsertVecIdentityCallbackId,
+};
+pub use insert_vec_simple_enum_reducer::{
+    insert_vec_simple_enum, set_flags_for_insert_vec_simple_enum, InsertVecSimpleEnumCallbackId,
+};
+pub use insert_vec_string_reducer::{insert_vec_string, set_flags_for_insert_vec_string, InsertVecStringCallbackId};
+pub use insert_vec_u_128_reducer::{insert_vec_u_128, set_flags_for_insert_vec_u_128, InsertVecU128CallbackId};
+pub use insert_vec_u_16_reducer::{insert_vec_u_16, set_flags_for_insert_vec_u_16, InsertVecU16CallbackId};
+pub use insert_vec_u_256_reducer::{insert_vec_u_256, set_flags_for_insert_vec_u_256, InsertVecU256CallbackId};
+pub use insert_vec_u_32_reducer::{insert_vec_u_32, set_flags_for_insert_vec_u_32, InsertVecU32CallbackId};
+pub use insert_vec_u_64_reducer::{insert_vec_u_64, set_flags_for_insert_vec_u_64, InsertVecU64CallbackId};
+pub use insert_vec_u_8_reducer::{insert_vec_u_8, set_flags_for_insert_vec_u_8, InsertVecU8CallbackId};
+pub use insert_vec_unit_struct_reducer::{
+    insert_vec_unit_struct, set_flags_for_insert_vec_unit_struct, InsertVecUnitStructCallbackId,
+};
 pub use large_table_table::*;
-pub use large_table_type::*;
-pub use no_op_succeeds_reducer::*;
+pub use large_table_type::LargeTable;
+pub use no_op_succeeds_reducer::{no_op_succeeds, set_flags_for_no_op_succeeds, NoOpSucceedsCallbackId};
 pub use one_address_table::*;
-pub use one_address_type::*;
+pub use one_address_type::OneAddress;
 pub use one_bool_table::*;
-pub use one_bool_type::*;
+pub use one_bool_type::OneBool;
 pub use one_byte_struct_table::*;
-pub use one_byte_struct_type::*;
+pub use one_byte_struct_type::OneByteStruct;
 pub use one_enum_with_payload_table::*;
-pub use one_enum_with_payload_type::*;
+pub use one_enum_with_payload_type::OneEnumWithPayload;
 pub use one_every_primitive_struct_table::*;
-pub use one_every_primitive_struct_type::*;
+pub use one_every_primitive_struct_type::OneEveryPrimitiveStruct;
 pub use one_every_vec_struct_table::*;
-pub use one_every_vec_struct_type::*;
+pub use one_every_vec_struct_type::OneEveryVecStruct;
 pub use one_f_32_table::*;
-pub use one_f_32_type::*;
+pub use one_f_32_type::OneF32;
 pub use one_f_64_table::*;
-pub use one_f_64_type::*;
+pub use one_f_64_type::OneF64;
 pub use one_i_128_table::*;
-pub use one_i_128_type::*;
+pub use one_i_128_type::OneI128;
 pub use one_i_16_table::*;
-pub use one_i_16_type::*;
+pub use one_i_16_type::OneI16;
 pub use one_i_256_table::*;
-pub use one_i_256_type::*;
+pub use one_i_256_type::OneI256;
 pub use one_i_32_table::*;
-pub use one_i_32_type::*;
+pub use one_i_32_type::OneI32;
 pub use one_i_64_table::*;
-pub use one_i_64_type::*;
+pub use one_i_64_type::OneI64;
 pub use one_i_8_table::*;
-pub use one_i_8_type::*;
+pub use one_i_8_type::OneI8;
 pub use one_identity_table::*;
-pub use one_identity_type::*;
+pub use one_identity_type::OneIdentity;
 pub use one_simple_enum_table::*;
-pub use one_simple_enum_type::*;
+pub use one_simple_enum_type::OneSimpleEnum;
 pub use one_string_table::*;
-pub use one_string_type::*;
+pub use one_string_type::OneString;
 pub use one_u_128_table::*;
-pub use one_u_128_type::*;
+pub use one_u_128_type::OneU128;
 pub use one_u_16_table::*;
-pub use one_u_16_type::*;
+pub use one_u_16_type::OneU16;
 pub use one_u_256_table::*;
-pub use one_u_256_type::*;
+pub use one_u_256_type::OneU256;
 pub use one_u_32_table::*;
-pub use one_u_32_type::*;
+pub use one_u_32_type::OneU32;
 pub use one_u_64_table::*;
-pub use one_u_64_type::*;
+pub use one_u_64_type::OneU64;
 pub use one_u_8_table::*;
-pub use one_u_8_type::*;
+pub use one_u_8_type::OneU8;
 pub use one_unit_struct_table::*;
-pub use one_unit_struct_type::*;
+pub use one_unit_struct_type::OneUnitStruct;
 pub use option_every_primitive_struct_table::*;
-pub use option_every_primitive_struct_type::*;
+pub use option_every_primitive_struct_type::OptionEveryPrimitiveStruct;
 pub use option_i_32_table::*;
-pub use option_i_32_type::*;
+pub use option_i_32_type::OptionI32;
 pub use option_identity_table::*;
-pub use option_identity_type::*;
+pub use option_identity_type::OptionIdentity;
 pub use option_simple_enum_table::*;
-pub use option_simple_enum_type::*;
+pub use option_simple_enum_type::OptionSimpleEnum;
 pub use option_string_table::*;
-pub use option_string_type::*;
+pub use option_string_type::OptionString;
 pub use option_vec_option_i_32_table::*;
-pub use option_vec_option_i_32_type::*;
+pub use option_vec_option_i_32_type::OptionVecOptionI32;
 pub use pk_address_table::*;
-pub use pk_address_type::*;
+pub use pk_address_type::PkAddress;
 pub use pk_bool_table::*;
-pub use pk_bool_type::*;
+pub use pk_bool_type::PkBool;
 pub use pk_i_128_table::*;
-pub use pk_i_128_type::*;
+pub use pk_i_128_type::PkI128;
 pub use pk_i_16_table::*;
-pub use pk_i_16_type::*;
+pub use pk_i_16_type::PkI16;
 pub use pk_i_256_table::*;
-pub use pk_i_256_type::*;
+pub use pk_i_256_type::PkI256;
 pub use pk_i_32_table::*;
-pub use pk_i_32_type::*;
+pub use pk_i_32_type::PkI32;
 pub use pk_i_64_table::*;
-pub use pk_i_64_type::*;
+pub use pk_i_64_type::PkI64;
 pub use pk_i_8_table::*;
-pub use pk_i_8_type::*;
+pub use pk_i_8_type::PkI8;
 pub use pk_identity_table::*;
-pub use pk_identity_type::*;
+pub use pk_identity_type::PkIdentity;
 pub use pk_string_table::*;
-pub use pk_string_type::*;
+pub use pk_string_type::PkString;
 pub use pk_u_128_table::*;
-pub use pk_u_128_type::*;
+pub use pk_u_128_type::PkU128;
 pub use pk_u_16_table::*;
-pub use pk_u_16_type::*;
+pub use pk_u_16_type::PkU16;
 pub use pk_u_256_table::*;
-pub use pk_u_256_type::*;
+pub use pk_u_256_type::PkU256;
 pub use pk_u_32_table::*;
-pub use pk_u_32_type::*;
+pub use pk_u_32_type::PkU32;
 pub use pk_u_64_table::*;
-pub use pk_u_64_type::*;
+pub use pk_u_64_type::PkU64;
 pub use pk_u_8_table::*;
-pub use pk_u_8_type::*;
-pub use simple_enum_type::*;
+pub use pk_u_8_type::PkU8;
+pub use scheduled_table_table::*;
+pub use scheduled_table_type::ScheduledTable;
+pub use send_scheduled_message_reducer::{
+    send_scheduled_message, set_flags_for_send_scheduled_message, SendScheduledMessageCallbackId,
+};
+pub use simple_enum_type::SimpleEnum;
 pub use table_holds_table_table::*;
-pub use table_holds_table_type::*;
+pub use table_holds_table_type::TableHoldsTable;
 pub use unique_address_table::*;
-pub use unique_address_type::*;
+pub use unique_address_type::UniqueAddress;
 pub use unique_bool_table::*;
-pub use unique_bool_type::*;
+pub use unique_bool_type::UniqueBool;
 pub use unique_i_128_table::*;
-pub use unique_i_128_type::*;
+pub use unique_i_128_type::UniqueI128;
 pub use unique_i_16_table::*;
-pub use unique_i_16_type::*;
+pub use unique_i_16_type::UniqueI16;
 pub use unique_i_256_table::*;
-pub use unique_i_256_type::*;
+pub use unique_i_256_type::UniqueI256;
 pub use unique_i_32_table::*;
-pub use unique_i_32_type::*;
+pub use unique_i_32_type::UniqueI32;
 pub use unique_i_64_table::*;
-pub use unique_i_64_type::*;
+pub use unique_i_64_type::UniqueI64;
 pub use unique_i_8_table::*;
-pub use unique_i_8_type::*;
+pub use unique_i_8_type::UniqueI8;
 pub use unique_identity_table::*;
-pub use unique_identity_type::*;
+pub use unique_identity_type::UniqueIdentity;
 pub use unique_string_table::*;
-pub use unique_string_type::*;
+pub use unique_string_type::UniqueString;
 pub use unique_u_128_table::*;
-pub use unique_u_128_type::*;
+pub use unique_u_128_type::UniqueU128;
 pub use unique_u_16_table::*;
-pub use unique_u_16_type::*;
+pub use unique_u_16_type::UniqueU16;
 pub use unique_u_256_table::*;
-pub use unique_u_256_type::*;
+pub use unique_u_256_type::UniqueU256;
 pub use unique_u_32_table::*;
-pub use unique_u_32_type::*;
+pub use unique_u_32_type::UniqueU32;
 pub use unique_u_64_table::*;
-pub use unique_u_64_type::*;
+pub use unique_u_64_type::UniqueU64;
 pub use unique_u_8_table::*;
-pub use unique_u_8_type::*;
-pub use unit_struct_type::*;
-pub use update_pk_address_reducer::*;
-pub use update_pk_bool_reducer::*;
-pub use update_pk_i_128_reducer::*;
-pub use update_pk_i_16_reducer::*;
-pub use update_pk_i_256_reducer::*;
-pub use update_pk_i_32_reducer::*;
-pub use update_pk_i_64_reducer::*;
-pub use update_pk_i_8_reducer::*;
-pub use update_pk_identity_reducer::*;
-pub use update_pk_string_reducer::*;
-pub use update_pk_u_128_reducer::*;
-pub use update_pk_u_16_reducer::*;
-pub use update_pk_u_256_reducer::*;
-pub use update_pk_u_32_reducer::*;
-pub use update_pk_u_64_reducer::*;
-pub use update_pk_u_8_reducer::*;
-pub use update_unique_address_reducer::*;
-pub use update_unique_bool_reducer::*;
-pub use update_unique_i_128_reducer::*;
-pub use update_unique_i_16_reducer::*;
-pub use update_unique_i_256_reducer::*;
-pub use update_unique_i_32_reducer::*;
-pub use update_unique_i_64_reducer::*;
-pub use update_unique_i_8_reducer::*;
-pub use update_unique_identity_reducer::*;
-pub use update_unique_string_reducer::*;
-pub use update_unique_u_128_reducer::*;
-pub use update_unique_u_16_reducer::*;
-pub use update_unique_u_256_reducer::*;
-pub use update_unique_u_32_reducer::*;
-pub use update_unique_u_64_reducer::*;
-pub use update_unique_u_8_reducer::*;
+pub use unique_u_8_type::UniqueU8;
+pub use unit_struct_type::UnitStruct;
+pub use update_pk_address_reducer::{set_flags_for_update_pk_address, update_pk_address, UpdatePkAddressCallbackId};
+pub use update_pk_bool_reducer::{set_flags_for_update_pk_bool, update_pk_bool, UpdatePkBoolCallbackId};
+pub use update_pk_i_128_reducer::{set_flags_for_update_pk_i_128, update_pk_i_128, UpdatePkI128CallbackId};
+pub use update_pk_i_16_reducer::{set_flags_for_update_pk_i_16, update_pk_i_16, UpdatePkI16CallbackId};
+pub use update_pk_i_256_reducer::{set_flags_for_update_pk_i_256, update_pk_i_256, UpdatePkI256CallbackId};
+pub use update_pk_i_32_reducer::{set_flags_for_update_pk_i_32, update_pk_i_32, UpdatePkI32CallbackId};
+pub use update_pk_i_64_reducer::{set_flags_for_update_pk_i_64, update_pk_i_64, UpdatePkI64CallbackId};
+pub use update_pk_i_8_reducer::{set_flags_for_update_pk_i_8, update_pk_i_8, UpdatePkI8CallbackId};
+pub use update_pk_identity_reducer::{
+    set_flags_for_update_pk_identity, update_pk_identity, UpdatePkIdentityCallbackId,
+};
+pub use update_pk_string_reducer::{set_flags_for_update_pk_string, update_pk_string, UpdatePkStringCallbackId};
+pub use update_pk_u_128_reducer::{set_flags_for_update_pk_u_128, update_pk_u_128, UpdatePkU128CallbackId};
+pub use update_pk_u_16_reducer::{set_flags_for_update_pk_u_16, update_pk_u_16, UpdatePkU16CallbackId};
+pub use update_pk_u_256_reducer::{set_flags_for_update_pk_u_256, update_pk_u_256, UpdatePkU256CallbackId};
+pub use update_pk_u_32_reducer::{set_flags_for_update_pk_u_32, update_pk_u_32, UpdatePkU32CallbackId};
+pub use update_pk_u_64_reducer::{set_flags_for_update_pk_u_64, update_pk_u_64, UpdatePkU64CallbackId};
+pub use update_pk_u_8_reducer::{set_flags_for_update_pk_u_8, update_pk_u_8, UpdatePkU8CallbackId};
+pub use update_unique_address_reducer::{
+    set_flags_for_update_unique_address, update_unique_address, UpdateUniqueAddressCallbackId,
+};
+pub use update_unique_bool_reducer::{
+    set_flags_for_update_unique_bool, update_unique_bool, UpdateUniqueBoolCallbackId,
+};
+pub use update_unique_i_128_reducer::{
+    set_flags_for_update_unique_i_128, update_unique_i_128, UpdateUniqueI128CallbackId,
+};
+pub use update_unique_i_16_reducer::{set_flags_for_update_unique_i_16, update_unique_i_16, UpdateUniqueI16CallbackId};
+pub use update_unique_i_256_reducer::{
+    set_flags_for_update_unique_i_256, update_unique_i_256, UpdateUniqueI256CallbackId,
+};
+pub use update_unique_i_32_reducer::{set_flags_for_update_unique_i_32, update_unique_i_32, UpdateUniqueI32CallbackId};
+pub use update_unique_i_64_reducer::{set_flags_for_update_unique_i_64, update_unique_i_64, UpdateUniqueI64CallbackId};
+pub use update_unique_i_8_reducer::{set_flags_for_update_unique_i_8, update_unique_i_8, UpdateUniqueI8CallbackId};
+pub use update_unique_identity_reducer::{
+    set_flags_for_update_unique_identity, update_unique_identity, UpdateUniqueIdentityCallbackId,
+};
+pub use update_unique_string_reducer::{
+    set_flags_for_update_unique_string, update_unique_string, UpdateUniqueStringCallbackId,
+};
+pub use update_unique_u_128_reducer::{
+    set_flags_for_update_unique_u_128, update_unique_u_128, UpdateUniqueU128CallbackId,
+};
+pub use update_unique_u_16_reducer::{set_flags_for_update_unique_u_16, update_unique_u_16, UpdateUniqueU16CallbackId};
+pub use update_unique_u_256_reducer::{
+    set_flags_for_update_unique_u_256, update_unique_u_256, UpdateUniqueU256CallbackId,
+};
+pub use update_unique_u_32_reducer::{set_flags_for_update_unique_u_32, update_unique_u_32, UpdateUniqueU32CallbackId};
+pub use update_unique_u_64_reducer::{set_flags_for_update_unique_u_64, update_unique_u_64, UpdateUniqueU64CallbackId};
+pub use update_unique_u_8_reducer::{set_flags_for_update_unique_u_8, update_unique_u_8, UpdateUniqueU8CallbackId};
 pub use vec_address_table::*;
-pub use vec_address_type::*;
+pub use vec_address_type::VecAddress;
 pub use vec_bool_table::*;
-pub use vec_bool_type::*;
+pub use vec_bool_type::VecBool;
 pub use vec_byte_struct_table::*;
-pub use vec_byte_struct_type::*;
+pub use vec_byte_struct_type::VecByteStruct;
 pub use vec_enum_with_payload_table::*;
-pub use vec_enum_with_payload_type::*;
+pub use vec_enum_with_payload_type::VecEnumWithPayload;
 pub use vec_every_primitive_struct_table::*;
-pub use vec_every_primitive_struct_type::*;
+pub use vec_every_primitive_struct_type::VecEveryPrimitiveStruct;
 pub use vec_every_vec_struct_table::*;
-pub use vec_every_vec_struct_type::*;
+pub use vec_every_vec_struct_type::VecEveryVecStruct;
 pub use vec_f_32_table::*;
-pub use vec_f_32_type::*;
+pub use vec_f_32_type::VecF32;
 pub use vec_f_64_table::*;
-pub use vec_f_64_type::*;
+pub use vec_f_64_type::VecF64;
 pub use vec_i_128_table::*;
-pub use vec_i_128_type::*;
+pub use vec_i_128_type::VecI128;
 pub use vec_i_16_table::*;
-pub use vec_i_16_type::*;
+pub use vec_i_16_type::VecI16;
 pub use vec_i_256_table::*;
-pub use vec_i_256_type::*;
+pub use vec_i_256_type::VecI256;
 pub use vec_i_32_table::*;
-pub use vec_i_32_type::*;
+pub use vec_i_32_type::VecI32;
 pub use vec_i_64_table::*;
-pub use vec_i_64_type::*;
+pub use vec_i_64_type::VecI64;
 pub use vec_i_8_table::*;
-pub use vec_i_8_type::*;
+pub use vec_i_8_type::VecI8;
 pub use vec_identity_table::*;
-pub use vec_identity_type::*;
+pub use vec_identity_type::VecIdentity;
 pub use vec_simple_enum_table::*;
-pub use vec_simple_enum_type::*;
+pub use vec_simple_enum_type::VecSimpleEnum;
 pub use vec_string_table::*;
-pub use vec_string_type::*;
+pub use vec_string_type::VecString;
 pub use vec_u_128_table::*;
-pub use vec_u_128_type::*;
+pub use vec_u_128_type::VecU128;
 pub use vec_u_16_table::*;
-pub use vec_u_16_type::*;
+pub use vec_u_16_type::VecU16;
 pub use vec_u_256_table::*;
-pub use vec_u_256_type::*;
+pub use vec_u_256_type::VecU256;
 pub use vec_u_32_table::*;
-pub use vec_u_32_type::*;
+pub use vec_u_32_type::VecU32;
 pub use vec_u_64_table::*;
-pub use vec_u_64_type::*;
+pub use vec_u_64_type::VecU64;
 pub use vec_u_8_table::*;
-pub use vec_u_8_type::*;
+pub use vec_u_8_type::VecU8;
 pub use vec_unit_struct_table::*;
-pub use vec_unit_struct_type::*;
+pub use vec_unit_struct_type::VecUnitStruct;
 
-#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
-#[sats(crate = __lib)]
+#[derive(Clone, PartialEq, Debug)]
 
 /// One of the reducers defined by this module.
 ///
@@ -707,505 +842,743 @@ pub use vec_unit_struct_type::*;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
-    DeletePkAddress(delete_pk_address_reducer::DeletePkAddress),
-    DeletePkBool(delete_pk_bool_reducer::DeletePkBool),
-    DeletePkI128(delete_pk_i_128_reducer::DeletePkI128),
-    DeletePkI16(delete_pk_i_16_reducer::DeletePkI16),
-    DeletePkI256(delete_pk_i_256_reducer::DeletePkI256),
-    DeletePkI32(delete_pk_i_32_reducer::DeletePkI32),
-    DeletePkI64(delete_pk_i_64_reducer::DeletePkI64),
-    DeletePkI8(delete_pk_i_8_reducer::DeletePkI8),
-    DeletePkIdentity(delete_pk_identity_reducer::DeletePkIdentity),
-    DeletePkString(delete_pk_string_reducer::DeletePkString),
-    DeletePkU128(delete_pk_u_128_reducer::DeletePkU128),
-    DeletePkU16(delete_pk_u_16_reducer::DeletePkU16),
-    DeletePkU256(delete_pk_u_256_reducer::DeletePkU256),
-    DeletePkU32(delete_pk_u_32_reducer::DeletePkU32),
-    DeletePkU64(delete_pk_u_64_reducer::DeletePkU64),
-    DeletePkU8(delete_pk_u_8_reducer::DeletePkU8),
-    DeleteUniqueAddress(delete_unique_address_reducer::DeleteUniqueAddress),
-    DeleteUniqueBool(delete_unique_bool_reducer::DeleteUniqueBool),
-    DeleteUniqueI128(delete_unique_i_128_reducer::DeleteUniqueI128),
-    DeleteUniqueI16(delete_unique_i_16_reducer::DeleteUniqueI16),
-    DeleteUniqueI256(delete_unique_i_256_reducer::DeleteUniqueI256),
-    DeleteUniqueI32(delete_unique_i_32_reducer::DeleteUniqueI32),
-    DeleteUniqueI64(delete_unique_i_64_reducer::DeleteUniqueI64),
-    DeleteUniqueI8(delete_unique_i_8_reducer::DeleteUniqueI8),
-    DeleteUniqueIdentity(delete_unique_identity_reducer::DeleteUniqueIdentity),
-    DeleteUniqueString(delete_unique_string_reducer::DeleteUniqueString),
-    DeleteUniqueU128(delete_unique_u_128_reducer::DeleteUniqueU128),
-    DeleteUniqueU16(delete_unique_u_16_reducer::DeleteUniqueU16),
-    DeleteUniqueU256(delete_unique_u_256_reducer::DeleteUniqueU256),
-    DeleteUniqueU32(delete_unique_u_32_reducer::DeleteUniqueU32),
-    DeleteUniqueU64(delete_unique_u_64_reducer::DeleteUniqueU64),
-    DeleteUniqueU8(delete_unique_u_8_reducer::DeleteUniqueU8),
-    InsertCallerOneAddress(insert_caller_one_address_reducer::InsertCallerOneAddress),
-    InsertCallerOneIdentity(insert_caller_one_identity_reducer::InsertCallerOneIdentity),
-    InsertCallerPkAddress(insert_caller_pk_address_reducer::InsertCallerPkAddress),
-    InsertCallerPkIdentity(insert_caller_pk_identity_reducer::InsertCallerPkIdentity),
-    InsertCallerUniqueAddress(insert_caller_unique_address_reducer::InsertCallerUniqueAddress),
-    InsertCallerUniqueIdentity(insert_caller_unique_identity_reducer::InsertCallerUniqueIdentity),
-    InsertCallerVecAddress(insert_caller_vec_address_reducer::InsertCallerVecAddress),
-    InsertCallerVecIdentity(insert_caller_vec_identity_reducer::InsertCallerVecIdentity),
-    InsertLargeTable(insert_large_table_reducer::InsertLargeTable),
-    InsertOneAddress(insert_one_address_reducer::InsertOneAddress),
-    InsertOneBool(insert_one_bool_reducer::InsertOneBool),
-    InsertOneByteStruct(insert_one_byte_struct_reducer::InsertOneByteStruct),
-    InsertOneEnumWithPayload(insert_one_enum_with_payload_reducer::InsertOneEnumWithPayload),
-    InsertOneEveryPrimitiveStruct(insert_one_every_primitive_struct_reducer::InsertOneEveryPrimitiveStruct),
-    InsertOneEveryVecStruct(insert_one_every_vec_struct_reducer::InsertOneEveryVecStruct),
-    InsertOneF32(insert_one_f_32_reducer::InsertOneF32),
-    InsertOneF64(insert_one_f_64_reducer::InsertOneF64),
-    InsertOneI128(insert_one_i_128_reducer::InsertOneI128),
-    InsertOneI16(insert_one_i_16_reducer::InsertOneI16),
-    InsertOneI256(insert_one_i_256_reducer::InsertOneI256),
-    InsertOneI32(insert_one_i_32_reducer::InsertOneI32),
-    InsertOneI64(insert_one_i_64_reducer::InsertOneI64),
-    InsertOneI8(insert_one_i_8_reducer::InsertOneI8),
-    InsertOneIdentity(insert_one_identity_reducer::InsertOneIdentity),
-    InsertOneSimpleEnum(insert_one_simple_enum_reducer::InsertOneSimpleEnum),
-    InsertOneString(insert_one_string_reducer::InsertOneString),
-    InsertOneU128(insert_one_u_128_reducer::InsertOneU128),
-    InsertOneU16(insert_one_u_16_reducer::InsertOneU16),
-    InsertOneU256(insert_one_u_256_reducer::InsertOneU256),
-    InsertOneU32(insert_one_u_32_reducer::InsertOneU32),
-    InsertOneU64(insert_one_u_64_reducer::InsertOneU64),
-    InsertOneU8(insert_one_u_8_reducer::InsertOneU8),
-    InsertOneUnitStruct(insert_one_unit_struct_reducer::InsertOneUnitStruct),
-    InsertOptionEveryPrimitiveStruct(insert_option_every_primitive_struct_reducer::InsertOptionEveryPrimitiveStruct),
-    InsertOptionI32(insert_option_i_32_reducer::InsertOptionI32),
-    InsertOptionIdentity(insert_option_identity_reducer::InsertOptionIdentity),
-    InsertOptionSimpleEnum(insert_option_simple_enum_reducer::InsertOptionSimpleEnum),
-    InsertOptionString(insert_option_string_reducer::InsertOptionString),
-    InsertOptionVecOptionI32(insert_option_vec_option_i_32_reducer::InsertOptionVecOptionI32),
-    InsertPkAddress(insert_pk_address_reducer::InsertPkAddress),
-    InsertPkBool(insert_pk_bool_reducer::InsertPkBool),
-    InsertPkI128(insert_pk_i_128_reducer::InsertPkI128),
-    InsertPkI16(insert_pk_i_16_reducer::InsertPkI16),
-    InsertPkI256(insert_pk_i_256_reducer::InsertPkI256),
-    InsertPkI32(insert_pk_i_32_reducer::InsertPkI32),
-    InsertPkI64(insert_pk_i_64_reducer::InsertPkI64),
-    InsertPkI8(insert_pk_i_8_reducer::InsertPkI8),
-    InsertPkIdentity(insert_pk_identity_reducer::InsertPkIdentity),
-    InsertPkString(insert_pk_string_reducer::InsertPkString),
-    InsertPkU128(insert_pk_u_128_reducer::InsertPkU128),
-    InsertPkU16(insert_pk_u_16_reducer::InsertPkU16),
-    InsertPkU256(insert_pk_u_256_reducer::InsertPkU256),
-    InsertPkU32(insert_pk_u_32_reducer::InsertPkU32),
-    InsertPkU64(insert_pk_u_64_reducer::InsertPkU64),
-    InsertPkU8(insert_pk_u_8_reducer::InsertPkU8),
-    InsertPrimitivesAsStrings(insert_primitives_as_strings_reducer::InsertPrimitivesAsStrings),
-    InsertTableHoldsTable(insert_table_holds_table_reducer::InsertTableHoldsTable),
-    InsertUniqueAddress(insert_unique_address_reducer::InsertUniqueAddress),
-    InsertUniqueBool(insert_unique_bool_reducer::InsertUniqueBool),
-    InsertUniqueI128(insert_unique_i_128_reducer::InsertUniqueI128),
-    InsertUniqueI16(insert_unique_i_16_reducer::InsertUniqueI16),
-    InsertUniqueI256(insert_unique_i_256_reducer::InsertUniqueI256),
-    InsertUniqueI32(insert_unique_i_32_reducer::InsertUniqueI32),
-    InsertUniqueI64(insert_unique_i_64_reducer::InsertUniqueI64),
-    InsertUniqueI8(insert_unique_i_8_reducer::InsertUniqueI8),
-    InsertUniqueIdentity(insert_unique_identity_reducer::InsertUniqueIdentity),
-    InsertUniqueString(insert_unique_string_reducer::InsertUniqueString),
-    InsertUniqueU128(insert_unique_u_128_reducer::InsertUniqueU128),
-    InsertUniqueU16(insert_unique_u_16_reducer::InsertUniqueU16),
-    InsertUniqueU256(insert_unique_u_256_reducer::InsertUniqueU256),
-    InsertUniqueU32(insert_unique_u_32_reducer::InsertUniqueU32),
-    InsertUniqueU64(insert_unique_u_64_reducer::InsertUniqueU64),
-    InsertUniqueU8(insert_unique_u_8_reducer::InsertUniqueU8),
-    InsertVecAddress(insert_vec_address_reducer::InsertVecAddress),
-    InsertVecBool(insert_vec_bool_reducer::InsertVecBool),
-    InsertVecByteStruct(insert_vec_byte_struct_reducer::InsertVecByteStruct),
-    InsertVecEnumWithPayload(insert_vec_enum_with_payload_reducer::InsertVecEnumWithPayload),
-    InsertVecEveryPrimitiveStruct(insert_vec_every_primitive_struct_reducer::InsertVecEveryPrimitiveStruct),
-    InsertVecEveryVecStruct(insert_vec_every_vec_struct_reducer::InsertVecEveryVecStruct),
-    InsertVecF32(insert_vec_f_32_reducer::InsertVecF32),
-    InsertVecF64(insert_vec_f_64_reducer::InsertVecF64),
-    InsertVecI128(insert_vec_i_128_reducer::InsertVecI128),
-    InsertVecI16(insert_vec_i_16_reducer::InsertVecI16),
-    InsertVecI256(insert_vec_i_256_reducer::InsertVecI256),
-    InsertVecI32(insert_vec_i_32_reducer::InsertVecI32),
-    InsertVecI64(insert_vec_i_64_reducer::InsertVecI64),
-    InsertVecI8(insert_vec_i_8_reducer::InsertVecI8),
-    InsertVecIdentity(insert_vec_identity_reducer::InsertVecIdentity),
-    InsertVecSimpleEnum(insert_vec_simple_enum_reducer::InsertVecSimpleEnum),
-    InsertVecString(insert_vec_string_reducer::InsertVecString),
-    InsertVecU128(insert_vec_u_128_reducer::InsertVecU128),
-    InsertVecU16(insert_vec_u_16_reducer::InsertVecU16),
-    InsertVecU256(insert_vec_u_256_reducer::InsertVecU256),
-    InsertVecU32(insert_vec_u_32_reducer::InsertVecU32),
-    InsertVecU64(insert_vec_u_64_reducer::InsertVecU64),
-    InsertVecU8(insert_vec_u_8_reducer::InsertVecU8),
-    InsertVecUnitStruct(insert_vec_unit_struct_reducer::InsertVecUnitStruct),
-    NoOpSucceeds(no_op_succeeds_reducer::NoOpSucceeds),
-    UpdatePkAddress(update_pk_address_reducer::UpdatePkAddress),
-    UpdatePkBool(update_pk_bool_reducer::UpdatePkBool),
-    UpdatePkI128(update_pk_i_128_reducer::UpdatePkI128),
-    UpdatePkI16(update_pk_i_16_reducer::UpdatePkI16),
-    UpdatePkI256(update_pk_i_256_reducer::UpdatePkI256),
-    UpdatePkI32(update_pk_i_32_reducer::UpdatePkI32),
-    UpdatePkI64(update_pk_i_64_reducer::UpdatePkI64),
-    UpdatePkI8(update_pk_i_8_reducer::UpdatePkI8),
-    UpdatePkIdentity(update_pk_identity_reducer::UpdatePkIdentity),
-    UpdatePkString(update_pk_string_reducer::UpdatePkString),
-    UpdatePkU128(update_pk_u_128_reducer::UpdatePkU128),
-    UpdatePkU16(update_pk_u_16_reducer::UpdatePkU16),
-    UpdatePkU256(update_pk_u_256_reducer::UpdatePkU256),
-    UpdatePkU32(update_pk_u_32_reducer::UpdatePkU32),
-    UpdatePkU64(update_pk_u_64_reducer::UpdatePkU64),
-    UpdatePkU8(update_pk_u_8_reducer::UpdatePkU8),
-    UpdateUniqueAddress(update_unique_address_reducer::UpdateUniqueAddress),
-    UpdateUniqueBool(update_unique_bool_reducer::UpdateUniqueBool),
-    UpdateUniqueI128(update_unique_i_128_reducer::UpdateUniqueI128),
-    UpdateUniqueI16(update_unique_i_16_reducer::UpdateUniqueI16),
-    UpdateUniqueI256(update_unique_i_256_reducer::UpdateUniqueI256),
-    UpdateUniqueI32(update_unique_i_32_reducer::UpdateUniqueI32),
-    UpdateUniqueI64(update_unique_i_64_reducer::UpdateUniqueI64),
-    UpdateUniqueI8(update_unique_i_8_reducer::UpdateUniqueI8),
-    UpdateUniqueIdentity(update_unique_identity_reducer::UpdateUniqueIdentity),
-    UpdateUniqueString(update_unique_string_reducer::UpdateUniqueString),
-    UpdateUniqueU128(update_unique_u_128_reducer::UpdateUniqueU128),
-    UpdateUniqueU16(update_unique_u_16_reducer::UpdateUniqueU16),
-    UpdateUniqueU256(update_unique_u_256_reducer::UpdateUniqueU256),
-    UpdateUniqueU32(update_unique_u_32_reducer::UpdateUniqueU32),
-    UpdateUniqueU64(update_unique_u_64_reducer::UpdateUniqueU64),
-    UpdateUniqueU8(update_unique_u_8_reducer::UpdateUniqueU8),
+    DeletePkAddress {
+        a: __sdk::Address,
+    },
+    DeletePkBool {
+        b: bool,
+    },
+    DeletePkI128 {
+        n: i128,
+    },
+    DeletePkI16 {
+        n: i16,
+    },
+    DeletePkI256 {
+        n: __sats::i256,
+    },
+    DeletePkI32 {
+        n: i32,
+    },
+    DeletePkI64 {
+        n: i64,
+    },
+    DeletePkI8 {
+        n: i8,
+    },
+    DeletePkIdentity {
+        i: __sdk::Identity,
+    },
+    DeletePkString {
+        s: String,
+    },
+    DeletePkU128 {
+        n: u128,
+    },
+    DeletePkU16 {
+        n: u16,
+    },
+    DeletePkU256 {
+        n: __sats::u256,
+    },
+    DeletePkU32 {
+        n: u32,
+    },
+    DeletePkU64 {
+        n: u64,
+    },
+    DeletePkU8 {
+        n: u8,
+    },
+    DeleteUniqueAddress {
+        a: __sdk::Address,
+    },
+    DeleteUniqueBool {
+        b: bool,
+    },
+    DeleteUniqueI128 {
+        n: i128,
+    },
+    DeleteUniqueI16 {
+        n: i16,
+    },
+    DeleteUniqueI256 {
+        n: __sats::i256,
+    },
+    DeleteUniqueI32 {
+        n: i32,
+    },
+    DeleteUniqueI64 {
+        n: i64,
+    },
+    DeleteUniqueI8 {
+        n: i8,
+    },
+    DeleteUniqueIdentity {
+        i: __sdk::Identity,
+    },
+    DeleteUniqueString {
+        s: String,
+    },
+    DeleteUniqueU128 {
+        n: u128,
+    },
+    DeleteUniqueU16 {
+        n: u16,
+    },
+    DeleteUniqueU256 {
+        n: __sats::u256,
+    },
+    DeleteUniqueU32 {
+        n: u32,
+    },
+    DeleteUniqueU64 {
+        n: u64,
+    },
+    DeleteUniqueU8 {
+        n: u8,
+    },
+    InsertCallerOneAddress,
+    InsertCallerOneIdentity,
+    InsertCallerPkAddress {
+        data: i32,
+    },
+    InsertCallerPkIdentity {
+        data: i32,
+    },
+    InsertCallerUniqueAddress {
+        data: i32,
+    },
+    InsertCallerUniqueIdentity {
+        data: i32,
+    },
+    InsertCallerVecAddress,
+    InsertCallerVecIdentity,
+    InsertLargeTable {
+        a: u8,
+        b: u16,
+        c: u32,
+        d: u64,
+        e: u128,
+        f: __sats::u256,
+        g: i8,
+        h: i16,
+        i: i32,
+        j: i64,
+        k: i128,
+        l: __sats::i256,
+        m: bool,
+        n: f32,
+        o: f64,
+        p: String,
+        q: SimpleEnum,
+        r: EnumWithPayload,
+        s: UnitStruct,
+        t: ByteStruct,
+        u: EveryPrimitiveStruct,
+        v: EveryVecStruct,
+    },
+    InsertOneAddress {
+        a: __sdk::Address,
+    },
+    InsertOneBool {
+        b: bool,
+    },
+    InsertOneByteStruct {
+        s: ByteStruct,
+    },
+    InsertOneEnumWithPayload {
+        e: EnumWithPayload,
+    },
+    InsertOneEveryPrimitiveStruct {
+        s: EveryPrimitiveStruct,
+    },
+    InsertOneEveryVecStruct {
+        s: EveryVecStruct,
+    },
+    InsertOneF32 {
+        f: f32,
+    },
+    InsertOneF64 {
+        f: f64,
+    },
+    InsertOneI128 {
+        n: i128,
+    },
+    InsertOneI16 {
+        n: i16,
+    },
+    InsertOneI256 {
+        n: __sats::i256,
+    },
+    InsertOneI32 {
+        n: i32,
+    },
+    InsertOneI64 {
+        n: i64,
+    },
+    InsertOneI8 {
+        n: i8,
+    },
+    InsertOneIdentity {
+        i: __sdk::Identity,
+    },
+    InsertOneSimpleEnum {
+        e: SimpleEnum,
+    },
+    InsertOneString {
+        s: String,
+    },
+    InsertOneU128 {
+        n: u128,
+    },
+    InsertOneU16 {
+        n: u16,
+    },
+    InsertOneU256 {
+        n: __sats::u256,
+    },
+    InsertOneU32 {
+        n: u32,
+    },
+    InsertOneU64 {
+        n: u64,
+    },
+    InsertOneU8 {
+        n: u8,
+    },
+    InsertOneUnitStruct {
+        s: UnitStruct,
+    },
+    InsertOptionEveryPrimitiveStruct {
+        s: Option<EveryPrimitiveStruct>,
+    },
+    InsertOptionI32 {
+        n: Option<i32>,
+    },
+    InsertOptionIdentity {
+        i: Option<__sdk::Identity>,
+    },
+    InsertOptionSimpleEnum {
+        e: Option<SimpleEnum>,
+    },
+    InsertOptionString {
+        s: Option<String>,
+    },
+    InsertOptionVecOptionI32 {
+        v: Option<Vec<Option<i32>>>,
+    },
+    InsertPkAddress {
+        a: __sdk::Address,
+        data: i32,
+    },
+    InsertPkBool {
+        b: bool,
+        data: i32,
+    },
+    InsertPkI128 {
+        n: i128,
+        data: i32,
+    },
+    InsertPkI16 {
+        n: i16,
+        data: i32,
+    },
+    InsertPkI256 {
+        n: __sats::i256,
+        data: i32,
+    },
+    InsertPkI32 {
+        n: i32,
+        data: i32,
+    },
+    InsertPkI64 {
+        n: i64,
+        data: i32,
+    },
+    InsertPkI8 {
+        n: i8,
+        data: i32,
+    },
+    InsertPkIdentity {
+        i: __sdk::Identity,
+        data: i32,
+    },
+    InsertPkString {
+        s: String,
+        data: i32,
+    },
+    InsertPkU128 {
+        n: u128,
+        data: i32,
+    },
+    InsertPkU16 {
+        n: u16,
+        data: i32,
+    },
+    InsertPkU256 {
+        n: __sats::u256,
+        data: i32,
+    },
+    InsertPkU32 {
+        n: u32,
+        data: i32,
+    },
+    InsertPkU64 {
+        n: u64,
+        data: i32,
+    },
+    InsertPkU8 {
+        n: u8,
+        data: i32,
+    },
+    InsertPrimitivesAsStrings {
+        s: EveryPrimitiveStruct,
+    },
+    InsertTableHoldsTable {
+        a: OneU8,
+        b: VecU8,
+    },
+    InsertUniqueAddress {
+        a: __sdk::Address,
+        data: i32,
+    },
+    InsertUniqueBool {
+        b: bool,
+        data: i32,
+    },
+    InsertUniqueI128 {
+        n: i128,
+        data: i32,
+    },
+    InsertUniqueI16 {
+        n: i16,
+        data: i32,
+    },
+    InsertUniqueI256 {
+        n: __sats::i256,
+        data: i32,
+    },
+    InsertUniqueI32 {
+        n: i32,
+        data: i32,
+    },
+    InsertUniqueI64 {
+        n: i64,
+        data: i32,
+    },
+    InsertUniqueI8 {
+        n: i8,
+        data: i32,
+    },
+    InsertUniqueIdentity {
+        i: __sdk::Identity,
+        data: i32,
+    },
+    InsertUniqueString {
+        s: String,
+        data: i32,
+    },
+    InsertUniqueU128 {
+        n: u128,
+        data: i32,
+    },
+    InsertUniqueU16 {
+        n: u16,
+        data: i32,
+    },
+    InsertUniqueU256 {
+        n: __sats::u256,
+        data: i32,
+    },
+    InsertUniqueU32 {
+        n: u32,
+        data: i32,
+    },
+    InsertUniqueU64 {
+        n: u64,
+        data: i32,
+    },
+    InsertUniqueU8 {
+        n: u8,
+        data: i32,
+    },
+    InsertVecAddress {
+        a: Vec<__sdk::Address>,
+    },
+    InsertVecBool {
+        b: Vec<bool>,
+    },
+    InsertVecByteStruct {
+        s: Vec<ByteStruct>,
+    },
+    InsertVecEnumWithPayload {
+        e: Vec<EnumWithPayload>,
+    },
+    InsertVecEveryPrimitiveStruct {
+        s: Vec<EveryPrimitiveStruct>,
+    },
+    InsertVecEveryVecStruct {
+        s: Vec<EveryVecStruct>,
+    },
+    InsertVecF32 {
+        f: Vec<f32>,
+    },
+    InsertVecF64 {
+        f: Vec<f64>,
+    },
+    InsertVecI128 {
+        n: Vec<i128>,
+    },
+    InsertVecI16 {
+        n: Vec<i16>,
+    },
+    InsertVecI256 {
+        n: Vec<__sats::i256>,
+    },
+    InsertVecI32 {
+        n: Vec<i32>,
+    },
+    InsertVecI64 {
+        n: Vec<i64>,
+    },
+    InsertVecI8 {
+        n: Vec<i8>,
+    },
+    InsertVecIdentity {
+        i: Vec<__sdk::Identity>,
+    },
+    InsertVecSimpleEnum {
+        e: Vec<SimpleEnum>,
+    },
+    InsertVecString {
+        s: Vec<String>,
+    },
+    InsertVecU128 {
+        n: Vec<u128>,
+    },
+    InsertVecU16 {
+        n: Vec<u16>,
+    },
+    InsertVecU256 {
+        n: Vec<__sats::u256>,
+    },
+    InsertVecU32 {
+        n: Vec<u32>,
+    },
+    InsertVecU64 {
+        n: Vec<u64>,
+    },
+    InsertVecU8 {
+        n: Vec<u8>,
+    },
+    InsertVecUnitStruct {
+        s: Vec<UnitStruct>,
+    },
+    NoOpSucceeds,
+    SendScheduledMessage {
+        arg: ScheduledTable,
+    },
+    UpdatePkAddress {
+        a: __sdk::Address,
+        data: i32,
+    },
+    UpdatePkBool {
+        b: bool,
+        data: i32,
+    },
+    UpdatePkI128 {
+        n: i128,
+        data: i32,
+    },
+    UpdatePkI16 {
+        n: i16,
+        data: i32,
+    },
+    UpdatePkI256 {
+        n: __sats::i256,
+        data: i32,
+    },
+    UpdatePkI32 {
+        n: i32,
+        data: i32,
+    },
+    UpdatePkI64 {
+        n: i64,
+        data: i32,
+    },
+    UpdatePkI8 {
+        n: i8,
+        data: i32,
+    },
+    UpdatePkIdentity {
+        i: __sdk::Identity,
+        data: i32,
+    },
+    UpdatePkString {
+        s: String,
+        data: i32,
+    },
+    UpdatePkU128 {
+        n: u128,
+        data: i32,
+    },
+    UpdatePkU16 {
+        n: u16,
+        data: i32,
+    },
+    UpdatePkU256 {
+        n: __sats::u256,
+        data: i32,
+    },
+    UpdatePkU32 {
+        n: u32,
+        data: i32,
+    },
+    UpdatePkU64 {
+        n: u64,
+        data: i32,
+    },
+    UpdatePkU8 {
+        n: u8,
+        data: i32,
+    },
+    UpdateUniqueAddress {
+        a: __sdk::Address,
+        data: i32,
+    },
+    UpdateUniqueBool {
+        b: bool,
+        data: i32,
+    },
+    UpdateUniqueI128 {
+        n: i128,
+        data: i32,
+    },
+    UpdateUniqueI16 {
+        n: i16,
+        data: i32,
+    },
+    UpdateUniqueI256 {
+        n: __sats::i256,
+        data: i32,
+    },
+    UpdateUniqueI32 {
+        n: i32,
+        data: i32,
+    },
+    UpdateUniqueI64 {
+        n: i64,
+        data: i32,
+    },
+    UpdateUniqueI8 {
+        n: i8,
+        data: i32,
+    },
+    UpdateUniqueIdentity {
+        i: __sdk::Identity,
+        data: i32,
+    },
+    UpdateUniqueString {
+        s: String,
+        data: i32,
+    },
+    UpdateUniqueU128 {
+        n: u128,
+        data: i32,
+    },
+    UpdateUniqueU16 {
+        n: u16,
+        data: i32,
+    },
+    UpdateUniqueU256 {
+        n: __sats::u256,
+        data: i32,
+    },
+    UpdateUniqueU32 {
+        n: u32,
+        data: i32,
+    },
+    UpdateUniqueU64 {
+        n: u64,
+        data: i32,
+    },
+    UpdateUniqueU8 {
+        n: u8,
+        data: i32,
+    },
 }
 
-impl __sdk::spacetime_module::InModule for Reducer {
+impl __sdk::InModule for Reducer {
     type Module = RemoteModule;
 }
 
-impl __sdk::spacetime_module::Reducer for Reducer {
+impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
-            Reducer::DeletePkAddress(_) => "delete_pk_address",
-            Reducer::DeletePkBool(_) => "delete_pk_bool",
-            Reducer::DeletePkI128(_) => "delete_pk_i128",
-            Reducer::DeletePkI16(_) => "delete_pk_i16",
-            Reducer::DeletePkI256(_) => "delete_pk_i256",
-            Reducer::DeletePkI32(_) => "delete_pk_i32",
-            Reducer::DeletePkI64(_) => "delete_pk_i64",
-            Reducer::DeletePkI8(_) => "delete_pk_i8",
-            Reducer::DeletePkIdentity(_) => "delete_pk_identity",
-            Reducer::DeletePkString(_) => "delete_pk_string",
-            Reducer::DeletePkU128(_) => "delete_pk_u128",
-            Reducer::DeletePkU16(_) => "delete_pk_u16",
-            Reducer::DeletePkU256(_) => "delete_pk_u256",
-            Reducer::DeletePkU32(_) => "delete_pk_u32",
-            Reducer::DeletePkU64(_) => "delete_pk_u64",
-            Reducer::DeletePkU8(_) => "delete_pk_u8",
-            Reducer::DeleteUniqueAddress(_) => "delete_unique_address",
-            Reducer::DeleteUniqueBool(_) => "delete_unique_bool",
-            Reducer::DeleteUniqueI128(_) => "delete_unique_i128",
-            Reducer::DeleteUniqueI16(_) => "delete_unique_i16",
-            Reducer::DeleteUniqueI256(_) => "delete_unique_i256",
-            Reducer::DeleteUniqueI32(_) => "delete_unique_i32",
-            Reducer::DeleteUniqueI64(_) => "delete_unique_i64",
-            Reducer::DeleteUniqueI8(_) => "delete_unique_i8",
-            Reducer::DeleteUniqueIdentity(_) => "delete_unique_identity",
-            Reducer::DeleteUniqueString(_) => "delete_unique_string",
-            Reducer::DeleteUniqueU128(_) => "delete_unique_u128",
-            Reducer::DeleteUniqueU16(_) => "delete_unique_u16",
-            Reducer::DeleteUniqueU256(_) => "delete_unique_u256",
-            Reducer::DeleteUniqueU32(_) => "delete_unique_u32",
-            Reducer::DeleteUniqueU64(_) => "delete_unique_u64",
-            Reducer::DeleteUniqueU8(_) => "delete_unique_u8",
-            Reducer::InsertCallerOneAddress(_) => "insert_caller_one_address",
-            Reducer::InsertCallerOneIdentity(_) => "insert_caller_one_identity",
-            Reducer::InsertCallerPkAddress(_) => "insert_caller_pk_address",
-            Reducer::InsertCallerPkIdentity(_) => "insert_caller_pk_identity",
-            Reducer::InsertCallerUniqueAddress(_) => "insert_caller_unique_address",
-            Reducer::InsertCallerUniqueIdentity(_) => "insert_caller_unique_identity",
-            Reducer::InsertCallerVecAddress(_) => "insert_caller_vec_address",
-            Reducer::InsertCallerVecIdentity(_) => "insert_caller_vec_identity",
-            Reducer::InsertLargeTable(_) => "insert_large_table",
-            Reducer::InsertOneAddress(_) => "insert_one_address",
-            Reducer::InsertOneBool(_) => "insert_one_bool",
-            Reducer::InsertOneByteStruct(_) => "insert_one_byte_struct",
-            Reducer::InsertOneEnumWithPayload(_) => "insert_one_enum_with_payload",
-            Reducer::InsertOneEveryPrimitiveStruct(_) => "insert_one_every_primitive_struct",
-            Reducer::InsertOneEveryVecStruct(_) => "insert_one_every_vec_struct",
-            Reducer::InsertOneF32(_) => "insert_one_f32",
-            Reducer::InsertOneF64(_) => "insert_one_f64",
-            Reducer::InsertOneI128(_) => "insert_one_i128",
-            Reducer::InsertOneI16(_) => "insert_one_i16",
-            Reducer::InsertOneI256(_) => "insert_one_i256",
-            Reducer::InsertOneI32(_) => "insert_one_i32",
-            Reducer::InsertOneI64(_) => "insert_one_i64",
-            Reducer::InsertOneI8(_) => "insert_one_i8",
-            Reducer::InsertOneIdentity(_) => "insert_one_identity",
-            Reducer::InsertOneSimpleEnum(_) => "insert_one_simple_enum",
-            Reducer::InsertOneString(_) => "insert_one_string",
-            Reducer::InsertOneU128(_) => "insert_one_u128",
-            Reducer::InsertOneU16(_) => "insert_one_u16",
-            Reducer::InsertOneU256(_) => "insert_one_u256",
-            Reducer::InsertOneU32(_) => "insert_one_u32",
-            Reducer::InsertOneU64(_) => "insert_one_u64",
-            Reducer::InsertOneU8(_) => "insert_one_u8",
-            Reducer::InsertOneUnitStruct(_) => "insert_one_unit_struct",
-            Reducer::InsertOptionEveryPrimitiveStruct(_) => "insert_option_every_primitive_struct",
-            Reducer::InsertOptionI32(_) => "insert_option_i32",
-            Reducer::InsertOptionIdentity(_) => "insert_option_identity",
-            Reducer::InsertOptionSimpleEnum(_) => "insert_option_simple_enum",
-            Reducer::InsertOptionString(_) => "insert_option_string",
-            Reducer::InsertOptionVecOptionI32(_) => "insert_option_vec_option_i32",
-            Reducer::InsertPkAddress(_) => "insert_pk_address",
-            Reducer::InsertPkBool(_) => "insert_pk_bool",
-            Reducer::InsertPkI128(_) => "insert_pk_i128",
-            Reducer::InsertPkI16(_) => "insert_pk_i16",
-            Reducer::InsertPkI256(_) => "insert_pk_i256",
-            Reducer::InsertPkI32(_) => "insert_pk_i32",
-            Reducer::InsertPkI64(_) => "insert_pk_i64",
-            Reducer::InsertPkI8(_) => "insert_pk_i8",
-            Reducer::InsertPkIdentity(_) => "insert_pk_identity",
-            Reducer::InsertPkString(_) => "insert_pk_string",
-            Reducer::InsertPkU128(_) => "insert_pk_u128",
-            Reducer::InsertPkU16(_) => "insert_pk_u16",
-            Reducer::InsertPkU256(_) => "insert_pk_u256",
-            Reducer::InsertPkU32(_) => "insert_pk_u32",
-            Reducer::InsertPkU64(_) => "insert_pk_u64",
-            Reducer::InsertPkU8(_) => "insert_pk_u8",
-            Reducer::InsertPrimitivesAsStrings(_) => "insert_primitives_as_strings",
-            Reducer::InsertTableHoldsTable(_) => "insert_table_holds_table",
-            Reducer::InsertUniqueAddress(_) => "insert_unique_address",
-            Reducer::InsertUniqueBool(_) => "insert_unique_bool",
-            Reducer::InsertUniqueI128(_) => "insert_unique_i128",
-            Reducer::InsertUniqueI16(_) => "insert_unique_i16",
-            Reducer::InsertUniqueI256(_) => "insert_unique_i256",
-            Reducer::InsertUniqueI32(_) => "insert_unique_i32",
-            Reducer::InsertUniqueI64(_) => "insert_unique_i64",
-            Reducer::InsertUniqueI8(_) => "insert_unique_i8",
-            Reducer::InsertUniqueIdentity(_) => "insert_unique_identity",
-            Reducer::InsertUniqueString(_) => "insert_unique_string",
-            Reducer::InsertUniqueU128(_) => "insert_unique_u128",
-            Reducer::InsertUniqueU16(_) => "insert_unique_u16",
-            Reducer::InsertUniqueU256(_) => "insert_unique_u256",
-            Reducer::InsertUniqueU32(_) => "insert_unique_u32",
-            Reducer::InsertUniqueU64(_) => "insert_unique_u64",
-            Reducer::InsertUniqueU8(_) => "insert_unique_u8",
-            Reducer::InsertVecAddress(_) => "insert_vec_address",
-            Reducer::InsertVecBool(_) => "insert_vec_bool",
-            Reducer::InsertVecByteStruct(_) => "insert_vec_byte_struct",
-            Reducer::InsertVecEnumWithPayload(_) => "insert_vec_enum_with_payload",
-            Reducer::InsertVecEveryPrimitiveStruct(_) => "insert_vec_every_primitive_struct",
-            Reducer::InsertVecEveryVecStruct(_) => "insert_vec_every_vec_struct",
-            Reducer::InsertVecF32(_) => "insert_vec_f32",
-            Reducer::InsertVecF64(_) => "insert_vec_f64",
-            Reducer::InsertVecI128(_) => "insert_vec_i128",
-            Reducer::InsertVecI16(_) => "insert_vec_i16",
-            Reducer::InsertVecI256(_) => "insert_vec_i256",
-            Reducer::InsertVecI32(_) => "insert_vec_i32",
-            Reducer::InsertVecI64(_) => "insert_vec_i64",
-            Reducer::InsertVecI8(_) => "insert_vec_i8",
-            Reducer::InsertVecIdentity(_) => "insert_vec_identity",
-            Reducer::InsertVecSimpleEnum(_) => "insert_vec_simple_enum",
-            Reducer::InsertVecString(_) => "insert_vec_string",
-            Reducer::InsertVecU128(_) => "insert_vec_u128",
-            Reducer::InsertVecU16(_) => "insert_vec_u16",
-            Reducer::InsertVecU256(_) => "insert_vec_u256",
-            Reducer::InsertVecU32(_) => "insert_vec_u32",
-            Reducer::InsertVecU64(_) => "insert_vec_u64",
-            Reducer::InsertVecU8(_) => "insert_vec_u8",
-            Reducer::InsertVecUnitStruct(_) => "insert_vec_unit_struct",
-            Reducer::NoOpSucceeds(_) => "no_op_succeeds",
-            Reducer::UpdatePkAddress(_) => "update_pk_address",
-            Reducer::UpdatePkBool(_) => "update_pk_bool",
-            Reducer::UpdatePkI128(_) => "update_pk_i128",
-            Reducer::UpdatePkI16(_) => "update_pk_i16",
-            Reducer::UpdatePkI256(_) => "update_pk_i256",
-            Reducer::UpdatePkI32(_) => "update_pk_i32",
-            Reducer::UpdatePkI64(_) => "update_pk_i64",
-            Reducer::UpdatePkI8(_) => "update_pk_i8",
-            Reducer::UpdatePkIdentity(_) => "update_pk_identity",
-            Reducer::UpdatePkString(_) => "update_pk_string",
-            Reducer::UpdatePkU128(_) => "update_pk_u128",
-            Reducer::UpdatePkU16(_) => "update_pk_u16",
-            Reducer::UpdatePkU256(_) => "update_pk_u256",
-            Reducer::UpdatePkU32(_) => "update_pk_u32",
-            Reducer::UpdatePkU64(_) => "update_pk_u64",
-            Reducer::UpdatePkU8(_) => "update_pk_u8",
-            Reducer::UpdateUniqueAddress(_) => "update_unique_address",
-            Reducer::UpdateUniqueBool(_) => "update_unique_bool",
-            Reducer::UpdateUniqueI128(_) => "update_unique_i128",
-            Reducer::UpdateUniqueI16(_) => "update_unique_i16",
-            Reducer::UpdateUniqueI256(_) => "update_unique_i256",
-            Reducer::UpdateUniqueI32(_) => "update_unique_i32",
-            Reducer::UpdateUniqueI64(_) => "update_unique_i64",
-            Reducer::UpdateUniqueI8(_) => "update_unique_i8",
-            Reducer::UpdateUniqueIdentity(_) => "update_unique_identity",
-            Reducer::UpdateUniqueString(_) => "update_unique_string",
-            Reducer::UpdateUniqueU128(_) => "update_unique_u128",
-            Reducer::UpdateUniqueU16(_) => "update_unique_u16",
-            Reducer::UpdateUniqueU256(_) => "update_unique_u256",
-            Reducer::UpdateUniqueU32(_) => "update_unique_u32",
-            Reducer::UpdateUniqueU64(_) => "update_unique_u64",
-            Reducer::UpdateUniqueU8(_) => "update_unique_u8",
-        }
-    }
-    fn reducer_args(&self) -> &dyn std::any::Any {
-        match self {
-            Reducer::DeletePkAddress(args) => args,
-            Reducer::DeletePkBool(args) => args,
-            Reducer::DeletePkI128(args) => args,
-            Reducer::DeletePkI16(args) => args,
-            Reducer::DeletePkI256(args) => args,
-            Reducer::DeletePkI32(args) => args,
-            Reducer::DeletePkI64(args) => args,
-            Reducer::DeletePkI8(args) => args,
-            Reducer::DeletePkIdentity(args) => args,
-            Reducer::DeletePkString(args) => args,
-            Reducer::DeletePkU128(args) => args,
-            Reducer::DeletePkU16(args) => args,
-            Reducer::DeletePkU256(args) => args,
-            Reducer::DeletePkU32(args) => args,
-            Reducer::DeletePkU64(args) => args,
-            Reducer::DeletePkU8(args) => args,
-            Reducer::DeleteUniqueAddress(args) => args,
-            Reducer::DeleteUniqueBool(args) => args,
-            Reducer::DeleteUniqueI128(args) => args,
-            Reducer::DeleteUniqueI16(args) => args,
-            Reducer::DeleteUniqueI256(args) => args,
-            Reducer::DeleteUniqueI32(args) => args,
-            Reducer::DeleteUniqueI64(args) => args,
-            Reducer::DeleteUniqueI8(args) => args,
-            Reducer::DeleteUniqueIdentity(args) => args,
-            Reducer::DeleteUniqueString(args) => args,
-            Reducer::DeleteUniqueU128(args) => args,
-            Reducer::DeleteUniqueU16(args) => args,
-            Reducer::DeleteUniqueU256(args) => args,
-            Reducer::DeleteUniqueU32(args) => args,
-            Reducer::DeleteUniqueU64(args) => args,
-            Reducer::DeleteUniqueU8(args) => args,
-            Reducer::InsertCallerOneAddress(args) => args,
-            Reducer::InsertCallerOneIdentity(args) => args,
-            Reducer::InsertCallerPkAddress(args) => args,
-            Reducer::InsertCallerPkIdentity(args) => args,
-            Reducer::InsertCallerUniqueAddress(args) => args,
-            Reducer::InsertCallerUniqueIdentity(args) => args,
-            Reducer::InsertCallerVecAddress(args) => args,
-            Reducer::InsertCallerVecIdentity(args) => args,
-            Reducer::InsertLargeTable(args) => args,
-            Reducer::InsertOneAddress(args) => args,
-            Reducer::InsertOneBool(args) => args,
-            Reducer::InsertOneByteStruct(args) => args,
-            Reducer::InsertOneEnumWithPayload(args) => args,
-            Reducer::InsertOneEveryPrimitiveStruct(args) => args,
-            Reducer::InsertOneEveryVecStruct(args) => args,
-            Reducer::InsertOneF32(args) => args,
-            Reducer::InsertOneF64(args) => args,
-            Reducer::InsertOneI128(args) => args,
-            Reducer::InsertOneI16(args) => args,
-            Reducer::InsertOneI256(args) => args,
-            Reducer::InsertOneI32(args) => args,
-            Reducer::InsertOneI64(args) => args,
-            Reducer::InsertOneI8(args) => args,
-            Reducer::InsertOneIdentity(args) => args,
-            Reducer::InsertOneSimpleEnum(args) => args,
-            Reducer::InsertOneString(args) => args,
-            Reducer::InsertOneU128(args) => args,
-            Reducer::InsertOneU16(args) => args,
-            Reducer::InsertOneU256(args) => args,
-            Reducer::InsertOneU32(args) => args,
-            Reducer::InsertOneU64(args) => args,
-            Reducer::InsertOneU8(args) => args,
-            Reducer::InsertOneUnitStruct(args) => args,
-            Reducer::InsertOptionEveryPrimitiveStruct(args) => args,
-            Reducer::InsertOptionI32(args) => args,
-            Reducer::InsertOptionIdentity(args) => args,
-            Reducer::InsertOptionSimpleEnum(args) => args,
-            Reducer::InsertOptionString(args) => args,
-            Reducer::InsertOptionVecOptionI32(args) => args,
-            Reducer::InsertPkAddress(args) => args,
-            Reducer::InsertPkBool(args) => args,
-            Reducer::InsertPkI128(args) => args,
-            Reducer::InsertPkI16(args) => args,
-            Reducer::InsertPkI256(args) => args,
-            Reducer::InsertPkI32(args) => args,
-            Reducer::InsertPkI64(args) => args,
-            Reducer::InsertPkI8(args) => args,
-            Reducer::InsertPkIdentity(args) => args,
-            Reducer::InsertPkString(args) => args,
-            Reducer::InsertPkU128(args) => args,
-            Reducer::InsertPkU16(args) => args,
-            Reducer::InsertPkU256(args) => args,
-            Reducer::InsertPkU32(args) => args,
-            Reducer::InsertPkU64(args) => args,
-            Reducer::InsertPkU8(args) => args,
-            Reducer::InsertPrimitivesAsStrings(args) => args,
-            Reducer::InsertTableHoldsTable(args) => args,
-            Reducer::InsertUniqueAddress(args) => args,
-            Reducer::InsertUniqueBool(args) => args,
-            Reducer::InsertUniqueI128(args) => args,
-            Reducer::InsertUniqueI16(args) => args,
-            Reducer::InsertUniqueI256(args) => args,
-            Reducer::InsertUniqueI32(args) => args,
-            Reducer::InsertUniqueI64(args) => args,
-            Reducer::InsertUniqueI8(args) => args,
-            Reducer::InsertUniqueIdentity(args) => args,
-            Reducer::InsertUniqueString(args) => args,
-            Reducer::InsertUniqueU128(args) => args,
-            Reducer::InsertUniqueU16(args) => args,
-            Reducer::InsertUniqueU256(args) => args,
-            Reducer::InsertUniqueU32(args) => args,
-            Reducer::InsertUniqueU64(args) => args,
-            Reducer::InsertUniqueU8(args) => args,
-            Reducer::InsertVecAddress(args) => args,
-            Reducer::InsertVecBool(args) => args,
-            Reducer::InsertVecByteStruct(args) => args,
-            Reducer::InsertVecEnumWithPayload(args) => args,
-            Reducer::InsertVecEveryPrimitiveStruct(args) => args,
-            Reducer::InsertVecEveryVecStruct(args) => args,
-            Reducer::InsertVecF32(args) => args,
-            Reducer::InsertVecF64(args) => args,
-            Reducer::InsertVecI128(args) => args,
-            Reducer::InsertVecI16(args) => args,
-            Reducer::InsertVecI256(args) => args,
-            Reducer::InsertVecI32(args) => args,
-            Reducer::InsertVecI64(args) => args,
-            Reducer::InsertVecI8(args) => args,
-            Reducer::InsertVecIdentity(args) => args,
-            Reducer::InsertVecSimpleEnum(args) => args,
-            Reducer::InsertVecString(args) => args,
-            Reducer::InsertVecU128(args) => args,
-            Reducer::InsertVecU16(args) => args,
-            Reducer::InsertVecU256(args) => args,
-            Reducer::InsertVecU32(args) => args,
-            Reducer::InsertVecU64(args) => args,
-            Reducer::InsertVecU8(args) => args,
-            Reducer::InsertVecUnitStruct(args) => args,
-            Reducer::NoOpSucceeds(args) => args,
-            Reducer::UpdatePkAddress(args) => args,
-            Reducer::UpdatePkBool(args) => args,
-            Reducer::UpdatePkI128(args) => args,
-            Reducer::UpdatePkI16(args) => args,
-            Reducer::UpdatePkI256(args) => args,
-            Reducer::UpdatePkI32(args) => args,
-            Reducer::UpdatePkI64(args) => args,
-            Reducer::UpdatePkI8(args) => args,
-            Reducer::UpdatePkIdentity(args) => args,
-            Reducer::UpdatePkString(args) => args,
-            Reducer::UpdatePkU128(args) => args,
-            Reducer::UpdatePkU16(args) => args,
-            Reducer::UpdatePkU256(args) => args,
-            Reducer::UpdatePkU32(args) => args,
-            Reducer::UpdatePkU64(args) => args,
-            Reducer::UpdatePkU8(args) => args,
-            Reducer::UpdateUniqueAddress(args) => args,
-            Reducer::UpdateUniqueBool(args) => args,
-            Reducer::UpdateUniqueI128(args) => args,
-            Reducer::UpdateUniqueI16(args) => args,
-            Reducer::UpdateUniqueI256(args) => args,
-            Reducer::UpdateUniqueI32(args) => args,
-            Reducer::UpdateUniqueI64(args) => args,
-            Reducer::UpdateUniqueI8(args) => args,
-            Reducer::UpdateUniqueIdentity(args) => args,
-            Reducer::UpdateUniqueString(args) => args,
-            Reducer::UpdateUniqueU128(args) => args,
-            Reducer::UpdateUniqueU16(args) => args,
-            Reducer::UpdateUniqueU256(args) => args,
-            Reducer::UpdateUniqueU32(args) => args,
-            Reducer::UpdateUniqueU64(args) => args,
-            Reducer::UpdateUniqueU8(args) => args,
+            Reducer::DeletePkAddress { .. } => "delete_pk_address",
+            Reducer::DeletePkBool { .. } => "delete_pk_bool",
+            Reducer::DeletePkI128 { .. } => "delete_pk_i128",
+            Reducer::DeletePkI16 { .. } => "delete_pk_i16",
+            Reducer::DeletePkI256 { .. } => "delete_pk_i256",
+            Reducer::DeletePkI32 { .. } => "delete_pk_i32",
+            Reducer::DeletePkI64 { .. } => "delete_pk_i64",
+            Reducer::DeletePkI8 { .. } => "delete_pk_i8",
+            Reducer::DeletePkIdentity { .. } => "delete_pk_identity",
+            Reducer::DeletePkString { .. } => "delete_pk_string",
+            Reducer::DeletePkU128 { .. } => "delete_pk_u128",
+            Reducer::DeletePkU16 { .. } => "delete_pk_u16",
+            Reducer::DeletePkU256 { .. } => "delete_pk_u256",
+            Reducer::DeletePkU32 { .. } => "delete_pk_u32",
+            Reducer::DeletePkU64 { .. } => "delete_pk_u64",
+            Reducer::DeletePkU8 { .. } => "delete_pk_u8",
+            Reducer::DeleteUniqueAddress { .. } => "delete_unique_address",
+            Reducer::DeleteUniqueBool { .. } => "delete_unique_bool",
+            Reducer::DeleteUniqueI128 { .. } => "delete_unique_i128",
+            Reducer::DeleteUniqueI16 { .. } => "delete_unique_i16",
+            Reducer::DeleteUniqueI256 { .. } => "delete_unique_i256",
+            Reducer::DeleteUniqueI32 { .. } => "delete_unique_i32",
+            Reducer::DeleteUniqueI64 { .. } => "delete_unique_i64",
+            Reducer::DeleteUniqueI8 { .. } => "delete_unique_i8",
+            Reducer::DeleteUniqueIdentity { .. } => "delete_unique_identity",
+            Reducer::DeleteUniqueString { .. } => "delete_unique_string",
+            Reducer::DeleteUniqueU128 { .. } => "delete_unique_u128",
+            Reducer::DeleteUniqueU16 { .. } => "delete_unique_u16",
+            Reducer::DeleteUniqueU256 { .. } => "delete_unique_u256",
+            Reducer::DeleteUniqueU32 { .. } => "delete_unique_u32",
+            Reducer::DeleteUniqueU64 { .. } => "delete_unique_u64",
+            Reducer::DeleteUniqueU8 { .. } => "delete_unique_u8",
+            Reducer::InsertCallerOneAddress => "insert_caller_one_address",
+            Reducer::InsertCallerOneIdentity => "insert_caller_one_identity",
+            Reducer::InsertCallerPkAddress { .. } => "insert_caller_pk_address",
+            Reducer::InsertCallerPkIdentity { .. } => "insert_caller_pk_identity",
+            Reducer::InsertCallerUniqueAddress { .. } => "insert_caller_unique_address",
+            Reducer::InsertCallerUniqueIdentity { .. } => "insert_caller_unique_identity",
+            Reducer::InsertCallerVecAddress => "insert_caller_vec_address",
+            Reducer::InsertCallerVecIdentity => "insert_caller_vec_identity",
+            Reducer::InsertLargeTable { .. } => "insert_large_table",
+            Reducer::InsertOneAddress { .. } => "insert_one_address",
+            Reducer::InsertOneBool { .. } => "insert_one_bool",
+            Reducer::InsertOneByteStruct { .. } => "insert_one_byte_struct",
+            Reducer::InsertOneEnumWithPayload { .. } => "insert_one_enum_with_payload",
+            Reducer::InsertOneEveryPrimitiveStruct { .. } => "insert_one_every_primitive_struct",
+            Reducer::InsertOneEveryVecStruct { .. } => "insert_one_every_vec_struct",
+            Reducer::InsertOneF32 { .. } => "insert_one_f32",
+            Reducer::InsertOneF64 { .. } => "insert_one_f64",
+            Reducer::InsertOneI128 { .. } => "insert_one_i128",
+            Reducer::InsertOneI16 { .. } => "insert_one_i16",
+            Reducer::InsertOneI256 { .. } => "insert_one_i256",
+            Reducer::InsertOneI32 { .. } => "insert_one_i32",
+            Reducer::InsertOneI64 { .. } => "insert_one_i64",
+            Reducer::InsertOneI8 { .. } => "insert_one_i8",
+            Reducer::InsertOneIdentity { .. } => "insert_one_identity",
+            Reducer::InsertOneSimpleEnum { .. } => "insert_one_simple_enum",
+            Reducer::InsertOneString { .. } => "insert_one_string",
+            Reducer::InsertOneU128 { .. } => "insert_one_u128",
+            Reducer::InsertOneU16 { .. } => "insert_one_u16",
+            Reducer::InsertOneU256 { .. } => "insert_one_u256",
+            Reducer::InsertOneU32 { .. } => "insert_one_u32",
+            Reducer::InsertOneU64 { .. } => "insert_one_u64",
+            Reducer::InsertOneU8 { .. } => "insert_one_u8",
+            Reducer::InsertOneUnitStruct { .. } => "insert_one_unit_struct",
+            Reducer::InsertOptionEveryPrimitiveStruct { .. } => "insert_option_every_primitive_struct",
+            Reducer::InsertOptionI32 { .. } => "insert_option_i32",
+            Reducer::InsertOptionIdentity { .. } => "insert_option_identity",
+            Reducer::InsertOptionSimpleEnum { .. } => "insert_option_simple_enum",
+            Reducer::InsertOptionString { .. } => "insert_option_string",
+            Reducer::InsertOptionVecOptionI32 { .. } => "insert_option_vec_option_i32",
+            Reducer::InsertPkAddress { .. } => "insert_pk_address",
+            Reducer::InsertPkBool { .. } => "insert_pk_bool",
+            Reducer::InsertPkI128 { .. } => "insert_pk_i128",
+            Reducer::InsertPkI16 { .. } => "insert_pk_i16",
+            Reducer::InsertPkI256 { .. } => "insert_pk_i256",
+            Reducer::InsertPkI32 { .. } => "insert_pk_i32",
+            Reducer::InsertPkI64 { .. } => "insert_pk_i64",
+            Reducer::InsertPkI8 { .. } => "insert_pk_i8",
+            Reducer::InsertPkIdentity { .. } => "insert_pk_identity",
+            Reducer::InsertPkString { .. } => "insert_pk_string",
+            Reducer::InsertPkU128 { .. } => "insert_pk_u128",
+            Reducer::InsertPkU16 { .. } => "insert_pk_u16",
+            Reducer::InsertPkU256 { .. } => "insert_pk_u256",
+            Reducer::InsertPkU32 { .. } => "insert_pk_u32",
+            Reducer::InsertPkU64 { .. } => "insert_pk_u64",
+            Reducer::InsertPkU8 { .. } => "insert_pk_u8",
+            Reducer::InsertPrimitivesAsStrings { .. } => "insert_primitives_as_strings",
+            Reducer::InsertTableHoldsTable { .. } => "insert_table_holds_table",
+            Reducer::InsertUniqueAddress { .. } => "insert_unique_address",
+            Reducer::InsertUniqueBool { .. } => "insert_unique_bool",
+            Reducer::InsertUniqueI128 { .. } => "insert_unique_i128",
+            Reducer::InsertUniqueI16 { .. } => "insert_unique_i16",
+            Reducer::InsertUniqueI256 { .. } => "insert_unique_i256",
+            Reducer::InsertUniqueI32 { .. } => "insert_unique_i32",
+            Reducer::InsertUniqueI64 { .. } => "insert_unique_i64",
+            Reducer::InsertUniqueI8 { .. } => "insert_unique_i8",
+            Reducer::InsertUniqueIdentity { .. } => "insert_unique_identity",
+            Reducer::InsertUniqueString { .. } => "insert_unique_string",
+            Reducer::InsertUniqueU128 { .. } => "insert_unique_u128",
+            Reducer::InsertUniqueU16 { .. } => "insert_unique_u16",
+            Reducer::InsertUniqueU256 { .. } => "insert_unique_u256",
+            Reducer::InsertUniqueU32 { .. } => "insert_unique_u32",
+            Reducer::InsertUniqueU64 { .. } => "insert_unique_u64",
+            Reducer::InsertUniqueU8 { .. } => "insert_unique_u8",
+            Reducer::InsertVecAddress { .. } => "insert_vec_address",
+            Reducer::InsertVecBool { .. } => "insert_vec_bool",
+            Reducer::InsertVecByteStruct { .. } => "insert_vec_byte_struct",
+            Reducer::InsertVecEnumWithPayload { .. } => "insert_vec_enum_with_payload",
+            Reducer::InsertVecEveryPrimitiveStruct { .. } => "insert_vec_every_primitive_struct",
+            Reducer::InsertVecEveryVecStruct { .. } => "insert_vec_every_vec_struct",
+            Reducer::InsertVecF32 { .. } => "insert_vec_f32",
+            Reducer::InsertVecF64 { .. } => "insert_vec_f64",
+            Reducer::InsertVecI128 { .. } => "insert_vec_i128",
+            Reducer::InsertVecI16 { .. } => "insert_vec_i16",
+            Reducer::InsertVecI256 { .. } => "insert_vec_i256",
+            Reducer::InsertVecI32 { .. } => "insert_vec_i32",
+            Reducer::InsertVecI64 { .. } => "insert_vec_i64",
+            Reducer::InsertVecI8 { .. } => "insert_vec_i8",
+            Reducer::InsertVecIdentity { .. } => "insert_vec_identity",
+            Reducer::InsertVecSimpleEnum { .. } => "insert_vec_simple_enum",
+            Reducer::InsertVecString { .. } => "insert_vec_string",
+            Reducer::InsertVecU128 { .. } => "insert_vec_u128",
+            Reducer::InsertVecU16 { .. } => "insert_vec_u16",
+            Reducer::InsertVecU256 { .. } => "insert_vec_u256",
+            Reducer::InsertVecU32 { .. } => "insert_vec_u32",
+            Reducer::InsertVecU64 { .. } => "insert_vec_u64",
+            Reducer::InsertVecU8 { .. } => "insert_vec_u8",
+            Reducer::InsertVecUnitStruct { .. } => "insert_vec_unit_struct",
+            Reducer::NoOpSucceeds => "no_op_succeeds",
+            Reducer::SendScheduledMessage { .. } => "send_scheduled_message",
+            Reducer::UpdatePkAddress { .. } => "update_pk_address",
+            Reducer::UpdatePkBool { .. } => "update_pk_bool",
+            Reducer::UpdatePkI128 { .. } => "update_pk_i128",
+            Reducer::UpdatePkI16 { .. } => "update_pk_i16",
+            Reducer::UpdatePkI256 { .. } => "update_pk_i256",
+            Reducer::UpdatePkI32 { .. } => "update_pk_i32",
+            Reducer::UpdatePkI64 { .. } => "update_pk_i64",
+            Reducer::UpdatePkI8 { .. } => "update_pk_i8",
+            Reducer::UpdatePkIdentity { .. } => "update_pk_identity",
+            Reducer::UpdatePkString { .. } => "update_pk_string",
+            Reducer::UpdatePkU128 { .. } => "update_pk_u128",
+            Reducer::UpdatePkU16 { .. } => "update_pk_u16",
+            Reducer::UpdatePkU256 { .. } => "update_pk_u256",
+            Reducer::UpdatePkU32 { .. } => "update_pk_u32",
+            Reducer::UpdatePkU64 { .. } => "update_pk_u64",
+            Reducer::UpdatePkU8 { .. } => "update_pk_u8",
+            Reducer::UpdateUniqueAddress { .. } => "update_unique_address",
+            Reducer::UpdateUniqueBool { .. } => "update_unique_bool",
+            Reducer::UpdateUniqueI128 { .. } => "update_unique_i128",
+            Reducer::UpdateUniqueI16 { .. } => "update_unique_i16",
+            Reducer::UpdateUniqueI256 { .. } => "update_unique_i256",
+            Reducer::UpdateUniqueI32 { .. } => "update_unique_i32",
+            Reducer::UpdateUniqueI64 { .. } => "update_unique_i64",
+            Reducer::UpdateUniqueI8 { .. } => "update_unique_i8",
+            Reducer::UpdateUniqueIdentity { .. } => "update_unique_identity",
+            Reducer::UpdateUniqueString { .. } => "update_unique_string",
+            Reducer::UpdateUniqueU128 { .. } => "update_unique_u128",
+            Reducer::UpdateUniqueU16 { .. } => "update_unique_u16",
+            Reducer::UpdateUniqueU256 { .. } => "update_unique_u256",
+            Reducer::UpdateUniqueU32 { .. } => "update_unique_u32",
+            Reducer::UpdateUniqueU64 { .. } => "update_unique_u64",
+            Reducer::UpdateUniqueU8 { .. } => "update_unique_u8",
         }
     }
 }
@@ -1213,618 +1586,914 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
     type Error = __anyhow::Error;
     fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {
         match &value.reducer_name[..] {
-            "delete_pk_address" => Ok(Reducer::DeletePkAddress(__sdk::spacetime_module::parse_reducer_args(
-                "delete_pk_address",
-                &value.args,
-            )?)),
-            "delete_pk_bool" => Ok(Reducer::DeletePkBool(__sdk::spacetime_module::parse_reducer_args(
+            "delete_pk_address" => Ok(
+                __sdk::parse_reducer_args::<delete_pk_address_reducer::DeletePkAddressArgs>(
+                    "delete_pk_address",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_pk_bool" => Ok(__sdk::parse_reducer_args::<delete_pk_bool_reducer::DeletePkBoolArgs>(
                 "delete_pk_bool",
                 &value.args,
-            )?)),
-            "delete_pk_i128" => Ok(Reducer::DeletePkI128(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "delete_pk_i128" => Ok(__sdk::parse_reducer_args::<delete_pk_i_128_reducer::DeletePkI128Args>(
                 "delete_pk_i128",
                 &value.args,
-            )?)),
-            "delete_pk_i16" => Ok(Reducer::DeletePkI16(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "delete_pk_i16" => Ok(__sdk::parse_reducer_args::<delete_pk_i_16_reducer::DeletePkI16Args>(
                 "delete_pk_i16",
                 &value.args,
-            )?)),
-            "delete_pk_i256" => Ok(Reducer::DeletePkI256(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "delete_pk_i256" => Ok(__sdk::parse_reducer_args::<delete_pk_i_256_reducer::DeletePkI256Args>(
                 "delete_pk_i256",
                 &value.args,
-            )?)),
-            "delete_pk_i32" => Ok(Reducer::DeletePkI32(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "delete_pk_i32" => Ok(__sdk::parse_reducer_args::<delete_pk_i_32_reducer::DeletePkI32Args>(
                 "delete_pk_i32",
                 &value.args,
-            )?)),
-            "delete_pk_i64" => Ok(Reducer::DeletePkI64(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "delete_pk_i64" => Ok(__sdk::parse_reducer_args::<delete_pk_i_64_reducer::DeletePkI64Args>(
                 "delete_pk_i64",
                 &value.args,
-            )?)),
-            "delete_pk_i8" => Ok(Reducer::DeletePkI8(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "delete_pk_i8" => Ok(__sdk::parse_reducer_args::<delete_pk_i_8_reducer::DeletePkI8Args>(
                 "delete_pk_i8",
                 &value.args,
-            )?)),
-            "delete_pk_identity" => Ok(Reducer::DeletePkIdentity(__sdk::spacetime_module::parse_reducer_args(
-                "delete_pk_identity",
-                &value.args,
-            )?)),
-            "delete_pk_string" => Ok(Reducer::DeletePkString(__sdk::spacetime_module::parse_reducer_args(
-                "delete_pk_string",
-                &value.args,
-            )?)),
-            "delete_pk_u128" => Ok(Reducer::DeletePkU128(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "delete_pk_identity" => Ok(
+                __sdk::parse_reducer_args::<delete_pk_identity_reducer::DeletePkIdentityArgs>(
+                    "delete_pk_identity",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_pk_string" => Ok(
+                __sdk::parse_reducer_args::<delete_pk_string_reducer::DeletePkStringArgs>(
+                    "delete_pk_string",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_pk_u128" => Ok(__sdk::parse_reducer_args::<delete_pk_u_128_reducer::DeletePkU128Args>(
                 "delete_pk_u128",
                 &value.args,
-            )?)),
-            "delete_pk_u16" => Ok(Reducer::DeletePkU16(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "delete_pk_u16" => Ok(__sdk::parse_reducer_args::<delete_pk_u_16_reducer::DeletePkU16Args>(
                 "delete_pk_u16",
                 &value.args,
-            )?)),
-            "delete_pk_u256" => Ok(Reducer::DeletePkU256(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "delete_pk_u256" => Ok(__sdk::parse_reducer_args::<delete_pk_u_256_reducer::DeletePkU256Args>(
                 "delete_pk_u256",
                 &value.args,
-            )?)),
-            "delete_pk_u32" => Ok(Reducer::DeletePkU32(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "delete_pk_u32" => Ok(__sdk::parse_reducer_args::<delete_pk_u_32_reducer::DeletePkU32Args>(
                 "delete_pk_u32",
                 &value.args,
-            )?)),
-            "delete_pk_u64" => Ok(Reducer::DeletePkU64(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "delete_pk_u64" => Ok(__sdk::parse_reducer_args::<delete_pk_u_64_reducer::DeletePkU64Args>(
                 "delete_pk_u64",
                 &value.args,
-            )?)),
-            "delete_pk_u8" => Ok(Reducer::DeletePkU8(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "delete_pk_u8" => Ok(__sdk::parse_reducer_args::<delete_pk_u_8_reducer::DeletePkU8Args>(
                 "delete_pk_u8",
                 &value.args,
-            )?)),
-            "delete_unique_address" => Ok(Reducer::DeleteUniqueAddress(
-                __sdk::spacetime_module::parse_reducer_args("delete_unique_address", &value.args)?,
-            )),
-            "delete_unique_bool" => Ok(Reducer::DeleteUniqueBool(__sdk::spacetime_module::parse_reducer_args(
-                "delete_unique_bool",
-                &value.args,
-            )?)),
-            "delete_unique_i128" => Ok(Reducer::DeleteUniqueI128(__sdk::spacetime_module::parse_reducer_args(
-                "delete_unique_i128",
-                &value.args,
-            )?)),
-            "delete_unique_i16" => Ok(Reducer::DeleteUniqueI16(__sdk::spacetime_module::parse_reducer_args(
-                "delete_unique_i16",
-                &value.args,
-            )?)),
-            "delete_unique_i256" => Ok(Reducer::DeleteUniqueI256(__sdk::spacetime_module::parse_reducer_args(
-                "delete_unique_i256",
-                &value.args,
-            )?)),
-            "delete_unique_i32" => Ok(Reducer::DeleteUniqueI32(__sdk::spacetime_module::parse_reducer_args(
-                "delete_unique_i32",
-                &value.args,
-            )?)),
-            "delete_unique_i64" => Ok(Reducer::DeleteUniqueI64(__sdk::spacetime_module::parse_reducer_args(
-                "delete_unique_i64",
-                &value.args,
-            )?)),
-            "delete_unique_i8" => Ok(Reducer::DeleteUniqueI8(__sdk::spacetime_module::parse_reducer_args(
-                "delete_unique_i8",
-                &value.args,
-            )?)),
-            "delete_unique_identity" => Ok(Reducer::DeleteUniqueIdentity(
-                __sdk::spacetime_module::parse_reducer_args("delete_unique_identity", &value.args)?,
-            )),
-            "delete_unique_string" => Ok(Reducer::DeleteUniqueString(
-                __sdk::spacetime_module::parse_reducer_args("delete_unique_string", &value.args)?,
-            )),
-            "delete_unique_u128" => Ok(Reducer::DeleteUniqueU128(__sdk::spacetime_module::parse_reducer_args(
-                "delete_unique_u128",
-                &value.args,
-            )?)),
-            "delete_unique_u16" => Ok(Reducer::DeleteUniqueU16(__sdk::spacetime_module::parse_reducer_args(
-                "delete_unique_u16",
-                &value.args,
-            )?)),
-            "delete_unique_u256" => Ok(Reducer::DeleteUniqueU256(__sdk::spacetime_module::parse_reducer_args(
-                "delete_unique_u256",
-                &value.args,
-            )?)),
-            "delete_unique_u32" => Ok(Reducer::DeleteUniqueU32(__sdk::spacetime_module::parse_reducer_args(
-                "delete_unique_u32",
-                &value.args,
-            )?)),
-            "delete_unique_u64" => Ok(Reducer::DeleteUniqueU64(__sdk::spacetime_module::parse_reducer_args(
-                "delete_unique_u64",
-                &value.args,
-            )?)),
-            "delete_unique_u8" => Ok(Reducer::DeleteUniqueU8(__sdk::spacetime_module::parse_reducer_args(
-                "delete_unique_u8",
-                &value.args,
-            )?)),
-            "insert_caller_one_address" => Ok(Reducer::InsertCallerOneAddress(
-                __sdk::spacetime_module::parse_reducer_args("insert_caller_one_address", &value.args)?,
-            )),
-            "insert_caller_one_identity" => Ok(Reducer::InsertCallerOneIdentity(
-                __sdk::spacetime_module::parse_reducer_args("insert_caller_one_identity", &value.args)?,
-            )),
-            "insert_caller_pk_address" => Ok(Reducer::InsertCallerPkAddress(
-                __sdk::spacetime_module::parse_reducer_args("insert_caller_pk_address", &value.args)?,
-            )),
-            "insert_caller_pk_identity" => Ok(Reducer::InsertCallerPkIdentity(
-                __sdk::spacetime_module::parse_reducer_args("insert_caller_pk_identity", &value.args)?,
-            )),
-            "insert_caller_unique_address" => Ok(Reducer::InsertCallerUniqueAddress(
-                __sdk::spacetime_module::parse_reducer_args("insert_caller_unique_address", &value.args)?,
-            )),
-            "insert_caller_unique_identity" => Ok(Reducer::InsertCallerUniqueIdentity(
-                __sdk::spacetime_module::parse_reducer_args("insert_caller_unique_identity", &value.args)?,
-            )),
-            "insert_caller_vec_address" => Ok(Reducer::InsertCallerVecAddress(
-                __sdk::spacetime_module::parse_reducer_args("insert_caller_vec_address", &value.args)?,
-            )),
-            "insert_caller_vec_identity" => Ok(Reducer::InsertCallerVecIdentity(
-                __sdk::spacetime_module::parse_reducer_args("insert_caller_vec_identity", &value.args)?,
-            )),
-            "insert_large_table" => Ok(Reducer::InsertLargeTable(__sdk::spacetime_module::parse_reducer_args(
-                "insert_large_table",
-                &value.args,
-            )?)),
-            "insert_one_address" => Ok(Reducer::InsertOneAddress(__sdk::spacetime_module::parse_reducer_args(
-                "insert_one_address",
-                &value.args,
-            )?)),
-            "insert_one_bool" => Ok(Reducer::InsertOneBool(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "delete_unique_address" => Ok(__sdk::parse_reducer_args::<
+                delete_unique_address_reducer::DeleteUniqueAddressArgs,
+            >("delete_unique_address", &value.args)?
+            .into()),
+            "delete_unique_bool" => Ok(
+                __sdk::parse_reducer_args::<delete_unique_bool_reducer::DeleteUniqueBoolArgs>(
+                    "delete_unique_bool",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_unique_i128" => Ok(
+                __sdk::parse_reducer_args::<delete_unique_i_128_reducer::DeleteUniqueI128Args>(
+                    "delete_unique_i128",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_unique_i16" => Ok(
+                __sdk::parse_reducer_args::<delete_unique_i_16_reducer::DeleteUniqueI16Args>(
+                    "delete_unique_i16",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_unique_i256" => Ok(
+                __sdk::parse_reducer_args::<delete_unique_i_256_reducer::DeleteUniqueI256Args>(
+                    "delete_unique_i256",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_unique_i32" => Ok(
+                __sdk::parse_reducer_args::<delete_unique_i_32_reducer::DeleteUniqueI32Args>(
+                    "delete_unique_i32",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_unique_i64" => Ok(
+                __sdk::parse_reducer_args::<delete_unique_i_64_reducer::DeleteUniqueI64Args>(
+                    "delete_unique_i64",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_unique_i8" => Ok(
+                __sdk::parse_reducer_args::<delete_unique_i_8_reducer::DeleteUniqueI8Args>(
+                    "delete_unique_i8",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_unique_identity" => Ok(__sdk::parse_reducer_args::<
+                delete_unique_identity_reducer::DeleteUniqueIdentityArgs,
+            >("delete_unique_identity", &value.args)?
+            .into()),
+            "delete_unique_string" => Ok(__sdk::parse_reducer_args::<
+                delete_unique_string_reducer::DeleteUniqueStringArgs,
+            >("delete_unique_string", &value.args)?
+            .into()),
+            "delete_unique_u128" => Ok(
+                __sdk::parse_reducer_args::<delete_unique_u_128_reducer::DeleteUniqueU128Args>(
+                    "delete_unique_u128",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_unique_u16" => Ok(
+                __sdk::parse_reducer_args::<delete_unique_u_16_reducer::DeleteUniqueU16Args>(
+                    "delete_unique_u16",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_unique_u256" => Ok(
+                __sdk::parse_reducer_args::<delete_unique_u_256_reducer::DeleteUniqueU256Args>(
+                    "delete_unique_u256",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_unique_u32" => Ok(
+                __sdk::parse_reducer_args::<delete_unique_u_32_reducer::DeleteUniqueU32Args>(
+                    "delete_unique_u32",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_unique_u64" => Ok(
+                __sdk::parse_reducer_args::<delete_unique_u_64_reducer::DeleteUniqueU64Args>(
+                    "delete_unique_u64",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "delete_unique_u8" => Ok(
+                __sdk::parse_reducer_args::<delete_unique_u_8_reducer::DeleteUniqueU8Args>(
+                    "delete_unique_u8",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_caller_one_address" => Ok(__sdk::parse_reducer_args::<
+                insert_caller_one_address_reducer::InsertCallerOneAddressArgs,
+            >("insert_caller_one_address", &value.args)?
+            .into()),
+            "insert_caller_one_identity" => Ok(__sdk::parse_reducer_args::<
+                insert_caller_one_identity_reducer::InsertCallerOneIdentityArgs,
+            >("insert_caller_one_identity", &value.args)?
+            .into()),
+            "insert_caller_pk_address" => Ok(__sdk::parse_reducer_args::<
+                insert_caller_pk_address_reducer::InsertCallerPkAddressArgs,
+            >("insert_caller_pk_address", &value.args)?
+            .into()),
+            "insert_caller_pk_identity" => Ok(__sdk::parse_reducer_args::<
+                insert_caller_pk_identity_reducer::InsertCallerPkIdentityArgs,
+            >("insert_caller_pk_identity", &value.args)?
+            .into()),
+            "insert_caller_unique_address" => Ok(__sdk::parse_reducer_args::<
+                insert_caller_unique_address_reducer::InsertCallerUniqueAddressArgs,
+            >("insert_caller_unique_address", &value.args)?
+            .into()),
+            "insert_caller_unique_identity" => Ok(__sdk::parse_reducer_args::<
+                insert_caller_unique_identity_reducer::InsertCallerUniqueIdentityArgs,
+            >("insert_caller_unique_identity", &value.args)?
+            .into()),
+            "insert_caller_vec_address" => Ok(__sdk::parse_reducer_args::<
+                insert_caller_vec_address_reducer::InsertCallerVecAddressArgs,
+            >("insert_caller_vec_address", &value.args)?
+            .into()),
+            "insert_caller_vec_identity" => Ok(__sdk::parse_reducer_args::<
+                insert_caller_vec_identity_reducer::InsertCallerVecIdentityArgs,
+            >("insert_caller_vec_identity", &value.args)?
+            .into()),
+            "insert_large_table" => Ok(
+                __sdk::parse_reducer_args::<insert_large_table_reducer::InsertLargeTableArgs>(
+                    "insert_large_table",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_one_address" => Ok(
+                __sdk::parse_reducer_args::<insert_one_address_reducer::InsertOneAddressArgs>(
+                    "insert_one_address",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_one_bool" => Ok(__sdk::parse_reducer_args::<insert_one_bool_reducer::InsertOneBoolArgs>(
                 "insert_one_bool",
                 &value.args,
-            )?)),
-            "insert_one_byte_struct" => Ok(Reducer::InsertOneByteStruct(
-                __sdk::spacetime_module::parse_reducer_args("insert_one_byte_struct", &value.args)?,
-            )),
-            "insert_one_enum_with_payload" => Ok(Reducer::InsertOneEnumWithPayload(
-                __sdk::spacetime_module::parse_reducer_args("insert_one_enum_with_payload", &value.args)?,
-            )),
-            "insert_one_every_primitive_struct" => Ok(Reducer::InsertOneEveryPrimitiveStruct(
-                __sdk::spacetime_module::parse_reducer_args("insert_one_every_primitive_struct", &value.args)?,
-            )),
-            "insert_one_every_vec_struct" => Ok(Reducer::InsertOneEveryVecStruct(
-                __sdk::spacetime_module::parse_reducer_args("insert_one_every_vec_struct", &value.args)?,
-            )),
-            "insert_one_f32" => Ok(Reducer::InsertOneF32(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_one_byte_struct" => Ok(__sdk::parse_reducer_args::<
+                insert_one_byte_struct_reducer::InsertOneByteStructArgs,
+            >("insert_one_byte_struct", &value.args)?
+            .into()),
+            "insert_one_enum_with_payload" => Ok(__sdk::parse_reducer_args::<
+                insert_one_enum_with_payload_reducer::InsertOneEnumWithPayloadArgs,
+            >("insert_one_enum_with_payload", &value.args)?
+            .into()),
+            "insert_one_every_primitive_struct" => Ok(__sdk::parse_reducer_args::<
+                insert_one_every_primitive_struct_reducer::InsertOneEveryPrimitiveStructArgs,
+            >("insert_one_every_primitive_struct", &value.args)?
+            .into()),
+            "insert_one_every_vec_struct" => Ok(__sdk::parse_reducer_args::<
+                insert_one_every_vec_struct_reducer::InsertOneEveryVecStructArgs,
+            >("insert_one_every_vec_struct", &value.args)?
+            .into()),
+            "insert_one_f32" => Ok(__sdk::parse_reducer_args::<insert_one_f_32_reducer::InsertOneF32Args>(
                 "insert_one_f32",
                 &value.args,
-            )?)),
-            "insert_one_f64" => Ok(Reducer::InsertOneF64(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_one_f64" => Ok(__sdk::parse_reducer_args::<insert_one_f_64_reducer::InsertOneF64Args>(
                 "insert_one_f64",
                 &value.args,
-            )?)),
-            "insert_one_i128" => Ok(Reducer::InsertOneI128(__sdk::spacetime_module::parse_reducer_args(
-                "insert_one_i128",
-                &value.args,
-            )?)),
-            "insert_one_i16" => Ok(Reducer::InsertOneI16(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_one_i128" => Ok(
+                __sdk::parse_reducer_args::<insert_one_i_128_reducer::InsertOneI128Args>(
+                    "insert_one_i128",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_one_i16" => Ok(__sdk::parse_reducer_args::<insert_one_i_16_reducer::InsertOneI16Args>(
                 "insert_one_i16",
                 &value.args,
-            )?)),
-            "insert_one_i256" => Ok(Reducer::InsertOneI256(__sdk::spacetime_module::parse_reducer_args(
-                "insert_one_i256",
-                &value.args,
-            )?)),
-            "insert_one_i32" => Ok(Reducer::InsertOneI32(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_one_i256" => Ok(
+                __sdk::parse_reducer_args::<insert_one_i_256_reducer::InsertOneI256Args>(
+                    "insert_one_i256",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_one_i32" => Ok(__sdk::parse_reducer_args::<insert_one_i_32_reducer::InsertOneI32Args>(
                 "insert_one_i32",
                 &value.args,
-            )?)),
-            "insert_one_i64" => Ok(Reducer::InsertOneI64(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_one_i64" => Ok(__sdk::parse_reducer_args::<insert_one_i_64_reducer::InsertOneI64Args>(
                 "insert_one_i64",
                 &value.args,
-            )?)),
-            "insert_one_i8" => Ok(Reducer::InsertOneI8(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_one_i8" => Ok(__sdk::parse_reducer_args::<insert_one_i_8_reducer::InsertOneI8Args>(
                 "insert_one_i8",
                 &value.args,
-            )?)),
-            "insert_one_identity" => Ok(Reducer::InsertOneIdentity(__sdk::spacetime_module::parse_reducer_args(
-                "insert_one_identity",
-                &value.args,
-            )?)),
-            "insert_one_simple_enum" => Ok(Reducer::InsertOneSimpleEnum(
-                __sdk::spacetime_module::parse_reducer_args("insert_one_simple_enum", &value.args)?,
-            )),
-            "insert_one_string" => Ok(Reducer::InsertOneString(__sdk::spacetime_module::parse_reducer_args(
-                "insert_one_string",
-                &value.args,
-            )?)),
-            "insert_one_u128" => Ok(Reducer::InsertOneU128(__sdk::spacetime_module::parse_reducer_args(
-                "insert_one_u128",
-                &value.args,
-            )?)),
-            "insert_one_u16" => Ok(Reducer::InsertOneU16(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_one_identity" => Ok(
+                __sdk::parse_reducer_args::<insert_one_identity_reducer::InsertOneIdentityArgs>(
+                    "insert_one_identity",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_one_simple_enum" => Ok(__sdk::parse_reducer_args::<
+                insert_one_simple_enum_reducer::InsertOneSimpleEnumArgs,
+            >("insert_one_simple_enum", &value.args)?
+            .into()),
+            "insert_one_string" => Ok(
+                __sdk::parse_reducer_args::<insert_one_string_reducer::InsertOneStringArgs>(
+                    "insert_one_string",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_one_u128" => Ok(
+                __sdk::parse_reducer_args::<insert_one_u_128_reducer::InsertOneU128Args>(
+                    "insert_one_u128",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_one_u16" => Ok(__sdk::parse_reducer_args::<insert_one_u_16_reducer::InsertOneU16Args>(
                 "insert_one_u16",
                 &value.args,
-            )?)),
-            "insert_one_u256" => Ok(Reducer::InsertOneU256(__sdk::spacetime_module::parse_reducer_args(
-                "insert_one_u256",
-                &value.args,
-            )?)),
-            "insert_one_u32" => Ok(Reducer::InsertOneU32(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_one_u256" => Ok(
+                __sdk::parse_reducer_args::<insert_one_u_256_reducer::InsertOneU256Args>(
+                    "insert_one_u256",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_one_u32" => Ok(__sdk::parse_reducer_args::<insert_one_u_32_reducer::InsertOneU32Args>(
                 "insert_one_u32",
                 &value.args,
-            )?)),
-            "insert_one_u64" => Ok(Reducer::InsertOneU64(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_one_u64" => Ok(__sdk::parse_reducer_args::<insert_one_u_64_reducer::InsertOneU64Args>(
                 "insert_one_u64",
                 &value.args,
-            )?)),
-            "insert_one_u8" => Ok(Reducer::InsertOneU8(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_one_u8" => Ok(__sdk::parse_reducer_args::<insert_one_u_8_reducer::InsertOneU8Args>(
                 "insert_one_u8",
                 &value.args,
-            )?)),
-            "insert_one_unit_struct" => Ok(Reducer::InsertOneUnitStruct(
-                __sdk::spacetime_module::parse_reducer_args("insert_one_unit_struct", &value.args)?,
-            )),
-            "insert_option_every_primitive_struct" => Ok(Reducer::InsertOptionEveryPrimitiveStruct(
-                __sdk::spacetime_module::parse_reducer_args("insert_option_every_primitive_struct", &value.args)?,
-            )),
-            "insert_option_i32" => Ok(Reducer::InsertOptionI32(__sdk::spacetime_module::parse_reducer_args(
-                "insert_option_i32",
-                &value.args,
-            )?)),
-            "insert_option_identity" => Ok(Reducer::InsertOptionIdentity(
-                __sdk::spacetime_module::parse_reducer_args("insert_option_identity", &value.args)?,
-            )),
-            "insert_option_simple_enum" => Ok(Reducer::InsertOptionSimpleEnum(
-                __sdk::spacetime_module::parse_reducer_args("insert_option_simple_enum", &value.args)?,
-            )),
-            "insert_option_string" => Ok(Reducer::InsertOptionString(
-                __sdk::spacetime_module::parse_reducer_args("insert_option_string", &value.args)?,
-            )),
-            "insert_option_vec_option_i32" => Ok(Reducer::InsertOptionVecOptionI32(
-                __sdk::spacetime_module::parse_reducer_args("insert_option_vec_option_i32", &value.args)?,
-            )),
-            "insert_pk_address" => Ok(Reducer::InsertPkAddress(__sdk::spacetime_module::parse_reducer_args(
-                "insert_pk_address",
-                &value.args,
-            )?)),
-            "insert_pk_bool" => Ok(Reducer::InsertPkBool(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_one_unit_struct" => Ok(__sdk::parse_reducer_args::<
+                insert_one_unit_struct_reducer::InsertOneUnitStructArgs,
+            >("insert_one_unit_struct", &value.args)?
+            .into()),
+            "insert_option_every_primitive_struct" => {
+                Ok(__sdk::parse_reducer_args::<
+                    insert_option_every_primitive_struct_reducer::InsertOptionEveryPrimitiveStructArgs,
+                >("insert_option_every_primitive_struct", &value.args)?
+                .into())
+            }
+            "insert_option_i32" => Ok(
+                __sdk::parse_reducer_args::<insert_option_i_32_reducer::InsertOptionI32Args>(
+                    "insert_option_i32",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_option_identity" => Ok(__sdk::parse_reducer_args::<
+                insert_option_identity_reducer::InsertOptionIdentityArgs,
+            >("insert_option_identity", &value.args)?
+            .into()),
+            "insert_option_simple_enum" => Ok(__sdk::parse_reducer_args::<
+                insert_option_simple_enum_reducer::InsertOptionSimpleEnumArgs,
+            >("insert_option_simple_enum", &value.args)?
+            .into()),
+            "insert_option_string" => Ok(__sdk::parse_reducer_args::<
+                insert_option_string_reducer::InsertOptionStringArgs,
+            >("insert_option_string", &value.args)?
+            .into()),
+            "insert_option_vec_option_i32" => Ok(__sdk::parse_reducer_args::<
+                insert_option_vec_option_i_32_reducer::InsertOptionVecOptionI32Args,
+            >("insert_option_vec_option_i32", &value.args)?
+            .into()),
+            "insert_pk_address" => Ok(
+                __sdk::parse_reducer_args::<insert_pk_address_reducer::InsertPkAddressArgs>(
+                    "insert_pk_address",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_pk_bool" => Ok(__sdk::parse_reducer_args::<insert_pk_bool_reducer::InsertPkBoolArgs>(
                 "insert_pk_bool",
                 &value.args,
-            )?)),
-            "insert_pk_i128" => Ok(Reducer::InsertPkI128(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_pk_i128" => Ok(__sdk::parse_reducer_args::<insert_pk_i_128_reducer::InsertPkI128Args>(
                 "insert_pk_i128",
                 &value.args,
-            )?)),
-            "insert_pk_i16" => Ok(Reducer::InsertPkI16(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_pk_i16" => Ok(__sdk::parse_reducer_args::<insert_pk_i_16_reducer::InsertPkI16Args>(
                 "insert_pk_i16",
                 &value.args,
-            )?)),
-            "insert_pk_i256" => Ok(Reducer::InsertPkI256(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_pk_i256" => Ok(__sdk::parse_reducer_args::<insert_pk_i_256_reducer::InsertPkI256Args>(
                 "insert_pk_i256",
                 &value.args,
-            )?)),
-            "insert_pk_i32" => Ok(Reducer::InsertPkI32(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_pk_i32" => Ok(__sdk::parse_reducer_args::<insert_pk_i_32_reducer::InsertPkI32Args>(
                 "insert_pk_i32",
                 &value.args,
-            )?)),
-            "insert_pk_i64" => Ok(Reducer::InsertPkI64(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_pk_i64" => Ok(__sdk::parse_reducer_args::<insert_pk_i_64_reducer::InsertPkI64Args>(
                 "insert_pk_i64",
                 &value.args,
-            )?)),
-            "insert_pk_i8" => Ok(Reducer::InsertPkI8(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_pk_i8" => Ok(__sdk::parse_reducer_args::<insert_pk_i_8_reducer::InsertPkI8Args>(
                 "insert_pk_i8",
                 &value.args,
-            )?)),
-            "insert_pk_identity" => Ok(Reducer::InsertPkIdentity(__sdk::spacetime_module::parse_reducer_args(
-                "insert_pk_identity",
-                &value.args,
-            )?)),
-            "insert_pk_string" => Ok(Reducer::InsertPkString(__sdk::spacetime_module::parse_reducer_args(
-                "insert_pk_string",
-                &value.args,
-            )?)),
-            "insert_pk_u128" => Ok(Reducer::InsertPkU128(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_pk_identity" => Ok(
+                __sdk::parse_reducer_args::<insert_pk_identity_reducer::InsertPkIdentityArgs>(
+                    "insert_pk_identity",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_pk_string" => Ok(
+                __sdk::parse_reducer_args::<insert_pk_string_reducer::InsertPkStringArgs>(
+                    "insert_pk_string",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_pk_u128" => Ok(__sdk::parse_reducer_args::<insert_pk_u_128_reducer::InsertPkU128Args>(
                 "insert_pk_u128",
                 &value.args,
-            )?)),
-            "insert_pk_u16" => Ok(Reducer::InsertPkU16(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_pk_u16" => Ok(__sdk::parse_reducer_args::<insert_pk_u_16_reducer::InsertPkU16Args>(
                 "insert_pk_u16",
                 &value.args,
-            )?)),
-            "insert_pk_u256" => Ok(Reducer::InsertPkU256(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_pk_u256" => Ok(__sdk::parse_reducer_args::<insert_pk_u_256_reducer::InsertPkU256Args>(
                 "insert_pk_u256",
                 &value.args,
-            )?)),
-            "insert_pk_u32" => Ok(Reducer::InsertPkU32(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_pk_u32" => Ok(__sdk::parse_reducer_args::<insert_pk_u_32_reducer::InsertPkU32Args>(
                 "insert_pk_u32",
                 &value.args,
-            )?)),
-            "insert_pk_u64" => Ok(Reducer::InsertPkU64(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_pk_u64" => Ok(__sdk::parse_reducer_args::<insert_pk_u_64_reducer::InsertPkU64Args>(
                 "insert_pk_u64",
                 &value.args,
-            )?)),
-            "insert_pk_u8" => Ok(Reducer::InsertPkU8(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_pk_u8" => Ok(__sdk::parse_reducer_args::<insert_pk_u_8_reducer::InsertPkU8Args>(
                 "insert_pk_u8",
                 &value.args,
-            )?)),
-            "insert_primitives_as_strings" => Ok(Reducer::InsertPrimitivesAsStrings(
-                __sdk::spacetime_module::parse_reducer_args("insert_primitives_as_strings", &value.args)?,
-            )),
-            "insert_table_holds_table" => Ok(Reducer::InsertTableHoldsTable(
-                __sdk::spacetime_module::parse_reducer_args("insert_table_holds_table", &value.args)?,
-            )),
-            "insert_unique_address" => Ok(Reducer::InsertUniqueAddress(
-                __sdk::spacetime_module::parse_reducer_args("insert_unique_address", &value.args)?,
-            )),
-            "insert_unique_bool" => Ok(Reducer::InsertUniqueBool(__sdk::spacetime_module::parse_reducer_args(
-                "insert_unique_bool",
-                &value.args,
-            )?)),
-            "insert_unique_i128" => Ok(Reducer::InsertUniqueI128(__sdk::spacetime_module::parse_reducer_args(
-                "insert_unique_i128",
-                &value.args,
-            )?)),
-            "insert_unique_i16" => Ok(Reducer::InsertUniqueI16(__sdk::spacetime_module::parse_reducer_args(
-                "insert_unique_i16",
-                &value.args,
-            )?)),
-            "insert_unique_i256" => Ok(Reducer::InsertUniqueI256(__sdk::spacetime_module::parse_reducer_args(
-                "insert_unique_i256",
-                &value.args,
-            )?)),
-            "insert_unique_i32" => Ok(Reducer::InsertUniqueI32(__sdk::spacetime_module::parse_reducer_args(
-                "insert_unique_i32",
-                &value.args,
-            )?)),
-            "insert_unique_i64" => Ok(Reducer::InsertUniqueI64(__sdk::spacetime_module::parse_reducer_args(
-                "insert_unique_i64",
-                &value.args,
-            )?)),
-            "insert_unique_i8" => Ok(Reducer::InsertUniqueI8(__sdk::spacetime_module::parse_reducer_args(
-                "insert_unique_i8",
-                &value.args,
-            )?)),
-            "insert_unique_identity" => Ok(Reducer::InsertUniqueIdentity(
-                __sdk::spacetime_module::parse_reducer_args("insert_unique_identity", &value.args)?,
-            )),
-            "insert_unique_string" => Ok(Reducer::InsertUniqueString(
-                __sdk::spacetime_module::parse_reducer_args("insert_unique_string", &value.args)?,
-            )),
-            "insert_unique_u128" => Ok(Reducer::InsertUniqueU128(__sdk::spacetime_module::parse_reducer_args(
-                "insert_unique_u128",
-                &value.args,
-            )?)),
-            "insert_unique_u16" => Ok(Reducer::InsertUniqueU16(__sdk::spacetime_module::parse_reducer_args(
-                "insert_unique_u16",
-                &value.args,
-            )?)),
-            "insert_unique_u256" => Ok(Reducer::InsertUniqueU256(__sdk::spacetime_module::parse_reducer_args(
-                "insert_unique_u256",
-                &value.args,
-            )?)),
-            "insert_unique_u32" => Ok(Reducer::InsertUniqueU32(__sdk::spacetime_module::parse_reducer_args(
-                "insert_unique_u32",
-                &value.args,
-            )?)),
-            "insert_unique_u64" => Ok(Reducer::InsertUniqueU64(__sdk::spacetime_module::parse_reducer_args(
-                "insert_unique_u64",
-                &value.args,
-            )?)),
-            "insert_unique_u8" => Ok(Reducer::InsertUniqueU8(__sdk::spacetime_module::parse_reducer_args(
-                "insert_unique_u8",
-                &value.args,
-            )?)),
-            "insert_vec_address" => Ok(Reducer::InsertVecAddress(__sdk::spacetime_module::parse_reducer_args(
-                "insert_vec_address",
-                &value.args,
-            )?)),
-            "insert_vec_bool" => Ok(Reducer::InsertVecBool(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_primitives_as_strings" => Ok(__sdk::parse_reducer_args::<
+                insert_primitives_as_strings_reducer::InsertPrimitivesAsStringsArgs,
+            >("insert_primitives_as_strings", &value.args)?
+            .into()),
+            "insert_table_holds_table" => Ok(__sdk::parse_reducer_args::<
+                insert_table_holds_table_reducer::InsertTableHoldsTableArgs,
+            >("insert_table_holds_table", &value.args)?
+            .into()),
+            "insert_unique_address" => Ok(__sdk::parse_reducer_args::<
+                insert_unique_address_reducer::InsertUniqueAddressArgs,
+            >("insert_unique_address", &value.args)?
+            .into()),
+            "insert_unique_bool" => Ok(
+                __sdk::parse_reducer_args::<insert_unique_bool_reducer::InsertUniqueBoolArgs>(
+                    "insert_unique_bool",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_unique_i128" => Ok(
+                __sdk::parse_reducer_args::<insert_unique_i_128_reducer::InsertUniqueI128Args>(
+                    "insert_unique_i128",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_unique_i16" => Ok(
+                __sdk::parse_reducer_args::<insert_unique_i_16_reducer::InsertUniqueI16Args>(
+                    "insert_unique_i16",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_unique_i256" => Ok(
+                __sdk::parse_reducer_args::<insert_unique_i_256_reducer::InsertUniqueI256Args>(
+                    "insert_unique_i256",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_unique_i32" => Ok(
+                __sdk::parse_reducer_args::<insert_unique_i_32_reducer::InsertUniqueI32Args>(
+                    "insert_unique_i32",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_unique_i64" => Ok(
+                __sdk::parse_reducer_args::<insert_unique_i_64_reducer::InsertUniqueI64Args>(
+                    "insert_unique_i64",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_unique_i8" => Ok(
+                __sdk::parse_reducer_args::<insert_unique_i_8_reducer::InsertUniqueI8Args>(
+                    "insert_unique_i8",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_unique_identity" => Ok(__sdk::parse_reducer_args::<
+                insert_unique_identity_reducer::InsertUniqueIdentityArgs,
+            >("insert_unique_identity", &value.args)?
+            .into()),
+            "insert_unique_string" => Ok(__sdk::parse_reducer_args::<
+                insert_unique_string_reducer::InsertUniqueStringArgs,
+            >("insert_unique_string", &value.args)?
+            .into()),
+            "insert_unique_u128" => Ok(
+                __sdk::parse_reducer_args::<insert_unique_u_128_reducer::InsertUniqueU128Args>(
+                    "insert_unique_u128",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_unique_u16" => Ok(
+                __sdk::parse_reducer_args::<insert_unique_u_16_reducer::InsertUniqueU16Args>(
+                    "insert_unique_u16",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_unique_u256" => Ok(
+                __sdk::parse_reducer_args::<insert_unique_u_256_reducer::InsertUniqueU256Args>(
+                    "insert_unique_u256",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_unique_u32" => Ok(
+                __sdk::parse_reducer_args::<insert_unique_u_32_reducer::InsertUniqueU32Args>(
+                    "insert_unique_u32",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_unique_u64" => Ok(
+                __sdk::parse_reducer_args::<insert_unique_u_64_reducer::InsertUniqueU64Args>(
+                    "insert_unique_u64",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_unique_u8" => Ok(
+                __sdk::parse_reducer_args::<insert_unique_u_8_reducer::InsertUniqueU8Args>(
+                    "insert_unique_u8",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_vec_address" => Ok(
+                __sdk::parse_reducer_args::<insert_vec_address_reducer::InsertVecAddressArgs>(
+                    "insert_vec_address",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_vec_bool" => Ok(__sdk::parse_reducer_args::<insert_vec_bool_reducer::InsertVecBoolArgs>(
                 "insert_vec_bool",
                 &value.args,
-            )?)),
-            "insert_vec_byte_struct" => Ok(Reducer::InsertVecByteStruct(
-                __sdk::spacetime_module::parse_reducer_args("insert_vec_byte_struct", &value.args)?,
-            )),
-            "insert_vec_enum_with_payload" => Ok(Reducer::InsertVecEnumWithPayload(
-                __sdk::spacetime_module::parse_reducer_args("insert_vec_enum_with_payload", &value.args)?,
-            )),
-            "insert_vec_every_primitive_struct" => Ok(Reducer::InsertVecEveryPrimitiveStruct(
-                __sdk::spacetime_module::parse_reducer_args("insert_vec_every_primitive_struct", &value.args)?,
-            )),
-            "insert_vec_every_vec_struct" => Ok(Reducer::InsertVecEveryVecStruct(
-                __sdk::spacetime_module::parse_reducer_args("insert_vec_every_vec_struct", &value.args)?,
-            )),
-            "insert_vec_f32" => Ok(Reducer::InsertVecF32(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_vec_byte_struct" => Ok(__sdk::parse_reducer_args::<
+                insert_vec_byte_struct_reducer::InsertVecByteStructArgs,
+            >("insert_vec_byte_struct", &value.args)?
+            .into()),
+            "insert_vec_enum_with_payload" => Ok(__sdk::parse_reducer_args::<
+                insert_vec_enum_with_payload_reducer::InsertVecEnumWithPayloadArgs,
+            >("insert_vec_enum_with_payload", &value.args)?
+            .into()),
+            "insert_vec_every_primitive_struct" => Ok(__sdk::parse_reducer_args::<
+                insert_vec_every_primitive_struct_reducer::InsertVecEveryPrimitiveStructArgs,
+            >("insert_vec_every_primitive_struct", &value.args)?
+            .into()),
+            "insert_vec_every_vec_struct" => Ok(__sdk::parse_reducer_args::<
+                insert_vec_every_vec_struct_reducer::InsertVecEveryVecStructArgs,
+            >("insert_vec_every_vec_struct", &value.args)?
+            .into()),
+            "insert_vec_f32" => Ok(__sdk::parse_reducer_args::<insert_vec_f_32_reducer::InsertVecF32Args>(
                 "insert_vec_f32",
                 &value.args,
-            )?)),
-            "insert_vec_f64" => Ok(Reducer::InsertVecF64(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_vec_f64" => Ok(__sdk::parse_reducer_args::<insert_vec_f_64_reducer::InsertVecF64Args>(
                 "insert_vec_f64",
                 &value.args,
-            )?)),
-            "insert_vec_i128" => Ok(Reducer::InsertVecI128(__sdk::spacetime_module::parse_reducer_args(
-                "insert_vec_i128",
-                &value.args,
-            )?)),
-            "insert_vec_i16" => Ok(Reducer::InsertVecI16(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_vec_i128" => Ok(
+                __sdk::parse_reducer_args::<insert_vec_i_128_reducer::InsertVecI128Args>(
+                    "insert_vec_i128",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_vec_i16" => Ok(__sdk::parse_reducer_args::<insert_vec_i_16_reducer::InsertVecI16Args>(
                 "insert_vec_i16",
                 &value.args,
-            )?)),
-            "insert_vec_i256" => Ok(Reducer::InsertVecI256(__sdk::spacetime_module::parse_reducer_args(
-                "insert_vec_i256",
-                &value.args,
-            )?)),
-            "insert_vec_i32" => Ok(Reducer::InsertVecI32(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_vec_i256" => Ok(
+                __sdk::parse_reducer_args::<insert_vec_i_256_reducer::InsertVecI256Args>(
+                    "insert_vec_i256",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_vec_i32" => Ok(__sdk::parse_reducer_args::<insert_vec_i_32_reducer::InsertVecI32Args>(
                 "insert_vec_i32",
                 &value.args,
-            )?)),
-            "insert_vec_i64" => Ok(Reducer::InsertVecI64(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_vec_i64" => Ok(__sdk::parse_reducer_args::<insert_vec_i_64_reducer::InsertVecI64Args>(
                 "insert_vec_i64",
                 &value.args,
-            )?)),
-            "insert_vec_i8" => Ok(Reducer::InsertVecI8(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_vec_i8" => Ok(__sdk::parse_reducer_args::<insert_vec_i_8_reducer::InsertVecI8Args>(
                 "insert_vec_i8",
                 &value.args,
-            )?)),
-            "insert_vec_identity" => Ok(Reducer::InsertVecIdentity(__sdk::spacetime_module::parse_reducer_args(
-                "insert_vec_identity",
-                &value.args,
-            )?)),
-            "insert_vec_simple_enum" => Ok(Reducer::InsertVecSimpleEnum(
-                __sdk::spacetime_module::parse_reducer_args("insert_vec_simple_enum", &value.args)?,
-            )),
-            "insert_vec_string" => Ok(Reducer::InsertVecString(__sdk::spacetime_module::parse_reducer_args(
-                "insert_vec_string",
-                &value.args,
-            )?)),
-            "insert_vec_u128" => Ok(Reducer::InsertVecU128(__sdk::spacetime_module::parse_reducer_args(
-                "insert_vec_u128",
-                &value.args,
-            )?)),
-            "insert_vec_u16" => Ok(Reducer::InsertVecU16(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_vec_identity" => Ok(
+                __sdk::parse_reducer_args::<insert_vec_identity_reducer::InsertVecIdentityArgs>(
+                    "insert_vec_identity",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_vec_simple_enum" => Ok(__sdk::parse_reducer_args::<
+                insert_vec_simple_enum_reducer::InsertVecSimpleEnumArgs,
+            >("insert_vec_simple_enum", &value.args)?
+            .into()),
+            "insert_vec_string" => Ok(
+                __sdk::parse_reducer_args::<insert_vec_string_reducer::InsertVecStringArgs>(
+                    "insert_vec_string",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_vec_u128" => Ok(
+                __sdk::parse_reducer_args::<insert_vec_u_128_reducer::InsertVecU128Args>(
+                    "insert_vec_u128",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_vec_u16" => Ok(__sdk::parse_reducer_args::<insert_vec_u_16_reducer::InsertVecU16Args>(
                 "insert_vec_u16",
                 &value.args,
-            )?)),
-            "insert_vec_u256" => Ok(Reducer::InsertVecU256(__sdk::spacetime_module::parse_reducer_args(
-                "insert_vec_u256",
-                &value.args,
-            )?)),
-            "insert_vec_u32" => Ok(Reducer::InsertVecU32(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_vec_u256" => Ok(
+                __sdk::parse_reducer_args::<insert_vec_u_256_reducer::InsertVecU256Args>(
+                    "insert_vec_u256",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "insert_vec_u32" => Ok(__sdk::parse_reducer_args::<insert_vec_u_32_reducer::InsertVecU32Args>(
                 "insert_vec_u32",
                 &value.args,
-            )?)),
-            "insert_vec_u64" => Ok(Reducer::InsertVecU64(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_vec_u64" => Ok(__sdk::parse_reducer_args::<insert_vec_u_64_reducer::InsertVecU64Args>(
                 "insert_vec_u64",
                 &value.args,
-            )?)),
-            "insert_vec_u8" => Ok(Reducer::InsertVecU8(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_vec_u8" => Ok(__sdk::parse_reducer_args::<insert_vec_u_8_reducer::InsertVecU8Args>(
                 "insert_vec_u8",
                 &value.args,
-            )?)),
-            "insert_vec_unit_struct" => Ok(Reducer::InsertVecUnitStruct(
-                __sdk::spacetime_module::parse_reducer_args("insert_vec_unit_struct", &value.args)?,
-            )),
-            "no_op_succeeds" => Ok(Reducer::NoOpSucceeds(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "insert_vec_unit_struct" => Ok(__sdk::parse_reducer_args::<
+                insert_vec_unit_struct_reducer::InsertVecUnitStructArgs,
+            >("insert_vec_unit_struct", &value.args)?
+            .into()),
+            "no_op_succeeds" => Ok(__sdk::parse_reducer_args::<no_op_succeeds_reducer::NoOpSucceedsArgs>(
                 "no_op_succeeds",
                 &value.args,
-            )?)),
-            "update_pk_address" => Ok(Reducer::UpdatePkAddress(__sdk::spacetime_module::parse_reducer_args(
-                "update_pk_address",
-                &value.args,
-            )?)),
-            "update_pk_bool" => Ok(Reducer::UpdatePkBool(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "send_scheduled_message" => Ok(__sdk::parse_reducer_args::<
+                send_scheduled_message_reducer::SendScheduledMessageArgs,
+            >("send_scheduled_message", &value.args)?
+            .into()),
+            "update_pk_address" => Ok(
+                __sdk::parse_reducer_args::<update_pk_address_reducer::UpdatePkAddressArgs>(
+                    "update_pk_address",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_pk_bool" => Ok(__sdk::parse_reducer_args::<update_pk_bool_reducer::UpdatePkBoolArgs>(
                 "update_pk_bool",
                 &value.args,
-            )?)),
-            "update_pk_i128" => Ok(Reducer::UpdatePkI128(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "update_pk_i128" => Ok(__sdk::parse_reducer_args::<update_pk_i_128_reducer::UpdatePkI128Args>(
                 "update_pk_i128",
                 &value.args,
-            )?)),
-            "update_pk_i16" => Ok(Reducer::UpdatePkI16(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "update_pk_i16" => Ok(__sdk::parse_reducer_args::<update_pk_i_16_reducer::UpdatePkI16Args>(
                 "update_pk_i16",
                 &value.args,
-            )?)),
-            "update_pk_i256" => Ok(Reducer::UpdatePkI256(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "update_pk_i256" => Ok(__sdk::parse_reducer_args::<update_pk_i_256_reducer::UpdatePkI256Args>(
                 "update_pk_i256",
                 &value.args,
-            )?)),
-            "update_pk_i32" => Ok(Reducer::UpdatePkI32(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "update_pk_i32" => Ok(__sdk::parse_reducer_args::<update_pk_i_32_reducer::UpdatePkI32Args>(
                 "update_pk_i32",
                 &value.args,
-            )?)),
-            "update_pk_i64" => Ok(Reducer::UpdatePkI64(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "update_pk_i64" => Ok(__sdk::parse_reducer_args::<update_pk_i_64_reducer::UpdatePkI64Args>(
                 "update_pk_i64",
                 &value.args,
-            )?)),
-            "update_pk_i8" => Ok(Reducer::UpdatePkI8(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "update_pk_i8" => Ok(__sdk::parse_reducer_args::<update_pk_i_8_reducer::UpdatePkI8Args>(
                 "update_pk_i8",
                 &value.args,
-            )?)),
-            "update_pk_identity" => Ok(Reducer::UpdatePkIdentity(__sdk::spacetime_module::parse_reducer_args(
-                "update_pk_identity",
-                &value.args,
-            )?)),
-            "update_pk_string" => Ok(Reducer::UpdatePkString(__sdk::spacetime_module::parse_reducer_args(
-                "update_pk_string",
-                &value.args,
-            )?)),
-            "update_pk_u128" => Ok(Reducer::UpdatePkU128(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "update_pk_identity" => Ok(
+                __sdk::parse_reducer_args::<update_pk_identity_reducer::UpdatePkIdentityArgs>(
+                    "update_pk_identity",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_pk_string" => Ok(
+                __sdk::parse_reducer_args::<update_pk_string_reducer::UpdatePkStringArgs>(
+                    "update_pk_string",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_pk_u128" => Ok(__sdk::parse_reducer_args::<update_pk_u_128_reducer::UpdatePkU128Args>(
                 "update_pk_u128",
                 &value.args,
-            )?)),
-            "update_pk_u16" => Ok(Reducer::UpdatePkU16(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "update_pk_u16" => Ok(__sdk::parse_reducer_args::<update_pk_u_16_reducer::UpdatePkU16Args>(
                 "update_pk_u16",
                 &value.args,
-            )?)),
-            "update_pk_u256" => Ok(Reducer::UpdatePkU256(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "update_pk_u256" => Ok(__sdk::parse_reducer_args::<update_pk_u_256_reducer::UpdatePkU256Args>(
                 "update_pk_u256",
                 &value.args,
-            )?)),
-            "update_pk_u32" => Ok(Reducer::UpdatePkU32(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "update_pk_u32" => Ok(__sdk::parse_reducer_args::<update_pk_u_32_reducer::UpdatePkU32Args>(
                 "update_pk_u32",
                 &value.args,
-            )?)),
-            "update_pk_u64" => Ok(Reducer::UpdatePkU64(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "update_pk_u64" => Ok(__sdk::parse_reducer_args::<update_pk_u_64_reducer::UpdatePkU64Args>(
                 "update_pk_u64",
                 &value.args,
-            )?)),
-            "update_pk_u8" => Ok(Reducer::UpdatePkU8(__sdk::spacetime_module::parse_reducer_args(
+            )?
+            .into()),
+            "update_pk_u8" => Ok(__sdk::parse_reducer_args::<update_pk_u_8_reducer::UpdatePkU8Args>(
                 "update_pk_u8",
                 &value.args,
-            )?)),
-            "update_unique_address" => Ok(Reducer::UpdateUniqueAddress(
-                __sdk::spacetime_module::parse_reducer_args("update_unique_address", &value.args)?,
-            )),
-            "update_unique_bool" => Ok(Reducer::UpdateUniqueBool(__sdk::spacetime_module::parse_reducer_args(
-                "update_unique_bool",
-                &value.args,
-            )?)),
-            "update_unique_i128" => Ok(Reducer::UpdateUniqueI128(__sdk::spacetime_module::parse_reducer_args(
-                "update_unique_i128",
-                &value.args,
-            )?)),
-            "update_unique_i16" => Ok(Reducer::UpdateUniqueI16(__sdk::spacetime_module::parse_reducer_args(
-                "update_unique_i16",
-                &value.args,
-            )?)),
-            "update_unique_i256" => Ok(Reducer::UpdateUniqueI256(__sdk::spacetime_module::parse_reducer_args(
-                "update_unique_i256",
-                &value.args,
-            )?)),
-            "update_unique_i32" => Ok(Reducer::UpdateUniqueI32(__sdk::spacetime_module::parse_reducer_args(
-                "update_unique_i32",
-                &value.args,
-            )?)),
-            "update_unique_i64" => Ok(Reducer::UpdateUniqueI64(__sdk::spacetime_module::parse_reducer_args(
-                "update_unique_i64",
-                &value.args,
-            )?)),
-            "update_unique_i8" => Ok(Reducer::UpdateUniqueI8(__sdk::spacetime_module::parse_reducer_args(
-                "update_unique_i8",
-                &value.args,
-            )?)),
-            "update_unique_identity" => Ok(Reducer::UpdateUniqueIdentity(
-                __sdk::spacetime_module::parse_reducer_args("update_unique_identity", &value.args)?,
-            )),
-            "update_unique_string" => Ok(Reducer::UpdateUniqueString(
-                __sdk::spacetime_module::parse_reducer_args("update_unique_string", &value.args)?,
-            )),
-            "update_unique_u128" => Ok(Reducer::UpdateUniqueU128(__sdk::spacetime_module::parse_reducer_args(
-                "update_unique_u128",
-                &value.args,
-            )?)),
-            "update_unique_u16" => Ok(Reducer::UpdateUniqueU16(__sdk::spacetime_module::parse_reducer_args(
-                "update_unique_u16",
-                &value.args,
-            )?)),
-            "update_unique_u256" => Ok(Reducer::UpdateUniqueU256(__sdk::spacetime_module::parse_reducer_args(
-                "update_unique_u256",
-                &value.args,
-            )?)),
-            "update_unique_u32" => Ok(Reducer::UpdateUniqueU32(__sdk::spacetime_module::parse_reducer_args(
-                "update_unique_u32",
-                &value.args,
-            )?)),
-            "update_unique_u64" => Ok(Reducer::UpdateUniqueU64(__sdk::spacetime_module::parse_reducer_args(
-                "update_unique_u64",
-                &value.args,
-            )?)),
-            "update_unique_u8" => Ok(Reducer::UpdateUniqueU8(__sdk::spacetime_module::parse_reducer_args(
-                "update_unique_u8",
-                &value.args,
-            )?)),
+            )?
+            .into()),
+            "update_unique_address" => Ok(__sdk::parse_reducer_args::<
+                update_unique_address_reducer::UpdateUniqueAddressArgs,
+            >("update_unique_address", &value.args)?
+            .into()),
+            "update_unique_bool" => Ok(
+                __sdk::parse_reducer_args::<update_unique_bool_reducer::UpdateUniqueBoolArgs>(
+                    "update_unique_bool",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_unique_i128" => Ok(
+                __sdk::parse_reducer_args::<update_unique_i_128_reducer::UpdateUniqueI128Args>(
+                    "update_unique_i128",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_unique_i16" => Ok(
+                __sdk::parse_reducer_args::<update_unique_i_16_reducer::UpdateUniqueI16Args>(
+                    "update_unique_i16",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_unique_i256" => Ok(
+                __sdk::parse_reducer_args::<update_unique_i_256_reducer::UpdateUniqueI256Args>(
+                    "update_unique_i256",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_unique_i32" => Ok(
+                __sdk::parse_reducer_args::<update_unique_i_32_reducer::UpdateUniqueI32Args>(
+                    "update_unique_i32",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_unique_i64" => Ok(
+                __sdk::parse_reducer_args::<update_unique_i_64_reducer::UpdateUniqueI64Args>(
+                    "update_unique_i64",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_unique_i8" => Ok(
+                __sdk::parse_reducer_args::<update_unique_i_8_reducer::UpdateUniqueI8Args>(
+                    "update_unique_i8",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_unique_identity" => Ok(__sdk::parse_reducer_args::<
+                update_unique_identity_reducer::UpdateUniqueIdentityArgs,
+            >("update_unique_identity", &value.args)?
+            .into()),
+            "update_unique_string" => Ok(__sdk::parse_reducer_args::<
+                update_unique_string_reducer::UpdateUniqueStringArgs,
+            >("update_unique_string", &value.args)?
+            .into()),
+            "update_unique_u128" => Ok(
+                __sdk::parse_reducer_args::<update_unique_u_128_reducer::UpdateUniqueU128Args>(
+                    "update_unique_u128",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_unique_u16" => Ok(
+                __sdk::parse_reducer_args::<update_unique_u_16_reducer::UpdateUniqueU16Args>(
+                    "update_unique_u16",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_unique_u256" => Ok(
+                __sdk::parse_reducer_args::<update_unique_u_256_reducer::UpdateUniqueU256Args>(
+                    "update_unique_u256",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_unique_u32" => Ok(
+                __sdk::parse_reducer_args::<update_unique_u_32_reducer::UpdateUniqueU32Args>(
+                    "update_unique_u32",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_unique_u64" => Ok(
+                __sdk::parse_reducer_args::<update_unique_u_64_reducer::UpdateUniqueU64Args>(
+                    "update_unique_u64",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "update_unique_u8" => Ok(
+                __sdk::parse_reducer_args::<update_unique_u_8_reducer::UpdateUniqueU8Args>(
+                    "update_unique_u8",
+                    &value.args,
+                )?
+                .into(),
+            ),
             _ => Err(__anyhow::anyhow!("Unknown reducer {:?}", value.reducer_name)),
         }
     }
@@ -1834,94 +2503,97 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
-    large_table: __sdk::spacetime_module::TableUpdate<LargeTable>,
-    one_address: __sdk::spacetime_module::TableUpdate<OneAddress>,
-    one_bool: __sdk::spacetime_module::TableUpdate<OneBool>,
-    one_byte_struct: __sdk::spacetime_module::TableUpdate<OneByteStruct>,
-    one_enum_with_payload: __sdk::spacetime_module::TableUpdate<OneEnumWithPayload>,
-    one_every_primitive_struct: __sdk::spacetime_module::TableUpdate<OneEveryPrimitiveStruct>,
-    one_every_vec_struct: __sdk::spacetime_module::TableUpdate<OneEveryVecStruct>,
-    one_f_32: __sdk::spacetime_module::TableUpdate<OneF32>,
-    one_f_64: __sdk::spacetime_module::TableUpdate<OneF64>,
-    one_i_128: __sdk::spacetime_module::TableUpdate<OneI128>,
-    one_i_16: __sdk::spacetime_module::TableUpdate<OneI16>,
-    one_i_256: __sdk::spacetime_module::TableUpdate<OneI256>,
-    one_i_32: __sdk::spacetime_module::TableUpdate<OneI32>,
-    one_i_64: __sdk::spacetime_module::TableUpdate<OneI64>,
-    one_i_8: __sdk::spacetime_module::TableUpdate<OneI8>,
-    one_identity: __sdk::spacetime_module::TableUpdate<OneIdentity>,
-    one_simple_enum: __sdk::spacetime_module::TableUpdate<OneSimpleEnum>,
-    one_string: __sdk::spacetime_module::TableUpdate<OneString>,
-    one_u_128: __sdk::spacetime_module::TableUpdate<OneU128>,
-    one_u_16: __sdk::spacetime_module::TableUpdate<OneU16>,
-    one_u_256: __sdk::spacetime_module::TableUpdate<OneU256>,
-    one_u_32: __sdk::spacetime_module::TableUpdate<OneU32>,
-    one_u_64: __sdk::spacetime_module::TableUpdate<OneU64>,
-    one_u_8: __sdk::spacetime_module::TableUpdate<OneU8>,
-    one_unit_struct: __sdk::spacetime_module::TableUpdate<OneUnitStruct>,
-    option_every_primitive_struct: __sdk::spacetime_module::TableUpdate<OptionEveryPrimitiveStruct>,
-    option_i_32: __sdk::spacetime_module::TableUpdate<OptionI32>,
-    option_identity: __sdk::spacetime_module::TableUpdate<OptionIdentity>,
-    option_simple_enum: __sdk::spacetime_module::TableUpdate<OptionSimpleEnum>,
-    option_string: __sdk::spacetime_module::TableUpdate<OptionString>,
-    option_vec_option_i_32: __sdk::spacetime_module::TableUpdate<OptionVecOptionI32>,
-    pk_address: __sdk::spacetime_module::TableUpdate<PkAddress>,
-    pk_bool: __sdk::spacetime_module::TableUpdate<PkBool>,
-    pk_i_128: __sdk::spacetime_module::TableUpdate<PkI128>,
-    pk_i_16: __sdk::spacetime_module::TableUpdate<PkI16>,
-    pk_i_256: __sdk::spacetime_module::TableUpdate<PkI256>,
-    pk_i_32: __sdk::spacetime_module::TableUpdate<PkI32>,
-    pk_i_64: __sdk::spacetime_module::TableUpdate<PkI64>,
-    pk_i_8: __sdk::spacetime_module::TableUpdate<PkI8>,
-    pk_identity: __sdk::spacetime_module::TableUpdate<PkIdentity>,
-    pk_string: __sdk::spacetime_module::TableUpdate<PkString>,
-    pk_u_128: __sdk::spacetime_module::TableUpdate<PkU128>,
-    pk_u_16: __sdk::spacetime_module::TableUpdate<PkU16>,
-    pk_u_256: __sdk::spacetime_module::TableUpdate<PkU256>,
-    pk_u_32: __sdk::spacetime_module::TableUpdate<PkU32>,
-    pk_u_64: __sdk::spacetime_module::TableUpdate<PkU64>,
-    pk_u_8: __sdk::spacetime_module::TableUpdate<PkU8>,
-    table_holds_table: __sdk::spacetime_module::TableUpdate<TableHoldsTable>,
-    unique_address: __sdk::spacetime_module::TableUpdate<UniqueAddress>,
-    unique_bool: __sdk::spacetime_module::TableUpdate<UniqueBool>,
-    unique_i_128: __sdk::spacetime_module::TableUpdate<UniqueI128>,
-    unique_i_16: __sdk::spacetime_module::TableUpdate<UniqueI16>,
-    unique_i_256: __sdk::spacetime_module::TableUpdate<UniqueI256>,
-    unique_i_32: __sdk::spacetime_module::TableUpdate<UniqueI32>,
-    unique_i_64: __sdk::spacetime_module::TableUpdate<UniqueI64>,
-    unique_i_8: __sdk::spacetime_module::TableUpdate<UniqueI8>,
-    unique_identity: __sdk::spacetime_module::TableUpdate<UniqueIdentity>,
-    unique_string: __sdk::spacetime_module::TableUpdate<UniqueString>,
-    unique_u_128: __sdk::spacetime_module::TableUpdate<UniqueU128>,
-    unique_u_16: __sdk::spacetime_module::TableUpdate<UniqueU16>,
-    unique_u_256: __sdk::spacetime_module::TableUpdate<UniqueU256>,
-    unique_u_32: __sdk::spacetime_module::TableUpdate<UniqueU32>,
-    unique_u_64: __sdk::spacetime_module::TableUpdate<UniqueU64>,
-    unique_u_8: __sdk::spacetime_module::TableUpdate<UniqueU8>,
-    vec_address: __sdk::spacetime_module::TableUpdate<VecAddress>,
-    vec_bool: __sdk::spacetime_module::TableUpdate<VecBool>,
-    vec_byte_struct: __sdk::spacetime_module::TableUpdate<VecByteStruct>,
-    vec_enum_with_payload: __sdk::spacetime_module::TableUpdate<VecEnumWithPayload>,
-    vec_every_primitive_struct: __sdk::spacetime_module::TableUpdate<VecEveryPrimitiveStruct>,
-    vec_every_vec_struct: __sdk::spacetime_module::TableUpdate<VecEveryVecStruct>,
-    vec_f_32: __sdk::spacetime_module::TableUpdate<VecF32>,
-    vec_f_64: __sdk::spacetime_module::TableUpdate<VecF64>,
-    vec_i_128: __sdk::spacetime_module::TableUpdate<VecI128>,
-    vec_i_16: __sdk::spacetime_module::TableUpdate<VecI16>,
-    vec_i_256: __sdk::spacetime_module::TableUpdate<VecI256>,
-    vec_i_32: __sdk::spacetime_module::TableUpdate<VecI32>,
-    vec_i_64: __sdk::spacetime_module::TableUpdate<VecI64>,
-    vec_i_8: __sdk::spacetime_module::TableUpdate<VecI8>,
-    vec_identity: __sdk::spacetime_module::TableUpdate<VecIdentity>,
-    vec_simple_enum: __sdk::spacetime_module::TableUpdate<VecSimpleEnum>,
-    vec_string: __sdk::spacetime_module::TableUpdate<VecString>,
-    vec_u_128: __sdk::spacetime_module::TableUpdate<VecU128>,
-    vec_u_16: __sdk::spacetime_module::TableUpdate<VecU16>,
-    vec_u_256: __sdk::spacetime_module::TableUpdate<VecU256>,
-    vec_u_32: __sdk::spacetime_module::TableUpdate<VecU32>,
-    vec_u_64: __sdk::spacetime_module::TableUpdate<VecU64>,
-    vec_u_8: __sdk::spacetime_module::TableUpdate<VecU8>,
-    vec_unit_struct: __sdk::spacetime_module::TableUpdate<VecUnitStruct>,
+    indexed_table: __sdk::TableUpdate<IndexedTable>,
+    indexed_table_2: __sdk::TableUpdate<IndexedTable2>,
+    large_table: __sdk::TableUpdate<LargeTable>,
+    one_address: __sdk::TableUpdate<OneAddress>,
+    one_bool: __sdk::TableUpdate<OneBool>,
+    one_byte_struct: __sdk::TableUpdate<OneByteStruct>,
+    one_enum_with_payload: __sdk::TableUpdate<OneEnumWithPayload>,
+    one_every_primitive_struct: __sdk::TableUpdate<OneEveryPrimitiveStruct>,
+    one_every_vec_struct: __sdk::TableUpdate<OneEveryVecStruct>,
+    one_f_32: __sdk::TableUpdate<OneF32>,
+    one_f_64: __sdk::TableUpdate<OneF64>,
+    one_i_128: __sdk::TableUpdate<OneI128>,
+    one_i_16: __sdk::TableUpdate<OneI16>,
+    one_i_256: __sdk::TableUpdate<OneI256>,
+    one_i_32: __sdk::TableUpdate<OneI32>,
+    one_i_64: __sdk::TableUpdate<OneI64>,
+    one_i_8: __sdk::TableUpdate<OneI8>,
+    one_identity: __sdk::TableUpdate<OneIdentity>,
+    one_simple_enum: __sdk::TableUpdate<OneSimpleEnum>,
+    one_string: __sdk::TableUpdate<OneString>,
+    one_u_128: __sdk::TableUpdate<OneU128>,
+    one_u_16: __sdk::TableUpdate<OneU16>,
+    one_u_256: __sdk::TableUpdate<OneU256>,
+    one_u_32: __sdk::TableUpdate<OneU32>,
+    one_u_64: __sdk::TableUpdate<OneU64>,
+    one_u_8: __sdk::TableUpdate<OneU8>,
+    one_unit_struct: __sdk::TableUpdate<OneUnitStruct>,
+    option_every_primitive_struct: __sdk::TableUpdate<OptionEveryPrimitiveStruct>,
+    option_i_32: __sdk::TableUpdate<OptionI32>,
+    option_identity: __sdk::TableUpdate<OptionIdentity>,
+    option_simple_enum: __sdk::TableUpdate<OptionSimpleEnum>,
+    option_string: __sdk::TableUpdate<OptionString>,
+    option_vec_option_i_32: __sdk::TableUpdate<OptionVecOptionI32>,
+    pk_address: __sdk::TableUpdate<PkAddress>,
+    pk_bool: __sdk::TableUpdate<PkBool>,
+    pk_i_128: __sdk::TableUpdate<PkI128>,
+    pk_i_16: __sdk::TableUpdate<PkI16>,
+    pk_i_256: __sdk::TableUpdate<PkI256>,
+    pk_i_32: __sdk::TableUpdate<PkI32>,
+    pk_i_64: __sdk::TableUpdate<PkI64>,
+    pk_i_8: __sdk::TableUpdate<PkI8>,
+    pk_identity: __sdk::TableUpdate<PkIdentity>,
+    pk_string: __sdk::TableUpdate<PkString>,
+    pk_u_128: __sdk::TableUpdate<PkU128>,
+    pk_u_16: __sdk::TableUpdate<PkU16>,
+    pk_u_256: __sdk::TableUpdate<PkU256>,
+    pk_u_32: __sdk::TableUpdate<PkU32>,
+    pk_u_64: __sdk::TableUpdate<PkU64>,
+    pk_u_8: __sdk::TableUpdate<PkU8>,
+    scheduled_table: __sdk::TableUpdate<ScheduledTable>,
+    table_holds_table: __sdk::TableUpdate<TableHoldsTable>,
+    unique_address: __sdk::TableUpdate<UniqueAddress>,
+    unique_bool: __sdk::TableUpdate<UniqueBool>,
+    unique_i_128: __sdk::TableUpdate<UniqueI128>,
+    unique_i_16: __sdk::TableUpdate<UniqueI16>,
+    unique_i_256: __sdk::TableUpdate<UniqueI256>,
+    unique_i_32: __sdk::TableUpdate<UniqueI32>,
+    unique_i_64: __sdk::TableUpdate<UniqueI64>,
+    unique_i_8: __sdk::TableUpdate<UniqueI8>,
+    unique_identity: __sdk::TableUpdate<UniqueIdentity>,
+    unique_string: __sdk::TableUpdate<UniqueString>,
+    unique_u_128: __sdk::TableUpdate<UniqueU128>,
+    unique_u_16: __sdk::TableUpdate<UniqueU16>,
+    unique_u_256: __sdk::TableUpdate<UniqueU256>,
+    unique_u_32: __sdk::TableUpdate<UniqueU32>,
+    unique_u_64: __sdk::TableUpdate<UniqueU64>,
+    unique_u_8: __sdk::TableUpdate<UniqueU8>,
+    vec_address: __sdk::TableUpdate<VecAddress>,
+    vec_bool: __sdk::TableUpdate<VecBool>,
+    vec_byte_struct: __sdk::TableUpdate<VecByteStruct>,
+    vec_enum_with_payload: __sdk::TableUpdate<VecEnumWithPayload>,
+    vec_every_primitive_struct: __sdk::TableUpdate<VecEveryPrimitiveStruct>,
+    vec_every_vec_struct: __sdk::TableUpdate<VecEveryVecStruct>,
+    vec_f_32: __sdk::TableUpdate<VecF32>,
+    vec_f_64: __sdk::TableUpdate<VecF64>,
+    vec_i_128: __sdk::TableUpdate<VecI128>,
+    vec_i_16: __sdk::TableUpdate<VecI16>,
+    vec_i_256: __sdk::TableUpdate<VecI256>,
+    vec_i_32: __sdk::TableUpdate<VecI32>,
+    vec_i_64: __sdk::TableUpdate<VecI64>,
+    vec_i_8: __sdk::TableUpdate<VecI8>,
+    vec_identity: __sdk::TableUpdate<VecIdentity>,
+    vec_simple_enum: __sdk::TableUpdate<VecSimpleEnum>,
+    vec_string: __sdk::TableUpdate<VecString>,
+    vec_u_128: __sdk::TableUpdate<VecU128>,
+    vec_u_16: __sdk::TableUpdate<VecU16>,
+    vec_u_256: __sdk::TableUpdate<VecU256>,
+    vec_u_32: __sdk::TableUpdate<VecU32>,
+    vec_u_64: __sdk::TableUpdate<VecU64>,
+    vec_u_8: __sdk::TableUpdate<VecU8>,
+    vec_unit_struct: __sdk::TableUpdate<VecUnitStruct>,
 }
 
 impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
@@ -1930,6 +2602,10 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
+                "indexed_table" => db_update.indexed_table = indexed_table_table::parse_table_update(table_update)?,
+                "indexed_table_2" => {
+                    db_update.indexed_table_2 = indexed_table_2_table::parse_table_update(table_update)?
+                }
                 "large_table" => db_update.large_table = large_table_table::parse_table_update(table_update)?,
                 "one_address" => db_update.one_address = one_address_table::parse_table_update(table_update)?,
                 "one_bool" => db_update.one_bool = one_bool_table::parse_table_update(table_update)?,
@@ -1999,6 +2675,9 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "pk_u32" => db_update.pk_u_32 = pk_u_32_table::parse_table_update(table_update)?,
                 "pk_u64" => db_update.pk_u_64 = pk_u_64_table::parse_table_update(table_update)?,
                 "pk_u8" => db_update.pk_u_8 = pk_u_8_table::parse_table_update(table_update)?,
+                "scheduled_table" => {
+                    db_update.scheduled_table = scheduled_table_table::parse_table_update(table_update)?
+                }
                 "table_holds_table" => {
                     db_update.table_holds_table = table_holds_table_table::parse_table_update(table_update)?
                 }
@@ -2065,12 +2744,14 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
     }
 }
 
-impl __sdk::spacetime_module::InModule for DbUpdate {
+impl __sdk::InModule for DbUpdate {
     type Module = RemoteModule;
 }
 
-impl __sdk::spacetime_module::DbUpdate for DbUpdate {
-    fn apply_to_client_cache(&self, cache: &mut __sdk::client_cache::ClientCache<RemoteModule>) {
+impl __sdk::DbUpdate for DbUpdate {
+    fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) {
+        cache.apply_diff_to_table::<IndexedTable>("indexed_table", &self.indexed_table);
+        cache.apply_diff_to_table::<IndexedTable2>("indexed_table_2", &self.indexed_table_2);
         cache.apply_diff_to_table::<LargeTable>("large_table", &self.large_table);
         cache.apply_diff_to_table::<OneAddress>("one_address", &self.one_address);
         cache.apply_diff_to_table::<OneBool>("one_bool", &self.one_bool);
@@ -2124,6 +2805,7 @@ impl __sdk::spacetime_module::DbUpdate for DbUpdate {
         cache.apply_diff_to_table::<PkU32>("pk_u32", &self.pk_u_32);
         cache.apply_diff_to_table::<PkU64>("pk_u64", &self.pk_u_64);
         cache.apply_diff_to_table::<PkU8>("pk_u8", &self.pk_u_8);
+        cache.apply_diff_to_table::<ScheduledTable>("scheduled_table", &self.scheduled_table);
         cache.apply_diff_to_table::<TableHoldsTable>("table_holds_table", &self.table_holds_table);
         cache.apply_diff_to_table::<UniqueAddress>("unique_address", &self.unique_address);
         cache.apply_diff_to_table::<UniqueBool>("unique_bool", &self.unique_bool);
@@ -2169,7 +2851,9 @@ impl __sdk::spacetime_module::DbUpdate for DbUpdate {
         cache.apply_diff_to_table::<VecU8>("vec_u8", &self.vec_u_8);
         cache.apply_diff_to_table::<VecUnitStruct>("vec_unit_struct", &self.vec_unit_struct);
     }
-    fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::callbacks::DbCallbacks<RemoteModule>) {
+    fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
+        callbacks.invoke_table_row_callbacks::<IndexedTable>("indexed_table", &self.indexed_table, event);
+        callbacks.invoke_table_row_callbacks::<IndexedTable2>("indexed_table_2", &self.indexed_table_2, event);
         callbacks.invoke_table_row_callbacks::<LargeTable>("large_table", &self.large_table, event);
         callbacks.invoke_table_row_callbacks::<OneAddress>("one_address", &self.one_address, event);
         callbacks.invoke_table_row_callbacks::<OneBool>("one_bool", &self.one_bool, event);
@@ -2237,6 +2921,7 @@ impl __sdk::spacetime_module::DbUpdate for DbUpdate {
         callbacks.invoke_table_row_callbacks::<PkU32>("pk_u32", &self.pk_u_32, event);
         callbacks.invoke_table_row_callbacks::<PkU64>("pk_u64", &self.pk_u_64, event);
         callbacks.invoke_table_row_callbacks::<PkU8>("pk_u8", &self.pk_u_8, event);
+        callbacks.invoke_table_row_callbacks::<ScheduledTable>("scheduled_table", &self.scheduled_table, event);
         callbacks.invoke_table_row_callbacks::<TableHoldsTable>("table_holds_table", &self.table_holds_table, event);
         callbacks.invoke_table_row_callbacks::<UniqueAddress>("unique_address", &self.unique_address, event);
         callbacks.invoke_table_row_callbacks::<UniqueBool>("unique_bool", &self.unique_bool, event);
@@ -2296,28 +2981,17 @@ impl __sdk::spacetime_module::DbUpdate for DbUpdate {
 #[doc(hidden)]
 pub struct RemoteModule;
 
-impl __sdk::spacetime_module::InModule for RemoteModule {
+impl __sdk::InModule for RemoteModule {
     type Module = Self;
-}
-
-impl __sdk::spacetime_module::SpacetimeModule for RemoteModule {
-    type DbConnection = DbConnection;
-    type EventContext = EventContext;
-    type Reducer = Reducer;
-    type DbView = RemoteTables;
-    type Reducers = RemoteReducers;
-    type SetReducerFlags = SetReducerFlags;
-    type DbUpdate = DbUpdate;
-    type SubscriptionHandle = SubscriptionHandle;
 }
 
 /// The `reducers` field of [`EventContext`] and [`DbConnection`],
 /// with methods provided by extension traits for each reducer defined by the module.
 pub struct RemoteReducers {
-    imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
+    imp: __sdk::DbContextImpl<RemoteModule>,
 }
 
-impl __sdk::spacetime_module::InModule for RemoteReducers {
+impl __sdk::InModule for RemoteReducers {
     type Module = RemoteModule;
 }
 
@@ -2328,20 +3002,20 @@ impl __sdk::spacetime_module::InModule for RemoteReducers {
 ///
 /// This type is currently unstable and may be removed without a major version bump.
 pub struct SetReducerFlags {
-    imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
+    imp: __sdk::DbContextImpl<RemoteModule>,
 }
 
-impl __sdk::spacetime_module::InModule for SetReducerFlags {
+impl __sdk::InModule for SetReducerFlags {
     type Module = RemoteModule;
 }
 
 /// The `db` field of [`EventContext`] and [`DbConnection`],
 /// with methods provided by extension traits for each table defined by the module.
 pub struct RemoteTables {
-    imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
+    imp: __sdk::DbContextImpl<RemoteModule>,
 }
 
-impl __sdk::spacetime_module::InModule for RemoteTables {
+impl __sdk::InModule for RemoteTables {
     type Module = RemoteModule;
 }
 
@@ -2373,14 +3047,14 @@ pub struct DbConnection {
     /// This type is currently unstable and may be removed without a major version bump.
     pub set_reducer_flags: SetReducerFlags,
 
-    imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
+    imp: __sdk::DbContextImpl<RemoteModule>,
 }
 
-impl __sdk::spacetime_module::InModule for DbConnection {
+impl __sdk::InModule for DbConnection {
     type Module = RemoteModule;
 }
 
-impl __sdk::db_context::DbContext for DbConnection {
+impl __sdk::DbContext for DbConnection {
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
     type SetReducerFlags = SetReducerFlags;
@@ -2403,10 +3077,10 @@ impl __sdk::db_context::DbContext for DbConnection {
         self.imp.disconnect()
     }
 
-    type SubscriptionBuilder = __sdk::subscription::SubscriptionBuilder<RemoteModule>;
+    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
 
     fn subscription_builder(&self) -> Self::SubscriptionBuilder {
-        __sdk::subscription::SubscriptionBuilder::new(&self.imp)
+        __sdk::SubscriptionBuilder::new(&self.imp)
     }
 
     fn try_identity(&self) -> Option<__sdk::Identity> {
@@ -2422,7 +3096,7 @@ impl DbConnection {
     ///
     /// See [`__sdk::DbConnectionBuilder`] for required and optional configuration for the new connection.
     pub fn builder() -> __sdk::DbConnectionBuilder<RemoteModule> {
-        __sdk::db_connection::DbConnectionBuilder::new()
+        __sdk::DbConnectionBuilder::new()
     }
 
     /// If any WebSocket messages are waiting, process one of them.
@@ -2488,8 +3162,8 @@ impl DbConnection {
     }
 }
 
-impl __sdk::spacetime_module::DbConnection for DbConnection {
-    fn new(imp: __sdk::db_connection::DbContextImpl<RemoteModule>) -> Self {
+impl __sdk::DbConnection for DbConnection {
+    fn new(imp: __sdk::DbContextImpl<RemoteModule>) -> Self {
         Self {
             db: RemoteTables { imp: imp.clone() },
             reducers: RemoteReducers { imp: imp.clone() },
@@ -2512,15 +3186,15 @@ pub struct EventContext {
     /// This type is currently unstable and may be removed without a major version bump.
     pub set_reducer_flags: SetReducerFlags,
     /// The event which caused these callbacks to run.
-    pub event: __sdk::event::Event<Reducer>,
-    imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
+    pub event: __sdk::Event<Reducer>,
+    imp: __sdk::DbContextImpl<RemoteModule>,
 }
 
-impl __sdk::spacetime_module::InModule for EventContext {
+impl __sdk::InModule for EventContext {
     type Module = RemoteModule;
 }
 
-impl __sdk::db_context::DbContext for EventContext {
+impl __sdk::DbContext for EventContext {
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
     type SetReducerFlags = SetReducerFlags;
@@ -2539,14 +3213,14 @@ impl __sdk::db_context::DbContext for EventContext {
         self.imp.is_active()
     }
 
-    fn disconnect(&self) -> spacetimedb_sdk::anyhow::Result<()> {
+    fn disconnect(&self) -> __anyhow::Result<()> {
         self.imp.disconnect()
     }
 
-    type SubscriptionBuilder = __sdk::subscription::SubscriptionBuilder<RemoteModule>;
+    type SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>;
 
     fn subscription_builder(&self) -> Self::SubscriptionBuilder {
-        __sdk::subscription::SubscriptionBuilder::new(&self.imp)
+        __sdk::SubscriptionBuilder::new(&self.imp)
     }
 
     fn try_identity(&self) -> Option<__sdk::Identity> {
@@ -2557,11 +3231,11 @@ impl __sdk::db_context::DbContext for EventContext {
     }
 }
 
-impl __sdk::spacetime_module::EventContext for EventContext {
-    fn event(&self) -> &__sdk::event::Event<Reducer> {
+impl __sdk::EventContext for EventContext {
+    fn event(&self) -> &__sdk::Event<Reducer> {
         &self.event
     }
-    fn new(imp: __sdk::db_connection::DbContextImpl<RemoteModule>, event: __sdk::event::Event<Reducer>) -> Self {
+    fn new(imp: __sdk::DbContextImpl<RemoteModule>, event: __sdk::Event<Reducer>) -> Self {
         Self {
             db: RemoteTables { imp: imp.clone() },
             reducers: RemoteReducers { imp: imp.clone() },
@@ -2575,15 +3249,15 @@ impl __sdk::spacetime_module::EventContext for EventContext {
 /// A handle on a subscribed query.
 // TODO: Document this better after implementing the new subscription API.
 pub struct SubscriptionHandle {
-    imp: __sdk::subscription::SubscriptionHandleImpl<RemoteModule>,
+    imp: __sdk::SubscriptionHandleImpl<RemoteModule>,
 }
 
-impl __sdk::spacetime_module::InModule for SubscriptionHandle {
+impl __sdk::InModule for SubscriptionHandle {
     type Module = RemoteModule;
 }
 
-impl __sdk::spacetime_module::SubscriptionHandle for SubscriptionHandle {
-    fn new(imp: __sdk::subscription::SubscriptionHandleImpl<RemoteModule>) -> Self {
+impl __sdk::SubscriptionHandle for SubscriptionHandle {
+    fn new(imp: __sdk::SubscriptionHandleImpl<RemoteModule>) -> Self {
         Self { imp }
     }
 }
@@ -2598,7 +3272,7 @@ pub trait RemoteDbContext:
     DbView = RemoteTables,
     Reducers = RemoteReducers,
     SetReducerFlags = SetReducerFlags,
-    SubscriptionBuilder = __sdk::subscription::SubscriptionBuilder<RemoteModule>,
+    SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
 >
 {
 }
@@ -2607,8 +3281,113 @@ impl<
             DbView = RemoteTables,
             Reducers = RemoteReducers,
             SetReducerFlags = SetReducerFlags,
-            SubscriptionBuilder = __sdk::subscription::SubscriptionBuilder<RemoteModule>,
+            SubscriptionBuilder = __sdk::SubscriptionBuilder<RemoteModule>,
         >,
     > RemoteDbContext for Ctx
 {
+}
+
+impl __sdk::SpacetimeModule for RemoteModule {
+    type DbConnection = DbConnection;
+    type EventContext = EventContext;
+    type Reducer = Reducer;
+    type DbView = RemoteTables;
+    type Reducers = RemoteReducers;
+    type SetReducerFlags = SetReducerFlags;
+    type DbUpdate = DbUpdate;
+    type SubscriptionHandle = SubscriptionHandle;
+
+    fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
+        indexed_table_table::register_table(client_cache);
+        indexed_table_2_table::register_table(client_cache);
+        large_table_table::register_table(client_cache);
+        one_address_table::register_table(client_cache);
+        one_bool_table::register_table(client_cache);
+        one_byte_struct_table::register_table(client_cache);
+        one_enum_with_payload_table::register_table(client_cache);
+        one_every_primitive_struct_table::register_table(client_cache);
+        one_every_vec_struct_table::register_table(client_cache);
+        one_f_32_table::register_table(client_cache);
+        one_f_64_table::register_table(client_cache);
+        one_i_128_table::register_table(client_cache);
+        one_i_16_table::register_table(client_cache);
+        one_i_256_table::register_table(client_cache);
+        one_i_32_table::register_table(client_cache);
+        one_i_64_table::register_table(client_cache);
+        one_i_8_table::register_table(client_cache);
+        one_identity_table::register_table(client_cache);
+        one_simple_enum_table::register_table(client_cache);
+        one_string_table::register_table(client_cache);
+        one_u_128_table::register_table(client_cache);
+        one_u_16_table::register_table(client_cache);
+        one_u_256_table::register_table(client_cache);
+        one_u_32_table::register_table(client_cache);
+        one_u_64_table::register_table(client_cache);
+        one_u_8_table::register_table(client_cache);
+        one_unit_struct_table::register_table(client_cache);
+        option_every_primitive_struct_table::register_table(client_cache);
+        option_i_32_table::register_table(client_cache);
+        option_identity_table::register_table(client_cache);
+        option_simple_enum_table::register_table(client_cache);
+        option_string_table::register_table(client_cache);
+        option_vec_option_i_32_table::register_table(client_cache);
+        pk_address_table::register_table(client_cache);
+        pk_bool_table::register_table(client_cache);
+        pk_i_128_table::register_table(client_cache);
+        pk_i_16_table::register_table(client_cache);
+        pk_i_256_table::register_table(client_cache);
+        pk_i_32_table::register_table(client_cache);
+        pk_i_64_table::register_table(client_cache);
+        pk_i_8_table::register_table(client_cache);
+        pk_identity_table::register_table(client_cache);
+        pk_string_table::register_table(client_cache);
+        pk_u_128_table::register_table(client_cache);
+        pk_u_16_table::register_table(client_cache);
+        pk_u_256_table::register_table(client_cache);
+        pk_u_32_table::register_table(client_cache);
+        pk_u_64_table::register_table(client_cache);
+        pk_u_8_table::register_table(client_cache);
+        scheduled_table_table::register_table(client_cache);
+        table_holds_table_table::register_table(client_cache);
+        unique_address_table::register_table(client_cache);
+        unique_bool_table::register_table(client_cache);
+        unique_i_128_table::register_table(client_cache);
+        unique_i_16_table::register_table(client_cache);
+        unique_i_256_table::register_table(client_cache);
+        unique_i_32_table::register_table(client_cache);
+        unique_i_64_table::register_table(client_cache);
+        unique_i_8_table::register_table(client_cache);
+        unique_identity_table::register_table(client_cache);
+        unique_string_table::register_table(client_cache);
+        unique_u_128_table::register_table(client_cache);
+        unique_u_16_table::register_table(client_cache);
+        unique_u_256_table::register_table(client_cache);
+        unique_u_32_table::register_table(client_cache);
+        unique_u_64_table::register_table(client_cache);
+        unique_u_8_table::register_table(client_cache);
+        vec_address_table::register_table(client_cache);
+        vec_bool_table::register_table(client_cache);
+        vec_byte_struct_table::register_table(client_cache);
+        vec_enum_with_payload_table::register_table(client_cache);
+        vec_every_primitive_struct_table::register_table(client_cache);
+        vec_every_vec_struct_table::register_table(client_cache);
+        vec_f_32_table::register_table(client_cache);
+        vec_f_64_table::register_table(client_cache);
+        vec_i_128_table::register_table(client_cache);
+        vec_i_16_table::register_table(client_cache);
+        vec_i_256_table::register_table(client_cache);
+        vec_i_32_table::register_table(client_cache);
+        vec_i_64_table::register_table(client_cache);
+        vec_i_8_table::register_table(client_cache);
+        vec_identity_table::register_table(client_cache);
+        vec_simple_enum_table::register_table(client_cache);
+        vec_string_table::register_table(client_cache);
+        vec_u_128_table::register_table(client_cache);
+        vec_u_16_table::register_table(client_cache);
+        vec_u_256_table::register_table(client_cache);
+        vec_u_32_table::register_table(client_cache);
+        vec_u_64_table::register_table(client_cache);
+        vec_u_8_table::register_table(client_cache);
+        vec_unit_struct_table::register_table(client_cache);
+    }
 }

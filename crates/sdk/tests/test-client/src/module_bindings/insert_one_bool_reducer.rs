@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneBool {
+pub(super) struct InsertOneBoolArgs {
     pub b: bool,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOneBool {
+impl From<InsertOneBoolArgs> for super::Reducer {
+    fn from(args: InsertOneBoolArgs) -> Self {
+        Self::InsertOneBool { b: args.b }
+    }
+}
+
+impl __sdk::InModule for InsertOneBoolArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOneBoolCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOneBoolCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_one_bool`.
@@ -52,20 +57,32 @@ pub trait insert_one_bool {
 
 impl insert_one_bool for super::RemoteReducers {
     fn insert_one_bool(&self, b: bool) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_bool", InsertOneBool { b })
+        self.imp.call_reducer("insert_one_bool", InsertOneBoolArgs { b })
     }
     fn on_insert_one_bool(
         &self,
         mut callback: impl FnMut(&super::EventContext, &bool) + Send + 'static,
     ) -> InsertOneBoolCallbackId {
-        InsertOneBoolCallbackId(self.imp.on_reducer::<InsertOneBool>(
+        InsertOneBoolCallbackId(self.imp.on_reducer(
             "insert_one_bool",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneBool| callback(ctx, &args.b)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneBool { b },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, b)
+            }),
         ))
     }
     fn remove_on_insert_one_bool(&self, callback: InsertOneBoolCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneBool>("insert_one_bool", callback.0)
+        self.imp.remove_on_reducer("insert_one_bool", callback.0)
     }
 }
 

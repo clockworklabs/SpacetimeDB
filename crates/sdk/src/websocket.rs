@@ -2,7 +2,6 @@
 //!
 //! This module is internal, and may incompatibly change without warning.
 
-use crate::ws_messages::{ClientMessage, ServerMessage};
 use anyhow::{anyhow, bail, Context, Result};
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt as _, TryStreamExt};
@@ -12,6 +11,7 @@ use spacetimedb_client_api_messages::websocket::{
     brotli_decompress, gzip_decompress, BsatnFormat, Compression, SERVER_MSG_COMPRESSION_TAG_BROTLI,
     SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
 };
+use spacetimedb_client_api_messages::websocket::{ClientMessage, ServerMessage};
 use spacetimedb_lib::{bsatn, Address, Identity};
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};

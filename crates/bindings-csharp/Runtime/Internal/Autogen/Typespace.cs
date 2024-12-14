@@ -18,9 +18,7 @@ namespace SpacetimeDB.Internal
 		[DataMember(Name = "types")]
 		public System.Collections.Generic.List<SpacetimeDB.BSATN.AlgebraicType> Types;
 
-		public Typespace(
-			System.Collections.Generic.List<SpacetimeDB.BSATN.AlgebraicType> Types
-		)
+		public Typespace(System.Collections.Generic.List<SpacetimeDB.BSATN.AlgebraicType> Types)
 		{
 			this.Types = Types;
 		}

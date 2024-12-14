@@ -2,24 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdateUniqueBool {
+pub(super) struct UpdateUniqueBoolArgs {
     pub b: bool,
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for UpdateUniqueBool {
+impl From<UpdateUniqueBoolArgs> for super::Reducer {
+    fn from(args: UpdateUniqueBoolArgs) -> Self {
+        Self::UpdateUniqueBool {
+            b: args.b,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdateUniqueBoolArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct UpdateUniqueBoolCallbackId(__sdk::callbacks::CallbackId);
+pub struct UpdateUniqueBoolCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `update_unique_bool`.
@@ -54,20 +62,32 @@ pub trait update_unique_bool {
 impl update_unique_bool for super::RemoteReducers {
     fn update_unique_bool(&self, b: bool, data: i32) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("update_unique_bool", UpdateUniqueBool { b, data })
+            .call_reducer("update_unique_bool", UpdateUniqueBoolArgs { b, data })
     }
     fn on_update_unique_bool(
         &self,
         mut callback: impl FnMut(&super::EventContext, &bool, &i32) + Send + 'static,
     ) -> UpdateUniqueBoolCallbackId {
-        UpdateUniqueBoolCallbackId(self.imp.on_reducer::<UpdateUniqueBool>(
+        UpdateUniqueBoolCallbackId(self.imp.on_reducer(
             "update_unique_bool",
-            Box::new(move |ctx: &super::EventContext, args: &UpdateUniqueBool| callback(ctx, &args.b, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdateUniqueBool { b, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, b, data)
+            }),
         ))
     }
     fn remove_on_update_unique_bool(&self, callback: UpdateUniqueBoolCallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdateUniqueBool>("update_unique_bool", callback.0)
+        self.imp.remove_on_reducer("update_unique_bool", callback.0)
     }
 }
 

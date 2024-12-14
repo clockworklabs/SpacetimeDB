@@ -2,24 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertUniqueString {
+pub(super) struct InsertUniqueStringArgs {
     pub s: String,
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for InsertUniqueString {
+impl From<InsertUniqueStringArgs> for super::Reducer {
+    fn from(args: InsertUniqueStringArgs) -> Self {
+        Self::InsertUniqueString {
+            s: args.s,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertUniqueStringArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertUniqueStringCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertUniqueStringCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_unique_string`.
@@ -54,20 +62,32 @@ pub trait insert_unique_string {
 impl insert_unique_string for super::RemoteReducers {
     fn insert_unique_string(&self, s: String, data: i32) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_unique_string", InsertUniqueString { s, data })
+            .call_reducer("insert_unique_string", InsertUniqueStringArgs { s, data })
     }
     fn on_insert_unique_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String, &i32) + Send + 'static,
     ) -> InsertUniqueStringCallbackId {
-        InsertUniqueStringCallbackId(self.imp.on_reducer::<InsertUniqueString>(
+        InsertUniqueStringCallbackId(self.imp.on_reducer(
             "insert_unique_string",
-            Box::new(move |ctx: &super::EventContext, args: &InsertUniqueString| callback(ctx, &args.s, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertUniqueString { s, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s, data)
+            }),
         ))
     }
     fn remove_on_insert_unique_string(&self, callback: InsertUniqueStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueString>("insert_unique_string", callback.0)
+        self.imp.remove_on_reducer("insert_unique_string", callback.0)
     }
 }
 

@@ -2,24 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdatePkU32 {
+pub(super) struct UpdatePkU32Args {
     pub n: u32,
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for UpdatePkU32 {
+impl From<UpdatePkU32Args> for super::Reducer {
+    fn from(args: UpdatePkU32Args) -> Self {
+        Self::UpdatePkU32 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdatePkU32Args {
     type Module = super::RemoteModule;
 }
 
-pub struct UpdatePkU32CallbackId(__sdk::callbacks::CallbackId);
+pub struct UpdatePkU32CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `update_pk_u32`.
@@ -53,19 +61,32 @@ pub trait update_pk_u_32 {
 
 impl update_pk_u_32 for super::RemoteReducers {
     fn update_pk_u_32(&self, n: u32, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_pk_u32", UpdatePkU32 { n, data })
+        self.imp.call_reducer("update_pk_u32", UpdatePkU32Args { n, data })
     }
     fn on_update_pk_u_32(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u32, &i32) + Send + 'static,
     ) -> UpdatePkU32CallbackId {
-        UpdatePkU32CallbackId(self.imp.on_reducer::<UpdatePkU32>(
+        UpdatePkU32CallbackId(self.imp.on_reducer(
             "update_pk_u32",
-            Box::new(move |ctx: &super::EventContext, args: &UpdatePkU32| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdatePkU32 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_update_pk_u_32(&self, callback: UpdatePkU32CallbackId) {
-        self.imp.remove_on_reducer::<UpdatePkU32>("update_pk_u32", callback.0)
+        self.imp.remove_on_reducer("update_pk_u32", callback.0)
     }
 }
 

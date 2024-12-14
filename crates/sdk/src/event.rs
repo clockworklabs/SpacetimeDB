@@ -11,7 +11,7 @@
 //! to determine what change in your connection's state caused the callback to run.
 
 use crate::spacetime_module::{DbUpdate as _, SpacetimeModule};
-use spacetimedb_client_api_messages::websocket::BsatnFormat;
+use spacetimedb_client_api_messages::websocket as ws;
 use spacetimedb_lib::{Address, Identity};
 use std::time::SystemTime;
 
@@ -99,14 +99,12 @@ pub enum Status {
 
 impl Status {
     pub(crate) fn parse_status_and_update<M: SpacetimeModule>(
-        status: crate::ws_messages::UpdateStatus<BsatnFormat>,
+        status: ws::UpdateStatus<ws::BsatnFormat>,
     ) -> anyhow::Result<(Self, Option<M::DbUpdate>)> {
         Ok(match status {
-            crate::ws_messages::UpdateStatus::Committed(update) => {
-                (Self::Committed, Some(M::DbUpdate::parse_update(update)?))
-            }
-            crate::ws_messages::UpdateStatus::Failed(errmsg) => (Self::Failed(errmsg), None),
-            crate::ws_messages::UpdateStatus::OutOfEnergy => (Self::OutOfEnergy, None),
+            ws::UpdateStatus::Committed(update) => (Self::Committed, Some(M::DbUpdate::parse_update(update)?)),
+            ws::UpdateStatus::Failed(errmsg) => (Self::Failed(errmsg), None),
+            ws::UpdateStatus::OutOfEnergy => (Self::OutOfEnergy, None),
         })
     }
 }

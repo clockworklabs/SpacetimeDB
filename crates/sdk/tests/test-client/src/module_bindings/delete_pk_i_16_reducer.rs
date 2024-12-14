@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeletePkI16 {
+pub(super) struct DeletePkI16Args {
     pub n: i16,
 }
 
-impl __sdk::spacetime_module::InModule for DeletePkI16 {
+impl From<DeletePkI16Args> for super::Reducer {
+    fn from(args: DeletePkI16Args) -> Self {
+        Self::DeletePkI16 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for DeletePkI16Args {
     type Module = super::RemoteModule;
 }
 
-pub struct DeletePkI16CallbackId(__sdk::callbacks::CallbackId);
+pub struct DeletePkI16CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `delete_pk_i16`.
@@ -52,19 +57,32 @@ pub trait delete_pk_i_16 {
 
 impl delete_pk_i_16 for super::RemoteReducers {
     fn delete_pk_i_16(&self, n: i16) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_i16", DeletePkI16 { n })
+        self.imp.call_reducer("delete_pk_i16", DeletePkI16Args { n })
     }
     fn on_delete_pk_i_16(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i16) + Send + 'static,
     ) -> DeletePkI16CallbackId {
-        DeletePkI16CallbackId(self.imp.on_reducer::<DeletePkI16>(
+        DeletePkI16CallbackId(self.imp.on_reducer(
             "delete_pk_i16",
-            Box::new(move |ctx: &super::EventContext, args: &DeletePkI16| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeletePkI16 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_delete_pk_i_16(&self, callback: DeletePkI16CallbackId) {
-        self.imp.remove_on_reducer::<DeletePkI16>("delete_pk_i16", callback.0)
+        self.imp.remove_on_reducer("delete_pk_i16", callback.0)
     }
 }
 

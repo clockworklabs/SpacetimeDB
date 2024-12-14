@@ -2,10 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::byte_struct_type::ByteStruct;
@@ -17,7 +16,7 @@ use super::unit_struct_type::UnitStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertLargeTable {
+pub(super) struct InsertLargeTableArgs {
     pub a: u8,
     pub b: u16,
     pub c: u32,
@@ -42,11 +41,40 @@ pub struct InsertLargeTable {
     pub v: EveryVecStruct,
 }
 
-impl __sdk::spacetime_module::InModule for InsertLargeTable {
+impl From<InsertLargeTableArgs> for super::Reducer {
+    fn from(args: InsertLargeTableArgs) -> Self {
+        Self::InsertLargeTable {
+            a: args.a,
+            b: args.b,
+            c: args.c,
+            d: args.d,
+            e: args.e,
+            f: args.f,
+            g: args.g,
+            h: args.h,
+            i: args.i,
+            j: args.j,
+            k: args.k,
+            l: args.l,
+            m: args.m,
+            n: args.n,
+            o: args.o,
+            p: args.p,
+            q: args.q,
+            r: args.r,
+            s: args.s,
+            t: args.t,
+            u: args.u,
+            v: args.v,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertLargeTableArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertLargeTableCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertLargeTableCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_large_table`.
@@ -155,7 +183,7 @@ impl insert_large_table for super::RemoteReducers {
     ) -> __anyhow::Result<()> {
         self.imp.call_reducer(
             "insert_large_table",
-            InsertLargeTable {
+            InsertLargeTableArgs {
                 a,
                 b,
                 c,
@@ -210,20 +238,50 @@ impl insert_large_table for super::RemoteReducers {
             ) + Send
             + 'static,
     ) -> InsertLargeTableCallbackId {
-        InsertLargeTableCallbackId(self.imp.on_reducer::<InsertLargeTable>(
+        InsertLargeTableCallbackId(self.imp.on_reducer(
             "insert_large_table",
-            Box::new(move |ctx: &super::EventContext, args: &InsertLargeTable| {
-                callback(
-                    ctx, &args.a, &args.b, &args.c, &args.d, &args.e, &args.f, &args.g, &args.h, &args.i, &args.j,
-                    &args.k, &args.l, &args.m, &args.n, &args.o, &args.p, &args.q, &args.r, &args.s, &args.t, &args.u,
-                    &args.v,
-                )
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer:
+                                super::Reducer::InsertLargeTable {
+                                    a,
+                                    b,
+                                    c,
+                                    d,
+                                    e,
+                                    f,
+                                    g,
+                                    h,
+                                    i,
+                                    j,
+                                    k,
+                                    l,
+                                    m,
+                                    n,
+                                    o,
+                                    p,
+                                    q,
+                                    r,
+                                    s,
+                                    t,
+                                    u,
+                                    v,
+                                },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v)
             }),
         ))
     }
     fn remove_on_insert_large_table(&self, callback: InsertLargeTableCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertLargeTable>("insert_large_table", callback.0)
+        self.imp.remove_on_reducer("insert_large_table", callback.0)
     }
 }
 

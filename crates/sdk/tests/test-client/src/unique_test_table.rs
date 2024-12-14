@@ -1,8 +1,5 @@
 use crate::module_bindings::*;
-use spacetimedb_sdk::{
-    sats::{i256, u256},
-    Address, Event, Identity, Table,
-};
+use spacetimedb_sdk::{i256, u256, Address, Event, Identity, Table};
 use std::sync::Arc;
 use test_counter::TestCounter;
 
@@ -116,10 +113,10 @@ macro_rules! impl_unique_test_table {
             }
 
             fn is_insert_reducer_event(event: &Reducer) -> bool {
-                matches!(event, Reducer::$insert_reducer_event(_))
+                matches!(event, Reducer::$insert_reducer_event { .. })
             }
             fn is_delete_reducer_event(event: &Reducer) -> bool {
-                matches!(event, Reducer::$delete_reducer_event(_))
+                matches!(event, Reducer::$delete_reducer_event { .. })
             }
 
             fn insert(ctx: &impl RemoteDbContext, key: Self::Key, value: i32) {

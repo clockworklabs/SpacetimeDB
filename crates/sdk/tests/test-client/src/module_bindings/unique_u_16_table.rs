@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::unique_u_16_type::UniqueU16;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `unique_u16`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.unique_u_16().on_insert(...)`.
 pub struct UniqueU16TableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<UniqueU16>,
+    imp: __sdk::TableHandle<UniqueU16>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl UniqueU16TableAccess for super::RemoteTables {
     }
 }
 
-pub struct UniqueU16InsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct UniqueU16DeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct UniqueU16InsertCallbackId(__sdk::CallbackId);
+pub struct UniqueU16DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for UniqueU16TableHandle<'ctx> {
+impl<'ctx> __sdk::Table for UniqueU16TableHandle<'ctx> {
     type Row = UniqueU16;
     type EventContext = super::EventContext;
 
@@ -83,10 +82,15 @@ impl<'ctx> __sdk::table::Table for UniqueU16TableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueU16>("unique_u16");
+    _table.add_unique_constraint::<u16>("n", |row| &row.n);
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueU16>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<UniqueU16>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"unique_u16\"")
 }
 
@@ -98,7 +102,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.unique_u_16().n().find(...)`.
 pub struct UniqueU16NUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraint<UniqueU16, u16>,
+    imp: __sdk::UniqueConstraintHandle<UniqueU16, u16>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -106,7 +110,7 @@ impl<'ctx> UniqueU16TableHandle<'ctx> {
     /// Get a handle on the `n` unique index on the table `unique_u16`.
     pub fn n(&self) -> UniqueU16NUnique<'ctx> {
         UniqueU16NUnique {
-            imp: self.imp.get_unique_constraint::<u16>("n", |row| &row.n),
+            imp: self.imp.get_unique_constraint::<u16>("n"),
             phantom: std::marker::PhantomData,
         }
     }

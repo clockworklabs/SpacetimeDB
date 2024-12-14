@@ -2,24 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertUniqueU32 {
+pub(super) struct InsertUniqueU32Args {
     pub n: u32,
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for InsertUniqueU32 {
+impl From<InsertUniqueU32Args> for super::Reducer {
+    fn from(args: InsertUniqueU32Args) -> Self {
+        Self::InsertUniqueU32 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertUniqueU32Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertUniqueU32CallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertUniqueU32CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_unique_u32`.
@@ -53,20 +61,33 @@ pub trait insert_unique_u_32 {
 
 impl insert_unique_u_32 for super::RemoteReducers {
     fn insert_unique_u_32(&self, n: u32, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_unique_u32", InsertUniqueU32 { n, data })
+        self.imp
+            .call_reducer("insert_unique_u32", InsertUniqueU32Args { n, data })
     }
     fn on_insert_unique_u_32(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u32, &i32) + Send + 'static,
     ) -> InsertUniqueU32CallbackId {
-        InsertUniqueU32CallbackId(self.imp.on_reducer::<InsertUniqueU32>(
+        InsertUniqueU32CallbackId(self.imp.on_reducer(
             "insert_unique_u32",
-            Box::new(move |ctx: &super::EventContext, args: &InsertUniqueU32| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertUniqueU32 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_insert_unique_u_32(&self, callback: InsertUniqueU32CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueU32>("insert_unique_u32", callback.0)
+        self.imp.remove_on_reducer("insert_unique_u32", callback.0)
     }
 }
 

@@ -2,25 +2,30 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::byte_struct_type::ByteStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneByteStruct {
+pub(super) struct InsertOneByteStructArgs {
     pub s: ByteStruct,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOneByteStruct {
+impl From<InsertOneByteStructArgs> for super::Reducer {
+    fn from(args: InsertOneByteStructArgs) -> Self {
+        Self::InsertOneByteStruct { s: args.s }
+    }
+}
+
+impl __sdk::InModule for InsertOneByteStructArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOneByteStructCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOneByteStructCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_one_byte_struct`.
@@ -55,20 +60,32 @@ pub trait insert_one_byte_struct {
 impl insert_one_byte_struct for super::RemoteReducers {
     fn insert_one_byte_struct(&self, s: ByteStruct) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_one_byte_struct", InsertOneByteStruct { s })
+            .call_reducer("insert_one_byte_struct", InsertOneByteStructArgs { s })
     }
     fn on_insert_one_byte_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &ByteStruct) + Send + 'static,
     ) -> InsertOneByteStructCallbackId {
-        InsertOneByteStructCallbackId(self.imp.on_reducer::<InsertOneByteStruct>(
+        InsertOneByteStructCallbackId(self.imp.on_reducer(
             "insert_one_byte_struct",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneByteStruct| callback(ctx, &args.s)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneByteStruct { s },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
+            }),
         ))
     }
     fn remove_on_insert_one_byte_struct(&self, callback: InsertOneByteStructCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneByteStruct>("insert_one_byte_struct", callback.0)
+        self.imp.remove_on_reducer("insert_one_byte_struct", callback.0)
     }
 }
 

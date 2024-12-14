@@ -18,9 +18,7 @@ namespace SpacetimeDB.Internal
 		[DataMember(Name = "sql")]
 		public string Sql;
 
-		public RawRowLevelSecurityDefV9(
-			string Sql
-		)
+		public RawRowLevelSecurityDefV9(string Sql)
 		{
 			this.Sql = Sql;
 		}

@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneI64 {
+pub(super) struct InsertOneI64Args {
     pub n: i64,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOneI64 {
+impl From<InsertOneI64Args> for super::Reducer {
+    fn from(args: InsertOneI64Args) -> Self {
+        Self::InsertOneI64 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for InsertOneI64Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOneI64CallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOneI64CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_one_i64`.
@@ -52,19 +57,32 @@ pub trait insert_one_i_64 {
 
 impl insert_one_i_64 for super::RemoteReducers {
     fn insert_one_i_64(&self, n: i64) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_i64", InsertOneI64 { n })
+        self.imp.call_reducer("insert_one_i64", InsertOneI64Args { n })
     }
     fn on_insert_one_i_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i64) + Send + 'static,
     ) -> InsertOneI64CallbackId {
-        InsertOneI64CallbackId(self.imp.on_reducer::<InsertOneI64>(
+        InsertOneI64CallbackId(self.imp.on_reducer(
             "insert_one_i64",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneI64| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneI64 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_insert_one_i_64(&self, callback: InsertOneI64CallbackId) {
-        self.imp.remove_on_reducer::<InsertOneI64>("insert_one_i64", callback.0)
+        self.imp.remove_on_reducer("insert_one_i64", callback.0)
     }
 }
 

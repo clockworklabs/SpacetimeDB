@@ -2,24 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdatePkI128 {
+pub(super) struct UpdatePkI128Args {
     pub n: i128,
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for UpdatePkI128 {
+impl From<UpdatePkI128Args> for super::Reducer {
+    fn from(args: UpdatePkI128Args) -> Self {
+        Self::UpdatePkI128 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdatePkI128Args {
     type Module = super::RemoteModule;
 }
 
-pub struct UpdatePkI128CallbackId(__sdk::callbacks::CallbackId);
+pub struct UpdatePkI128CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `update_pk_i128`.
@@ -53,19 +61,32 @@ pub trait update_pk_i_128 {
 
 impl update_pk_i_128 for super::RemoteReducers {
     fn update_pk_i_128(&self, n: i128, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_pk_i128", UpdatePkI128 { n, data })
+        self.imp.call_reducer("update_pk_i128", UpdatePkI128Args { n, data })
     }
     fn on_update_pk_i_128(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i128, &i32) + Send + 'static,
     ) -> UpdatePkI128CallbackId {
-        UpdatePkI128CallbackId(self.imp.on_reducer::<UpdatePkI128>(
+        UpdatePkI128CallbackId(self.imp.on_reducer(
             "update_pk_i128",
-            Box::new(move |ctx: &super::EventContext, args: &UpdatePkI128| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdatePkI128 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_update_pk_i_128(&self, callback: UpdatePkI128CallbackId) {
-        self.imp.remove_on_reducer::<UpdatePkI128>("update_pk_i128", callback.0)
+        self.imp.remove_on_reducer("update_pk_i128", callback.0)
     }
 }
 
