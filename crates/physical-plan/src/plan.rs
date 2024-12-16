@@ -22,7 +22,7 @@ pub enum PhysicalProject {
 impl PhysicalProject {
     pub fn optimize(self) -> Self {
         match self {
-            Self::None(_) => self,
+            Self::None(plan) => Self::None(plan.optimize(vec![])),
             Self::Relvar(plan, var) => Self::None(plan.optimize(vec![var])),
             Self::Fields(plan, fields) => {
                 Self::Fields(plan.optimize(fields.iter().map(|(_, proj)| proj.var).collect()), fields)
@@ -753,12 +753,15 @@ impl RewriteRule for PushEqFilter {
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
         if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, expr, value)) = plan {
             if let (PhysicalExpr::Field(ProjectField { var, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value) {
-                return input
-                    .any(&|plan| match plan {
-                        PhysicalPlan::TableScan(_, label) => label == var,
-                        _ => false,
-                    })
-                    .then_some(*var);
+                return match &**input {
+                    PhysicalPlan::TableScan(..) => None,
+                    input => input
+                        .any(&|plan| match plan {
+                            PhysicalPlan::TableScan(_, label) => label == var,
+                            _ => false,
+                        })
+                        .then_some(*var),
+                };
             }
         }
         None
@@ -825,12 +828,15 @@ impl RewriteRule for PushConjunction {
                 if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = expr {
                     if let (PhysicalExpr::Field(ProjectField { var, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value)
                     {
-                        return input
-                            .any(&|plan| match plan {
-                                PhysicalPlan::TableScan(_, label) => label == var,
-                                _ => false,
-                            })
-                            .then_some(*var);
+                        return match &**input {
+                            PhysicalPlan::TableScan(..) => None,
+                            input => input
+                                .any(&|plan| match plan {
+                                    PhysicalPlan::TableScan(_, label) => label == var,
+                                    _ => false,
+                                })
+                                .then_some(*var),
+                        };
                     }
                 }
                 None
@@ -1237,11 +1243,14 @@ mod tests {
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
         schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableSchema},
     };
+    use spacetimedb_sql_parser::ast::BinOp;
 
     use crate::{
         compile::compile,
         plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, PhysicalProject, ProjectField, Sarg, Semi},
     };
+
+    use super::PhysicalExpr;
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableSchema>>,
@@ -1307,6 +1316,76 @@ mod tests {
             None,
             primary_key.map(ColId::from),
         )
+    }
+
+    /// No rewrites applied to a simple table scan
+    #[test]
+    fn table_scan_noop() {
+        let t_id = TableId(1);
+
+        let t = Arc::new(schema(
+            t_id,
+            "t",
+            &[("id", AlgebraicType::U64), ("x", AlgebraicType::U64)],
+            &[&[0]],
+            &[&[0]],
+            Some(0),
+        ));
+
+        let db = SchemaViewer {
+            schemas: vec![t.clone()],
+        };
+
+        let sql = "select * from t";
+
+        let lp = compile_sql_sub(sql, &db).unwrap();
+        let pp = compile(lp).plan.optimize();
+
+        match pp {
+            PhysicalProject::None(PhysicalPlan::TableScan(schema, _)) => {
+                assert_eq!(schema.table_id, t_id);
+            }
+            proj => panic!("unexpected project: {:#?}", proj),
+        };
+    }
+
+    /// No rewrites applied to a table scan + filter
+    #[test]
+    fn filter_noop() {
+        let t_id = TableId(1);
+
+        let t = Arc::new(schema(
+            t_id,
+            "t",
+            &[("id", AlgebraicType::U64), ("x", AlgebraicType::U64)],
+            &[&[0]],
+            &[&[0]],
+            Some(0),
+        ));
+
+        let db = SchemaViewer {
+            schemas: vec![t.clone()],
+        };
+
+        let sql = "select * from t where x = 5";
+
+        let lp = compile_sql_sub(sql, &db).unwrap();
+        let pp = compile(lp).plan.optimize();
+
+        match pp {
+            PhysicalProject::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
+                assert!(matches!(*field, PhysicalExpr::Field(ProjectField { pos: 1, .. })));
+                assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U64(5))));
+
+                match *input {
+                    PhysicalPlan::TableScan(schema, _) => {
+                        assert_eq!(schema.table_id, t_id);
+                    }
+                    plan => panic!("unexpected plan: {:#?}", plan),
+                }
+            }
+            proj => panic!("unexpected project: {:#?}", proj),
+        };
     }
 
     /// Given the following operator notation:
