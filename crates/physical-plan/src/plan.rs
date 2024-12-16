@@ -753,12 +753,15 @@ impl RewriteRule for PushEqFilter {
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
         if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, expr, value)) = plan {
             if let (PhysicalExpr::Field(ProjectField { var, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value) {
-                return input
-                    .any(&|plan| match plan {
-                        PhysicalPlan::TableScan(_, label) => label == var,
-                        _ => false,
-                    })
-                    .then_some(*var);
+                return match &**input {
+                    PhysicalPlan::TableScan(..) => None,
+                    input => input
+                        .any(&|plan| match plan {
+                            PhysicalPlan::TableScan(_, label) => label == var,
+                            _ => false,
+                        })
+                        .then_some(*var),
+                };
             }
         }
         None
@@ -825,12 +828,15 @@ impl RewriteRule for PushConjunction {
                 if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = expr {
                     if let (PhysicalExpr::Field(ProjectField { var, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value)
                     {
-                        return input
-                            .any(&|plan| match plan {
-                                PhysicalPlan::TableScan(_, label) => label == var,
-                                _ => false,
-                            })
-                            .then_some(*var);
+                        return match &**input {
+                            PhysicalPlan::TableScan(..) => None,
+                            input => input
+                                .any(&|plan| match plan {
+                                    PhysicalPlan::TableScan(_, label) => label == var,
+                                    _ => false,
+                                })
+                                .then_some(*var),
+                        };
                     }
                 }
                 None
