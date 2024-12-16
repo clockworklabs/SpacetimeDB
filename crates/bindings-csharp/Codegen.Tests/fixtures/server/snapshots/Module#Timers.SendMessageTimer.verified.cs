@@ -4,28 +4,27 @@
 
 partial class Timers
 {
-    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
     partial struct SendMessageTimer : SpacetimeDB.BSATN.IStructuralReadWrite
     {
         public void ReadFields(System.IO.BinaryReader reader)
         {
-            Text = BSATN.Text.Read(reader);
             ScheduledId = BSATN.ScheduledId.Read(reader);
             ScheduledAt = BSATN.ScheduledAt.Read(reader);
+            Text = BSATN.Text.Read(reader);
         }
 
         public void WriteFields(System.IO.BinaryWriter writer)
         {
-            BSATN.Text.Write(writer, Text);
             BSATN.ScheduledId.Write(writer, ScheduledId);
             BSATN.ScheduledAt.Write(writer, ScheduledAt);
+            BSATN.Text.Write(writer, Text);
         }
 
         public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<Timers.SendMessageTimer>
         {
-            internal static readonly SpacetimeDB.BSATN.String Text = new();
             internal static readonly SpacetimeDB.BSATN.U64 ScheduledId = new();
             internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduledAt = new();
+            internal static readonly SpacetimeDB.BSATN.String Text = new();
 
             public Timers.SendMessageTimer Read(System.IO.BinaryReader reader) =>
                 SpacetimeDB.BSATN.IStructuralReadWrite.Read<Timers.SendMessageTimer>(reader);
@@ -42,9 +41,9 @@ partial class Timers
                     _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                         new SpacetimeDB.BSATN.AggregateElement[]
                         {
-                            new(nameof(Text), Text.GetAlgebraicType(registrar)),
                             new(nameof(ScheduledId), ScheduledId.GetAlgebraicType(registrar)),
-                            new(nameof(ScheduledAt), ScheduledAt.GetAlgebraicType(registrar))
+                            new(nameof(ScheduledAt), ScheduledAt.GetAlgebraicType(registrar)),
+                            new(nameof(Text), Text.GetAlgebraicType(registrar))
                         }
                     )
                 );
@@ -53,8 +52,5 @@ partial class Timers
                 SpacetimeDB.BSATN.ITypeRegistrar registrar
             ) => GetAlgebraicType(registrar);
         }
-
-        public ulong ScheduledId;
-        public SpacetimeDB.ScheduleAt ScheduledAt;
     } // SendMessageTimer
 } // Timers

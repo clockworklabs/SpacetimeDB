@@ -805,7 +805,7 @@ public TestUniqueNotEquatableUniqueIndex PrimaryKeyField => new(this);
     }
   },
   {/*
-SpacetimeDB.Internal.Module.RegisterTable<global::TestIncompatibleSchedule, SpacetimeDB.Internal.TableHandles.TestIncompatibleSchedule2>();
+SpacetimeDB.Internal.Module.RegisterTable<global::TestScheduleIssues, SpacetimeDB.Internal.TableHandles.TestScheduleWithWrongScheduleAtType>();
 SpacetimeDB.Internal.Module.RegisterTable<global::TestTableTaggedEnum, SpacetimeDB.Internal.TableHandles.TestTableTaggedEnum>();
                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable, SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable>();
@@ -828,7 +828,7 @@ SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable, Spacet
     }
   },
   {/*
-SpacetimeDB.Internal.Module.RegisterTable<global::TestIncompatibleSchedule, SpacetimeDB.Internal.TableHandles.TestIncompatibleSchedule2>();
+SpacetimeDB.Internal.Module.RegisterTable<global::TestScheduleIssues, SpacetimeDB.Internal.TableHandles.TestScheduleWithWrongScheduleAtType>();
 SpacetimeDB.Internal.Module.RegisterTable<global::TestTableTaggedEnum, SpacetimeDB.Internal.TableHandles.TestTableTaggedEnum>();
                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable, SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable>();

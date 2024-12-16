@@ -14,7 +14,7 @@
             PrimaryKeyAuto = PrimaryKey | AutoInc,
         }
 
-        [AttributeUsage(AttributeTargets.Field)]
+        [AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
         public abstract class ColumnAttribute : Attribute
         {
             public string? Table { get; init; }

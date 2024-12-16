@@ -747,13 +747,13 @@ namespace SpacetimeDB
                         new global::Timers.SendMessageTimer.BSATN()
                             .GetAlgebraicType(registrar)
                             .Ref_,
-                    PrimaryKey: [1],
+                    PrimaryKey: [0],
                     Indexes:
                     [
                         new(
                             Name: null,
                             AccessorName: "ScheduledId",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                         )
                     ],
                     Constraints:
@@ -761,19 +761,19 @@ namespace SpacetimeDB
                         SpacetimeDB.Internal.ITableView<
                             SendMessageTimer,
                             global::Timers.SendMessageTimer
-                        >.MakeUniqueConstraint(1)
+                        >.MakeUniqueConstraint(0)
                     ],
                     Sequences:
                     [
                         SpacetimeDB.Internal.ITableView<
                             SendMessageTimer,
                             global::Timers.SendMessageTimer
-                        >.MakeSequence(1)
+                        >.MakeSequence(0)
                     ],
                     Schedule: SpacetimeDB.Internal.ITableView<
                         SendMessageTimer,
                         global::Timers.SendMessageTimer
-                    >.MakeSchedule("SendScheduledMessage", 2),
+                    >.MakeSchedule("SendScheduledMessage", 1),
                     TableType: SpacetimeDB.Internal.TableType.User,
                     TableAccess: SpacetimeDB.Internal.TableAccess.Private
                 );

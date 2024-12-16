@@ -105,4 +105,10 @@ internal static class ErrorDescriptor
                 $"Several reducers are assigned to the same lifecycle kind {ctx.kind}: {string.Join(", ", ctx.fullNames)}",
             ctx => Location.None
         );
+
+    public static readonly ErrorDescriptor<(
+        AttributeData attr,
+        string message
+    )> InvalidScheduledDeclaration =
+        new(group, "Invalid scheduled table declaration", ctx => $"{ctx.message}", ctx => ctx.attr);
 }

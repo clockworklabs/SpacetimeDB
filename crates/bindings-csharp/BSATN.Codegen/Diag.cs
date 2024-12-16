@@ -91,6 +91,22 @@ public class ErrorDescriptor<TContext>
     )
         : this(group, title, interpolate, ctx => toLocation(ctx).Locations.FirstOrDefault()) { }
 
+    public ErrorDescriptor(
+        ErrorDescriptorGroup group,
+        string title,
+        Expression<Func<TContext, FormattableString>> interpolate,
+        Func<TContext, AttributeData> toLocation
+    )
+        : this(
+            group,
+            title,
+            interpolate,
+            ctx =>
+                toLocation(ctx).ApplicationSyntaxReference is { } r
+                    ? r.SyntaxTree.GetLocation(r.Span)
+                    : null
+        ) { }
+
     public Diagnostic ToDiag(TContext ctx) =>
         Diagnostic.Create(descriptor, toLocation(ctx), makeFormatArgs(ctx));
 }

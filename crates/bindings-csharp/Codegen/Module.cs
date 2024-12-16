@@ -154,7 +154,7 @@ record TableView
     public readonly bool IsPublic;
     public readonly Scheduled? Scheduled;
 
-    public TableView(TableDeclaration table, AttributeData data)
+    public TableView(TableDeclaration table, AttributeData data, DiagReporter diag)
     {
         var attr = data.ParseAs<TableAttribute>();
 
@@ -162,18 +162,28 @@ record TableView
         IsPublic = attr.Public;
         if (attr.Scheduled is { } reducer)
         {
-            Scheduled = new(reducer, table.Members.Select(m => m.Name).IndexOf(attr.ScheduledAt));
-            if (table.GetPrimaryKey(this) is not { } pk || table.Members[pk].Type != "ulong")
+            try
             {
-                throw new InvalidOperationException(
-                    $"{Name} is a scheduled table but doesn't have a primary key of type `ulong`."
+                Scheduled = new(
+                    reducer,
+                    table.Members.Select(m => m.Name).IndexOf(attr.ScheduledAt)
                 );
+                if (table.GetPrimaryKey(this) is not { } pk || table.Members[pk].Type != "ulong")
+                {
+                    throw new InvalidOperationException(
+                        $"{Name} is a scheduled table but doesn't have a primary key of type `ulong`."
+                    );
+                }
+                if (table.Members[Scheduled.ScheduledAtColumn].Type != "SpacetimeDB.ScheduleAt")
+                {
+                    throw new InvalidOperationException(
+                        $"{Name}.{attr.ScheduledAt} is marked with `ScheduledAt`, but doesn't have the expected type `SpacetimeDB.ScheduleAt`."
+                    );
+                }
             }
-            if (table.Members[Scheduled.ScheduledAtColumn].Type != "SpacetimeDB.ScheduleAt")
+            catch (Exception e)
             {
-                throw new InvalidOperationException(
-                    $"The `{Name}.{attr.ScheduledAt}` column is marked with `ScheduledAt`, but doesn't have the expected type `SpacetimeDB.ScheduleAt`."
-                );
+                diag.Report(ErrorDescriptor.InvalidScheduledDeclaration, (data, e.Message));
             }
         }
     }
@@ -289,7 +299,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             container = container.ContainingType;
         }
 
-        Views = new(context.Attributes.Select(a => new TableView(this, a)).ToImmutableArray());
+        Views = new(
+            context.Attributes.Select(a => new TableView(this, a, diag)).ToImmutableArray()
+        );
         Indexes = new(
             context
                 .TargetSymbol.GetAttributes()
