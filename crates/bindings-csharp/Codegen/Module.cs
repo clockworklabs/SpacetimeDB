@@ -7,6 +7,25 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using SpacetimeDB.Internal;
 using static Utils;
 
+static class IndexOfExt
+{
+    // A LINQ helper to find the index of the first element equal to `searchItem`.
+    public static int IndexOf<T>(this IEnumerable<T> source, T searchItem)
+        where T : IEquatable<T>
+    {
+        var i = 0;
+        foreach (var item in source)
+        {
+            if (searchItem.Equals(item))
+            {
+                return i;
+            }
+            i++;
+        }
+        throw new InvalidOperationException($"Item {searchItem} not found.");
+    }
+}
+
 readonly record struct ColumnAttr(ColumnAttrs Mask, string? Table = null)
 {
     private static readonly ImmutableDictionary<string, System.Type> AttrTypes = ImmutableArray
@@ -127,11 +146,13 @@ record ColumnDeclaration : MemberDeclaration
         $"new (nameof({Name}), BSATN.{Name}.GetAlgebraicType(registrar))";
 }
 
+record Scheduled(string ReducerName, int ScheduledAtColumn);
+
 record TableView
 {
     public readonly string Name;
     public readonly bool IsPublic;
-    public readonly string? Scheduled;
+    public readonly Scheduled? Scheduled;
 
     public TableView(TableDeclaration table, AttributeData data)
     {
@@ -139,7 +160,16 @@ record TableView
 
         Name = attr.Name ?? table.ShortName;
         IsPublic = attr.Public;
-        Scheduled = attr.Scheduled;
+        if (attr.Scheduled is { } reducer)
+        {
+            Scheduled = new(reducer, table.Members.Select(m => m.Name).IndexOf(attr.ScheduledAt));
+            if (table.GetPrimaryKey(this) is not { } pk || table.Members[pk].Type != "ulong")
+            {
+                throw new InvalidOperationException(
+                    $"{Name} is a scheduled table but doesn't have a primary key of type `ulong`."
+                );
+            }
+        }
     }
 }
 
@@ -193,11 +223,9 @@ record ViewIndex
     public ViewIndex(AttributeData data, TypeDeclarationSyntax decl, DiagReporter diag)
         : this(data.ParseAs<IndexAttribute>(), decl, diag) { }
 
-    public string GenerateIndexDef(IEnumerable<ColumnDeclaration> columns)
+    public string GenerateIndexDef(IEnumerable<ColumnDeclaration> allColumns)
     {
-        var colIndices = Columns.Select(c =>
-            columns.Select((c, i) => (c, i)).First(cd => cd.c.Name == c).i
-        );
+        var colIndices = Columns.Select(c => allColumns.Select(cd => cd.Name).IndexOf(c));
 
         return $$"""
             new(
@@ -220,32 +248,14 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     public readonly EquatableArray<TableView> Views;
     public readonly EquatableArray<ViewIndex> Indexes;
 
-    private static ColumnDeclaration[] ScheduledColumns(string tableName) =>
-        [
-            new(
-                tableName,
-                "ScheduledId",
-                "ulong",
-                "SpacetimeDB.BSATN.U64",
-                ColumnAttrs.PrimaryKeyAuto,
-                true
-            ),
-            new(
-                tableName,
-                "ScheduledAt",
-                "SpacetimeDB.ScheduleAt",
-                "SpacetimeDB.ScheduleAt.BSATN",
-                ColumnAttrs.UnSet,
-                false
-            ),
-        ];
-
     public TableDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
         : base(context, diag)
     {
+        var typeSyntax = (TypeDeclarationSyntax)context.TargetNode;
+
         if (Kind is TypeKind.Sum)
         {
-            diag.Report(ErrorDescriptor.TableTaggedEnum, (TypeDeclarationSyntax)context.TargetNode);
+            diag.Report(ErrorDescriptor.TableTaggedEnum, typeSyntax);
         }
 
         var container = context.TargetSymbol;
@@ -264,10 +274,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     }
                     break;
                 default:
-                    diag.Report(
-                        ErrorDescriptor.InvalidTableVisibility,
-                        (TypeDeclarationSyntax)context.TargetNode
-                    );
+                    diag.Report(ErrorDescriptor.InvalidTableVisibility, typeSyntax);
                     throw new Exception(
                         "Table row type visibility must be public or internal, including containing types."
                     );
@@ -281,27 +288,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             context
                 .TargetSymbol.GetAttributes()
                 .Where(a => a.AttributeClass?.ToString() == typeof(IndexAttribute).FullName)
-                .Select(a => new ViewIndex(a, (TypeDeclarationSyntax)context.TargetNode, diag))
+                .Select(a => new ViewIndex(a, typeSyntax, diag))
                 .ToImmutableArray()
         );
-
-        var hasScheduled = Views.Select(t => t.Scheduled is not null).Distinct();
-
-        if (hasScheduled.Count() != 1)
-        {
-            diag.Report(
-                ErrorDescriptor.IncompatibleTableSchedule,
-                (TypeDeclarationSyntax)context.TargetNode
-            );
-        }
-
-        if (hasScheduled.Any(has => has))
-        {
-            // For scheduled tables, we append extra fields early in the pipeline,
-            // both to the type itself and to the BSATN information, as if they
-            // were part of the original declaration.
-            Members = new(Members.Concat(ScheduledColumns(FullName)).ToImmutableArray());
-        }
     }
 
     protected override ColumnDeclaration ConvertMember(IFieldSymbol field, DiagReporter diag) =>
@@ -432,7 +421,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     Sequences: {{GenConstraintList(v, ColumnAttrs.AutoInc, $"{iTable}.MakeSequence")}},
                     Schedule: {{(
                         v.Scheduled is {} scheduled
-                        ? $"{iTable}.MakeSchedule(\"{scheduled}\", {/* ScheduledAt is the last column */ Members.Length - 1})"
+                        ? $"{iTable}.MakeSchedule(\"{scheduled.ReducerName}\", {scheduled.ScheduledAtColumn})"
                         : "null"
                     )}},
                     TableType: SpacetimeDB.Internal.TableType.User,
@@ -484,33 +473,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         ]
         """;
 
-    private int? GetPrimaryKey(TableView view) =>
+    internal int? GetPrimaryKey(TableView view) =>
         GetConstraints(view, ColumnAttrs.PrimaryKey).Select(c => (int?)c.pos).SingleOrDefault();
-
-    public override Scope.Extensions ToExtensions()
-    {
-        var extensions = base.ToExtensions();
-
-        if (Views.Any(v => v.Scheduled is not null))
-        {
-            // For scheduled tables we're adding extra fields to the type source.
-            extensions.Contents.Append(
-                $$"""
-                public ulong ScheduledId;
-                public SpacetimeDB.ScheduleAt ScheduledAt;
-                """
-            );
-
-            // When doing so, the compiler will warn about undefined ordering between partial declarations.
-            // We don't care about ordering as we generate BSATN ourselves and don't use those structs in FFI,
-            // so we can safely suppress the warning by saying "yes, we're okay with an auto/arbitrary layout".
-            extensions.ExtraAttrs.Add(
-                "[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]"
-            );
-        }
-
-        return extensions;
-    }
 }
 
 record ReducerDeclaration

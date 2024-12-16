@@ -48,7 +48,17 @@
         /// </summary>
         public bool Public { get; init; } = false;
 
+        /// <summary>
+        /// If set, the name of the reducer that will be invoked when the scheduled time is reached.
+        /// </summary>
         public string? Scheduled { get; init; }
+
+        /// <summary>
+        /// The name of the column that will be used to store the scheduled time.
+        ///
+        /// <para>Defaults to <c>ScheduledAt</c>.</para>
+        /// </summary>
+        public string ScheduledAt { get; init; } = "ScheduledAt";
     }
 
     [AttributeUsage(AttributeTargets.Struct | AttributeTargets.Class, AllowMultiple = true)]

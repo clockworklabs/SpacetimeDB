@@ -159,7 +159,7 @@ public interface ITableView<View, T>
     }
 
     protected static RawScheduleDefV9 MakeSchedule(string reducerName, ushort colIndex) =>
-        new(Name: $"{tableName}_schedule", ReducerName: reducerName, ScheduledAtColumn: colIndex);
+        new(Name: $"{tableName}_sched", ReducerName: reducerName, ScheduledAtColumn: colIndex);
 
     protected static RawSequenceDefV9 MakeSequence(ushort colIndex) =>
         new(
