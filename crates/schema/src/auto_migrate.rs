@@ -6,12 +6,13 @@ use spacetimedb_data_structures::{
 use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableType};
 use spacetimedb_sats::WithTypespace;
 
+pub mod pretty_print;
+
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 
 /// A plan for a migration.
 #[derive(Debug)]
 pub enum MigratePlan<'def> {
-    Manual(ManualMigratePlan<'def>),
     Auto(AutoMigratePlan<'def>),
 }
 
@@ -19,7 +20,6 @@ impl<'def> MigratePlan<'def> {
     /// Get the old `ModuleDef` for this migration plan.
     pub fn old_def(&self) -> &'def ModuleDef {
         match self {
-            MigratePlan::Manual(plan) => plan.old,
             MigratePlan::Auto(plan) => plan.old,
         }
     }
@@ -27,18 +27,9 @@ impl<'def> MigratePlan<'def> {
     /// Get the new `ModuleDef` for this migration plan.
     pub fn new_def(&self) -> &'def ModuleDef {
         match self {
-            MigratePlan::Manual(plan) => plan.new,
             MigratePlan::Auto(plan) => plan.new,
         }
     }
-}
-
-/// A plan for a manual migration.
-/// `new` must have a reducer marked with `Lifecycle::Update`.
-#[derive(Debug)]
-pub struct ManualMigratePlan<'def> {
-    pub old: &'def ModuleDef,
-    pub new: &'def ModuleDef,
 }
 
 /// A plan for an automatic migration.

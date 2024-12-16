@@ -16,7 +16,9 @@ spacetimedb-sats.workspace = true
 spacetimedb-data-structures.workspace = true
 spacetimedb-sql-parser.workspace = true
 
+regex.workspace = true
 anyhow.workspace = true
+colored.workspace = true
 indexmap.workspace = true
 itertools.workspace = true
 lazy_static.workspace = true
