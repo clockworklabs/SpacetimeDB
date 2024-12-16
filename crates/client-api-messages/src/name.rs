@@ -57,6 +57,11 @@ pub enum PublishResult {
         /// or not.
         database_identity: Identity,
         op: PublishOp,
+
+        /// If the database was updated, may contain a string describing the update.
+        /// Contains ANSI escape codes for color.
+        /// Suitable for printing to the console.
+        update_summary: Option<String>,
     },
 
     // TODO: below variants are obsolete with control db module

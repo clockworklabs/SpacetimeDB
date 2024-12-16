@@ -1,6 +1,6 @@
 //! This module provides a function [`pretty_print`](pretty_print) that renders an automatic migration plan to a string.
 
-use super::{AutoMigratePlan, IndexAlgorithm, TableDef};
+use super::{IndexAlgorithm, MigratePlan, TableDef};
 use crate::{auto_migrate::AutoMigrateStep, def::ConstraintData};
 use colored::{self, ColoredString, Colorize};
 use lazy_static::lazy_static;
@@ -33,7 +33,10 @@ pub fn strip_ansi_escape_codes(s: &str) -> String {
 
 /// Pretty print a migration plan, resulting in a string (containing ANSI escape codes).
 /// If you are printing
-pub fn pretty_print(plan: &AutoMigratePlan) -> Result<String, fmt::Error> {
+pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
+    let plan = match plan {
+        MigratePlan::Auto(plan) => plan,
+    };
     let mut out = String::new();
     let outr = &mut out;
 

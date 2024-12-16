@@ -179,6 +179,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             domain,
             database_identity,
             op,
+            update_summary,
         } => {
             let op = match op {
                 PublishOp::Created => "Created new",
@@ -188,6 +189,9 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
                 println!("{} database with name: {}, identity: {}", op, domain, database_identity);
             } else {
                 println!("{} database with identity: {}", op, database_identity);
+            }
+            if let Some(update_summary) = update_summary {
+                println!("{}", update_summary);
             }
         }
         PublishResult::TldNotRegistered { domain } => {
