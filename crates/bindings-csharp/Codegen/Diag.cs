@@ -92,12 +92,23 @@ internal static class ErrorDescriptor
             ctx => ctx.method.Identifier
         );
 
-    public static readonly ErrorDescriptor<TypeDeclarationSyntax> IncompatibleTableSchedule =
+    public static readonly UnusedErrorDescriptor IncompatibleTableSchedule = new(group);
+
+    public static readonly ErrorDescriptor<(
+        ReducerKind kind,
+        IEnumerable<string> fullNames
+    )> DuplicateSpecialReducer =
         new(
             group,
-            "Incompatible `[Table(Schedule)]` attributes",
-            table =>
-                $"Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.",
-            table => table.SyntaxTree.GetLocation(table.AttributeLists.Span)
+            "Multiple reducers of the same kind",
+            ctx =>
+                $"Several reducers are assigned to the same lifecycle kind {ctx.kind}: {string.Join(", ", ctx.fullNames)}",
+            ctx => Location.None
         );
+
+    public static readonly ErrorDescriptor<(
+        AttributeData attr,
+        string message
+    )> InvalidScheduledDeclaration =
+        new(group, "Invalid scheduled table declaration", ctx => $"{ctx.message}", ctx => ctx.attr);
 }

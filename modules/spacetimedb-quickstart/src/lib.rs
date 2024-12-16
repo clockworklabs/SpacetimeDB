@@ -1,6 +1,6 @@
 use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = person, public)]
+#[spacetimedb::table(name = person, public, index(name = age, btree(columns = [age])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -24,7 +24,7 @@ pub fn say_hello(ctx: &ReducerContext) {
 
 #[spacetimedb::reducer]
 pub fn list_over_age(ctx: &ReducerContext, age: u8) {
-    for person in ctx.db.person().iter().filter(|person| person.age >= age) {
+    for person in ctx.db.person().age().filter(age..) {
         log::info!("{} has age {} >= {}", person.name, person.age, age);
     }
 }

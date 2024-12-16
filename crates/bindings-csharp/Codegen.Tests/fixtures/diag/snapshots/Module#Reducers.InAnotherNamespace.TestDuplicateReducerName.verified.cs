@@ -13,7 +13,7 @@ partial class Reducers
             using var writer = new BinaryWriter(stream);
 
             SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-                "TestDuplicateReducerName",
+                nameof(TestDuplicateReducerName),
                 stream
             );
         }

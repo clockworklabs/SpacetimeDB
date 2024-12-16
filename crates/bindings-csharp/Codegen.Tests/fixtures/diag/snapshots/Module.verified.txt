@@ -87,31 +87,6 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
     },
     {/*
 
-[SpacetimeDB.Table(
-^^^^^^^^^^^^^^^^^^^
-    Name = "TestIncompatibleSchedule1",
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    Scheduled = nameof(TestIncompatibleScheduleReducer)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-)]
-^^
-[SpacetimeDB.Table(Name = "TestIncompatibleSchedule2")]
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-public partial struct TestIncompatibleSchedule
-*/
-      Message: Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.,
-      Severity: Error,
-      Descriptor: {
-        Id: STDB0010,
-        Title: Incompatible `[Table(Schedule)]` attributes,
-        MessageFormat: Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.,
-        Category: SpacetimeDB,
-        DefaultSeverity: Error,
-        IsEnabledByDefault: true
-      }
-    },
-    {/*
-
 [SpacetimeDB.Table]
 ^^^^^^^^^^^^^^^^^^^
 [SpacetimeDB.Index]
@@ -148,6 +123,98 @@ public partial struct TestIndexWithEmptyColumns { }
         Title: Internal SpacetimeDB codegen error,
         MessageFormat: An internal error occurred during codegen: {0},
         Category: SpacetimeDB.Internal,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table(
+ ^^^^^^^^^^^^^^^^^^
+    Name = "TestScheduleWithoutPrimaryKey",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Scheduled = "DummyScheduledReducer",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ScheduledAt = nameof(ScheduleAtCorrectType)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)]
+^
+[SpacetimeDB.Table(
+*/
+      Message: TestScheduleWithoutPrimaryKey is a scheduled table but doesn't have a primary key of type `ulong`.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0012,
+        Title: Invalid scheduled table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+)]
+[SpacetimeDB.Table(
+ ^^^^^^^^^^^^^^^^^^
+    Name = "TestScheduleWithWrongPrimaryKeyType",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Scheduled = "DummyScheduledReducer",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ScheduledAt = nameof(ScheduleAtCorrectType)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)]
+^
+[SpacetimeDB.Table(Name = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
+*/
+      Message: TestScheduleWithWrongPrimaryKeyType is a scheduled table but doesn't have a primary key of type `ulong`.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0012,
+        Title: Invalid scheduled table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+)]
+[SpacetimeDB.Table(Name = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Table(
+*/
+      Message: Item ScheduledAt not found.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0012,
+        Title: Invalid scheduled table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Table(Name = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
+[SpacetimeDB.Table(
+ ^^^^^^^^^^^^^^^^^^
+    Name = "TestScheduleWithWrongScheduleAtType",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Scheduled = "DummyScheduledReducer",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ScheduledAt = nameof(ScheduleAtWrongType)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)]
+^
+public partial struct TestScheduleIssues
+*/
+      Message: TestScheduleWithWrongScheduleAtType is a scheduled table but doesn't have a primary key of type `ulong`.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0012,
+        Title: Invalid scheduled table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
       }
@@ -222,12 +289,12 @@ public partial struct TestIndexWithEmptyColumns { }
     },
     {
       Location: ,
-      Message: Reducer with the same export name __init__ is registered in multiple places: Reducers.TestDuplicateReducerKind1, Reducers.TestDuplicateReducerKind2,
+      Message: Several reducers are assigned to the same lifecycle kind Init: Reducers.TestDuplicateReducerKind1, Reducers.TestDuplicateReducerKind2,
       Severity: Error,
       Descriptor: {
-        Id: STDB0007,
-        Title: Duplicate exports,
-        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
+        Id: STDB0011,
+        Title: Multiple reducers of the same kind,
+        MessageFormat: Several reducers are assigned to the same lifecycle kind {0}: {1},
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true

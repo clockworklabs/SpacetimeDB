@@ -29,7 +29,7 @@ partial struct CustomStruct : SpacetimeDB.BSATN.IStructuralReadWrite
             value.WriteFields(writer);
         }
 
-        public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
+        public SpacetimeDB.BSATN.AlgebraicType.Ref GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             registrar.RegisterType<CustomStruct>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
@@ -39,5 +39,9 @@ partial struct CustomStruct : SpacetimeDB.BSATN.IStructuralReadWrite
                     new(nameof(StringField), StringField.GetAlgebraicType(registrar))
                 }
             ));
+
+        SpacetimeDB.BSATN.AlgebraicType SpacetimeDB.BSATN.IReadWrite<CustomStruct>.GetAlgebraicType(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => GetAlgebraicType(registrar);
     }
 } // CustomStruct
