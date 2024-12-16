@@ -5151,6 +5151,7 @@ name = "spacetimedb-schema"
 version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
+ "colored",
  "enum-as-inner",
  "hashbrown 0.15.1",
  "indexmap 2.6.0",
@@ -5159,6 +5160,7 @@ dependencies = [
  "petgraph",
  "pretty_assertions",
  "proptest",
+ "regex",
  "serde_json",
  "smallvec",
  "spacetimedb-cli",
