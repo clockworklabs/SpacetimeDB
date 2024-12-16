@@ -2,25 +2,30 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::unit_struct_type::UnitStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecUnitStruct {
+pub(super) struct InsertVecUnitStructArgs {
     pub s: Vec<UnitStruct>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertVecUnitStruct {
+impl From<InsertVecUnitStructArgs> for super::Reducer {
+    fn from(args: InsertVecUnitStructArgs) -> Self {
+        Self::InsertVecUnitStruct { s: args.s }
+    }
+}
+
+impl __sdk::InModule for InsertVecUnitStructArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecUnitStructCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertVecUnitStructCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_unit_struct`.
@@ -55,19 +60,51 @@ pub trait insert_vec_unit_struct {
 impl insert_vec_unit_struct for super::RemoteReducers {
     fn insert_vec_unit_struct(&self, s: Vec<UnitStruct>) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_vec_unit_struct", InsertVecUnitStruct { s })
+            .call_reducer("insert_vec_unit_struct", InsertVecUnitStructArgs { s })
     }
     fn on_insert_vec_unit_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<UnitStruct>) + Send + 'static,
     ) -> InsertVecUnitStructCallbackId {
-        InsertVecUnitStructCallbackId(self.imp.on_reducer::<InsertVecUnitStruct>(
+        InsertVecUnitStructCallbackId(self.imp.on_reducer(
             "insert_vec_unit_struct",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecUnitStruct| callback(ctx, &args.s)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecUnitStruct { s },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
+            }),
         ))
     }
     fn remove_on_insert_vec_unit_struct(&self, callback: InsertVecUnitStructCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecUnitStruct>("insert_vec_unit_struct", callback.0)
+        self.imp.remove_on_reducer("insert_vec_unit_struct", callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_vec_unit_struct`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_vec_unit_struct {
+    /// Set the call-reducer flags for the reducer `insert_vec_unit_struct` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_vec_unit_struct(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_vec_unit_struct for super::SetReducerFlags {
+    fn insert_vec_unit_struct(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_vec_unit_struct", flags);
     }
 }

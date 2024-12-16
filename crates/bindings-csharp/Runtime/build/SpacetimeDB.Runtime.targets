@@ -3,16 +3,23 @@
   <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
     <NativeLibrary Include="$(MSBuildThisFileDirectory)..\bindings.c" />
     <UnmanagedEntryPointsAssembly Include="SpacetimeDB.Runtime" />
+
     <WasmImport Include="$(SpacetimeNamespace)!table_id_from_name" />
+    <WasmImport Include="$(SpacetimeNamespace)!index_id_from_name" />
     <WasmImport Include="$(SpacetimeNamespace)!datastore_table_row_count" />
     <WasmImport Include="$(SpacetimeNamespace)!datastore_table_scan_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_btree_scan_bsatn" />
     <WasmImport Include="$(SpacetimeNamespace)!row_iter_bsatn_advance" />
     <WasmImport Include="$(SpacetimeNamespace)!row_iter_bsatn_close" />
     <WasmImport Include="$(SpacetimeNamespace)!datastore_insert_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_delete_by_btree_scan_bsatn" />
     <WasmImport Include="$(SpacetimeNamespace)!datastore_delete_all_by_eq_bsatn" />
     <WasmImport Include="$(SpacetimeNamespace)!bytes_source_read" />
     <WasmImport Include="$(SpacetimeNamespace)!bytes_sink_write" />
     <WasmImport Include="$(SpacetimeNamespace)!console_log" />
+    <WasmImport Include="$(SpacetimeNamespace)!console_timer_start" />
+    <WasmImport Include="$(SpacetimeNamespace)!console_timer_end" />
+    <WasmImport Include="$(SpacetimeNamespace)!volatile_nonatomic_schedule_immediate" />
 
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
     <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
@@ -56,7 +63,7 @@
             SourceUrl="$(WasiSdkUrl)"
             DestinationFolder="$(IntermediateOutputPath)"
             DestinationFileName="$([System.IO.Path]::GetFileName('$(WasiSdkDownloadTempFile)'))"
-            Condition="!Exists('$(WasiSdkDownloadTempFile)')" />
+            Condition="!Exists('$(WasiClang)')" />
 
     <Message Importance="high" Text="Extracting $(WasiSdkDownloadTempFile) to $(WasiSdkRoot)..." Condition="!Exists('$(WasiClang)')" />
     <MakeDir Directories="$(WasiSdkRoot)" />

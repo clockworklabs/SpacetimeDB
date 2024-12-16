@@ -92,8 +92,6 @@ type Result<T> = std::result::Result<T, ErrorStream<ClientCodegenError>>;
 /// ]
 /// ```
 /// are forbidden. (Because most languages do not support anonymous recursive types.)
-///
-/// The input must satisfy `AlgebraicType::is_valid_for_client_type_use`.
 #[derive(Debug, Clone)]
 pub struct TypespaceForGenerate {
     defs: HashMap<AlgebraicTypeRef, AlgebraicTypeDef>,

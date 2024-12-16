@@ -2,25 +2,30 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::enum_with_payload_type::EnumWithPayload;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecEnumWithPayload {
+pub(super) struct InsertVecEnumWithPayloadArgs {
     pub e: Vec<EnumWithPayload>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertVecEnumWithPayload {
+impl From<InsertVecEnumWithPayloadArgs> for super::Reducer {
+    fn from(args: InsertVecEnumWithPayloadArgs) -> Self {
+        Self::InsertVecEnumWithPayload { e: args.e }
+    }
+}
+
+impl __sdk::InModule for InsertVecEnumWithPayloadArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecEnumWithPayloadCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertVecEnumWithPayloadCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_enum_with_payload`.
@@ -55,19 +60,51 @@ pub trait insert_vec_enum_with_payload {
 impl insert_vec_enum_with_payload for super::RemoteReducers {
     fn insert_vec_enum_with_payload(&self, e: Vec<EnumWithPayload>) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_vec_enum_with_payload", InsertVecEnumWithPayload { e })
+            .call_reducer("insert_vec_enum_with_payload", InsertVecEnumWithPayloadArgs { e })
     }
     fn on_insert_vec_enum_with_payload(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<EnumWithPayload>) + Send + 'static,
     ) -> InsertVecEnumWithPayloadCallbackId {
-        InsertVecEnumWithPayloadCallbackId(self.imp.on_reducer::<InsertVecEnumWithPayload>(
+        InsertVecEnumWithPayloadCallbackId(self.imp.on_reducer(
             "insert_vec_enum_with_payload",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecEnumWithPayload| callback(ctx, &args.e)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecEnumWithPayload { e },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, e)
+            }),
         ))
     }
     fn remove_on_insert_vec_enum_with_payload(&self, callback: InsertVecEnumWithPayloadCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecEnumWithPayload>("insert_vec_enum_with_payload", callback.0)
+        self.imp.remove_on_reducer("insert_vec_enum_with_payload", callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_vec_enum_with_payload`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_vec_enum_with_payload {
+    /// Set the call-reducer flags for the reducer `insert_vec_enum_with_payload` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_vec_enum_with_payload(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_vec_enum_with_payload for super::SetReducerFlags {
+    fn insert_vec_enum_with_payload(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_vec_enum_with_payload", flags);
     }
 }

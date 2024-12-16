@@ -1,8 +1,6 @@
 //! Provides safe abstractions around `bindings-sys`
 //! and re-exports `#[spacetimedb]` and `#[duration]`.
 
-#[macro_use]
-mod io;
 pub mod log_stopwatch;
 mod logger;
 #[cfg(feature = "rand")]

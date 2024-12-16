@@ -18,9 +18,7 @@ namespace SpacetimeDB.Internal
 		[DataMember(Name = "columns")]
 		public System.Collections.Generic.List<ushort> Columns;
 
-		public RawUniqueConstraintDataV9(
-			System.Collections.Generic.List<ushort> Columns
-		)
+		public RawUniqueConstraintDataV9(System.Collections.Generic.List<ushort> Columns)
 		{
 			this.Columns = Columns;
 		}

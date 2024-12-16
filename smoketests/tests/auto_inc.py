@@ -30,9 +30,9 @@ pub fn add_$KEY_TY(ctx: &ReducerContext, name: String, expected_value: $KEY_TY) 
 #[spacetimedb::reducer]
 pub fn say_hello_$KEY_TY(ctx: &ReducerContext) {
     for person in ctx.db.person_$KEY_TY().iter() {
-        println!("Hello, {}:{}!", person.key_col, person.name);
+        log::info!("Hello, {}:{}!", person.key_col, person.name);
     }
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """)
 
@@ -43,7 +43,7 @@ class AutoincBasic(IntTests, Smoketest):
 
     MODULE_CODE = f"""
 #![allow(non_camel_case_types)]
-use spacetimedb::{{println, ReducerContext, Table}};
+use spacetimedb::{{log, ReducerContext, Table}};
 {"".join(autoinc1_template.substitute(KEY_TY=int_ty) for int_ty in ints)}
 """
 
@@ -73,7 +73,7 @@ pub struct Person_$KEY_TY {
 #[spacetimedb::reducer]
 pub fn add_new_$KEY_TY(ctx: &ReducerContext, name: String) -> Result<(), Box<dyn Error>> {
     let value = ctx.db.person_$KEY_TY().try_insert(Person_$KEY_TY { key_col: 0, name })?;
-    println!("Assigned Value: {} -> {}", value.key_col, value.name);
+    log::info!("Assigned Value: {} -> {}", value.key_col, value.name);
     Ok(())
 }
 
@@ -86,9 +86,9 @@ pub fn update_$KEY_TY(ctx: &ReducerContext, name: String, new_id: $KEY_TY) {
 #[spacetimedb::reducer]
 pub fn say_hello_$KEY_TY(ctx: &ReducerContext) {
     for person in ctx.db.person_$KEY_TY().iter() {
-        println!("Hello, {}:{}!", person.key_col, person.name);
+        log::info!("Hello, {}:{}!", person.key_col, person.name);
     }
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """)
 
@@ -99,7 +99,7 @@ class AutoincUnique(IntTests, Smoketest):
     MODULE_CODE = f"""
 #![allow(non_camel_case_types)]
 use std::error::Error;
-use spacetimedb::{{println, ReducerContext, Table}};
+use spacetimedb::{{log, ReducerContext, Table}};
 {"".join(autoinc2_template.substitute(KEY_TY=int_ty) for int_ty in ints)}
 """
 

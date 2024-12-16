@@ -159,9 +159,6 @@ struct FixedHeader {
     ///
     /// Unallocated row slots store valid-unconstrained bytes, i.e. are never uninit.
     present_rows: FixedBitSet,
-
-    #[cfg(debug_assertions)]
-    fixed_row_size: Size,
 }
 
 impl MemoryUsage for FixedHeader {
@@ -171,18 +168,11 @@ impl MemoryUsage for FixedHeader {
             last,
             num_rows,
             present_rows,
-            // MEMUSE: it's just a u16, ok to ignore
-            #[cfg(debug_assertions)]
-                fixed_row_size: _,
         } = self;
         next_free.heap_usage() + last.heap_usage() + num_rows.heap_usage() + present_rows.heap_usage()
     }
 }
 
-#[cfg(debug_assertions)]
-static_assert_size!(FixedHeader, 18);
-
-#[cfg(not(debug_assertions))]
 static_assert_size!(FixedHeader, 16);
 
 impl FixedHeader {
@@ -196,18 +186,8 @@ impl FixedHeader {
             last: PageOffset::VAR_LEN_NULL,
             num_rows: 0,
             present_rows: FixedBitSet::new(PageOffset::PAGE_END.idx().div_ceil(fixed_row_size.len())),
-            #[cfg(debug_assertions)]
-            fixed_row_size,
         }
     }
-
-    #[cfg(debug_assertions)]
-    fn debug_check_fixed_row_size(&self, fixed_row_size: Size) {
-        assert_eq!(self.fixed_row_size, fixed_row_size);
-    }
-
-    #[cfg(not(debug_assertions))]
-    fn debug_check_fixed_row_size(&self, _: Size) {}
 
     /// Set the (fixed) row starting at `offset`
     /// and lasting `fixed_row_size` as `present`.
@@ -221,7 +201,6 @@ impl FixedHeader {
     /// and lasting `fixed_row_size` is `present` or not.
     #[inline]
     fn set_row_presence(&mut self, offset: PageOffset, fixed_row_size: Size, present: bool) {
-        self.debug_check_fixed_row_size(fixed_row_size);
         self.present_rows.set(offset / fixed_row_size, present);
     }
 
@@ -229,7 +208,6 @@ impl FixedHeader {
     /// and lasting `fixed_row_size` is present or not.
     #[inline]
     fn is_row_present(&self, offset: PageOffset, fixed_row_size: Size) -> bool {
-        self.debug_check_fixed_row_size(fixed_row_size);
         self.present_rows.get(offset / fixed_row_size)
     }
 
@@ -442,13 +420,11 @@ impl FixedView<'_> {
     /// in an expected state, i.e. initialized where required by the row type,
     /// and with `VarLenRef`s that point to valid granules and with correct lengths.
     pub fn get_row_mut(&mut self, start: PageOffset, fixed_row_size: Size) -> &mut Bytes {
-        self.header.debug_check_fixed_row_size(fixed_row_size);
         &mut self.fixed_row_data[start.range(fixed_row_size)]
     }
 
     /// Returns a shared view of the row from `start` lasting `fixed_row_size` number of bytes.
     fn get_row(&mut self, start: PageOffset, fixed_row_size: Size) -> &Bytes {
-        self.header.debug_check_fixed_row_size(fixed_row_size);
         &self.fixed_row_data[start.range(fixed_row_size)]
     }
 
@@ -1198,8 +1174,6 @@ impl Page {
     /// where the fixed size part is `fixed_row_size` bytes large,
     /// and the variable part requires `num_granules`.
     pub fn has_space_for_row(&self, fixed_row_size: Size, num_granules: usize) -> bool {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
-
         // Determine the gap remaining after allocating for the fixed part.
         let gap_remaining = gap_remaining_size(self.header.var.first, self.header.fixed.last);
         let gap_avail_for_granules = if self.header.fixed.next_free.has() {
@@ -1257,7 +1231,6 @@ impl Page {
     ) -> Result<PageOffset, Error> {
         // Allocate the fixed-len row.
         let fixed_row_size = Size(fixed_row.len() as u16);
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
 
         // SAFETY: Caller promised that `fixed_row.len()` uses the right `fixed_row_size`
         // and we trust that others have too.
@@ -1300,8 +1273,6 @@ impl Page {
     /// `fixed_row_size` must be equal to the value passed
     /// to all other methods ever invoked on `self`.
     pub unsafe fn alloc_fixed_len(&mut self, fixed_row_size: Size) -> Result<PageOffset, Error> {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
-
         self.alloc_fixed_len_from_freelist(fixed_row_size)
             .or_else(|| self.alloc_fixed_len_from_gap(fixed_row_size))
             .ok_or(Error::InsufficientFixedLenSpace { need: fixed_row_size })
@@ -1352,7 +1323,6 @@ impl Page {
     /// It is the caller's responsibility to ensure that `PageOffset`s derived from
     /// this iterator are valid when used to do anything `unsafe`.
     fn iter_fixed_len_from(&self, fixed_row_size: Size, starting_from: PageOffset) -> FixedLenRowsIter<'_> {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
         let idx = starting_from / fixed_row_size;
         FixedLenRowsIter {
             idx_iter: self.header.fixed.present_rows.iter_set_from(idx),
@@ -1369,7 +1339,6 @@ impl Page {
     /// It is the caller's responsibility to ensure that `PageOffset`s derived from
     /// this iterator are valid when used to do anything `unsafe`.
     pub fn iter_fixed_len(&self, fixed_row_size: Size) -> FixedLenRowsIter<'_> {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
         FixedLenRowsIter {
             idx_iter: self.header.fixed.present_rows.iter_set(),
             fixed_row_size,
@@ -1423,8 +1392,6 @@ impl Page {
         var_len_visitor: &impl VarLenMembers,
         blob_store: &mut dyn BlobStore,
     ) -> BlobNumBytes {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
-
         // We're modifying the page, so clear the unmodified hash.
         self.header.unmodified_hash = None;
 
@@ -1473,8 +1440,6 @@ impl Page {
         fixed_row_size: Size,
         var_len_visitor: &impl VarLenMembers,
     ) -> usize {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
-
         let fixed_row = self.get_row_data(fixed_row_offset, fixed_row_size);
         // SAFETY:
         // - Caller promised that `fixed_row_offset` is a valid row.
@@ -1515,8 +1480,6 @@ impl Page {
         blob_store: &mut dyn BlobStore,
         mut filter: impl FnMut(&Page, PageOffset) -> bool,
     ) -> ControlFlow<(), PageOffset> {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
-
         for row_offset in self
             .iter_fixed_len_from(fixed_row_size, starting_from)
             // Only copy rows satisfying the predicate `filter`.
@@ -1560,8 +1523,6 @@ impl Page {
         var_len_visitor: &impl VarLenMembers,
         blob_store: &mut dyn BlobStore,
     ) -> bool {
-        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
-
         // SAFETY: Caller promised that `starting_from` points to a valid row
         // consistent with `fixed_row_size` which was also
         // claimed to be consistent with `var_len_visitor` and `self`.

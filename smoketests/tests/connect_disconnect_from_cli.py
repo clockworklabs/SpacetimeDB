@@ -3,23 +3,23 @@ from .. import Smoketest
 class ConnDisconnFromCli(Smoketest):
 
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext};
+use spacetimedb::{log, ReducerContext};
 
 #[spacetimedb::reducer(client_connected)]
 pub fn connected(_ctx: &ReducerContext) {
-    println!("_connect called");
+    log::info!("_connect called");
     panic!("Panic on connect");
 }
 
 #[spacetimedb::reducer(client_disconnected)]
 pub fn disconnected(_ctx: &ReducerContext) {
-    println!("disconnect called");
+    log::info!("disconnect called");
     panic!("Panic on disconnect");
 }
 
 #[spacetimedb::reducer]
 pub fn say_hello(_ctx: &ReducerContext) {
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """
 

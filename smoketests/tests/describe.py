@@ -2,7 +2,7 @@ from .. import Smoketest
 
 class ModuleDescription(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -17,15 +17,15 @@ pub fn add(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn say_hello(ctx: &ReducerContext) {
     for person in ctx.db.person().iter() {
-        println!("Hello, {}!", person.name);
+        log::info!("Hello, {}!", person.name);
     }
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """
 
     def test_describe(self):
         """Check describing a module"""
 
-        self.spacetime("describe", self.address)
-        self.spacetime("describe", self.address, "reducer", "say_hello")
-        self.spacetime("describe", self.address, "table", "person")
+        self.spacetime("describe", self.database_identity)
+        self.spacetime("describe", self.database_identity, "reducer", "say_hello")
+        self.spacetime("describe", self.database_identity, "table", "person")

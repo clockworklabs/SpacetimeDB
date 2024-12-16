@@ -1,7 +1,6 @@
 pub mod datastore;
 pub mod db_metrics;
 pub mod relational_db;
-mod relational_operators;
 pub mod update;
 
 /// Whether SpacetimeDB is run in memory, or persists objects and

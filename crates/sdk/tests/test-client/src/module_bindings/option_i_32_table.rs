@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::option_i_32_type::OptionI32;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `option_i32`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.option_i_32().on_insert(...)`.
 pub struct OptionI32TableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<OptionI32>,
+    imp: __sdk::TableHandle<OptionI32>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl OptionI32TableAccess for super::RemoteTables {
     }
 }
 
-pub struct OptionI32InsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct OptionI32DeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct OptionI32InsertCallbackId(__sdk::CallbackId);
+pub struct OptionI32DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for OptionI32TableHandle<'ctx> {
+impl<'ctx> __sdk::Table for OptionI32TableHandle<'ctx> {
     type Row = OptionI32;
     type EventContext = super::EventContext;
 
@@ -83,9 +82,13 @@ impl<'ctx> __sdk::table::Table for OptionI32TableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<OptionI32>("option_i32");
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OptionI32>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<OptionI32>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"option_i32\"")
 }

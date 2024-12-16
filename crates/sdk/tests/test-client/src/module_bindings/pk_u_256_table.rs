@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::pk_u_256_type::PkU256;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `pk_u256`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.pk_u_256().on_insert(...)`.
 pub struct PkU256TableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<PkU256>,
+    imp: __sdk::TableHandle<PkU256>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl PkU256TableAccess for super::RemoteTables {
     }
 }
 
-pub struct PkU256InsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct PkU256DeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct PkU256InsertCallbackId(__sdk::CallbackId);
+pub struct PkU256DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for PkU256TableHandle<'ctx> {
+impl<'ctx> __sdk::Table for PkU256TableHandle<'ctx> {
     type Row = PkU256;
     type EventContext = super::EventContext;
 
@@ -82,9 +81,14 @@ impl<'ctx> __sdk::table::Table for PkU256TableHandle<'ctx> {
     }
 }
 
-pub struct PkU256UpdateCallbackId(__sdk::callbacks::CallbackId);
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkU256>("pk_u256");
+    _table.add_unique_constraint::<__sats::u256>("n", |row| &row.n);
+}
+pub struct PkU256UpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::TableWithPrimaryKey for PkU256TableHandle<'ctx> {
+impl<'ctx> __sdk::TableWithPrimaryKey for PkU256TableHandle<'ctx> {
     type UpdateCallbackId = PkU256UpdateCallbackId;
 
     fn on_update(
@@ -102,12 +106,9 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkU256TableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<PkU256>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<__sats::u256>(
-        raw_updates,
-        |row: &PkU256| &row.n,
-    )
-    .context("Failed to parse table update for table \"pk_u256\"")
+) -> __anyhow::Result<__sdk::TableUpdate<PkU256>> {
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<__sats::u256>(raw_updates, |row: &PkU256| &row.n)
+        .context("Failed to parse table update for table \"pk_u256\"")
 }
 
 /// Access to the `n` unique index on the table `pk_u256`,
@@ -118,7 +119,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.pk_u_256().n().find(...)`.
 pub struct PkU256NUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraint<PkU256, __sats::u256>,
+    imp: __sdk::UniqueConstraintHandle<PkU256, __sats::u256>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -126,7 +127,7 @@ impl<'ctx> PkU256TableHandle<'ctx> {
     /// Get a handle on the `n` unique index on the table `pk_u256`.
     pub fn n(&self) -> PkU256NUnique<'ctx> {
         PkU256NUnique {
-            imp: self.imp.get_unique_constraint::<__sats::u256>("n", |row| &row.n),
+            imp: self.imp.get_unique_constraint::<__sats::u256>("n"),
             phantom: std::marker::PhantomData,
         }
     }

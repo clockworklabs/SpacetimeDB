@@ -4,7 +4,7 @@ import time
 class CancelReducer(Smoketest):
 
     MODULE_CODE = """
-use spacetimedb::{duration, println, ReducerContext, Table};
+use spacetimedb::{duration, log, ReducerContext, Table};
 
 #[spacetimedb::reducer(init)]
 fn init(ctx: &ReducerContext) {
@@ -25,6 +25,11 @@ fn init(ctx: &ReducerContext) {
 
 #[spacetimedb::table(name = scheduled_reducer_args, public, scheduled(reducer))]
 pub struct ScheduledReducerArgs {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    #[scheduled_at]
+    scheduled_at: spacetimedb::ScheduleAt,
     num: i32,
 }
 
@@ -35,7 +40,7 @@ fn do_cancel(ctx: &ReducerContext, schedule_id: u64) {
 
 #[spacetimedb::reducer]
 fn reducer(_ctx: &ReducerContext, args: ScheduledReducerArgs) {
-    println!("the reducer ran: {}", args.num);
+    log::info!("the reducer ran: {}", args.num);
 }
 """
 
@@ -49,10 +54,15 @@ fn reducer(_ctx: &ReducerContext, args: ScheduledReducerArgs) {
 
 class SubscribeScheduledTable(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, duration, ReducerContext, Table, Timestamp};
+use spacetimedb::{log, duration, ReducerContext, Table, Timestamp};
 
 #[spacetimedb::table(name = scheduled_table, public, scheduled(my_reducer))]
 pub struct ScheduledTable {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    #[scheduled_at]
+    scheduled_at: spacetimedb::ScheduleAt,
     prev: Timestamp,
 }
 
@@ -68,7 +78,7 @@ fn schedule_repeated_reducer(ctx: &ReducerContext) {
 
 #[spacetimedb::reducer]
 pub fn my_reducer(_ctx: &ReducerContext, arg: ScheduledTable) {
-    println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), arg.prev.elapsed());
+    log::info!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), arg.prev.elapsed());
 }
 """
     def test_scheduled_table_subscription(self):

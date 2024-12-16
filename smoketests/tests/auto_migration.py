@@ -5,7 +5,7 @@ import logging
 
 class AddTableAutoMigration(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table, SpacetimeType};
+use spacetimedb::{log, ReducerContext, Table, SpacetimeType};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -20,7 +20,7 @@ pub fn add_person(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     for person in ctx.db.person().iter() {
-        println!("{}: {}", prefix, person.name);
+        log::info!("{}: {}", prefix, person.name);
     }
 }
 
@@ -56,7 +56,7 @@ pub fn add_book(ctx: &ReducerContext, isbn: String) {
 #[spacetimedb::reducer]
 pub fn print_books(ctx: &ReducerContext, prefix: String) {
     for book in ctx.db.book().iter() {
-        println!("{}: {}", prefix, book.isbn);
+        log::info!("{}: {}", prefix, book.isbn);
     }
 }
 
@@ -66,7 +66,7 @@ spacetimedb::filter!("SELECT * FROM book");
 
     def assertSql(self, sql, expected):
         self.maxDiff = None
-        sql_out = self.spacetime("sql", self.address, sql)
+        sql_out = self.spacetime("sql", self.database_identity, sql)
         sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
         expected = "\n".join([line.rstrip() for line in expected.splitlines()])
         self.assertMultiLineEqual(sql_out, expected)
@@ -98,7 +98,7 @@ spacetimedb::filter!("SELECT * FROM book");
         )
 
         self.write_module_code(self.MODULE_CODE_UPDATED)
-        self.publish_module(self.address, clear=False)
+        self.publish_module(self.database_identity, clear=False)
 
         logging.info("Updated")
 
@@ -127,7 +127,7 @@ spacetimedb::filter!("SELECT * FROM book");
 
 class RejectTableChanges(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -142,13 +142,13 @@ pub fn add_person(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     for person in ctx.db.person().iter() {
-        println!("{}: {}", prefix, person.name);
+        log::info!("{}: {}", prefix, person.name);
     }
 }
 """
 
     MODULE_CODE_UPDATED = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -164,7 +164,7 @@ pub fn add_person(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     for person in ctx.db.person().iter() {
-        println!("{}: {}", prefix, person.name);
+        log::info!("{}: {}", prefix, person.name);
     }
 }
 """
@@ -176,6 +176,6 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
 
         with self.assertRaises(Exception):
             self.write_module_code(self.MODULE_CODE_UPDATED)
-            self.publish_module(self.address, clear=False)
+            self.publish_module(self.database_identity, clear=False)
 
         logging.info("Rejected as expected.")

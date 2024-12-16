@@ -98,7 +98,7 @@ fn upgrade_table(
     // Now we're ready to go through the various definitions and upgrade them.
     let indexes = convert_all(indexes, upgrade_index);
     let sequences = convert_all(sequences.into_iter().chain(generated_sequences), upgrade_sequence);
-    let schedule = upgrade_schedule(scheduled, &table_name, scheduled_at_col);
+    let schedule = upgrade_schedule(scheduled, scheduled_at_col);
 
     // Constraints are pretty hairy, which is why we're getting rid of v8.
     let mut primary_key = None;
@@ -220,7 +220,7 @@ fn upgrade_index(index: RawIndexDefV8) -> RawIndexDefV9 {
     // ABI stability proposal. The old macros don't make this distinction, so we just reuse the name for them.
     let accessor_name = Some(index_name.clone());
     RawIndexDefV9 {
-        name: index_name.clone(),
+        name: Some(index_name),
         // Set the accessor name to be the same as the index name.
         accessor_name,
         algorithm,
@@ -238,7 +238,7 @@ fn upgrade_constraint(
     extra_errors: &mut Vec<ValidationError>,
 ) -> Option<RawConstraintDefV9> {
     let RawConstraintDefV8 {
-        constraint_name,
+        constraint_name, // not used in v9.
         constraints,
         columns,
     } = constraint;
@@ -262,7 +262,7 @@ fn upgrade_constraint(
 
     if constraints.has_unique() {
         Some(RawConstraintDefV9 {
-            name: constraint_name,
+            name: Some(constraint_name),
             data: RawConstraintDataV9::Unique(RawUniqueConstraintDataV9 { columns }),
         })
     } else {
@@ -273,14 +273,10 @@ fn upgrade_constraint(
     }
 }
 
-fn upgrade_schedule(
-    schedule: Option<RawIdentifier>,
-    table_name: &RawIdentifier,
-    scheduled_at_col: Option<u16>,
-) -> Option<RawScheduleDefV9> {
+fn upgrade_schedule(schedule: Option<RawIdentifier>, scheduled_at_col: Option<u16>) -> Option<RawScheduleDefV9> {
     let scheduled_at_col = scheduled_at_col?;
     schedule.map(|reducer_name| RawScheduleDefV9 {
-        name: format!("{table_name}_schedule").into(),
+        name: None,
         reducer_name,
         scheduled_at_column: scheduled_at_col.into(),
     })
@@ -298,7 +294,7 @@ fn upgrade_sequence(sequence: RawSequenceDefV8) -> RawSequenceDefV9 {
     } = sequence;
 
     RawSequenceDefV9 {
-        name: sequence_name,
+        name: Some(sequence_name),
         column: col_pos,
         start,
         increment,

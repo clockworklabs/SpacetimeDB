@@ -1,10 +1,9 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::ops::DerefMut;
 use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
-use crate::execution_context::ExecutionContext;
+use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{
@@ -17,8 +16,6 @@ use spacetimedb_primitives::{errno, ColId};
 use spacetimedb_sats::bsatn;
 use spacetimedb_sats::buffer::{CountWriter, TeeWriter};
 use wasmtime::{AsContext, Caller, StoreContextMut};
-
-use crate::host::instance_env::InstanceEnv;
 
 use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 
@@ -75,6 +72,9 @@ pub(super) struct WasmInstanceEnv {
 
     /// The last, including current, reducer to be executed by this environment.
     reducer_name: String,
+    /// A pool of unused allocated chunks that can be reused.
+    // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
+    chunk_pool: ChunkPool,
 }
 
 const CALL_REDUCER_ARGS_SOURCE: u32 = 1;
@@ -99,6 +99,7 @@ impl WasmInstanceEnv {
             reducer_start,
             call_times: CallTimes::new(),
             reducer_name: String::from(""),
+            chunk_pool: <_>::default(),
         }
     }
 
@@ -178,11 +179,6 @@ impl WasmInstanceEnv {
 
         self.call_reducer_args = None;
         (timings, self.take_standard_bytes_sink())
-    }
-
-    /// Returns an execution context for a reducer call.
-    fn reducer_context(&self) -> Result<impl DerefMut<Target = ExecutionContext> + '_, WasmError> {
-        self.instance_env().get_ctx().map_err(|err| WasmError::Db(err.into()))
     }
 
     fn with_span<R>(mut caller: Caller<'_, Self>, func: AbiCall, run: impl FnOnce(&mut Caller<'_, Self>) -> R) -> R {
@@ -405,13 +401,10 @@ impl WasmInstanceEnv {
     ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::DatastoreTableScanBsatn, out, |caller| {
             let env = caller.data_mut();
-            // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context()?;
             // Collect the iterator chunks.
             let chunks = env
                 .instance_env
-                .datastore_table_scan_bsatn_chunks(&ctx, table_id.into())?;
-            drop(ctx);
+                .datastore_table_scan_bsatn_chunks(&mut env.chunk_pool, table_id.into())?;
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
             Ok(env.iters.insert(chunks.into_iter()))
@@ -507,6 +500,7 @@ impl WasmInstanceEnv {
 
             // Find the relevant rows.
             let chunks = env.instance_env.datastore_btree_scan_bsatn_chunks(
+                &mut env.chunk_pool,
                 index_id.into(),
                 prefix,
                 prefix_elems,
@@ -586,11 +580,9 @@ impl WasmInstanceEnv {
                 buffer = &mut buffer[chunk.len()..];
 
                 // Advance the iterator, as we used a chunk.
-                // TODO(Centril): consider putting these into a pool for reuse
-                // by the next `ChunkedWriter::collect_iter`, `span_start`, and `bytes_sink_write`.
-                // Although we need to shrink these chunks to fit due to `Box<[u8]>`,
-                // in practice, `realloc` will in practice not move the data to a new heap allocation.
-                iter.next();
+                // SAFETY: We peeked one `chunk`, so there must be one at least.
+                let chunk = unsafe { iter.next().unwrap_unchecked() };
+                env.chunk_pool.put(chunk);
             }
 
             let ret = match (written, iter.as_slice().first()) {
@@ -687,8 +679,7 @@ impl WasmInstanceEnv {
 
             // Insert the row into the DB.
             // This will return back the generated column values.
-            let ctx = env.reducer_context()?;
-            let gen_cols = env.instance_env.insert(&ctx, table_id.into(), row)?;
+            let gen_cols = env.instance_env.insert(table_id.into(), row)?;
 
             // Write back the generated column values to `row`
             // and the encoded length to `row_len`.

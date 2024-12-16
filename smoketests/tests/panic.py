@@ -2,7 +2,7 @@ from .. import Smoketest
 
 class Panic(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext};
+use spacetimedb::{log, ReducerContext};
 use std::cell::RefCell;
 
 thread_local! {
@@ -18,7 +18,7 @@ fn first(_ctx: &ReducerContext) {
 #[spacetimedb::reducer]
 fn second(_ctx: &ReducerContext) {
     X.with(|x| *x.borrow_mut());
-    println!("Test Passed");
+    log::info!("Test Passed");
 }
 """
 

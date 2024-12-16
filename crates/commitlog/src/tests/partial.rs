@@ -9,7 +9,7 @@ use log::debug;
 
 use crate::{
     commitlog, error, payload,
-    repo::{self, Repo},
+    repo::{self, Repo, Segment},
     segment::FileLike,
     tests::helpers::enable_logging,
     Commit, Encode, Options, DEFAULT_LOG_FORMAT_VERSION,
@@ -158,6 +158,12 @@ const ENOSPC: i32 = 28;
 struct ShortSegment {
     inner: repo::mem::Segment,
     max_len: u64,
+}
+
+impl Segment for ShortSegment {
+    fn segment_len(&mut self) -> io::Result<u64> {
+        self.inner.segment_len()
+    }
 }
 
 impl FileLike for ShortSegment {

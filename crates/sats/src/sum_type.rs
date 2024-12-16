@@ -68,15 +68,30 @@ impl SumType {
     /// If the type does look like a structural option type, returns the type `T`.
     pub fn as_option(&self) -> Option<&AlgebraicType> {
         match &*self.variants {
-            [first, second]
-                if second.is_unit() // Done first to avoid pointer indirection when it doesn't matter.
-                    && first.has_name(OPTION_SOME_TAG)
-                    && second.has_name(OPTION_NONE_TAG) =>
-            {
-                Some(&first.algebraic_type)
-            }
+            [first, second] if Self::are_variants_option(first, second) => Some(&first.algebraic_type),
             _ => None,
         }
+    }
+
+    /// Check whether this sum type is a structural option type.
+    ///
+    /// A structural option type has `some(T)` as its first variant and `none` as its second.
+    /// That is, `{ some(T), none }` or `some: T | none` depending on your notation.
+    /// Note that `some` and `none` are lowercase, unlike Rust's `Option`.
+    /// Order matters, and an option type with these variants in the opposite order will not be recognized.
+    ///
+    /// If the type does look like a structural option type, returns the type `T`.
+    pub fn as_option_mut(&mut self) -> Option<&mut AlgebraicType> {
+        match &mut *self.variants {
+            [first, second] if Self::are_variants_option(first, second) => Some(&mut first.algebraic_type),
+            _ => None,
+        }
+    }
+
+    fn are_variants_option(first: &SumTypeVariant, second: &SumTypeVariant) -> bool {
+        second.is_unit() // Done first to avoid pointer indirection when it doesn't matter.
+        && first.has_name(OPTION_SOME_TAG)
+        && second.has_name(OPTION_NONE_TAG)
     }
 
     /// Check whether this sum type is a structural option type.

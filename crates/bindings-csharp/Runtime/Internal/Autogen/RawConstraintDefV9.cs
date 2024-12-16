@@ -16,12 +16,12 @@ namespace SpacetimeDB.Internal
 	public partial class RawConstraintDefV9
 	{
 		[DataMember(Name = "name")]
-		public string Name;
+		public string? Name;
 		[DataMember(Name = "data")]
 		public SpacetimeDB.Internal.RawConstraintDataV9 Data;
 
 		public RawConstraintDefV9(
-			string Name,
+			string? Name,
 			SpacetimeDB.Internal.RawConstraintDataV9 Data
 		)
 		{
@@ -31,7 +31,6 @@ namespace SpacetimeDB.Internal
 
 		public RawConstraintDefV9()
 		{
-			this.Name = "";
 			this.Data = null!;
 		}
 

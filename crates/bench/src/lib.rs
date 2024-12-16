@@ -16,6 +16,8 @@ mod tests {
         sqlite::SQLite,
         ResultBench,
     };
+    use serial_test::serial;
+    use spacetimedb_testing::modules::{Csharp, Rust};
     use std::{io, path::Path, sync::Once};
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -57,7 +59,7 @@ mod tests {
     ) -> ResultBench<()> {
         prepare_tests();
 
-        let mut db = DB::build(in_memory, false)?;
+        let mut db = DB::build(in_memory)?;
         let table_id = db.create_table::<T>(index_strategy)?;
         assert_eq!(db.count_table(&table_id)?, 0, "tables should begin empty");
 
@@ -101,30 +103,37 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_basic_invariants_sqlite() {
-        basic_invariants::<SQLite, u32_u64_str>(IndexStrategy::Unique0, true).unwrap();
-        basic_invariants::<SQLite, u32_u64_u64>(IndexStrategy::Unique0, true).unwrap();
-        basic_invariants::<SQLite, u32_u64_str>(IndexStrategy::BTreeEachColumn, true).unwrap();
-        basic_invariants::<SQLite, u32_u64_u64>(IndexStrategy::BTreeEachColumn, true).unwrap();
+    fn test_basic_invariants<DB: BenchDatabase>() -> ResultBench<()> {
+        basic_invariants::<DB, u32_u64_str>(IndexStrategy::Unique0, true)?;
+        basic_invariants::<DB, u32_u64_u64>(IndexStrategy::Unique0, true)?;
+        basic_invariants::<DB, u32_u64_str>(IndexStrategy::BTreeEachColumn, true)?;
+        basic_invariants::<DB, u32_u64_u64>(IndexStrategy::BTreeEachColumn, true)?;
+        Ok(())
     }
 
     #[test]
-    fn test_basic_invariants_spacetime_raw() {
-        basic_invariants::<SpacetimeRaw, u32_u64_str>(IndexStrategy::Unique0, true).unwrap();
-        basic_invariants::<SpacetimeRaw, u32_u64_u64>(IndexStrategy::Unique0, true).unwrap();
-        basic_invariants::<SpacetimeRaw, u32_u64_str>(IndexStrategy::BTreeEachColumn, true).unwrap();
-        basic_invariants::<SpacetimeRaw, u32_u64_u64>(IndexStrategy::BTreeEachColumn, true).unwrap();
+    fn test_basic_invariants_sqlite() -> ResultBench<()> {
+        test_basic_invariants::<SQLite>()
     }
 
     #[test]
-    fn test_basic_invariants_spacetime_module() {
-        // note: there can only be one #[test] invoking spacetime module stuff.
-        // #[test]s run concurrently and they fight over lockfiles.
-        // so, run the sub-tests here in sequence.
-        basic_invariants::<SpacetimeModule, u32_u64_str>(IndexStrategy::Unique0, true).unwrap();
-        basic_invariants::<SpacetimeModule, u32_u64_u64>(IndexStrategy::Unique0, true).unwrap();
-        basic_invariants::<SpacetimeModule, u32_u64_str>(IndexStrategy::BTreeEachColumn, true).unwrap();
-        basic_invariants::<SpacetimeModule, u32_u64_u64>(IndexStrategy::BTreeEachColumn, true).unwrap();
+    fn test_basic_invariants_spacetime_raw() -> ResultBench<()> {
+        test_basic_invariants::<SpacetimeRaw>()
+    }
+
+    // note: there can only be one #[test] invoking spacetime module stuff.
+    // #[test]s run concurrently and they fight over lockfiles.
+    // so, run the sub-tests here in sequence.
+
+    #[test]
+    #[serial]
+    fn test_basic_invariants_spacetime_module_rust() -> ResultBench<()> {
+        test_basic_invariants::<SpacetimeModule<Rust>>()
+    }
+
+    #[test]
+    #[serial]
+    fn test_basic_invariants_spacetime_module_csharp() -> ResultBench<()> {
+        test_basic_invariants::<SpacetimeModule<Csharp>>()
     }
 }

@@ -76,11 +76,6 @@
         internal override Internal.ColumnAttrs Mask => Internal.ColumnAttrs.Unique;
     }
 
-    public sealed class IndexedAttribute : Internal.ColumnAttribute
-    {
-        internal override Internal.ColumnAttrs Mask => Internal.ColumnAttrs.Indexed;
-    }
-
     public enum ReducerKind
     {
         /// <summary>

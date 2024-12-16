@@ -10,7 +10,7 @@ public interface ITable<T> : IStructuralReadWrite
 
     internal abstract class RawTableIterBase
     {
-        public class Enumerator(FFI.RowIter handle) : IDisposable
+        public sealed class Enumerator(FFI.RowIter handle) : IDisposable
         {
             byte[] buffer = new byte[0x20_000];
             public byte[] Current { get; private set; } = [];
@@ -65,16 +65,7 @@ public interface ITable<T> : IStructuralReadWrite
                 {
                     FFI.row_iter_bsatn_close(handle);
                     handle = FFI.RowIter.INVALID;
-                    // Avoid running ~RowIter if Dispose was executed successfully.
-                    GC.SuppressFinalize(this);
                 }
-            }
-
-            // Free unmanaged resource just in case user hasn't disposed for some reason.
-            ~Enumerator()
-            {
-                // we already guard against double-free in Dispose.
-                Dispose();
             }
 
             public void Reset()

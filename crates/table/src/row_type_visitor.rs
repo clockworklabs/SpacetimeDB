@@ -46,6 +46,11 @@ use std::sync::Arc;
 /// This is a potentially expensive operation,
 /// so the resulting `VarLenVisitorProgram` should be stored and re-used.
 pub fn row_type_visitor(ty: &RowTypeLayout) -> VarLenVisitorProgram {
+    if ty.layout().fixed {
+        // Fast-path: The row type doesn't contain var-len members, so quit early.
+        return VarLenVisitorProgram { insns: [].into() };
+    }
+
     let rose_tree = product_type_to_rose_tree(ty.product(), &mut 0);
 
     rose_tree_to_visitor_program(&rose_tree)
@@ -111,10 +116,8 @@ fn sum_type_to_rose_tree(ty: &SumTypeLayout, current_offset: &mut usize) -> VarL
 
             // All variants are stored overlapping at the offset of the sum.
             // Don't let them mutate `current_offset`.
-            // Note that we store sums with data first,
-            // followed by tag,
-            // so the variant data goes at `current_offset`,
-            // not `current_offset + tag + padding`.
+            // Note that we store sums with tag first,
+            // followed by data/payload.
             //
             // `offset_of_variant_data` is defined as 0,
             // but included for future-proofing.

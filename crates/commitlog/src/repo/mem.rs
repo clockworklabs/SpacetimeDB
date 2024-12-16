@@ -28,6 +28,7 @@ impl Segment {
     pub fn len(&self) -> usize {
         self.buf.read().unwrap().len()
     }
+
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -36,6 +37,12 @@ impl Segment {
 impl From<SharedBytes> for Segment {
     fn from(buf: SharedBytes) -> Self {
         Self { pos: 0, buf }
+    }
+}
+
+impl super::Segment for Segment {
+    fn segment_len(&mut self) -> io::Result<u64> {
+        Ok(Segment::len(self) as u64)
     }
 }
 
@@ -118,8 +125,10 @@ impl Repo for Memory {
         let mut inner = self.0.write().unwrap();
         match inner.entry(offset) {
             btree_map::Entry::Occupied(entry) => {
-                if entry.get().read().unwrap().len() == 0 {
-                    Ok(Segment::from(Arc::clone(entry.get())))
+                let entry = entry.get();
+                let read_guard = entry.read().unwrap();
+                if read_guard.len() == 0 {
+                    Ok(Segment::from(Arc::clone(entry)))
                 } else {
                     Err(io::Error::new(
                         io::ErrorKind::AlreadyExists,

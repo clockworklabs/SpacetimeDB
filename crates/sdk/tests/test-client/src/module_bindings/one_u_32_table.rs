@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::one_u_32_type::OneU32;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `one_u32`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.one_u_32().on_insert(...)`.
 pub struct OneU32TableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<OneU32>,
+    imp: __sdk::TableHandle<OneU32>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl OneU32TableAccess for super::RemoteTables {
     }
 }
 
-pub struct OneU32InsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct OneU32DeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct OneU32InsertCallbackId(__sdk::CallbackId);
+pub struct OneU32DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for OneU32TableHandle<'ctx> {
+impl<'ctx> __sdk::Table for OneU32TableHandle<'ctx> {
     type Row = OneU32;
     type EventContext = super::EventContext;
 
@@ -83,9 +82,13 @@ impl<'ctx> __sdk::table::Table for OneU32TableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<OneU32>("one_u32");
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneU32>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<OneU32>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"one_u32\"")
 }

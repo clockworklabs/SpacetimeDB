@@ -68,7 +68,7 @@ namespace SpacetimeDB
 
             internal sealed class LocationIndex()
                 : SpacetimeDB.Internal.IndexBase<global::BTreeMultiColumn>(
-                    "bt_BTreeMultiColumn_Location"
+                    "BTreeMultiColumn_X_Y_Z_idx_btree"
                 )
             {
                 public IEnumerable<global::BTreeMultiColumn> Filter(uint X) =>
@@ -217,7 +217,13 @@ namespace SpacetimeDB
                 >
             {
                 internal BTreeViewsUniqueIndex(BTreeViews handle)
-                    : base(handle, "idx_BTreeViews_BTreeViews_Id_unique") { }
+                    : base(handle, "BTreeViews_Id_idx_btree") { }
+
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::BTreeViews? Find(SpacetimeDB.Identity key) =>
+                    DoFilter(key).Cast<global::BTreeViews?>().SingleOrDefault();
 
                 public bool Update(global::BTreeViews row) => DoUpdate(row.Id, row);
             }
@@ -225,7 +231,7 @@ namespace SpacetimeDB
             internal BTreeViewsUniqueIndex Id => new(this);
 
             internal sealed class LocationIndex()
-                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("bt_BTreeViews_Location")
+                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_X_Y_idx_btree")
             {
                 public IEnumerable<global::BTreeViews> Filter(uint X) =>
                     DoFilter(
@@ -291,7 +297,7 @@ namespace SpacetimeDB
             internal LocationIndex Location => new();
 
             internal sealed class FactionIndex()
-                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("bt_BTreeViews_Faction")
+                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_Faction_idx_btree")
             {
                 public IEnumerable<global::BTreeViews> Filter(string Faction) =>
                     DoFilter(
@@ -356,7 +362,13 @@ namespace SpacetimeDB
                 : UniqueIndex<MultiTable1, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
             {
                 internal MultiTable1UniqueIndex(MultiTable1 handle)
-                    : base(handle, "idx_MultiTable1_MultiTable1_Foo_unique") { }
+                    : base(handle, "MultiTable1_Foo_idx_btree") { }
+
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::MultiTableRow? Find(uint key) =>
+                    DoFilter(key).Cast<global::MultiTableRow?>().SingleOrDefault();
 
                 public bool Update(global::MultiTableRow row) => DoUpdate(row.Foo, row);
             }
@@ -364,7 +376,9 @@ namespace SpacetimeDB
             public MultiTable1UniqueIndex Foo => new(this);
 
             public sealed class NameIndex()
-                : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>("bt_MultiTable1_Name")
+                : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>(
+                    "MultiTable1_Name_idx_btree"
+                )
             {
                 public IEnumerable<global::MultiTableRow> Filter(string Name) =>
                     DoFilter(
@@ -429,7 +443,13 @@ namespace SpacetimeDB
                 : UniqueIndex<MultiTable2, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
             {
                 internal MultiTable2UniqueIndex(MultiTable2 handle)
-                    : base(handle, "idx_MultiTable2_MultiTable2_Bar_unique") { }
+                    : base(handle, "MultiTable2_Bar_idx_btree") { }
+
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::MultiTableRow? Find(uint key) =>
+                    DoFilter(key).Cast<global::MultiTableRow?>().SingleOrDefault();
 
                 public bool Update(global::MultiTableRow row) => DoUpdate(row.Bar, row);
             }
@@ -492,7 +512,13 @@ namespace SpacetimeDB
                 : UniqueIndex<PublicTable, global::PublicTable, int, SpacetimeDB.BSATN.I32>
             {
                 internal PublicTableUniqueIndex(PublicTable handle)
-                    : base(handle, "idx_PublicTable_PublicTable_Id_unique") { }
+                    : base(handle, "PublicTable_Id_idx_btree") { }
+
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::PublicTable? Find(int key) =>
+                    DoFilter(key).Cast<global::PublicTable?>().SingleOrDefault();
 
                 public bool Update(global::PublicTable row) => DoUpdate(row.Id, row);
             }
@@ -550,7 +576,13 @@ namespace SpacetimeDB
                 >
             {
                 internal SendMessageTimerUniqueIndex(SendMessageTimer handle)
-                    : base(handle, "idx_SendMessageTimer_SendMessageTimer_ScheduledId_unique") { }
+                    : base(handle, "SendMessageTimer_ScheduledId_idx_btree") { }
+
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::Timers.SendMessageTimer? Find(ulong key) =>
+                    DoFilter(key).Cast<global::Timers.SendMessageTimer?>().SingleOrDefault();
 
                 public bool Update(global::Timers.SendMessageTimer row) =>
                     DoUpdate(row.ScheduledId, row);

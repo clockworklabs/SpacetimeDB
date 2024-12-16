@@ -16,14 +16,14 @@ namespace SpacetimeDB.Internal
 	public partial class RawIndexDefV9
 	{
 		[DataMember(Name = "name")]
-		public string Name;
+		public string? Name;
 		[DataMember(Name = "accessor_name")]
 		public string? AccessorName;
 		[DataMember(Name = "algorithm")]
 		public SpacetimeDB.Internal.RawIndexAlgorithm Algorithm;
 
 		public RawIndexDefV9(
-			string Name,
+			string? Name,
 			string? AccessorName,
 			SpacetimeDB.Internal.RawIndexAlgorithm Algorithm
 		)
@@ -35,7 +35,6 @@ namespace SpacetimeDB.Internal
 
 		public RawIndexDefV9()
 		{
-			this.Name = "";
 			this.Algorithm = null!;
 		}
 

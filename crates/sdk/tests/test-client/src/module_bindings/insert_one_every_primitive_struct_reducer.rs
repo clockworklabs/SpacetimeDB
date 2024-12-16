@@ -2,25 +2,30 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneEveryPrimitiveStruct {
+pub(super) struct InsertOneEveryPrimitiveStructArgs {
     pub s: EveryPrimitiveStruct,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOneEveryPrimitiveStruct {
+impl From<InsertOneEveryPrimitiveStructArgs> for super::Reducer {
+    fn from(args: InsertOneEveryPrimitiveStructArgs) -> Self {
+        Self::InsertOneEveryPrimitiveStruct { s: args.s }
+    }
+}
+
+impl __sdk::InModule for InsertOneEveryPrimitiveStructArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOneEveryPrimitiveStructCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOneEveryPrimitiveStructCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_one_every_primitive_struct`.
@@ -54,20 +59,56 @@ pub trait insert_one_every_primitive_struct {
 
 impl insert_one_every_primitive_struct for super::RemoteReducers {
     fn insert_one_every_primitive_struct(&self, s: EveryPrimitiveStruct) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_one_every_primitive_struct", InsertOneEveryPrimitiveStruct { s })
+        self.imp.call_reducer(
+            "insert_one_every_primitive_struct",
+            InsertOneEveryPrimitiveStructArgs { s },
+        )
     }
     fn on_insert_one_every_primitive_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &EveryPrimitiveStruct) + Send + 'static,
     ) -> InsertOneEveryPrimitiveStructCallbackId {
-        InsertOneEveryPrimitiveStructCallbackId(self.imp.on_reducer::<InsertOneEveryPrimitiveStruct>(
+        InsertOneEveryPrimitiveStructCallbackId(self.imp.on_reducer(
             "insert_one_every_primitive_struct",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneEveryPrimitiveStruct| callback(ctx, &args.s)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneEveryPrimitiveStruct { s },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
+            }),
         ))
     }
     fn remove_on_insert_one_every_primitive_struct(&self, callback: InsertOneEveryPrimitiveStructCallbackId) {
         self.imp
-            .remove_on_reducer::<InsertOneEveryPrimitiveStruct>("insert_one_every_primitive_struct", callback.0)
+            .remove_on_reducer("insert_one_every_primitive_struct", callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_one_every_primitive_struct`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_one_every_primitive_struct {
+    /// Set the call-reducer flags for the reducer `insert_one_every_primitive_struct` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_one_every_primitive_struct(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_one_every_primitive_struct for super::SetReducerFlags {
+    fn insert_one_every_primitive_struct(&self, flags: __ws::CallReducerFlags) {
+        self.imp
+            .set_call_reducer_flags("insert_one_every_primitive_struct", flags);
     }
 }

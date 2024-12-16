@@ -2,21 +2,26 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertCallerOneIdentity {}
+pub(super) struct InsertCallerOneIdentityArgs {}
 
-impl __sdk::spacetime_module::InModule for InsertCallerOneIdentity {
+impl From<InsertCallerOneIdentityArgs> for super::Reducer {
+    fn from(args: InsertCallerOneIdentityArgs) -> Self {
+        Self::InsertCallerOneIdentity
+    }
+}
+
+impl __sdk::InModule for InsertCallerOneIdentityArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertCallerOneIdentityCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertCallerOneIdentityCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_caller_one_identity`.
@@ -51,19 +56,51 @@ pub trait insert_caller_one_identity {
 impl insert_caller_one_identity for super::RemoteReducers {
     fn insert_caller_one_identity(&self) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_caller_one_identity", InsertCallerOneIdentity {})
+            .call_reducer("insert_caller_one_identity", InsertCallerOneIdentityArgs {})
     }
     fn on_insert_caller_one_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> InsertCallerOneIdentityCallbackId {
-        InsertCallerOneIdentityCallbackId(self.imp.on_reducer::<InsertCallerOneIdentity>(
+        InsertCallerOneIdentityCallbackId(self.imp.on_reducer(
             "insert_caller_one_identity",
-            Box::new(move |ctx: &super::EventContext, args: &InsertCallerOneIdentity| callback(ctx)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertCallerOneIdentity {},
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx)
+            }),
         ))
     }
     fn remove_on_insert_caller_one_identity(&self, callback: InsertCallerOneIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertCallerOneIdentity>("insert_caller_one_identity", callback.0)
+        self.imp.remove_on_reducer("insert_caller_one_identity", callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_caller_one_identity`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_caller_one_identity {
+    /// Set the call-reducer flags for the reducer `insert_caller_one_identity` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_caller_one_identity(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_caller_one_identity for super::SetReducerFlags {
+    fn insert_caller_one_identity(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_caller_one_identity", flags);
     }
 }

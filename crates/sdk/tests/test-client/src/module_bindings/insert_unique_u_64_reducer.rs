@@ -2,24 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertUniqueU64 {
+pub(super) struct InsertUniqueU64Args {
     pub n: u64,
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for InsertUniqueU64 {
+impl From<InsertUniqueU64Args> for super::Reducer {
+    fn from(args: InsertUniqueU64Args) -> Self {
+        Self::InsertUniqueU64 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertUniqueU64Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertUniqueU64CallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertUniqueU64CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_unique_u64`.
@@ -53,19 +61,52 @@ pub trait insert_unique_u_64 {
 
 impl insert_unique_u_64 for super::RemoteReducers {
     fn insert_unique_u_64(&self, n: u64, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_unique_u64", InsertUniqueU64 { n, data })
+        self.imp
+            .call_reducer("insert_unique_u64", InsertUniqueU64Args { n, data })
     }
     fn on_insert_unique_u_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u64, &i32) + Send + 'static,
     ) -> InsertUniqueU64CallbackId {
-        InsertUniqueU64CallbackId(self.imp.on_reducer::<InsertUniqueU64>(
+        InsertUniqueU64CallbackId(self.imp.on_reducer(
             "insert_unique_u64",
-            Box::new(move |ctx: &super::EventContext, args: &InsertUniqueU64| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertUniqueU64 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_insert_unique_u_64(&self, callback: InsertUniqueU64CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueU64>("insert_unique_u64", callback.0)
+        self.imp.remove_on_reducer("insert_unique_u64", callback.0)
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[doc(hidden)]
+/// Extension trait for setting the call-flags for the reducer `insert_unique_u64`.
+///
+/// Implemented for [`super::SetReducerFlags`].
+///
+/// This type is currently unstable and may be removed without a major version bump.
+pub trait set_flags_for_insert_unique_u_64 {
+    /// Set the call-reducer flags for the reducer `insert_unique_u64` to `flags`.
+    ///
+    /// This type is currently unstable and may be removed without a major version bump.
+    fn insert_unique_u_64(&self, flags: __ws::CallReducerFlags);
+}
+
+impl set_flags_for_insert_unique_u_64 for super::SetReducerFlags {
+    fn insert_unique_u_64(&self, flags: __ws::CallReducerFlags) {
+        self.imp.set_call_reducer_flags("insert_unique_u64", flags);
     }
 }

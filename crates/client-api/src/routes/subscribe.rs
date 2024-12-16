@@ -13,7 +13,7 @@ use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
 use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage};
-use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol};
+use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage, MessageHandleError, Protocol};
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::also_poll;
 use spacetimedb::worker_metrics::WORKER_METRICS;
@@ -27,7 +27,7 @@ use crate::auth::SpacetimeAuth;
 use crate::util::websocket::{
     CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade,
 };
-use crate::util::{NameOrAddress, XForwardedFor};
+use crate::util::{NameOrIdentity, XForwardedFor};
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
 #[allow(clippy::declare_interior_mutable_const)]
@@ -37,13 +37,18 @@ pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static("v1.bsatn.spaceti
 
 #[derive(Deserialize)]
 pub struct SubscribeParams {
-    pub name_or_address: NameOrAddress,
+    pub name_or_identity: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
 pub struct SubscribeQueryParams {
     pub client_address: Option<AddressForUrl>,
-    pub compression: Option<Compression>,
+    #[serde(default)]
+    pub compression: Compression,
+    /// Whether we want "light" responses, tailored to network bandwidth constrained clients.
+    /// This knob works by setting other, more specifc, knobs to the value.
+    #[serde(default)]
+    pub light: bool,
 }
 
 // TODO: is this a reasonable way to generate client addresses?
@@ -56,10 +61,11 @@ pub fn generate_random_address() -> Address {
 
 pub async fn handle_websocket<S>(
     State(ctx): State<S>,
-    Path(SubscribeParams { name_or_address }): Path<SubscribeParams>,
+    Path(SubscribeParams { name_or_identity }): Path<SubscribeParams>,
     Query(SubscribeQueryParams {
         client_address,
         compression,
+        light,
     }): Query<SubscribeQueryParams>,
     forwarded_for: Option<TypedHeader<XForwardedFor>>,
     Extension(auth): Extension<SpacetimeAuth>,
@@ -79,33 +85,35 @@ where
         ))?;
     }
 
-    let db_address = name_or_address.resolve(&ctx).await?.into();
+    let db_address = name_or_identity.resolve(&ctx).await?.into();
 
     let (res, ws_upgrade, protocol) =
         ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
 
     let protocol = protocol.ok_or((StatusCode::BAD_REQUEST, "no valid protocol selected"))?;
-    let compression = compression.unwrap_or_default();
+    let client_config = ClientConfig {
+        protocol,
+        compression,
+        tx_update_full: !light,
+    };
 
     // TODO: Should also maybe refactor the code and the protocol to allow a single websocket
     // to connect to multiple modules
 
     let database = ctx
-        .get_database_by_address(&db_address)
+        .get_database_by_identity(&db_address)
         .unwrap()
         .ok_or(StatusCode::NOT_FOUND)?;
-    let replica = ctx
-        .get_leader_replica_by_database(database.id)
+
+    let leader = ctx
+        .leader(database.id)
+        .await
+        .map_err(log_and_500)?
         .ok_or(StatusCode::NOT_FOUND)?;
-    let replica_id = replica.id;
 
     let identity_token = auth.creds.token().into();
 
-    let host = ctx.host_controller();
-    let module_rx = host
-        .watch_maybe_launch_module_host(database, replica_id)
-        .await
-        .map_err(log_and_500)?;
+    let module_rx = leader.module_watcher().await.map_err(log_and_500)?;
 
     let client_id = ClientActorId {
         identity: auth.identity,
@@ -137,7 +145,7 @@ where
         }
 
         let actor = |client, sendrx| ws_client_actor(client, ws, sendrx);
-        let client = match ClientConnection::spawn(client_id, protocol, compression, replica_id, module_rx, actor).await
+        let client = match ClientConnection::spawn(client_id, client_config, leader.replica_id, module_rx, actor).await
         {
             Ok(s) => s,
             Err(e) => {
@@ -212,7 +220,7 @@ async fn ws_client_actor_inner(
     let mut closed = false;
     let mut rx_buf = Vec::new();
 
-    let addr = client.module.info().address;
+    let addr = client.module.info().database_identity;
 
     loop {
         rx_buf.clear();
@@ -266,7 +274,7 @@ async fn ws_client_actor_inner(
                             let workload = msg.workload();
                             let num_rows = msg.num_rows();
 
-                            let msg = datamsg_to_wsmsg(serialize(msg, client.protocol, client.compression));
+                            let msg = datamsg_to_wsmsg(serialize(msg, client.config));
 
                             // These metrics should be updated together,
                             // or not at all.
@@ -354,7 +362,7 @@ async fn ws_client_actor_inner(
                 if let Err(e) = res {
                     if let MessageHandleError::Execution(err) = e {
                         log::error!("{err:#}");
-                        let msg = serialize(err, client.protocol, client.compression);
+                        let msg = serialize(err, client.config);
                         if let Err(error) = ws.send(datamsg_to_wsmsg(msg)).await {
                             log::warn!("Websocket send error: {error}")
                         }

@@ -60,7 +60,12 @@ partial struct MultiTableRow : SpacetimeDB.Internal.ITable<MultiTableRow>
                     ],
                     Indexes:
                     [
-                        new("bt_MultiTable1_Name", false, SpacetimeDB.Internal.IndexType.BTree, [0])
+                        new(
+                            "MultiTable1_Name_idx_btree",
+                            false,
+                            SpacetimeDB.Internal.IndexType.BTree,
+                            [0]
+                        )
                     ],
                     Constraints:
                     [

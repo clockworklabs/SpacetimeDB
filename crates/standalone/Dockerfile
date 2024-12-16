@@ -28,19 +28,17 @@ COPY . .
 RUN cargo build -p spacetimedb-standalone --profile=${CARGO_PROFILE} --locked
 
 FROM builder as env-dev
-ENV SPACETIMEDB_LOG_CONFIG=/usr/src/app/crates/standalone/log.conf
-ENV SPACETIMEDB_JWT_PUB_KEY=/etc/spacetimedb/id_ecdsa.pub
-ENV SPACETIMEDB_JWT_PRIV_KEY=/etc/spacetimedb/id_ecdsa
+RUN mkdir -p /stdb/data && ln -s /usr/src/app/crates/standalone/config.toml /stdb/data/config.toml
 ENV PATH="/usr/src/app/target/debug:${PATH}"
 
 FROM debian as env-release
 COPY --from=builder /usr/src/app/target/release/spacetimedb /usr/local/bin/
-COPY --from=builder /usr/src/app/crates/standalone/log.conf /etc/spacetimedb/
+COPY --from=builder /usr/src/app/crates/standalone/config.toml /stdb/data/config.toml
 
 FROM env-${CARGO_PROFILE}
 
 EXPOSE 3000
 
 ENV RUST_BACKTRACE=1
-ENTRYPOINT ["spacetimedb"]
+ENTRYPOINT ["spacetimedb", "--data-dir=/stdb/data", "--jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub", "--jwt-priv-key-path=/etc/spacetimedb/id_ecdsa"]
 CMD ["start"]

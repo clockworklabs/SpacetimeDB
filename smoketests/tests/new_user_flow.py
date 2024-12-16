@@ -4,7 +4,7 @@ import time
 class NewUserFlow(Smoketest):
     AUTOPUBLISH = False
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -19,9 +19,9 @@ pub fn add(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn say_hello(ctx: &ReducerContext) {
     for person in ctx.db.person().iter() {
-        println!("Hello, {}!", person.name);
+        log::info!("Hello, {}!", person.name);
     }
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """
 
@@ -43,7 +43,7 @@ pub fn say_hello(ctx: &ReducerContext) {
         self.assertEqual(self.logs(5).count("Hello, World!"), 2)
         self.assertEqual(self.logs(5).count("Hello, Tyler!"), 1)
 
-        out = self.spacetime("sql", self.address, "SELECT * FROM person")
+        out = self.spacetime("sql", self.database_identity, "SELECT * FROM person")
         # The spaces after the name are important
         self.assertMultiLineEqual(out, """\
  name    

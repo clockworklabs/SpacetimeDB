@@ -1,4 +1,4 @@
-//! This module implements a fast path for serializing certain types from BFLATN to BSATN.
+//! This module implements a fast path for converting certain row types between BFLATN <-> BSATN.
 //!
 //! The key insight is that a majority of row types will have a known fixed length,
 //! with no variable-length members.
@@ -9,18 +9,17 @@
 //! so row types which contain sums may not have a fixed BSATN length
 //! if the sum's variants have different "live" unpadded lengths.
 //!
-//! For row types with fixed BSATN lengths, we can reduce the BFLATN -> BSATN conversion
+//! For row types with fixed BSATN lengths, we can reduce the BFLATN <-> BSATN conversions
 //! to a series of `memcpy`s, skipping over padding sequences.
-//! This is potentially much faster than the more general  [`crate::bflatn_from::serialize_row_from_page`],
-//! which traverses a [`RowTypeLayout`] and dispatches on the type of each column.
+//! This is potentially much faster than the more general
+//! [`crate::bflatn_from::serialize_row_from_page`] and [`crate::bflatn_to::write_row_to_page`] ,
+//! which both traverse a [`RowTypeLayout`] and dispatch on the type of each column.
 //!
 //! For example, to serialize a row of type `(u64, u64, u32, u64)`,
 //! [`bflatn_from`] will do four dispatches, three calls to `serialize_u64` and one to `serialize_u32`.
 //! This module will make 2 `memcpy`s (or actually, `<[u8]>::copy_from_slice`s):
 //! one of 20 bytes to copy the leading `(u64, u64, u32)`, which contains no padding,
 //! and then one of 8 bytes to copy the trailing `u64`, skipping over 4 bytes of padding in between.
-
-use crate::MemoryUsage;
 
 use super::{
     indexes::{Byte, Bytes},
@@ -29,14 +28,15 @@ use super::{
         SumTypeLayout, SumTypeVariantLayout,
     },
     util::range_move,
+    MemoryUsage,
 };
 use core::mem::MaybeUninit;
 use core::ptr;
 
-/// A precomputed BSATN layout for a type whose encoded length is a known constant,
-/// enabling fast BFLATN -> BSATN conversion.
+/// A precomputed layout for a type whose encoded BSATN and BFLATN lengths are both known constants,
+/// enabling fast BFLATN <-> BSATN conversions.
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub(crate) struct StaticBsatnLayout {
+pub struct StaticLayout {
     /// The length of the encoded BSATN representation of a row of this type,
     /// in bytes.
     ///
@@ -44,19 +44,19 @@ pub(crate) struct StaticBsatnLayout {
     /// avoiding potentially-expensive `realloc`s.
     pub(crate) bsatn_length: u16,
 
-    /// A series of `memcpy` invocations from a BFLATN row into a BSATN buffer
-    /// which are sufficient to BSATN serialize the row.
+    /// A series of `memcpy` invocations from a BFLATN src/dst <-> a BSATN src/dst
+    /// which are sufficient to convert BSATN to BFLATN and vice versa.
     fields: Box<[MemcpyField]>,
 }
 
-impl MemoryUsage for StaticBsatnLayout {
+impl MemoryUsage for StaticLayout {
     fn heap_usage(&self) -> usize {
         let Self { bsatn_length, fields } = self;
         bsatn_length.heap_usage() + fields.heap_usage()
     }
 }
 
-impl StaticBsatnLayout {
+impl StaticLayout {
     /// Serialize `row` from BFLATN to BSATN into `buf`.
     ///
     /// # Safety
@@ -68,9 +68,9 @@ impl StaticBsatnLayout {
     ///   `row[field.bflatn_offset .. field.bflatn_offset + length]` will be initialized.
     unsafe fn serialize_row_into(&self, buf: &mut [MaybeUninit<Byte>], row: &Bytes) {
         debug_assert!(buf.len() >= self.bsatn_length as usize);
-        for field in &self.fields[..] {
+        for field in &*self.fields {
             // SAFETY: forward caller requirements.
-            unsafe { field.copy(buf, row) };
+            unsafe { field.copy_bflatn_to_bsatn(row, buf) };
         }
     }
 
@@ -132,12 +132,50 @@ impl StaticBsatnLayout {
         unsafe { buf.set_len(start + len) }
     }
 
-    /// Construct a `StaticBsatnLayout` for converting BFLATN rows of `row_type` into BSATN.
+    #[allow(unused)]
+    /// Deserializes the BSATN-encoded `row` into the BFLATN-encoded `buf`.
+    ///
+    /// - `row` must be at least `self.bsatn_length` long.
+    /// - `buf` must be ready to store an instance of the BFLATN row type
+    ///   for which `self` was computed.
+    ///   As a consequence of this, for every `field` in `self.fields`,
+    ///   `field.bflatn_offset .. field.bflatn_offset + length` must be in-bounds of `buf`.
+    pub(crate) unsafe fn deserialize_row_into(&self, buf: &mut Bytes, row: &[u8]) {
+        for field in &*self.fields {
+            // SAFETY: forward caller requirements.
+            unsafe { field.copy_bsatn_to_bflatn(row, buf) };
+        }
+    }
+
+    /// Compares `row_a` for equality against `row_b`.
+    ///
+    /// # Safety
+    ///
+    /// - `row` must store a valid, initialized instance of the BFLATN row type
+    ///   for which `self` was computed.
+    ///   As a consequence of this, for every `field` in `self.fields`,
+    ///   `row[field.bflatn_offset .. field.bflatn_offset + field.length]` will be initialized.
+    pub(crate) unsafe fn eq(&self, row_a: &Bytes, row_b: &Bytes) -> bool {
+        // No need to check the lengths.
+        // We assume they are of the same length.
+        self.fields.iter().all(|field| {
+            // SAFETY: The consequence of what the caller promised is that
+            // `row_(a/b).len() >= field.bflatn_offset + field.length >= field.bflatn_offset`.
+            unsafe { field.eq(row_a, row_b) }
+        })
+    }
+
+    /// Construct a `StaticLayout` for converting BFLATN rows of `row_type` <-> BSATN.
     ///
     /// Returns `None` if `row_type` contains a column which does not have a constant length in BSATN,
     /// either a [`VarLenType`]
     /// or a [`SumTypeLayout`] whose variants do not have the same "live" unpadded length.
-    pub(crate) fn for_row_type(row_type: &RowTypeLayout) -> Option<Self> {
+    pub fn for_row_type(row_type: &RowTypeLayout) -> Option<Self> {
+        if !row_type.layout().fixed {
+            // Don't bother computing the static layout if there are variable components.
+            return None;
+        }
+
         let mut builder = LayoutBuilder::new_builder();
         builder.visit_product(row_type.product())?;
         Some(builder.build())
@@ -146,7 +184,7 @@ impl StaticBsatnLayout {
 
 /// An identifier for a series of bytes within a BFLATN row
 /// which can be directly copied into an output BSATN buffer
-/// with a known length and offset.
+/// with a known length and offset or vice versa.
 ///
 /// Within the row type's BFLATN layout, `row[bflatn_offset .. (bflatn_offset + length)]`
 /// must not contain any padding bytes,
@@ -168,28 +206,81 @@ struct MemcpyField {
 impl MemoryUsage for MemcpyField {}
 
 impl MemcpyField {
-    /// Copies the bytes at `row[self.bflatn_offset .. self.bflatn_offset + self.length]`
-    /// into `buf[self.bsatn_offset + self.length]`.
+    /// Copies the bytes at `src[self.bflatn_offset .. self.bflatn_offset + self.length]`
+    /// into `dst[self.bsatn_offset .. self.bsatn_offset + self.length]`.
     ///
     /// # Safety
     ///
-    /// - `buf` must be exactly `self.bsatn_offset + self.length` long.
-    /// - `row` must be exactly `self.bflatn_offset + self.length` long.
-    unsafe fn copy(&self, buf: &mut [MaybeUninit<Byte>], row: &Bytes) {
+    /// 1. `src.len() >= self.bflatn_offset + self.length`.
+    /// 2. `dst.len() >= self.bsatn_offset + self.length`
+    unsafe fn copy_bflatn_to_bsatn(&self, src: &Bytes, dst: &mut [MaybeUninit<Byte>]) {
+        let src_offset = self.bflatn_offset as usize;
+        let dst_offset = self.bsatn_offset as usize;
+
         let len = self.length as usize;
-        // SAFETY: forward caller requirement #1.
-        let to = unsafe { buf.get_unchecked_mut(range_move(0..len, self.bsatn_offset as usize)) };
-        let dst = to.as_mut_ptr().cast();
-        // SAFETY: forward caller requirement #2.
-        let from = unsafe { row.get_unchecked(range_move(0..len, self.bflatn_offset as usize)) };
-        let src = from.as_ptr();
+        let src = src.as_ptr();
+        let dst = dst.as_mut_ptr();
+        // SAFETY: per 1., it follows that `src_offset` is in bounds of `src`.
+        let src = unsafe { src.add(src_offset) };
+        // SAFETY: per 2., it follows that `dst_offset` is in bounds of `dst`.
+        let dst = unsafe { dst.add(dst_offset) };
+        let dst = dst.cast();
 
         // SAFETY:
-        // 1. `src` is valid for reads for `len` bytes as it came from `from`, a shared slice.
-        // 2. `dst` is valid for writes for `len` bytes as it came from `to`, an exclusive slice.
+        // 1. `src` is valid for reads for `len` bytes per caller requirement 1.
+        //    and because `src` was derived from a shared slice.
+        // 2. `dst` is valid for writes for `len` bytes per caller requirement 2.
+        //    and because `dst` was derived from an exclusive slice.
         // 3. Alignment for `u8` is trivially satisfied for any pointer.
-        // 4. As `from` and `to` are shared and exclusive slices, they cannot overlap.
+        // 4. As `src` and `dst` were derived from shared and exclusive slices, they cannot overlap.
         unsafe { ptr::copy_nonoverlapping(src, dst, len) }
+    }
+
+    /// Copies the bytes at `src[self.bsatn_offset .. self.bsatn_offset + self.length]`
+    /// into `dst[self.bflatn_offset .. self.bflatn_offset + self.length]`.
+    ///
+    /// # Safety
+    ///
+    /// 1. `src.len() >= self.bsatn_offset + self.length`.
+    /// 2. `dst.len() >= self.bflatn_offset + self.length`
+    unsafe fn copy_bsatn_to_bflatn(&self, src: &Bytes, dst: &mut Bytes) {
+        let src_offset = self.bsatn_offset as usize;
+        let dst_offset = self.bflatn_offset as usize;
+
+        let len = self.length as usize;
+        let src = src.as_ptr();
+        let dst = dst.as_mut_ptr();
+        // SAFETY: per 1., it follows that `src_offset` is in bounds of `src`.
+        let src = unsafe { src.add(src_offset) };
+        // SAFETY: per 2., it follows that `dst_offset` is in bounds of `dst`.
+        let dst = unsafe { dst.add(dst_offset) };
+
+        // SAFETY:
+        // 1. `src` is valid for reads for `len` bytes per caller requirement 1.
+        //    and because `src` was derived from a shared slice.
+        // 2. `dst` is valid for writes for `len` bytes per caller requirement 2.
+        //    and because `dst` was derived from an exclusive slice.
+        // 3. Alignment for `u8` is trivially satisfied for any pointer.
+        // 4. As `src` and `dst` were derived from shared and exclusive slices, they cannot overlap.
+        unsafe { ptr::copy_nonoverlapping(src, dst, len) }
+    }
+
+    /// Compares `row_a` and `row_b` for equality in this field.
+    ///
+    /// # Safety
+    ///
+    /// - `row_a.len() >= self.bflatn_offset + self.length`
+    /// - `row_b.len() >= self.bflatn_offset + self.length`
+    unsafe fn eq(&self, row_a: &Bytes, row_b: &Bytes) -> bool {
+        let range = range_move(0..self.length as usize, self.bflatn_offset as usize);
+        let range2 = range.clone();
+        // SAFETY: The `range` is in bounds as
+        // `row_a.len() >= self.bflatn_offset + self.length >= self.bflatn_offset`.
+        let row_a_field = unsafe { row_a.get_unchecked(range) };
+        // SAFETY: The `range` is in bounds as
+        // `row_b.len() >= self.bflatn_offset + self.length >= self.bflatn_offset`.
+        let row_b_field = unsafe { row_b.get_unchecked(range2) };
+        row_a_field == row_b_field
     }
 
     fn is_empty(&self) -> bool {
@@ -197,7 +288,7 @@ impl MemcpyField {
     }
 }
 
-/// A builder for a [`StaticBsatnLayout`].
+/// A builder for a [`StaticLayout`].
 struct LayoutBuilder {
     /// Always at least one element.
     fields: Vec<MemcpyField>,
@@ -214,12 +305,12 @@ impl LayoutBuilder {
         }
     }
 
-    fn build(self) -> StaticBsatnLayout {
+    fn build(self) -> StaticLayout {
         let LayoutBuilder { fields } = self;
         let fields: Vec<_> = fields.into_iter().filter(|field| !field.is_empty()).collect();
         let bsatn_length = fields.last().map(|last| last.bsatn_offset + last.length).unwrap_or(0);
         let fields = fields.into_boxed_slice();
-        StaticBsatnLayout { bsatn_length, fields }
+        StaticLayout { bsatn_length, fields }
     }
 
     fn current_field(&self) -> &MemcpyField {
@@ -294,7 +385,7 @@ impl LayoutBuilder {
             Some(builder.build())
         };
 
-        // Check that the variants all have the same `StaticBsatnLayout`.
+        // Check that the variants all have the same `StaticLayout`.
         // If they don't, bail.
         let first_variant_layout = variant_layout(first_variant)?;
         for later_variant in &sum.variants[1..] {
@@ -352,7 +443,7 @@ mod test {
     use spacetimedb_sats::{bsatn, proptest::generate_typed_row, AlgebraicType, ProductType};
 
     fn assert_expected_layout(ty: ProductType, bsatn_length: u16, fields: &[(u16, u16, u16)]) {
-        let expected_layout = StaticBsatnLayout {
+        let expected_layout = StaticLayout {
             bsatn_length,
             fields: fields
                 .iter()
@@ -365,7 +456,7 @@ mod test {
                 .collect(),
         };
         let row_type = RowTypeLayout::from(ty.clone());
-        let Some(computed_layout) = StaticBsatnLayout::for_row_type(&row_type) else {
+        let Some(computed_layout) = StaticLayout::for_row_type(&row_type) else {
             panic!("assert_expected_layout: Computed `None` for row {row_type:#?}\nExpected:{expected_layout:#?}");
         };
         assert_eq!(
@@ -536,14 +627,15 @@ mod test {
             AlgebraicType::sum([AlgebraicType::U8, AlgebraicType::U16]),
         ] {
             let layout = RowTypeLayout::from(ProductType::from([ty]));
-            if let Some(computed) = StaticBsatnLayout::for_row_type(&layout) {
+            if let Some(computed) = StaticLayout::for_row_type(&layout) {
                 panic!("Expected row type not to have a constant BSATN layout!\nRow type: {layout:#?}\nBSATN layout: {computed:#?}");
             }
         }
     }
 
     proptest! {
-        // The test `known_bsatn_same_as_bflatn_from` generates a lot of rejects,
+        // The tests `known_bsatn_same_as_bflatn_from`
+        // and `known_bflatn_same_as_pv_from` generate a lot of rejects,
         // as a vast majority of the space of `ProductType` does not have a fixed BSATN length.
         // Writing a proptest generator which produces only types that have a fixed BSATN length
         // seems hard, because we'd have to generate sums with known matching layouts,
@@ -564,7 +656,7 @@ mod test {
         fn known_bsatn_same_as_bflatn_from((ty, val) in generate_typed_row()) {
             let mut blob_store = HashMapBlobStore::default();
             let mut table = crate::table::test::table(ty);
-            let Some(bsatn_layout) = table.static_bsatn_layout().cloned() else {
+            let Some(static_layout) = table.static_layout().cloned() else {
                 // `ty` has a var-len member or a sum with different payload lengths,
                 // so the fast path doesn't apply.
                 return Err(TestCaseError::reject("Var-length type"));
@@ -576,16 +668,38 @@ mod test {
             let slow_path = bsatn::to_vec(&row_ref).unwrap();
 
             let fast_path = unsafe {
-                bsatn_layout.serialize_row_into_vec(bytes)
+                static_layout.serialize_row_into_vec(bytes)
             };
 
             let mut fast_path2 = Vec::new();
             unsafe {
-                bsatn_layout.serialize_row_extend(&mut fast_path2, bytes)
+                static_layout.serialize_row_extend(&mut fast_path2, bytes)
             };
 
             assert_eq!(slow_path, fast_path);
             assert_eq!(slow_path, fast_path2);
+        }
+
+        #[test]
+        fn known_bflatn_same_as_pv_from((ty, val) in generate_typed_row()) {
+            let mut blob_store = HashMapBlobStore::default();
+            let mut table = crate::table::test::table(ty);
+            let Some(static_layout) = table.static_layout().cloned() else {
+                // `ty` has a var-len member or a sum with different payload lengths,
+                // so the fast path doesn't apply.
+                return Err(TestCaseError::reject("Var-length type"));
+            };
+            let bsatn = bsatn::to_vec(&val).unwrap();
+
+            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
+            let slow_path = row_ref.get_row_data();
+
+            let mut fast_path = vec![0u8; slow_path.len()];
+            unsafe {
+                static_layout.deserialize_row_into(&mut fast_path, &bsatn);
+            };
+
+            assert_eq!(slow_path, fast_path);
         }
     }
 }

@@ -1,11 +1,11 @@
 use std::{
     io,
     num::{NonZeroU16, NonZeroU64},
-    path::PathBuf,
     sync::RwLock,
 };
 
 use log::trace;
+use spacetimedb_paths::server::CommitLogDir;
 
 pub mod commit;
 pub mod commitlog;
@@ -105,8 +105,8 @@ impl<T> Commitlog<T> {
     /// This is only necessary when opening the commitlog for writing. See the
     /// free-standing functions in this module for how to traverse a read-only
     /// commitlog.
-    pub fn open(root: impl Into<PathBuf>, opts: Options) -> io::Result<Self> {
-        let inner = commitlog::Generic::open(repo::Fs::new(root), opts)?;
+    pub fn open(root: CommitLogDir, opts: Options) -> io::Result<Self> {
+        let inner = commitlog::Generic::open(repo::Fs::new(root)?, opts)?;
 
         Ok(Self {
             inner: RwLock::new(inner),
@@ -118,6 +118,35 @@ impl<T> Commitlog<T> {
     /// The offset is `None` if the log hasn't been flushed to disk yet.
     pub fn max_committed_offset(&self) -> Option<u64> {
         self.inner.read().unwrap().max_committed_offset()
+    }
+
+    /// Get the current epoch.
+    ///
+    /// See also: [`Commit::epoch`].
+    pub fn epoch(&self) -> u64 {
+        self.inner.read().unwrap().epoch()
+    }
+
+    /// Update the current epoch.
+    ///
+    /// Does nothing if the given `epoch` is equal to the current epoch.
+    /// Otherwise flushes outstanding transactions to disk (equivalent to
+    /// [`Self::flush`]) before updating the epoch.
+    ///
+    /// Returns the maximum transaction offset written to disk. The offset is
+    /// `None` if the log is empty and no data was pending to be flushed.
+    ///
+    /// # Errors
+    ///
+    /// If `epoch` is smaller than the current epoch, an error of kind
+    /// [`io::ErrorKind::InvalidInput`] is returned.
+    ///
+    /// Errors from the implicit flush are propagated.
+    pub fn set_epoch(&self, epoch: u64) -> io::Result<Option<u64>> {
+        let mut inner = self.inner.write().unwrap();
+        inner.set_epoch(epoch)?;
+
+        Ok(inner.max_committed_offset())
     }
 
     /// Sync all OS-buffered writes to disk.
@@ -402,7 +431,7 @@ impl<T: Encode> Commitlog<T> {
 ///
 /// Starts the traversal without the upfront I/O imposed by [`Commitlog::open`].
 /// See [`Commitlog::commits`] for more information.
-pub fn commits(root: impl Into<PathBuf>) -> io::Result<impl Iterator<Item = Result<StoredCommit, error::Traversal>>> {
+pub fn commits(root: CommitLogDir) -> io::Result<impl Iterator<Item = Result<StoredCommit, error::Traversal>>> {
     commits_from(root, 0)
 }
 
@@ -412,10 +441,10 @@ pub fn commits(root: impl Into<PathBuf>) -> io::Result<impl Iterator<Item = Resu
 /// Starts the traversal without the upfront I/O imposed by [`Commitlog::open`].
 /// See [`Commitlog::commits_from`] for more information.
 pub fn commits_from(
-    root: impl Into<PathBuf>,
+    root: CommitLogDir,
     offset: u64,
 ) -> io::Result<impl Iterator<Item = Result<StoredCommit, error::Traversal>>> {
-    commitlog::commits_from(repo::Fs::new(root), DEFAULT_LOG_FORMAT_VERSION, offset)
+    commitlog::commits_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset)
 }
 
 /// Obtain an iterator which traverses the commitlog located at the `root`
@@ -424,7 +453,7 @@ pub fn commits_from(
 /// Starts the traversal without the upfront I/O imposed by [`Commitlog::open`].
 /// See [`Commitlog::transactions`] for more information.
 pub fn transactions<'a, D, T>(
-    root: impl Into<PathBuf>,
+    root: CommitLogDir,
     de: &'a D,
 ) -> io::Result<impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a>
 where
@@ -441,7 +470,7 @@ where
 /// Starts the traversal without the upfront I/O imposed by [`Commitlog::open`].
 /// See [`Commitlog::transactions_from`] for more information.
 pub fn transactions_from<'a, D, T>(
-    root: impl Into<PathBuf>,
+    root: CommitLogDir,
     offset: u64,
     de: &'a D,
 ) -> io::Result<impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a>
@@ -450,7 +479,7 @@ where
     D::Error: From<error::Traversal>,
     T: 'a,
 {
-    commitlog::transactions_from(repo::Fs::new(root), DEFAULT_LOG_FORMAT_VERSION, offset, de)
+    commitlog::transactions_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
 }
 
 /// Traverse the commitlog located at the `root` directory from the start and
@@ -458,7 +487,7 @@ where
 ///
 /// Starts the traversal without the upfront I/O imposed by [`Commitlog::open`].
 /// See [`Commitlog::fold_transactions`] for more information.
-pub fn fold_transactions<D>(root: impl Into<PathBuf>, de: D) -> Result<(), D::Error>
+pub fn fold_transactions<D>(root: CommitLogDir, de: D) -> Result<(), D::Error>
 where
     D: Decoder,
     D::Error: From<error::Traversal> + From<io::Error>,
@@ -471,10 +500,10 @@ where
 ///
 /// Starts the traversal without the upfront I/O imposed by [`Commitlog::open`].
 /// See [`Commitlog::fold_transactions_from`] for more information.
-pub fn fold_transactions_from<D>(root: impl Into<PathBuf>, offset: u64, de: D) -> Result<(), D::Error>
+pub fn fold_transactions_from<D>(root: CommitLogDir, offset: u64, de: D) -> Result<(), D::Error>
 where
     D: Decoder,
     D::Error: From<error::Traversal> + From<io::Error>,
 {
-    commitlog::fold_transactions_from(repo::Fs::new(root), DEFAULT_LOG_FORMAT_VERSION, offset, de)
+    commitlog::fold_transactions_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
 }

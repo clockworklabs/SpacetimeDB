@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::unique_bool_type::UniqueBool;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `unique_bool`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.unique_bool().on_insert(...)`.
 pub struct UniqueBoolTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<UniqueBool>,
+    imp: __sdk::TableHandle<UniqueBool>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl UniqueBoolTableAccess for super::RemoteTables {
     }
 }
 
-pub struct UniqueBoolInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct UniqueBoolDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct UniqueBoolInsertCallbackId(__sdk::CallbackId);
+pub struct UniqueBoolDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for UniqueBoolTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for UniqueBoolTableHandle<'ctx> {
     type Row = UniqueBool;
     type EventContext = super::EventContext;
 
@@ -83,10 +82,15 @@ impl<'ctx> __sdk::table::Table for UniqueBoolTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<UniqueBool>("unique_bool");
+    _table.add_unique_constraint::<bool>("b", |row| &row.b);
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<UniqueBool>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<UniqueBool>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"unique_bool\"")
 }
 
@@ -98,7 +102,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.unique_bool().b().find(...)`.
 pub struct UniqueBoolBUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraint<UniqueBool, bool>,
+    imp: __sdk::UniqueConstraintHandle<UniqueBool, bool>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -106,7 +110,7 @@ impl<'ctx> UniqueBoolTableHandle<'ctx> {
     /// Get a handle on the `b` unique index on the table `unique_bool`.
     pub fn b(&self) -> UniqueBoolBUnique<'ctx> {
         UniqueBoolBUnique {
-            imp: self.imp.get_unique_constraint::<bool>("b", |row| &row.b),
+            imp: self.imp.get_unique_constraint::<bool>("b"),
             phantom: std::marker::PhantomData,
         }
     }

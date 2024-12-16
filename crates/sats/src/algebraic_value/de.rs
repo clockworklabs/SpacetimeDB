@@ -18,7 +18,7 @@ impl ValueDeserializer {
         Self { val }
     }
 
-    /// Converts `&AlgebraicValue` to `&ValueDeserialize`.
+    /// Converts `&AlgebraicValue` to `&ValueDeserializer`.
     pub fn from_ref(val: &AlgebraicValue) -> &Self {
         // SAFETY: The conversion is OK due to `repr(transparent)`.
         unsafe { &*(val as *const AlgebraicValue as *const ValueDeserializer) }

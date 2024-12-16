@@ -12,7 +12,7 @@ use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
-use spacetimedb_client_api_messages::websocket::{Compression, FormatSwitch};
+use spacetimedb_client_api_messages::websocket::{CallReducerFlags, Compression, FormatSwitch};
 use spacetimedb_lib::identity::RequestId;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
@@ -32,11 +32,32 @@ impl Protocol {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct ClientConfig {
+    /// The client's desired protocol (format) when the host replies.
+    pub protocol: Protocol,
+    /// The client's desired (conditional) compression algorithm, if any.
+    pub compression: Compression,
+    /// Whether the client prefers full [`TransactionUpdate`]s
+    /// rather than  [`TransactionUpdateLight`]s on a successful update.
+    // TODO(centril): As more knobs are added, make this into a bitfield (when there's time).
+    pub tx_update_full: bool,
+}
+
+impl ClientConfig {
+    pub fn for_test() -> ClientConfig {
+        Self {
+            protocol: Protocol::Binary,
+            compression: <_>::default(),
+            tx_update_full: true,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ClientConnectionSender {
     pub id: ClientActorId,
-    pub protocol: Protocol,
-    pub compression: Compression,
+    pub config: ClientConfig,
     sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
@@ -51,7 +72,7 @@ pub enum ClientSendError {
 }
 
 impl ClientConnectionSender {
-    pub fn dummy_with_channel(id: ClientActorId, protocol: Protocol) -> (Self, mpsc::Receiver<SerializableMessage>) {
+    pub fn dummy_with_channel(id: ClientActorId, config: ClientConfig) -> (Self, mpsc::Receiver<SerializableMessage>) {
         let (sendtx, rx) = mpsc::channel(1);
         // just make something up, it doesn't need to be attached to a real task
         let abort_handle = match tokio::runtime::Handle::try_current() {
@@ -61,8 +82,7 @@ impl ClientConnectionSender {
         (
             Self {
                 id,
-                protocol,
-                compression: Compression::Brotli,
+                config,
                 sendtx,
                 abort_handle,
                 cancelled: AtomicBool::new(false),
@@ -71,8 +91,8 @@ impl ClientConnectionSender {
         )
     }
 
-    pub fn dummy(id: ClientActorId, protocol: Protocol) -> Self {
-        Self::dummy_with_channel(id, protocol).0
+    pub fn dummy(id: ClientActorId, config: ClientConfig) -> Self {
+        Self::dummy_with_channel(id, config).0
     }
 
     pub fn send_message(&self, message: impl Into<SerializableMessage>) -> Result<(), ClientSendError> {
@@ -142,16 +162,14 @@ const KB: usize = 1024;
 
 impl ClientConnection {
     /// Returns an error if ModuleHost closed
-    pub async fn spawn<F, Fut>(
+    pub async fn spawn<Fut>(
         id: ClientActorId,
-        protocol: Protocol,
-        compression: Compression,
+        config: ClientConfig,
         replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
-        actor: F,
+        actor: impl FnOnce(ClientConnection, mpsc::Receiver<SerializableMessage>) -> Fut,
     ) -> Result<ClientConnection, ReducerCallError>
     where
-        F: FnOnce(ClientConnection, mpsc::Receiver<SerializableMessage>) -> Fut,
         Fut: Future<Output = ()> + Send + 'static,
     {
         // Add this client as a subscriber
@@ -165,7 +183,7 @@ impl ClientConnection {
 
         let (sendtx, sendrx) = mpsc::channel::<SerializableMessage>(CLIENT_CHANNEL_CAPACITY);
 
-        let db = module.info().address;
+        let db = module.info().database_identity;
 
         let (fut_tx, fut_rx) = oneshot::channel::<Fut>();
         // weird dance so that we can get an abort_handle into ClientConnection
@@ -180,8 +198,7 @@ impl ClientConnection {
 
         let sender = Arc::new(ClientConnectionSender {
             id,
-            protocol,
-            compression,
+            config,
             sendtx,
             abort_handle,
             cancelled: AtomicBool::new(false),
@@ -202,13 +219,13 @@ impl ClientConnection {
 
     pub fn dummy(
         id: ClientActorId,
-        protocol: Protocol,
+        config: ClientConfig,
         replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
     ) -> Self {
         let module = module_rx.borrow_and_update().clone();
         Self {
-            sender: Arc::new(ClientConnectionSender::dummy(id, protocol)),
+            sender: Arc::new(ClientConnectionSender::dummy(id, config)),
             replica_id,
             module,
             module_rx,
@@ -244,12 +261,20 @@ impl ClientConnection {
         args: ReducerArgs,
         request_id: RequestId,
         timer: Instant,
+        flags: CallReducerFlags,
     ) -> Result<ReducerCallResult, ReducerCallError> {
+        let caller = match flags {
+            CallReducerFlags::FullUpdate => Some(self.sender()),
+            // Setting `sender = None` causes `eval_updates` to skip sending to the caller
+            // as it has no access to the caller other than by id/addr.
+            CallReducerFlags::NoSuccessNotify => None,
+        };
+
         self.module
             .call_reducer(
                 self.id.identity,
                 Some(self.id.address),
-                Some(self.sender()),
+                caller,
                 Some(request_id),
                 Some(timer),
                 reducer,

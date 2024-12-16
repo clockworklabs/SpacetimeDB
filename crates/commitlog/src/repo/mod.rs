@@ -11,16 +11,31 @@ use crate::{
 };
 
 pub(crate) mod fs;
-#[cfg(test)]
+#[cfg(any(test, feature = "test"))]
 pub mod mem;
 
 pub use fs::Fs;
-#[cfg(test)]
+#[cfg(any(test, feature = "test"))]
 pub use mem::Memory;
 
 pub type TxOffset = u64;
 pub type TxOffsetIndexMut = IndexFileMut<TxOffset>;
 pub type TxOffsetIndex = IndexFile<TxOffset>;
+
+pub trait Segment: FileLike + io::Read + io::Write + io::Seek + Send + Sync {
+    /// Determine the length in bytes of the segment.
+    ///
+    /// This method does not rely on metadata `fsync`, and may use up to three
+    /// `seek` operations.
+    ///
+    /// If the method returns successfully, the seek position before the call is
+    /// restored. However, if it returns an error, the seek position is
+    /// unspecified.
+    //
+    // TODO: Replace with `Seek::stream_len` if / when stabilized:
+    // https://github.com/rust-lang/rust/issues/59359
+    fn segment_len(&mut self) -> io::Result<u64>;
+}
 
 /// A repository of log segments.
 ///
@@ -28,7 +43,7 @@ pub type TxOffsetIndex = IndexFile<TxOffset>;
 /// representation.
 pub trait Repo: Clone {
     /// The type of log segments managed by this repo, which must behave like a file.
-    type Segment: io::Read + io::Write + FileLike + io::Seek;
+    type Segment: Segment + 'static;
 
     /// Create a new segment with the minimum transaction offset `offset`.
     ///
@@ -95,7 +110,12 @@ fn create_offset_index_writer<R: Repo>(repo: &R, offset: u64, opts: Options) -> 
 /// `log_format_version`.
 ///
 /// If the segment already exists, [`io::ErrorKind::AlreadyExists`] is returned.
-pub fn create_segment_writer<R: Repo>(repo: &R, opts: Options, offset: u64) -> io::Result<Writer<R::Segment>> {
+pub fn create_segment_writer<R: Repo>(
+    repo: &R,
+    opts: Options,
+    epoch: u64,
+    offset: u64,
+) -> io::Result<Writer<R::Segment>> {
     let mut storage = repo.create_segment(offset)?;
     Header {
         log_format_version: opts.log_format_version,
@@ -109,6 +129,7 @@ pub fn create_segment_writer<R: Repo>(repo: &R, opts: Options, offset: u64) -> i
             min_tx_offset: offset,
             n: 0,
             records: Vec::new(),
+            epoch,
         },
         inner: io::BufWriter::new(storage),
 
@@ -146,6 +167,7 @@ pub fn resume_segment_writer<R: Repo>(
         header,
         tx_range,
         size_in_bytes,
+        max_epoch,
     } = match Metadata::extract(offset, &mut storage) {
         Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => {
             warn!("invalid commit in segment {offset}: {source}");
@@ -158,12 +180,23 @@ pub fn resume_segment_writer<R: Repo>(
     header
         .ensure_compatible(opts.log_format_version, Commit::CHECKSUM_ALGORITHM)
         .map_err(|msg| io::Error::new(io::ErrorKind::InvalidData, msg))?;
+    // When resuming, the log format version must be equal.
+    if header.log_format_version != opts.log_format_version {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "log format version mismatch: current={} segment={}",
+                opts.log_format_version, header.log_format_version
+            ),
+        ));
+    }
 
     Ok(Ok(Writer {
         commit: Commit {
             min_tx_offset: tx_range.end,
             n: 0,
             records: Vec::new(),
+            epoch: max_epoch,
         },
         inner: io::BufWriter::new(storage),
 

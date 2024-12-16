@@ -193,7 +193,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
         set_store_fuel(store, budget.into());
 
-        // Prepare sender identity and address.
+        // Prepare sender identity and address, as LITTLE-ENDIAN byte arrays.
         let [sender_0, sender_1, sender_2, sender_3] = bytemuck::must_cast(op.caller_identity.to_byte_array());
         let [address_0, address_1] = bytemuck::must_cast(op.caller_address.as_byte_array());
 

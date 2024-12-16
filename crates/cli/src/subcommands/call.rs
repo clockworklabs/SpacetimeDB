@@ -2,14 +2,15 @@ use crate::common_args;
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
 use crate::util;
-use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
+use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
 use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgMatches};
 use itertools::Either;
 use serde_json::Value;
+use spacetimedb::Identity;
 use spacetimedb_lib::de::serde::deserialize_from;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, Typespace};
-use spacetimedb_lib::{Address, ProductTypeElement};
+use spacetimedb_lib::ProductTypeElement;
 use std::fmt::Write;
 use std::iter;
 
@@ -19,7 +20,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("database")
                 .required(true)
-                .help("The database domain or address to use to invoke the call"),
+                .help("The database name or identity to use to invoke the call"),
         )
         .arg(
             Arg::new("reducer_name")
@@ -28,11 +29,6 @@ pub fn cli() -> clap::Command {
         )
         .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
-        .arg(
-            common_args::identity()
-                .conflicts_with("anon_identity")
-                .help("The identity to use for the call"),
-        )
         .arg(common_args::anonymous())
         .after_help("Run `spacetime help call` for more detailed information.\n")
 }
@@ -43,26 +39,24 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     let arguments = args.get_many::<String>("arguments");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
-    let identity = args.get_one::<String>("identity");
     let anon_identity = args.get_flag("anon_identity");
 
-    let address = database_address(&config, database, server).await?;
+    let database_identity = database_identity(&config, database, server).await?;
 
     let builder = reqwest::Client::new().post(format!(
         "{}/database/call/{}/{}",
         config.get_host_url(server)?,
-        address.clone(),
+        database_identity.clone(),
         reducer_name
     ));
-    let auth_header = get_auth_header_only(&mut config, anon_identity, identity, server).await?;
+    let auth_header = get_auth_header(&config, anon_identity)?;
     let builder = add_auth_header_opt(builder, &auth_header);
     let describe_reducer = util::describe_reducer(
         &mut config,
-        address,
+        database_identity,
         server.map(|x| x.to_string()),
         reducer_name.clone(),
         anon_identity,
-        identity.cloned(),
     )
     .await?;
 
@@ -90,11 +84,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         let error = Err(e).context(format!("Response text: {}", response_text));
 
         let error_msg = if response_text.starts_with("no such reducer") {
-            no_such_reducer(config, &address, database, &auth_header, reducer_name, server).await
+            no_such_reducer(config, &database_identity, database, &auth_header, reducer_name, server).await
         } else if response_text.starts_with("invalid arguments") {
             invalid_arguments(
                 config,
-                &address,
+                &database_identity,
                 database,
                 &auth_header,
                 reducer_name,
@@ -115,7 +109,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
 /// Returns an error message for when `reducer` is called with wrong arguments.
 async fn invalid_arguments(
     config: Config,
-    addr: &Address,
+    identity: &Identity,
     db: &str,
     auth_header: &Option<String>,
     reducer: &str,
@@ -123,8 +117,8 @@ async fn invalid_arguments(
     server: Option<&str>,
 ) -> String {
     let mut error = format!(
-        "Invalid arguments provided for reducer `{}` for database `{}` resolving to address `{}`.",
-        reducer, db, addr
+        "Invalid arguments provided for reducer `{}` for database `{}` resolving to identity `{}`.",
+        reducer, db, identity
     );
 
     if let Some((actual, expected)) = find_actual_expected(text).filter(|(a, e)| a != e) {
@@ -136,7 +130,7 @@ async fn invalid_arguments(
         .unwrap();
     }
 
-    if let Some(sig) = schema_json(config, addr, auth_header, true, server)
+    if let Some(sig) = schema_json(config, identity, auth_header, true, server)
         .await
         .and_then(|schema| reducer_signature(schema, reducer))
     {
@@ -198,18 +192,18 @@ fn reducer_signature(schema_json: Value, reducer_name: &str) -> Option<String> {
 /// Returns an error message for when `reducer` does not exist in `db`.
 async fn no_such_reducer(
     config: Config,
-    addr: &Address,
+    database_identity: &Identity,
     db: &str,
     auth_header: &Option<String>,
     reducer: &str,
     server: Option<&str>,
 ) -> String {
     let mut error = format!(
-        "No such reducer `{}` for database `{}` resolving to address `{}`.",
-        reducer, db, addr
+        "No such reducer `{}` for database `{}` resolving to identity `{}`.",
+        reducer, db, database_identity
     );
 
-    if let Some(schema) = schema_json(config, addr, auth_header, false, server).await {
+    if let Some(schema) = schema_json(config, database_identity, auth_header, false, server).await {
         add_reducer_ctx_to_err(&mut error, schema, reducer);
     }
 
@@ -255,12 +249,12 @@ fn add_reducer_ctx_to_err(error: &mut String, schema_json: Value, reducer_name: 
     }
 }
 
-/// Fetch the schema as JSON for the database at `address`.
+/// Fetch the schema as JSON for the database at `identity`.
 ///
 /// The value of `expand` determines how detailed information to fetch.
 async fn schema_json(
     config: Config,
-    address: &Address,
+    identity: &Identity,
     auth_header: &Option<String>,
     expand: bool,
     server: Option<&str>,
@@ -268,7 +262,7 @@ async fn schema_json(
     let builder = reqwest::Client::new().get(format!(
         "{}/database/schema/{}",
         config.get_host_url(server).ok()?,
-        address
+        identity
     ));
     let builder = add_auth_header_opt(builder, auth_header);
 

@@ -7,7 +7,8 @@ use syn::punctuated::Pair;
 use syn::spanned::Spanned;
 use syn::{LitStr, Token};
 
-use crate::{check_duplicate, sym};
+use crate::sym;
+use crate::util::{check_duplicate, match_meta};
 
 pub(crate) struct SatsType<'a> {
     pub ident: &'a syn::Ident,
@@ -109,7 +110,7 @@ pub(crate) fn extract_sats_type<'a>(
         })?;
     }
     let krate = krate.unwrap_or(crate_fallback);
-    let name = name.unwrap_or_else(|| crate::ident_to_litstr(ident));
+    let name = name.unwrap_or_else(|| crate::util::ident_to_litstr(ident));
 
     Ok(SatsType {
         ident,
