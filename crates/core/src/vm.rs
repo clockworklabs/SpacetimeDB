@@ -297,7 +297,7 @@ pub struct IndexSemiJoinLeft<'a, 'c, Rhs: RelOps<'a>> {
     pub tx: &'a TxMode<'a>,
 }
 
-static_assert_size!(IndexSemiJoinLeft<Box<IterRows<'static>>>, 280);
+static_assert_size!(IndexSemiJoinLeft<Box<IterRows<'static>>>, 264);
 
 impl<'a, Rhs: RelOps<'a>> IndexSemiJoinLeft<'a, '_, Rhs> {
     fn filter(&self, index_row: &RelValue<'_>) -> bool {
