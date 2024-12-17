@@ -2,10 +2,11 @@ use super::{
     committed_state::CommittedState,
     mut_tx::MutTxId,
     sequence::SequencesState,
-    state_view::{Iter, IterByColRange, StateView},
+    state_view::{IterByColRangeTx, StateView},
     tx::TxId,
     tx_state::TxState,
 };
+use crate::db::datastore::locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx};
 use crate::execution_context::Workload;
 use crate::{
     db::{
@@ -322,20 +323,31 @@ impl Tx for Locking {
 }
 
 impl TxDatastore for Locking {
-    type Iter<'a>
-        = Iter<'a>
+    type IterTx<'a>
+        = IterTx<'a>
     where
         Self: 'a;
-    type IterByColEq<'a, 'r>
-        = IterByColRange<'a, &'r AlgebraicValue>
+    type IterMutTx<'a>= IterMutTx<'a>
     where
         Self: 'a;
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>
-        = IterByColRange<'a, R>
+    type IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>>
+        = IterByColRangeTx<'a, R>
+    where
+        Self: 'a;
+    type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>>
+    = IterByColRangeMutTx<'a, R>
+    where
+        Self: 'a;
+    type IterByColEqTx<'a, 'r>
+        = IterByColRangeTx<'a, &'r AlgebraicValue>
+    where
+        Self: 'a;
+    type IterByColEqMutTx<'a, 'r>
+    = IterByColRangeMutTx<'a, &'r AlgebraicValue>
     where
         Self: 'a;
 
-    fn iter_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>> {
+    fn iter_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::IterTx<'a>> {
         tx.iter(table_id)
     }
 
@@ -345,7 +357,7 @@ impl TxDatastore for Locking {
         table_id: TableId,
         cols: impl Into<ColList>,
         range: R,
-    ) -> Result<Self::IterByColRange<'a, R>> {
+    ) -> Result<Self::IterByColRangeTx<'a, R>> {
         tx.iter_by_col_range(table_id, cols.into(), range)
     }
 
@@ -355,7 +367,7 @@ impl TxDatastore for Locking {
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a, 'r>> {
+    ) -> Result<Self::IterByColEqTx<'a, 'r>> {
         tx.iter_by_col_eq(table_id, cols, value)
     }
 
@@ -492,7 +504,7 @@ impl MutTxDatastore for Locking {
         tx.constraint_id_from_name(constraint_name)
     }
 
-    fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTx, table_id: TableId) -> Result<Self::Iter<'a>> {
+    fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTx, table_id: TableId) -> Result<Self::IterMutTx<'a>> {
         tx.iter(table_id)
     }
 
@@ -502,7 +514,7 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         cols: impl Into<ColList>,
         range: R,
-    ) -> Result<Self::IterByColRange<'a, R>> {
+    ) -> Result<Self::IterByColRangeMutTx<'a, R>> {
         tx.iter_by_col_range(table_id, cols.into(), range)
     }
 
@@ -512,7 +524,7 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a, 'r>> {
+    ) -> Result<Self::IterByColEqMutTx<'a, 'r>> {
         tx.iter_by_col_eq(table_id, cols.into(), value)
     }
 
