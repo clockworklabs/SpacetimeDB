@@ -95,11 +95,11 @@ public static class Module
         moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar));
     }
 
-    private static byte[] Consume(this BytesSource source, ref byte[] buffer)
+    private static MemoryStream Consume(this BytesSource source, ref byte[] buffer)
     {
         if (source == BytesSource.INVALID)
         {
-            return [];
+            return new();
         }
         var written = 0U;
         while (true)
@@ -113,8 +113,7 @@ public static class Module
             {
                 // Host side source exhausted, we're done.
                 case Errno.EXHAUSTED:
-                    Array.Resize(ref buffer, (int)written);
-                    return buffer;
+                    return new(buffer, 0, (int)written);
                 // Wrote the entire spare capacity.
                 // Need to reserve more space in the buffer.
                 case Errno.OK when written == buffer.Length:
@@ -196,7 +195,7 @@ public static class Module
 
             var ctx = newContext!(senderIdentity, senderAddress, random, time);
 
-            using var stream = new MemoryStream(args.Consume(ref reducerArgsBuffer));
+            using var stream = args.Consume(ref reducerArgsBuffer);
             using var reader = new BinaryReader(stream);
             reducers[(int)id].Invoke(reader, ctx);
             if (stream.Position != stream.Length)
