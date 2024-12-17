@@ -438,3 +438,17 @@ public readonly struct List<Element, ElementRW> : IReadWrite<List<Element>>
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
         enumerable.GetAlgebraicType(registrar);
 }
+
+// This is a dummy type, mainly used by codegen as a diagnostics placeholder to
+// reduce amount of noisy compilation errors when a used type is not supported by BSATN.
+public readonly struct Unsupported<T> : IReadWrite<T>
+{
+    private static readonly NotSupportedException Exception =
+        new($"Type {typeof(T)} is not supported by BSATN.");
+
+    public T Read(BinaryReader reader) => throw Exception;
+
+    public void Write(BinaryWriter writer, T value) => throw Exception;
+
+    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => throw Exception;
+}

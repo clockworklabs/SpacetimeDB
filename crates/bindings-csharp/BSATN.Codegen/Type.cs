@@ -19,7 +19,7 @@ public record MemberDeclaration(string Name, string Type, string TypeInfo)
         {
             diag.Report(ErrorDescriptor.UnsupportedType, (member, type, e));
             // dummy type; can't instantiate an interface, but at least it will produce fewer noisy errors
-            TypeInfo = $"SpacetimeDB.BSATN.IReadWrite<{Type}>";
+            TypeInfo = $"SpacetimeDB.BSATN.Unsupported<{Type}>";
         }
     }
 
