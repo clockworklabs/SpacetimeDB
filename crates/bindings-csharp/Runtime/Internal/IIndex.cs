@@ -41,7 +41,7 @@ public abstract class IndexBase<Row>
     }
 
     protected IEnumerable<Row> DoFilter<Bounds>(Bounds bounds)
-        where Bounds : IBTreeIndexBounds => new RawTableIter<Bounds>(indexId, bounds).Parse();
+        where Bounds : IBTreeIndexBounds => new RawTableIter<Bounds>(indexId, bounds);
 
     protected uint DoDelete<Bounds>(Bounds bounds)
         where Bounds : IBTreeIndexBounds

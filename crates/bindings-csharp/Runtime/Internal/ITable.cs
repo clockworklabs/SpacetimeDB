@@ -1,44 +1,47 @@
 namespace SpacetimeDB.Internal;
 
+using System.Buffers;
+using System.Collections;
 using SpacetimeDB.BSATN;
 
-internal abstract class RawTableIterBase<T>
+internal abstract class RawTableIterBase<T> : IEnumerable<T>
     where T : IStructuralReadWrite, new()
 {
-    public sealed class Enumerator(FFI.RowIter handle) : IDisposable
+    protected abstract void IterStart(out FFI.RowIter handle);
+
+    public IEnumerator<T> GetEnumerator()
     {
-        byte[] buffer = new byte[0x20_000];
-        public byte[] Current { get; private set; } = [];
-
-        public bool MoveNext()
+        IterStart(out var handle);
+        // Initial buffer size to match Rust one (see `DEFAULT_BUFFER_CAPACITY` in `bindings/src/lib.rs`).
+        // Use pool to reduce GC pressure between iterations.
+        var buffer = ArrayPool<byte>.Shared.Rent(0x10_000);
+        try
         {
-            if (handle == FFI.RowIter.INVALID)
+            while (handle != FFI.RowIter.INVALID)
             {
-                return false;
-            }
-
-            uint buffer_len;
-            while (true)
-            {
-                buffer_len = (uint)buffer.Length;
+                var buffer_len = (uint)buffer.Length;
                 var ret = FFI.row_iter_bsatn_advance(handle, buffer, ref buffer_len);
-                if (ret == Errno.EXHAUSTED)
-                {
-                    handle = FFI.RowIter.INVALID;
-                }
                 // On success, the only way `buffer_len == 0` is for the iterator to be exhausted.
                 // This happens when the host iterator was empty from the start.
                 System.Diagnostics.Debug.Assert(!(ret == Errno.OK && buffer_len == 0));
                 switch (ret)
                 {
-                    // Iterator advanced and may also be `EXHAUSTED`.
-                    // When `OK`, we'll need to advance the iterator in the next call to `MoveNext`.
-                    // In both cases, copy over the row data to `Current` from the scratch `buffer`.
-                    case Errno.EXHAUSTED
-                    or Errno.OK:
-                        Current = new byte[buffer_len];
-                        Array.Copy(buffer, 0, Current, 0, buffer_len);
-                        return buffer_len != 0;
+                    // Iterator is exhausted.
+                    // Treat in the same way as OK, just tell the next iteration to stop.
+                    case Errno.EXHAUSTED:
+                        handle = FFI.RowIter.INVALID;
+                        goto case Errno.OK;
+                    // We got a chunk of rows, parse all of them before moving to the next chunk.
+                    case Errno.OK:
+                    {
+                        using var stream = new MemoryStream(buffer, 0, (int)buffer_len);
+                        using var reader = new BinaryReader(stream);
+                        while (stream.Position < stream.Length)
+                        {
+                            yield return IStructuralReadWrite.Read<T>(reader);
+                        }
+                        break;
+                    }
                     // Couldn't find the iterator, error!
                     case Errno.NO_SUCH_ITER:
                         throw new NoSuchIterException();
@@ -46,50 +49,24 @@ internal abstract class RawTableIterBase<T>
                     // Grow `buffer` and try again.
                     // The `buffer_len` will have been updated with the necessary size.
                     case Errno.BUFFER_TOO_SMALL:
-                        buffer = new byte[buffer_len];
-                        continue;
+                        ArrayPool<byte>.Shared.Return(buffer);
+                        break;
                     default:
                         throw new UnknownException(ret);
                 }
             }
         }
-
-        public void Dispose()
+        finally
         {
             if (handle != FFI.RowIter.INVALID)
             {
                 FFI.row_iter_bsatn_close(handle);
-                handle = FFI.RowIter.INVALID;
             }
-        }
-
-        public void Reset()
-        {
-            throw new NotImplementedException();
+            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 
-    protected abstract void IterStart(out FFI.RowIter handle);
-
-    // Note: using the GetEnumerator() duck-typing protocol instead of IEnumerable to avoid extra boxing.
-    public Enumerator GetEnumerator()
-    {
-        IterStart(out var handle);
-        return new(handle);
-    }
-
-    public IEnumerable<T> Parse()
-    {
-        foreach (var chunk in this)
-        {
-            using var stream = new MemoryStream(chunk);
-            using var reader = new BinaryReader(stream);
-            while (stream.Position < stream.Length)
-            {
-                yield return IStructuralReadWrite.Read<T>(reader);
-            }
-        }
-    }
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
 public interface ITableView<View, T>
@@ -136,7 +113,7 @@ public interface ITableView<View, T>
         return count;
     }
 
-    protected static IEnumerable<T> DoIter() => new RawTableIter(tableId).Parse();
+    protected static IEnumerable<T> DoIter() => new RawTableIter(tableId);
 
     protected static T DoInsert(T row)
     {
