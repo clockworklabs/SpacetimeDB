@@ -10,7 +10,6 @@ use spacetimedb::db::{Config, Storage};
 use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::ServerDataDir;
-use spacetimedb_paths::SpacetimePaths;
 use tokio::net::TcpListener;
 
 #[cfg(feature = "string")]
@@ -20,96 +19,64 @@ impl From<std::string::String> for OsStr {
     }
 }
 
-pub enum ProgramMode {
-    Standalone,
-    CLI,
-}
-
-impl ProgramMode {
-    /// The address mask and port to listen on
-    /// based on the mode we're running the program in.
-    fn listen_addr(&self) -> &'static str {
-        match self {
-            ProgramMode::Standalone => "0.0.0.0:3000",
-            ProgramMode::CLI => "127.0.0.1:3000",
-        }
-    }
-
-    /// Help string for the address mask and port option,
-    /// based on the mode we're running the program in.
-    fn listen_addr_help(&self) -> &'static str {
-        match self {
-            ProgramMode::Standalone => "The address and port where SpacetimeDB should listen for connections. This defaults to to listen on all IP addresses on port 80.",
-            ProgramMode::CLI => "The address and port where SpacetimeDB should listen for connections. This defaults to local connections only on port 3000. Use an IP address or 0.0.0.0 in order to allow remote connections to SpacetimeDB.",
-        }
-    }
-
-    // We still want to keep the executable name `spacetimedb` when we're executing as a standalone, but
-    // we want the executable name to be `spacetime` when we're executing this from the CLI. We have to
-    // pass these strings with static lifetimes so we can't do any dynamic string manipulation here.
-    fn after_help(&self) -> &'static str {
-        match self {
-            ProgramMode::Standalone => "Run `spacetimedb help start` for more detailed information.",
-            ProgramMode::CLI => "Run `spacetime help start` for more information.",
-        }
-    }
-}
-
-pub fn cli(mode: ProgramMode) -> clap::Command {
-    let jwt_pub_key_path_arg = Arg::new("jwt_pub_key_path")
-        .long("jwt-pub-key-path")
-        .requires("jwt_priv_key_path")
-        .help("The path to the public jwt key for verifying identities")
-        .value_parser(clap::value_parser!(PubKeyPath));
-    let jwt_priv_key_path_arg = Arg::new("jwt_priv_key_path")
-        .long("jwt-priv-key-path")
-        .requires("jwt_pub_key_path")
-        .help("The path to the private jwt key for issuing identities")
-        .value_parser(clap::value_parser!(PrivKeyPath));
-    let mut data_dir_arg = Arg::new("data_dir")
-        .long("data-dir")
-        .help("The path to the data directory for the database")
-        .required(true)
-        .value_parser(clap::value_parser!(ServerDataDir));
-
-    let in_memory_arg = Arg::new("in_memory")
-        .long("in-memory")
-        .action(SetTrue)
-        .help("If specified the database will run entirely in memory. After the process exits all data will be lost.");
-
-    match mode {
-        ProgramMode::CLI => {
-            data_dir_arg = data_dir_arg.required(false);
-        }
-        ProgramMode::Standalone => {
-            data_dir_arg = data_dir_arg.required(true);
-        }
-    }
-
+pub fn cli() -> clap::Command {
     clap::Command::new("start")
         .about("Starts a standalone SpacetimeDB instance")
+        .args_override_self(true)
+        .override_usage("spacetimedb start [OPTIONS]")
         .arg(
             Arg::new("listen_addr")
                 .long("listen-addr")
                 .short('l')
-                .default_value(mode.listen_addr())
-                .help(mode.listen_addr_help()),
+                .default_value("0.0.0.0:3000")
+                .help(
+                    "The address and port where SpacetimeDB should listen for connections. \
+                     This defaults to to listen on all IP addresses on port 80.",
+                ),
         )
-        .arg(data_dir_arg)
+        .arg(
+            Arg::new("data_dir")
+                .long("data-dir")
+                .help("The path to the data directory for the database")
+                .required(true)
+                .value_parser(clap::value_parser!(ServerDataDir)),
+        )
         .arg(
             Arg::new("enable_tracy")
                 .long("enable-tracy")
                 .action(SetTrue)
                 .help("Enable Tracy profiling"),
         )
-        .arg(jwt_pub_key_path_arg)
-        .arg(jwt_priv_key_path_arg)
-        .arg(in_memory_arg)
-        .after_help(mode.after_help())
+        .arg(
+            Arg::new("jwt_key_dir")
+                .hide(true)
+                .long("jwt-key-dir")
+                .help("The directory with id_ecdsa and id_ecdsa.pub")
+                .value_parser(clap::value_parser!(spacetimedb_paths::cli::ConfigDir)),
+        )
+        .arg(
+            Arg::new("jwt_pub_key_path")
+                .long("jwt-pub-key-path")
+                .requires("jwt_priv_key_path")
+                .help("The path to the public jwt key for verifying identities")
+                .value_parser(clap::value_parser!(PubKeyPath)),
+        )
+        .arg(
+            Arg::new("jwt_priv_key_path")
+                .long("jwt-priv-key-path")
+                .requires("jwt_pub_key_path")
+                .help("The path to the private jwt key for issuing identities")
+                .value_parser(clap::value_parser!(PrivKeyPath)),
+        )
+        .arg(Arg::new("in_memory").long("in-memory").action(SetTrue).help(
+            "If specified the database will run entirely in memory. After the process exits all data will be lost.",
+        ))
+    // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
-pub async fn exec(paths: Option<&SpacetimePaths>, args: &ArgMatches) -> anyhow::Result<()> {
+pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
+    let cert_dir = args.get_one::<spacetimedb_paths::cli::ConfigDir>("jwt_key_dir");
     let certs = Option::zip(
         args.get_one::<PubKeyPath>("jwt_pub_key_path").cloned(),
         args.get_one::<PrivKeyPath>("jwt_priv_key_path").cloned(),
@@ -118,11 +85,7 @@ pub async fn exec(paths: Option<&SpacetimePaths>, args: &ArgMatches) -> anyhow::
         jwt_pub_key_path,
         jwt_priv_key_path,
     });
-    let data_dir = args
-        .get_one::<ServerDataDir>("data_dir")
-        .or(paths.map(|p| &p.data_dir))
-        // cli should pass Some(paths), while standalone has data-dir as a required arg
-        .unwrap();
+    let data_dir = args.get_one::<ServerDataDir>("data_dir").unwrap();
     let enable_tracy = args.get_flag("enable_tracy") || std::env::var_os("SPACETIMEDB_TRACY").is_some();
     let storage = if args.get_flag("in_memory") {
         Storage::Memory
@@ -170,7 +133,7 @@ pub async fn exec(paths: Option<&SpacetimePaths>, args: &ArgMatches) -> anyhow::
 
     let certs = certs
         .or(config.certificate_authority)
-        .or_else(|| paths.map(|paths| CertificateAuthority::in_cli_config_dir(&paths.cli_config_dir)))
+        .or_else(|| cert_dir.map(CertificateAuthority::in_cli_config_dir))
         .context("cannot omit --jwt-{pub,priv}-key-path when those options are not specified in config.toml")?;
 
     let data_dir = Arc::new(data_dir.clone());

@@ -4,20 +4,19 @@ mod config;
 pub(crate) mod detect;
 mod edit_distance;
 mod errors;
+mod start;
 mod subcommands;
 mod tasks;
 pub mod util;
+
+use std::process::ExitCode;
 
 use clap::{ArgMatches, Command};
 
 pub use config::Config;
 use spacetimedb_paths::SpacetimePaths;
-use spacetimedb_standalone::subcommands::start::ProgramMode;
 pub use subcommands::*;
 pub use tasks::build;
-
-#[cfg(feature = "standalone")]
-use spacetimedb_standalone::subcommands::start;
 
 pub fn get_subcommands() -> Vec<Command> {
     vec![
@@ -39,8 +38,7 @@ pub fn get_subcommands() -> Vec<Command> {
         server::cli(),
         upgrade::cli(),
         subscribe::cli(),
-        #[cfg(feature = "standalone")]
-        start::cli(ProgramMode::CLI),
+        start::cli(),
     ]
 }
 
@@ -49,7 +47,7 @@ pub async fn exec_subcommand(
     paths: &SpacetimePaths,
     cmd: &str,
     args: &ArgMatches,
-) -> Result<(), anyhow::Error> {
+) -> anyhow::Result<ExitCode> {
     match cmd {
         "version" => version::exec(config, args).await,
         "call" => call::exec(config, args).await,
@@ -66,11 +64,11 @@ pub async fn exec_subcommand(
         "build" => build::exec(config, args).await.map(drop),
         "server" => server::exec(config, paths, args).await,
         "subscribe" => subscribe::exec(config, args).await,
-        #[cfg(feature = "standalone")]
-        "start" => start::exec(Some(paths), args).await,
+        "start" => return start::exec(paths, args).await,
         "login" => login::exec(config, args).await,
         "logout" => logout::exec(config, args).await,
         "upgrade" => upgrade::exec(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
+    .map(|()| ExitCode::SUCCESS)
 }
