@@ -86,43 +86,35 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
       }
     },
     {/*
-
 [SpacetimeDB.Table]
-^^^^^^^^^^^^^^^^^^^
 [SpacetimeDB.Index]
-^^^^^^^^^^^^^^^^^^^
+ ^^^^^^^^^^^^^^^^^
 public partial struct TestIndexWithoutColumns { }
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
 */
-      Message: An internal error occurred during codegen: Object reference not set to an instance of an object.,
+      Message: Index has an Index.BTree attribute, but no columns.,
       Severity: Error,
       Descriptor: {
-        Id: STDBINT0001,
-        Title: Internal SpacetimeDB codegen error,
-        MessageFormat: An internal error occurred during codegen: {0},
-        Category: SpacetimeDB.Internal,
+        Id: STDB0004,
+        Title: Index attribute must specify columns.,
+        MessageFormat: Index{0}{1} has an Index.BTree attribute, but no columns.,
+        Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
       }
     },
     {/*
-
 [SpacetimeDB.Table]
-^^^^^^^^^^^^^^^^^^^
 [SpacetimeDB.Index(BTree = [])]
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 public partial struct TestIndexWithEmptyColumns { }
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
 */
-      Message: An internal error occurred during codegen: Object reference not set to an instance of an object.,
+      Message: Index has an Index.BTree attribute, but no columns.,
       Severity: Error,
       Descriptor: {
-        Id: STDBINT0001,
-        Title: Internal SpacetimeDB codegen error,
-        MessageFormat: An internal error occurred during codegen: {0},
-        Category: SpacetimeDB.Internal,
+        Id: STDB0004,
+        Title: Index attribute must specify columns.,
+        MessageFormat: Index{0}{1} has an Index.BTree attribute, but no columns.,
+        Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
       }
