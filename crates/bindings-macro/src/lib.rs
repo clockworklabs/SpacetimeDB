@@ -168,7 +168,7 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 ///
 /// Instead, a struct implementing [`Table<Row = Self>`] is generated. This can be looked up in a [`ReducerContext`]
 /// using `ctx.db().table_name()`. This struct represents a handle to a database table, and can be used to
-/// iterate and modify the table's elements.
+/// iterate and modify the table's elements. It is a view of the entire table -- the entire set of rows at the time of the reducer call.
 ///
 /// # Example
 ///

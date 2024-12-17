@@ -1,9 +1,4 @@
-//! # SpacetimeDB Rust Module SDK
-//!
-//! This crate makes it easy to write SpacetimeDB modules in Rust.
-//!
-//! Provides safe abstractions around `bindings-sys`
-//! and re-exports `#[spacetimedb]` and `#[duration]`.
+#![doc = include_str!("../README.md")]
 
 pub mod log_stopwatch;
 mod logger;
@@ -132,7 +127,7 @@ impl DbContext for ReducerContext {
 /// The `#[table]` macro uses the trait system to add table accessors to this type.
 /// These are generated methods that allow you to access specific tables.
 ///
-/// Run `cargo doc` in your SpacetimeDB module project and browse the generated documentation
+/// Run `cargo doc` in your Rust module project and browse the generated documentation
 /// to see the methods have been automatically added to this type.
 #[non_exhaustive]
 pub struct Local {}
