@@ -220,24 +220,26 @@ record ViewIndex
             ViewIndexType.BTree // this might become hash in the future
         ) { }
 
-    private ViewIndex(IndexAttribute attr, TypeDeclarationSyntax decl, DiagReporter diag)
+    private ViewIndex(IndexAttribute attr)
         : this(
-            attr.Name,
+            attr.Name == "" ? null : attr.Name,
             // TODO: check other properties when we support types other than BTree.
             // Then make sure we don't allow multiple index types on the same attribute via diagnostics.
-            attr.BTree ?? [],
+            attr.BTree,
             ViewIndexType.BTree
         )
     {
         Table = attr.Table;
-        if (Columns.Length == 0)
-        {
-            diag.Report(ErrorDescriptor.EmptyIndexColumns, decl);
-        }
     }
 
-    public ViewIndex(AttributeData data, TypeDeclarationSyntax decl, DiagReporter diag)
-        : this(data.ParseAs<IndexAttribute>(), decl, diag) { }
+    public ViewIndex(AttributeData data, DiagReporter diag)
+        : this(data.ParseAs<IndexAttribute>())
+    {
+        if (Columns.Length == 0)
+        {
+            diag.Report(ErrorDescriptor.EmptyIndexColumns, (this, data));
+        }
+    }
 
     public string GenerateIndexDef(IEnumerable<ColumnDeclaration> allColumns)
     {
@@ -246,7 +248,7 @@ record ViewIndex
         return $$"""
             new(
                 Name: null,
-                AccessorName: {{(AccessorName is not null ? $"\"{AccessorName}\"" : "null")}},
+                AccessorName: "{{AccessorName}}",
                 Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.{{Type}}([{{string.Join(
                     ", ",
                     colIndices
@@ -306,7 +308,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             context
                 .TargetSymbol.GetAttributes()
                 .Where(a => a.AttributeClass?.ToString() == typeof(IndexAttribute).FullName)
-                .Select(a => new ViewIndex(a, typeSyntax, diag))
+                .Select(a => new ViewIndex(a, diag))
                 .ToImmutableArray()
         );
     }
@@ -344,10 +346,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
         foreach (var index in GetIndexes(view))
         {
-            var members = index.Columns.Select(s => Members.First(x => x.Name == s)).ToArray();
+            var name = index.AccessorName;
 
+            // Skip bad declarations. Empty name means no columns, which we have already reported with a meaningful error.
+            // Emitting this will result in further compilation errors due to missing property name.
+            if (name == "")
+            {
+                continue;
+            }
+
+            var members = index.Columns.Select(s => Members.First(x => x.Name == s)).ToArray();
             var standardIndexName = index.StandardIndexName(view);
-            var name = index.AccessorName ?? standardIndexName;
 
             yield return $$"""
                     {{vis}} sealed class {{name}}Index() : SpacetimeDB.Internal.IndexBase<{{globalName}}>("{{standardIndexName}}") {
