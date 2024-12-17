@@ -46,33 +46,10 @@
     }
   },
   {/*
-    internal static readonly SpacetimeDB.BSATN.IReadWrite<System.DateTime> UnsupportedSpecialType = new();
-internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> UnsupportedSystemType = new();
-                                                                                                ^^^^^
-internal static readonly SpacetimeDB.BSATN.IReadWrite<UnresolvedType> UnresolvedType = new();
-*/
-    Message: Cannot create an instance of the abstract type or interface 'IReadWrite<Exception>',
-    Severity: Error,
-    Descriptor: {
-      Id: CS0144,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0144),
-      MessageFormat: Cannot create an instance of the abstract type or interface '{0}',
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> UnsupportedSystemType = new();
-internal static readonly SpacetimeDB.BSATN.IReadWrite<UnresolvedType> UnresolvedType = new();
-                                                      ^^^^^^^^^^^^^^
-internal static readonly SpacetimeDB.BSATN.IReadWrite<LocalEnum> UnsupportedEnum = new();
+internal static readonly SpacetimeDB.BSATN.Unsupported<System.Exception> UnsupportedSystemType = new();
+internal static readonly SpacetimeDB.BSATN.Unsupported<UnresolvedType> UnresolvedType = new();
+                                                       ^^^^^^^^^^^^^^
+internal static readonly SpacetimeDB.BSATN.Unsupported<LocalEnum> UnsupportedEnum = new();
 */
     Message: The type or namespace name 'UnresolvedType' could not be found (are you missing a using directive or an assembly reference?),
     Severity: Error,
@@ -81,75 +58,6 @@ internal static readonly SpacetimeDB.BSATN.IReadWrite<LocalEnum> UnsupportedEnum
       Title: ,
       HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
       MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> UnsupportedSystemType = new();
-internal static readonly SpacetimeDB.BSATN.IReadWrite<UnresolvedType> UnresolvedType = new();
-                                                                                       ^^^^^
-internal static readonly SpacetimeDB.BSATN.IReadWrite<LocalEnum> UnsupportedEnum = new();
-*/
-    Message: Cannot create an instance of the abstract type or interface 'IReadWrite<UnresolvedType>',
-    Severity: Error,
-    Descriptor: {
-      Id: CS0144,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0144),
-      MessageFormat: Cannot create an instance of the abstract type or interface '{0}',
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-internal static readonly SpacetimeDB.BSATN.IReadWrite<UnresolvedType> UnresolvedType = new();
-internal static readonly SpacetimeDB.BSATN.IReadWrite<LocalEnum> UnsupportedEnum = new();
-                                                                                   ^^^^^
-
-*/
-    Message: Cannot create an instance of the abstract type or interface 'IReadWrite<LocalEnum>',
-    Severity: Error,
-    Descriptor: {
-      Id: CS0144,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0144),
-      MessageFormat: Cannot create an instance of the abstract type or interface '{0}',
-      Category: Compiler,
-      DefaultSeverity: Error,
-      IsEnabledByDefault: true,
-      CustomTags: [
-        Compiler,
-        Telemetry,
-        NotConfigurable
-      ]
-    }
-  },
-  {/*
-{
-    internal static readonly SpacetimeDB.BSATN.IReadWrite<System.DateTime> UnsupportedSpecialType = new();
-                                                                                                    ^^^^^
-internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> UnsupportedSystemType = new();
-*/
-    Message: Cannot create an instance of the abstract type or interface 'IReadWrite<DateTime>',
-    Severity: Error,
-    Descriptor: {
-      Id: CS0144,
-      Title: ,
-      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0144),
-      MessageFormat: Cannot create an instance of the abstract type or interface '{0}',
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,
