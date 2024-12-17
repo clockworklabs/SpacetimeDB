@@ -31,6 +31,7 @@ mod sym {
         };
     }
 
+    symbol!(at);
     symbol!(auto_inc);
     symbol!(btree);
     symbol!(client_connected);
@@ -45,7 +46,6 @@ mod sym {
     symbol!(public);
     symbol!(sats);
     symbol!(scheduled);
-    symbol!(scheduled_at);
     symbol!(unique);
     symbol!(update);
 
@@ -242,7 +242,7 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 
 /// Provides helper attributes for `#[spacetimedb::table]`, so that we don't get unknown attribute errors.
 #[doc(hidden)]
-#[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index, scheduled_at))]
+#[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index))]
 pub fn table_helper(_input: StdTokenStream) -> StdTokenStream {
     Default::default()
 }

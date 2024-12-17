@@ -147,7 +147,6 @@ pub struct ScheduledMessage {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
     prev: Timestamp,
 }
