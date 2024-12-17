@@ -1,5 +1,4 @@
-//! Provides safe abstractions around `bindings-sys`
-//! and re-exports `#[spacetimedb]` and `#[duration]`.
+#![doc = include_str!("../README.md")]
 
 pub mod log_stopwatch;
 mod logger;
@@ -41,7 +40,20 @@ pub use timestamp::Timestamp;
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;
 
-/// A context that any reducer is provided with.
+/// The context that any reducer is provided with.
+///
+/// This must be the first argument of the reducer. Clients of the module will
+/// only see arguments after the `ReducerContext`.
+///
+/// Includes information about the client calling the reducer and the time of invocation,
+/// as well as a view into the module's database.
+///
+/// If the crate was compiled with the `rand` feature, also includes faculties for random
+/// number generation.
+///
+/// Implements the `DbContext` trait for accessing views into a database.
+/// Currently, being this generic is only meaningful in clients,
+/// as `ReducerContext` is the only implementor of `DbContext` within modules.
 #[non_exhaustive]
 pub struct ReducerContext {
     /// The `Identity` of the client that invoked the reducer.
@@ -56,6 +68,14 @@ pub struct ReducerContext {
     /// For automatic reducers, i.e. `init`, `update` and scheduled reducers,
     /// this will be the module's `Address`.
     pub address: Option<Address>,
+    /// Allows accessing the local database attached to a module.
+    ///
+    /// This slightly strange type appears to have no methods, but that is misleading.
+    /// The `#[table]` macro uses the trait system to add table accessors to this type.
+    /// These are generated methods that allow you to access specific tables.
+    ///
+    /// Run `cargo doc` in your SpacetimeDB module project and browse the generated documentation
+    /// to see the methods have been automatically added to this type.
     pub db: Local,
 
     #[cfg(feature = "rand")]
@@ -89,7 +109,7 @@ pub trait DbContext {
     /// This method is provided for times when a programmer wants to be generic over the `DbContext` type.
     /// Concrete-typed code is expected to read the `.db` field off the particular `DbContext` implementor.
     /// Currently, being this generic is only meaningful in clients,
-    /// as modules have only a single implementor of `DbContext`.
+    /// as `ReducerContext` is the only implementor of `DbContext` within modules.
     fn db(&self) -> &Self::DbView;
 }
 
@@ -101,6 +121,14 @@ impl DbContext for ReducerContext {
     }
 }
 
+/// Allows accessing the local database attached to the module.
+///
+/// This slightly strange type appears to have no methods, but that is misleading.
+/// The `#[table]` macro uses the trait system to add table accessors to this type.
+/// These are generated methods that allow you to access specific tables.
+///
+/// Run `cargo doc` in your Rust module project and browse the generated documentation
+/// to see the methods have been automatically added to this type.
 #[non_exhaustive]
 pub struct Local {}
 

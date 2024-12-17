@@ -159,15 +159,25 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     })
 }
 
-/// Generates code for treating this struct type as a table.
+/// Generates code for treating a struct type as a row of a table.
 ///
-/// Among other things, this derives `Serialize`, `Deserialize`,
-/// `SpacetimeType`, and `Table` for our type.
+/// This derives [`Serialize`], [`Deserialize`], [`SpacetimeType`], and [`Debug`] for the type.
+///
+/// Elements of the struct type are NOT automatically inserted into any global table. They are regular structs,
+/// with no special behavior. In particular, modifying them does not automatically modify the database!
+///
+/// Instead, a struct implementing [`Table<Row = Self>`] is generated. This can be looked up in a [`ReducerContext`]
+/// using `ctx.db().table_name()`. This struct represents a handle to a database table, and can be used to
+/// iterate and modify the table's elements. It is a view of the entire table -- the entire set of rows at the time of the reducer call.
 ///
 /// # Example
 ///
 /// ```ignore
-/// #[spacetimedb::table(name = users, public)]
+/// use spacetimedb::{table, ReducerCtx};
+/// use log::debug;
+///
+/// #[table(name = users, public,
+///         index(name = id_and_username, btree(id, username)))]
 /// pub struct User {
 ///     #[auto_inc]
 ///     #[primary_key]
@@ -177,9 +187,41 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 ///     #[index(btree)]
 ///     pub popularity: u32,
 /// }
+///
+/// fn demo(ctx: &ReducerCtx) {
+///     // Use the *name* of the table to get a struct
+///     // implementing `spacetimedb::Table<Row = User>`.
+///     let users = ctx.db().users();
+///
+///     // You can use methods from `spacetimedb::Table`
+///     // on the table.
+///     debug!("User count: {}", users.count());
+///     for user in users.iter() {
+///         debug!("{:?}", user);
+///     }
+///
+///     // For every named `index`, the table has an extra method
+///     // for getting a corresponding `spacetimedb::BTreeIndex`.
+///     let by_id_and_username: spacetimedb::BTreeIndex<_, (u32, String), _> =
+///         users.id_and_username();
+///     by_id_and_username.delete((&57, &"Billy".to_string()));
+///
+///     // For every `#[unique]` or `#[primary_key]` field,
+///     // the table has an extra method that allows getting a
+///     // corresponding `spacetimedb::UniqueColumn`.
+///     let by_username: spacetimedb::UniqueColumn<_, String, _> = users.id();
+///     by_username.delete(&"test_user".to_string());
+/// }
 /// ```
 ///
 /// # Macro arguments
+///
+/// * `name = my_table`
+///
+///    Specify the name of the table in the database, if you want it to be different from
+///    the name of the struct.
+///    Multiple `table` annotations can be present on the same type. This will generate
+///    multiple tables of the same row type, but with different names.
 ///
 /// * `public` and `private`
 ///
@@ -192,14 +234,43 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 ///
 /// * `index(name = my_index, btree(columns = [a, b, c]))`
 ///
-///    You can specify an index on 1 or more of the table's columns with the above syntax.
+///    You can specify an index on one or more of the table's columns with the above syntax.
 ///    You can also just put `#[index(btree)]` on the field itself if you only need
 ///    a single-column attribute; see column attributes below.
+///    Multiple indexes are permitted.
 ///
-/// * `name = my_table`
+/// * `scheduled(reducer_name)`
 ///
-///    Specify the name of the table in the database, if you want it to be different from
-///    the name of the struct.
+///    Scheduled [reducers](macro@crate::reducer) need a table storing scheduling information.
+///    The rows of this table store all information needed when invoking a scheduled reducer.
+///    This can be any information you want, but we require that the tables store at least an
+///    invocation ID field and timestamp field.
+///
+///    The corresponding reducer should accept a single argument
+///
+///    These can be declared like so:
+///
+/// ```ignore
+/// #[table(name = train_schedule, scheduled(run_train))]
+/// pub struct TrainSchedule {
+///     // Required fields.
+///     #[primary_key]
+///     #[auto_inc]
+///     scheduled_id: u64,
+///     #[scheduled_at]
+///     scheduled_at: spacetimedb::ScheduleAt,
+///
+///     // Any other fields needed.
+///     train: TrainID,
+///     source_station: StationID,
+///     target_station: StationID
+/// }
+///
+/// #[reducer]
+/// pub fn run_train(ctx: &ReducerCtx, schedule: TrainSchedule) {
+///     /* ... */
+/// }
+/// ```
 ///
 /// # Column (field) attributes
 ///
@@ -226,10 +297,67 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 ///
 ///    Creates a single-column index with the specified algorithm.
 ///
+/// * `#[scheduled_at]`
+///    Used in scheduled reducer tables, see above.
+///
+/// * `#[scheduled_id]`
+///    Used in scheduled reducer tables, see above.
+///
+/// # Generated code
+///
+/// For each `[table(name = {name})]` annotation on a type `{T}`, generates a struct
+/// `{name}Handle` implementing `Table<Row={T}>`, and a trait that allows looking up such a
+/// `{name}Handle` in a `ReducerContext`.
+///
+/// The struct `{name}Handle` is hidden in an anonymous scope and cannot be accessed.
+///
+/// For each named index declaration, add a method to `{name}Handle` for getting a corresponding
+/// `BTreeIndex`.
+///
+/// For each field  with a `#[unique]` or `#[primary_key]` annotation,
+/// add a method to `{name}Handle` for getting a corresponding `UniqueColumn`.
+///
+/// The following pseudocode illustrates the general idea. Curly braces are used to indicate templated
+/// names.
+///
+/// ```ignore
+/// use spacetimedb::{BTreeIndex, UniqueColumn, Table, DbView};
+///
+/// // This generated struct is hidden and cannot be directly accessed.
+/// struct {name}Handle { /* ... */ };
+///
+/// // It is a table handle.
+/// impl Table for {name}Handle {
+///     type Row = {T};
+///     /* ... */
+/// }
+///
+/// // It can be looked up in a `ReducerContext`,
+/// // using `ctx.db().{name}()`.
+/// trait {name} {
+///     fn {name}(&self) -> Row = {T}>;
+/// }
+/// impl {name} for <ReducerContext as DbContext>::DbView { /* ... */ }
+///
+/// // Once looked up, it can be used to look up indexes.
+/// impl {name}Handle {
+///     // For each `#[unique]` or `#[primary_key]` field `{field}` of type `{F}`:
+///     fn {field}(&self) -> UniqueColumn<_, {F}, _> { /* ... */ };
+///     
+///     // For each named index `{index}` on fields of type `{(F1, ..., FN)}`:
+///     fn {index}(&self) -> BTreeIndex<_, {(F1, ..., FN)}, _>;
+/// }
+/// ```
+///
 /// [`Serialize`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Serialize.html
 /// [`Deserialize`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Deserialize.html
 /// [`SpacetimeType`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.SpacetimeType.html
 /// [`TableType`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.TableType.html
+/// [`Table`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Table.html
+/// [`Table<Row = Self>`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Table.html
+/// [`ReducerContext`]: https://docs.rs/spacetimedb/latest/spacetimedb/struct.ReducerContext.html
+/// [`UniqueColumn`]: https://docs.rs/spacetimedb/latest/spacetimedb/struct.UniqueColumn.html
+/// [`BTreeIndex`]: https://docs.rs/spacetimedb/latest/spacetimedb/struct.BTreeIndex.html
 #[proc_macro_attribute]
 pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     // put this on the struct so we don't get unknown attribute errors
