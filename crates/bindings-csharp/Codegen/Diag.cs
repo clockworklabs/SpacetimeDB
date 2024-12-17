@@ -42,7 +42,7 @@ internal static class ErrorDescriptor
             group,
             "Index attribute must specify columns.",
             ctx =>
-                $"Index{(ctx.index.AccessorName != "" ? " " : "")}{ctx.index.AccessorName} has an Index.BTree attribute, but no columns.",
+                $"{(ctx.index.AccessorName != "" ? ctx.index.AccessorName : "Index")} has an Index.BTree attribute, but no columns.",
             ctx => ctx.attr
         );
 

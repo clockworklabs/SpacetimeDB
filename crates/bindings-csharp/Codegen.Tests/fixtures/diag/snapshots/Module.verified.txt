@@ -96,7 +96,7 @@ public partial struct TestIndexWithoutColumns { }
       Descriptor: {
         Id: STDB0004,
         Title: Index attribute must specify columns.,
-        MessageFormat: Index{0}{1} has an Index.BTree attribute, but no columns.,
+        MessageFormat: {0} has an Index.BTree attribute, but no columns.,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
@@ -113,7 +113,7 @@ public partial struct TestIndexWithEmptyColumns { }
       Descriptor: {
         Id: STDB0004,
         Title: Index attribute must specify columns.,
-        MessageFormat: Index{0}{1} has an Index.BTree attribute, but no columns.,
+        MessageFormat: {0} has an Index.BTree attribute, but no columns.,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
