@@ -26,8 +26,7 @@ partial struct TestUnsupportedType : SpacetimeDB.BSATN.IStructuralReadWrite
             new();
         internal static readonly SpacetimeDB.BSATN.Unsupported<System.Exception> UnsupportedSystemType =
             new();
-        internal static readonly SpacetimeDB.BSATN.Unsupported<UnresolvedType> UnresolvedType =
-            new();
+        internal static readonly SpacetimeDB.BSATN.Unsupported<object> UnresolvedType = new();
         internal static readonly SpacetimeDB.BSATN.Unsupported<LocalEnum> UnsupportedEnum = new();
 
         public TestUnsupportedType Read(System.IO.BinaryReader reader) =>

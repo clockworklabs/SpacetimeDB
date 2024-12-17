@@ -15,10 +15,17 @@ public record MemberDeclaration(string Name, string Type, string TypeInfo)
         {
             TypeInfo = GetTypeInfo(type);
         }
+        catch (UnresolvedTypeException)
+        {
+            // If it's an unresolved type, this error will have been already highlighted by .NET itself, no need to add noise.
+            // Just add some dummy type to avoid further errors.
+            // Note that we just use `object` here because emitting the unresolved type's name again would produce more of said noise.
+            TypeInfo = "SpacetimeDB.BSATN.Unsupported<object>";
+        }
         catch (Exception e)
         {
             diag.Report(ErrorDescriptor.UnsupportedType, (member, type, e));
-            // dummy type; can't instantiate an interface, but at least it will produce fewer noisy errors
+            // dummy BSATN implementation to produce fewer noisy errors
             TypeInfo = $"SpacetimeDB.BSATN.Unsupported<{Type}>";
         }
     }
