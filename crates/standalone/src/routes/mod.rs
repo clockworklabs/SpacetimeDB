@@ -2,7 +2,7 @@ use http::header::{ACCEPT, AUTHORIZATION};
 use tower_http::cors::{Any, CorsLayer};
 
 use spacetimedb_client_api::{
-    routes::{database, energy, identity, metrics, prometheus},
+    routes::{database, energy, health, identity, metrics, prometheus},
     ControlStateDelegate, NodeDelegate,
 };
 
@@ -19,7 +19,8 @@ where
         .nest("/identity", identity::router(ctx.clone()))
         .nest("/energy", energy::router())
         .nest("/prometheus", prometheus::router())
-        .nest("/metrics", metrics::router());
+        .nest("/metrics", metrics::router())
+        .nest("/health", health::router());
 
     let cors = CorsLayer::new()
         .allow_headers([AUTHORIZATION, ACCEPT])
