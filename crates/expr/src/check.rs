@@ -208,6 +208,7 @@ mod tests {
             (
                 "t",
                 ProductType::from([
+                    ("int", AlgebraicType::U32),
                     ("u32", AlgebraicType::U32),
                     ("f32", AlgebraicType::F32),
                     ("str", AlgebraicType::String),

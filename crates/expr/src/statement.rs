@@ -286,3 +286,61 @@ pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<
         source: StatementSource::Query,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+    use spacetimedb_schema::def::ModuleDef;
+
+    use crate::{
+        check::test_utils::{build_module_def, SchemaViewer},
+        statement::parse_and_type_sql,
+    };
+
+    fn module_def() -> ModuleDef {
+        build_module_def(vec![
+            (
+                "t",
+                ProductType::from([
+                    ("u32", AlgebraicType::U32),
+                    ("f32", AlgebraicType::F32),
+                    ("str", AlgebraicType::String),
+                    ("arr", AlgebraicType::array(AlgebraicType::String)),
+                ]),
+            ),
+            (
+                "s",
+                ProductType::from([
+                    ("id", AlgebraicType::identity()),
+                    ("u32", AlgebraicType::U32),
+                    ("arr", AlgebraicType::array(AlgebraicType::String)),
+                    ("bytes", AlgebraicType::bytes()),
+                ]),
+            ),
+        ])
+    }
+
+    #[test]
+    fn valid() {
+        let tx = SchemaViewer(module_def());
+
+        for sql in [
+            "select str from t",
+            "select str, arr from t",
+            "select t.str, arr from t",
+        ] {
+            let result = parse_and_type_sql(sql, &tx);
+            assert!(result.is_ok());
+        }
+    }
+
+    #[test]
+    fn invalid() {
+        let tx = SchemaViewer(module_def());
+
+        // Unqualified columns in a join
+        let sql = "select id, str from s join t";
+        let result = parse_and_type_sql(sql, &tx);
+        assert!(result.is_err());
+    }
+}

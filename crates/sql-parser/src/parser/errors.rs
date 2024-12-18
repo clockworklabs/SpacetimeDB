@@ -64,6 +64,8 @@ pub enum SqlUnsupported {
     MultiTableDelete,
     #[error("Empty SQL query")]
     Empty,
+    #[error("Names must be qualified when using joins")]
+    UnqualifiedNames,
 }
 
 impl SqlUnsupported {
