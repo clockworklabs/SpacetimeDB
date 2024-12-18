@@ -332,6 +332,7 @@ impl_read_column_via_from! {
     u32 => spacetimedb_primitives::IndexId;
     u32 => spacetimedb_primitives::ConstraintId;
     u32 => spacetimedb_primitives::SequenceId;
+    u32 => spacetimedb_primitives::ScheduleId;
     u128 => Packed<u128>;
     i128 => Packed<i128>;
     u256 => Box<u256>;

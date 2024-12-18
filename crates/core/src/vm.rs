@@ -447,11 +447,14 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Ok(Code::Table(MemTable::new(head, table_access, rows)))
     }
 
-    fn _execute_insert(&mut self, table: &DbTable, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
+    // TODO(centril): investigate taking bsatn as input instead.
+    fn _execute_insert(&mut self, table: &DbTable, inserts: Vec<ProductValue>) -> Result<Code, ErrorVm> {
         let tx = self.tx.unwrap_mut();
-        let inserts = rows.clone(); // TODO code shouldn't be hot, let's remove later
-        for row in rows {
-            self.db.insert(tx, table.table_id, row)?;
+        let mut scratch = Vec::new();
+        for row in &inserts {
+            row.encode(&mut scratch);
+            self.db.insert(tx, table.table_id, &scratch)?;
+            scratch.clear();
         }
         Ok(Code::Pass(Some(Update {
             table_id: table.table_id,
@@ -582,7 +585,7 @@ pub(crate) mod tests {
         StSequenceRow, StTableFields, StTableRow, ST_COLUMN_ID, ST_COLUMN_NAME, ST_INDEX_ID, ST_INDEX_NAME,
         ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCE_ID, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_NAME,
     };
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::execution_context::Workload;
     use pretty_assertions::assert_eq;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -634,7 +637,7 @@ pub(crate) mod tests {
         let schema = db.schema_for_table_mut(tx, table_id)?;
 
         for row in rows {
-            db.insert(tx, table_id, row.clone())?;
+            insert(db, tx, table_id, &row)?;
         }
 
         Ok(schema)

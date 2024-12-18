@@ -286,6 +286,7 @@ impl Insn {
 
 impl MemoryUsage for Insn {}
 
+#[derive(Clone)]
 pub struct StaticBsatnValidator {
     /// The list of instructions that make up this program.
     insns: Arc<[Insn]>,
