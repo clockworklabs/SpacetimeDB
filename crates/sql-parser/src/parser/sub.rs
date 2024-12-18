@@ -71,7 +71,9 @@ pub fn parse_subscription(sql: &str) -> SqlParseResult<SqlSelect> {
     let mut stmts = Parser::parse_sql(&PostgreSqlDialect {}, sql)?;
     match stmts.len() {
         0 => Err(SqlUnsupported::Empty.into()),
-        1 => parse_statement(stmts.swap_remove(0)).map(|ast| ast.qualify_vars()),
+        1 => parse_statement(stmts.swap_remove(0))
+            .map(|ast| ast.qualify_vars())
+            .and_then(|ast| ast.find_unqualified_vars()),
         _ => Err(SqlUnsupported::MultiStatement.into()),
     }
 }
