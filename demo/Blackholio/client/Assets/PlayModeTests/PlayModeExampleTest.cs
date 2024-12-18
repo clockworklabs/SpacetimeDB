@@ -12,7 +12,6 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using Random = UnityEngine.Random;
-using Vector2 = SpacetimeDB.Types.Vector2;
 
 public class PlayModeExampleTest
 {
@@ -35,11 +34,6 @@ public class PlayModeExampleTest
             conn.FrameTick();
             yield return null;
         }
-    }
-
-    UnityEngine.Vector2 ToVector2(Vector2 v)
-    {
-        return new UnityEngine.Vector2(v.X, v.Y);
     }
 
     [UnityTest]
@@ -106,7 +100,7 @@ public class PlayModeExampleTest
                 var ourEntityPosition = ourEntity.Position;
                 Debug.Assert(foodEntityPosition != null, nameof(foodEntityPosition) + " != null");
                 Debug.Assert(ourEntityPosition != null, nameof(ourEntityPosition) + " != null");
-                var toThisFood = ToVector2(foodEntity.Position) - ToVector2(ourEntity.Position);
+                var toThisFood = (Vector2)foodEntity.Position - (Vector2)ourEntity.Position;
                 if (toThisFood.sqrMagnitude == 0.0f) continue;
                 if (toChosenFood.sqrMagnitude > toThisFood.sqrMagnitude)
                 {
@@ -121,7 +115,7 @@ public class PlayModeExampleTest
                 var foodEntity = GameManager.conn.Db.Entity.Id.Find(chosenFoodId);
                 Debug.Assert(foodEntity != null, nameof(foodEntity) + " != null");
                 Debug.Assert(ourNewEntity != null, nameof(ourNewEntity) + " != null");
-                var toThisFood = ToVector2(foodEntity.Position) - ToVector2(ourNewEntity.Position);
+                var toThisFood = (Vector2)foodEntity.Position - (Vector2)ourNewEntity.Position;
                 PlayerController.Local.SetTestInput(toThisFood);
 
             }

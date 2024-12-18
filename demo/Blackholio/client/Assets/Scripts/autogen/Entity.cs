@@ -18,13 +18,13 @@ namespace SpacetimeDB.Types
 		[DataMember(Name = "id")]
 		public uint Id;
 		[DataMember(Name = "position")]
-		public SpacetimeDB.Types.Vector2 Position;
+		public SpacetimeDB.Types.DbVector2 Position;
 		[DataMember(Name = "mass")]
 		public uint Mass;
 
 		public Entity(
 			uint Id,
-			SpacetimeDB.Types.Vector2 Position,
+			SpacetimeDB.Types.DbVector2 Position,
 			uint Mass
 		)
 		{

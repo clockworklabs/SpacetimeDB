@@ -1,0 +1,1 @@
+spacetime publish -s local -c -y untitled-circle-game

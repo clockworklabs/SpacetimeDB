@@ -1,0 +1,1 @@
+spacetime logs -s local -f untitled-circle-game --anonymous

@@ -10,6 +10,7 @@ public class ArenaController : MonoBehaviour
 {
     public SpriteRenderer backgroundPrefab;
     public float thickness = 10;
+    public Material borderMaterial;
 
     private SpriteRenderer backgroundInstance;
 
@@ -21,17 +22,21 @@ public class ArenaController : MonoBehaviour
             var north = GameObject.CreatePrimitive(PrimitiveType.Cube);
             north.transform.localScale = new Vector3(worldSize + thickness * 2.0f, thickness, 1);
             north.transform.position = new Vector3(worldSize / 2.0f, worldSize + thickness / 2, 1);
+            north.GetComponent<MeshRenderer>().material = borderMaterial;
             var south = GameObject.CreatePrimitive(PrimitiveType.Cube);
             south.transform.localScale = new Vector3(worldSize + thickness * 2.0f, thickness, 1);
             south.transform.position = new Vector3(worldSize / 2.0f, -thickness / 2, 1);
-            var east = GameObject.CreatePrimitive(PrimitiveType.Cube);
+			south.GetComponent<MeshRenderer>().material = borderMaterial;
+			var east = GameObject.CreatePrimitive(PrimitiveType.Cube);
             east.transform.localScale = new Vector3(thickness, worldSize + thickness * 2.0f, 1);
             east.transform.position = new Vector3(worldSize + thickness / 2, worldSize / 2.0f, 1);
-            var west = GameObject.CreatePrimitive(PrimitiveType.Cube);
+			east.GetComponent<MeshRenderer>().material = borderMaterial;
+			var west = GameObject.CreatePrimitive(PrimitiveType.Cube);
             west.transform.localScale = new Vector3(thickness, worldSize + thickness * 2.0f, 1);
             west.transform.position = new Vector3(-thickness / 2, worldSize / 2.0f, 1);
+			west.GetComponent<MeshRenderer>().material = borderMaterial;
 
-            backgroundInstance = Instantiate(backgroundPrefab);
+			backgroundInstance = Instantiate(backgroundPrefab);
             var size = worldSize / backgroundInstance.transform.localScale.x;
             backgroundInstance.size = new UnityEngine.Vector2(size, size);
             backgroundInstance.transform.position = new Vector3((float)worldSize / 2, (float)worldSize / 2);

@@ -33,7 +33,7 @@ public class FoodController : MonoBehaviour
             z = foodRadius * 2,
         };
         transform.position = position;
-        rend.material.SetColor(MainTexProperty, GameManager.GetRandomColor(entity.Id));
+        rend.material.SetColor(MainTexProperty, GameManager.GetRandomFoodColor(entity.Id));
     }
 
     private void OnDestroy()

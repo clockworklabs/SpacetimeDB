@@ -97,6 +97,42 @@ namespace SpacetimeDB.Types
 
 		public readonly CircleDecayTimerHandle CircleDecayTimer = new();
 
+		public class CircleRecombineTimerHandle : RemoteTableHandle<EventContext, CircleRecombineTimer>
+		{
+
+			public override void InternalInvokeValueInserted(IDatabaseRow row)
+			{
+				var value = (CircleRecombineTimer)row;
+				ScheduledId.Cache[value.ScheduledId] = value;
+			}
+
+			public override void InternalInvokeValueDeleted(IDatabaseRow row)
+			{
+				ScheduledId.Cache.Remove(((CircleRecombineTimer)row).ScheduledId);
+			}
+
+			public class ScheduledIdUniqueIndex
+			{
+				internal readonly Dictionary<ulong, CircleRecombineTimer> Cache = new(16);
+				public CircleRecombineTimer? Find(ulong value)
+				{
+					Cache.TryGetValue(value, out var r);
+					return r;
+				}
+
+			}
+
+			public ScheduledIdUniqueIndex ScheduledId = new();
+
+			internal CircleRecombineTimerHandle()
+			{
+			}
+			public override object GetPrimaryKey(IDatabaseRow row) => ((CircleRecombineTimer)row).ScheduledId;
+
+		}
+
+		public readonly CircleRecombineTimerHandle CircleRecombineTimer = new();
+
 		public class ConfigHandle : RemoteTableHandle<EventContext, Config>
 		{
 
@@ -434,6 +470,23 @@ namespace SpacetimeDB.Types
 			);
 			return true;
 		}
+		public delegate void CircleRecombineHandler(EventContext ctx, SpacetimeDB.Types.CircleRecombineTimer timer);
+		public event CircleRecombineHandler? OnCircleRecombine;
+
+		public void CircleRecombine(SpacetimeDB.Types.CircleRecombineTimer timer)
+		{
+			conn.InternalCallReducer(new Reducer.CircleRecombine(timer), this.SetCallReducerFlags.CircleRecombineFlags);
+		}
+
+		public bool InvokeCircleRecombine(EventContext ctx, Reducer.CircleRecombine args)
+		{
+			if (OnCircleRecombine == null) return false;
+			OnCircleRecombine(
+				ctx,
+				args.Timer
+			);
+			return true;
+		}
 		public delegate void CreatePlayerHandler(EventContext ctx, string name);
 		public event CreatePlayerHandler? OnCreatePlayer;
 
@@ -517,12 +570,12 @@ namespace SpacetimeDB.Types
 			);
 			return true;
 		}
-		public delegate void UpdatePlayerInputHandler(EventContext ctx, SpacetimeDB.Types.Vector2 direction, float magnitude);
+		public delegate void UpdatePlayerInputHandler(EventContext ctx, SpacetimeDB.Types.DbVector2 direction);
 		public event UpdatePlayerInputHandler? OnUpdatePlayerInput;
 
-		public void UpdatePlayerInput(SpacetimeDB.Types.Vector2 direction, float magnitude)
+		public void UpdatePlayerInput(SpacetimeDB.Types.DbVector2 direction)
 		{
-			conn.InternalCallReducer(new Reducer.UpdatePlayerInput(direction, magnitude), this.SetCallReducerFlags.UpdatePlayerInputFlags);
+			conn.InternalCallReducer(new Reducer.UpdatePlayerInput(direction), this.SetCallReducerFlags.UpdatePlayerInputFlags);
 		}
 
 		public bool InvokeUpdatePlayerInput(EventContext ctx, Reducer.UpdatePlayerInput args)
@@ -530,8 +583,7 @@ namespace SpacetimeDB.Types
 			if (OnUpdatePlayerInput == null) return false;
 			OnUpdatePlayerInput(
 				ctx,
-				args.Direction,
-				args.Magnitude
+				args.Direction
 			);
 			return true;
 		}
@@ -542,6 +594,8 @@ namespace SpacetimeDB.Types
 		internal SetReducerFlags() { }
 		internal CallReducerFlags CircleDecayFlags;
 		public void CircleDecay(CallReducerFlags flags) { this.CircleDecayFlags = flags; }
+		internal CallReducerFlags CircleRecombineFlags;
+		public void CircleRecombine(CallReducerFlags flags) { this.CircleRecombineFlags = flags; }
 		internal CallReducerFlags CreatePlayerFlags;
 		public void CreatePlayer(CallReducerFlags flags) { this.CreatePlayerFlags = flags; }
 		internal CallReducerFlags MoveAllPlayersFlags;
@@ -592,6 +646,26 @@ namespace SpacetimeDB.Types
 			}
 
 			string IReducerArgs.ReducerName => "circle_decay";
+		}
+
+		[SpacetimeDB.Type]
+		[DataContract]
+		public partial class CircleRecombine : Reducer, IReducerArgs
+		{
+			[DataMember(Name = "timer")]
+			public SpacetimeDB.Types.CircleRecombineTimer Timer;
+
+			public CircleRecombine(SpacetimeDB.Types.CircleRecombineTimer Timer)
+			{
+				this.Timer = Timer;
+			}
+
+			public CircleRecombine()
+			{
+				this.Timer = new();
+			}
+
+			string IReducerArgs.ReducerName => "circle_recombine";
 		}
 
 		[SpacetimeDB.Type]
@@ -673,17 +747,11 @@ namespace SpacetimeDB.Types
 		public partial class UpdatePlayerInput : Reducer, IReducerArgs
 		{
 			[DataMember(Name = "direction")]
-			public SpacetimeDB.Types.Vector2 Direction;
-			[DataMember(Name = "magnitude")]
-			public float Magnitude;
+			public SpacetimeDB.Types.DbVector2 Direction;
 
-			public UpdatePlayerInput(
-				SpacetimeDB.Types.Vector2 Direction,
-				float Magnitude
-			)
+			public UpdatePlayerInput(SpacetimeDB.Types.DbVector2 Direction)
 			{
 				this.Direction = Direction;
-				this.Magnitude = Magnitude;
 			}
 
 			public UpdatePlayerInput()
@@ -712,6 +780,7 @@ namespace SpacetimeDB.Types
 
 			clientDB.AddTable<Circle>("circle", Db.Circle);
 			clientDB.AddTable<CircleDecayTimer>("circle_decay_timer", Db.CircleDecayTimer);
+			clientDB.AddTable<CircleRecombineTimer>("circle_recombine_timer", Db.CircleRecombineTimer);
 			clientDB.AddTable<Config>("config", Db.Config);
 			clientDB.AddTable<Entity>("entity", Db.Entity);
 			clientDB.AddTable<Food>("food", Db.Food);
@@ -727,6 +796,7 @@ namespace SpacetimeDB.Types
 			var encodedArgs = update.ReducerCall.Args;
 			return update.ReducerCall.ReducerName switch {
 				"circle_decay" => BSATNHelpers.Decode<Reducer.CircleDecay>(encodedArgs),
+				"circle_recombine" => BSATNHelpers.Decode<Reducer.CircleRecombine>(encodedArgs),
 				"create_player" => BSATNHelpers.Decode<Reducer.CreatePlayer>(encodedArgs),
 				"move_all_players" => BSATNHelpers.Decode<Reducer.MoveAllPlayers>(encodedArgs),
 				"player_split" => BSATNHelpers.Decode<Reducer.PlayerSplit>(encodedArgs),
@@ -749,6 +819,7 @@ namespace SpacetimeDB.Types
 			var eventContext = (EventContext)context;
 			return reducer switch {
 				Reducer.CircleDecay args => Reducers.InvokeCircleDecay(eventContext, args),
+				Reducer.CircleRecombine args => Reducers.InvokeCircleRecombine(eventContext, args),
 				Reducer.CreatePlayer args => Reducers.InvokeCreatePlayer(eventContext, args),
 				Reducer.MoveAllPlayers args => Reducers.InvokeMoveAllPlayers(eventContext, args),
 				Reducer.PlayerSplit args => Reducers.InvokePlayerSplit(eventContext, args),

@@ -98,9 +98,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bd6b8a91c00f49b4a9a894af85e2eee3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  updatesPerSecond: 20
   lerpUpdatesPerSecond: 20
-  targetCameraSize: 50
   rend: {fileID: 2753275671783793823}
   usernameDisplay: {fileID: 5819006763668977793}
 --- !u!1 &4816698811859672967
@@ -177,8 +175,8 @@ MonoBehaviour:
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4280098077
-  m_fontColor: {r: 0.11320752, g: 0.11320752, b: 0.11320752, a: 1}
+    rgba: 4294768372
+  m_fontColor: {r: 0.95686275, g: 0.9647059, b: 0.9882353, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:
