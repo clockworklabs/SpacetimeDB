@@ -7,7 +7,11 @@ use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, IndexId, TableId};
-use spacetimedb_sats::{bsatn::ToBsatn, AlgebraicValue, ProductValue};
+use spacetimedb_sats::{
+    bsatn::{self, ToBsatn},
+    buffer::{CountWriter, TeeWriter},
+    ProductValue,
+};
 use spacetimedb_table::table::UniqueConstraintViolation;
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -113,13 +117,22 @@ impl InstanceEnv {
         );
     }
 
-    pub fn insert(&self, table_id: TableId, buffer: &[u8]) -> Result<AlgebraicValue, NodesError> {
+    pub fn insert(&self, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
 
-        let (gen_cols, row_ptr) = stdb
-            .insert_bytes_as_row(tx, table_id, buffer)
-            .map(|(gc, rr)| (gc, rr.pointer()))
+        let (row_len, row_ptr) = stdb
+            .insert(tx, table_id, buffer)
+            .map(|(gen_cols, row_ref)| {
+                // Write back the generated column values to `buffer`
+                // and the encoded length to `row_len`.
+                let counter = CountWriter::default();
+                let mut writer = TeeWriter::new(counter, buffer);
+                bsatn::to_writer(&mut writer, &gen_cols).unwrap();
+                let row_len = writer.w1.finish();
+
+                (row_len, row_ref.pointer())
+            })
             .inspect_err(|e| match e {
                 crate::error::DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                     constraint_name: _,
@@ -148,7 +161,7 @@ impl InstanceEnv {
                 .map_err(NodesError::ScheduleError)?;
         }
 
-        Ok(gen_cols)
+        Ok(row_len)
     }
 
     #[tracing::instrument(skip_all)]

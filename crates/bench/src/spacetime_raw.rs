@@ -5,8 +5,8 @@ use crate::{
 };
 use spacetimedb::db::relational_db::{tests_utils::TestDB, RelationalDB};
 use spacetimedb::execution_context::Workload;
-use spacetimedb_lib::sats::AlgebraicValue;
 use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_sats::{bsatn, AlgebraicValue};
 use spacetimedb_schema::{
     def::{BTreeAlgorithm, IndexAlgorithm},
     schema::{IndexSchema, TableSchema},
@@ -102,8 +102,11 @@ impl BenchDatabase for SpacetimeRaw {
 
     fn insert_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, rows: Vec<T>) -> ResultBench<()> {
         self.db.with_auto_commit(Workload::Internal, |tx| {
+            let mut scratch = Vec::new();
             for row in rows {
-                self.db.insert(tx, *table_id, row.into_product_value())?;
+                scratch.clear();
+                bsatn::to_writer(&mut scratch, &row.into_product_value()).unwrap();
+                self.db.insert(tx, *table_id, &scratch)?;
             }
             Ok(())
         })
@@ -119,6 +122,7 @@ impl BenchDatabase for SpacetimeRaw {
                 .collect::<Vec<_>>();
 
             assert_eq!(rows.len(), row_count as usize, "not enough rows found for update_bulk!");
+            let mut scratch = Vec::new();
             for mut row in rows {
                 // It would likely be faster to collect a vector of IDs and delete + insert them all at once,
                 // but this implementation is closer to how `update` works in modules.
@@ -143,7 +147,9 @@ impl BenchDatabase for SpacetimeRaw {
                     panic!("column 1 is not a u64!");
                 }
 
-                self.db.insert(tx, *table_id, row)?;
+                scratch.clear();
+                bsatn::to_writer(&mut scratch, &row).unwrap();
+                self.db.insert(tx, *table_id, &scratch)?;
             }
             Ok(())
         })

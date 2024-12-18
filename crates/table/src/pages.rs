@@ -64,7 +64,6 @@ impl Pages {
     ///
     /// Used in benchmarks. Internal operators will prefer directly indexing into `self.pages`,
     /// as that allows split borrows.
-    #[doc(hidden)] // Used in benchmarks.
     pub fn get_page_mut(&mut self, page: PageIndex) -> &mut Page {
         &mut self.pages[page.idx()]
     }
