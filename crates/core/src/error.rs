@@ -103,6 +103,8 @@ pub enum SubscriptionError {
     SideEffect(Crud),
     #[error("Unsupported query on subscription: {0:?}")]
     Unsupported(String),
+    #[error("Subscribing to queries in one call is not supported")]
+    Multiple,
 }
 
 #[derive(Error, Debug)]

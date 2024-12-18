@@ -4,7 +4,7 @@ use spacetimedb::execution_context::Workload;
 use spacetimedb::host::module_host::DatabaseTableUpdate;
 use spacetimedb::identity::AuthCtx;
 use spacetimedb::messages::websocket::BsatnFormat;
-use spacetimedb::subscription::query::compile_read_only_query;
+use spacetimedb::subscription::query::compile_read_only_queryset;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb::{db::relational_db::RelationalDB, messages::websocket::Compression};
 use spacetimedb_bench::database::BenchDatabase as _;
@@ -102,7 +102,7 @@ fn eval(c: &mut Criterion) {
     let bench_eval = |c: &mut Criterion, name, sql| {
         c.bench_function(name, |b| {
             let tx = raw.db.begin_tx(Workload::Update);
-            let query = compile_read_only_query(&raw.db, &AuthCtx::for_testing(), &tx, sql).unwrap();
+            let query = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), &tx, sql).unwrap();
             let query: ExecutionSet = query.into();
 
             b.iter(|| {
@@ -141,8 +141,8 @@ fn eval(c: &mut Criterion) {
         let select_lhs = "select * from footprint";
         let select_rhs = "select * from location";
         let tx = &raw.db.begin_tx(Workload::Update);
-        let query_lhs = compile_read_only_query(&raw.db, &AuthCtx::for_testing(), tx, select_lhs).unwrap();
-        let query_rhs = compile_read_only_query(&raw.db, &AuthCtx::for_testing(), tx, select_rhs).unwrap();
+        let query_lhs = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), tx, select_lhs).unwrap();
+        let query_rhs = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), tx, select_rhs).unwrap();
         let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
         let tx = &tx.into();
 
@@ -160,7 +160,7 @@ fn eval(c: &mut Criterion) {
             where location.chunk_index = {chunk_index}"
         );
         let tx = &raw.db.begin_tx(Workload::Update);
-        let query = compile_read_only_query(&raw.db, &AuthCtx::for_testing(), tx, &join).unwrap();
+        let query = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), tx, &join).unwrap();
         let query: ExecutionSet = query.into();
         let tx = &tx.into();
 
