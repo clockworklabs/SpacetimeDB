@@ -38,7 +38,12 @@ public class UIUsernameChooser : MonoBehaviour
         Debug.Log("Creating player");
 
         sentCreatePlayer = true;
-        GameManager.conn.Reducers.CreatePlayer(usernameInputField.text);
+        string name = usernameInputField.text.Trim();
+        if (string.IsNullOrEmpty(name))
+        {
+            name = "<No Name>";
+        }
+		GameManager.conn.Reducers.CreatePlayer(name);
         playButton.interactable = false;
     }
 }

@@ -21,23 +21,41 @@ public class GameManager : MonoBehaviour
     public static event CallbackDelegate OnConnect;
     public static event CallbackDelegate OnSubscriptionApplied;
 
-    public static Color[] colorPalette = new[]
+    public static Color[] colorPalettePlayer = new[]
     {
-        (Color)new Color32(248, 72, 245, 255),
-        (Color)new Color32(248, 72, 245, 255),
-        (Color)new Color32(170, 67, 247, 255),
-        (Color)new Color32(62, 223, 56, 255),
-        (Color)new Color32(56, 250, 193, 255),
-        (Color)new Color32(56, 225, 68, 255),
-        (Color)new Color32(39, 229, 245, 255),
-        (Color)new Color32(231, 250, 65, 255),
-        (Color)new Color32(0, 140, 247, 255),
-        (Color)new Color32(48, 53, 244, 255),
-        (Color)new Color32(247, 26, 37, 255),
-        (Color)new Color32(253, 121, 43, 255),
+        //Yellow
+        (Color)new Color32(251, 220, 241, 255),
+		(Color)new Color32(175, 159, 49, 255),
+		(Color)new Color32(175, 116, 49, 255),
+        
+        //Purple
+        (Color)new Color32(112, 47, 252, 255),
+		(Color)new Color32(199, 32, 252, 255),
+		(Color)new Color32(51, 91, 252, 255),
+        
+        //Red
+        (Color)new Color32(176, 54, 54, 255),
+		(Color)new Color32(176, 109, 54, 255),
+		(Color)new Color32(141, 43, 99, 255),
+        
+        //Blue
+        (Color)new Color32(2, 188, 250, 255),
+		(Color)new Color32(7, 50, 251, 255),
+		(Color)new Color32(2, 28, 146, 255),
     };
 
-    public static GameManager instance;
+	public static Color[] colorPaletteFood = new[]
+	{
+		(Color)new Color32(119, 252, 173, 255),
+        (Color)new Color32(76, 250, 146, 255), //4cfa90
+		(Color)new Color32(35, 246, 120, 255),
+
+		(Color)new Color32(119, 251, 201, 255),
+		(Color)new Color32(76, 249, 184, 255),
+		(Color)new Color32(35, 245, 165, 255),
+	};
+
+	public static GameManager instance;
     public static Camera localCamera;
     public static Dictionary<uint, PlayerController> playerIdToPlayerController =
         new Dictionary<uint, PlayerController>();
@@ -48,7 +66,7 @@ public class GameManager : MonoBehaviour
     private void Start()
     {
         instance = this;
-        Application.targetFrameRate = 60;
+        //Application.targetFrameRate = 60;
 
         // Now that we’ve registered all our callbacks, lets connect to spacetimedb
         conn = DbConnection.Builder().OnConnect((_conn, identity, token) => {
@@ -163,11 +181,16 @@ public class GameManager : MonoBehaviour
         // Spawn the new food
         var food = Instantiate(foodPrefab);
         food.Spawn(insertedValue.EntityId);
-    }
+	}
 
-    public static Color GetRandomColor(uint entityId)
+	public static Color GetRandomPlayerColor(uint entityId)
+	{
+		return colorPalettePlayer[entityId % colorPalettePlayer.Length];
+	}
+
+	public static Color GetRandomFoodColor(uint entityId)
     {
-        return colorPalette[entityId % colorPalette.Length];
+        return colorPaletteFood[entityId % colorPaletteFood.Length];
     }
 
     public static float MassToRadius(uint mass)

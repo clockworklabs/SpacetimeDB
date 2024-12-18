@@ -5,24 +5,24 @@ using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 using UnityEngine;
-using Vector2 = SpacetimeDB.Types.Vector2;
 
 public class PlayerController : MonoBehaviour
 {
     private Dictionary<uint, CircleController> circlesByEntityId = new Dictionary<uint, CircleController>();
 
-    public float targetCameraSize = 50;
     public int updatesPerSecond = 20;
 
     private Identity identity;
     private uint playerId;
-    private float? previousCameraSize;
-    private float? lastMovementSendUpdate;
+    public float targetCameraSize;
+    private float previousCameraSize;
+    private float lastMovementSendUpdate;
     public static PlayerController Local;
     private bool testInputEnabled;
-    private UnityEngine.Vector2 testInput;
+    private Vector2 testInput;
+    private Vector2? lockInputPosition;
 
-    public void SetTestInput(UnityEngine.Vector2 input) => testInput = input;
+    public void SetTestInput(Vector2 input) => testInput = input;
     public void EnableTestInput() => testInputEnabled = true;
     
     public void Spawn(Identity identity)
@@ -33,6 +33,7 @@ public class PlayerController : MonoBehaviour
         {
             Local = this;
         }
+        previousCameraSize = targetCameraSize = CalculateCameraSize();
     }
 
     private void OnDestroy()
@@ -67,7 +68,7 @@ public class PlayerController : MonoBehaviour
         }
 
         // If the player has no more circles remaining, show the death screen
-        if (IsLocalPlayer() && GameManager.conn.Db.Circle.EntityId.Find(playerId) == null)
+        if (IsLocalPlayer() && circlesByEntityId.Count == 0)
         {
             GameManager.instance.deathScreen.SetActive(true);
         }
@@ -81,9 +82,14 @@ public class PlayerController : MonoBehaviour
         }
 
         circle.UpdatePosition(newCircle);
-        var playerRadius = GameManager.MassToRadius(TotalMass());
-        previousCameraSize = targetCameraSize = playerRadius * 2 + 50.0f;
+        previousCameraSize = GameManager.localCamera.orthographicSize;
+        targetCameraSize = CalculateCameraSize();
     }
+
+    private float CalculateCameraSize()
+	{
+        return 50f + Mathf.Min(50, TotalMass() / 5) + Mathf.Min(circlesByEntityId.Count - 1, 1) * 30;
+	}
 
     public uint TotalMass()
     {
@@ -103,7 +109,7 @@ public class PlayerController : MonoBehaviour
         return mass;
     }
 
-    public string GetUsername() => GameManager.conn.Db.Player.Identity.Find(identity)!.Name;
+    public string GetUsername() => GameManager.conn.Db.Player.PlayerId.Find(playerId)!.Name;
 
     private void OnGUI()
     {
@@ -117,7 +123,7 @@ public class PlayerController : MonoBehaviour
 
     public bool IsLocalPlayer() => GameManager.localIdentity != null && identity == GameManager.localIdentity;
 
-    public UnityEngine.Vector2? CenterOfMass()
+    public Vector2? CenterOfMass()
     {
         if (circlesByEntityId.Count == 0)
         {
@@ -136,52 +142,56 @@ public class PlayerController : MonoBehaviour
             totalMass += entity.Mass;
         }
 
-        return new UnityEngine.Vector2(totalX / totalMass, totalY / totalMass);
+        return new Vector2(totalX / totalMass, totalY / totalMass);
     }
     
     public void Update()
     {
-        if (IsLocalPlayer() && Input.GetKeyDown(KeyCode.Space))
-        {
-            GameManager.conn.Reducers.PlayerSplit();
-        }
-        
-        if (IsLocalPlayer() && previousCameraSize.HasValue)
-        {
-            GameManager.localCamera.orthographicSize =
-                Mathf.Lerp(previousCameraSize.Value, targetCameraSize, Time.time / 10);
-        }
-
-        if (!IsLocalPlayer() ||
-            (lastMovementSendUpdate.HasValue && Time.time - lastMovementSendUpdate.Value < 1.0f / updatesPerSecond))
+        if (!IsLocalPlayer())
         {
             return;
         }
 
-        lastMovementSendUpdate = Time.time;
+        if (Input.GetKeyDown(KeyCode.Space))
+        {
+            GameManager.conn.Reducers.PlayerSplit();
+        }
 
-        var mousePosition = new UnityEngine.Vector2
+        if (Input.GetKeyDown(KeyCode.Q))
         {
-            x = Input.mousePosition.x,
-            y = Input.mousePosition.y,
-        };
-        var screenSize = new UnityEngine.Vector2
+            if (lockInputPosition.HasValue)
+            {
+                lockInputPosition = null;
+			}
+            else
+            {
+				lockInputPosition = (Vector2)Input.mousePosition;
+            }
+        }
+        
+        GameManager.localCamera.orthographicSize =
+            Mathf.Lerp(GameManager.localCamera.orthographicSize, targetCameraSize, Time.deltaTime * 3);
+
+        //Throttled input requests
+        if (Time.time - lastMovementSendUpdate >= 1.0f / updatesPerSecond)
         {
-            x = Screen.width,
-            y = Screen.height,
-        };
-        var centerOfScreen = new UnityEngine.Vector2
-        {
-            x = Screen.width / 2.0f,
-            y = Screen.height / 2.0f,
-        };
-        var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
-        if (testInputEnabled) direction = testInput;
-        var magnitude = Mathf.Clamp01(direction.magnitude);
-        GameManager.conn.Reducers.UpdatePlayerInput(new Vector2
-        {
-            X = direction.x,
-            Y = direction.y,
-        }, magnitude);
+            lastMovementSendUpdate = Time.time;
+
+            var mousePosition = lockInputPosition ?? (Vector2)Input.mousePosition;
+            var screenSize = new Vector2
+            {
+                x = Screen.width,
+                y = Screen.height,
+            };
+            var centerOfScreen = screenSize / 2;
+
+			var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
+            if (testInputEnabled) direction = testInput;
+            GameManager.conn.Reducers.UpdatePlayerInput(new DbVector2
+            {
+                X = direction.x,
+                Y = direction.y,
+            });
+        }
     }
 }
