@@ -5,7 +5,6 @@ using SpacetimeDB;
 using SpacetimeDB.Types;
 using Unity.VisualScripting;
 using UnityEngine;
-using Random = System.Random;
 
 public class FoodController : MonoBehaviour
 {
@@ -19,8 +18,8 @@ public class FoodController : MonoBehaviour
         this.entityId = entityId;
         GameManager.conn.Db.Food.OnDelete += OnDelete;
         
-        var entity = GameManager.conn.Db.Entity.Id.Find(entityId);
-        var position = new UnityEngine.Vector2
+        var entity = GameManager.conn.Db.Entity.EntityId.Find(entityId);
+        var position = new Vector2
         {
             x = entity.Position.X,
             y = entity.Position.Y,
@@ -33,7 +32,7 @@ public class FoodController : MonoBehaviour
             z = foodRadius * 2,
         };
         transform.position = position;
-        rend.material.SetColor(MainTexProperty, GameManager.GetRandomFoodColor(entity.Id));
+        rend.material.SetColor(MainTexProperty, GameManager.GetRandomFoodColor(entity.EntityId));
     }
 
     private void OnDestroy()

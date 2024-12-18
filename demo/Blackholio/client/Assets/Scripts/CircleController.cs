@@ -28,7 +28,7 @@ public class CircleController : MonoBehaviour
         entityId = circle.EntityId;
         playerIdentity = player.Identity;
 
-        var entity = GameManager.conn.Db.Entity.Id.Find(circle.EntityId);
+        var entity = GameManager.conn.Db.Entity.EntityId.Find(circle.EntityId);
 		lerpStartPosition = lerpTargetPosition = transform.position = new Vector2
         {
             x = entity.Position.X,
@@ -47,7 +47,7 @@ public class CircleController : MonoBehaviour
     }
 
     public uint GetEntityId() => entityId;
-    public Entity GetEntity() => GameManager.conn.Db.Entity.Id.Find(entityId);
+    public Entity GetEntity() => GameManager.conn.Db.Entity.EntityId.Find(entityId);
 
     public void Despawn()
     {
