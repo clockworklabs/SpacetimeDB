@@ -66,6 +66,7 @@ fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use crate::db::relational_db::tests_utils::insert;
     use crate::execution_context::Workload;
     use crate::{
         db::relational_db::{tests_utils::TestDB, RelationalDB},
@@ -103,8 +104,7 @@ mod tests {
 
         db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
             for i in 0..NUM_T_ROWS {
-                db.insert(tx, table_id, product![i % NDV_T, i])
-                    .expect("failed to insert into table");
+                insert(db, tx, table_id, &product![i % NDV_T, i]).expect("failed to insert into table");
             }
             Ok(())
         })
@@ -120,7 +120,7 @@ mod tests {
 
         db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
             for i in 0..NUM_S_ROWS {
-                db.insert(tx, rhs, product![i, i]).expect("failed to insert into table");
+                insert(db, tx, rhs, &product![i, i]).expect("failed to insert into table");
             }
             Ok(())
         })

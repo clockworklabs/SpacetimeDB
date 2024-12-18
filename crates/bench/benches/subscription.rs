@@ -10,7 +10,7 @@ use spacetimedb::{db::relational_db::RelationalDB, messages::websocket::Compress
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
 use spacetimedb_primitives::{col_list, TableId};
-use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_sats::{bsatn, product, AlgebraicType, AlgebraicValue, ProductValue};
 
 fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
     let schema = &[
@@ -57,11 +57,15 @@ fn eval(c: &mut Criterion) {
         .db
         .with_auto_commit(Workload::Internal, |tx| -> Result<(), DBError> {
             // 1M rows
+            let mut scratch = Vec::new();
             for entity_id in 0u64..1_000_000 {
                 let owner = entity_id % 1_000;
                 let footprint = AlgebraicValue::sum(entity_id as u8 % 4, AlgebraicValue::unit());
                 let row = product!(entity_id, owner, footprint);
-                let _ = raw.db.insert(tx, lhs, row)?;
+
+                scratch.clear();
+                bsatn::to_writer(&mut scratch, &row).unwrap();
+                let _ = raw.db.insert(tx, lhs, &scratch)?;
             }
             Ok(())
         });
@@ -70,6 +74,7 @@ fn eval(c: &mut Criterion) {
         .db
         .with_auto_commit(Workload::Internal, |tx| -> Result<(), DBError> {
             // 1000 chunks, 1200 rows per chunk = 1.2M rows
+            let mut scratch = Vec::new();
             for chunk_index in 0u64..1_000 {
                 for i in 0u64..1200 {
                     let entity_id = chunk_index * 1200 + i;
@@ -77,7 +82,10 @@ fn eval(c: &mut Criterion) {
                     let z = entity_id as i32;
                     let dimension = 0u32;
                     let row = product!(entity_id, chunk_index, x, z, dimension);
-                    let _ = raw.db.insert(tx, rhs, row)?;
+
+                    scratch.clear();
+                    bsatn::to_writer(&mut scratch, &row).unwrap();
+                    let _ = raw.db.insert(tx, rhs, &scratch)?;
                 }
             }
             Ok(())

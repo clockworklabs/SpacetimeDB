@@ -1,6 +1,12 @@
+use crate::{
+    bflatn_to::write_row_to_pages_bsatn,
+    layout::AlgebraicTypeLayout,
+    static_bsatn_validator::{static_bsatn_validator, validate_bsatn, StaticBsatnValidator},
+};
+
 use super::{
     bflatn_from::serialize_row_from_page,
-    bflatn_to::write_row_to_pages,
+    bflatn_to::{write_row_to_pages, Error},
     blob_store::BlobStore,
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     eq::eq_row_in_page,
@@ -18,22 +24,27 @@ use super::{
     var_len::VarLenMembers,
     MemoryUsage,
 };
-use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
 use core::{fmt, ptr};
+use core::{
+    hash::{Hash, Hasher},
+    hint::unreachable_unchecked,
+};
 use derive_more::{Add, AddAssign, From, Sub};
+use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{DefaultHashBuilder, HashCollectionExt, HashMap};
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
-use spacetimedb_primitives::{ColId, ColList, IndexId};
+use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId};
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     bsatn::{self, ser::BsatnError, ToBsatn},
+    i256,
     product_value::InvalidFieldError,
     satn::Satn,
     ser::{Serialize, Serializer},
-    AlgebraicValue, ProductType, ProductValue,
+    u256, AlgebraicValue, ProductType, ProductValue,
 };
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::{schema::TableSchema, type_for_generate::PrimitiveType};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -42,6 +53,9 @@ use thiserror::Error;
 pub struct BlobNumBytes(usize);
 
 impl MemoryUsage for BlobNumBytes {}
+
+pub type SeqIdList = SmallVec<[SequenceId; 4]>;
+static_assert_size!(SeqIdList, 24);
 
 /// A database table containing the row schema, the rows, and indices.
 ///
@@ -81,7 +95,7 @@ pub(crate) struct TableInner {
     row_layout: RowTypeLayout,
     /// A [`StaticLayout`] for fast BFLATN <-> BSATN conversion,
     /// if the [`RowTypeLayout`] has a static BSATN length and layout.
-    static_layout: Option<StaticLayout>,
+    static_layout: Option<(StaticLayout, StaticBsatnValidator)>,
     /// The visitor program for `row_layout`.
     ///
     /// Must be in the `TableInner` so that [`RowRef::blob_store_bytes`] can use it.
@@ -125,7 +139,7 @@ impl TableInner {
     }
 }
 
-static_assert_size!(Table, 256);
+static_assert_size!(Table, 272);
 
 impl MemoryUsage for Table {
     fn heap_usage(&self) -> usize {
@@ -191,7 +205,7 @@ impl Table {
     /// Creates a new empty table with the given `schema` and `squashed_offset`.
     pub fn new(schema: Arc<TableSchema>, squashed_offset: SquashedOffset) -> Self {
         let row_layout: RowTypeLayout = schema.get_row_type().clone().into();
-        let static_layout = StaticLayout::for_row_type(&row_layout);
+        let static_layout = StaticLayout::for_row_type(&row_layout).map(|sl| (sl, static_bsatn_validator(&row_layout)));
         let visitor_prog = row_type_visitor(&row_layout);
         Self::new_with_indexes_capacity(schema, row_layout, static_layout, visitor_prog, squashed_offset, 0)
     }
@@ -239,9 +253,7 @@ impl Table {
 
         // Insert row into indices and check unique constraints.
         // SAFETY: We just inserted `ptr`, so it must be present.
-        unsafe {
-            self.insert_into_indices(blob_store, ptr)?;
-        }
+        unsafe { self.insert_into_indices(blob_store, ptr) }?;
 
         // SAFETY: We just inserted `ptr`,
         // and `insert_into_indices` didn't remove it,
@@ -266,8 +278,7 @@ impl Table {
         // SAFETY: `ptr` was derived from `row_ref` without interleaving calls, so it must be valid.
         unsafe { self.insert_into_pointer_map(blob_store, ptr, hash) }?;
 
-        self.row_count += 1;
-        self.blob_store_bytes += blob_bytes;
+        self.update_statistics_added_row(blob_bytes);
 
         Ok((hash, ptr))
     }
@@ -298,6 +309,179 @@ impl Table {
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
 
         Ok((row_ref, blob_bytes))
+    }
+
+    /// Physically insert a `row`, encoded in BSATN, into this table,
+    /// storing its large var-len members in the `blob_store`.
+    ///
+    /// On success, returns the hash of the newly-inserted row,
+    /// and a `RowRef` referring to the row.
+    ///
+    /// This does not check for set semantic or unique constraints.
+    ///
+    /// This is also useful when we need to insert a row temporarily to get back a `RowPointer`.
+    /// In this case, A call to this method should be followed by a call to [`delete_internal_skip_pointer_map`].
+    pub fn insert_physically_bsatn<'a>(
+        &'a mut self,
+        blob_store: &'a mut dyn BlobStore,
+        row: &[u8],
+    ) -> Result<(RowRef<'a>, BlobNumBytes), InsertError> {
+        // Got a static layout? => Use fast-path insertion.
+        let (ptr, blob_bytes) = if let Some((static_layout, static_validator)) = self.inner.static_layout.as_ref() {
+            // Before inserting, validate the row, ensuring type safety.
+            // SAFETY: The `static_validator` was derived from the same row layout as the static layout.
+            unsafe { validate_bsatn(static_validator, static_layout, row) }.map_err(Error::Decode)?;
+
+            let fixed_row_size = self.inner.row_layout.size();
+            let squashed_offset = self.squashed_offset;
+            let res = self
+                .inner
+                .pages
+                .with_page_to_insert_row(fixed_row_size, 0, |page| {
+                    // SAFETY: We've used the right `row_size` and we trust that others have too.
+                    // `RowTypeLayout` also ensures that we satisfy the minimum row size.
+                    let fixed_offset = unsafe { page.alloc_fixed_len(fixed_row_size) }.map_err(Error::PageError)?;
+                    let (mut fixed, _) = page.split_fixed_var_mut();
+                    let fixed_buf = fixed.get_row_mut(fixed_offset, fixed_row_size);
+                    // SAFETY:
+                    // - We've validated that `row` is of sufficient length.
+                    // - The `fixed_buf` is exactly the right `fixed_row_size`.
+                    unsafe { static_layout.deserialize_row_into(fixed_buf, row) };
+                    Ok(fixed_offset)
+                })
+                .map_err(Error::PagesError)?;
+            match res {
+                (page, Ok(offset)) => (RowPointer::new(false, page, offset, squashed_offset), 0.into()),
+                (_, Err(e)) => return Err(e),
+            }
+        } else {
+            // SAFETY: `self.pages` is known to be specialized for `self.row_layout`,
+            // as `self.pages` was constructed from `self.row_layout` in `Table::new`.
+            unsafe {
+                write_row_to_pages_bsatn(
+                    &mut self.inner.pages,
+                    &self.inner.visitor_prog,
+                    blob_store,
+                    &self.inner.row_layout,
+                    row,
+                    self.squashed_offset,
+                )
+            }?
+        };
+
+        // SAFETY: We just inserted `ptr`, so it must be present.
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+
+        Ok((row_ref, blob_bytes))
+    }
+
+    /// Returns all the columns with sequences that need generation for this `row`.
+    ///
+    /// # Safety
+    ///
+    /// `self.is_row_present(row)` must hold.
+    pub unsafe fn sequence_triggers_for<'a>(
+        &'a self,
+        blob_store: &'a dyn BlobStore,
+        row: RowPointer,
+    ) -> (ColList, SeqIdList) {
+        let sequences = &*self.get_schema().sequences;
+        let row_ty = self.row_layout().product();
+
+        // SAFETY: Caller promised that `self.is_row_present(row)` holds.
+        let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, row) };
+
+        sequences
+            .iter()
+            // Find all the sequences that are triggered by this row.
+            .filter(|seq| {
+                // SAFETY: `seq.col_pos` is in-bounds of `row_ty.elements`
+                // as `row_ty` was derived from the same schema as `seq` is part of.
+                let elem_ty = unsafe { &row_ty.elements.get_unchecked(seq.col_pos.idx()) };
+                // SAFETY:
+                // - `elem_ty` appears as a column in th row type.
+                // - `AlgebraicValue` is compatible with all types.
+                let val = unsafe { AlgebraicValue::unchecked_read_column(row_ref, elem_ty) };
+                val.is_numeric_zero()
+            })
+            .map(|seq| (seq.col_pos, seq.sequence_id))
+            .unzip()
+    }
+
+    /// Writes `seq_val` to the column at `col_id` in the row identified by `ptr`.
+    ///
+    /// Truncates the `seq_val` to fit the type of the column.
+    ///
+    /// # Safety
+    ///
+    /// - `self.is_row_present(row)` must hold.
+    /// - `col_id` must be a valid column, with a primiive type, of the row type.
+    pub unsafe fn write_gen_val_to_col(&mut self, col_id: ColId, ptr: RowPointer, seq_val: i128) {
+        let row_ty = self.inner.row_layout.product();
+        let elem_ty = unsafe { row_ty.elements.get_unchecked(col_id.idx()) };
+        let AlgebraicTypeLayout::Primitive(col_typ) = elem_ty.ty else {
+            // SAFETY: Columns with sequences must be primitive types.
+            unsafe { unreachable_unchecked() }
+        };
+
+        let fixed_row_size = self.inner.row_layout.size();
+        let fixed_buf = self.inner.pages[ptr.page_index()].get_fixed_row_data_mut(ptr.page_offset(), fixed_row_size);
+
+        fn write<const N: usize>(dst: &mut [u8], offset: u16, bytes: [u8; N]) {
+            let offset = offset as usize;
+            dst[offset..offset + N].copy_from_slice(&bytes);
+        }
+
+        match col_typ {
+            PrimitiveType::I8 => write(fixed_buf, elem_ty.offset, (seq_val as i8).to_le_bytes()),
+            PrimitiveType::U8 => write(fixed_buf, elem_ty.offset, (seq_val as u8).to_le_bytes()),
+            PrimitiveType::I16 => write(fixed_buf, elem_ty.offset, (seq_val as i16).to_le_bytes()),
+            PrimitiveType::U16 => write(fixed_buf, elem_ty.offset, (seq_val as u16).to_le_bytes()),
+            PrimitiveType::I32 => write(fixed_buf, elem_ty.offset, (seq_val as i32).to_le_bytes()),
+            PrimitiveType::U32 => write(fixed_buf, elem_ty.offset, (seq_val as u32).to_le_bytes()),
+            PrimitiveType::I64 => write(fixed_buf, elem_ty.offset, (seq_val as i64).to_le_bytes()),
+            PrimitiveType::U64 => write(fixed_buf, elem_ty.offset, (seq_val as u64).to_le_bytes()),
+            PrimitiveType::I128 => write(fixed_buf, elem_ty.offset, seq_val.to_le_bytes()),
+            PrimitiveType::U128 => write(fixed_buf, elem_ty.offset, (seq_val as u128).to_le_bytes()),
+            PrimitiveType::I256 => write(fixed_buf, elem_ty.offset, (i256::from(seq_val)).to_le_bytes()),
+            PrimitiveType::U256 => write(fixed_buf, elem_ty.offset, (u256::from(seq_val as u128)).to_le_bytes()),
+            PrimitiveType::Bool | PrimitiveType::F32 | PrimitiveType::F64 => {
+                panic!("`{:?}` is not a sequence integer type", &elem_ty.ty)
+            }
+        }
+    }
+
+    /// Performs all the checks necessary after having fully decided on a rows contents.
+    ///
+    /// On `Ok(_)`, statistics of the table are also updated,
+    /// and the `ptr` still points to a valid row, and otherwise not.
+    ///
+    /// # Safety
+    ///
+    /// `self.is_row_present(row)` must hold.
+    pub fn confirm_insertion<'a>(
+        &'a mut self,
+        blob_store: &'a mut dyn BlobStore,
+        ptr: RowPointer,
+        blob_bytes: BlobNumBytes,
+    ) -> Result<(RowHash, RowPointer), InsertError> {
+        // SAFETY: Caller promised that `self.is_row_present(row)` holds.
+        let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, ptr) };
+        let hash = row_ref.row_hash();
+        // SAFETY: Caller promised that `self.is_row_present(row)` holds.
+        unsafe { self.insert_into_pointer_map(blob_store, ptr, hash) }?;
+        // SAFETY: Caller promised that `self.is_row_present(row)` holds.
+        unsafe { self.insert_into_indices(blob_store, ptr) }?;
+
+        self.update_statistics_added_row(blob_bytes);
+        Ok((hash, ptr))
+    }
+
+    /// We've added a row, update the statistics to record this.
+    #[inline]
+    fn update_statistics_added_row(&mut self, blob_bytes: BlobNumBytes) {
+        self.row_count += 1;
+        self.blob_store_bytes += blob_bytes;
     }
 
     /// Insert row identified by `ptr` into indices.
@@ -415,7 +599,7 @@ impl Table {
                         committed_offset,
                         tx_offset,
                         &committed_table.inner.row_layout,
-                        committed_table.inner.static_layout.as_ref(),
+                        committed_table.static_layout(),
                     )
                 }
             })
@@ -675,7 +859,7 @@ impl Table {
     pub fn clone_structure(&self, squashed_offset: SquashedOffset) -> Self {
         let schema = self.schema.clone();
         let layout = self.row_layout().clone();
-        let sbl = self.static_layout().cloned();
+        let sbl = self.inner.static_layout.clone();
         let visitor = self.inner.visitor_prog.clone();
         let mut new =
             Table::new_with_indexes_capacity(schema, layout, sbl, visitor, squashed_offset, self.indexes.len());
@@ -841,21 +1025,16 @@ impl<'a> RowRef<'a> {
         RowHash(RowHash::hasher_builder().hash_one(self))
     }
 
-    /// The length of this row when BSATN-encoded.
-    ///
-    /// Only available for rows whose types have a static BSATN layout.
-    /// Returns `None` for rows of other types, e.g. rows containing strings.
-    pub fn bsatn_length(&self) -> Option<usize> {
-        self.table.static_layout.as_ref().map(|s| s.bsatn_length as usize)
+    /// Returns the static layout for this row reference, if any.
+    pub fn static_layout(&self) -> Option<&StaticLayout> {
+        self.table.static_layout.as_ref().map(|(s, _)| s)
     }
 
     /// Encode the row referred to by `self` into a `Vec<u8>` using BSATN and then deserialize it.
-    /// The passed buffer is allowed to be in an arbitrary state before and after this operation.
     pub fn read_via_bsatn<T>(&self, scratch: &mut Vec<u8>) -> Result<T, ReadViaBsatnError>
     where
         T: DeserializeOwned,
     {
-        scratch.clear();
         self.to_bsatn_extend(scratch)?;
         Ok(bsatn::from_slice::<T>(scratch)?)
     }
@@ -903,7 +1082,7 @@ impl ToBsatn for RowRef<'_> {
     /// This method will use a [`StaticLayout`] if one is available,
     /// and may therefore be faster than calling [`bsatn::to_vec`].
     fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
-        if let Some(static_layout) = &self.table.static_layout {
+        if let Some(static_layout) = self.static_layout() {
             // Use fast path, by first fetching the row data and then using the static layout.
             let row = self.get_row_data();
             // SAFETY:
@@ -921,7 +1100,7 @@ impl ToBsatn for RowRef<'_> {
     /// This method will use a [`StaticLayout`] if one is available,
     /// and may therefore be faster than calling [`bsatn::to_writer`].
     fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
-        if let Some(static_layout) = &self.table.static_layout {
+        if let Some(static_layout) = self.static_layout() {
             // Use fast path, by first fetching the row data and then using the static layout.
             let row = self.get_row_data();
             // SAFETY:
@@ -938,7 +1117,7 @@ impl ToBsatn for RowRef<'_> {
     }
 
     fn static_bsatn_size(&self) -> Option<u16> {
-        self.table.static_layout.as_ref().map(|sbl| sbl.bsatn_length)
+        self.static_layout().map(|sl| sl.bsatn_length)
     }
 }
 
@@ -957,7 +1136,7 @@ impl PartialEq for RowRef<'_> {
         }
         let (page_a, offset_a) = self.page_and_offset();
         let (page_b, offset_b) = other.page_and_offset();
-        let static_layout = self.table.static_layout.as_ref();
+        let static_layout = self.static_layout();
         // SAFETY: `offset_a/b` are valid rows in `page_a/b` typed at `a_ty`
         // and `static_bsatn_layout` is derived from `a_ty`.
         unsafe { eq_row_in_page(page_a, page_b, offset_a, offset_b, a_ty, static_layout) }
@@ -1133,7 +1312,7 @@ impl Table {
     fn new_with_indexes_capacity(
         schema: Arc<TableSchema>,
         row_layout: RowTypeLayout,
-        static_layout: Option<StaticLayout>,
+        static_layout: Option<(StaticLayout, StaticBsatnValidator)>,
         visitor_prog: VarLenVisitorProgram,
         squashed_offset: SquashedOffset,
         indexes_capacity: usize,
@@ -1215,7 +1394,7 @@ impl Table {
 
     /// Returns the [`StaticLayout`] for this table,
     pub(crate) fn static_layout(&self) -> Option<&StaticLayout> {
-        self.inner.static_layout.as_ref()
+        self.inner.static_layout.as_ref().map(|(s, _)| s)
     }
 
     /// Rebuild the [`PointerMap`] by iterating over all the rows in `self` and inserting them.

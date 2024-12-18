@@ -714,9 +714,6 @@ impl<'de> DeserializeSeed<'de> for &AlgebraicTypeLayout {
             AlgebraicTypeLayout::Primitive(PrimitiveType::F64) => f64::deserialize(de).map(Into::into),
             AlgebraicTypeLayout::VarLen(VarLenType::Array(ty)) => WithTypespace::empty(&**ty).deserialize(de),
             AlgebraicTypeLayout::VarLen(VarLenType::String) => <Box<str>>::deserialize(de).map(Into::into),
-            /*
-            AlgebraicType::Sum(sum) => self.with(sum).deserialize(de).map(Into::into),
-            */
         }
     }
 }

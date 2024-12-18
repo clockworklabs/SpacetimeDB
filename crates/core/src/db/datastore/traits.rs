@@ -439,7 +439,6 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     // - index_seek_mut_tx
 
     // Sequences
-    fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<i128>;
     fn create_sequence_mut_tx(&self, tx: &mut Self::MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId>;
     fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<()>;
     fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> super::Result<Option<SequenceId>>;
@@ -482,23 +481,19 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         table_id: TableId,
         relation: impl IntoIterator<Item = ProductValue>,
     ) -> u32;
-    /// Inserts `row` into the table identified by `table_id`.
+    /// Inserts `row`, encoded in BSATN, into the table identified by `table_id`.
     ///
-    /// Returns the generated column values (the [`AlgebraicValue`])
+    /// Returns the list of columns where values were replaced with generated ones
     /// and a reference to the row as a [`RowRef`].
-    /// The generated column values are only those that were generated.
-    /// Those are columns with an auto-inc sequence
+    ///
+    /// Generated columns are columns with an auto-inc sequence
     /// and where the column was `0` in `row`.
-    /// In case of zero or multiple such column,
-    /// an `AlgebraicValue::Product` is returned.
-    /// Otherwise, in case of a single column,
-    /// as an optimization, the value is not wrapped.
     fn insert_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTx,
         table_id: TableId,
-        row: ProductValue,
-    ) -> Result<(AlgebraicValue, RowRef<'a>)>;
+        row: &[u8],
+    ) -> Result<(ColList, RowRef<'a>)>;
 
     /// Obtain the [`Metadata`] for this datastore.
     ///
