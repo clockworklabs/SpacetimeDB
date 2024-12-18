@@ -87,13 +87,13 @@ public class PlayModeExampleTest
         while (foodEaten < 200)
         {
             Debug.Assert(circle != null, nameof(circle) + " != null");
-            var ourEntity = GameManager.conn.Db.Entity.Id.Find(circle.EntityId);
+            var ourEntity = GameManager.conn.Db.Entity.EntityId.Find(circle.EntityId);
             var toChosenFood = new UnityEngine.Vector2(1000, 0);
             uint chosenFoodId = 0;
             foreach (var food in GameManager.conn.Db.Food.Iter())
             {
                 var thisFoodId = food.EntityId;
-                var foodEntity = GameManager.conn.Db.Entity.Id.Find(thisFoodId);
+                var foodEntity = GameManager.conn.Db.Entity.EntityId.Find(thisFoodId);
                 Debug.Assert(foodEntity != null, nameof(foodEntity) + " != null");
                 Debug.Assert(ourEntity != null, nameof(ourEntity) + " != null");
                 var foodEntityPosition = foodEntity.Position;
@@ -109,10 +109,10 @@ public class PlayModeExampleTest
                 }
             }
 
-            if (GameManager.conn.Db.Entity.Id.Find(chosenFoodId) != null)
+            if (GameManager.conn.Db.Entity.EntityId.Find(chosenFoodId) != null)
             {
-                var ourNewEntity = GameManager.conn.Db.Entity.Id.Find(circle.EntityId);
-                var foodEntity = GameManager.conn.Db.Entity.Id.Find(chosenFoodId);
+                var ourNewEntity = GameManager.conn.Db.Entity.EntityId.Find(circle.EntityId);
+                var foodEntity = GameManager.conn.Db.Entity.EntityId.Find(chosenFoodId);
                 Debug.Assert(foodEntity != null, nameof(foodEntity) + " != null");
                 Debug.Assert(ourNewEntity != null, nameof(ourNewEntity) + " != null");
                 var toThisFood = (Vector2)foodEntity.Position - (Vector2)ourNewEntity.Position;
@@ -126,9 +126,9 @@ public class PlayModeExampleTest
 
         PlayerController.Local.SetTestInput(UnityEngine.Vector2.zero);
         Debug.Assert(circle != null, nameof(circle) + " != null");
-        var massStart = GameManager.conn.Db.Entity.Id.Find(circle.EntityId)!.Mass;
+        var massStart = GameManager.conn.Db.Entity.EntityId.Find(circle.EntityId)!.Mass;
         yield return new WaitForSeconds(10);
-        var massEnd = GameManager.conn.Db.Entity.Id.Find(circle.EntityId)!.Mass;
+        var massEnd = GameManager.conn.Db.Entity.EntityId.Find(circle.EntityId)!.Mass;
         Debug.Assert(massEnd < massStart, "Mass should have decayed");
     }
 

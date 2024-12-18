@@ -175,15 +175,15 @@ namespace SpacetimeDB.Types
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (Entity)row;
-				Id.Cache[value.Id] = value;
+				EntityId.Cache[value.EntityId] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				Id.Cache.Remove(((Entity)row).Id);
+				EntityId.Cache.Remove(((Entity)row).EntityId);
 			}
 
-			public class IdUniqueIndex
+			public class EntityIdUniqueIndex
 			{
 				internal readonly Dictionary<uint, Entity> Cache = new(16);
 				public Entity? Find(uint value)
@@ -194,12 +194,12 @@ namespace SpacetimeDB.Types
 
 			}
 
-			public IdUniqueIndex Id = new();
+			public EntityIdUniqueIndex EntityId = new();
 
 			internal EntityHandle()
 			{
 			}
-			public override object GetPrimaryKey(IDatabaseRow row) => ((Entity)row).Id;
+			public override object GetPrimaryKey(IDatabaseRow row) => ((Entity)row).EntityId;
 
 		}
 

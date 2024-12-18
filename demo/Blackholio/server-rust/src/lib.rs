@@ -7,7 +7,7 @@ use vector2::DbVector2;
 
 // TODO:
 // - [x] Remove players when they are eaten on the client + death + respawn screen
-// - [ ] Player splitting + increased area of view
+// - [x] Player splitting + increased area of view
 // - [x] Overlap amount should be more significant in order to eat
 // - [ ] Viruses
 // - [ ] Ejecting mass
@@ -34,7 +34,7 @@ pub struct Config {
 pub struct Entity {
     #[auto_inc]
     #[primary_key]
-    pub id: u32,
+    pub entity_id: u32,
     pub position: DbVector2,
     pub mass: u32,
 }
@@ -163,11 +163,11 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
         let entity = ctx
             .db
             .entity()
-            .id()
+            .entity_id()
             .find(&circle.entity_id)
             .ok_or("Could not find circle")?;
-        ctx.db.entity().id().delete(&entity.id);
-        ctx.db.circle().entity_id().delete(&entity.id);
+        ctx.db.entity().entity_id().delete(&entity.entity_id);
+        ctx.db.circle().entity_id().delete(&entity.entity_id);
         ctx.db.logged_out_circle().try_insert(LoggedOutCircle {
             logged_out_id: 0,
             player_id: player.player_id,
@@ -263,13 +263,13 @@ fn spawn_circle_at(
     timestamp: Timestamp,
 ) -> Result<Entity, String> {
     let entity = ctx.db.entity().try_insert(Entity {
-        id: 0,
+        entity_id: 0,
         position,
         mass,
     })?;
 
     ctx.db.circle().try_insert(Circle {
-        entity_id: entity.id,
+        entity_id: entity.entity_id,
         player_id,
         direction: DbVector2 { x: 0.0, y: 1.0 },
         speed: 0.0,
@@ -343,7 +343,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
             .collect();
         let mut entities: Vec<Entity> = circles
             .iter()
-            .map(|c| ctx.db.entity().id().find(&c.entity_id).unwrap())
+            .map(|c| ctx.db.entity().entity_id().find(&c.entity_id).unwrap())
             .collect();
         if entities.len() <= 1 {
             continue;
@@ -380,8 +380,8 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
                         * (radius_sum - distance_sqr.sqrt())
                         * gravity_multiplier
                         * 0.05;
-                    *circle_directions.get_mut(&entity_i.id).unwrap() += vec / 2.0;
-                    *circle_directions.get_mut(&entity_j.id).unwrap() -= vec / 2.0;
+                    *circle_directions.get_mut(&entity_i.entity_id).unwrap() += vec / 2.0;
+                    *circle_directions.get_mut(&entity_j.entity_id).unwrap() -= vec / 2.0;
                 }
             }
         }
@@ -404,8 +404,8 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
                     let vec = diff.normalized()
                         * (radius_sum - distance_sqr.sqrt())
                         * SELF_COLLISION_SPEED;
-                    *circle_directions.get_mut(&entity_i.id).unwrap() += vec / 2.0;
-                    *circle_directions.get_mut(&entity_j.id).unwrap() -= vec / 2.0;
+                    *circle_directions.get_mut(&entity_i.entity_id).unwrap() += vec / 2.0;
+                    *circle_directions.get_mut(&entity_j.entity_id).unwrap() -= vec / 2.0;
                 }
             }
         }
@@ -413,7 +413,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
 
     //Handle player input
     for circle in ctx.db.circle().iter() {
-        let mut circle_entity = ctx.db.entity().id().find(&circle.entity_id).unwrap();
+        let mut circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id).unwrap();
         let circle_radius = mass_to_radius(circle_entity.mass);
         let direction = *circle_directions.get(&circle.entity_id).unwrap();
         let new_pos =
@@ -424,35 +424,41 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         circle_entity.position.y = new_pos
             .y
             .clamp(circle_radius, world_size as f32 - circle_radius);
-        ctx.db.entity().id().update(circle_entity);
+        ctx.db.entity().entity_id().update(circle_entity);
     }
 
     // Check collisions
-    let entities: HashMap<u32, Entity> = ctx.db.entity().iter().map(|e| (e.id, e)).collect();
+    let entities: HashMap<u32, Entity> = ctx.db.entity().iter().map(|e| (e.entity_id, e)).collect();
     for circle in ctx.db.circle().iter() {
         // let span = spacetimedb::time_span::Span::start("collisions");
         let mut circle_entity = entities.get(&circle.entity_id).unwrap().clone();
         for (_, other_entity) in entities.iter() {
-            if other_entity.id == circle_entity.id {
+            if other_entity.entity_id == circle_entity.entity_id {
                 continue;
             }
 
             if is_overlapping(&circle_entity, &other_entity) {
                 // Check to see if we're overlapping with food
-                if ctx.db.food().entity_id().find(&other_entity.id).is_some() {
-                    ctx.db.entity().id().delete(&other_entity.id);
-                    ctx.db.food().entity_id().delete(&other_entity.id);
+                if ctx
+                    .db
+                    .food()
+                    .entity_id()
+                    .find(&other_entity.entity_id)
+                    .is_some()
+                {
+                    ctx.db.entity().entity_id().delete(&other_entity.entity_id);
+                    ctx.db.food().entity_id().delete(&other_entity.entity_id);
                     circle_entity.mass += other_entity.mass;
                 }
 
                 // Check to see if we're overlapping with another circle owned by another player
-                let other_circle = ctx.db.circle().entity_id().find(&other_entity.id);
+                let other_circle = ctx.db.circle().entity_id().find(&other_entity.entity_id);
                 if let Some(other_circle) = other_circle {
                     if other_circle.player_id != circle.player_id {
                         let mass_ratio = other_entity.mass as f32 / circle_entity.mass as f32;
                         if mass_ratio < MINIMUM_SAFE_MASS_RATIO {
-                            ctx.db.entity().id().delete(&other_entity.id);
-                            ctx.db.circle().entity_id().delete(&other_entity.id);
+                            ctx.db.entity().entity_id().delete(&other_entity.entity_id);
+                            ctx.db.circle().entity_id().delete(&other_entity.entity_id);
                             circle_entity.mass += other_entity.mass;
                         }
                     }
@@ -461,7 +467,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         }
         // span.end();
 
-        ctx.db.entity().id().update(circle_entity);
+        ctx.db.entity().entity_id().update(circle_entity);
     }
 
     //span.end();
@@ -491,7 +497,7 @@ pub fn player_split(ctx: &ReducerContext) -> Result<(), String> {
         let mut circle_entity = ctx
             .db
             .entity()
-            .id()
+            .entity_id()
             .find(&circle.entity_id)
             .ok_or("Circle has no entity")?;
         if circle_entity.mass >= MIN_MASS_TO_SPLIT * 2 {
@@ -506,7 +512,7 @@ pub fn player_split(ctx: &ReducerContext) -> Result<(), String> {
             circle_entity.mass -= half_mass;
             circle.last_split_time = ctx.timestamp;
             ctx.db.circle().entity_id().update(circle);
-            ctx.db.entity().id().update(circle_entity);
+            ctx.db.entity().entity_id().update(circle_entity);
             circle_count += 1;
             if circle_count >= MAX_CIRCLES_PER_PLAYER {
                 break;
@@ -549,15 +555,15 @@ pub fn spawn_food(ctx: &ReducerContext, _timer: SpawnFoodTimer) -> Result<(), St
         let x = rng.gen_range(food_radius..world_size as f32 - food_radius);
         let y = rng.gen_range(food_radius..world_size as f32 - food_radius);
         let entity = ctx.db.entity().try_insert(Entity {
-            id: 0,
+            entity_id: 0,
             position: DbVector2 { x, y },
             mass: food_mass,
         })?;
         ctx.db.food().try_insert(Food {
-            entity_id: entity.id,
+            entity_id: entity.entity_id,
         })?;
         food_count += 1;
-        log::info!("Spawned food! {}", entity.id);
+        log::info!("Spawned food! {}", entity.entity_id);
     }
 
     Ok(())
@@ -569,14 +575,14 @@ pub fn circle_decay(ctx: &ReducerContext, _timer: CircleDecayTimer) -> Result<()
         let mut circle_entity = ctx
             .db
             .entity()
-            .id()
+            .entity_id()
             .find(&circle.entity_id)
             .ok_or("Entity not found")?;
         if circle_entity.mass <= START_PLAYER_MASS {
             continue;
         }
         circle_entity.mass = (circle_entity.mass as f32 * 0.99) as u32;
-        ctx.db.entity().id().update(circle_entity);
+        ctx.db.entity().entity_id().update(circle_entity);
     }
 
     Ok(())
@@ -605,7 +611,7 @@ pub fn circle_recombine(ctx: &ReducerContext, timer: CircleRecombineTimer) -> Re
                 .as_secs_f32()
                 >= SPLIT_RECOMBINE_DELAY_SEC
         })
-        .map(|c| ctx.db.entity().id().find(&c.entity_id).unwrap())
+        .map(|c| ctx.db.entity().entity_id().find(&c.entity_id).unwrap())
         .collect();
     if recombining_entities.len() <= 1 {
         return Ok(()); //No circles to recombine
@@ -616,10 +622,13 @@ pub fn circle_recombine(ctx: &ReducerContext, timer: CircleRecombineTimer) -> Re
     recombining_entities[0].mass = total_mass;
     recombining_entities[0].position = center_of_mass;
 
-    ctx.db.entity().id().update(recombining_entities[0].clone());
+    ctx.db
+        .entity()
+        .entity_id()
+        .update(recombining_entities[0].clone());
     for i in 1..recombining_entities.len() {
-        let entity_id = recombining_entities[i].id;
-        ctx.db.entity().id().delete(&entity_id);
+        let entity_id = recombining_entities[i].entity_id;
+        ctx.db.entity().entity_id().delete(&entity_id);
         ctx.db.circle().entity_id().delete(&entity_id);
     }
 

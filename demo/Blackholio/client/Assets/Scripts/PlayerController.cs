@@ -76,7 +76,7 @@ public class PlayerController : MonoBehaviour
 
     public void CircleUpdate(Entity oldCircle, Entity newCircle)
     {
-        if (!circlesByEntityId.TryGetValue(newCircle.Id, out var circle))
+        if (!circlesByEntityId.TryGetValue(newCircle.EntityId, out var circle))
         {
             return;
         }
@@ -96,7 +96,7 @@ public class PlayerController : MonoBehaviour
         uint mass = 0;
         foreach (var circle in circlesByEntityId.Values)
         {
-            var entity = GameManager.conn.Db.Entity.Id.Find(circle.GetEntityId());
+            var entity = GameManager.conn.Db.Entity.EntityId.Find(circle.GetEntityId());
             // If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
             if (entity == null)
             {

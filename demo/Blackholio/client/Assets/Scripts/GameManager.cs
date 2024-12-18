@@ -138,7 +138,7 @@ public class GameManager : MonoBehaviour
 
     private void EntityOnUpdate(EventContext context, Entity oldEntity, Entity newEntity)
     {
-        var circle = conn.Db.Circle.EntityId.Find(newEntity.Id);
+        var circle = conn.Db.Circle.EntityId.Find(newEntity.EntityId);
         if (circle == null)
         {
             return;

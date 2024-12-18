@@ -15,20 +15,20 @@ namespace SpacetimeDB.Types
 	[DataContract]
 	public partial class Entity : IDatabaseRow
 	{
-		[DataMember(Name = "id")]
-		public uint Id;
+		[DataMember(Name = "entity_id")]
+		public uint EntityId;
 		[DataMember(Name = "position")]
 		public SpacetimeDB.Types.DbVector2 Position;
 		[DataMember(Name = "mass")]
 		public uint Mass;
 
 		public Entity(
-			uint Id,
+			uint EntityId,
 			SpacetimeDB.Types.DbVector2 Position,
 			uint Mass
 		)
 		{
-			this.Id = Id;
+			this.EntityId = EntityId;
 			this.Position = Position;
 			this.Mass = Mass;
 		}
