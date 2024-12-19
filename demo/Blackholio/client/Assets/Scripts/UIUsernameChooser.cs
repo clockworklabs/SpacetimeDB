@@ -19,26 +19,21 @@ public class UIUsernameChooser : MonoBehaviour
             if (newPlayer.Identity == ConnectionManager.LocalIdentity)
             {
                 // We have a player
-               gameObject.SetActive(false); 
-            }
+                UsernameInputField.text = newPlayer.Name;
+			}
         };
     }
 
     public void PlayPressed()
     {
-        if (!PlayButton.interactable)
-        {
-            return;
-		}
-
 		Debug.Log("Creating player");
-		PlayButton.interactable = false;
 
         string name = UsernameInputField.text.Trim();
         if (string.IsNullOrEmpty(name))
         {
             name = "<No Name>";
         }
-		ConnectionManager.Conn.Reducers.CreatePlayer(name);
-    }
+		ConnectionManager.Conn.Reducers.EnterGame(name);
+		gameObject.SetActive(false);
+	}
 }

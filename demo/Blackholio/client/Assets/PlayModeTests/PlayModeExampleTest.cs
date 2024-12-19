@@ -60,7 +60,7 @@ public class PlayModeExampleTest
 
         while (!connected) yield return null;
 
-        ConnectionManager.Conn.Reducers.OnCreatePlayer += (_, _) =>
+        ConnectionManager.Conn.Reducers.OnEnterGame += (_, _) =>
         {
             Debug.Log("Player created");
             playerCreated = true;
@@ -155,7 +155,7 @@ public class PlayModeExampleTest
 
         while (!connected) yield return null;
 
-        ConnectionManager.Conn.Reducers.OnCreatePlayer += (ctx, username) =>
+        ConnectionManager.Conn.Reducers.OnEnterGame += (ctx, username) =>
         {
             Debug.Log("Player created");
             playerCreated = true;
@@ -200,7 +200,7 @@ public class PlayModeExampleTest
 
         while (!connected) yield return null;
 
-        ConnectionManager.Conn.Reducers.OnCreatePlayer += (ctx, username) =>
+        ConnectionManager.Conn.Reducers.OnEnterGame += (ctx, username) =>
         {
             Debug.Log("Player created");
             playerCreated = true;
@@ -243,7 +243,7 @@ public class PlayModeExampleTest
 
         while (!connected) yield return null;
 
-        ConnectionManager.Conn.Reducers.OnCreatePlayer += (_, _) =>
+        ConnectionManager.Conn.Reducers.OnEnterGame += (_, _) =>
         {
             Debug.Log("Player created");
             playerCreated = true;

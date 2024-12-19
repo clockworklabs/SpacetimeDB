@@ -13,10 +13,16 @@ use vector2::DbVector2;
 // - [ ] Ejecting mass
 // - [ ] Leaderboard
 
+const START_PLAYER_MASS: u32 = 15;
+const START_PLAYER_SPEED: u32 = 10;
+const FOOD_MASS_MIN: u32 = 2;
+const FOOD_MASS_MAX: u32 = 4;
 const TARGET_FOOD_COUNT: usize = 600;
 const MINIMUM_SAFE_MASS_RATIO: f32 = 0.85;
-const MAX_CIRCLES_PER_PLAYER: u32 = 16;
 const MIN_OVERLAP_PCT_TO_CONSUME: f32 = 0.1;
+
+const MIN_MASS_TO_SPLIT: u32 = START_PLAYER_MASS * 2;
+const MAX_CIRCLES_PER_PLAYER: u32 = 16;
 const SPLIT_RECOMBINE_DELAY_SEC: f32 = 5.0;
 const SPLIT_GRAV_PULL_BEFORE_RECOMBINE_SEC: f32 = 2.0;
 const ALLOWED_SPLIT_CIRCLE_OVERLAP_PCT: f32 = 0.9;
@@ -51,6 +57,7 @@ pub struct Circle {
 }
 
 #[spacetimedb::table(name = player, public)]
+#[derive(Debug, Clone)]
 pub struct Player {
     #[primary_key]
     identity: Identity,
@@ -65,17 +72,6 @@ pub struct LoggedOutPlayer {
     #[primary_key]
     identity: Identity,
     player: Player,
-}
-
-#[spacetimedb::table(name = logged_out_circle, public)]
-pub struct LoggedOutCircle {
-    #[auto_inc]
-    #[primary_key]
-    logged_out_id: u32,
-    #[index(btree)]
-    player_id: u32,
-    circle: Circle,
-    entity: Entity,
 }
 
 #[spacetimedb::table(name = food, public)]
@@ -118,12 +114,6 @@ pub struct CircleRecombineTimer {
     player_id: u32,
 }
 
-const START_PLAYER_MASS: u32 = 12;
-const MIN_MASS_TO_SPLIT: u32 = START_PLAYER_MASS * 2;
-const START_PLAYER_SPEED: u32 = 10;
-const FOOD_MASS_MIN: u32 = 2;
-const FOOD_MASS_MAX: u32 = 4;
-
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Initializing...");
@@ -165,12 +155,6 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
             .ok_or("Could not find circle")?;
         ctx.db.entity().entity_id().delete(&entity.entity_id);
         ctx.db.circle().entity_id().delete(&entity.entity_id);
-        ctx.db.logged_out_circle().try_insert(LoggedOutCircle {
-            logged_out_id: 0,
-            player_id: player.player_id,
-            circle,
-            entity,
-        })?;
     }
     ctx.db.logged_out_player().insert(LoggedOutPlayer {
         identity: player.identity,
@@ -183,38 +167,27 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
 
 #[spacetimedb::reducer(client_connected)]
 pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx
-        .db
-        .logged_out_player()
-        .identity()
-        .find(&ctx.sender)
-        .ok_or("No player for identity.")?;
-    for logged_out_circle in ctx
-        .db
-        .logged_out_circle()
-        .player_id()
-        .filter(&player.player.player_id)
-    {
-        ctx.db.circle().try_insert(logged_out_circle.circle)?;
-        ctx.db.entity().try_insert(logged_out_circle.entity)?;
-        ctx.db
-            .logged_out_circle()
-            .logged_out_id()
-            .delete(&logged_out_circle.logged_out_id);
+    if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender) {
+        ctx.db.player().insert(player.player.clone());
+        ctx.db.logged_out_player().delete(player);
+    } else {
+        ctx.db.player().try_insert(Player {
+            identity: ctx.sender,
+            player_id: 0,
+            name: String::new(),
+        })?;
     }
-    ctx.db.player().insert(player.player);
     Ok(())
 }
 
 #[spacetimedb::reducer]
-pub fn create_player(ctx: &ReducerContext, name: String) -> Result<(), String> {
+pub fn enter_game(ctx: &ReducerContext, name: String) -> Result<(), String> {
     log::info!("Creating player with name {}", name);
-    let player = ctx.db.player().try_insert(Player {
-        identity: ctx.sender,
-        player_id: 0,
-        name,
-    })?;
-    spawn_player_initial_circle(ctx, player.player_id)?;
+    let mut player: Player = ctx.db.player().identity().find(ctx.sender).ok_or("")?;
+    let player_id = player.player_id;
+    player.name = name;
+    ctx.db.player().identity().update(player);
+    spawn_player_initial_circle(ctx, player_id)?;
 
     Ok(())
 }

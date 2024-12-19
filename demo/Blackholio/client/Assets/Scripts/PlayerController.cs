@@ -28,12 +28,6 @@ public class PlayerController : MonoBehaviour
         if (player.Identity == ConnectionManager.LocalIdentity)
         {
             Local = this;
-
-            if (!ConnectionManager.Conn.Db.Circle.PlayerId.Filter(player.PlayerId).Any())
-            {
-				// We have a player, but no circle, let's respawn
-				ConnectionManager.Conn.Reducers.Respawn();
-			}
         }
 	}
 
@@ -97,7 +91,7 @@ public class PlayerController : MonoBehaviour
 
 	public void Update()
     {
-        if (!IsLocalPlayer)
+        if (!IsLocalPlayer || NumberOfOwnedCircles == 0)
         {
             return;
         }

@@ -25,11 +25,12 @@ public class LeaderboardController : MonoBehaviour
     {
         var players = EntityManager.Players.Values
             .Select(a => (player: a, mass: a.TotalMass()))
+            .Where(a => a.mass > 0)
             .OrderByDescending(a => a.mass)
             .Take(10)
             .ToList();
         var localPlayer = PlayerController.Local;
-		if (localPlayer != null && !players.Any(p => p.player == localPlayer))
+		if (localPlayer != null && !players.Any(p => p.player == localPlayer) && localPlayer.NumberOfOwnedCircles > 0)
         {
             players.Add((localPlayer, localPlayer.TotalMass()));
 		}
