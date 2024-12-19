@@ -333,7 +333,6 @@ mod tests {
     };
     use crate::auth::JwtKeys;
     use base64::Engine;
-    use openssl::ec::{EcGroup, EcKey};
     use serde_json;
     use spacetimedb_lib::Identity;
 
@@ -480,6 +479,8 @@ mod tests {
     use axum::routing::get;
     use axum::Json;
     use axum::Router;
+    use p256::elliptic_curve::sec1::ToEncodedPoint;
+    use p256::pkcs8::DecodePublicKey;
     use tokio::net::TcpListener;
     use tokio::sync::oneshot;
 
@@ -666,51 +667,36 @@ mod tests {
 
     // Extract the x and y coordinates from a public key and return a JWK for a single key.
     fn to_jwk_json(jk: &JwtKeys) -> anyhow::Result<serde_json::Value> {
-        let eck = EcKey::public_key_from_pem(&jk.public_pem)?;
+        // Parse the public key from PEM.
+        let public_key = p256::PublicKey::from_public_key_pem(std::str::from_utf8(&jk.public_pem)?)?;
+        // Convert the public key to an uncompressed SEC1-encoded point.
+        let encoded_point = public_key.to_encoded_point(false); // false for uncompressed
+        let coordinates = encoded_point.coordinates();
 
-        let group = EcGroup::from_curve_name(openssl::nid::Nid::X9_62_PRIME256V1)?;
-        let mut ctx = openssl::bn::BigNumContext::new()?;
-
-        // Get the x and y coordinates.
-        let mut x = openssl::bn::BigNum::new()?;
-        // let mut x = openssl::bn::BigNumRef
-        let mut y = openssl::bn::BigNum::new()?;
-        eck.public_key().affine_coordinates(&group, &mut x, &mut y, &mut ctx)?;
-
-        let x_bytes = x.to_vec();
-        let y_bytes = y.to_vec();
-
-        let x_padded = if x_bytes.len() < 32 {
-            let mut padded = vec![0u8; 32];
-            padded[32 - x_bytes.len()..].copy_from_slice(&x_bytes);
-            padded
-        } else {
-            x_bytes
+        // Extract x and y coordinates.
+        let (x_bytes, y_bytes) = match coordinates {
+            p256::elliptic_curve::sec1::Coordinates::Uncompressed { x, y } => (x.as_slice(), y.as_slice()),
+            _ => return Err(anyhow::anyhow!("Invalid coordinates")),
         };
 
-        let y_padded = if y_bytes.len() < 32 {
-            let mut padded = vec![0u8; 32];
-            padded[32 - y_bytes.len()..].copy_from_slice(&y_bytes);
-            padded
-        } else {
-            y_bytes
-        };
-        let x_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(x_padded);
-        let y_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(y_padded);
+        // Base64-url encode x and y coordinates.
+        let x_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(x_bytes);
+        let y_b64 = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(y_bytes);
 
-        let mut jwks = serde_json::json!(
-            {
-                "kty": "EC",
-                "crv": "P-256",
-                "use": "sig",
-                "alg": "ES256",
-                "x": x_b64,
-                "y": y_b64
-            }
-        );
+        // Construct the JWK JSON.
+        let mut jwks = serde_json::json!({
+            "kty": "EC",
+            "crv": "P-256",
+            "use": "sig",
+            "alg": "ES256",
+            "x": x_b64,
+            "y": y_b64
+        });
+
         if let Some(kid) = &jk.kid {
             jwks["kid"] = kid.to_string().into();
         }
+
         Ok(jwks)
     }
 }
