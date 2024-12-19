@@ -25,17 +25,17 @@ public class ConnectionManager : MonoBehaviour
         Application.targetFrameRate = 60;
 
         // Now that we’ve registered all our callbacks, lets connect to spacetimedb
-        Conn = DbConnection.Builder().OnConnect((_conn, identity, token) => {
+        var builder = DbConnection.Builder().OnConnect((_conn, identity, token) => {
             // Called when we connect to SpacetimeDB and receive our client identity
             Debug.Log("Connected.");
             AuthToken.SaveToken(token);
             LocalIdentity = identity;
 
-            EntityManager.Initialize(Conn);
-			OnConnected?.Invoke();
+			EntityManager.Initialize(Conn);
+            OnConnected?.Invoke();
 
-			// Request all tables
-			Conn.SubscriptionBuilder().OnApplied(ctx =>
+            // Request all tables
+            Conn.SubscriptionBuilder().OnApplied(ctx =>
             {
                 Debug.Log("Subscription applied!");
                 OnSubscriptionApplied?.Invoke();
@@ -53,12 +53,15 @@ public class ConnectionManager : MonoBehaviour
                 Debug.LogException(ex);
             }
         }).WithUri(SERVER_URL)
-            .WithModuleName(MODULE_NAME)
-            // .WithCredentials((localIdentity.Value, PlayerPrefs.GetString(AuthToken.GetTokenKey())))
-            .Build();
+            .WithModuleName(MODULE_NAME);
+		if (PlayerPrefs.HasKey(AuthToken.GetTokenKey()))
+        {
+			builder = builder.WithCredentials((default, AuthToken.Token));
+        }
+        Conn = builder.Build();
 
 #pragma warning disable CS0612 // Type or member is obsolete
-        Conn.onUnhandledReducerError += InstanceOnUnhandledReducerError;
+		Conn.onUnhandledReducerError += InstanceOnUnhandledReducerError;
 #pragma warning restore CS0612 // Type or member is obsolete
     }
 
