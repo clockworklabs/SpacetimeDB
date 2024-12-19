@@ -5,21 +5,62 @@ use spacetimedb_primitives::TableId;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
-/// A projection is the root of any relation expression
+/// A projection is the root of any relational expression.
+/// This type represents a projection that returns relvars.
+///
+/// For example:
+///
+/// ```sql
+/// select * from t
+/// ```
+///
+/// and
+///
+/// ```sql
+/// select t.* from t join s ...
+/// ```
 #[derive(Debug)]
-pub enum Project {
+pub enum ProjectName {
     None(RelExpr),
-    Relvar(RelExpr, Box<str>),
-    Fields(RelExpr, Vec<(Box<str>, FieldProject)>),
+    Some(RelExpr, Box<str>),
 }
 
-impl Project {
+impl ProjectName {
     /// What is the [TableId] for this projection?
     pub fn table_id(&self) -> Option<TableId> {
         match self {
-            Self::Fields(..) => None,
-            Self::Relvar(input, var) => input.table_id(Some(var.as_ref())),
             Self::None(input) => input.table_id(None),
+            Self::Some(input, var) => input.table_id(Some(var.as_ref())),
+        }
+    }
+}
+
+/// A projection is the root of any relational expression.
+/// This type represents a projection that returns fields.
+///
+/// For example:
+///
+/// ```sql
+/// select a, b from t
+/// ```
+///
+/// and
+///
+/// ```sql
+/// select t.a as x from t join s ...
+/// ```
+#[derive(Debug)]
+pub enum ProjectList {
+    Name(ProjectName),
+    List(RelExpr, Vec<(Box<str>, FieldProject)>),
+}
+
+impl ProjectList {
+    /// What is the [TableId] for this projection?
+    pub fn table_id(&self) -> Option<TableId> {
+        match self {
+            Self::List(..) => None,
+            Self::Name(proj) => proj.table_id(),
         }
     }
 }
