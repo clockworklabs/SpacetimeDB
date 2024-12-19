@@ -1,8 +1,9 @@
 use std::{
     cmp,
     fmt::Debug,
-    io::{self, Seek as _, SeekFrom, Write},
+    io::{self, Seek as _, SeekFrom},
     iter::repeat,
+    sync::RwLockWriteGuard,
 };
 
 use log::debug;
@@ -96,11 +97,13 @@ fn overwrite_reopen() {
         .unwrap()
         .into();
     debug!("last commit: {last_commit:?}");
-    let mut last_segment = repo.open_segment(last_segment_offset).unwrap();
-    last_segment
-        .seek(SeekFrom::End(-((last_commit.encoded_len() - 1) as i64)))
-        .unwrap();
-    last_segment.write_all(&[255; 1]).unwrap();
+
+    {
+        let mut last_segment = repo.open_segment(last_segment_offset).unwrap();
+        let mut data = last_segment.buf_mut();
+        let pos = data.len() - last_commit.encoded_len() + 1;
+        data[pos] = 255;
+    }
 
     let mut log = open_log::<[u8; 32]>(repo.clone());
     for (i, commit) in log.commits_from(0).enumerate() {
@@ -158,6 +161,12 @@ const ENOSPC: i32 = 28;
 struct ShortSegment {
     inner: repo::mem::Segment,
     max_len: u64,
+}
+
+impl ShortSegment {
+    fn buf_mut(&mut self) -> RwLockWriteGuard<'_, Vec<u8>> {
+        self.inner.buf_mut()
+    }
 }
 
 impl Segment for ShortSegment {
