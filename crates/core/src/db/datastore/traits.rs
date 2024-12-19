@@ -346,19 +346,18 @@ impl Program {
 }
 
 pub trait TxDatastore: DataRow + Tx {
-    type Iter<'a>: Iterator<Item = Self::RowRef<'a>>
+    type IterTx<'a>: Iterator<Item = Self::RowRef<'a>>
     where
         Self: 'a;
 
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::RowRef<'a>>
+    type IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::RowRef<'a>>
+    where
+        Self: 'a;
+    type IterByColEqTx<'a, 'r>: Iterator<Item = Self::RowRef<'a>>
     where
         Self: 'a;
 
-    type IterByColEq<'a, 'r>: Iterator<Item = Self::RowRef<'a>>
-    where
-        Self: 'a;
-
-    fn iter_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>>;
+    fn iter_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::IterTx<'a>>;
 
     fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
@@ -366,7 +365,7 @@ pub trait TxDatastore: DataRow + Tx {
         table_id: TableId,
         cols: impl Into<ColList>,
         range: R,
-    ) -> Result<Self::IterByColRange<'a, R>>;
+    ) -> Result<Self::IterByColRangeTx<'a, R>>;
 
     fn iter_by_col_eq_tx<'a, 'r>(
         &'a self,
@@ -374,7 +373,7 @@ pub trait TxDatastore: DataRow + Tx {
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a, 'r>>;
+    ) -> Result<Self::IterByColEqTx<'a, 'r>>;
 
     fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool;
     fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> Result<Option<TableId>>;
@@ -394,6 +393,18 @@ pub trait TxDatastore: DataRow + Tx {
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
+    type IterMutTx<'a>: Iterator<Item = Self::RowRef<'a>>
+    where
+        Self: 'a;
+
+    type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::RowRef<'a>>
+    where
+        Self: 'a;
+
+    type IterByColEqMutTx<'a, 'r>: Iterator<Item = Self::RowRef<'a>>
+    where
+        Self: 'a;
+
     // Tables
     fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: TableSchema) -> Result<TableId>;
     // In these methods, we use `'tx` because the return type must borrow data
@@ -438,21 +449,21 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn constraint_id_from_name(&self, tx: &Self::MutTx, constraint_name: &str) -> super::Result<Option<ConstraintId>>;
 
     // Data
-    fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTx, table_id: TableId) -> Result<Self::Iter<'a>>;
+    fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTx, table_id: TableId) -> Result<Self::IterMutTx<'a>>;
     fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         tx: &'a Self::MutTx,
         table_id: TableId,
         cols: impl Into<ColList>,
         range: R,
-    ) -> Result<Self::IterByColRange<'a, R>>;
+    ) -> Result<Self::IterByColRangeMutTx<'a, R>>;
     fn iter_by_col_eq_mut_tx<'a, 'r>(
         &'a self,
         tx: &'a Self::MutTx,
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a, 'r>>;
+    ) -> Result<Self::IterByColEqMutTx<'a, 'r>>;
     fn get_mut_tx<'a>(
         &self,
         tx: &'a Self::MutTx,
