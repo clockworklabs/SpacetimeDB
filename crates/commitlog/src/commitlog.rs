@@ -267,7 +267,10 @@ impl<R: Repo, T> Generic<R, T> {
                     let byte_offset = segment::Header::LEN as u64 + bytes_read;
                     debug!("truncating segment {segment} to {offset} at {byte_offset}");
                     let mut file = self.repo.open_segment(segment)?;
-                    file.ftruncate(offset, byte_offset)?;
+                    // Note: The offset index truncates equal or greater,
+                    // inclusive. We'd like to retain `offset` in the index, as
+                    // the commit is also retained in the log.
+                    file.ftruncate(offset + 1, byte_offset)?;
                     // Some filesystems require fsync after ftruncate.
                     file.fsync()?;
                     break;
