@@ -162,5 +162,6 @@ pub fn compile(ast: StatementCtx<'_>) -> PhysicalCtx<'_> {
         plan,
         sql: ast.sql,
         source: ast.source,
+        planning_time: ast.planning_time,
     }
 }
