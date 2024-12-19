@@ -175,6 +175,7 @@ pub(crate) fn parse(value: String, ty: &AlgebraicType) -> Result<AlgebraicValue,
 }
 
 /// The source of a statement
+#[derive(Debug, Clone, Copy)]
 pub enum StatementSource {
     Subscription,
     Query,
@@ -187,4 +188,5 @@ pub struct StatementCtx<'a> {
     pub statement: Statement,
     pub sql: &'a str,
     pub source: StatementSource,
+    pub planning_time: std::time::Duration,
 }
