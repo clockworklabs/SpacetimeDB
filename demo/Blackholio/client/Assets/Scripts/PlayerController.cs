@@ -1,5 +1,3 @@
-using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using SpacetimeDB;
@@ -8,176 +6,125 @@ using UnityEngine;
 
 public class PlayerController : MonoBehaviour
 {
-    private Dictionary<uint, CircleController> circlesByEntityId = new Dictionary<uint, CircleController>();
+	const int SEND_UPDATES_PER_SEC = 20;
+	const float SEND_UPDATES_FREQUENCY = 1f / SEND_UPDATES_PER_SEC;
 
-    public int updatesPerSecond = 20;
+    public static PlayerController Local { get; private set; }
 
-    private Identity identity;
-    private uint playerId;
-    public float targetCameraSize;
-    private float previousCameraSize;
-    private float lastMovementSendUpdate;
-    public static PlayerController Local;
-    private bool testInputEnabled;
-    private Vector2 testInput;
-    private Vector2? lockInputPosition;
+	private uint PlayerId;
+    private float LastMovementSendTimestamp;
+    private Vector2? LockInputPosition;
+	private List<CircleActor> OwnedCircles = new List<CircleActor>();
 
-    public void SetTestInput(Vector2 input) => testInput = input;
-    public void EnableTestInput() => testInputEnabled = true;
-    
-    public void Spawn(Identity identity)
+	public string Username => ConnectionManager.Conn.Db.Player.PlayerId.Find(PlayerId).Name;
+	public int NumberOfOwnedCircles => OwnedCircles.Count;
+	public bool IsLocalPlayer => this == Local;
+
+
+
+	public void Initialize(Player player)
     {
-        this.identity = identity;
-        playerId = GameManager.conn.Db.Player.Identity.Find(identity)!.PlayerId;
-        if (IsLocalPlayer())
+        PlayerId = player.PlayerId;
+        if (player.Identity == ConnectionManager.LocalIdentity)
         {
             Local = this;
+
+            if (!ConnectionManager.Conn.Db.Circle.PlayerId.Filter(player.PlayerId).Any())
+            {
+				// We have a player, but no circle, let's respawn
+				ConnectionManager.Conn.Reducers.Respawn();
+			}
         }
-        previousCameraSize = targetCameraSize = CalculateCameraSize();
-    }
+	}
 
     private void OnDestroy()
     {
         // If we have any circles, destroy them
-        var circles = circlesByEntityId.Values.ToList();
-        foreach (var circle in circles)
+        foreach (var circle in OwnedCircles)
         {
             if (circle != null)
             {
                 Destroy(circle.gameObject);
             }
         }
-        circlesByEntityId.Clear();
+        OwnedCircles.Clear();
     }
 
-    public void SpawnCircle(Circle insertedCircle, CircleController circlePrefab)
+    public void OnCircleSpawned(CircleActor circle)
     {
-        var circle = Instantiate(circlePrefab);
-        circle.Spawn(insertedCircle);
-        circlesByEntityId[insertedCircle.EntityId] = circle;
+        OwnedCircles.Add(circle);
     }
 
-    public void DespawnCircle(Circle deletedCircle)
-    {
-        // This means we got eaten
-        if (circlesByEntityId.TryGetValue(deletedCircle.EntityId, out var circle))
-        {
-            circlesByEntityId.Remove(deletedCircle.EntityId);
-            // If the local player died, show the death screen
-            circle.Despawn();
-        }
-
-        // If the player has no more circles remaining, show the death screen
-        if (IsLocalPlayer() && circlesByEntityId.Count == 0)
-        {
-            GameManager.instance.deathScreen.SetActive(true);
-        }
-    }
-
-    public void CircleUpdate(Entity oldCircle, Entity newCircle)
-    {
-        if (!circlesByEntityId.TryGetValue(newCircle.EntityId, out var circle))
-        {
-            return;
-        }
-
-        circle.UpdatePosition(newCircle);
-        previousCameraSize = GameManager.localCamera.orthographicSize;
-        targetCameraSize = CalculateCameraSize();
-    }
-
-    private float CalculateCameraSize()
+    public void OnCircleDeleted(CircleActor deletedCircle)
 	{
-        return 50f + Mathf.Min(50, TotalMass() / 5) + Mathf.Min(circlesByEntityId.Count - 1, 1) * 30;
+		// This means we got eaten
+		if (OwnedCircles.Remove(deletedCircle) && IsLocalPlayer && OwnedCircles.Count == 0)
+		{
+			DeathScreen.Instance.SetVisible(true);
+		}
 	}
 
-    public uint TotalMass()
+
+
+	public uint TotalMass()
     {
-        uint mass = 0;
-        foreach (var circle in circlesByEntityId.Values)
-        {
-            var entity = GameManager.conn.Db.Entity.EntityId.Find(circle.GetEntityId());
-            // If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
-            if (entity == null)
-            {
-                continue;
-            }
-
-            mass += entity.Mass;
-        }
-
-        return mass;
-    }
-
-    public string GetUsername() => GameManager.conn.Db.Player.PlayerId.Find(playerId)!.Name;
-
-    private void OnGUI()
-    {
-        if (!IsLocalPlayer() || !GameManager.IsConnected())
-        {
-            return;
-        }
-
-        GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
-    }
-
-    public bool IsLocalPlayer() => GameManager.localIdentity != null && identity == GameManager.localIdentity;
+        return (uint)OwnedCircles
+            .Select(circle => ConnectionManager.Conn.Db.Entity.EntityId.Find(circle.EntityId))
+			.Sum(e => e?.Mass ?? 0); //If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
+	}
 
     public Vector2? CenterOfMass()
     {
-        if (circlesByEntityId.Count == 0)
+        if (OwnedCircles.Count == 0)
         {
             return null;
         }
         
-        var circles = circlesByEntityId.Values;        
-        float totalX = 0, totalY = 0;
+        Vector2 totalPos = Vector2.zero;
         float totalMass = 0;
-        foreach (var circle in circles)
+        foreach (var circle in OwnedCircles)
         {
-            var entity = circle.GetEntity();
+            var entity = ConnectionManager.Conn.Db.Entity.EntityId.Find(circle.EntityId);
             var position = circle.transform.position;
-            totalX += position.x * entity.Mass;
-            totalY += position.y * entity.Mass;
+            totalPos += (Vector2)position * entity.Mass;
             totalMass += entity.Mass;
         }
 
-        return new Vector2(totalX / totalMass, totalY / totalMass);
-    }
-    
-    public void Update()
+        return totalPos / totalMass;
+	}
+
+
+
+	public void Update()
     {
-        if (!IsLocalPlayer())
+        if (!IsLocalPlayer)
         {
             return;
         }
 
         if (Input.GetKeyDown(KeyCode.Space))
         {
-            GameManager.conn.Reducers.PlayerSplit();
+            ConnectionManager.Conn.Reducers.PlayerSplit();
         }
 
         if (Input.GetKeyDown(KeyCode.Q))
         {
-            if (lockInputPosition.HasValue)
+            if (LockInputPosition.HasValue)
             {
-                lockInputPosition = null;
+                LockInputPosition = null;
 			}
             else
             {
-				lockInputPosition = (Vector2)Input.mousePosition;
+				LockInputPosition = (Vector2)Input.mousePosition;
             }
         }
-        
-        GameManager.localCamera.orthographicSize =
-            Mathf.Lerp(GameManager.localCamera.orthographicSize, targetCameraSize, Time.deltaTime * 3);
 
         //Throttled input requests
-        if (Time.time - lastMovementSendUpdate >= 1.0f / updatesPerSecond)
+        if (Time.time - LastMovementSendTimestamp >= SEND_UPDATES_FREQUENCY)
         {
-            lastMovementSendUpdate = Time.time;
+            LastMovementSendTimestamp = Time.time;
 
-            var mousePosition = lockInputPosition ?? (Vector2)Input.mousePosition;
+            var mousePosition = LockInputPosition ?? (Vector2)Input.mousePosition;
             var screenSize = new Vector2
             {
                 x = Screen.width,
@@ -186,12 +133,27 @@ public class PlayerController : MonoBehaviour
             var centerOfScreen = screenSize / 2;
 
 			var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
-            if (testInputEnabled) direction = testInput;
-            GameManager.conn.Reducers.UpdatePlayerInput(new DbVector2
-            {
-                X = direction.x,
-                Y = direction.y,
-            });
+            if (testInputEnabled) { direction = testInput; }
+            ConnectionManager.Conn.Reducers.UpdatePlayerInput(direction);
         }
-    }
+	}
+
+	private void OnGUI()
+	{
+		if (!IsLocalPlayer || !ConnectionManager.IsConnected())
+		{
+			return;
+		}
+
+		GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
+	}
+
+
+
+	//Automated testing members
+	private bool testInputEnabled;
+	private Vector2 testInput;
+
+	public void SetTestInput(Vector2 input) => testInput = input;
+	public void EnableTestInput() => testInputEnabled = true;
 }

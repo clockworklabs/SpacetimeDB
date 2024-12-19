@@ -5,6 +5,12 @@ using UnityEngine;
 
 public class LeaderboardRow : MonoBehaviour
 {
-    public TextMeshProUGUI usernameText;
-    public TextMeshProUGUI massText;
+    public TextMeshProUGUI UsernameText;
+    public TextMeshProUGUI MassText;
+
+    public void SetData(string username, uint mass)
+	{
+		UsernameText.text = username;
+		MassText.text = mass.ToString();
+	}
 }
