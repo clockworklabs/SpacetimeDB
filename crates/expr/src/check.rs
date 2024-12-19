@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use crate::expr::{Expr, Project};
+use crate::expr::{Expr, ProjectList, ProjectName};
 use crate::{expr::LeftDeepJoin, statement::Statement};
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_schema::schema::TableSchema;
@@ -46,9 +46,9 @@ pub trait TypeChecker {
     type Ast;
     type Set;
 
-    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<Project>;
+    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<ProjectList>;
 
-    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<Project>;
+    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<ProjectList>;
 
     fn type_from(from: SqlFrom, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<RelExpr> {
         match from {
@@ -111,11 +111,11 @@ impl TypeChecker for SubChecker {
     type Ast = SqlSelect;
     type Set = SqlSelect;
 
-    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<Project> {
+    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<ProjectList> {
         Self::type_set(ast, &mut Relvars::default(), tx)
     }
 
-    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<Project> {
+    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<ProjectList> {
         match ast {
             SqlSelect {
                 project,
@@ -138,26 +138,30 @@ impl TypeChecker for SubChecker {
 }
 
 /// Parse and type check a subscription query
-pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<Project> {
+pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<ProjectName> {
     expect_table_type(SubChecker::type_ast(parse_subscription(sql)?, tx)?)
+}
+
+/// Type check a subscription query
+pub fn type_subscription(ast: SqlSelect, tx: &impl SchemaView) -> TypingResult<ProjectName> {
+    expect_table_type(SubChecker::type_ast(ast, tx)?)
 }
 
 /// Parse and type check a *subscription* query into a `StatementCtx`
 pub fn compile_sql_sub<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<StatementCtx<'a>> {
-    let expr = parse_and_type_sub(sql, tx)?;
     Ok(StatementCtx {
-        statement: Statement::Select(expr),
+        statement: Statement::Select(ProjectList::Name(parse_and_type_sub(sql, tx)?)),
         sql,
         source: StatementSource::Subscription,
     })
 }
 
 /// Returns an error if the input type is not a table type or relvar
-fn expect_table_type(expr: Project) -> TypingResult<Project> {
-    if let Project::Fields(..) = expr {
-        return Err(Unsupported::ReturnType.into());
+fn expect_table_type(expr: ProjectList) -> TypingResult<ProjectName> {
+    match expr {
+        ProjectList::Name(proj) => Ok(proj),
+        ProjectList::List(..) => Err(Unsupported::ReturnType.into()),
     }
-    Ok(expr)
 }
 
 pub mod test_utils {
