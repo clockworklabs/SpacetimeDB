@@ -1,53 +1,50 @@
-using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using SpacetimeDB.Types;
-using Unity.VisualScripting;
 using UnityEngine;
 
 public class LeaderboardController : MonoBehaviour
 {
-    public LeaderboardRow rowPrefab;
-    public Transform elementsHierarchy;
-    public int rowCount = 10;
+    const int MAX_ROW_COUNT = 11; //10 + local player
 
-    private List<LeaderboardRow> rows = new List<LeaderboardRow>();
+    public LeaderboardRow RowPrefab;
+    public Transform Root;
+
+    private LeaderboardRow[] Rows = new LeaderboardRow[MAX_ROW_COUNT];
 
     private void Start()
     {
-        for (var x = 0; x < rowCount; x++)
+        for (var i = 0; i < MAX_ROW_COUNT; i++)
         {
-            var go = Instantiate(rowPrefab, elementsHierarchy, true);
-            rows.Add(go);
-        }
-    }
-
-    void UpdateRowEnabled(int count)
-    {
-        for (var x = 0; x < rowCount; x++)
-        {
-            rows[x].gameObject.SetActive(x < count);
+            var go = Instantiate(RowPrefab, Root, true);
+            go.gameObject.SetActive(false);
+            Rows[i] = go;
         }
     }
     
     private void Update()
     {
-        var players = GameManager.playerIdToPlayerController.Values.Select(
-            a => (a, a.TotalMass())).OrderByDescending(a => a.Item2).Take(10).ToList();
-        if (PlayerController.Local != null && !players.Any(p => p.a == PlayerController.Local))
+        var players = EntityManager.Players.Values
+            .Select(a => (player: a, mass: a.TotalMass()))
+            .OrderByDescending(a => a.mass)
+            .Take(10)
+            .ToList();
+        var localPlayer = PlayerController.Local;
+		if (localPlayer != null && !players.Any(p => p.player == localPlayer))
         {
-            players.Add((PlayerController.Local, PlayerController.Local.TotalMass()));
+            players.Add((localPlayer, localPlayer.TotalMass()));
 		}
 
-        var index = 0;
-        foreach(var player in players)
-        {
-            var row = rows[index];
-            row.usernameText.text = player.a.GetUsername();
-            row.massText.text = player.Item2 + "";
-            index++;
-        }
-        UpdateRowEnabled(index);
+        int i;
+        for (i = 0; i < players.Count; i++)
+		{
+            var player = players[i];
+			var row = Rows[i];
+            row.SetData(player.player.Username, player.mass);
+            row.gameObject.SetActive(true);
+		}
+        for (; i < MAX_ROW_COUNT; i++)
+		{
+			Rows[i].gameObject.SetActive(false);
+		}
     }
 }

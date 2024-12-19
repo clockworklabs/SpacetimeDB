@@ -20,7 +20,7 @@ const MIN_OVERLAP_PCT_TO_CONSUME: f32 = 0.1;
 const SPLIT_RECOMBINE_DELAY_SEC: f32 = 5.0;
 const SPLIT_GRAV_PULL_BEFORE_RECOMBINE_SEC: f32 = 2.0;
 const ALLOWED_SPLIT_CIRCLE_OVERLAP_PCT: f32 = 0.9;
-const SELF_COLLISION_SPEED: f32 = 0.07; //1 == instantly separate circles. less means separation takes time
+const SELF_COLLISION_SPEED: f32 = 0.05; //1 == instantly separate circles. less means separation takes time
 
 #[spacetimedb::table(name = config, public)]
 pub struct Config {
@@ -217,7 +217,7 @@ pub fn create_player(ctx: &ReducerContext, name: String) -> Result<(), String> {
         player_id: 0,
         name,
     })?;
-    spawn_circle(ctx, player.player_id)?;
+    spawn_player_initial_circle(ctx, player.player_id)?;
 
     Ok(())
 }
@@ -230,11 +230,22 @@ pub fn respawn(ctx: &ReducerContext) -> Result<(), String> {
         .identity()
         .find(&ctx.sender)
         .ok_or("No such player found")?;
-    spawn_circle(ctx, player.player_id)?;
+    if ctx
+        .db
+        .circle()
+        .player_id()
+        .filter(&player.player_id)
+        .count()
+        > 0
+    {
+        return Err(format!("Player {} already has a circle", player.player_id).into());
+    }
+
+    spawn_player_initial_circle(ctx, player.player_id)?;
     Ok(())
 }
 
-fn spawn_circle(ctx: &ReducerContext, player_id: u32) -> Result<Entity, String> {
+fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: u32) -> Result<Entity, String> {
     let mut rng = ctx.rng();
     let world_size = ctx
         .db
@@ -348,6 +359,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         if entities.len() <= 1 {
             continue;
         }
+        let count = entities.len();
 
         //Gravitate circles towards other circles before they recombine
         for i in 0..entities.len() {
@@ -379,7 +391,8 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
                     let vec = diff.normalized()
                         * (radius_sum - distance_sqr.sqrt())
                         * gravity_multiplier
-                        * 0.05;
+                        * 0.05
+                        / count as f32;
                     *circle_directions.get_mut(&entity_i.entity_id).unwrap() += vec / 2.0;
                     *circle_directions.get_mut(&entity_j.entity_id).unwrap() -= vec / 2.0;
                 }
@@ -506,7 +519,7 @@ pub fn player_split(ctx: &ReducerContext) -> Result<(), String> {
                 ctx,
                 circle.player_id,
                 half_mass,
-                circle_entity.position + circle.direction * 30.0,
+                circle_entity.position + circle.direction,
                 ctx.timestamp,
             )?;
             circle_entity.mass -= half_mass;
@@ -524,8 +537,11 @@ pub fn player_split(ctx: &ReducerContext) -> Result<(), String> {
         .circle_recombine_timer()
         .insert(CircleRecombineTimer {
             scheduled_id: 0,
-            scheduled_at: ScheduleAt::Interval(
-                Duration::from_secs_f32(SPLIT_RECOMBINE_DELAY_SEC).as_micros() as u64,
+            scheduled_at: ScheduleAt::Time(
+                Timestamp::now()
+                    .checked_add(Duration::from_secs_f32(SPLIT_RECOMBINE_DELAY_SEC))
+                    .unwrap()
+                    .into_micros_since_epoch(),
             ),
             player_id: player.player_id,
         });

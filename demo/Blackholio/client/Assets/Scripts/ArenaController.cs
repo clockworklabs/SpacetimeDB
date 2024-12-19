@@ -1,52 +1,48 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using SpacetimeDB;
 using SpacetimeDB.Types;
 using UnityEngine;
 
 public class ArenaController : MonoBehaviour
 {
-    public SpriteRenderer backgroundPrefab;
-    public float thickness = 10;
+    public SpriteRenderer backgroundInstance;
+    public float borderThickness = 10;
     public Material borderMaterial;
-
-    private SpriteRenderer backgroundInstance;
 
     private void Start()
     {
-        GameManager.conn.Db.Config.OnInsert += (ctx, value) =>
+        ConnectionManager.Conn.Db.Config.OnInsert += (ctx, value) =>
         {
             var worldSize = value.WorldSize;
-            var north = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            north.transform.localScale = new Vector3(worldSize + thickness * 2.0f, thickness, 1);
-            north.transform.position = new Vector3(worldSize / 2.0f, worldSize + thickness / 2, 1);
-            north.GetComponent<MeshRenderer>().material = borderMaterial;
-            var south = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            south.transform.localScale = new Vector3(worldSize + thickness * 2.0f, thickness, 1);
-            south.transform.position = new Vector3(worldSize / 2.0f, -thickness / 2, 1);
-			south.GetComponent<MeshRenderer>().material = borderMaterial;
-			var east = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            east.transform.localScale = new Vector3(thickness, worldSize + thickness * 2.0f, 1);
-            east.transform.position = new Vector3(worldSize + thickness / 2, worldSize / 2.0f, 1);
-			east.GetComponent<MeshRenderer>().material = borderMaterial;
-			var west = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            west.transform.localScale = new Vector3(thickness, worldSize + thickness * 2.0f, 1);
-            west.transform.position = new Vector3(-thickness / 2, worldSize / 2.0f, 1);
-			west.GetComponent<MeshRenderer>().material = borderMaterial;
+            CreateBorderCube(new Vector2(worldSize / 2.0f, worldSize + borderThickness / 2),
+                new Vector2(worldSize + borderThickness * 2.0f, borderThickness)); //North
+			CreateBorderCube(new Vector2(worldSize / 2.0f, -borderThickness / 2),
+				new Vector2(worldSize + borderThickness * 2.0f, borderThickness)); //South
+			CreateBorderCube(new Vector2(worldSize + borderThickness / 2, worldSize / 2.0f),
+				new Vector2(borderThickness, worldSize + borderThickness * 2.0f)); //East
+			CreateBorderCube(new Vector2(-borderThickness / 2, worldSize / 2.0f),
+				new Vector2(borderThickness, worldSize + borderThickness * 2.0f)); //West
 
-			backgroundInstance = Instantiate(backgroundPrefab);
+            backgroundInstance.gameObject.SetActive(true); ;
             var size = worldSize / backgroundInstance.transform.localScale.x;
-            backgroundInstance.size = new UnityEngine.Vector2(size, size);
+            backgroundInstance.size = new Vector2(size, size);
             backgroundInstance.transform.position = new Vector3((float)worldSize / 2, (float)worldSize / 2);
             
             // Start the camera in the middle of the screen for setup, but only if we have no player
             if (PlayerController.Local == null)
             {
-                GameManager.localCamera.transform.position = new Vector3((float)worldSize / 2, (float)worldSize / 2, -10.0f);
+                Camera.main.transform.position = new Vector3((float)worldSize / 2, (float)worldSize / 2, -10.0f);
             }
         };
-        
     }
+
+    private void CreateBorderCube(Vector2 position, Vector2 scale)
+	{
+		var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        cube.name = "Border";
+		cube.transform.localScale = new Vector3(scale.x, scale.y, 1);
+		cube.transform.position = new Vector3(position.x, position.y, 1);
+		cube.GetComponent<MeshRenderer>().material = borderMaterial;
+	}
 }
