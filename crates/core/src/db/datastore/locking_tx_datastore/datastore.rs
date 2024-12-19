@@ -327,23 +327,12 @@ impl TxDatastore for Locking {
         = IterTx<'a>
     where
         Self: 'a;
-    type IterMutTx<'a>= IterMutTx<'a>
-    where
-        Self: 'a;
     type IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>>
         = IterByColRangeTx<'a, R>
     where
         Self: 'a;
-    type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>>
-    = IterByColRangeMutTx<'a, R>
-    where
-        Self: 'a;
     type IterByColEqTx<'a, 'r>
         = IterByColRangeTx<'a, &'r AlgebraicValue>
-    where
-        Self: 'a;
-    type IterByColEqMutTx<'a, 'r>
-    = IterByColRangeMutTx<'a, &'r AlgebraicValue>
     where
         Self: 'a;
 
@@ -416,6 +405,15 @@ impl TxDatastore for Locking {
 }
 
 impl MutTxDatastore for Locking {
+    type IterMutTx<'a>= IterMutTx<'a>
+    where
+        Self: 'a;
+    type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeMutTx<'a, R>;
+    type IterByColEqMutTx<'a, 'r>
+    = IterByColRangeMutTx<'a, &'r AlgebraicValue>
+    where
+        Self: 'a;
+
     fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: TableSchema) -> Result<TableId> {
         tx.create_table(schema)
     }

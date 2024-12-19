@@ -350,21 +350,10 @@ pub trait TxDatastore: DataRow + Tx {
     where
         Self: 'a;
 
-    type IterMutTx<'a>: Iterator<Item = Self::RowRef<'a>>
-    where
-        Self: 'a;
-
     type IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::RowRef<'a>>
     where
         Self: 'a;
-    type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::RowRef<'a>>
-    where
-        Self: 'a;
     type IterByColEqTx<'a, 'r>: Iterator<Item = Self::RowRef<'a>>
-    where
-        Self: 'a;
-
-    type IterByColEqMutTx<'a, 'r>: Iterator<Item = Self::RowRef<'a>>
     where
         Self: 'a;
 
@@ -404,6 +393,18 @@ pub trait TxDatastore: DataRow + Tx {
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
+    type IterMutTx<'a>: Iterator<Item = Self::RowRef<'a>>
+    where
+        Self: 'a;
+
+    type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::RowRef<'a>>
+    where
+        Self: 'a;
+
+    type IterByColEqMutTx<'a, 'r>: Iterator<Item = Self::RowRef<'a>>
+    where
+        Self: 'a;
+
     // Tables
     fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: TableSchema) -> Result<TableId>;
     // In these methods, we use `'tx` because the return type must borrow data
