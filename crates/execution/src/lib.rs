@@ -1,7 +1,7 @@
 use std::ops::{Deref, RangeBounds};
 
 use anyhow::{anyhow, Result};
-use iter::Iter;
+use iter::PlanIter;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_physical_plan::plan::{ProjectField, ProjectPlan, TupleField};
 use spacetimedb_primitives::{IndexId, TableId};
@@ -13,12 +13,14 @@ use spacetimedb_table::{
 
 pub mod iter;
 
+/// The datastore interface required for building an executor
 pub trait Datastore {
     fn table(&self, table_id: TableId) -> Option<&Table>;
     fn blob_store(&self) -> &dyn BlobStore;
 }
 
-pub struct FallibleDatastore<'a, T>(&'a T);
+/// A wrapper around a [Datastore] that returns an error instead of `None`
+pub(crate) struct FallibleDatastore<'a, T>(pub &'a T);
 
 impl<T> Deref for FallibleDatastore<'_, T> {
     type Target = T;
@@ -29,20 +31,20 @@ impl<T> Deref for FallibleDatastore<'_, T> {
 }
 
 impl<'a, T: Datastore> FallibleDatastore<'a, T> {
-    pub fn table(&self, table_id: TableId) -> Result<&Table> {
+    fn table(&self, table_id: TableId) -> Result<&Table> {
         self.0
             .table(table_id)
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
     }
 
-    pub fn table_scan(&self, table_id: TableId) -> Result<TableScanIter> {
+    fn table_scan(&self, table_id: TableId) -> Result<TableScanIter> {
         self.0
             .table(table_id)
             .map(|table| table.scan_rows(self.0.blob_store()))
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
     }
 
-    pub fn index_scan(
+    fn index_scan(
         &self,
         table_id: TableId,
         index_id: IndexId,
@@ -85,7 +87,7 @@ impl ProjectField for Tuple<'_> {
 
 impl<'a> Tuple<'a> {
     /// Select the tuple element at position `i`
-    pub fn select(self, i: usize) -> Option<RowRef<'a>> {
+    fn select(self, i: usize) -> Option<RowRef<'a>> {
         match self {
             Self::Row(_) => None,
             Self::Join(mut ptrs) => Some(ptrs.swap_remove(i)),
@@ -93,7 +95,7 @@ impl<'a> Tuple<'a> {
     }
 
     /// Append a [RowRef] to a tuple
-    pub fn append(self, ptr: RowRef<'a>) -> Self {
+    fn append(self, ptr: RowRef<'a>) -> Self {
         match self {
             Self::Row(row) => Self::Join(vec![row, ptr]),
             Self::Join(mut rows) => {
@@ -104,28 +106,11 @@ impl<'a> Tuple<'a> {
     }
 }
 
-/// Execute a physcial plan, pushing the return tuples into a closure.
-pub fn execute_plan<T: Datastore>(
-    plan: &ProjectPlan,
-    tx: &FallibleDatastore<'_, T>,
-    mut f: impl FnMut(RowRef),
-) -> Result<()> {
-    match plan {
-        ProjectPlan::None(plan) => {
-            for tuple in Iter::build(plan, tx)? {
-                if let Tuple::Row(ptr) = tuple {
-                    f(ptr);
-                }
-            }
-        }
-        ProjectPlan::Name(plan, _, Some(i)) => {
-            for tuple in Iter::build(plan, tx)? {
-                if let Some(ptr) = tuple.select(*i) {
-                    f(ptr);
-                }
-            }
-        }
-        _ => {}
-    }
-    Ok(())
+/// Execute a query plan.
+/// The actual execution is driven by `f`.
+pub fn execute_plan<T, R>(plan: &ProjectPlan, tx: &T, f: impl Fn(PlanIter) -> R) -> Result<R>
+where
+    T: Datastore,
+{
+    PlanIter::build(plan, &FallibleDatastore(tx)).map(f)
 }

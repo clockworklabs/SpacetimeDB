@@ -4658,9 +4658,11 @@ dependencies = [
  "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-data-structures",
+ "spacetimedb-execution",
  "spacetimedb-lib",
  "spacetimedb-paths",
  "spacetimedb-primitives",
+ "spacetimedb-query",
  "spacetimedb-sats",
  "spacetimedb-schema",
  "spacetimedb-standalone",
@@ -4975,7 +4977,6 @@ name = "spacetimedb-execution"
 version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
- "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-physical-plan",
  "spacetimedb-primitives",
@@ -5120,6 +5121,7 @@ name = "spacetimedb-query"
 version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
+ "spacetimedb-client-api-messages",
  "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-physical-plan",

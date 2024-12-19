@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{anyhow, bail, Context, Result};
 use spacetimedb_lib::{AlgebraicValue, ProductValue};
 use spacetimedb_physical_plan::plan::{
-    HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, Sarg, Semi, TupleField,
+    HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectPlan, Sarg, Semi, TupleField,
 };
 use spacetimedb_table::{
     blob_store::BlobStore,
@@ -13,30 +13,61 @@ use spacetimedb_table::{
 
 use crate::{Datastore, FallibleDatastore, Tuple};
 
-pub enum RowRefProjIter<'a> {
+/// The different iterators for evaluating query plans
+pub enum PlanIter<'a> {
+    Table(TableScanIter<'a>),
+    Index(IndexScanIter<'a>),
+    RowId(RowRefIter<'a>),
+    Tuple(ProjectIter<'a>),
+}
+
+impl<'a> PlanIter<'a> {
+    pub(crate) fn build<T: Datastore>(plan: &'a ProjectPlan, tx: &'a FallibleDatastore<'a, T>) -> Result<Self> {
+        ProjectIter::build(plan, tx).map(|iter| match iter {
+            ProjectIter::None(Iter::Row(RowRefIter::TableScan(iter))) => Self::Table(iter),
+            ProjectIter::None(Iter::Row(RowRefIter::IndexScan(iter))) => Self::Index(iter),
+            ProjectIter::None(Iter::Row(iter)) => Self::RowId(iter),
+            _ => Self::Tuple(iter),
+        })
+    }
+}
+
+/// Implements a tuple projection for a query plan
+pub enum ProjectIter<'a> {
     None(Iter<'a>),
     Some(Iter<'a>, usize),
 }
 
-impl<'a> Iterator for RowRefProjIter<'a> {
+impl<'a> Iterator for ProjectIter<'a> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::None(iter) => iter.find_map(|tuple| match tuple {
-                Tuple::Row(ptr) => Some(ptr),
-                _ => None,
+            Self::None(iter) => iter.find_map(|tuple| {
+                if let Tuple::Row(ptr) = tuple {
+                    return Some(ptr);
+                }
+                None
             }),
             Self::Some(iter, i) => iter.find_map(|tuple| tuple.select(*i)),
         }
     }
 }
 
-/// A tuple-at-a-time query iterator
+impl<'a> ProjectIter<'a> {
+    fn build<T: Datastore>(plan: &'a ProjectPlan, tx: &'a FallibleDatastore<'a, T>) -> Result<Self> {
+        match plan {
+            ProjectPlan::None(plan) | ProjectPlan::Name(plan, _, None) => Iter::build(plan, tx).map(Self::None),
+            ProjectPlan::Name(plan, _, Some(i)) => Iter::build(plan, tx).map(|iter| Self::Some(iter, *i)),
+        }
+    }
+}
+
+/// A generic tuple-at-a-time iterator for a query plan
 pub enum Iter<'a> {
     Row(RowRefIter<'a>),
     Join(LeftDeepJoinIter<'a>),
-    Filter(Filter<'a>),
+    Filter(Filter<'a, Iter<'a>>),
 }
 
 impl<'a> Iterator for Iter<'a> {
@@ -52,7 +83,7 @@ impl<'a> Iterator for Iter<'a> {
 }
 
 impl<'a> Iter<'a> {
-    pub fn build<T: Datastore>(plan: &'a PhysicalPlan, tx: &'a FallibleDatastore<'a, T>) -> Result<Self> {
+    fn build<T: Datastore>(plan: &'a PhysicalPlan, tx: &'a FallibleDatastore<'a, T>) -> Result<Self> {
         match plan {
             PhysicalPlan::TableScan(..) | PhysicalPlan::IxScan(..) => RowRefIter::build(plan, tx).map(Self::Row),
             PhysicalPlan::Filter(input, expr) => {
@@ -160,7 +191,7 @@ impl<'a> Iter<'a> {
 pub enum RowRefIter<'a> {
     TableScan(TableScanIter<'a>),
     IndexScan(IndexScanIter<'a>),
-    RowFilter(RowFilterIter<'a>),
+    RowFilter(Filter<'a, RowRefIter<'a>>),
 }
 
 impl<'a> Iterator for RowRefIter<'a> {
@@ -237,24 +268,10 @@ impl<'a> RowRefIter<'a> {
                 .map(Self::IndexScan),
             PhysicalPlan::Filter(input, expr) => Self::build(input, tx)
                 .map(Box::new)
-                .map(|input| RowFilterIter { input, expr })
+                .map(|input| Filter { input, expr })
                 .map(Self::RowFilter),
             _ => bail!("Plan does not return row ids"),
         }
-    }
-}
-
-/// A filter iterator that returns [RowRef]s
-pub struct RowFilterIter<'a> {
-    input: Box<RowRefIter<'a>>,
-    expr: &'a PhysicalExpr,
-}
-
-impl<'a> Iterator for RowFilterIter<'a> {
-    type Item = RowRef<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.input.find(|ptr| self.expr.eval_bool(ptr))
     }
 }
 
@@ -981,12 +998,20 @@ impl<'a> Iterator for NLJoin<'a> {
 }
 
 /// A tuple-at-a-time filter iterator
-pub struct Filter<'a> {
-    input: Box<Iter<'a>>,
+pub struct Filter<'a, I> {
+    input: Box<I>,
     expr: &'a PhysicalExpr,
 }
 
-impl<'a> Iterator for Filter<'a> {
+impl<'a> Iterator for Filter<'a, RowRefIter<'a>> {
+    type Item = RowRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.input.find(|ptr| self.expr.eval_bool(ptr))
+    }
+}
+
+impl<'a> Iterator for Filter<'a, Iter<'a>> {
     type Item = Tuple<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -3,9 +3,12 @@ name = "spacetimedb-query"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license-file = "LICENSE"
+description = "Top level crate for invoking the query engine and optimizer"
 
 [dependencies]
 anyhow.workspace = true
+spacetimedb-client-api-messages.workspace = true
 spacetimedb-execution.workspace = true
 spacetimedb-expr.workspace = true
 spacetimedb-primitives.workspace = true
