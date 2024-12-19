@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use crate::statement::Statement;
 use check::{Relvars, TypingResult};
 use errors::{DuplicateName, InvalidLiteral, InvalidOp, InvalidWildcard, UnexpectedType, Unresolved};
-use expr::{Expr, FieldProject, Project, RelExpr};
+use expr::{Expr, FieldProject, ProjectList, ProjectName, RelExpr};
 use spacetimedb_lib::{from_hex_pad, Address, AlgebraicType, AlgebraicValue, Identity};
 use spacetimedb_schema::schema::ColumnSchema;
 use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
@@ -22,11 +22,13 @@ pub(crate) fn type_select(input: RelExpr, expr: SqlExpr, vars: &Relvars) -> Typi
 }
 
 /// Type check and lower a [ast::Project]
-pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> TypingResult<Project> {
+pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> TypingResult<ProjectList> {
     match proj {
         ast::Project::Star(None) if input.nfields() > 1 => Err(InvalidWildcard::Join.into()),
-        ast::Project::Star(None) => Ok(Project::None(input)),
-        ast::Project::Star(Some(SqlIdent(var))) if input.has_field(&var) => Ok(Project::Relvar(input, var)),
+        ast::Project::Star(None) => Ok(ProjectList::Name(ProjectName::None(input))),
+        ast::Project::Star(Some(SqlIdent(var))) if input.has_field(&var) => {
+            Ok(ProjectList::Name(ProjectName::Some(input, var)))
+        }
         ast::Project::Star(Some(SqlIdent(var))) => Err(Unresolved::var(&var).into()),
         ast::Project::Exprs(elems) => {
             let mut projections = vec![];
@@ -42,7 +44,7 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
                 }
             }
 
-            Ok(Project::Fields(input, projections))
+            Ok(ProjectList::List(input, projections))
         }
     }
 }

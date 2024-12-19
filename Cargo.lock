@@ -4658,9 +4658,11 @@ dependencies = [
  "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-data-structures",
+ "spacetimedb-execution",
  "spacetimedb-lib",
  "spacetimedb-paths",
  "spacetimedb-primitives",
+ "spacetimedb-query",
  "spacetimedb-sats",
  "spacetimedb-schema",
  "spacetimedb-standalone",
@@ -4910,13 +4912,16 @@ dependencies = [
  "spacetimedb-commitlog",
  "spacetimedb-data-structures",
  "spacetimedb-durability",
+ "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-jwks",
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-paths",
+ "spacetimedb-physical-plan",
  "spacetimedb-primitives",
+ "spacetimedb-query",
  "spacetimedb-sats",
  "spacetimedb-schema",
  "spacetimedb-snapshot",
@@ -4975,9 +4980,12 @@ dependencies = [
 name = "spacetimedb-execution"
 version = "1.0.0-rc3"
 dependencies = [
+ "anyhow",
  "spacetimedb-expr",
  "spacetimedb-lib",
+ "spacetimedb-physical-plan",
  "spacetimedb-primitives",
+ "spacetimedb-sql-parser",
  "spacetimedb-table",
 ]
 
@@ -5091,12 +5099,15 @@ dependencies = [
 name = "spacetimedb-physical-plan"
 version = "1.0.0-rc3"
 dependencies = [
+ "anyhow",
  "derive_more",
+ "pretty_assertions",
  "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-schema",
  "spacetimedb-sql-parser",
+ "spacetimedb-table",
 ]
 
 [[package]]
@@ -5108,6 +5119,23 @@ dependencies = [
  "itertools 0.12.1",
  "nohash-hasher",
  "proptest",
+]
+
+[[package]]
+name = "spacetimedb-query"
+version = "1.0.0-rc3"
+dependencies = [
+ "anyhow",
+ "itertools 0.12.1",
+ "rayon",
+ "spacetimedb-client-api-messages",
+ "spacetimedb-execution",
+ "spacetimedb-expr",
+ "spacetimedb-lib",
+ "spacetimedb-physical-plan",
+ "spacetimedb-primitives",
+ "spacetimedb-sql-parser",
+ "spacetimedb-table",
 ]
 
 [[package]]
@@ -5320,6 +5348,7 @@ dependencies = [
  "log",
  "smallvec",
  "spacetimedb-data-structures",
+ "spacetimedb-execution",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",

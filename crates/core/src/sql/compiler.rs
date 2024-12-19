@@ -1,5 +1,6 @@
 use super::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
 use super::type_check::TypeCheck;
+use crate::db::datastore::locking_tx_datastore::state_view::StateView;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use core::ops::Deref;
@@ -20,7 +21,7 @@ use super::ast::TableSchemaView;
 const MAX_SQL_LENGTH: usize = 50_000;
 
 /// Compile the `SQL` expression into an `ast`
-pub fn compile_sql<T: TableSchemaView>(
+pub fn compile_sql<T: TableSchemaView + StateView>(
     db: &RelationalDB,
     auth: &AuthCtx,
     tx: &T,
@@ -268,7 +269,11 @@ mod tests {
         assert!(matches!(op, Query::Select(_)));
     }
 
-    fn compile_sql<T: TableSchemaView>(db: &RelationalDB, tx: &T, sql: &str) -> Result<Vec<CrudExpr>, DBError> {
+    fn compile_sql<T: TableSchemaView + StateView>(
+        db: &RelationalDB,
+        tx: &T,
+        sql: &str,
+    ) -> Result<Vec<CrudExpr>, DBError> {
         super::compile_sql(db, &AuthCtx::for_testing(), tx, sql)
     }
 
