@@ -1,6 +1,5 @@
 use std::{
     fmt,
-    io::{Read, Seek, SeekFrom, Write},
     iter::{repeat, successors},
     num::NonZeroU8,
     rc::Rc,
@@ -126,12 +125,10 @@ proptest! {
             segment_offset:_ ,
         } = inputs;
 
-        segment.seek(SeekFrom::Start(byte_pos as u64)).unwrap();
-        let mut buf = [0; 1];
-        segment.read_exact(&mut buf).unwrap();
-        buf[0] ^= bit_mask;
-        segment.seek(SeekFrom::Current(-1)).unwrap();
-        segment.write_all(&buf).unwrap();
+        {
+            let mut data = segment.buf_mut();
+            data[byte_pos] ^= bit_mask;
+        }
 
         let first_err = log
             .transactions_from(0, &payload::ArrayDecoder)

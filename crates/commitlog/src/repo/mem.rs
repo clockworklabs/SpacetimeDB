@@ -1,9 +1,7 @@
 use std::{
     collections::{btree_map, BTreeMap},
     io,
-    ops::DerefMut as _,
-    sync::{Arc, RwLock},
-    u64,
+    sync::{Arc, RwLock, RwLockWriteGuard},
 };
 
 use crate::segment::FileLike;
@@ -14,6 +12,11 @@ type SharedLock<T> = Arc<RwLock<T>>;
 type SharedBytes = SharedLock<Vec<u8>>;
 
 /// A log segment backed by a `Vec<u8>`.
+///
+/// Writing to the segment behaves like a file opened with `O_APPEND`:
+/// [`io::Write::write`] always appends to the segment, regardless of the
+/// current position, and updates the position to the new length of the segment.
+/// The initial position is zero.
 ///
 /// Note that this is not a faithful model of a file, as safe Rust requires to
 /// protect the buffer with a lock. This means that pathological situations
@@ -31,6 +34,13 @@ impl Segment {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Obtain mutable access to the underlying buffer.
+    ///
+    /// This is intended for tests which deliberately corrupt the segment data.
+    pub fn buf_mut(&mut self) -> RwLockWriteGuard<'_, Vec<u8>> {
+        self.buf.write().unwrap()
     }
 }
 
@@ -54,6 +64,7 @@ impl FileLike for Segment {
     fn ftruncate(&mut self, _tx_offset: u64, size: u64) -> io::Result<()> {
         let mut inner = self.buf.write().unwrap();
         inner.resize(size as usize, 0);
+        // NOTE: As per `ftruncate(2)`, the offset is not changed.
         Ok(())
     }
 }
@@ -61,13 +72,10 @@ impl FileLike for Segment {
 impl io::Write for Segment {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let mut inner = self.buf.write().unwrap();
-        // Piggyback on unsafe code in Cursor
-        let mut cursor = io::Cursor::new(inner.deref_mut());
-        cursor.set_position(self.pos);
-        let sz = cursor.write(buf)?;
-        self.pos = cursor.position();
+        inner.extend(buf);
+        self.pos += buf.len() as u64;
 
-        Ok(sz)
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -78,9 +86,14 @@ impl io::Write for Segment {
 impl io::Read for Segment {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let inner = self.buf.read().unwrap();
-        let len = self.pos.min(inner.len() as u64);
-        let n = io::Read::read(&mut &inner[(len as usize)..], buf)?;
+        let pos = self.pos as usize;
+        if pos > inner.len() {
+            // Bad file descriptor
+            return Err(io::Error::from_raw_os_error(9));
+        }
+        let n = io::Read::read(&mut &inner[pos..], buf)?;
         self.pos += n as u64;
+
         Ok(n)
     }
 }
