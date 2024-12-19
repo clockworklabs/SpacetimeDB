@@ -1,40 +1,121 @@
-use std::{ops::Bound, sync::Arc};
+use std::{borrow::Cow, ops::Bound, sync::Arc};
 
 use derive_more::From;
 use spacetimedb_expr::StatementSource;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
-use spacetimedb_schema::schema::{IndexSchema, TableSchema};
+use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
+use spacetimedb_table::table::RowRef;
+
+use crate::rules::{
+    ComputePositions, ConjunctionToIxScan, EqToIxScan, HashToIxJoin, PushConjunction, PushEqFilter, RewriteRule,
+    UniqueHashJoinRule, UniqueIxJoinRule,
+};
 
 /// Table aliases are replaced with labels in the physical plan
 #[derive(Debug, Clone, Copy, PartialEq, Eq, From)]
 pub struct Label(pub usize);
 
-/// Physical query plans always terminate with a projection
-#[derive(Debug, PartialEq, Eq)]
-pub enum PhysicalProject {
+/// Physical plans always terminate with a projection.
+/// This type of projection returns row ids.
+///
+/// It can represent:
+///
+/// ```sql
+/// select * from t
+/// ```
+///
+/// and
+///
+/// ```sql
+/// select t.* from t join ...
+/// ```
+///
+/// but not
+///
+/// ```sql
+/// select a from t
+/// ```
+#[derive(Debug)]
+pub enum ProjectPlan {
     None(PhysicalPlan),
-    Relvar(PhysicalPlan, Label),
-    Fields(PhysicalPlan, Vec<(Box<str>, ProjectField)>),
+    Name(PhysicalPlan, Label, Option<usize>),
 }
 
-impl PhysicalProject {
+impl ProjectPlan {
     pub fn optimize(self) -> Self {
         match self {
             Self::None(plan) => Self::None(plan.optimize(vec![])),
-            Self::Relvar(plan, var) => Self::None(plan.optimize(vec![var])),
-            Self::Fields(plan, fields) => {
-                Self::Fields(plan.optimize(fields.iter().map(|(_, proj)| proj.var).collect()), fields)
+            Self::Name(plan, label, _) => {
+                let plan = plan.optimize(vec![label]);
+                let n = plan.nfields();
+                let pos = plan.label_pos(&label);
+                match n {
+                    1 => Self::None(plan),
+                    _ => Self::Name(plan, label, pos),
+                }
             }
         }
     }
 }
 
+/// Physical plans always terminate with a projection.
+/// This type can project fields within a table.
+///
+/// That is, it can represent:
+///
+/// ```sql
+/// select a from t
+/// ```
+///
+/// as well as
+///
+/// ```sql
+/// select t.a, s.b from t join s ...
+/// ```
+#[derive(Debug)]
+pub enum ProjectListPlan {
+    Name(ProjectPlan),
+    List(PhysicalPlan, Vec<(Box<str>, TupleField)>),
+}
+
+impl ProjectListPlan {
+    pub fn optimize(self) -> Self {
+        match self {
+            Self::Name(plan) => Self::Name(plan.optimize()),
+            Self::List(plan, fields) => Self::List(
+                plan.optimize(
+                    fields
+                        .iter()
+                        .map(|(_, TupleField { label, .. })| label)
+                        .copied()
+                        .collect(),
+                ),
+                fields,
+            ),
+        }
+    }
+}
+
+/// Query operators return tuples of rows.
+/// And this type refers to a field of a row within a tuple.
+///
+/// Note that from the perspective of the optimizer,
+/// tuple elements have names or labels,
+/// so as to preserve query semantics across rewrites.
+///
+/// However from the perspective of the query engine,
+/// tuple elements are entirely positional.
+/// Hence the need for both `label` and `label_pos`.
+///
+/// The former is consistent across rewrites.
+/// The latter is only computed once after optimization.
 #[derive(Debug, PartialEq, Eq)]
-pub struct ProjectField {
-    pub var: Label,
-    pub pos: usize,
+pub struct TupleField {
+    pub label: Label,
+    pub label_pos: Option<usize>,
+    pub field_pos: usize,
 }
 
 /// A physical plan represents a concrete evaluation strategy.
@@ -65,6 +146,21 @@ impl PhysicalPlan {
             Self::NLJoin(lhs, rhs) | Self::HashJoin(HashJoin { lhs, rhs, .. }, _) => {
                 lhs.visit(f);
                 rhs.visit(f);
+            }
+            _ => {}
+        }
+    }
+
+    /// Walks the plan tree and calls `f` on every op
+    pub fn visit_mut(&mut self, f: &mut impl FnMut(&mut Self)) {
+        f(self);
+        match self {
+            Self::IxJoin(IxJoin { lhs: input, .. }, _) | Self::Filter(input, _) => {
+                input.visit_mut(f);
+            }
+            Self::NLJoin(lhs, rhs) | Self::HashJoin(HashJoin { lhs, rhs, .. }, _) => {
+                lhs.visit_mut(f);
+                rhs.visit_mut(f);
             }
             _ => {}
         }
@@ -188,12 +284,13 @@ impl PhysicalPlan {
         plan
     }
 
-    /// Optimize a physical plan by applying rewrite rules.
+    /// Optimize a plan using the following rewrites:
     ///
-    /// First we canonicalize the plan.
-    /// Next we push filters to the leaves.
-    /// Then we try to turn those filters into index scans.
-    /// And finally we deterimine the index joins and semijoins.
+    /// 1. Canonicalize the plan
+    /// 2. Push filters to the leaves
+    /// 3. Turn filters into index scans if possible
+    /// 4. Determine index and semijoins
+    /// 5. Compute positions for tuple labels
     pub fn optimize(self, reqs: Vec<Label>) -> Self {
         self.map(&Self::canonicalize)
             .apply_until::<PushConjunction>()
@@ -204,6 +301,7 @@ impl PhysicalPlan {
             .apply_rec::<UniqueIxJoinRule>()
             .apply_rec::<UniqueHashJoinRule>()
             .introduce_semijoins(reqs)
+            .apply_rec::<ComputePositions>()
     }
 
     /// The rewriter assumes a canonicalized plan.
@@ -258,7 +356,7 @@ impl PhysicalPlan {
                     unique,
                 },
                 semi,
-            ) if rhs.has_label(&lhs_field.var) || lhs.has_label(&rhs_field.var) => Self::HashJoin(
+            ) if rhs.has_label(&lhs_field.label) || lhs.has_label(&rhs_field.label) => Self::HashJoin(
                 HashJoin {
                     lhs,
                     rhs,
@@ -351,7 +449,7 @@ impl PhysicalPlan {
         match self {
             Self::Filter(input, expr) => {
                 expr.visit(&mut |expr| {
-                    if let PhysicalExpr::Field(ProjectField { var, .. }) = expr {
+                    if let PhysicalExpr::Field(TupleField { label: var, .. }) = expr {
                         if !reqs.contains(var) {
                             reqs.push(*var);
                         }
@@ -377,8 +475,8 @@ impl PhysicalPlan {
                 HashJoin {
                     lhs,
                     rhs,
-                    lhs_field: lhs_field @ ProjectField { var: u, .. },
-                    rhs_field: rhs_field @ ProjectField { var: v, .. },
+                    lhs_field: lhs_field @ TupleField { label: u, .. },
+                    rhs_field: rhs_field @ TupleField { label: v, .. },
                     unique,
                 },
                 Semi::All,
@@ -411,13 +509,13 @@ impl PhysicalPlan {
                 )
             }
             Self::IxJoin(join, Semi::All) if reqs.len() == 1 && join.rhs_label == reqs[0] => {
-                let lhs = join.lhs.introduce_semijoins(vec![join.lhs_probe_expr.var]);
+                let lhs = join.lhs.introduce_semijoins(vec![join.lhs_field.label]);
                 let lhs = Box::new(lhs);
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::Rhs)
             }
             Self::IxJoin(join, Semi::All) if reqs.iter().all(|var| *var != join.rhs_label) => {
-                if !reqs.contains(&join.lhs_probe_expr.var) {
-                    reqs.push(join.lhs_probe_expr.var);
+                if !reqs.contains(&join.lhs_field.label) {
+                    reqs.push(join.lhs_field.label);
                 }
                 let lhs = join.lhs.introduce_semijoins(reqs);
                 let lhs = Box::new(lhs);
@@ -434,7 +532,7 @@ impl PhysicalPlan {
     }
 
     // Does this plan return distinct values for these columns?
-    fn returns_distinct_values(&self, label: &Label, cols: &ColSet) -> bool {
+    pub(crate) fn returns_distinct_values(&self, label: &Label, cols: &ColSet) -> bool {
         match self {
             // Is there a unique constraint for these cols?
             Self::TableScan(schema, var) => var == label && schema.is_unique(cols),
@@ -471,10 +569,11 @@ impl PhysicalPlan {
                 IxJoin {
                     lhs,
                     rhs,
-                    lhs_probe_expr:
-                        ProjectField {
-                            var: lhs_label,
-                            pos: lhs_field_pos,
+                    lhs_field:
+                        TupleField {
+                            label: lhs_label,
+                            field_pos: lhs_field_pos,
+                            ..
                         },
                     ..
                 },
@@ -492,9 +591,10 @@ impl PhysicalPlan {
                     lhs,
                     rhs,
                     rhs_field:
-                        ProjectField {
-                            var: rhs_label,
-                            pos: rhs_field_pos,
+                        TupleField {
+                            label: rhs_label,
+                            field_pos: rhs_field_pos,
+                            ..
                         },
                     ..
                 },
@@ -512,9 +612,10 @@ impl PhysicalPlan {
                     lhs,
                     rhs,
                     lhs_field:
-                        ProjectField {
-                            var: lhs_label,
-                            pos: lhs_field_pos,
+                        TupleField {
+                            label: lhs_label,
+                            field_pos: lhs_field_pos,
+                            ..
                         },
                     ..
                 },
@@ -532,8 +633,8 @@ impl PhysicalPlan {
                 expr.visit(&mut |plan| {
                     if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = plan {
                         if let (PhysicalExpr::Field(proj), PhysicalExpr::Value(..)) = (&**expr, &**value) {
-                            if proj.var == *label {
-                                cols.push(proj.pos.into());
+                            if proj.label == *label {
+                                cols.push(proj.field_pos.into());
                             }
                         }
                     }
@@ -552,6 +653,41 @@ impl PhysicalPlan {
             }
             _ => false,
         })
+    }
+
+    /// How many fields do the tuples returned by this plan have?
+    fn nfields(&self) -> usize {
+        match self {
+            Self::TableScan(..) | Self::IxScan(..) | Self::IxJoin(_, Semi::Rhs) => 1,
+            Self::Filter(input, _) => input.nfields(),
+            Self::IxJoin(join, Semi::Lhs) => join.lhs.nfields(),
+            Self::IxJoin(join, Semi::All) => join.lhs.nfields() + 1,
+            Self::HashJoin(join, Semi::Rhs) => join.rhs.nfields(),
+            Self::HashJoin(join, Semi::Lhs) => join.lhs.nfields(),
+            Self::HashJoin(join, Semi::All) => join.lhs.nfields() + join.rhs.nfields(),
+            Self::NLJoin(lhs, rhs) => lhs.nfields() + rhs.nfields(),
+        }
+    }
+
+    /// What is the position of this label in the return tuple?
+    pub(crate) fn label_pos(&self, label: &Label) -> Option<usize> {
+        match self {
+            Self::TableScan(_, var) | Self::IxScan(_, var) if var == label => Some(0),
+            Self::IxJoin(join, Semi::Rhs) if &join.rhs_label == label => Some(0),
+            Self::TableScan(..) | Self::IxScan(..) | Self::IxJoin(_, Semi::Rhs) => None,
+            Self::Filter(input, _) => input.label_pos(label),
+            Self::NLJoin(lhs, rhs) => lhs
+                .label_pos(label)
+                .or_else(|| rhs.label_pos(label).map(|pos| pos + lhs.nfields())),
+            Self::IxJoin(join, Semi::Lhs) => join.lhs.label_pos(label),
+            Self::IxJoin(IxJoin { lhs, rhs_label, .. }, Semi::All) if rhs_label == label => Some(lhs.nfields()),
+            Self::IxJoin(IxJoin { lhs, .. }, Semi::All) => lhs.label_pos(label),
+            Self::HashJoin(HashJoin { rhs, .. }, Semi::Rhs) => rhs.label_pos(label),
+            Self::HashJoin(HashJoin { lhs, .. }, Semi::Lhs) => lhs.label_pos(label),
+            Self::HashJoin(HashJoin { lhs, rhs, .. }, Semi::All) => lhs
+                .label_pos(label)
+                .or_else(|| rhs.label_pos(label).map(|pos| pos + lhs.nfields())),
+        }
     }
 }
 
@@ -575,25 +711,14 @@ pub enum Sarg {
     Range(ColId, Bound<AlgebraicValue>, Bound<AlgebraicValue>),
 }
 
-/// A hash join is potentially a bushy join.
-///
-/// ```text
-///      x
-///     / \
-///    /   \
-///   x     x
-///  / \   / \
-/// a   b c   d
-/// ```
-///
-/// It joins two relations by a single equality condition.
+/// A join of two relations on a single equality condition.
 /// It builds a hash table for the rhs and streams the lhs.
 #[derive(Debug, PartialEq, Eq)]
 pub struct HashJoin {
     pub lhs: Box<PhysicalPlan>,
     pub rhs: Box<PhysicalPlan>,
-    pub lhs_field: ProjectField,
-    pub rhs_field: ProjectField,
+    pub lhs_field: TupleField,
+    pub rhs_field: TupleField,
     pub unique: bool,
 }
 
@@ -618,7 +743,7 @@ pub struct IxJoin {
     /// The expression for computing probe values.
     /// Values are projected from the lhs,
     /// and used to probe the index on the rhs.
-    pub lhs_probe_expr: ProjectField,
+    pub lhs_field: TupleField,
 }
 
 /// Is this a semijoin?
@@ -630,10 +755,7 @@ pub enum Semi {
     All,
 }
 
-/// A physical scalar expression.
-///
-/// Types are encoded in the structure of the plan,
-/// rather than made explicit as for the logical plan.
+/// A physical scalar expression
 #[derive(Debug, PartialEq, Eq)]
 pub enum PhysicalExpr {
     /// An n-ary logic expression
@@ -643,7 +765,21 @@ pub enum PhysicalExpr {
     /// A constant algebraic value
     Value(AlgebraicValue),
     /// A field projection expression
-    Field(ProjectField),
+    Field(TupleField),
+}
+
+/// A trait for projecting values from a tuple.
+/// This is needed because not all tuples are created equal.
+/// Some operators return [RowRef]s.
+/// Some joins return tuples of combined [RowRef]s.
+pub trait ProjectField {
+    fn project(&self, field: &TupleField) -> AlgebraicValue;
+}
+
+impl ProjectField for RowRef<'_> {
+    fn project(&self, field: &TupleField) -> AlgebraicValue {
+        self.read_col(field.field_pos).unwrap()
+    }
 }
 
 impl PhysicalExpr {
@@ -664,6 +800,15 @@ impl PhysicalExpr {
         }
     }
 
+    /// Is there any subplan where `f` returns true?
+    pub fn any(&self, f: impl Fn(&Self) -> bool) -> bool {
+        let mut ok = false;
+        self.visit(&mut |plan| {
+            ok = ok || f(plan);
+        });
+        ok
+    }
+
     /// Applies the transformation `f` to all subplans
     pub fn map(self, f: &impl Fn(Self) -> Self) -> Self {
         match f(self) {
@@ -671,6 +816,48 @@ impl PhysicalExpr {
             field @ Self::Field(..) => field,
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.map(f)), Box::new(b.map(f))),
             Self::LogOp(op, exprs) => Self::LogOp(op, exprs.into_iter().map(|expr| expr.map(f)).collect()),
+        }
+    }
+
+    /// Evaluate this boolean expression over `row`
+    pub fn eval_bool(&self, row: &impl ProjectField) -> bool {
+        self.eval(row).as_bool().copied().unwrap_or(false)
+    }
+
+    /// Evaluate this expression over `row`
+    fn eval(&self, row: &impl ProjectField) -> Cow<'_, AlgebraicValue> {
+        fn eval_bin_op(op: BinOp, a: &AlgebraicValue, b: &AlgebraicValue) -> bool {
+            match op {
+                BinOp::Eq => a == b,
+                BinOp::Ne => a != b,
+                BinOp::Lt => a < b,
+                BinOp::Lte => a <= b,
+                BinOp::Gt => a > b,
+                BinOp::Gte => a >= b,
+            }
+        }
+        let into = |b| Cow::Owned(AlgebraicValue::Bool(b));
+        match self {
+            Self::BinOp(op, a, b) => into(eval_bin_op(*op, &a.eval(row), &b.eval(row))),
+            Self::LogOp(LogOp::And, exprs) => exprs
+                .iter()
+                .all(|expr| expr.eval_bool(row))
+                .then(|| AlgebraicValue::Bool(true))
+                .map(Cow::Owned)
+                .unwrap_or_else(|| into(false)),
+            Self::LogOp(LogOp::Or, exprs) => exprs
+                .iter()
+                .any(|expr| expr.eval_bool(row))
+                .then(|| AlgebraicValue::Bool(true))
+                .map(Cow::Owned)
+                .unwrap_or_else(|| into(false)),
+            Self::Field(field) => row
+                .project(field)
+                .as_bool()
+                .copied()
+                .map(into)
+                .unwrap_or_else(|| into(false)),
+            Self::Value(v) => v.as_bool().copied().map(into).unwrap_or_else(|| into(false)),
         }
     }
 
@@ -692,548 +879,40 @@ impl PhysicalExpr {
             Self::Field(..) | Self::Value(..) => self,
         }
     }
+
+    /// Compute the positions of all tuple labels
+    pub(crate) fn label_positions(&mut self, plan: &PhysicalPlan) {
+        match self {
+            Self::Field(field @ TupleField { label_pos: None, .. }) => {
+                field.label_pos = plan.label_pos(&field.label);
+            }
+            Self::BinOp(_, a, b) => {
+                a.label_positions(plan);
+                b.label_positions(plan);
+            }
+            Self::LogOp(_, exprs) => {
+                for expr in exprs {
+                    expr.label_positions(plan);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// A physical context for the result of a query compilation.
 pub struct PhysicalCtx<'a> {
-    pub plan: PhysicalProject,
+    pub plan: ProjectListPlan,
     pub sql: &'a str,
     pub source: StatementSource,
-}
-
-pub trait RewriteRule {
-    type Plan;
-    type Info;
-
-    fn matches(plan: &Self::Plan) -> Option<Self::Info>;
-    fn rewrite(plan: Self::Plan, info: Self::Info) -> Self::Plan;
-}
-
-/// Push equality conditions down to the leaves.
-///
-/// Example:
-///
-/// ```sql
-/// select b.*
-/// from a join b on a.id = b.id
-/// where a.x = 3
-/// ```
-///
-/// ... to ...
-///
-/// ```sql
-/// select b.*
-/// from (select * from a where x = 3) a
-/// join b on a.id = b.id
-/// ```
-///
-/// Example:
-///
-/// ```text
-///  s(a)
-///   |
-///   x
-///  / \
-/// a   b
-///
-/// ... to ...
-///
-///    x
-///   / \
-/// s(a) b
-///  |
-///  a
-/// ```
-struct PushEqFilter;
-
-impl RewriteRule for PushEqFilter {
-    type Plan = PhysicalPlan;
-    type Info = Label;
-
-    fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, expr, value)) = plan {
-            if let (PhysicalExpr::Field(ProjectField { var, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value) {
-                return match &**input {
-                    PhysicalPlan::TableScan(..) => None,
-                    input => input
-                        .any(&|plan| match plan {
-                            PhysicalPlan::TableScan(_, label) => label == var,
-                            _ => false,
-                        })
-                        .then_some(*var),
-                };
-            }
-        }
-        None
-    }
-
-    fn rewrite(plan: PhysicalPlan, relvar: Self::Info) -> PhysicalPlan {
-        if let PhysicalPlan::Filter(input, expr) = plan {
-            return input.map_if(
-                |scan, _| PhysicalPlan::Filter(Box::new(scan), expr),
-                |plan| match plan {
-                    PhysicalPlan::TableScan(_, var) if var == &relvar => Some(()),
-                    _ => None,
-                },
-            );
-        }
-        unreachable!()
-    }
-}
-
-/// Push conjunctions down to the leaves.
-///
-/// Example:
-///
-/// ```sql
-/// select b.*
-/// from a join b on a.id = b.id
-/// where a.x = 3 and a.y = 5
-/// ```
-///
-/// ... to ...
-///
-/// ```sql
-/// select b.*
-/// from (select * from a where x = 3 and y = 5) a
-/// join b on a.id = b.id
-/// ```
-///
-/// Example:
-///
-/// ```text
-///  s(a)
-///   |
-///   x
-///  / \
-/// a   b
-///
-/// ... to ...
-///
-///    x
-///   / \
-/// s(a) b
-///  |
-///  a
-/// ```
-struct PushConjunction;
-
-impl RewriteRule for PushConjunction {
-    type Plan = PhysicalPlan;
-    type Info = Label;
-
-    fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
-            return exprs.iter().find_map(|expr| {
-                if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = expr {
-                    if let (PhysicalExpr::Field(ProjectField { var, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value)
-                    {
-                        return match &**input {
-                            PhysicalPlan::TableScan(..) => None,
-                            input => input
-                                .any(&|plan| match plan {
-                                    PhysicalPlan::TableScan(_, label) => label == var,
-                                    _ => false,
-                                })
-                                .then_some(*var),
-                        };
-                    }
-                }
-                None
-            });
-        }
-        None
-    }
-
-    fn rewrite(plan: PhysicalPlan, relvar: Self::Info) -> PhysicalPlan {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
-            let mut leaf_exprs = vec![];
-            let mut root_exprs = vec![];
-            for expr in exprs {
-                if let PhysicalExpr::BinOp(BinOp::Eq, lhs, value) = &expr {
-                    if let (PhysicalExpr::Field(ProjectField { var, .. }), PhysicalExpr::Value(_)) = (&**lhs, &**value)
-                    {
-                        if var == &relvar {
-                            leaf_exprs.push(expr);
-                            continue;
-                        }
-                    }
-                }
-                root_exprs.push(expr);
-            }
-            // Match on table scan
-            let ok = |plan: &PhysicalPlan| match plan {
-                PhysicalPlan::TableScan(_, var) if var == &relvar => Some(()),
-                _ => None,
-            };
-            // Map scan to scan + filter
-            let f = |scan, _| {
-                PhysicalPlan::Filter(
-                    Box::new(scan),
-                    match leaf_exprs.len() {
-                        1 => leaf_exprs.swap_remove(0),
-                        _ => PhysicalExpr::LogOp(LogOp::And, leaf_exprs),
-                    },
-                )
-            };
-            // Remove top level filter if all conditions were pushable
-            if root_exprs.is_empty() {
-                return input.map_if(f, ok);
-            }
-            // Otherwise remove exprs from top level filter and push
-            return PhysicalPlan::Filter(
-                Box::new(input.map_if(f, ok)),
-                match root_exprs.len() {
-                    1 => root_exprs.swap_remove(0),
-                    _ => PhysicalExpr::LogOp(LogOp::And, root_exprs),
-                },
-            );
-        }
-        unreachable!()
-    }
-}
-
-/// Turn an equality predicate into a single column index scan
-struct EqToIxScan;
-
-struct IxScanInfo {
-    index_id: IndexId,
-    col_id: ColId,
-}
-
-impl RewriteRule for EqToIxScan {
-    type Plan = PhysicalPlan;
-    type Info = IxScanInfo;
-
-    fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, expr, value)) = plan {
-            if let PhysicalPlan::TableScan(schema, _) = &**input {
-                if let (PhysicalExpr::Field(ProjectField { pos, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value) {
-                    return schema
-                        .indexes
-                        .iter()
-                        .find_map(
-                            |IndexSchema {
-                                 index_id,
-                                 index_algorithm,
-                                 ..
-                             }| {
-                                index_algorithm
-                                    .columns()
-                                    .as_singleton()
-                                    .filter(|col_id| col_id.idx() == *pos)
-                                    .map(|col_id| IxScanInfo {
-                                        index_id: *index_id,
-                                        col_id,
-                                    })
-                            },
-                        )
-                        .or_else(|| {
-                            schema.indexes.iter().find_map(
-                                |IndexSchema {
-                                     index_id,
-                                     index_algorithm,
-                                     ..
-                                 }| {
-                                    index_algorithm
-                                        .columns()
-                                        .head()
-                                        .filter(|col_id| col_id.idx() == *pos)
-                                        .map(|col_id| IxScanInfo {
-                                            index_id: *index_id,
-                                            col_id,
-                                        })
-                                },
-                            )
-                        });
-                }
-            }
-        }
-        None
-    }
-
-    fn rewrite(plan: PhysicalPlan, info: Self::Info) -> PhysicalPlan {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, _, value)) = plan {
-            if let PhysicalPlan::TableScan(schema, var) = *input {
-                if let PhysicalExpr::Value(v) = *value {
-                    return PhysicalPlan::IxScan(
-                        IxScan {
-                            schema,
-                            index_id: info.index_id,
-                            prefix: vec![],
-                            arg: Sarg::Eq(info.col_id, v),
-                        },
-                        var,
-                    );
-                }
-            }
-        }
-        unreachable!()
-    }
-}
-
-/// Turn a conjunction into a single column index scan
-struct ConjunctionToIxScan;
-
-impl RewriteRule for ConjunctionToIxScan {
-    type Plan = PhysicalPlan;
-    type Info = (usize, IxScanInfo);
-
-    fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
-            if let PhysicalPlan::TableScan(schema, _) = &**input {
-                return exprs.iter().enumerate().find_map(|(i, expr)| {
-                    if let PhysicalExpr::BinOp(BinOp::Eq, lhs, value) = expr {
-                        if let (PhysicalExpr::Field(ProjectField { pos, .. }), PhysicalExpr::Value(_)) =
-                            (&**lhs, &**value)
-                        {
-                            return schema
-                                .indexes
-                                .iter()
-                                .find_map(
-                                    |IndexSchema {
-                                         index_id,
-                                         index_algorithm,
-                                         ..
-                                     }| {
-                                        index_algorithm
-                                            .columns()
-                                            .as_singleton()
-                                            .filter(|col_id| col_id.idx() == *pos)
-                                            .map(|col_id| {
-                                                (
-                                                    i,
-                                                    IxScanInfo {
-                                                        index_id: *index_id,
-                                                        col_id,
-                                                    },
-                                                )
-                                            })
-                                    },
-                                )
-                                .or_else(|| {
-                                    schema.indexes.iter().find_map(
-                                        |IndexSchema {
-                                             index_id,
-                                             index_algorithm,
-                                             ..
-                                         }| {
-                                            index_algorithm
-                                                .columns()
-                                                .head()
-                                                .filter(|col_id| col_id.idx() == *pos)
-                                                .map(|col_id| {
-                                                    (
-                                                        i,
-                                                        IxScanInfo {
-                                                            index_id: *index_id,
-                                                            col_id,
-                                                        },
-                                                    )
-                                                })
-                                        },
-                                    )
-                                });
-                        }
-                    }
-                    None
-                });
-            }
-        }
-        None
-    }
-
-    fn rewrite(plan: PhysicalPlan, info: Self::Info) -> PhysicalPlan {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, mut exprs)) = plan {
-            if let PhysicalPlan::TableScan(schema, label) = *input {
-                let (i, IxScanInfo { index_id, col_id }) = info;
-                if let PhysicalExpr::BinOp(BinOp::Eq, _, value) = exprs.swap_remove(i) {
-                    if let PhysicalExpr::Value(v) = *value {
-                        return PhysicalPlan::Filter(
-                            Box::new(PhysicalPlan::IxScan(
-                                IxScan {
-                                    schema,
-                                    index_id,
-                                    prefix: vec![],
-                                    arg: Sarg::Eq(col_id, v),
-                                },
-                                label,
-                            )),
-                            match exprs.len() {
-                                1 => exprs.swap_remove(0),
-                                _ => PhysicalExpr::LogOp(LogOp::And, exprs),
-                            },
-                        );
-                    }
-                }
-            }
-        }
-        unreachable!()
-    }
-}
-
-/// Is this hash join a left deep join tree that can use an index?
-///
-/// ```text
-/// Notation:
-///
-/// x: index join
-/// hx: hash join
-///
-///     hx
-///    /  \
-///   x    c
-///  / \
-/// a   b
-///
-/// ... to ...
-///
-///     x
-///    / \
-///   x   c
-///  / \
-/// a   b
-/// ```
-struct HashToIxJoin;
-
-impl RewriteRule for HashToIxJoin {
-    type Plan = PhysicalPlan;
-    type Info = IxScanInfo;
-
-    fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
-        if let PhysicalPlan::HashJoin(
-            HashJoin {
-                rhs,
-                rhs_field:
-                    ProjectField {
-                        var: rhs_var,
-                        pos: field_pos,
-                    },
-                ..
-            },
-            _,
-        ) = plan
-        {
-            return match &**rhs {
-                PhysicalPlan::TableScan(schema, var) if var == rhs_var => {
-                    // Is there a single column index on this field?
-                    schema.indexes.iter().find_map(|ix| {
-                        ix.index_algorithm
-                            .columns()
-                            .as_singleton()
-                            .filter(|col_id| col_id.idx() == *field_pos)
-                            .map(|col_id| IxScanInfo {
-                                index_id: ix.index_id,
-                                col_id,
-                            })
-                    })
-                }
-                _ => None,
-            };
-        }
-        None
-    }
-
-    fn rewrite(plan: PhysicalPlan, info: Self::Info) -> PhysicalPlan {
-        if let PhysicalPlan::HashJoin(join, semi) = plan {
-            if let PhysicalPlan::TableScan(rhs, rhs_label) = *join.rhs {
-                return PhysicalPlan::IxJoin(
-                    IxJoin {
-                        lhs: join.lhs,
-                        rhs,
-                        rhs_label,
-                        rhs_index: info.index_id,
-                        rhs_field: info.col_id,
-                        unique: false,
-                        lhs_probe_expr: join.lhs_field,
-                    },
-                    semi,
-                );
-            }
-        }
-        unreachable!()
-    }
-}
-
-/// Does this index join use a unique index?
-struct UniqueIxJoinRule;
-
-impl RewriteRule for UniqueIxJoinRule {
-    type Plan = PhysicalPlan;
-    type Info = ();
-
-    fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
-        if let PhysicalPlan::IxJoin(
-            IxJoin {
-                unique: false,
-                rhs,
-                rhs_field,
-                ..
-            },
-            _,
-        ) = plan
-        {
-            return rhs
-                .constraints
-                .iter()
-                .filter_map(|cs| cs.data.unique_columns())
-                .filter_map(|cols| cols.as_singleton())
-                .find(|col_id| col_id == rhs_field)
-                .map(|_| ());
-        }
-        None
-    }
-
-    fn rewrite(mut plan: PhysicalPlan, _: Self::Info) -> PhysicalPlan {
-        if let PhysicalPlan::IxJoin(IxJoin { unique, .. }, _) = &mut plan {
-            *unique = true;
-        }
-        plan
-    }
-}
-
-/// Does probing the hash table return at most one element?
-struct UniqueHashJoinRule;
-
-impl RewriteRule for UniqueHashJoinRule {
-    type Plan = PhysicalPlan;
-    type Info = ();
-
-    fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
-        if let PhysicalPlan::HashJoin(
-            HashJoin {
-                unique: false,
-                rhs,
-                rhs_field:
-                    ProjectField {
-                        var: rhs_label,
-                        pos: rhs_field_pos,
-                    },
-                ..
-            },
-            _,
-        ) = plan
-        {
-            return rhs
-                .returns_distinct_values(rhs_label, &ColSet::from(ColId(*rhs_field_pos as u16)))
-                .then_some(());
-        }
-        None
-    }
-
-    fn rewrite(mut plan: PhysicalPlan, _: Self::Info) -> PhysicalPlan {
-        if let PhysicalPlan::HashJoin(HashJoin { unique, .. }, _) = &mut plan {
-            *unique = true;
-        }
-        plan
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use spacetimedb_expr::check::{compile_sql_sub, SchemaView};
+    use pretty_assertions::assert_eq;
+    use spacetimedb_expr::check::{parse_and_type_sub, SchemaView};
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
         AlgebraicType, AlgebraicValue,
@@ -1246,11 +925,11 @@ mod tests {
     use spacetimedb_sql_parser::ast::BinOp;
 
     use crate::{
-        compile::compile,
-        plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, PhysicalProject, ProjectField, Sarg, Semi},
+        compile::compile_sub,
+        plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, Semi, TupleField},
     };
 
-    use super::PhysicalExpr;
+    use super::{PhysicalExpr, ProjectPlan};
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableSchema>>,
@@ -1338,11 +1017,11 @@ mod tests {
 
         let sql = "select * from t";
 
-        let lp = compile_sql_sub(sql, &db).unwrap();
-        let pp = compile(lp).plan.optimize();
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_sub(lp).optimize();
 
         match pp {
-            PhysicalProject::None(PhysicalPlan::TableScan(schema, _)) => {
+            ProjectPlan::None(PhysicalPlan::TableScan(schema, _)) => {
                 assert_eq!(schema.table_id, t_id);
             }
             proj => panic!("unexpected project: {:#?}", proj),
@@ -1369,12 +1048,12 @@ mod tests {
 
         let sql = "select * from t where x = 5";
 
-        let lp = compile_sql_sub(sql, &db).unwrap();
-        let pp = compile(lp).plan.optimize();
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_sub(lp).optimize();
 
         match pp {
-            PhysicalProject::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
-                assert!(matches!(*field, PhysicalExpr::Field(ProjectField { pos: 1, .. })));
+            ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
+                assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 1, .. })));
                 assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U64(5))));
 
                 match *input {
@@ -1468,8 +1147,8 @@ mod tests {
             join b on q.entity_id = b.entity_id
             where u.identity = 5
         ";
-        let lp = compile_sql_sub(sql, &db).unwrap();
-        let pp = compile(lp).plan.optimize();
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_sub(lp).optimize();
 
         // Plan:
         //         rx
@@ -1480,7 +1159,7 @@ mod tests {
         //    /  \
         // ix(u)  l
         let plan = match pp {
-            PhysicalProject::None(plan) => plan,
+            ProjectPlan::None(plan) => plan,
             proj => panic!("unexpected project: {:#?}", proj),
         };
 
@@ -1499,7 +1178,7 @@ mod tests {
                     rhs,
                     rhs_field: ColId(0),
                     unique: true,
-                    lhs_probe_expr: ProjectField { pos: 0, .. },
+                    lhs_field: TupleField { field_pos: 0, .. },
                     ..
                 },
                 Semi::Rhs,
@@ -1523,7 +1202,7 @@ mod tests {
                     rhs,
                     rhs_field: ColId(1),
                     unique: false,
-                    lhs_probe_expr: ProjectField { pos: 1, .. },
+                    lhs_field: TupleField { field_pos: 1, .. },
                     ..
                 },
                 Semi::Rhs,
@@ -1545,7 +1224,7 @@ mod tests {
                     rhs,
                     rhs_field: ColId(0),
                     unique: true,
-                    lhs_probe_expr: ProjectField { pos: 1, .. },
+                    lhs_field: TupleField { field_pos: 1, .. },
                     ..
                 },
                 Semi::Rhs,
@@ -1660,8 +1339,8 @@ mod tests {
             join p on p.id = v.project
             where 5 = m.employee and 5 = v.employee
         ";
-        let lp = compile_sql_sub(sql, &db).unwrap();
-        let pp = compile(lp).plan.optimize();
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_sub(lp).optimize();
 
         // Plan:
         //           rx
@@ -1674,7 +1353,7 @@ mod tests {
         //    /  \
         // ix(m)  m
         let plan = match pp {
-            PhysicalProject::None(plan) => plan,
+            ProjectPlan::None(plan) => plan,
             proj => panic!("unexpected project: {:#?}", proj),
         };
 
@@ -1695,7 +1374,7 @@ mod tests {
                     rhs,
                     rhs_field: ColId(0),
                     unique: true,
-                    lhs_probe_expr: ProjectField { pos: 1, .. },
+                    lhs_field: TupleField { field_pos: 1, .. },
                     ..
                 },
                 Semi::Rhs,
@@ -1719,8 +1398,8 @@ mod tests {
                 HashJoin {
                     lhs,
                     rhs,
-                    lhs_field: ProjectField { pos: 1, .. },
-                    rhs_field: ProjectField { pos: 1, .. },
+                    lhs_field: TupleField { field_pos: 1, .. },
+                    rhs_field: TupleField { field_pos: 1, .. },
                     unique: true,
                 },
                 Semi::Rhs,
@@ -1758,7 +1437,7 @@ mod tests {
                     rhs,
                     rhs_field: ColId(0),
                     unique: false,
-                    lhs_probe_expr: ProjectField { pos: 0, .. },
+                    lhs_field: TupleField { field_pos: 0, .. },
                     ..
                 },
                 Semi::Rhs,
@@ -1780,7 +1459,7 @@ mod tests {
                     rhs,
                     rhs_field: ColId(1),
                     unique: false,
-                    lhs_probe_expr: ProjectField { pos: 1, .. },
+                    lhs_field: TupleField { field_pos: 1, .. },
                     ..
                 },
                 Semi::Rhs,
