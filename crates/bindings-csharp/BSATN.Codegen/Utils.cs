@@ -72,6 +72,9 @@ public static class Utils
 
     public static string MakeRwTypeParam(string typeParam) => typeParam + "RW";
 
+    public class UnresolvedTypeException(INamedTypeSymbol type)
+        : InvalidOperationException($"Could not resolve type {type}") { }
+
     public static string GetTypeInfo(ITypeSymbol type)
     {
         // We need to distinguish handle nullable reference types specially:
@@ -120,7 +123,7 @@ public static class Utils
         {
             if (type.TypeKind == Microsoft.CodeAnalysis.TypeKind.Error)
             {
-                throw new InvalidOperationException($"Could not resolve type {type}");
+                throw new UnresolvedTypeException(type);
             }
             if (type.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum)
             {
