@@ -33,10 +33,10 @@ use spacetimedb_sats::{
 mod multimap;
 mod uniquemap;
 
-type Index<K> = multimap::MultiMap<K, RowPointer>;
-type IndexIter<'a, K> = multimap::MultiMapRangeIter<'a, K, RowPointer>;
-type UniqueIndex<K> = uniquemap::UniqueMap<K, RowPointer>;
-type UniqueIndexIter<'a, K> = uniquemap::UniqueMapRangeIter<'a, K, RowPointer>;
+pub type Index<K> = multimap::MultiMap<K, RowPointer>;
+pub type IndexIter<'a, K> = multimap::MultiMapRangeIter<'a, K, RowPointer>;
+pub type UniqueIndex<K> = uniquemap::UniqueMap<K, RowPointer>;
+pub type UniqueIndexIter<'a, K> = uniquemap::UniqueMapRangeIter<'a, K, RowPointer>;
 
 /// An iterator over a [`TypedIndex`], with a specialized key type.
 ///
@@ -708,6 +708,16 @@ impl BTreeIndex {
     /// Returns whether `value` is in this index.
     pub fn contains_any(&self, value: &AlgebraicValue) -> bool {
         self.seek(value).next().is_some()
+    }
+
+    /// Returns the number of rows associated with this `value`.
+    /// Returns `None` if 0.
+    /// Returns `Some(1)` if the index is unique.
+    pub fn count(&self, value: &AlgebraicValue) -> Option<usize> {
+        match self.seek(value).count() {
+            0 => None,
+            n => Some(n),
+        }
     }
 
     /// Returns an iterator over the [BTreeIndex] that yields all the `RowPointer`s

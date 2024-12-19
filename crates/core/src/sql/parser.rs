@@ -3,13 +3,13 @@ use crate::db::relational_db::RelationalDB;
 use crate::sql::ast::SchemaViewer;
 use spacetimedb_expr::check::parse_and_type_sub;
 use spacetimedb_expr::errors::TypingError;
-use spacetimedb_expr::expr::Project;
+use spacetimedb_expr::expr::ProjectName;
 use spacetimedb_lib::db::raw_def::v9::RawRowLevelSecurityDefV9;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_schema::schema::RowLevelSecuritySchema;
 
 pub struct RowLevelExpr {
-    pub sql: Project,
+    pub sql: ProjectName,
     pub def: RowLevelSecuritySchema,
 }
 
