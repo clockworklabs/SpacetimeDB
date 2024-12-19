@@ -279,10 +279,12 @@ fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<Statement
 
 /// Parse and type check a *general* query into a [StatementCtx].
 pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<StatementCtx<'a>> {
+    let planning_time = std::time::Instant::now();
     let statement = parse_and_type_sql(sql, tx)?;
     Ok(StatementCtx {
         statement,
         sql,
         source: StatementSource::Query,
+        planning_time: planning_time.elapsed(),
     })
 }

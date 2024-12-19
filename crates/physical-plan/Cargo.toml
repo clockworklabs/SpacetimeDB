@@ -8,8 +8,12 @@ description = "The physical query plan for the SpacetimeDB query engine"
 
 [dependencies]
 derive_more.workspace = true
+itertools.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-schema.workspace = true
 spacetimedb-expr.workspace = true
 spacetimedb-sql-parser.workspace = true
+
+[dev-dependencies]
+expect-test.workspace = true
