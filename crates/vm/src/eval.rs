@@ -4,8 +4,14 @@ use crate::program::{ProgramVm, Sources};
 use crate::rel_ops::RelOps;
 use crate::relation::RelValue;
 use spacetimedb_sats::ProductValue;
+use spacetimedb_table::table::RowRef;
 
 pub type IterRows<'a> = dyn RelOps<'a> + 'a;
+
+/// Utility to simplify the creation of a boxed iterator.
+pub fn box_iter<'a, T: Iterator<Item = RowRef<'a>> + 'a>(iter: T) -> Box<dyn Iterator<Item = RowRef<'a>> + 'a> {
+    Box::new(iter)
+}
 
 pub fn build_select<'a>(base: impl RelOps<'a> + 'a, cmp: &'a ColumnOp) -> Box<IterRows<'a>> {
     Box::new(base.select(move |row| cmp.eval_bool(row)))
