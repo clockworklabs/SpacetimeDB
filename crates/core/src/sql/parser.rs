@@ -1,5 +1,4 @@
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::relational_db::RelationalDB;
 use crate::sql::ast::SchemaViewer;
 use spacetimedb_expr::check::parse_and_type_sub;
 use spacetimedb_expr::errors::TypingError;
@@ -15,12 +14,11 @@ pub struct RowLevelExpr {
 
 impl RowLevelExpr {
     pub fn build_row_level_expr(
-        stdb: &RelationalDB,
         tx: &mut MutTxId,
         auth_ctx: &AuthCtx,
         rls: &RawRowLevelSecurityDefV9,
     ) -> Result<Self, TypingError> {
-        let sql = parse_and_type_sub(&rls.sql, &SchemaViewer::new(stdb, tx, auth_ctx))?;
+        let sql = parse_and_type_sub(&rls.sql, &SchemaViewer::new(tx, auth_ctx))?;
 
         Ok(Self {
             def: RowLevelSecuritySchema {

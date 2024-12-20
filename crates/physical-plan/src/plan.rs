@@ -936,11 +936,15 @@ mod tests {
     }
 
     impl SchemaView for SchemaViewer {
-        fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
+        fn table_id(&self, name: &str) -> Option<TableId> {
             self.schemas
                 .iter()
                 .find(|schema| schema.table_name.as_ref() == name)
-                .cloned()
+                .map(|schema| schema.table_id)
+        }
+
+        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
+            self.schemas.iter().find(|schema| schema.table_id == table_id).cloned()
         }
     }
 
