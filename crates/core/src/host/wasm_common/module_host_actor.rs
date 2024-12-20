@@ -3,6 +3,7 @@ use bytes::Bytes;
 use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_primitives::TableId;
 use spacetimedb_schema::auto_migrate::ponder_migrate;
+use spacetimedb_schema::auto_migrate::pretty_print::pretty_print;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use std::sync::Arc;
@@ -340,6 +341,10 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 return Ok(UpdateDatabaseResult::AutoMigrateError(errs));
             }
         };
+        let summary = pretty_print(&plan).unwrap_or_else(|_| {
+            log::warn!("Failed to pretty-print migration plan: {plan:#?}");
+            "(plan not rendered, but succeeded)".to_string()
+        });
         let stdb = &*self.replica_context().relational_db;
 
         let program_hash = program.hash;
@@ -361,7 +366,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 stdb.commit_tx(tx)?;
                 self.system_logger().info("Database updated");
                 log::info!("Database updated, {}", stdb.database_identity());
-                Ok(UpdateDatabaseResult::UpdatePerformed)
+                Ok(UpdateDatabaseResult::UpdatePerformed(summary))
             }
         }
     }
