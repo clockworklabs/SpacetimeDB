@@ -29,7 +29,7 @@ public static class EntityManager
 		{
 			return;
 		}
-		actor.OnUpdate(newEntity);
+		actor.OnEntityUpdated(newEntity);
 	}
 
 	private static void EntityOnDelete(EventContext context, Entity oldEntity)
