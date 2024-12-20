@@ -35,7 +35,7 @@ public abstract class EntityActor : MonoBehaviour
 		GetComponent<SpriteRenderer>().material.SetColor(ShaderColorProperty, color);
 	}
 
-	public virtual void OnUpdate(Entity newVal)
+	public virtual void OnEntityUpdated(Entity newVal)
 	{
 		LerpTime = 0.0f;
 		LerpStartPosition = transform.position;
