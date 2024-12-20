@@ -106,10 +106,14 @@ fn eval(c: &mut Criterion) {
         c.bench_function(name, |b| {
             let tx = raw.db.begin_tx(Workload::Subscribe);
             let auth = AuthCtx::for_testing();
-            let schema_viewer = &SchemaViewer::new(&raw.db, &tx, &auth);
+            let schema_viewer = &SchemaViewer::new(&tx, &auth);
             let plan = SubscribePlan::compile(sql, schema_viewer).unwrap();
 
-            b.iter(|| drop(black_box(plan.execute_bsatn(&tx))))
+            b.iter(|| {
+                drop(black_box(
+                    plan.collect_table_update::<BsatnFormat>(Compression::None, &tx),
+                ))
+            })
         });
     };
 

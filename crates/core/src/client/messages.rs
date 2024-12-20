@@ -5,14 +5,13 @@ use crate::host::ArgsTuple;
 use crate::messages::websocket as ws;
 use derive_more::From;
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, Compression, FormatSwitch, JsonFormat, WebsocketFormat, SERVER_MSG_COMPRESSION_TAG_BROTLI,
-    SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
+    BsatnFormat, Compression, FormatSwitch, JsonFormat, OneOffTable, RowListLen, WebsocketFormat,
+    SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
 };
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::Address;
 use spacetimedb_sats::bsatn;
-use spacetimedb_vm::relation::MemTable;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -63,7 +62,8 @@ pub fn serialize(msg: impl ToProtocol<Encoded = SwitchedServerMessage>, config: 
 
 #[derive(Debug, From)]
 pub enum SerializableMessage {
-    Query(OneOffQueryResponseMessage),
+    QueryBinary(OneOffQueryResponseMessage<BsatnFormat>),
+    QueryText(OneOffQueryResponseMessage<JsonFormat>),
     Identity(IdentityTokenMessage),
     Subscribe(SubscriptionUpdateMessage),
     TxUpdate(TransactionUpdateMessage),
@@ -72,7 +72,8 @@ pub enum SerializableMessage {
 impl SerializableMessage {
     pub fn num_rows(&self) -> Option<usize> {
         match self {
-            Self::Query(msg) => Some(msg.num_rows()),
+            Self::QueryBinary(msg) => Some(msg.num_rows()),
+            Self::QueryText(msg) => Some(msg.num_rows()),
             Self::Subscribe(msg) => Some(msg.num_rows()),
             Self::TxUpdate(msg) => Some(msg.num_rows()),
             Self::Identity(_) => None,
@@ -81,7 +82,7 @@ impl SerializableMessage {
 
     pub fn workload(&self) -> Option<WorkloadType> {
         match self {
-            Self::Query(_) => Some(WorkloadType::Sql),
+            Self::QueryBinary(_) | Self::QueryText(_) => Some(WorkloadType::Sql),
             Self::Subscribe(_) => Some(WorkloadType::Subscribe),
             Self::TxUpdate(_) => Some(WorkloadType::Update),
             Self::Identity(_) => None,
@@ -93,7 +94,8 @@ impl ToProtocol for SerializableMessage {
     type Encoded = SwitchedServerMessage;
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
         match self {
-            SerializableMessage::Query(msg) => msg.to_protocol(protocol),
+            SerializableMessage::QueryBinary(msg) => msg.to_protocol(protocol),
+            SerializableMessage::QueryText(msg) => msg.to_protocol(protocol),
             SerializableMessage::Identity(msg) => msg.to_protocol(protocol),
             SerializableMessage::Subscribe(msg) => msg.to_protocol(protocol),
             SerializableMessage::TxUpdate(msg) => msg.to_protocol(protocol),
@@ -243,42 +245,38 @@ impl ToProtocol for SubscriptionUpdateMessage {
 }
 
 #[derive(Debug)]
-pub struct OneOffQueryResponseMessage {
+pub struct OneOffQueryResponseMessage<F: WebsocketFormat> {
     pub message_id: Vec<u8>,
     pub error: Option<String>,
-    pub results: Vec<MemTable>,
+    pub results: Vec<OneOffTable<F>>,
     pub total_host_execution_duration: u64,
 }
 
-impl OneOffQueryResponseMessage {
+impl<F: WebsocketFormat> OneOffQueryResponseMessage<F> {
     fn num_rows(&self) -> usize {
-        self.results.iter().map(|t| t.data.len()).sum()
+        self.results.iter().map(|table| table.rows.len()).sum()
     }
 }
 
-impl ToProtocol for OneOffQueryResponseMessage {
+impl ToProtocol for OneOffQueryResponseMessage<BsatnFormat> {
     type Encoded = SwitchedServerMessage;
-    fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
-        fn convert<F: WebsocketFormat>(msg: OneOffQueryResponseMessage) -> ws::ServerMessage<F> {
-            let tables = msg
-                .results
-                .into_iter()
-                .map(|table| ws::OneOffTable {
-                    table_name: table.head.table_name.clone(),
-                    rows: F::encode_list(table.data.into_iter()).0,
-                })
-                .collect();
-            ws::ServerMessage::OneOffQueryResponse(ws::OneOffQueryResponse {
-                message_id: msg.message_id.into(),
-                error: msg.error.map(Into::into),
-                tables,
-                total_host_execution_duration_micros: msg.total_host_execution_duration,
-            })
-        }
-
-        match protocol {
-            Protocol::Text => FormatSwitch::Json(convert(self)),
-            Protocol::Binary => FormatSwitch::Bsatn(convert(self)),
-        }
+    fn to_protocol(self, _: Protocol) -> Self::Encoded {
+        FormatSwitch::Bsatn(convert(self))
     }
+}
+
+impl ToProtocol for OneOffQueryResponseMessage<JsonFormat> {
+    type Encoded = SwitchedServerMessage;
+    fn to_protocol(self, _: Protocol) -> Self::Encoded {
+        FormatSwitch::Json(convert(self))
+    }
+}
+
+fn convert<F: WebsocketFormat>(msg: OneOffQueryResponseMessage<F>) -> ws::ServerMessage<F> {
+    ws::ServerMessage::OneOffQueryResponse(ws::OneOffQueryResponse {
+        message_id: msg.message_id.into(),
+        error: msg.error.map(Into::into),
+        tables: msg.results.into_boxed_slice(),
+        total_host_execution_duration_micros: msg.total_host_execution_duration,
+    })
 }
