@@ -12,7 +12,7 @@ use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use crate::replica_context::ReplicaContext;
-use crate::sql;
+use crate::sql::ast::SchemaViewer;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::worker_metrics::WORKER_METRICS;
@@ -24,17 +24,18 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_client_api_messages::timestamp::Timestamp;
-use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{Compression, OneOffTable, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::{col_list, TableId};
+use spacetimedb_query::SubscribePlan;
 use spacetimedb_sats::{algebraic_value, ProductValue};
 use spacetimedb_schema::auto_migrate::AutoMigrateError;
 use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef};
-use spacetimedb_vm::relation::{MemTable, RelValue};
+use spacetimedb_vm::relation::RelValue;
 use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -836,16 +837,24 @@ impl ModuleHost {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn one_off_query(&self, caller_identity: Identity, query: String) -> Result<Vec<MemTable>, anyhow::Error> {
+    pub fn one_off_query<F: WebsocketFormat>(
+        &self,
+        caller_identity: Identity,
+        query: String,
+    ) -> Result<OneOffTable<F>, anyhow::Error> {
         let replica_ctx = self.replica_ctx();
         let db = &replica_ctx.relational_db;
         let auth = AuthCtx::new(replica_ctx.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
 
         db.with_read_only(Workload::Sql, |tx| {
-            let ast = sql::compiler::compile_sql(db, &auth, tx, &query)?;
-            sql::execute::execute_sql_tx(db, tx, &query, ast, auth)?
-                .context("One-off queries are not allowed to modify the database")
+            let schema_viewer = SchemaViewer::new(tx, &auth);
+            let plan = SubscribePlan::compile(&query, &schema_viewer)?;
+            plan.execute_with::<F, OneOffTable<F>>(tx, |rows, _| OneOffTable {
+                table_name: plan.table_name().to_owned().into_boxed_str(),
+                rows,
+            })
+            .context("One-off queries are not allowed to modify the database")
         })
     }
 

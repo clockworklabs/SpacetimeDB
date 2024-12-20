@@ -19,6 +19,14 @@ pub struct SubscribePlan {
 }
 
 impl SubscribePlan {
+    pub fn table_id(&self) -> TableId {
+        self.table_id
+    }
+
+    pub fn table_name(&self) -> &str {
+        self.table_name.as_ref()
+    }
+
     pub fn compile(sql: &str, tx: &impl SchemaView) -> Result<Self> {
         let ast = parse_subscription(sql)?;
         let sub = type_subscription(ast, tx)?;
@@ -40,14 +48,25 @@ impl SubscribePlan {
         })
     }
 
-    pub fn execute<F: WebsocketFormat>(&self, comp: Compression, tx: &impl Datastore) -> Result<TableUpdate<F>> {
+    pub fn execute<F: WebsocketFormat>(&self, tx: &impl Datastore) -> Result<(F::List, u64)> {
         execute_plan(&self.plan, tx, |iter| match iter {
             PlanIter::Index(iter) => F::encode_list(iter),
             PlanIter::Table(iter) => F::encode_list(iter),
             PlanIter::RowId(iter) => F::encode_list(iter),
             PlanIter::Tuple(iter) => F::encode_list(iter),
         })
-        .map(|(inserts, num_rows)| {
+    }
+
+    pub fn execute_with<F: WebsocketFormat, R>(&self, tx: &impl Datastore, f: impl Fn(F::List, u64) -> R) -> Result<R> {
+        self.execute::<F>(tx).map(|(list, n)| f(list, n))
+    }
+
+    pub fn collect_table_update<F: WebsocketFormat>(
+        &self,
+        comp: Compression,
+        tx: &impl Datastore,
+    ) -> Result<TableUpdate<F>> {
+        self.execute_with::<F, TableUpdate<F>>(tx, |inserts, num_rows| {
             let deletes = F::List::default();
             let qu = QueryUpdate { deletes, inserts };
             let update = F::into_query_update(qu, comp);
@@ -63,7 +82,7 @@ where
 {
     plans
         .par_iter()
-        .map(|plan| plan.execute(comp, tx))
+        .map(|plan| plan.collect_table_update(comp, tx))
         .collect::<Result<_>>()
         .map(|tables| DatabaseUpdate { tables })
 }
