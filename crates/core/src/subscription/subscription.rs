@@ -554,6 +554,11 @@ impl ExecutionSet {
             .map(|unit| unit.row_estimate(tx))
             .fold(0, |acc, est| acc.saturating_add(est))
     }
+
+    /// Return an iterator over the execution units
+    pub fn iter(&self) -> impl Iterator<Item = &ExecutionUnit> {
+        self.exec_units.iter().map(|arc| &**arc)
+    }
 }
 
 impl FromIterator<SupportedQuery> for ExecutionSet {

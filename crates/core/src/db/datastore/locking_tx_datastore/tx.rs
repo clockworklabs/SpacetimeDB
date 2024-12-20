@@ -6,9 +6,12 @@ use super::{
     SharedReadGuard,
 };
 use crate::execution_context::ExecutionContext;
+use spacetimedb_execution::Datastore;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_table::blob_store::BlobStore;
+use spacetimedb_table::table::Table;
 use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::{
@@ -21,6 +24,16 @@ pub struct TxId {
     pub(super) lock_wait_time: Duration,
     pub(super) timer: Instant,
     pub(crate) ctx: ExecutionContext,
+}
+
+impl Datastore for TxId {
+    fn blob_store(&self) -> &dyn BlobStore {
+        &self.committed_state_shared_lock.blob_store
+    }
+
+    fn table(&self, table_id: TableId) -> Option<&Table> {
+        self.committed_state_shared_lock.get_table(table_id)
+    }
 }
 
 impl StateView for TxId {
