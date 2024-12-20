@@ -1,5 +1,5 @@
 use super::messages::{SubscriptionUpdateMessage, SwitchedServerMessage, ToProtocol, TransactionUpdateMessage};
-use super::{ClientConnection, DataMessage};
+use super::{ClientConnection, DataMessage, Protocol};
 use crate::energy::EnergyQuanta;
 use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
@@ -107,7 +107,10 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             query_string: query,
             message_id,
         }) => {
-            let res = client.one_off_query(&query, &message_id, timer);
+            let res = match client.config.protocol {
+                Protocol::Binary => client.one_off_query_bsatn(&query, &message_id, timer),
+                Protocol::Text => client.one_off_query_json(&query, &message_id, timer),
+            };
             WORKER_METRICS
                 .request_round_trip
                 .with_label_values(&WorkloadType::Sql, &address, "")
