@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::expr::{Expr, ProjectList, ProjectName};
 use crate::{expr::LeftDeepJoin, statement::Statement};
 use spacetimedb_lib::AlgebraicType;
+use spacetimedb_primitives::TableId;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::{
@@ -23,7 +24,12 @@ pub type TypingResult<T> = core::result::Result<T, TypingError>;
 
 /// A view of the database schema
 pub trait SchemaView {
-    fn schema(&self, name: &str) -> Option<Arc<TableSchema>>;
+    fn table_id(&self, name: &str) -> Option<TableId>;
+    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>>;
+
+    fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
+        self.table_id(name).and_then(|table_id| self.schema_for_table(table_id))
+    }
 }
 
 #[derive(Default)]
@@ -186,14 +192,24 @@ pub mod test_utils {
     pub struct SchemaViewer(pub ModuleDef);
 
     impl SchemaView for SchemaViewer {
-        fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
-            self.0.table(name).map(|def| {
-                Arc::new(TableSchema::from_module_def(
-                    &self.0,
-                    def,
-                    (),
-                    TableId(if *def.name == *"t" { 0 } else { 1 }),
-                ))
+        fn table_id(&self, name: &str) -> Option<TableId> {
+            match name {
+                "t" => Some(TableId(0)),
+                "s" => Some(TableId(1)),
+                _ => None,
+            }
+        }
+
+        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
+            match table_id.idx() {
+                0 => Some((TableId(0), "t")),
+                1 => Some((TableId(1), "s")),
+                _ => None,
+            }
+            .and_then(|(table_id, name)| {
+                self.0
+                    .table(name)
+                    .map(|def| Arc::new(TableSchema::from_module_def(&self.0, def, (), table_id)))
             })
         }
     }

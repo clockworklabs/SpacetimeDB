@@ -24,6 +24,7 @@ use spacetimedb_client_api_messages::websocket::{
 use spacetimedb_expr::check::compile_sql_sub;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
+use spacetimedb_query::{execute_plans, SubscribePlan};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::AuthAccess;
 use std::time::Duration;
@@ -249,7 +250,7 @@ impl ModuleSubscriptions {
             } else {
                 // NOTE: The following ensures compliance with the 1.0 sql api.
                 // Come 1.0, it will have replaced the current compilation stack.
-                compile_sql_sub(sql, &SchemaViewer::new(&self.relational_db, &*tx, &auth))?;
+                compile_sql_sub(sql, &SchemaViewer::new(&*tx, &auth))?;
 
                 let mut compiled = compile_read_only_queryset(&self.relational_db, &auth, &tx, sql)?;
                 // Note that no error path is needed here.
@@ -278,20 +279,17 @@ impl ModuleSubscriptions {
             &auth,
         )?;
 
-        let slow_query_threshold = StVarTable::sub_limit(&self.relational_db, &tx)?.map(Duration::from_millis);
+        let schema_viewer = SchemaViewer::new(&*tx, &auth);
+        let plans: Vec<_> = execution_set
+            .iter()
+            .map(|unit| &unit.sql)
+            .map(|sql| SubscribePlan::compile(sql, &schema_viewer))
+            .collect::<Result<_, _>>()?;
+
+        let _slow_query_threshold = StVarTable::sub_limit(&self.relational_db, &tx)?.map(Duration::from_millis);
         let database_update = match sender.config.protocol {
-            Protocol::Text => FormatSwitch::Json(execution_set.eval(
-                &self.relational_db,
-                &tx,
-                slow_query_threshold,
-                sender.config.compression,
-            )),
-            Protocol::Binary => FormatSwitch::Bsatn(execution_set.eval(
-                &self.relational_db,
-                &tx,
-                slow_query_threshold,
-                sender.config.compression,
-            )),
+            Protocol::Text => FormatSwitch::Json(execute_plans(plans, sender.config.compression, &*tx)?),
+            Protocol::Binary => FormatSwitch::Bsatn(execute_plans(plans, sender.config.compression, &*tx)?),
         };
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.

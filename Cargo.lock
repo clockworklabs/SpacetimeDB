@@ -4920,6 +4920,7 @@ dependencies = [
  "spacetimedb-metrics",
  "spacetimedb-paths",
  "spacetimedb-primitives",
+ "spacetimedb-query",
  "spacetimedb-sats",
  "spacetimedb-schema",
  "spacetimedb-snapshot",
@@ -5123,6 +5124,7 @@ name = "spacetimedb-query"
 version = "1.0.0-rc2"
 dependencies = [
  "anyhow",
+ "rayon",
  "spacetimedb-client-api-messages",
  "spacetimedb-execution",
  "spacetimedb-expr",
