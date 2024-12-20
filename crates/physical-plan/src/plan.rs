@@ -572,7 +572,7 @@ pub struct IxScan {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Sarg {
     Eq(ColId, AlgebraicValue),
-    Range(ColId, Bound<AlgebraicValue>, Bound<AlgebraicValue>),
+    Range(BinOp, ColId, Bound<AlgebraicValue>, Bound<AlgebraicValue>),
 }
 
 /// A hash join is potentially a bushy join.
@@ -699,6 +699,16 @@ pub struct PhysicalCtx<'a> {
     pub plan: PhysicalProject,
     pub sql: &'a str,
     pub source: StatementSource,
+    pub planning_time: std::time::Duration,
+}
+
+impl<'a> PhysicalCtx<'a> {
+    pub fn optimize(self) -> Self {
+        Self {
+            plan: self.plan.optimize(),
+            ..self
+        }
+    }
 }
 
 pub trait RewriteRule {
@@ -1231,9 +1241,15 @@ impl RewriteRule for UniqueHashJoinRule {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
+    use crate::plan::PhysicalCtx;
+    use crate::printer::Explain;
+    use crate::{
+        compile::compile,
+        plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, PhysicalProject, ProjectField, Sarg, Semi},
+    };
+    use expect_test::{expect, Expect};
     use spacetimedb_expr::check::{compile_sql_sub, SchemaView};
+    use spacetimedb_expr::statement::compile_sql_stmt;
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
         AlgebraicType, AlgebraicValue,
@@ -1244,16 +1260,45 @@ mod tests {
         schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableSchema},
     };
     use spacetimedb_sql_parser::ast::BinOp;
-
-    use crate::{
-        compile::compile,
-        plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, PhysicalProject, ProjectField, Sarg, Semi},
-    };
+    use std::sync::Arc;
 
     use super::PhysicalExpr;
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableSchema>>,
+        optimize: bool,
+        show_source: bool,
+        show_schema: bool,
+        show_timings: bool,
+    }
+
+    impl SchemaViewer {
+        fn new(schemas: Vec<Arc<TableSchema>>) -> Self {
+            Self {
+                schemas,
+                optimize: false,
+                show_source: false,
+                show_schema: false,
+                show_timings: false,
+            }
+        }
+
+        fn optimize(mut self) -> Self {
+            self.optimize = true;
+            self
+        }
+        fn show_source(mut self) -> Self {
+            self.show_source = true;
+            self
+        }
+        fn show_schema(mut self) -> Self {
+            self.show_schema = true;
+            self
+        }
+        fn show_timings(mut self) -> Self {
+            self.show_timings = true;
+            self
+        }
     }
 
     impl SchemaView for SchemaViewer {
@@ -1332,10 +1377,7 @@ mod tests {
             Some(0),
         ));
 
-        let db = SchemaViewer {
-            schemas: vec![t.clone()],
-        };
-
+        let db = SchemaViewer::new(vec![t.clone()]);
         let sql = "select * from t";
 
         let lp = compile_sql_sub(sql, &db).unwrap();
@@ -1363,9 +1405,7 @@ mod tests {
             Some(0),
         ));
 
-        let db = SchemaViewer {
-            schemas: vec![t.clone()],
-        };
+        let db = SchemaViewer::new(vec![t.clone()]);
 
         let sql = "select * from t where x = 5";
 
@@ -1390,11 +1430,11 @@ mod tests {
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
     ///
     /// This test takes the following logical plan:
     ///
@@ -1456,9 +1496,7 @@ mod tests {
             Some(0),
         ));
 
-        let db = SchemaViewer {
-            schemas: vec![u.clone(), l.clone(), b.clone()],
-        };
+        let db = SchemaViewer::new(vec![u.clone(), l.clone(), b.clone()]);
 
         let sql = "
             select b.*
@@ -1576,12 +1614,12 @@ mod tests {
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
-    /// rj: right hash semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
+    /// rj: right hash semijoin
     ///
     /// This test takes the following logical plan:
     ///
@@ -1647,9 +1685,7 @@ mod tests {
             Some(0),
         ));
 
-        let db = SchemaViewer {
-            schemas: vec![m.clone(), w.clone(), p.clone()],
-        };
+        let db = SchemaViewer::new(vec![m.clone(), w.clone(), p.clone()]);
 
         let sql = "
             select p.*
@@ -1807,5 +1843,228 @@ mod tests {
             }
             plan => panic!("unexpected plan: {:#?}", plan),
         }
+    }
+
+    fn data() -> SchemaViewer {
+        let m_id = TableId(1);
+        let w_id = TableId(2);
+        let p_id = TableId(3);
+
+        let m = Arc::new(schema(
+            m_id,
+            "m",
+            &[("employee", AlgebraicType::U64), ("manager", AlgebraicType::U64)],
+            &[&[0], &[1]],
+            &[&[0]],
+            Some(0),
+        ));
+
+        let w = Arc::new(schema(
+            w_id,
+            "w",
+            &[("employee", AlgebraicType::U64), ("project", AlgebraicType::U64)],
+            &[&[0], &[1], &[0, 1]],
+            &[&[0, 1]],
+            None,
+        ));
+
+        let p = Arc::new(schema(
+            p_id,
+            "p",
+            &[("id", AlgebraicType::U64), ("name", AlgebraicType::String)],
+            &[&[0]],
+            &[&[0]],
+            Some(0),
+        ));
+
+        SchemaViewer::new(vec![m.clone(), w.clone(), p.clone()])
+    }
+
+    fn compile_sub<'a>(db: &'a SchemaViewer, sql: &'a str) -> PhysicalCtx<'a> {
+        let plan = compile_sql_sub(sql, db).unwrap();
+        compile(plan)
+    }
+
+    fn compile_query<'a>(db: &'a SchemaViewer, sql: &'a str) -> PhysicalCtx<'a> {
+        let plan = compile_sql_stmt(sql, db).unwrap();
+        compile(plan)
+    }
+
+    fn check(db: &SchemaViewer, plan: PhysicalCtx, expect: Expect) {
+        let plan = if db.optimize { plan.optimize() } else { plan };
+
+        let explain = Explain::new(&plan);
+        let explain = if db.show_source { explain.with_source() } else { explain };
+        let explain = if db.show_schema { explain.with_schema() } else { explain };
+        let explain = if db.show_timings {
+            explain.with_timings()
+        } else {
+            explain
+        };
+
+        let explain = explain.build();
+        expect.assert_eq(&explain.to_string());
+    }
+    fn check_sub(db: &SchemaViewer, sql: &str, expect: Expect) {
+        let plan = compile_sub(db, sql);
+        check(db, plan, expect);
+    }
+
+    fn check_query(db: &SchemaViewer, sql: &str, expect: Expect) {
+        let plan = compile_query(db, sql);
+        check(db, plan, expect);
+    }
+
+    #[test]
+    fn plan_metadata() {
+        let db = data().show_schema().show_source().optimize();
+        check_query(
+            &db,
+            "SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1",
+            expect![
+                r#"
+                Query: SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1
+                Nested Loop
+                  -> Index Scan using Index id 0: (employee) on m
+                    -> Index Cond: (m.employee = U64(1))
+                  -> Seq Scan on p:2
+                  Output: id, name
+                -------
+                Schema:
+
+                Label 1: m
+                  Columns: employee, manager
+                  Indexes: Unique(m.employee)
+                Label 2: p
+                  Columns: id, name
+                  Indexes: Unique(p.id)
+            "#
+            ],
+        );
+    }
+
+    #[test]
+    fn table_scan() {
+        let db = data();
+        check_sub(
+            &db,
+            "SELECT * FROM p",
+            expect![
+                r#"
+                Seq Scan on p
+                  Output: id, name
+            "#
+            ],
+        );
+    }
+
+    #[test]
+    fn table_project() {
+        let db = data();
+        check_query(
+            &db,
+            "SELECT id FROM p",
+            expect![
+                r#"
+                Seq Scan on p
+                  Output: p.id
+            "#
+            ],
+        );
+
+        check_query(
+            &db,
+            "SELECT p.id,m.employee FROM m CROSS JOIN p",
+            expect![
+                r#"
+                Nested Loop
+                  -> Seq Scan on m
+                  -> Seq Scan on p
+                  Output: p.id, m.employee
+            "#
+            ],
+        );
+    }
+
+    #[test]
+    fn table_scan_filter() {
+        let db = data();
+
+        check_sub(
+            &db,
+            "SELECT * FROM p WHERE id = 1",
+            expect![["
+            Seq Scan on p
+              Filter: (p.id = U64(1))
+              Output: id, name
+        "]],
+        );
+    }
+
+    #[test]
+    fn index_scan_filter() {
+        let db = data().optimize();
+
+        check_sub(
+            &db,
+            "SELECT m.* FROM m WHERE employee = 1",
+            expect![["
+            Index Scan using Index id 0[employee] on m
+              Index Cond: (m.employee = U64(1))
+              Output: employee, manager
+        "]],
+        );
+    }
+
+    #[test]
+    fn cross_join() {
+        let db = data();
+
+        check_sub(
+            &db,
+            "SELECT p.* FROM m JOIN p",
+            expect![["
+            Nested Loop
+              -> Seq Scan on m
+              -> Seq Scan on p
+              Output: id, name
+        "]],
+        );
+    }
+
+    #[test]
+    fn hash_join() {
+        let db = data();
+
+        check_sub(
+            &db,
+            "SELECT p.* FROM m JOIN p ON m.employee = p.id where m.employee = 1",
+            expect![["
+            Hash Join: All
+              -> Seq Scan on m
+              -> Seq Scan on p
+              Inner Unique: false
+              Hash Cond: (m.employee = p.id)
+              Filter: (m.employee = U64(1))
+              Output: id, name
+        "]],
+        );
+    }
+
+    #[test]
+    fn semi_join() {
+        let db = data().optimize();
+
+        check_sub(
+            &db,
+            "SELECT p.* FROM m JOIN p ON m.employee = p.id",
+            expect![["
+            Index Join: Rhs
+              -> Seq Scan on m
+              Inner Unique: true
+              Index Cond: (m.employee = p.id)
+              Output: employee, manager
+        "]],
+        );
     }
 }
