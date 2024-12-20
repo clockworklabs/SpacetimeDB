@@ -227,7 +227,7 @@ fn auto_migrate_database(
                 system_logger.info(&format!("Adding row-level security `{sql_rls}`"));
                 log::info!("Adding row-level security `{sql_rls}`");
                 let rls = plan.new.lookup_expect(sql_rls);
-                let rls = RowLevelExpr::build_row_level_expr(stdb, tx, &auth_ctx, rls)?;
+                let rls = RowLevelExpr::build_row_level_expr(tx, &auth_ctx, rls)?;
 
                 stdb.create_row_level_security(tx, rls.def)?;
             }
