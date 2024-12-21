@@ -1,9 +1,9 @@
-pub mod vector2;
+pub mod dbvector2;
 
+use dbvector2::DbVector2;
 use rand::Rng;
 use spacetimedb::{spacetimedb_lib::ScheduleAt, Identity, ReducerContext, Table, Timestamp};
 use std::{collections::HashMap, time::Duration};
-use vector2::DbVector2;
 
 // TODO:
 // - [x] Remove players when they are eaten on the client + death + respawn screen
@@ -141,6 +141,21 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
     Ok(())
 }
 
+#[spacetimedb::reducer(client_connected)]
+pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
+    if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender) {
+        ctx.db.player().insert(player.player.clone());
+        ctx.db.logged_out_player().delete(player);
+    } else {
+        ctx.db.player().try_insert(Player {
+            identity: ctx.sender,
+            player_id: 0,
+            name: String::new(),
+        })?;
+    }
+    Ok(())
+}
+
 #[spacetimedb::reducer(client_disconnected)]
 pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
     let player = ctx
@@ -165,21 +180,6 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
     });
     ctx.db.player().identity().delete(&ctx.sender);
 
-    Ok(())
-}
-
-#[spacetimedb::reducer(client_connected)]
-pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
-    if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender) {
-        ctx.db.player().insert(player.player.clone());
-        ctx.db.logged_out_player().delete(player);
-    } else {
-        ctx.db.player().try_insert(Player {
-            identity: ctx.sender,
-            player_id: 0,
-            name: String::new(),
-        })?;
-    }
     Ok(())
 }
 
@@ -325,17 +325,17 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
             .player_id()
             .filter(&player.player_id)
             .collect();
-        let mut entities: Vec<Entity> = circles
+        let mut player_entities: Vec<Entity> = circles
             .iter()
             .map(|c| ctx.db.entity().entity_id().find(&c.entity_id).unwrap())
             .collect();
-        if entities.len() <= 1 {
+        if player_entities.len() <= 1 {
             continue;
         }
-        let count = entities.len();
+        let count = player_entities.len();
 
         //Gravitate circles towards other circles before they recombine
-        for i in 0..entities.len() {
+        for i in 0..player_entities.len() {
             let circle_i = &circles[i];
             let time_since_split = ctx
                 .timestamp
@@ -347,7 +347,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
                 continue;
             }
 
-            let (slice1, slice_i) = entities.split_at_mut(i);
+            let (slice1, slice_i) = player_entities.split_at_mut(i);
             let (slice_i, slice2) = slice_i.split_at_mut(1);
             let entity_i = &mut slice_i[0];
             for entity_j in slice1.iter().chain(slice2.iter()) {
@@ -373,8 +373,8 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         }
 
         //Force circles apart
-        for i in 0..entities.len() {
-            let (slice1, slice2) = entities.split_at_mut(i + 1);
+        for i in 0..player_entities.len() {
+            let (slice1, slice2) = player_entities.split_at_mut(i + 1);
             let entity_i = &mut slice1[i];
             for j in 0..slice2.len() {
                 let entity_j = &mut slice2[j];
@@ -526,20 +526,23 @@ pub fn player_split(ctx: &ReducerContext) -> Result<(), String> {
 
 #[spacetimedb::reducer]
 pub fn spawn_food(ctx: &ReducerContext, _timer: SpawnFoodTimer) -> Result<(), String> {
-    // Is there too much food already? Are there no players yet?
-    let mut food_count = ctx.db.food().count();
-    let player_count = ctx.db.player().count();
+    if ctx.db.player().count() == 0 {
+        //Are there no players yet?
+        return Ok(());
+    }
 
-    while food_count < TARGET_FOOD_COUNT as u64 && player_count > 0 {
-        let mut rng = ctx.rng();
+    let world_size = ctx
+        .db
+        .config()
+        .id()
+        .find(0)
+        .ok_or("Config not found")?
+        .world_size;
+
+    let mut rng = ctx.rng();
+    let mut food_count = ctx.db.food().count();
+    while food_count < TARGET_FOOD_COUNT as u64 {
         let food_mass = rng.gen_range(FOOD_MASS_MIN..FOOD_MASS_MAX);
-        let world_size = ctx
-            .db
-            .config()
-            .id()
-            .find(0)
-            .ok_or("Config not found")?
-            .world_size;
         let food_radius = mass_to_radius(food_mass);
         let x = rng.gen_range(food_radius..world_size as f32 - food_radius);
         let y = rng.gen_range(food_radius..world_size as f32 - food_radius);
