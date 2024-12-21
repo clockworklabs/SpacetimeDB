@@ -152,24 +152,15 @@ public static partial class Module
 	[Reducer(ReducerKind.ClientDisconnected)]
 	public static void Disconnect(ReducerContext ctx)
 	{
-		var player = ctx
-			.Db
-			.player
-			.identity
-			.Find(ctx.CallerIdentity)
-			?? throw new Exception("Player not found");
+		var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("Player not found");
 		foreach (var circle in ctx.Db.circle.player_id.Filter(player.player_id))
 		{
-			var entity = ctx
-				.Db
-				.entity
-				.entity_id
-				.Find(circle.entity_id)
-				?? throw new Exception("Could not find circle");
+			var entity = ctx.Db.entity.entity_id.Find(circle.entity_id) ?? throw new Exception("Could not find circle");
 			ctx.Db.entity.entity_id.Delete(entity.entity_id);
 			ctx.Db.circle.entity_id.Delete(entity.entity_id);
 		}
-		ctx.Db.logged_out_player.Insert(new LoggedOutPlayer {
+		ctx.Db.logged_out_player.Insert(new LoggedOutPlayer
+		{
 			identity = player.identity,
 			player = player
 		});
@@ -181,29 +172,16 @@ public static partial class Module
 	{
 		Log.Info($"Creating player with name {name}");
 		var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("Player not found");
-		var player_id = player.player_id;
 		player.name = name;
 		ctx.Db.player.identity.Update(player);
-		SpawnPlayerInitialCircle(ctx, player_id);
+		SpawnPlayerInitialCircle(ctx, player.player_id);
 	}
 
 	[Reducer]
 	public static void Respawn(ReducerContext ctx)
 	{
-		var player = ctx
-			.Db
-			.player
-			.identity
-			.Find(ctx.CallerIdentity)
-			?? throw new Exception("No such player found");
-		if (ctx
-			.Db
-			.circle
-			.player_id
-			.Filter(player.player_id)
-			.Any())
-
-
+		var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("No such player found");
+		if (ctx.Db.circle.player_id.Filter(player.player_id).Any())
 		{
 			throw new Exception($"Player {player.player_id} already has a circle");
 		}
@@ -214,41 +192,34 @@ public static partial class Module
 	public static Entity SpawnPlayerInitialCircle(ReducerContext ctx, uint player_id)
 	{
 		var rng = ctx.Rng;
-		var world_size = (ctx
-			.Db
-			.config
-			.id
-			.Find(0)
-			?? throw new Exception("Config not found"))
-			.world_size;
+		var world_size = (ctx.Db.config.id.Find(0) ?? throw new Exception("Config not found")).world_size;
 		var player_start_radius = MassToRadius(START_PLAYER_MASS);
-		var x = rng.(player_start_radius, world_size - player_start_radius);
-		var y = rng.NextSingle(player_start_radius, world_size - player_start_radius);
+		var x = rng.Range(player_start_radius, world_size - player_start_radius);
+		var y = rng.Range(player_start_radius, world_size - player_start_radius);
 		return SpawnCircleAt(
 			ctx,
 			player_id,
 			START_PLAYER_MASS,
 			new DbVector2(x, y),
 			ctx.Timestamp
-
-
 		);
 	}
 
 	public static Entity SpawnCircleAt(ReducerContext ctx, uint player_id, uint mass, DbVector2 position, DateTimeOffset timestamp)
 	{
-		var entity = ctx.Db.entity.Insert(new Entity {
+		var entity = ctx.Db.entity.Insert(new Entity
+		{
 			position = position,
 			mass = mass,
 		});
 
-		ctx.Db.circle.Insert(new Circle {
+		ctx.Db.circle.Insert(new Circle
+		{
 			entity_id = entity.entity_id,
 			player_id = player_id,
 			direction = new DbVector2(0, 1),
 			speed = 0f,
 			last_split_time = timestamp,
-
 		});
 		return entity;
 	}
@@ -256,12 +227,7 @@ public static partial class Module
 	[Reducer]
 	public static void UpdatePlayerInput(ReducerContext ctx, DbVector2 direction)
 	{
-		var player = ctx
-			.Db
-			.player
-			.identity
-			.Find(ctx.CallerIdentity)
-			?? throw new Exception("Player not found");
+		var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("Player not found");
 		foreach (var c in ctx.Db.circle.player_id.Filter(player.player_id))
 		{
 			var circle = c;
@@ -291,33 +257,17 @@ public static partial class Module
 	[Reducer]
 	public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
 	{
-		//var span = spacetimedb::log_stopwatch::LogStopwatch::new("tick");
-		var world_size = (ctx
-			.Db
-			.config
-			.id
-			.Find(0)
-			?? throw new Exception("Config not found"))
-			.world_size;
+		//var span = new SpacetimeDB.LogStopwatch("tick");
+		var world_size = (ctx.Db.config.id.Find(0) ?? throw new Exception("Config not found")).world_size;
 
-		var circle_directions = ctx
-			.Db
-			.circle
-			.Iter()
-			.Select(c => (c.entity_id, c.direction * c.speed))
-			.ToDictionary();
+		var circle_directions = ctx.Db.circle.Iter().Select(c => (c.entity_id, c.direction * c.speed)).ToDictionary();
 
 		//Split circle movement
 		foreach (var player in ctx.Db.player.Iter())
 		{
-			var circles = ctx
-				.Db
-				.circle
-				.player_id
-				.Filter(player.player_id)
-				.ToList();
-			var player_entities = circles
-				.Select(c => ctx.Db.entity.entity_id.Find(c.entity_id)!)
+			List<Circle> circles = ctx.Db.circle.player_id.Filter(player.player_id).ToList();
+			List<Entity> player_entities = circles
+				.Select(c => ctx.Db.entity.entity_id.Find(c.entity_id) ?? throw new Exception("No entity for circle"))
 				.ToList();
 			if (player_entities.Count <= 1)
 			{
@@ -329,36 +279,36 @@ public static partial class Module
 			for (int i = 0; i < player_entities.Count; i++)
 			{
 				var circle_i = circles[i];
-				var time_since_split = (float)((ctx
-					.Timestamp
-					- circle_i.last_split_time)
-					.TotalSeconds);
+				var time_since_split = (float)(ctx.Timestamp - circle_i.last_split_time).TotalSeconds;
 				var time_before_recombining = MathF.Max(SPLIT_RECOMBINE_DELAY_SEC - time_since_split, 0f);
-				if (time_before_recombining > SPLIT_GRAV_PULL_BEFORE_RECOMBINE_SEC) {
+				if (time_before_recombining > SPLIT_GRAV_PULL_BEFORE_RECOMBINE_SEC)
+				{
 					continue;
 				}
 
-				var (slice1, slice_i) = player_entities.split_at_mut(i);
-				var (slice_i, slice2) = slice_i.split_at_mut(1);
-				var entity_i = &slice_i[0];
-				for entity_j in slice1.Iter().chain(slice2.Iter()) {
+				var entity_i = player_entities[i];
+				for (int j = i + 1; j < player_entities.Count; j++)
+				{
+					var entity_j = player_entities[j];
 					var diff = entity_i.position - entity_j.position;
-					var distance_sqr = diff.sqr_magnitude();
-					if (distance_sqr <= 0.0001f) {
+					var distance_sqr = diff.SqrMagnitude;
+					if (distance_sqr <= 0.0001f)
+					{
 						diff = new DbVector2(1f, 0f);
-						distance_sqr = 1.0;
+						distance_sqr = 1f;
 					}
 					var radius_sum = MassToRadius(entity_i.mass) + MassToRadius(entity_j.mass);
-					if distance_sqr > radius_sum * radius_sum {
+					if (distance_sqr > radius_sum * radius_sum)
+					{
 						var gravity_multiplier =
-							1.0 - time_before_recombining / SPLIT_GRAV_PULL_BEFORE_RECOMBINE_SEC;
-						var vec = diff.normalized()
-							* (radius_sum - distance_sqr.sqrt())
+							1f - time_before_recombining / SPLIT_GRAV_PULL_BEFORE_RECOMBINE_SEC;
+						var vec = diff.Normalized
+							* MathF.Sqrt(radius_sum - distance_sqr)
 							* gravity_multiplier
-							* 0.05
-							/ count as f32;
-						*circle_directions.get_mut(entity_i.entity_id).Value += vec / 2.0;
-						*circle_directions.get_mut(entity_j.entity_id).Value -= vec / 2.0;
+							* 0.05f
+							/ count;
+						circle_directions[entity_i.entity_id] += vec / 2f;
+						circle_directions[entity_j.entity_id] -= vec / 2f;
 					}
 				}
 			}
@@ -366,65 +316,60 @@ public static partial class Module
 			//Force circles apart
 			for (int i = 0; i < player_entities.Count; i++)
 			{
-				var (slice1, slice2) = player_entities.split_at_mut(i + 1);
-				var entity_i = &slice1[i];
-				for j in 0..slice2.Count {
-					var entity_j = &slice2[j];
+				var entity_i = player_entities[i];
+				for (int j = i + 1; j < player_entities.Count; j++)
+				{
+					var entity_j = player_entities[j];
 					var diff = entity_i.position - entity_j.position;
-					var distance_sqr = diff.sqr_magnitude();
-					if distance_sqr <= 0.0001 {
-						diff = DbVector2::new(1.0, 0.0);
-						distance_sqr = 1.0;
+					var distance_sqr = diff.SqrMagnitude;
+					if (distance_sqr <= 0.0001f)
+					{
+						diff = new DbVector2(1f, 0f);
+						distance_sqr = 1f;
 					}
 					var radius_sum = MassToRadius(entity_i.mass) + MassToRadius(entity_j.mass);
 					var radius_sum_multiplied = radius_sum * ALLOWED_SPLIT_CIRCLE_OVERLAP_PCT;
-					if distance_sqr < radius_sum_multiplied * radius_sum_multiplied {
-						var vec = diff.normalized()
-							* (radius_sum - distance_sqr.sqrt())
+					if (distance_sqr < radius_sum_multiplied * radius_sum_multiplied)
+					{
+						var vec = diff.Normalized
+							* MathF.Sqrt(radius_sum - distance_sqr)
 							* SELF_COLLISION_SPEED;
-						*circle_directions.get_mut(entity_i.entity_id).Value += vec / 2.0;
-						*circle_directions.get_mut(entity_j.entity_id).Value -= vec / 2.0;
+						circle_directions[entity_i.entity_id] += vec / 2f;
+						circle_directions[entity_j.entity_id] -= vec / 2f;
 					}
 				}
 			}
 		}
 
 		//Handle player input
-		foreach (var circle in ctx.Db.circle.Iter()) {
-			var circle_entity = ctx.Db.entity.entity_id.Find(circle.entity_id).Value;
+		foreach (var circle in ctx.Db.circle.Iter())
+		{
+			var circle_entity = ctx.Db.entity.entity_id.Find(circle.entity_id) ?? throw new Exception("Circle has no entity");
 			var circle_radius = MassToRadius(circle_entity.mass);
-			var direction = *circle_directions.get(circle.entity_id).Value;
-			var new_pos =
-				circle_entity.position + direction * mass_to_max_move_speed(circle_entity.mass);
-			circle_entity.position.x = new_pos
-				.x
-				.clamp(circle_radius, world_size as f32 - circle_radius);
-			circle_entity.position.y = new_pos
-				.y
-				.clamp(circle_radius, world_size as f32 - circle_radius);
+			var direction = circle_directions[circle.entity_id];
+			var new_pos = circle_entity.position + direction * MassToMaxMoveSpeed(circle_entity.mass);
+			circle_entity.position.x = Math.Clamp(new_pos.x, circle_radius, world_size - circle_radius);
+			circle_entity.position.y = Math.Clamp(new_pos.y, circle_radius, world_size - circle_radius);
 			ctx.Db.entity.entity_id.Update(circle_entity);
 		}
 
 		// Check collisions
-		var entities = ctx.Db.entity.Iter().Select(e => (e.entity_id, e)).ToDictionary();
-		foreach (var circle in ctx.Db.circle.Iter()) {
-			// var span = spacetimedb::time_span::Span::start("collisions");
-			var circle_entity = entities.get(circle.entity_id).Value;
-			foreach (var (_, other_entity) in entities.Iter()) {
-				if other_entity.entity_id == circle_entity.entity_id {
+		Dictionary<uint, Entity> entities = ctx.Db.entity.Iter().Select(e => (e.entity_id, e)).ToDictionary();
+		foreach (var circle in ctx.Db.circle.Iter())
+		{
+			//var span = new SpacetimeDB.LogStopwatch("collisions");
+			var circle_entity = entities[circle.entity_id];
+			foreach (var (_, other_entity) in entities)
+			{
+				if (other_entity.entity_id == circle_entity.entity_id)
+				{
 					continue;
 				}
 
-				if (IsOverlapping(circle_entity, &other_entity)) {
+				if (IsOverlapping(circle_entity, other_entity))
+				{
 					// Check to see if we're overlapping with food
-					if (ctx
-						.Db
-						.food
-						.entity_id
-						.Find(other_entity.entity_id)
-						.HasValue
-						)
-
+					if (ctx.Db.food.entity_id.Find(other_entity.entity_id).HasValue)
 					{
 						ctx.Db.entity.entity_id.Delete(other_entity.entity_id);
 						ctx.Db.food.entity_id.Delete(other_entity.entity_id);
@@ -433,10 +378,13 @@ public static partial class Module
 
 					// Check to see if we're overlapping with another circle owned by another player
 					var other_circle = ctx.Db.circle.entity_id.Find(other_entity.entity_id);
-					if var Some(other_circle) = other_circle {
-						if (other_circle.player_id != circle.player_id) {
-							var mass_ratio = other_entity.mass as f32 / circle_entity.mass as f32;
-							if mass_ratio < MINIMUM_SAFE_MASS_RATIO {
+					if (other_circle.HasValue)
+					{
+						if (other_circle.Value.player_id != circle.player_id)
+						{
+							var mass_ratio = (float)other_entity.mass / circle_entity.mass;
+							if (mass_ratio < MINIMUM_SAFE_MASS_RATIO)
+							{
 								ctx.Db.entity.entity_id.Delete(other_entity.entity_id);
 								ctx.Db.circle.entity_id.Delete(other_entity.entity_id);
 								circle_entity.mass += other_entity.mass;
@@ -445,40 +393,31 @@ public static partial class Module
 					}
 				}
 			}
-			// span.end();
+			//span.End();
 
 			ctx.Db.entity.entity_id.Update(circle_entity);
 		}
+
+		//span.End();
 	}
 
 	[Reducer]
 	public static void PlayerSplit(ReducerContext ctx)
 	{
-		var player = ctx
-			.Db
-			.player
-			.identity
-			.Find(ctx.CallerIdentity)
-			?? throw new Exception("Sender has no player");
-		var circles = ctx
-			.Db
-			.circle
-			.player_id
-			.Filter(player.player_id)
-			.ToList();
+		var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("Sender has no player");
+		List<Circle> circles = ctx.Db.circle.player_id.Filter(player.player_id).ToList();
 		var circle_count = circles.Count;
-		if (circle_count >= MAX_CIRCLES_PER_PLAYER) {
+		if (circle_count >= MAX_CIRCLES_PER_PLAYER)
+		{
 			return;
 		}
 
-		foreach (var circle in circles) {
-			var circle_entity = ctx
-				.Db
-				.entity
-				.entity_id
-				.Find(circle.entity_id)
-				?? throw new Exception("Circle has no entity");
-			if (circle_entity.mass >= MIN_MASS_TO_SPLIT * 2) {
+		for (int i = 0; i < circles.Count; i++)
+		{
+			var circle = circles[i];
+			var circle_entity = ctx.Db.entity.entity_id.Find(circle.entity_id) ?? throw new Exception("Circle has no entity");
+			if (circle_entity.mass >= MIN_MASS_TO_SPLIT * 2)
+			{
 				var half_mass = circle_entity.mass / 2;
 				SpawnCircleAt(
 					ctx,
@@ -492,19 +431,18 @@ public static partial class Module
 				ctx.Db.circle.entity_id.Update(circle);
 				ctx.Db.entity.entity_id.Update(circle_entity);
 				circle_count += 1;
-				if (circle_count >= MAX_CIRCLES_PER_PLAYER) {
+				if (circle_count >= MAX_CIRCLES_PER_PLAYER)
+				{
 					break;
 				}
 			}
 		}
 
-		ctx.Db
-			.circle_recombine_timer
-			.Insert(new CircleRecombineTimer {
-				scheduled_at = new ScheduleAt.Time(
-				DateTimeOffset.Now.Add(TimeSpan.FromSeconds(SPLIT_RECOMBINE_DELAY_SEC))),
-				player_id = player.player_id,
-			});
+		ctx.Db.circle_recombine_timer.Insert(new CircleRecombineTimer
+		{
+			scheduled_at = new ScheduleAt.Time(DateTimeOffset.Now.Add(TimeSpan.FromSeconds(SPLIT_RECOMBINE_DELAY_SEC))),
+			player_id = player.player_id,
+		});
 
 		Log.Warn("Player split!");
 	}
@@ -517,29 +455,26 @@ public static partial class Module
 			return;
 		}
 
-		var world_size = (ctx
-			.Db
-			.config
-			.id
-			.Find(0)
-			?? throw new Exception("Config not found"))
-			.world_size;
+		var world_size = (ctx.Db.config.id.Find(0) ?? throw new Exception("Config not found")).world_size;
 
 		var rng = ctx.Rng;
 		var food_count = ctx.Db.food.Count;
-		while (food_count < TARGET_FOOD_COUNT) {
-			var food_mass = rng.gen_range(FOOD_MASS_MIN, FOOD_MASS_MAX);
+		while (food_count < TARGET_FOOD_COUNT)
+		{
+			var food_mass = rng.Range(FOOD_MASS_MIN, FOOD_MASS_MAX);
 			var food_radius = MassToRadius(food_mass);
-			var x = rng.gen_range(food_radius, world_size - food_radius);
-			var y = rng.gen_range(food_radius, world_size - food_radius);
-			var entity = ctx.Db.entity.Insert(new Entity() {
+			var x = rng.Range(food_radius, world_size - food_radius);
+			var y = rng.Range(food_radius, world_size - food_radius);
+			var entity = ctx.Db.entity.Insert(new Entity()
+			{
 				position = new DbVector2(x, y),
 				mass = food_mass,
 			});
-			ctx.Db.food.Insert(new Food {
+			ctx.Db.food.Insert(new Food
+			{
 				entity_id = entity.entity_id,
 			});
-			food_count += 1;
+			food_count++;
 			Log.Info($"Spawned food! {entity.entity_id}");
 		}
 	}
@@ -549,12 +484,7 @@ public static partial class Module
 	{
 		foreach (var circle in ctx.Db.circle.Iter())
 		{
-			var circle_entity = ctx
-				.Db
-				.entity
-				.entity_id
-				.Find(circle.entity_id)
-				?? throw new Exception("Entity not found");
+			var circle_entity = ctx.Db.entity.entity_id.Find(circle.entity_id) ?? throw new Exception("Entity not found");
 			if (circle_entity.mass <= START_PLAYER_MASS)
 			{
 				continue;
@@ -564,7 +494,7 @@ public static partial class Module
 		}
 	}
 
-	public static DbVector2 CalculateCenterOfMass(List<Entity> entities)
+	public static DbVector2 CalculateCenterOfMass(IEnumerable<Entity> entities)
 	{
 		var total_mass = entities.Sum(e => e.mass);
 		var center_of_mass = entities.Select(e => e.position * e.mass).Aggregate((a, b) => a + b);
@@ -574,35 +504,34 @@ public static partial class Module
 	[Reducer]
 	public static void CircleRecombine(ReducerContext ctx, CircleRecombineTimer timer)
 	{
-		var circles = ctx
-			.Db
-			.circle
-			.player_id
-			.Filter(timer.player_id)
-			.ToList();
-		var recombining_entities = circles
-			.Where(c => (ctx.Timestamp - c.last_split_time)
-				.TotalSeconds >= SPLIT_RECOMBINE_DELAY_SEC)
-		.Select(c => ctx.Db.entity.entity_id.Find(c.entity_id) ?? throw new Exception())
-		.ToList();
-		if (recombining_entities.Count <= 1) {
+		List<Circle> circles = ctx.Db.circle.player_id.Filter(timer.player_id).ToList();
+		Entity[] recombining_entities = circles
+			.Where(c => (ctx.Timestamp - c.last_split_time).TotalSeconds >= SPLIT_RECOMBINE_DELAY_SEC)
+			.Select(c => ctx.Db.entity.entity_id.Find(c.entity_id) ?? throw new Exception())
+			.ToArray();
+		if (recombining_entities.Length <= 1)
+		{
 			return; //No circles to recombine
 		}
 
-		var total_mass = recombining_entities.Sum(e => e.mass);
+		var total_mass = (uint)recombining_entities.Sum(e => e.mass);
 		var center_of_mass = CalculateCenterOfMass(recombining_entities);
 		recombining_entities[0].mass = total_mass;
 		recombining_entities[0].position = center_of_mass;
 
-		ctx.Db
-			.entity
-			.entity_id
-			.Update(recombining_entities[0]);
-		for (int i = 1; i < recombining_entities.Count; i++) {
+		ctx.Db.entity.entity_id.Update(recombining_entities[0]);
+		for (int i = 1; i < recombining_entities.Length; i++)
+		{
 			var entity_id = recombining_entities[i].entity_id;
 			ctx.Db.entity.entity_id.Delete(entity_id);
 			ctx.Db.circle.entity_id.Delete(entity_id);
 		}
 	}
 	#endregion
+
+
+
+	public static float Range(this Random rng, float min, float max) => rng.NextSingle() * (max - min) + min;
+
+	public static uint Range(this Random rng, uint min, uint max) => (uint)rng.NextInt64(min, max);
 }
