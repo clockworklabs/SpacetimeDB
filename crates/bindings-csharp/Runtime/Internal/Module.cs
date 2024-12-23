@@ -124,11 +124,8 @@ public static class Module
                 // The host will likely not trigger this branch (current host doesn't),
                 // but a module should be prepared for it.
                 case Errno.OK:
+                    ret.Check();
                     break;
-                case Errno.NO_SUCH_BYTES:
-                    throw new NoSuchBytesException();
-                default:
-                    throw new UnknownException(ret);
             }
         }
     }
