@@ -42,9 +42,6 @@ internal abstract class RawTableIterBase<T> : IEnumerable<T>
                         }
                         break;
                     }
-                    // Couldn't find the iterator, error!
-                    case Errno.NO_SUCH_ITER:
-                        throw new NoSuchIterException();
                     // The scratch `buffer` is too small to fit a row / chunk.
                     // Grow `buffer` and try again.
                     // The `buffer_len` will have been updated with the necessary size.
@@ -52,7 +49,8 @@ internal abstract class RawTableIterBase<T> : IEnumerable<T>
                         ArrayPool<byte>.Shared.Return(buffer);
                         break;
                     default:
-                        throw new UnknownException(ret);
+                        ret.Check();
+                        break;
                 }
             }
         }
