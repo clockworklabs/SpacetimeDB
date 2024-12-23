@@ -47,6 +47,7 @@ internal abstract class RawTableIterBase<T> : IEnumerable<T>
                     // The `buffer_len` will have been updated with the necessary size.
                     case Errno.BUFFER_TOO_SMALL:
                         ArrayPool<byte>.Shared.Return(buffer);
+                        buffer = ArrayPool<byte>.Shared.Rent((int)buffer_len);
                         break;
                     default:
                         ret.Check();
