@@ -145,14 +145,12 @@ pub fn compile(ast: StatementCtx<'_>) -> PhysicalCtx<'_> {
             self.next.into()
         }
     }
+    let mut var = Interner {
+        next: 0,
+        names: HashMap::new(),
+    };
     let plan = match ast.statement {
-        Statement::Select(expr) => compile_project_list(
-            &mut Interner {
-                next: 0,
-                names: HashMap::new(),
-            },
-            expr,
-        ),
+        Statement::Select(expr) => compile_project_list(&mut var, expr),
         _ => {
             unreachable!("Only `SELECT` is implemented")
         }
@@ -161,6 +159,7 @@ pub fn compile(ast: StatementCtx<'_>) -> PhysicalCtx<'_> {
     PhysicalCtx {
         plan,
         sql: ast.sql,
+        vars: var.names,
         source: ast.source,
         planning_time: ast.planning_time,
     }
