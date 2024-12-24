@@ -4,10 +4,7 @@ mod module_bindings;
 
 use module_bindings::*;
 
-use spacetimedb_sdk::{
-    credentials, i256, u256, Address, DbContext, Event, Identity,
-    ReducerEvent, Status, Table,
-};
+use spacetimedb_sdk::{credentials, i256, u256, Address, DbContext, Event, Identity, ReducerEvent, Status, Table};
 use test_counter::TestCounter;
 
 mod simple_test_table;

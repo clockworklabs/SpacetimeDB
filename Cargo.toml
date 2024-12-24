@@ -172,7 +172,7 @@ indicatif = "0.16"
 insta = { version = "1.21.0", features = ["toml"] }
 is-terminal = "0.4"
 itertools = "0.12"
-jsonwebtoken = { git = "https://github.com/jsdt/jsonwebtoken.git", rev = "7f0cef63c74f58dfa912e88da844932ba4c71562"}
+jsonwebtoken = { package = "spacetimedb-jsonwebtoken", version = "9.3.0" }
 lazy_static = "1.4.0"
 log = "0.4.17"
 mimalloc = "0.1.39"
