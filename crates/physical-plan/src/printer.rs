@@ -420,7 +420,11 @@ impl<'a> fmt::Display for Explain<'a> {
             write!(f, "{:ident$}{arrow}", "")?;
             match line {
                 Line::TableScan { table, label, ident: _ } => {
-                    write!(f, "Seq Scan on {}:{}", table, label.0)?;
+                    if self.show_schema {
+                        write!(f, "Seq Scan on {}:{}", table, label.0)?;
+                    } else {
+                        write!(f, "Seq Scan on {}", table)?;
+                    }
                 }
                 Line::IxScan {
                     table_name,
@@ -428,7 +432,11 @@ impl<'a> fmt::Display for Explain<'a> {
                     label,
                     ident: _,
                 } => {
-                    write!(f, "Index Scan using {index} on {table_name}:{}", label.0)?;
+                    if self.show_schema {
+                        write!(f, "Index Scan using {index} on {table_name}:{}", label.0)?;
+                    } else {
+                        write!(f, "Index Scan using {index} on {table_name}")?;
+                    }
                 }
                 Line::Filter { expr, ident: _ } => {
                     write!(
@@ -503,7 +511,8 @@ impl<'a> fmt::Display for Explain<'a> {
         }
 
         if self.show_timings {
-            write!(f, "Planning Time: {:?}", ctx.planning_time)?;
+            let end = if self.show_schema { "\n" } else { "" };
+            write!(f, "Planning Time: {:?}{end}", ctx.planning_time)?;
         }
 
         if self.show_schema {

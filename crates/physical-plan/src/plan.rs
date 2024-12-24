@@ -1954,7 +1954,7 @@ mod tests {
             "SELECT * FROM p",
             expect![
                 r#"
-                Seq Scan on p:1
+                Seq Scan on p
                   Output: id, name"#
             ],
         );
@@ -1968,7 +1968,7 @@ mod tests {
             "SELECT * FROM p as b",
             expect![
                 r#"
-                Seq Scan on p:1
+                Seq Scan on p
                   Output: id, name"#
             ],
         );
@@ -1994,7 +1994,7 @@ mod tests {
             "SELECT id FROM p",
             expect![
                 r#"
-                Seq Scan on p:1
+                Seq Scan on p
                   Output: p.id"#
             ],
         );
@@ -2005,8 +2005,8 @@ mod tests {
             expect![
                 r#"
                 Nested Loop
-                  -> Seq Scan on m:1
-                  -> Seq Scan on p:2
+                  -> Seq Scan on m
+                  -> Seq Scan on p
                   Output: p.id, m.employee"#
             ],
         );
@@ -2020,7 +2020,7 @@ mod tests {
             &db,
             "SELECT * FROM p WHERE id = 1",
             expect![[r#"
-                Seq Scan on p:1
+                Seq Scan on p
                   Filter: (p.id = U64(1))
                   Output: id, name"#]],
         );
@@ -2029,9 +2029,9 @@ mod tests {
             &db,
             "SELECT * FROM p WHERE id = 1 AND id =2 OR name = 'jhon'",
             expect![[r#"
-            Seq Scan on p:1
-              Filter: (p.id = U64(1) AND p.id = U64(2) OR p.name = String("jhon"))
-              Output: id, name"#]],
+                Seq Scan on p
+                  Filter: (p.id = U64(1) AND p.id = U64(2) OR p.name = String("jhon"))
+                  Output: id, name"#]],
         );
     }
 
@@ -2043,7 +2043,7 @@ mod tests {
             &db,
             "SELECT m.* FROM m WHERE employee = 1",
             expect![[r#"
-                Index Scan using Index id 0: (employee) on m:1
+                Index Scan using Index id 0: (employee) on m
                   Index Cond: (m.employee = U64(1))
                   Output: employee, manager"#]],
         );
@@ -2058,8 +2058,8 @@ mod tests {
             "SELECT p.* FROM m JOIN p",
             expect![[r#"
                 Nested Loop
-                  -> Seq Scan on m:1
-                  -> Seq Scan on p:2
+                  -> Seq Scan on m
+                  -> Seq Scan on p
                   Output: id, name"#]],
         );
     }
@@ -2073,8 +2073,8 @@ mod tests {
             "SELECT p.* FROM m JOIN p ON m.employee = p.id where m.employee = 1",
             expect![[r#"
                 Hash Join: All
-                  -> Seq Scan on m:1
-                  -> Seq Scan on p:2
+                  -> Seq Scan on m
+                  -> Seq Scan on p
                   Inner Unique: false
                   Hash Cond: (m.employee = p.id)
                   Filter: (m.employee = U64(1))
@@ -2091,7 +2091,7 @@ mod tests {
             "SELECT p.* FROM m JOIN p ON m.employee = p.id",
             expect![[r#"
                 Index Join: Rhs
-                  -> Seq Scan on m:1
+                  -> Seq Scan on m
                   Inner Unique: true
                   Index Cond: (m.employee = p.id)
                   Output: employee, manager"#]],
