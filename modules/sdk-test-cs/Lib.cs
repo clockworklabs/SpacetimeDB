@@ -1806,16 +1806,16 @@ public static partial class Module
     }
 
     [SpacetimeDB.Table(Name = "indexed_table")]
-    [SpacetimeDB.Index(Name = "player_id_index", BTree = [nameof(player_id)])]
     public partial struct IndexedTable
     {
+        [SpacetimeDB.Index.BTree]
         uint player_id;
     }
 
     [SpacetimeDB.Table(Name = "indexed_table_2")]
-    [SpacetimeDB.Index(
+    [SpacetimeDB.Index.BTree(
         Name = "player_id_snazz_index",
-        BTree = [nameof(player_id), nameof(player_snazz)]
+        Columns = [nameof(player_id), nameof(player_snazz)]
     )]
     public partial struct IndexedTable2
     {
