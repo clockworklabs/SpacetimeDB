@@ -237,7 +237,7 @@ impl<'a> RowRefIter<'a> {
                 .map(Self::IndexScan),
             PhysicalPlan::IxScan(
                 scan @ IxScan {
-                    arg: Sarg::Range(_, lower, upper),
+                    arg: Sarg::Range(_, _, lower, upper),
                     ..
                 },
                 _,
@@ -246,7 +246,7 @@ impl<'a> RowRefIter<'a> {
                 .map(Self::IndexScan),
             PhysicalPlan::IxScan(
                 scan @ IxScan {
-                    arg: Sarg::Range(_, lower, upper),
+                    arg: Sarg::Range(_, _, lower, upper),
                     ..
                 },
                 _,

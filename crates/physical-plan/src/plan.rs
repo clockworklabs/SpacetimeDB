@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::{borrow::Cow, ops::Bound, sync::Arc};
 
 use derive_more::From;
+
 use spacetimedb_expr::StatementSource;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
@@ -901,9 +903,12 @@ impl PhysicalExpr {
 }
 
 /// A physical context for the result of a query compilation.
+#[derive(Debug)]
 pub struct PhysicalCtx<'a> {
     pub plan: ProjectListPlan,
     pub sql: &'a str,
+    // A map from table names to their labels
+    pub vars: HashMap<String, usize>,
     pub source: StatementSource,
     pub planning_time: std::time::Duration,
 }
@@ -919,31 +924,21 @@ impl<'a> PhysicalCtx<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use super::*;
 
+    use crate::compile::{compile, compile_sub};
+    use crate::plan::TupleField;
+    use crate::printer::Explain;
+    use expect_test::{expect, Expect};
     use pretty_assertions::assert_eq;
     use spacetimedb_expr::check::{compile_sql_sub, parse_and_type_sub, SchemaView};
-
-    use crate::plan::PhysicalCtx;
-    use crate::printer::Explain;
-    use crate::{
-        compile::compile,
-        plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, ProjectField, Sarg, Semi},
-    };
-    use expect_test::{expect, Expect};
     use spacetimedb_expr::statement::compile_sql_stmt;
-    use spacetimedb_lib::{
-        db::auth::{StAccess, StTableType},
-        AlgebraicType, AlgebraicValue,
-    };
-    use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
-    use spacetimedb_schema::{
-        def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
-        schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableSchema},
-    };
-    use spacetimedb_sql_parser::ast::BinOp;
-
-    use super::{PhysicalExpr, ProjectPlan};
+    use spacetimedb_lib::db::auth::{StAccess, StTableType};
+    use spacetimedb_lib::AlgebraicType;
+    use spacetimedb_primitives::{ColList, TableId};
+    use spacetimedb_schema::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData};
+    use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema};
+    use std::sync::Arc;
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableSchema>>,
@@ -1195,6 +1190,25 @@ mod tests {
             join b on q.entity_id = b.entity_id
             where u.identity = 5
         ";
+
+        check_sub(
+            &db,
+            sql,
+            expect![[r#"
+Index Join: Rhs
+  -> Index Join: Rhs
+      -> Index Join: Rhs
+          -> Index Scan using Index id 0: (identity) on u
+            -> Index Cond: (u.identity = U64(5))
+        -> Inner Unique: true
+        -> Index Cond: (u.entity_id = p.entity_id)
+    -> Inner Unique: false
+    -> Index Cond: (p.chunk = q.chunk)
+  Inner Unique: true
+  Index Cond: (q.entity_id = b.entity_id)
+  Output: b.entity_id, b.misc"#]],
+        );
+
         let lp = parse_and_type_sub(sql, &db).unwrap();
         let pp = compile_sub(lp).optimize();
 
@@ -1385,6 +1399,32 @@ mod tests {
             join p on p.id = v.project
             where 5 = m.employee and 5 = v.employee
         ";
+
+        check_sub(
+            &db,
+            sql,
+            expect![[r#"
+Hash Join: All
+  -> Hash Join: All
+      -> Hash Join: All
+          -> Hash Join: All
+              -> Seq Scan on m
+              -> Seq Scan on n
+            -> Inner Unique: false
+            -> Hash Cond: (m.manager = n.manager)
+          -> Seq Scan on u
+        -> Inner Unique: false
+        -> Hash Cond: (n.employee = u.employee)
+      -> Seq Scan on v
+    -> Inner Unique: false
+    -> Hash Cond: (u.project = v.project)
+  -> Seq Scan on p
+  Inner Unique: false
+  Hash Cond: (p.id = v.project)
+  Filter: (m.employee = U64(5) AND v.employee = U64(5))
+  Output: p.id, p.name"#]],
+        );
+
         let lp = parse_and_type_sub(sql, &db).unwrap();
         let pp = compile_sub(lp).optimize();
 
@@ -1569,12 +1609,12 @@ mod tests {
         SchemaViewer::new(vec![m.clone(), w.clone(), p.clone()])
     }
 
-    fn compile_sub<'a>(db: &'a SchemaViewer, sql: &'a str) -> PhysicalCtx<'a> {
+    fn sub<'a>(db: &'a SchemaViewer, sql: &'a str) -> PhysicalCtx<'a> {
         let plan = compile_sql_sub(sql, db).unwrap();
         compile(plan)
     }
 
-    fn compile_query<'a>(db: &'a SchemaViewer, sql: &'a str) -> PhysicalCtx<'a> {
+    fn query<'a>(db: &'a SchemaViewer, sql: &'a str) -> PhysicalCtx<'a> {
         let plan = compile_sql_stmt(sql, db).unwrap();
         compile(plan)
     }
@@ -1595,12 +1635,12 @@ mod tests {
         expect.assert_eq(&explain.to_string());
     }
     fn check_sub(db: &SchemaViewer, sql: &str, expect: Expect) {
-        let plan = compile_sub(db, sql);
+        let plan = sub(db, sql);
         check(db, plan, expect);
     }
 
     fn check_query(db: &SchemaViewer, sql: &str, expect: Expect) {
-        let plan = compile_query(db, sql);
+        let plan = query(db, sql);
         check(db, plan, expect);
     }
 
@@ -1617,7 +1657,7 @@ mod tests {
                   -> Index Scan using Index id 0: (employee) on m:1
                     -> Index Cond: (m.employee = U64(1))
                   -> Seq Scan on p:2
-                  Output: id, name
+                  Output: m.employee, m.manager
                 -------
                 Schema:
 
@@ -1639,8 +1679,8 @@ mod tests {
             "SELECT * FROM p",
             expect![
                 r#"
-                Seq Scan on p:1
-                  Output: id, name"#
+                Seq Scan on p
+                  Output: p.id, p.name"#
             ],
         );
     }
@@ -1653,22 +1693,23 @@ mod tests {
             "SELECT * FROM p as b",
             expect![
                 r#"
-                Seq Scan on p:1
-                  Output: id, name"#
+                Seq Scan on b
+                  Output: b.id, b.name"#
             ],
         );
-        // TODO: Look like need pr #2074 to correctly report the labels and fields
-        // check_sub(
-        //     &db,
-        //     "select b.*
-        //     from u
-        //     join l as p",
-        //     expect![
-        //         r#"
-        //         Seq Scan on p:1
-        //           Output: id, name"#
-        //     ],
-        // );
+        check_sub(
+            &db,
+            "select p.*
+            from w
+            join m as p",
+            expect![
+                r#"
+                Nested Loop
+                  -> Seq Scan on w
+                  -> Seq Scan on p
+                  Output: p.employee, p.manager"#
+            ],
+        );
     }
 
     #[test]
@@ -1679,7 +1720,7 @@ mod tests {
             "SELECT id FROM p",
             expect![
                 r#"
-                Seq Scan on p:1
+                Seq Scan on p
                   Output: p.id"#
             ],
         );
@@ -1690,8 +1731,8 @@ mod tests {
             expect![
                 r#"
                 Nested Loop
-                  -> Seq Scan on m:1
-                  -> Seq Scan on p:2
+                  -> Seq Scan on m
+                  -> Seq Scan on p
                   Output: p.id, m.employee"#
             ],
         );
@@ -1703,20 +1744,20 @@ mod tests {
 
         check_sub(
             &db,
-            "SELECT * FROM p WHERE id = 1",
+            "SELECT * FROM p WHERE id > 1",
             expect![[r#"
-                Seq Scan on p:1
-                  Filter: (p.id = U64(1))
-                  Output: id, name"#]],
+                Seq Scan on p
+                  Filter: (p.id > U64(1))
+                  Output: p.id, p.name"#]],
         );
 
         check_query(
             &db,
             "SELECT * FROM p WHERE id = 1 AND id =2 OR name = 'jhon'",
             expect![[r#"
-            Seq Scan on p:1
-              Filter: (p.id = U64(1) AND p.id = U64(2) OR p.name = String("jhon"))
-              Output: id, name"#]],
+                Seq Scan on p
+                  Filter: (p.id = U64(1) AND p.id = U64(2) OR p.name = String("jhon"))
+                  Output: p.id, p.name"#]],
         );
     }
 
@@ -1728,9 +1769,9 @@ mod tests {
             &db,
             "SELECT m.* FROM m WHERE employee = 1",
             expect![[r#"
-                Index Scan using Index id 0: (employee) on m:1
+                Index Scan using Index id 0: (employee) on m
                   Index Cond: (m.employee = U64(1))
-                  Output: employee, manager"#]],
+                  Output: m.employee, m.manager"#]],
         );
     }
 
@@ -1743,9 +1784,9 @@ mod tests {
             "SELECT p.* FROM m JOIN p",
             expect![[r#"
                 Nested Loop
-                  -> Seq Scan on m:1
-                  -> Seq Scan on p:2
-                  Output: id, name"#]],
+                  -> Seq Scan on m
+                  -> Seq Scan on p
+                  Output: p.id, p.name"#]],
         );
     }
 
@@ -1758,12 +1799,12 @@ mod tests {
             "SELECT p.* FROM m JOIN p ON m.employee = p.id where m.employee = 1",
             expect![[r#"
                 Hash Join: All
-                  -> Seq Scan on m:1
-                  -> Seq Scan on p:2
+                  -> Seq Scan on m
+                  -> Seq Scan on p
                   Inner Unique: false
                   Hash Cond: (m.employee = p.id)
                   Filter: (m.employee = U64(1))
-                  Output: id, name"#]],
+                  Output: p.id, p.name"#]],
         );
     }
 
@@ -1776,10 +1817,10 @@ mod tests {
             "SELECT p.* FROM m JOIN p ON m.employee = p.id",
             expect![[r#"
                 Index Join: Rhs
-                  -> Seq Scan on m:1
+                  -> Seq Scan on m
                   Inner Unique: true
                   Index Cond: (m.employee = p.id)
-                  Output: employee, manager"#]],
+                  Output: p.id, p.name"#]],
         );
     }
 }
