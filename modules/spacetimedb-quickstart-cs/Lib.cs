@@ -3,13 +3,14 @@ namespace SpacetimeDB.Examples.QuickStart.Server;
 using SpacetimeDB;
 
 [Table(Name = "person", Public = true)]
-[Index(Name = "age", BTree = ["age"])]
 public partial struct Person
 {
     [AutoInc]
     [PrimaryKey]
     public uint id;
     public string name;
+
+    [Index.BTree]
     public byte age;
 }
 

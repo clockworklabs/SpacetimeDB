@@ -86,17 +86,17 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
       }
     },
     {/*
-[SpacetimeDB.Table]
-[SpacetimeDB.Index]
- ^^^^^^^^^^^^^^^^^
-public partial struct TestIndexWithoutColumns { }
+{
+    [SpacetimeDB.Index.BTree(Name = "TestUnexpectedColumns", Columns = ["UnexpectedColumn"])]
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public int SelfIndexingColumn;
 */
-      Message: Index has an Index.BTree attribute, but no columns.,
+      Message: Index attribute on a field applies directly to that field, so it doesn't accept the Columns parameter.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0004,
-        Title: Index attribute must specify columns.,
-        MessageFormat: {0} has an Index.BTree attribute, but no columns.,
+        Id: STDB0013,
+        Title: Index attribute on a field must not specify Columns,
+        MessageFormat: Index attribute on a field applies directly to that field, so it doesn't accept the Columns parameter.,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
@@ -104,16 +104,50 @@ public partial struct TestIndexWithoutColumns { }
     },
     {/*
 [SpacetimeDB.Table]
-[SpacetimeDB.Index(BTree = [])]
- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-public partial struct TestIndexWithEmptyColumns { }
+[SpacetimeDB.Index.BTree(Name = "TestIndexWithoutColumns")]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Index.BTree(Name = "TestIndexWithEmptyColumns", Columns = [])]
 */
-      Message: Index has an Index.BTree attribute, but no columns.,
+      Message: Index attribute doesn't specify columns.,
       Severity: Error,
       Descriptor: {
         Id: STDB0004,
-        Title: Index attribute must specify columns.,
-        MessageFormat: {0} has an Index.BTree attribute, but no columns.,
+        Title: Index attribute must specify Columns,
+        MessageFormat: Index attribute doesn't specify columns.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Index.BTree(Name = "TestIndexWithoutColumns")]
+[SpacetimeDB.Index.BTree(Name = "TestIndexWithEmptyColumns", Columns = [])]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Index.BTree(Name = "TestUnknownColumns", Columns = ["UnknownColumn"])]
+*/
+      Message: Index attribute doesn't specify columns.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0004,
+        Title: Index attribute must specify Columns,
+        MessageFormat: Index attribute doesn't specify columns.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Index.BTree(Name = "TestIndexWithEmptyColumns", Columns = [])]
+[SpacetimeDB.Index.BTree(Name = "TestUnknownColumns", Columns = ["UnknownColumn"])]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestIndexIssues
+*/
+      Message: Could not find the specified column UnknownColumn in TestIndexIssues.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0014,
+        Title: Unknown column,
+        MessageFormat: Could not find the specified column {0} in {1}.,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
@@ -175,12 +209,12 @@ public partial struct TestIndexWithEmptyColumns { }
  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 [SpacetimeDB.Table(
 */
-      Message: Item ScheduledAt not found.,
+      Message: Could not find the specified column ScheduledAt in TestScheduleIssues.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0012,
-        Title: Invalid scheduled table declaration,
-        MessageFormat: {0},
+        Id: STDB0014,
+        Title: Unknown column,
+        MessageFormat: Could not find the specified column {0} in {1}.,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
@@ -198,7 +232,7 @@ public partial struct TestIndexWithEmptyColumns { }
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 )]
 ^
-public partial struct TestScheduleIssues
+[SpacetimeDB.Table(
 */
       Message: TestScheduleWithWrongScheduleAtType is a scheduled table but doesn't have a primary key of type `ulong`.,
       Severity: Error,
@@ -206,6 +240,31 @@ public partial struct TestScheduleIssues
         Id: STDB0012,
         Title: Invalid scheduled table declaration,
         MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+)]
+[SpacetimeDB.Table(
+ ^^^^^^^^^^^^^^^^^^
+    Name = "TestScheduleWithMissingScheduleAtField",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Scheduled = "DummyScheduledReducer",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ScheduledAt = "MissingField"
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)]
+^
+public partial struct TestScheduleIssues
+*/
+      Message: Could not find the specified column MissingField in TestScheduleIssues.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0014,
+        Title: Unknown column,
+        MessageFormat: Could not find the specified column {0} in {1}.,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
