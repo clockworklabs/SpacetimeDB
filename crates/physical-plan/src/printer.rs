@@ -19,10 +19,10 @@ impl<'a> Labels<'a> {
         self.labels.insert(idx, schema);
     }
 
-    fn field(&self, label: &Label, pos: usize) -> Option<FieldExpr<'a>> {
+    fn field(&self, label: &Label, pos: usize) -> Option<Field<'a>> {
         if let Some(table) = self.labels.get(&label.0) {
             if let Some(field) = table.get_column(pos) {
-                return Some(FieldExpr { table, field });
+                return Some(Field { table, field });
             }
         };
         None
@@ -75,6 +75,7 @@ pub enum JoinKind {
     HashJoin,
     NlJoin,
 }
+
 /// A formated line of output
 pub enum Line<'a> {
     TableScan {
@@ -95,6 +96,7 @@ pub enum Line<'a> {
         table_name: &'a str,
         index: Index<'a>,
         ident: u16,
+        label: Label,
     },
     IxJoin {
         semi: &'a Semi,
@@ -110,8 +112,8 @@ pub enum Line<'a> {
     JoinExpr {
         kind: JoinKind,
         unique: bool,
-        lhs: FieldExpr<'a>,
-        rhs: FieldExpr<'a>,
+        lhs: Field<'a>,
+        rhs: Field<'a>,
         ident: u16,
     },
 }
@@ -132,7 +134,7 @@ impl<'a> Line<'a> {
     }
 }
 
-pub struct FieldExpr<'a> {
+pub struct Field<'a> {
     table: &'a TableSchema,
     field: &'a ColumnSchema,
 }
@@ -140,7 +142,7 @@ pub struct FieldExpr<'a> {
 enum Output<'a> {
     Unknown,
     Star(&'a TableSchema),
-    Fields(Vec<FieldExpr<'a>>),
+    Fields(Vec<Field<'a>>),
 }
 
 struct Lines<'a> {
@@ -162,8 +164,14 @@ impl<'a> Lines<'a> {
         self.lines.push(line);
     }
 
-    pub fn add_label(&mut self, label: Label, name: &'a TableSchema) {
-        self.labels.insert(label.0, name);
+    pub fn add_table(&mut self, label: Label, table: &'a TableSchema) {
+        //TODO: Need PR to fix this
+        // assert_eq!(
+        //     label.0, table.table_id.0 as usize,
+        //     "Label mismatch: {:?}",
+        //     &table.table_name
+        // );
+        self.labels.insert(label.0, table);
     }
 }
 
@@ -175,7 +183,7 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
     match plan {
         PhysicalPlan::TableScan(schema, label) => {
             lines.output = Output::Star(schema);
-            lines.add_label(*label, schema);
+            lines.add_table(*label, schema);
             lines.add(Line::TableScan {
                 table: &schema.table_name,
                 label: *label,
@@ -184,11 +192,12 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
         }
         PhysicalPlan::IxScan(idx, label) => {
             lines.output = Output::Star(&idx.schema);
-            lines.add_label(*label, &idx.schema);
+            lines.add_table(*label, &idx.schema);
             let index = idx.schema.indexes.iter().find(|x| x.index_id == idx.index_id).unwrap();
             lines.add(Line::IxScan {
                 table_name: &idx.schema.table_name,
                 index: Index::new(index, &idx.schema),
+                label: *label,
                 ident,
             });
             lines.add(Line::FilterIxScan {
@@ -198,7 +207,7 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
             });
         }
         PhysicalPlan::IxJoin(idx, semi) => {
-            lines.add_label(idx.rhs_label, &idx.rhs);
+            lines.add_table(idx.rhs_label, &idx.rhs);
             lines.add(Line::IxJoin { semi, ident });
             eval_plan(lines, &idx.lhs, ident + 4);
 
@@ -371,7 +380,7 @@ impl<'a> fmt::Display for PrintSarg<'a> {
     }
 }
 
-impl<'a> fmt::Display for FieldExpr<'a> {
+impl<'a> fmt::Display for Field<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}.{}", self.table.table_name, self.field.col_name)
     }
@@ -407,7 +416,6 @@ impl<'a> fmt::Display for Explain<'a> {
 
         for line in &self.lines {
             let ident = line.ident();
-            // If the ident is bigger than 2 we need to generate `->` for each level
             let (ident, arrow) = if ident > 2 { (ident - 2, "-> ") } else { (ident, "") };
             write!(f, "{:ident$}{arrow}", "")?;
             match line {
@@ -417,9 +425,10 @@ impl<'a> fmt::Display for Explain<'a> {
                 Line::IxScan {
                     table_name,
                     index,
+                    label,
                     ident: _,
                 } => {
-                    write!(f, "Index Scan using {index} on {table_name}")?;
+                    write!(f, "Index Scan using {index} on {table_name}:{}", label.0)?;
                 }
                 Line::Filter { expr, ident: _ } => {
                     write!(
@@ -471,29 +480,42 @@ impl<'a> fmt::Display for Explain<'a> {
             writeln!(f)?;
         }
 
-        match &self.output {
-            Output::Unknown => {
-                writeln!(f, "  Output: ?")?;
-            }
+        let columns = match &self.output {
+            Output::Unknown => None,
             Output::Star(t) => {
                 let columns = t.columns().iter().map(|x| &x.col_name).join(", ");
-                writeln!(f, "  Output: {columns}")?;
+                Some(columns)
             }
             Output::Fields(fields) => {
                 let columns = fields.iter().map(|x| format!("{}", x)).join(", ");
-                writeln!(f, "  Output: {columns}")?;
+                Some(columns)
             }
+        };
+        let end = if self.show_timings || self.show_schema {
+            "\n"
+        } else {
+            ""
+        };
+        if let Some(columns) = columns {
+            write!(f, "  Output: {columns}{end}")?;
+        } else {
+            write!(f, "  Output: ?{end}")?;
         }
+
+        if self.show_timings {
+            write!(f, "Planning Time: {:?}", ctx.planning_time)?;
+        }
+
         if self.show_schema {
             writeln!(f, "-------")?;
             writeln!(f, "Schema:")?;
             writeln!(f)?;
-            for (label, schema) in &self.labels.labels {
-                writeln!(f, "Label {}: {}", label, schema.table_name)?;
+            for (pos, (label, schema)) in self.labels.labels.iter().enumerate() {
+                writeln!(f, "Label {}: {}", schema.table_name, label)?;
                 let columns = schema.columns().iter().map(|x| &x.col_name).join(", ");
                 writeln!(f, "  Columns: {columns}")?;
 
-                writeln!(
+                write!(
                     f,
                     "  Indexes: {}",
                     schema
@@ -506,7 +528,7 @@ impl<'a> fmt::Display for Explain<'a> {
                                     idx.columns
                                         .iter()
                                         .map(|x| {
-                                            FieldExpr {
+                                            Field {
                                                 table: schema,
                                                 field: &schema.columns()[x.idx()],
                                             }
@@ -518,12 +540,13 @@ impl<'a> fmt::Display for Explain<'a> {
                         })
                         .join(", ")
                 )?;
+
+                if pos < self.labels.labels.len() - 1 {
+                    writeln!(f)?;
+                }
             }
         }
 
-        if self.show_timings {
-            write!(f, "Planning Time: {:?}", ctx.planning_time)?;
-        }
         Ok(())
     }
 }
