@@ -1020,15 +1020,17 @@ mod tests {
             self.optimize = true;
             self
         }
-        fn show_source(mut self) -> Self {
+        fn with_source(mut self) -> Self {
             self.show_source = true;
             self
         }
-        fn show_schema(mut self) -> Self {
+        fn with_schema(mut self) -> Self {
             self.show_schema = true;
             self
         }
-        fn show_timings(mut self) -> Self {
+        // TODO: Remove when we integrate it.
+        #[allow(dead_code)]
+        fn with_timings(mut self) -> Self {
             self.show_timings = true;
             self
         }
@@ -1099,6 +1101,8 @@ mod tests {
             primary_key.map(ColId::from),
         )
     }
+
+    //TODO: This test are not ported until we integrate the changes that allow correctly report the labels.
 
     /// No rewrites applied to a simple table scan
     #[test]
@@ -1233,7 +1237,7 @@ mod tests {
             Some(0),
         ));
 
-        let db = SchemaViewer::new(vec![u.clone(), l.clone(), b.clone()]);
+        let db = SchemaViewer::new(vec![u.clone(), l.clone(), b.clone()]).optimize();
 
         let sql = "
             select b.*
@@ -1768,7 +1772,7 @@ mod tests {
 
     #[test]
     fn plan_metadata() {
-        let db = data().show_schema().show_source().optimize();
+        let db = data().with_schema().with_source().optimize();
         check_query(
             &db,
             "SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1",
@@ -1776,20 +1780,19 @@ mod tests {
                 r#"
                 Query: SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1
                 Nested Loop
-                  -> Index Scan using Index id 0: (employee) on m
+                  -> Index Scan using Index id 0: (employee) on m:1
                     -> Index Cond: (m.employee = U64(1))
                   -> Seq Scan on p:2
                   Output: id, name
                 -------
                 Schema:
 
-                Label 1: m
+                Label m: 1
                   Columns: employee, manager
                   Indexes: Unique(m.employee)
-                Label 2: p
+                Label p: 2
                   Columns: id, name
-                  Indexes: Unique(p.id)
-            "#
+                  Indexes: Unique(p.id)"#
             ],
         );
     }
@@ -1802,11 +1805,36 @@ mod tests {
             "SELECT * FROM p",
             expect![
                 r#"
-                Seq Scan on p
-                  Output: id, name
-            "#
+                Seq Scan on p:1
+                  Output: id, name"#
             ],
         );
+    }
+
+    #[test]
+    fn table_alias() {
+        let db = data();
+        check_sub(
+            &db,
+            "SELECT * FROM p as b",
+            expect![
+                r#"
+                Seq Scan on p:1
+                  Output: id, name"#
+            ],
+        );
+        // TODO: Look like need pr #2074 to correctly report the labels and fields
+        // check_sub(
+        //     &db,
+        //     "select b.*
+        //     from u
+        //     join l as p",
+        //     expect![
+        //         r#"
+        //         Seq Scan on p:1
+        //           Output: id, name"#
+        //     ],
+        // );
     }
 
     #[test]
@@ -1817,9 +1845,8 @@ mod tests {
             "SELECT id FROM p",
             expect![
                 r#"
-                Seq Scan on p
-                  Output: p.id
-            "#
+                Seq Scan on p:1
+                  Output: p.id"#
             ],
         );
 
@@ -1829,10 +1856,9 @@ mod tests {
             expect![
                 r#"
                 Nested Loop
-                  -> Seq Scan on m
-                  -> Seq Scan on p
-                  Output: p.id, m.employee
-            "#
+                  -> Seq Scan on m:1
+                  -> Seq Scan on p:2
+                  Output: p.id, m.employee"#
             ],
         );
     }
@@ -1847,8 +1873,7 @@ mod tests {
             expect![[r#"
                 Seq Scan on p:1
                   Filter: (p.id = U64(1))
-                  Output: id, name
-            "#]],
+                  Output: id, name"#]],
         );
     }
 
@@ -1860,10 +1885,9 @@ mod tests {
             &db,
             "SELECT m.* FROM m WHERE employee = 1",
             expect![[r#"
-                Index Scan using Index id 0: (employee) on m
+                Index Scan using Index id 0: (employee) on m:1
                   Index Cond: (m.employee = U64(1))
-                  Output: employee, manager
-            "#]],
+                  Output: employee, manager"#]],
         );
     }
 
@@ -1878,8 +1902,7 @@ mod tests {
                 Nested Loop
                   -> Seq Scan on m:1
                   -> Seq Scan on p:2
-                  Output: id, name
-            "#]],
+                  Output: id, name"#]],
         );
     }
 
@@ -1897,8 +1920,7 @@ mod tests {
                   Inner Unique: false
                   Hash Cond: (m.employee = p.id)
                   Filter: (m.employee = U64(1))
-                  Output: id, name
-            "#]],
+                  Output: id, name"#]],
         );
     }
 
@@ -1914,8 +1936,7 @@ mod tests {
                   -> Seq Scan on m:1
                   Inner Unique: true
                   Index Cond: (m.employee = p.id)
-                  Output: employee, manager
-            "#]],
+                  Output: employee, manager"#]],
         );
     }
 }
