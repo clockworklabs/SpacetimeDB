@@ -4883,6 +4883,7 @@ dependencies = [
  "enum-as-inner",
  "enum-map",
  "env_logger",
+ "expect-test",
  "faststr",
  "flate2",
  "fs2",
