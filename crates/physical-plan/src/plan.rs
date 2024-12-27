@@ -922,17 +922,54 @@ impl<'a> PhysicalCtx<'a> {
     }
 }
 
+pub mod tests_utils {
+    use super::*;
+    use crate::compile::compile;
+    use crate::printer::{Explain, ExplainOptions};
+    use expect_test::Expect;
+    use spacetimedb_expr::check::{compile_sql_sub, SchemaView};
+    use spacetimedb_expr::statement::compile_sql_stmt;
+
+    fn sub<'a>(db: &'a impl SchemaView, sql: &'a str) -> PhysicalCtx<'a> {
+        let plan = compile_sql_sub(sql, db).unwrap();
+        compile(plan)
+    }
+
+    fn query<'a>(db: &'a impl SchemaView, sql: &'a str) -> PhysicalCtx<'a> {
+        let plan = compile_sql_stmt(sql, db).unwrap();
+        compile(plan)
+    }
+
+    fn check(plan: PhysicalCtx, options: ExplainOptions, expect: Expect) {
+        let plan = if options.optimize { plan.optimize() } else { plan };
+
+        let explain = Explain::new(&plan).with_options(options);
+
+        let explain = explain.build();
+        expect.assert_eq(&explain.to_string());
+    }
+
+    pub fn check_sub(db: &impl SchemaView, options: ExplainOptions, sql: &str, expect: Expect) {
+        let plan = sub(db, sql);
+        check(plan, options, expect);
+    }
+
+    pub fn check_query(db: &impl SchemaView, options: ExplainOptions, sql: &str, expect: Expect) {
+        let plan = query(db, sql);
+        check(plan, options, expect);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use crate::compile::{compile, compile_sub};
+    use crate::compile::compile_sub;
     use crate::plan::TupleField;
-    use crate::printer::Explain;
+    use crate::printer::ExplainOptions;
     use expect_test::{expect, Expect};
     use pretty_assertions::assert_eq;
-    use spacetimedb_expr::check::{compile_sql_sub, parse_and_type_sub, SchemaView};
-    use spacetimedb_expr::statement::compile_sql_stmt;
+    use spacetimedb_expr::check::{parse_and_type_sub, SchemaView};
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::AlgebraicType;
     use spacetimedb_primitives::{ColList, TableId};
@@ -942,39 +979,24 @@ mod tests {
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableSchema>>,
-        optimize: bool,
-        show_source: bool,
-        show_schema: bool,
-        show_timings: bool,
+        options: ExplainOptions,
     }
 
     impl SchemaViewer {
         fn new(schemas: Vec<Arc<TableSchema>>) -> Self {
             Self {
                 schemas,
-                optimize: false,
-                show_source: false,
-                show_schema: false,
-                show_timings: false,
+                options: ExplainOptions::default(),
             }
         }
 
-        fn optimize(mut self) -> Self {
-            self.optimize = true;
+        fn with_options(mut self, options: ExplainOptions) -> Self {
+            self.options = options;
             self
         }
-        fn with_source(mut self) -> Self {
-            self.show_source = true;
-            self
-        }
-        fn with_schema(mut self) -> Self {
-            self.show_schema = true;
-            self
-        }
-        // TODO: Remove when we integrate it.
-        #[allow(dead_code)]
-        fn with_timings(mut self) -> Self {
-            self.show_timings = true;
+
+        fn optimize(mut self, optimize: bool) -> Self {
+            self.options = self.options.optimize(optimize);
             self
         }
     }
@@ -1180,7 +1202,7 @@ mod tests {
             Some(0),
         ));
 
-        let db = SchemaViewer::new(vec![u.clone(), l.clone(), b.clone()]).optimize();
+        let db = SchemaViewer::new(vec![u.clone(), l.clone(), b.clone()]).optimize(true);
 
         let sql = "
             select b.*
@@ -1388,7 +1410,7 @@ Index Join: Rhs
             Some(0),
         ));
 
-        let db = SchemaViewer::new(vec![m.clone(), w.clone(), p.clone()]);
+        let db = SchemaViewer::new(vec![m.clone(), w.clone(), p.clone()]).optimize(false);
 
         let sql = "
             select p.*
@@ -1606,47 +1628,20 @@ Hash Join: All
             Some(0),
         ));
 
-        SchemaViewer::new(vec![m.clone(), w.clone(), p.clone()])
+        SchemaViewer::new(vec![m.clone(), w.clone(), p.clone()]).with_options(ExplainOptions::default().optimize(false))
     }
 
-    fn sub<'a>(db: &'a SchemaViewer, sql: &'a str) -> PhysicalCtx<'a> {
-        let plan = compile_sql_sub(sql, db).unwrap();
-        compile(plan)
-    }
-
-    fn query<'a>(db: &'a SchemaViewer, sql: &'a str) -> PhysicalCtx<'a> {
-        let plan = compile_sql_stmt(sql, db).unwrap();
-        compile(plan)
-    }
-
-    fn check(db: &SchemaViewer, plan: PhysicalCtx, expect: Expect) {
-        let plan = if db.optimize { plan.optimize() } else { plan };
-
-        let explain = Explain::new(&plan);
-        let explain = if db.show_source { explain.with_source() } else { explain };
-        let explain = if db.show_schema { explain.with_schema() } else { explain };
-        let explain = if db.show_timings {
-            explain.with_timings()
-        } else {
-            explain
-        };
-
-        let explain = explain.build();
-        expect.assert_eq(&explain.to_string());
-    }
     fn check_sub(db: &SchemaViewer, sql: &str, expect: Expect) {
-        let plan = sub(db, sql);
-        check(db, plan, expect);
+        tests_utils::check_sub(db, db.options, sql, expect);
     }
 
     fn check_query(db: &SchemaViewer, sql: &str, expect: Expect) {
-        let plan = query(db, sql);
-        check(db, plan, expect);
+        tests_utils::check_query(db, db.options, sql, expect);
     }
 
     #[test]
     fn plan_metadata() {
-        let db = data().with_schema().with_source().optimize();
+        let db = data().with_options(ExplainOptions::new().with_schema().with_source().optimize(true));
         check_query(
             &db,
             "SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1",
@@ -1763,7 +1758,7 @@ Hash Join: All
 
     #[test]
     fn index_scan_filter() {
-        let db = data().optimize();
+        let db = data().optimize(true);
 
         check_sub(
             &db,
@@ -1810,7 +1805,7 @@ Hash Join: All
 
     #[test]
     fn semi_join() {
-        let db = data().optimize();
+        let db = data().optimize(true);
 
         check_sub(
             &db,
