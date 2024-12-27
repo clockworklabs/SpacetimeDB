@@ -1219,7 +1219,7 @@ pub mod tests_utils {
     use crate::PhysicalCtx;
     use expect_test::Expect;
     use spacetimedb_expr::check::{compile_sql_sub, SchemaView};
-    use spacetimedb_expr::statement::compile_sql_stmt;
+    use spacetimedb_expr::statement::compile_sql_stmt_with_ctx;
     use spacetimedb_lib::identity::AuthCtx;
 
     fn sub<'a>(db: &'a impl SchemaView, auth: &AuthCtx, sql: &'a str) -> PhysicalCtx<'a> {
@@ -1228,7 +1228,7 @@ pub mod tests_utils {
     }
 
     fn query<'a>(db: &'a impl SchemaView, auth: &AuthCtx, sql: &'a str) -> PhysicalCtx<'a> {
-        let plan = compile_sql_stmt(sql, db, auth, true).unwrap();
+        let plan = compile_sql_stmt_with_ctx(sql, db, auth, true).unwrap();
         compile(plan)
     }
 

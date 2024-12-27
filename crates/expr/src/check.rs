@@ -3,6 +3,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use super::{
+    check_sql_length,
     errors::{DuplicateName, TypingError, Unresolved, Unsupported},
     expr::RelExpr,
     type_expr, type_proj, type_select, StatementCtx, StatementSource,
@@ -182,6 +183,8 @@ pub fn compile_sql_sub<'a>(
     auth: &AuthCtx,
     with_timings: bool,
 ) -> TypingResult<StatementCtx<'a>> {
+    check_sql_length(sql)?;
+
     let planning_time = if with_timings {
         Some(std::time::Instant::now())
     } else {
