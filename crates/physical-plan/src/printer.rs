@@ -27,6 +27,60 @@ fn range_to_op(lower: &Bound<AlgebraicValue>, upper: &Bound<AlgebraicValue>) -> 
     }
 }
 
+/// The options for the printer
+///
+/// By default:
+///
+/// * `show_source: false`
+/// * `show_schema: false`
+/// * `show_timings: false`
+///
+/// * `optimize: true`
+#[derive(Debug, Copy, Clone)]
+pub struct ExplainOptions {
+    pub show_source: bool,
+    pub show_schema: bool,
+    pub show_timings: bool,
+    pub optimize: bool,
+}
+
+impl ExplainOptions {
+    pub fn new() -> Self {
+        Self {
+            show_source: false,
+            show_schema: false,
+            show_timings: false,
+            optimize: true,
+        }
+    }
+
+    pub fn with_source(mut self) -> Self {
+        self.show_source = true;
+        self
+    }
+
+    pub fn with_schema(mut self) -> Self {
+        self.show_schema = true;
+        self
+    }
+
+    pub fn with_timings(mut self) -> Self {
+        self.show_timings = true;
+        self
+    }
+
+    pub fn optimize(mut self, optimize: bool) -> Self {
+        self.optimize = optimize;
+        self
+    }
+}
+
+impl Default for ExplainOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The name or alias of the `table` with his schema
 struct Schema<'a> {
     /// The table schema
@@ -374,9 +428,7 @@ pub struct Explain<'a> {
     lines: Vec<Line<'a>>,
     labels: Labels<'a>,
     output: Output<'a>,
-    show_source: bool,
-    show_schema: bool,
-    show_timings: bool,
+    options: ExplainOptions,
 }
 
 impl<'a> Explain<'a> {
@@ -386,27 +438,13 @@ impl<'a> Explain<'a> {
             lines: Vec::new(),
             labels: Labels::new(),
             output: Output::Unknown,
-            show_source: false,
-            show_schema: false,
-            show_timings: false,
+            options: ExplainOptions::new(),
         }
     }
 
-    /// Show the source `SQL` statement
-    pub fn with_source(mut self) -> Self {
-        self.show_source = true;
-        self
-    }
-
-    /// Show the schema of the tables
-    pub fn with_schema(mut self) -> Self {
-        self.show_schema = true;
-        self
-    }
-
-    /// Show the planning time
-    pub fn with_timings(mut self) -> Self {
-        self.show_timings = true;
+    /// Set the options for the printer
+    pub fn with_options(mut self, options: ExplainOptions) -> Self {
+        self.options = options;
         self
     }
 
@@ -530,7 +568,7 @@ impl<'a> fmt::Display for Explain<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ctx = self.ctx;
 
-        if self.show_source {
+        if self.options.show_source {
             match ctx.source {
                 StatementSource::Subscription => write!(f, "Subscription: {}", ctx.sql)?,
                 StatementSource::Query => write!(f, "Query: {}", ctx.sql)?,
@@ -545,7 +583,7 @@ impl<'a> fmt::Display for Explain<'a> {
             write!(f, "{:ident$}{arrow}", "")?;
             match line {
                 Line::TableScan { table, label, ident: _ } => {
-                    if self.show_schema {
+                    if self.options.show_schema {
                         write!(f, "Seq Scan on {}:{}", table, label.0)?;
                     } else {
                         write!(f, "Seq Scan on {}", table)?;
@@ -557,7 +595,7 @@ impl<'a> fmt::Display for Explain<'a> {
                     label,
                     ident: _,
                 } => {
-                    if self.show_schema {
+                    if self.options.show_schema {
                         write!(f, "Index Scan using {index} on {table_name}:{}", label.0)?;
                     } else {
                         write!(f, "Index Scan using {index} on {table_name}")?;
@@ -625,7 +663,7 @@ impl<'a> fmt::Display for Explain<'a> {
                 Some(columns)
             }
         };
-        let end = if self.show_timings || self.show_schema {
+        let end = if self.options.show_timings || self.options.show_schema {
             "\n"
         } else {
             ""
@@ -636,12 +674,12 @@ impl<'a> fmt::Display for Explain<'a> {
             write!(f, "  Output: ?{end}")?;
         }
 
-        if self.show_timings {
-            let end = if self.show_schema { "\n" } else { "" };
+        if self.options.show_timings {
+            let end = if self.options.show_schema { "\n" } else { "" };
             write!(f, "Planning Time: {:?}{end}", ctx.planning_time)?;
         }
 
-        if self.show_schema {
+        if self.options.show_schema {
             writeln!(f, "-------")?;
             writeln!(f, "Schema:")?;
             writeln!(f)?;
