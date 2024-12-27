@@ -626,9 +626,10 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{expect_sub, TestDB};
     use crate::execution_context::Workload;
     use crate::sql::compiler::compile_sql;
+    use expect_test::expect;
     use spacetimedb_lib::relation::DbTable;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx};
     use spacetimedb_sats::{product, AlgebraicType};
@@ -671,6 +672,23 @@ mod tests {
         let Query::IndexJoin(join) = join else {
             panic!("expected an index join, but got {:#?}", join);
         };
+
+        //TODO(sql): Remove manual checks to just `EXPLAIN` the query.
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+Hash Join: All
+  -> Seq Scan on lhs
+  -> Seq Scan on rhs
+    -> Filter: (rhs.d = U64(3))
+  Inner Unique: false
+  Hash Cond: (lhs.b = rhs.b)
+  Filter: (rhs.c > U64(2) AND rhs.c < U64(4))
+  Output: lhs.a, lhs.b"#
+            ],
+        );
 
         // Create an insert for an incremental update.
         let delta = vec![product![0u64, 0u64]];
@@ -751,6 +769,24 @@ mod tests {
         let Query::IndexJoin(join) = join else {
             panic!("expected an index join, but got {:#?}", join);
         };
+
+        //TODO(sql): Remove manual checks to just `EXPLAIN` the query.
+        // Why this generate same plan than the previous test? 'compile_incremental_index_join_index_side'
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+Hash Join: All
+  -> Seq Scan on lhs
+  -> Seq Scan on rhs
+    -> Filter: (rhs.d = U64(3))
+  Inner Unique: false
+  Hash Cond: (lhs.b = rhs.b)
+  Filter: (rhs.c > U64(2) AND rhs.c < U64(4))
+  Output: lhs.a, lhs.b"#
+            ],
+        );
 
         // Create an insert for an incremental update.
         let delta = vec![product![0u64, 0u64, 0u64]];
@@ -839,6 +875,24 @@ mod tests {
             matches!(src_join, Query::IndexJoin(_)),
             "expected an index join, but got {:#?}",
             src_join
+        );
+
+        //TODO(sql): Remove manual checks to just `EXPLAIN` the query.
+        // Why this generate same plan than the previous test? 'compile_incremental_index_join_index_side'
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+Hash Join: All
+  -> Seq Scan on lhs
+  -> Seq Scan on rhs
+    -> Filter: (rhs.d = U64(3))
+  Inner Unique: false
+  Hash Cond: (lhs.b = rhs.b)
+  Filter: (rhs.c > U64(2) AND rhs.c < U64(4))
+  Output: lhs.a, lhs.b"#
+            ],
         );
 
         let incr = IncrementalJoin::new(&expr).expect("Failed to construct IncrementalJoin");

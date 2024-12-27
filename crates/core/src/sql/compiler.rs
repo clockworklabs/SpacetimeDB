@@ -231,9 +231,10 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
 mod tests {
     use super::*;
     use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{expect_query, expect_sub, TestDB};
     use crate::execution_context::Workload;
     use crate::sql::execute::tests::run_for_testing;
+    use expect_test::expect;
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::{Address, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
@@ -275,69 +276,6 @@ mod tests {
         sql: &str,
     ) -> Result<Vec<CrudExpr>, DBError> {
         super::compile_sql(db, &AuthCtx::for_testing(), tx, sql)
-    }
-
-    #[test]
-    fn compile_eq() -> ResultTest<()> {
-        let db = TestDB::durable()?;
-
-        // Create table [test] without any indexes
-        let schema = &[("a", AlgebraicType::U64)];
-        let indexes = &[];
-        db.create_table_for_test("test", schema, indexes)?;
-
-        let tx = db.begin_tx(Workload::ForTests);
-        // Compile query
-        let sql = "select * from test where a = 1";
-        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
-            panic!("Expected QueryExpr");
-        };
-        assert_eq!(1, query.len());
-        assert_select(&query[0]);
-        Ok(())
-    }
-
-    #[test]
-    fn compile_not_eq() -> ResultTest<()> {
-        let db = TestDB::durable()?;
-
-        // Create table [test] with cols [a, b] and index on [b].
-        db.create_table_for_test(
-            "test",
-            &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)],
-            &[1.into(), 0.into()],
-        )?;
-
-        let tx = db.begin_tx(Workload::ForTests);
-        // Should work with any qualified field.
-        let sql = "select * from test where a = 1 and b <> 3";
-        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
-            panic!("Expected QueryExpr");
-        };
-        assert_eq!(2, query.len());
-        assert_one_eq_index_scan(&query[0], 0, 1u64.into());
-        assert_select(&query[1]);
-        Ok(())
-    }
-
-    #[test]
-    fn compile_index_eq_basic() -> ResultTest<()> {
-        let db = TestDB::durable()?;
-
-        // Create table [test] with index on [a]
-        let schema = &[("a", AlgebraicType::U64)];
-        let indexes = &[0.into()];
-        db.create_table_for_test("test", schema, indexes)?;
-
-        let tx = db.begin_tx(Workload::ForTests);
-        //Compile query
-        let sql = "select * from test where a = 1";
-        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
-            panic!("Expected QueryExpr");
-        };
-        assert_eq!(1, query.len());
-        assert_one_eq_index_scan(&query[0], 0, 1u64.into());
-        Ok(())
     }
 
     #[test]
@@ -383,6 +321,7 @@ mod tests {
 
         let rows = run_for_testing(&db, sql)?;
 
+        //TODO(sql): Move the check of the 'plan' to use 'EXPLAIN'
         let CrudExpr::Query(QueryExpr {
             source: _,
             query: mut ops,
@@ -457,24 +396,102 @@ mod tests {
     }
 
     #[test]
-    fn compile_eq_and_eq() -> ResultTest<()> {
+    fn compile_eq() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        // Create table [test] with index on [b]
-        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[1.into()];
+        // Create table [test] without any indexes
+        let schema = &[("a", AlgebraicType::U64)];
+        let indexes = &[];
         db.create_table_for_test("test", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
-        // Note, order does not matter.
-        // The sargable predicate occurs last, but we can still generate an index scan.
-        let sql = "select * from test where a = 1 and b = 2";
+        // Compile query
+        let sql = "select * from test where a = 1";
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+            panic!("Expected QueryExpr");
+        };
+        assert_eq!(1, query.len());
+        assert_select(&query[0]);
+
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+                Seq Scan on test
+                  Filter: (test.a = U64(1))
+                  Output: test.a"#
+            ],
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn compile_not_eq() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        // Create table [test] with cols [a, b] and index on [b].
+        db.create_table_for_test(
+            "test",
+            &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)],
+            &[1.into(), 0.into()],
+        )?;
+
+        let tx = db.begin_tx(Workload::ForTests);
+        // Should work with any qualified field.
+        let sql = "select * from test where a = 1 and b <> 3";
         let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(2, query.len());
-        assert_one_eq_index_scan(&query[0], 1, 2u64.into());
+        assert_one_eq_index_scan(&query[0], 0, 1u64.into());
         assert_select(&query[1]);
+
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+Index Scan using Index test_a_idx_btree: (a) on test
+  Index Cond: (test.a = U64(1))
+  Filter: (test.b <> U64(3))
+  Output: test.a, test.b"#
+            ],
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn compile_index_eq_basic() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        // Create table [test] with index on [a]
+        let schema = &[("a", AlgebraicType::U64)];
+        let indexes = &[0.into()];
+        db.create_table_for_test("test", schema, indexes)?;
+
+        let tx = db.begin_tx(Workload::ForTests);
+        //Compile query
+        let sql = "select * from test where a = 1";
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+            panic!("Expected QueryExpr");
+        };
+        assert_eq!(1, query.len());
+        assert_one_eq_index_scan(&query[0], 0, 1u64.into());
+
+        expect_query(
+            &tx,
+            sql,
+            expect![
+                r#"
+Index Scan using Index test_a_idx_btree: (a) on test
+  Index Cond: (test.a = U64(1))
+  Output: test.a"#
+            ],
+        );
+
         Ok(())
     }
 
@@ -497,6 +514,19 @@ mod tests {
         assert_eq!(2, query.len());
         assert_one_eq_index_scan(&query[0], 1, 2u64.into());
         assert_select(&query[1]);
+
+        expect_query(
+            &tx,
+            sql,
+            expect![
+                r#"
+Index Scan using Index test_b_idx_btree: (b) on test
+  Index Cond: (test.b = U64(2))
+  Filter: (test.a = U64(1))
+  Output: test.a, test.b"#
+            ],
+        );
+
         Ok(())
     }
 
@@ -520,6 +550,20 @@ mod tests {
         };
         assert_eq!(1, query.len());
         assert_one_eq_index_scan(&query[0], col_list![0, 1], product![1u64, 2u64].into());
+
+        //TODO(sql): Need support for multi-column indexes
+        //         expect_query(
+        //             &tx,
+        //             sql,
+        //             expect![
+        //                 r#"
+        // Index Scan using Index test_a_b_idx_btree: (a, b) on test
+        //   Index Cond: (test.a = U64(1))
+        //   Filter: (test.b = U64(2)) //wrong
+        //   Output: test.a, test.b, test.c, test.d"#
+        //             ],
+        //         );
+
         Ok(())
     }
 
@@ -541,6 +585,18 @@ mod tests {
         assert_eq!(1, query.len());
         // Assert no index scan because OR is not sargable.
         assert_select(&query[0]);
+
+        expect_query(
+            &tx,
+            sql,
+            expect![
+                r#"
+Seq Scan on test
+  Filter: (test.a = U64(1) OR test.b = U64(2))
+  Output: test.a, test.b"#
+            ],
+        );
+
         Ok(())
     }
 
@@ -561,6 +617,18 @@ mod tests {
         };
         assert_eq!(1, query.len());
         assert_index_scan(&query[0], 1, Bound::Excluded(AlgebraicValue::U64(2)), Bound::Unbounded);
+
+        //TODO(sql): Need support for index scans for ranges
+        //         expect_query(
+        //             &tx,
+        //             sql,
+        //             expect![
+        //                 r#"
+        // Seq Scan on test
+        //   Filter: (test.b > U64(2))
+        //   Output: test.a, test.b"#
+        //             ],
+        //         );
 
         Ok(())
     }
@@ -588,6 +656,18 @@ mod tests {
             Bound::Excluded(AlgebraicValue::U64(5)),
         );
 
+        //TODO(sql): Need support for index scans for ranges
+        //         expect_query(
+        //             &tx,
+        //             sql,
+        //             expect![
+        //                 r#"
+        // Seq Scan on test
+        //   Filter: (test.b > U64(2) AND test.b < U64(5))
+        //   Output: test.a, test.b"#
+        //             ],
+        //         );
+
         Ok(())
     }
 
@@ -610,6 +690,20 @@ mod tests {
         assert_eq!(2, query.len());
         assert_one_eq_index_scan(&query[0], 0, 3u64.into());
         assert_select(&query[1]);
+
+        //TODO(sql): Need support for index scans for ranges
+        //         expect_query(
+        //             &tx,
+        //             sql,
+        //             expect![
+        //                 r#"
+        // Index Scan using Index test_a_idx_btree: (a) on test
+        //   Index Cond: (test.a = U64(3))
+        //   Filter: (test.b < U64(5) AND test.b > U64(2))
+        //   Output: test.a, test.b"#
+        //             ],
+        //         );
+
         Ok(())
     }
 
@@ -664,6 +758,22 @@ mod tests {
         assert_eq!(col_lhs, 1.into());
         assert_eq!(col_rhs, 0.into());
         assert_eq!(&**inner_header, &source_lhs.head().extend(rhs.source.head()));
+
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+Hash Join: Lhs
+  -> Index Scan using Index lhs_a_idx_btree: (a) on lhs
+    -> Index Cond: (lhs.a = U64(3))
+  -> Seq Scan on rhs
+  Inner Unique: false
+  Hash Cond: (lhs.b = rhs.b)
+  Output: lhs.a, lhs.b"#
+            ],
+        );
+
         Ok(())
     }
 
@@ -721,6 +831,22 @@ mod tests {
         assert_eq!(col_rhs, 0.into());
         assert_eq!(&**inner_header, &source_lhs.head().extend(rhs.source.head()));
         assert!(rhs.query.is_empty());
+
+        expect_query(
+            &tx,
+            sql,
+            expect![
+                r#"
+Hash Join: Lhs
+  -> Seq Scan on lhs
+    -> Filter: (lhs.a = U64(3))
+  -> Seq Scan on rhs
+  Inner Unique: false
+  Hash Cond: (lhs.b = rhs.b)
+  Output: lhs.a, lhs.b"#
+            ],
+        );
+
         Ok(())
     }
 
@@ -777,6 +903,22 @@ mod tests {
         else {
             panic!("unexpected operator {:#?}", rhs.query[0]);
         };
+
+        expect_query(
+            &tx,
+            sql,
+            expect![
+                r#"
+Hash Join: Lhs
+  -> Seq Scan on lhs
+  -> Seq Scan on rhs
+    -> Filter: (rhs.c = U64(3))
+  Inner Unique: false
+  Hash Cond: (lhs.b = rhs.b)
+  Output: lhs.a, lhs.b"#
+            ],
+        );
+
         Ok(())
     }
 
@@ -844,6 +986,23 @@ mod tests {
         );
 
         assert_eq!(table_id, rhs_id);
+
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+Hash Join: All
+  -> Index Scan using Index lhs_a_idx_btree: (a) on lhs
+    -> Index Cond: (lhs.a = U64(3))
+  -> Seq Scan on rhs
+  Inner Unique: false
+  Hash Cond: (lhs.b = rhs.b)
+  Filter: (rhs.c < U64(4))
+  Output: lhs.a, lhs.b"#
+            ],
+        );
+
         Ok(())
     }
 
@@ -926,6 +1085,23 @@ mod tests {
         else {
             panic!("unexpected operator {:#?}", rhs[0]);
         };
+
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+Hash Join: All
+  -> Seq Scan on lhs
+  -> Seq Scan on rhs
+    -> Filter: (rhs.d = U64(3))
+  Inner Unique: false
+  Hash Cond: (lhs.b = rhs.b)
+  Filter: (rhs.c > U64(2) AND rhs.c < U64(4))
+  Output: lhs.a, lhs.b"#
+            ],
+        );
+
         Ok(())
     }
 
@@ -1003,6 +1179,24 @@ mod tests {
         else {
             panic!("unexpected operator {:#?}", rhs[0]);
         };
+
+        //TODO(sql): Need support for multi-column indexes
+        //         expect_sub(
+        //             &tx,
+        //             sql,
+        //             expect![
+        //                 r#"
+        // Hash Join: Lhs
+        //   -> Seq Scan on lhs
+        //   -> Index Scan using Index rhs_b_c_idx_btree: (b, c) on rhs
+        //     -> Index Cond: (rhs.b = U64(4))
+        //     -> Filter: (rhs.c = U64(2) AND rhs.d = U64(3))
+        //   Inner Unique: false
+        //   Hash Cond: (lhs.b = rhs.b)
+        //   Output: lhs.a, lhs.b"#
+        //             ],
+        //         );
+
         Ok(())
     }
 
@@ -1011,12 +1205,24 @@ mod tests {
         let db = TestDB::durable()?;
         db.create_table_for_test("A", &[("x", AlgebraicType::U64)], &[])?;
         db.create_table_for_test("B", &[("y", AlgebraicType::U64)], &[])?;
-        assert!(compile_sql(
-            &db,
-            &db.begin_tx(Workload::ForTests),
-            "select B.* from B join A on B.y = A.x"
-        )
-        .is_ok());
+        let sql = "select B.* from B join A on B.y = A.x";
+        let tx = db.begin_tx(Workload::ForTests);
+        assert!(compile_sql(&db, &tx, sql).is_ok());
+
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+Hash Join: Lhs
+  -> Seq Scan on B
+  -> Seq Scan on A
+  Inner Unique: false
+  Hash Cond: (B.y = A.x)
+  Output: B.y"#
+            ],
+        );
+
         Ok(())
     }
 
