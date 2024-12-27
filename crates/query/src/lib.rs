@@ -4,11 +4,13 @@ use spacetimedb_execution::{
     pipelined::ProjectListExecutor,
     Datastore, DeltaStore,
 };
+use spacetimedb_expr::statement::compile_sql_stmt_with_ctx;
 use spacetimedb_expr::{
     check::{parse_and_type_sub, SchemaView},
+    check_sql_length,
     expr::ProjectList,
     rls::{resolve_views_for_sql, resolve_views_for_sub},
-    statement::{parse_and_type_sql, Statement, DML},
+    statement::{Statement, DML},
 };
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, ProductValue};
 use spacetimedb_physical_plan::{
@@ -17,19 +19,12 @@ use spacetimedb_physical_plan::{
 };
 use spacetimedb_primitives::TableId;
 
-/// DIRTY HACK ALERT: Maximum allowed length, in UTF-8 bytes, of SQL queries.
-/// Any query longer than this will be rejected.
-/// This prevents a stack overflow when compiling queries with deeply-nested `AND` and `OR` conditions.
-const MAX_SQL_LENGTH: usize = 50_000;
-
 pub fn compile_subscription(
     sql: &str,
     tx: &impl SchemaView,
     auth: &AuthCtx,
 ) -> Result<(Vec<ProjectPlan>, TableId, Box<str>, bool)> {
-    if sql.len() > MAX_SQL_LENGTH {
-        bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
-    }
+    check_sql_length(sql)?;
 
     let (plan, mut has_param) = parse_and_type_sub(sql, tx, auth)?;
 
@@ -52,11 +47,7 @@ pub fn compile_subscription(
 
 /// A utility for parsing and type checking a sql statement
 pub fn compile_sql_stmt(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Result<Statement> {
-    if sql.len() > MAX_SQL_LENGTH {
-        bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
-    }
-
-    match parse_and_type_sql(sql, tx, auth)? {
+    match compile_sql_stmt_with_ctx(sql, tx, auth, false)?.statement {
         stmt @ Statement::DML(_) => Ok(stmt),
         Statement::Select(expr) => Ok(Statement::Select(resolve_views_for_sql(tx, expr, auth)?)),
     }

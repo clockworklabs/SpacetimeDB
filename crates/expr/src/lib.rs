@@ -1,5 +1,6 @@
 use std::{collections::HashSet, ops::Deref, str::FromStr};
 
+use crate::errors::TypingError;
 use crate::statement::Statement;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -375,4 +376,19 @@ pub struct StatementCtx<'a> {
     pub sql: &'a str,
     pub source: StatementSource,
     pub planning_time: Option<std::time::Duration>,
+}
+
+/// DIRTY HACK ALERT: Maximum allowed length, in UTF-8 bytes, of SQL queries.
+/// Any query longer than this will be rejected.
+/// This prevents a stack overflow when compiling queries with deeply-nested `AND` and `OR` conditions.
+const MAX_SQL_LENGTH: usize = 50_000;
+
+pub fn check_sql_length(sql: &str) -> TypingResult<()> {
+    if sql.len() > MAX_SQL_LENGTH {
+        return Err(TypingError::SqlMaxLengthExceeded {
+            sql: sql[..120].into(),
+            max_length: MAX_SQL_LENGTH,
+        });
+    }
+    Ok(())
 }
