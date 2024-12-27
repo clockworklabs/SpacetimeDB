@@ -17,9 +17,8 @@ use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
 
 use crate::rules::{
-    ComputePositions, HashToIxJoin, IxScanAnd, IxScanEq, IxScanEq2Col, IxScanEq3Col, PullFilterAboveHashJoin,
-    PushConstAnd, PushConstEq, PushLimit, ReorderDeltaJoinRhs, ReorderHashJoin, RewriteRule, UniqueHashJoinRule,
-    UniqueIxJoinRule,
+    ComputePositions, HashToIxJoin, IxScanBinOp, IxScanOpMultiCol, PullFilterAboveHashJoin, PushConstAnd, PushConstEq,
+    PushLimit, ReorderDeltaJoinRhs, ReorderHashJoin, RewriteRule, UniqueHashJoinRule, UniqueIxJoinRule,
 };
 
 /// Table aliases are replaced with labels in the physical plan
@@ -240,6 +239,8 @@ pub enum PhysicalPlan {
     TableScan(TableScan, Label),
     /// Fetch row ids from an index
     IxScan(IxScan, Label),
+    /// Fetch rows from using an intersection from index scans
+    IxScansAnd(Vec<PhysicalPlan>),
     /// An index join + projection
     IxJoin(IxJoin, Semi),
     /// A hash join + projection
@@ -278,7 +279,7 @@ impl PhysicalPlan {
                 lhs.visit(f);
                 rhs.visit(f);
             }
-            Self::TableScan(..) | Self::IxScan(..) => {}
+            Self::TableScan(..) | Self::IxScan(..) | Self::IxScansAnd(..) => {}
         }
     }
 
@@ -293,7 +294,7 @@ impl PhysicalPlan {
                 lhs.visit_mut(f);
                 rhs.visit_mut(f);
             }
-            Self::TableScan(..) | Self::IxScan(..) => {}
+            Self::TableScan(..) | Self::IxScan(..) | Self::IxScansAnd(..) => {}
         }
     }
 
@@ -326,7 +327,7 @@ impl PhysicalPlan {
                 },
                 semi,
             ),
-            plan @ Self::TableScan(..) | plan @ Self::IxScan(..) => plan,
+            plan @ Self::TableScan(..) | plan @ Self::IxScan(..) | plan @ Self::IxScansAnd(..) => plan,
         }
     }
 
@@ -345,7 +346,7 @@ impl PhysicalPlan {
             plan.any(&|plan| ok(plan).is_some())
         };
         Ok(match self {
-            Self::TableScan(..) | Self::IxScan(..) => self,
+            Self::TableScan(..) | Self::IxScan(..) | Self::IxScansAnd(..) => self,
             Self::NLJoin(lhs, rhs) => {
                 if matches(&lhs) {
                     return Ok(Self::NLJoin(Box::new(lhs.map_if(f, ok)?), rhs));
@@ -449,10 +450,8 @@ impl PhysicalPlan {
             .apply_rec::<PushConstEq>()?
             .apply_rec::<ReorderDeltaJoinRhs>()?
             .apply_rec::<PullFilterAboveHashJoin>()?
-            .apply_rec::<IxScanEq3Col>()?
-            .apply_rec::<IxScanEq2Col>()?
-            .apply_rec::<IxScanEq>()?
-            .apply_rec::<IxScanAnd>()?
+            .apply_rec::<IxScanBinOp>()?
+            .apply_rec::<IxScanOpMultiCol>()?
             .apply_rec::<ReorderHashJoin>()?
             .apply_rec::<HashToIxJoin>()?
             .apply_rec::<UniqueIxJoinRule>()?
@@ -587,6 +586,7 @@ impl PhysicalPlan {
             Self::Filter(input, expr) => Self::Filter(Box::new(input.expand_views(auth)), expr),
             Self::NLJoin(lhs, rhs) => Self::NLJoin(Box::new(lhs.expand_views(auth)), Box::new(rhs.expand_views(auth))),
             Self::TableScan(..) | Self::IxScan(..) => self,
+            plan @ Self::IxScansAnd(_) => plan,
         }
     }
 
@@ -971,6 +971,7 @@ impl PhysicalPlan {
     fn nfields(&self) -> usize {
         match self {
             Self::TableScan(..) | Self::IxScan(..) | Self::IxJoin(_, Semi::Rhs) => 1,
+            Self::IxScansAnd(plans) => plans.iter().map(PhysicalPlan::nfields).sum(),
             Self::Filter(input, _) => input.nfields(),
             Self::IxJoin(join, Semi::Lhs) => join.lhs.nfields(),
             Self::IxJoin(join, Semi::All) => join.lhs.nfields() + 1,
@@ -999,6 +1000,7 @@ impl PhysicalPlan {
                 | PhysicalPlan::IxJoin(IxJoin { rhs_label: alias, .. }, Semi::Rhs) => {
                     labels.push(*alias);
                 }
+                PhysicalPlan::IxScansAnd(idx) => labels.extend(idx.iter().flat_map(|plan| plan.labels())),
                 PhysicalPlan::Filter(input, _)
                 | PhysicalPlan::IxJoin(IxJoin { lhs: input, .. }, Semi::Lhs)
                 | PhysicalPlan::HashJoin(HashJoin { lhs: input, .. }, Semi::Lhs)
@@ -1096,7 +1098,7 @@ impl PhysicalPlan {
             Self::IxJoin(join, Semi::Rhs) => Some(join.rhs.clone()),
             Self::HashJoin(join, Semi::Lhs) => join.lhs.return_table(),
             Self::HashJoin(join, Semi::Rhs) => join.rhs.return_table(),
-            Self::IxJoin(_, Semi::All) | Self::HashJoin(_, Semi::All) | Self::NLJoin(..) => None,
+            Self::IxJoin(_, Semi::All) | Self::HashJoin(_, Semi::All) | Self::NLJoin(..) | Self::IxScansAnd(_) => None,
         }
     }
 
@@ -1160,6 +1162,17 @@ pub enum Sarg {
 }
 
 impl Sarg {
+    pub fn from_op(op: BinOp, col: ColId, value: AlgebraicValue) -> Self {
+        match op {
+            BinOp::Eq => Sarg::Eq(col, value),
+            BinOp::Ne => unreachable!("Cannot create a search argument for inequality"),
+            BinOp::Lt => Sarg::Range(col, Bound::Unbounded, Bound::Excluded(value)),
+            BinOp::Gt => Sarg::Range(col, Bound::Excluded(value), Bound::Unbounded),
+            BinOp::Lte => Sarg::Range(col, Bound::Unbounded, Bound::Included(value)),
+            BinOp::Gte => Sarg::Range(col, Bound::Included(value), Bound::Unbounded),
+        }
+    }
+
     /// Decodes the sarg into a binary operator
     pub fn to_op(&self) -> BinOp {
         match self {
@@ -1395,18 +1408,18 @@ pub mod tests_utils {
     use crate::printer::{Explain, ExplainOptions};
     use crate::PhysicalCtx;
     use expect_test::Expect;
-    use spacetimedb_expr::check::{compile_sql_sub, SchemaView};
-    use spacetimedb_expr::statement::compile_sql_stmt;
+    use spacetimedb_expr::check::{compile_sql_sub, SchemaView, TypingResult};
+    use spacetimedb_expr::statement::compile_sql_stmt_with_ctx;
     use spacetimedb_lib::identity::AuthCtx;
 
-    fn sub<'a>(db: &'a impl SchemaView, auth: &'a AuthCtx, sql: &'a str) -> PhysicalCtx<'a> {
-        let plan = compile_sql_sub(sql, db, auth, true).unwrap();
-        compile(plan, auth)
+    fn sub<'a>(db: &'a impl SchemaView, auth: &'a AuthCtx, sql: &'a str) -> TypingResult<PhysicalCtx<'a>> {
+        let plan = compile_sql_sub(sql, db, auth, true)?;
+        Ok(compile(plan, auth))
     }
 
-    fn query<'a>(db: &'a impl SchemaView, auth: &'a AuthCtx, sql: &'a str) -> PhysicalCtx<'a> {
-        let plan = compile_sql_stmt(sql, db, auth, true).unwrap();
-        compile(plan, auth)
+    pub fn query<'a>(db: &'a impl SchemaView, auth: &'a AuthCtx, sql: &'a str) -> TypingResult<PhysicalCtx<'a>> {
+        let plan = compile_sql_stmt_with_ctx(sql, db, auth, true)?;
+        Ok(compile(plan, auth))
     }
 
     fn check(plan: PhysicalCtx, options: ExplainOptions, expect: Expect) {
@@ -1418,15 +1431,55 @@ pub mod tests_utils {
         let explain = Explain::new(&plan).with_options(options).build();
         expect.assert_eq(&explain.to_string());
     }
-
-    pub fn check_sub(db: &impl SchemaView, options: ExplainOptions, auth: &AuthCtx, sql: &str, expect: Expect) {
-        let plan = sub(db, auth, sql);
-        check(plan, options, expect);
+    #[cfg(test)]
+    fn check_assert(plan: PhysicalCtx, options: ExplainOptions, expect: String) {
+        let plan = if options.optimize {
+            plan.optimize().unwrap()
+        } else {
+            plan
+        };
+        let explain = Explain::new(&plan).with_options(options).build();
+        pretty_assertions::assert_eq!(explain.to_string(), expect, "{}", plan.sql)
     }
 
-    pub fn check_query(db: &impl SchemaView, options: ExplainOptions, auth: &AuthCtx, sql: &str, expect: Expect) {
-        let plan = query(db, auth, sql);
+    pub fn check_sub(
+        db: &impl SchemaView,
+        options: ExplainOptions,
+        auth: &AuthCtx,
+        sql: &str,
+        expect: Expect,
+    ) -> TypingResult<()> {
+        let plan = sub(db, auth, sql)?;
         check(plan, options, expect);
+        Ok(())
+    }
+    #[cfg(test)]
+    pub fn check_sub_assert(db: &impl SchemaView, options: ExplainOptions, auth: &AuthCtx, sql: &str, expect: String) {
+        let plan = sub(db, auth, sql).unwrap();
+        check_assert(plan, options, expect);
+    }
+
+    pub fn check_query(
+        db: &impl SchemaView,
+        options: ExplainOptions,
+        auth: &AuthCtx,
+        sql: &str,
+        expect: Expect,
+    ) -> TypingResult<()> {
+        let plan = query(db, auth, sql)?;
+        check(plan, options, expect);
+        Ok(())
+    }
+    #[cfg(test)]
+    pub fn check_query_assert(
+        db: &impl SchemaView,
+        options: ExplainOptions,
+        auth: &AuthCtx,
+        sql: &str,
+        expect: String,
+    ) {
+        let plan = query(db, auth, sql).unwrap();
+        check_assert(plan, options, expect);
     }
 }
 
@@ -1434,7 +1487,8 @@ pub mod tests_utils {
 mod tests {
     use super::*;
 
-    use crate::printer::ExplainOptions;
+    use crate::plan::tests_utils::query;
+    use crate::printer::{Explain, ExplainOptions};
     use expect_test::{expect, Expect};
     use spacetimedb_expr::check::SchemaView;
     use spacetimedb_lib::identity::AuthCtx;
@@ -1545,11 +1599,19 @@ mod tests {
     }
 
     fn check_sub(db: &SchemaViewer, sql: &str, expect: Expect) {
-        tests_utils::check_sub(db, db.options, &AuthCtx::for_testing(), sql, expect);
+        tests_utils::check_sub(db, db.options, &AuthCtx::for_testing(), sql, expect).unwrap();
+    }
+
+    fn check_sub_assert(db: &SchemaViewer, sql: &str, expect: String) {
+        tests_utils::check_sub_assert(db, db.options, &AuthCtx::for_testing(), sql, expect);
     }
 
     fn check_query(db: &SchemaViewer, sql: &str, expect: Expect) {
-        tests_utils::check_query(db, db.options, &AuthCtx::for_testing(), sql, expect);
+        tests_utils::check_query(db, db.options, &AuthCtx::for_testing(), sql, expect).unwrap();
+    }
+
+    fn check_query_assert(db: &SchemaViewer, sql: &str, expect: String) {
+        tests_utils::check_query_assert(db, db.options, &AuthCtx::for_testing(), sql, expect);
     }
 
     fn data() -> SchemaViewer {
@@ -1584,7 +1646,16 @@ mod tests {
             Some(0),
         ));
 
-        SchemaViewer::new(vec![m.clone(), w.clone(), p.clone()]).with_options(ExplainOptions::default().optimize(false))
+        let x = Arc::new(schema(
+            m_id,
+            "test",
+            &[("x", AlgebraicType::I32), ("y", AlgebraicType::I32)],
+            &[&[0], &[1]],
+            &[&[0]],
+            Some(0),
+        ));
+        SchemaViewer::new(vec![m.clone(), w.clone(), p.clone(), x.clone()])
+            .with_options(ExplainOptions::default().optimize(false))
     }
 
     #[test]
@@ -1755,62 +1826,101 @@ Seq Scan on t
         );
     }
 
-    /// Test single and multi-column index selections
-    #[test]
-    fn index_scans() {
-        let t_id = TableId(1);
-
+    fn make_table_index() -> SchemaViewer {
         let t = Arc::new(schema(
-            t_id,
+            TableId(1),
             "t",
             &[
                 ("w", AlgebraicType::U8),
                 ("x", AlgebraicType::U8),
                 ("y", AlgebraicType::U8),
                 ("z", AlgebraicType::U8),
+                ("id", AlgebraicType::U64),
             ],
-            &[&[1], &[2, 3], &[1, 2, 3]],
+            &[&[1], &[2, 3], &[1, 2, 3], &[0, 1, 2, 3], &[0]],
             &[],
             None,
         ));
 
-        let db = SchemaViewer::new(vec![t]);
+        SchemaViewer::new(vec![t]).optimize(true)
+    }
 
-        // Test permutations of the same query
+    // We optimize with the following rules in mind:
+    // - When all the comparisons are`!=` is always a full table scan
+    // - Multi-column indexes are only used if the query has a prefix match (ie all operators are `=`)
+    // - Else are converted to a single column index scan on the leftmost column and a filter on the rest
+
+    /// Test index selections on 1 column
+    #[test]
+    fn index_scans_and() {
+        let t = Arc::new(schema(
+            TableId(1),
+            "t",
+            &[
+                ("a", AlgebraicType::U8),
+                ("b", AlgebraicType::U8),
+                ("c", AlgebraicType::U8),
+            ],
+            &[&[1], &[2], &[0, 1, 2]],
+            &[],
+            None,
+        ));
+
+        let db = SchemaViewer::new(vec![t]).optimize(true);
+
         check_sub(
             &db,
-            "select * from t where z = 5 and y = 4 and x = 3",
+            "select * from t where a >= 3 and a <= 5",
             expect![
                 r#"
-Index Scan using Index id 2 (t.x, t.y, t.z) on t
-  Index Cond: (t.x = U8(3), t.y = U8(4), t.z = U8(5))
-  Output: t.w, t.x, t.y, t.z"#
+Index Scan using Index id 2 (t.a, t.b, t.c) on t
+  Index Cond: (t.a >= U8(3))
+  Output: t.a, t.b, t.c
+  -> Filter: (t.a <= U8(5))"#
             ],
         );
-        // Select index on x
-        check_sub(
+    }
+    /// Test index selections on 1 column
+    #[test]
+    fn index_scans_1_col() {
+        let db = make_table_index();
+
+        for op in ["=", ">", "<", ">=", "<="] {
+            check_sub_assert(
+                &db,
+                &format!("SELECT * FROM t WHERE x {op} 4"),
+                format!(
+                    "Index Scan using Index id 0 (t.x) on t
+  Index Cond: (t.x {op} U8(4))
+  Output: t.w, t.x, t.y, t.z, t.id",
+                ),
+            )
+        }
+        // `!=` is not supported in index scans
+        check_query(
             &db,
-            "select * from t where x = 3 and y = 4",
+            "select * from t where  x != 4",
             expect![
                 r#"
-Index Scan using Index id 0 (t.x) on t
-  Index Cond: (t.x = U8(3))
-  Output: t.w, t.x, t.y, t.z
-  -> Filter: (t.y = U8(4))"#
+Seq Scan on t
+  Output: t.w, t.x, t.y, t.z, t.id
+  -> Filter: (t.x <> U8(4))"#
             ],
         );
+
         // Select index on x
         check_query(
             &db,
-            "select * from t where w = 5 and x = 4",
+            "select * from t where x = 5 and id = 4",
             expect![
                 r#"
 Index Scan using Index id 0 (t.x) on t
-  Index Cond: (t.x = U8(4))
-  Output: t.w, t.x, t.y, t.z
-  -> Filter: (t.w = U8(5))"#
+  Index Cond: (t.x = U8(5))
+  Output: t.w, t.x, t.y, t.z, t.id
+  -> Filter: (t.id = U64(4))"#
             ],
         );
+
         // Do not select index on (y, z)
         check_query(
             &db,
@@ -1818,10 +1928,48 @@ Index Scan using Index id 0 (t.x) on t
             expect![
                 r#"
 Seq Scan on t
-  Output: t.w, t.x, t.y, t.z
+  Output: t.w, t.x, t.y, t.z, t.id
   -> Filter: (t.y = U8(1))"#
             ],
         );
+
+        //Query multiple times the same index
+        check_query(
+            &db,
+            "select * from t where x = 5 and x = 6 and x = 4",
+            expect![
+                r#"
+Union
+  -> Index Scan using Index id 0 (t.x) on t
+     Index Cond: (t.x = U8(6))
+     Output: t.w, t.x, t.y, t.z, t.id
+  -> Index Scan using Index id 0 (t.x) on t
+     Index Cond: (t.x = U8(4))
+     Output: t.w, t.x, t.y, t.z, t.id
+  -> Index Scan using Index id 0 (t.x) on t
+     Index Cond: (t.x = U8(5))
+     Output: t.w, t.x, t.y, t.z, t.id
+  Output: t.w, t.x, t.y, t.z, t.id
+  -> Filter: (t.x = U8(6) AND t.x = U8(4) AND t.x = U8(5))"#
+            ],
+        );
+
+        check_query(
+            &db,
+            "select * from t where x = 5 or x = 6 or x = 4",
+            expect![
+                r#"
+Seq Scan on t
+  Output: t.w, t.x, t.y, t.z, t.id
+  -> Filter: (t.x = U8(5) OR t.x = U8(6) OR t.x = U8(4))"#
+            ],
+        );
+    }
+
+    /// Test index selections on 2 columns
+    #[test]
+    fn index_scans_2_col() {
+        let db = make_table_index();
 
         // Select index on [y, z]
         check_query(
@@ -1831,31 +1979,225 @@ Seq Scan on t
                 r#"
 Index Scan using Index id 1 (t.y, t.z) on t
   Index Cond: (t.y = U8(1), t.z = U8(2))
-  Output: t.w, t.x, t.y, t.z"#
+  Output: t.w, t.x, t.y, t.z, t.id"#
             ],
         );
 
-        // Check permutations of the same query
+        for op in [">", "<", ">=", "<="] {
+            check_query_assert(
+                &db,
+                &format!("select * from t where y {op} 1 and z {op} 2"),
+                format!(
+                    r#"Index Scan using Index id 1 (t.y, t.z) on t
+  Index Cond: (t.y {op} U8(1))
+  Output: t.w, t.x, t.y, t.z, t.id
+  -> Filter: (t.z {op} U8(2))"#
+                ),
+            );
+
+            // Check permutations of the same query
+            check_query_assert(
+                &db,
+                &format!("select * from t where z {op} 2 and y {op} 1"),
+                format!(
+                    r#"Index Scan using Index id 1 (t.y, t.z) on t
+  Index Cond: (t.y {op} U8(1))
+  Output: t.w, t.x, t.y, t.z, t.id
+  -> Filter: (t.z {op} U8(2))"#
+                ),
+            );
+
+            check_query_assert(
+                &db,
+                &format!("select * from t where z != 2 and y {op} 1"),
+                format!(
+                    r#"Index Scan using Index id 1 (t.y, t.z) on t
+  Index Cond: (t.y {op} U8(1))
+  Output: t.w, t.x, t.y, t.z, t.id
+  -> Filter: (t.z <> U8(2))"#
+                ),
+            );
+        }
+
+        // Select index on (y, z), (w) and filter on (id)
         check_query(
             &db,
-            "select * from t where z = 2 and y = 1",
+            "select * from t where w = 1 and y = 2 and z = 3 and id = 4",
             expect![
                 r#"
-Index Scan using Index id 1 (t.y, t.z) on t
-  Index Cond: (t.y = U8(1), t.z = U8(2))
-  Output: t.w, t.x, t.y, t.z"#
+Union
+  -> Index Scan using Index id 1 (t.y, t.z) on t
+     Index Cond: (t.y = U8(2), t.z = U8(3))
+     Output: t.w, t.x, t.y, t.z, t.id
+  -> Index Scan using Index id 3 (t.w, t.x, t.y, t.z) on t
+     Index Cond: (t.w = U8(1))
+     Output: t.w, t.x, t.y, t.z, t.id
+  Output: t.w, t.x, t.y, t.z, t.id
+  -> Filter: (t.id = U64(4) AND t.y = U8(2) AND t.z = U8(3) AND t.w = U8(1))"#
             ],
         );
-        // Select index on (y, z) and filter on (w)
+
+        // `!=` is not supported in index scans
         check_query(
             &db,
-            "select * from t where w = 1 and y = 2 and z = 3",
+            "select * from t where y != 1 and z != 2",
             expect![
                 r#"
-Index Scan using Index id 1 (t.y, t.z) on t
-  Index Cond: (t.y = U8(2), t.z = U8(3))
-  Output: t.w, t.x, t.y, t.z
-  -> Filter: (t.w = U8(1))"#
+Seq Scan on t
+  Output: t.w, t.x, t.y, t.z, t.id
+  -> Filter: (t.y <> U8(1) AND t.z <> U8(2))"#
+            ],
+        );
+    }
+
+    /// Test index selections on 3 columns
+    #[test]
+    fn index_scans_3_col() {
+        let db = make_table_index();
+        // Select index on (x, y, z)
+        check_sub(
+            &db,
+            "select * from t as x where x = 3 and y = 4 and z = 5",
+            expect![
+                r#"
+Index Scan using Index id 2 (t.x, t.y, t.z) on t
+  Index Cond: (x.x = U8(3), x.y = U8(4), x.z = U8(5))
+  Output: x.w, x.x, x.y, x.z, x.id"#
+            ],
+        );
+
+        // Test permutations of the same query
+        check_sub(
+            &db,
+            "select * from t where z = 5 and y = 4 and x = 3",
+            expect![
+                r#"
+Index Scan using Index id 2 (t.x, t.y, t.z) on t
+  Index Cond: (t.x = U8(3), t.y = U8(4), t.z = U8(5))
+  Output: t.w, t.x, t.y, t.z, t.id"#
+            ],
+        );
+
+        for op in [">", "<", ">=", "<="] {
+            check_sub_assert(
+                &db,
+                &format!("select * from t where x {op} 3 and y {op} 4 and z {op} 5"),
+                format!(
+                    r#"Union
+  -> Index Scan using Index id 0 (t.x) on t
+     Index Cond: (t.x {op} U8(3))
+     Output: t.w, t.x, t.y, t.z, t.id
+  -> Index Scan using Index id 1 (t.y, t.z) on t
+     Index Cond: (t.y {op} U8(4))
+     Output: t.w, t.x, t.y, t.z, t.id
+  Output: t.w, t.x, t.y, t.z, t.id
+  -> Filter: (t.z {op} U8(5) AND t.x {op} U8(3) AND t.y {op} U8(4))"#
+                ),
+            );
+
+            // Check permutations of the same query
+            check_sub_assert(
+                &db,
+                &format!("select * from t where z {op} 5 and y {op} 4 and x {op} 3"),
+                format!(
+                    r#"Union
+  -> Index Scan using Index id 0 (t.x) on t
+     Index Cond: (t.x {op} U8(3))
+     Output: t.w, t.x, t.y, t.z, t.id
+  -> Index Scan using Index id 1 (t.y, t.z) on t
+     Index Cond: (t.y {op} U8(4))
+     Output: t.w, t.x, t.y, t.z, t.id
+  Output: t.w, t.x, t.y, t.z, t.id
+  -> Filter: (t.z {op} U8(5) AND t.x {op} U8(3) AND t.y {op} U8(4))"#
+                ),
+            );
+
+            check_sub_assert(
+                &db,
+                &format!("select * from t where x {op} 3 and y != 4 and z {op} 5"),
+                format!(
+                    r#"Index Scan using Index id 0 (t.x) on t
+  Index Cond: (t.x {op} U8(3))
+  Output: t.w, t.x, t.y, t.z, t.id
+  -> Filter: (t.y <> U8(4) AND t.z {op} U8(5))"#
+                ),
+            );
+        }
+
+        // `!=` is not supported in index scans
+        check_query(
+            &db,
+            "select * from t where x != 3 and y != 4 and z != 5",
+            expect![
+                r#"
+Seq Scan on t
+  Output: t.w, t.x, t.y, t.z, t.id
+  -> Filter: (t.x <> U8(3) AND t.y <> U8(4) AND t.z <> U8(5))"#
+            ],
+        );
+
+        // Select index on (y, z) with multiple conditions on y
+        check_sub(
+            &db,
+            "select * from t as x where y = 4 and y < 5 and id = 6",
+            expect![
+                r#"
+Union
+  -> Index Scan using Index id 1 (t.y, t.z) on t
+     Index Cond: (x.y = U8(4))
+     Output: x.w, x.x, x.y, x.z, x.id
+  -> Index Scan using Index id 1 (t.y, t.z) on t
+     Index Cond: (x.y < U8(5))
+     Output: x.w, x.x, x.y, x.z, x.id
+  Output: x.w, x.x, x.y, x.z, x.id
+  -> Filter: (x.id = U64(6) AND x.y < U8(5) AND x.y = U8(4))"#
+            ],
+        );
+    }
+
+    /// Test index selections above 3 columns
+    #[test]
+    fn index_scans_after_3_col() {
+        let db = make_table_index();
+        // Select index on (x, y, z)
+        check_sub(
+            &db,
+            "select * from t as x where x = 3 and y = 4 and z = 5 and w = 6",
+            expect![
+                r#"
+Index Scan using Index id 3 (t.w, t.x, t.y, t.z) on t
+  Index Cond: (x.w = U8(6), x.x = U8(3), x.y = U8(4), x.z = U8(5))
+  Output: x.w, x.x, x.y, x.z, x.id"#
+            ],
+        );
+
+        // Test permutations of the same query
+        check_sub(
+            &db,
+            "select * from t where z = 5 and y = 4 and w = 6 and x = 3",
+            expect![
+                r#"
+Index Scan using Index id 3 (t.w, t.x, t.y, t.z) on t
+  Index Cond: (t.w = U8(6), t.x = U8(3), t.y = U8(4), t.z = U8(5))
+  Output: t.w, t.x, t.y, t.z, t.id"#
+            ],
+        );
+    }
+
+    /// Test index selections select the shorter index when multiple indexes match
+    #[test]
+    fn index_scans_pick_shorter() {
+        let db = make_table_index();
+        // Select index on (x) instead of (x, y)
+        check_sub(
+            &db,
+            "select * from t as x where x = 3 and id > 4",
+            expect![
+                r#"
+Index Scan using Index id 0 (t.x) on t
+  Index Cond: (x.x = U8(3))
+  Output: x.w, x.x, x.y, x.z, x.id
+  -> Filter: (x.id > U64(4))"#
             ],
         );
     }
@@ -2223,5 +2565,102 @@ Delete on p
      Output: p.id, p.name
      -> Filter: (p.id = U64(1))"#]],
         );
+    }
+
+    #[test]
+    fn count() {
+        let db = data().with_options(ExplainOptions::default().optimize(true));
+
+        check_query(
+            &db,
+            "SELECT count(*) as n FROM p",
+            expect![[r#"
+Count
+  Output: n
+  -> Seq Scan on p
+     Output: p.id, p.name"#]],
+        );
+
+        check_query(
+            &db,
+            "SELECT count(*) as n FROM p WHERE id = 1",
+            expect![[r#"
+Count
+  Output: n
+  -> Index Scan using Index id 0 Unique(p.id) on p
+     Index Cond: (p.id = U64(1))
+     Output: p.id, p.name"#]],
+        );
+    }
+
+    #[test]
+    fn limit() {
+        let db = data().with_options(ExplainOptions::default().optimize(true));
+
+        check_query(
+            &db,
+            "SELECT * FROM p LIMIT 10",
+            expect![[r#"
+Limit: 10
+  Output: p.id, p.name
+  -> Seq Scan on p
+     Output: p.id, p.name"#]],
+        );
+
+        check_query(
+            &db,
+            "SELECT * FROM p WHERE id = 1 LIMIT 10",
+            expect![[r#"
+Limit: 10
+  Output: p.id, p.name
+  -> Index Scan using Index id 0 Unique(p.id) on p
+     Index Cond: (p.id = U64(1))
+     Output: p.id, p.name"#]],
+        );
+    }
+
+    #[test]
+    fn overflow() {
+        let db = data().with_options(ExplainOptions::default().optimize(true));
+
+        let build_query = |total| {
+            let mut sql = "select * from m where ".to_string();
+            for x in 1..total {
+                let fragment = format!("(manager = {x}) or ");
+                sql.push_str(&fragment.repeat((total - 1) as usize));
+            }
+            sql.push_str("(employee = 0)");
+            sql
+        };
+        let run = |sep: char, sql: &str| {
+            query(&db, &AuthCtx::for_testing(), sql)
+                .map(|plan| {
+                    // Check that the plan can be explained without overflow
+                    let explain = Explain::new(&plan)
+                        .with_options(ExplainOptions::default().optimize(true))
+                        .build();
+                    let out = explain.to_string();
+                    !out.is_empty()
+                })
+                .map_err(|e| e.to_string().split(sep).next().unwrap_or_default().to_string())
+        };
+        let sql = build_query(1_000);
+        assert_eq!(
+            run(':', &sql),
+            Err("SQL query exceeds maximum allowed length".to_string())
+        );
+
+        let sql = build_query(41);
+        assert_eq!(run(',', &sql), Err("Recursion limit exceeded".to_string()));
+
+        let sql = build_query(40);
+        assert_eq!(run(',', &sql), Ok(true), "Query should not overflow");
+
+        // Check no overflow with lot of joins
+        let mut sql = "SELECT m.* FROM m ".to_string();
+        for i in 0..1_000 {
+            sql.push_str(&format!("JOIN m AS m{i} ON m.employee = m{i}.manager "));
+        }
+        assert_eq!(run(',', &sql), Ok(true), "Query with 1_000 joins should not overflow");
     }
 }
