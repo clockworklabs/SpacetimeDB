@@ -117,11 +117,7 @@ impl ModuleSubscriptions {
         } else {
             // NOTE: The following ensures compliance with the 1.0 sql api.
             // Come 1.0, it will have replaced the current compilation stack.
-            compile_sql_sub(
-                &mut TyCtx::default(),
-                sql,
-                &SchemaViewer::new(&self.relational_db, &*tx, &auth),
-            )?;
+            compile_sql_sub(sql, &SchemaViewer::new(&self.relational_db, &*tx, &auth))?;
 
             let compiled = compile_read_only_query(&self.relational_db, &auth, &tx, sql)?;
             Arc::new(ExecutionUnit::new(compiled, hash)?)
