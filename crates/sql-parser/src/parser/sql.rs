@@ -155,7 +155,9 @@ pub fn parse_sql(sql: &str) -> SqlParseResult<SqlAst> {
     if stmts.is_empty() {
         return Err(SqlUnsupported::Empty.into());
     }
-    parse_statement(stmts.swap_remove(0)).map(|ast| ast.qualify_vars())
+    parse_statement(stmts.swap_remove(0))
+        .map(|ast| ast.qualify_vars())
+        .and_then(|ast| ast.find_unqualified_vars())
 }
 
 /// Parse a SQL statement
@@ -416,6 +418,8 @@ mod tests {
             "update t set a = 1 from s where t.id = s.id and s.b = 2",
             // Implicit joins
             "select a.* from t as a, s as b where a.id = b.id and b.c = 1",
+            // Joins require qualified vars
+            "select t.* from t join s on int = u32",
         ] {
             assert!(parse_sql(sql).is_err());
         }

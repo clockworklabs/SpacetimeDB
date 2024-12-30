@@ -118,6 +118,10 @@ public static partial class Timers
     [SpacetimeDB.Table(Scheduled = nameof(SendScheduledMessage))]
     public partial struct SendMessageTimer
     {
+        [PrimaryKey]
+        [AutoInc]
+        public ulong ScheduledId;
+        public ScheduleAt ScheduledAt;
         public string Text;
     }
 

@@ -37,13 +37,26 @@ pub const OPTION_NONE_TAG: &str = "none";
 /// See also: https://ncatlab.org/nlab/show/sum+type.
 ///
 /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct SumType {
     /// The possible variants of the sum type.
     ///
     /// The order is relevant as it defines the tags of the variants at runtime.
     pub variants: Box<[SumTypeVariant]>,
+}
+
+impl std::fmt::Debug for SumType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SumType ")?;
+        f.debug_map()
+            .entries(
+                self.variants
+                    .iter()
+                    .map(|variant| (crate::dbg_aggregate_name(&variant.name), &variant.algebraic_type)),
+            )
+            .finish()
+    }
 }
 
 impl SumType {

@@ -91,8 +91,39 @@ public class ErrorDescriptor<TContext>
     )
         : this(group, title, interpolate, ctx => toLocation(ctx).Locations.FirstOrDefault()) { }
 
+    public ErrorDescriptor(
+        ErrorDescriptorGroup group,
+        string title,
+        Expression<Func<TContext, FormattableString>> interpolate,
+        Func<TContext, AttributeData> toLocation
+    )
+        : this(
+            group,
+            title,
+            interpolate,
+            ctx =>
+                toLocation(ctx).ApplicationSyntaxReference is { } r
+                    ? r.SyntaxTree.GetLocation(r.Span)
+                    : null
+        ) { }
+
     public Diagnostic ToDiag(TContext ctx) =>
         Diagnostic.Create(descriptor, toLocation(ctx), makeFormatArgs(ctx));
+}
+
+/// <summary>
+/// No-op error descriptor placeholder.
+///
+/// <para>Error descriptors must have strong ID to avoid breaking semver, since they are used for diagnostic suppression by users.</para>
+/// <para>To ensure this, we cannot reorder to delete unused diagnostics - instead, we need to put some placeholders where they used to be.</para>
+/// <para>This class serves that purpose - it's a no-op error descriptor that you can instantiate just to reserve said ID.</para>
+/// </summary>
+public sealed class UnusedErrorDescriptor
+{
+    public UnusedErrorDescriptor(ErrorDescriptorGroup group)
+    {
+        group.NextId();
+    }
 }
 
 internal static class ErrorDescriptor

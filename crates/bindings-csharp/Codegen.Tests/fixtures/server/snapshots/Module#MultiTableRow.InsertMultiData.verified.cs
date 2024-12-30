@@ -10,6 +10,9 @@ partial struct MultiTableRow
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
         new MultiTableRow.BSATN().Write(writer, data);
-        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate("InsertMultiData", stream);
+        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
+            nameof(InsertMultiData),
+            stream
+        );
     }
 } // MultiTableRow

@@ -38,7 +38,7 @@ partial struct TestUnsupportedType : SpacetimeDB.BSATN.IStructuralReadWrite
             value.WriteFields(writer);
         }
 
-        public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
+        public SpacetimeDB.BSATN.AlgebraicType.Ref GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             registrar.RegisterType<TestUnsupportedType>(
@@ -58,5 +58,9 @@ partial struct TestUnsupportedType : SpacetimeDB.BSATN.IStructuralReadWrite
                     }
                 )
             );
+
+        SpacetimeDB.BSATN.AlgebraicType SpacetimeDB.BSATN.IReadWrite<TestUnsupportedType>.GetAlgebraicType(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => GetAlgebraicType(registrar);
     }
 } // TestUnsupportedType

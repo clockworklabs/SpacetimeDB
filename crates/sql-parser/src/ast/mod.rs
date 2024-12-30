@@ -12,12 +12,27 @@ pub enum SqlFrom {
     Join(SqlIdent, SqlIdent, Vec<SqlJoin>),
 }
 
+impl SqlFrom {
+    pub fn has_unqualified_vars(&self) -> bool {
+        match self {
+            Self::Join(_, _, joins) => joins.iter().any(|join| join.has_unqualified_vars()),
+            _ => false,
+        }
+    }
+}
+
 /// An inner join in a FROM clause
 #[derive(Debug)]
 pub struct SqlJoin {
     pub var: SqlIdent,
     pub alias: SqlIdent,
     pub on: Option<SqlExpr>,
+}
+
+impl SqlJoin {
+    pub fn has_unqualified_vars(&self) -> bool {
+        self.on.as_ref().is_some_and(|expr| expr.has_unqualified_vars())
+    }
 }
 
 /// A projection expression in a SELECT clause
@@ -73,6 +88,15 @@ impl Project {
             Self::Exprs(elems) => Self::Exprs(elems.into_iter().map(|elem| elem.qualify_vars(with.clone())).collect()),
         }
     }
+
+    pub fn has_unqualified_vars(&self) -> bool {
+        match self {
+            Self::Exprs(exprs) => exprs
+                .iter()
+                .any(|ProjectElem(expr, _)| matches!(expr, ProjectExpr::Var(_))),
+            _ => false,
+        }
+    }
 }
 
 /// A scalar SQL expression
@@ -105,6 +129,14 @@ impl SqlExpr {
                 Box::new(b.qualify_vars(with)),
                 op,
             ),
+        }
+    }
+
+    pub fn has_unqualified_vars(&self) -> bool {
+        match self {
+            Self::Var(_) => true,
+            Self::Bin(a, b, _) | Self::Log(a, b, _) => a.has_unqualified_vars() || b.has_unqualified_vars(),
+            _ => false,
         }
     }
 }

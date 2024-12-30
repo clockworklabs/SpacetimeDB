@@ -60,7 +60,6 @@ public static partial class ia_loop
     }
 
     [SpacetimeDB.Table(Name = "game_targetable_state")]
-    [SpacetimeDB.Index(BTree = [nameof(quad)])]
     public partial struct GameTargetableState(ulong entity_id, long quad)
     {
         [PrimaryKey]

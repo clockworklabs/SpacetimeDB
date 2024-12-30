@@ -35,7 +35,7 @@ pub const ADDRESS_TAG: &str = "__address__";
 /// so for example, `values({ A: U64, B: Bool }) = values(U64) * values(Bool)`.
 ///
 /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct ProductType {
     /// The factors of the product type.
@@ -43,6 +43,19 @@ pub struct ProductType {
     /// These factors can either be named or unnamed.
     /// When all the factors are unnamed, we can regard this as a plain tuple type.
     pub elements: Box<[ProductTypeElement]>,
+}
+
+impl std::fmt::Debug for ProductType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ProductType ")?;
+        f.debug_map()
+            .entries(
+                self.elements
+                    .iter()
+                    .map(|elem| (crate::dbg_aggregate_name(&elem.name), &elem.algebraic_type)),
+            )
+            .finish()
+    }
 }
 
 impl ProductType {
