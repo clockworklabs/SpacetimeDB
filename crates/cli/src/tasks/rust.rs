@@ -1,3 +1,4 @@
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
@@ -32,22 +33,42 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
         }
     }
 
-    // Note: Clippy has to run first so that it can build & cache deps for actual build while checking in parallel.
-    if !skip_clippy {
-        let clippy_conf_dir = tempfile::tempdir()?;
-        fs::write(clippy_conf_dir.path().join("clippy.toml"), CLIPPY_TOML)?;
-        eprintln!("checking crate with spacetimedb's clippy configuration");
-        let out = cargo_cmd(
-            "clippy",
-            build_debug,
-            &["--", "--no-deps", "-Aclippy::all", "-Dclippy::disallowed-macros"],
-        )
-        .dir(project_path)
-        .env("CLIPPY_DISABLE_DOCS_LINKS", "1")
-        .env("CLIPPY_CONF_DIR", clippy_conf_dir.path())
-        .unchecked()
-        .run()?;
-        anyhow::ensure!(out.status.success(), "clippy found a lint error");
+    if skip_clippy {
+        println!(
+            "Warning: Skipping checks for nonfunctional print statements.\n\
+            If you have used builtin macros for printing, such as println!,\n\
+            your logs will not show up."
+        );
+    } else {
+        let mut err_count: u32 = 0;
+        for file in walkdir::WalkDir::new(project_path).into_iter() {
+            let file = file?;
+            let printable_path = file.path().to_str().ok_or(anyhow::anyhow!("path not utf-8"))?;
+            if file.file_type().is_file() && file.path().extension().map_or(false, |ext| ext == "rs") {
+                let file = fs::File::open(file.path())?;
+                for (idx, line) in io::BufReader::new(file).lines().enumerate() {
+                    let line = line?;
+                    let line_number = idx + 1;
+                    for disallowed in &["println!", "print!", "eprintln!", "eprint!", "dbg!"] {
+                        if line.contains(disallowed) {
+                            if err_count == 0 {
+                                eprintln!("\nDetected nonfunctional print statements:");
+                            }
+                            eprintln!("\n{printable_path}:{line_number}: {line}\n");
+                            err_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+        if err_count > 0 {
+            anyhow::bail!(
+                "Found {err_count} disallowed print statement(s).\n\
+                These will not be printed from SpacetimeDB modules.\n\
+                If you need to print something, use the `log` crate\n\
+                and the `log::info!` macro instead."
+            );
+        }
     }
 
     let reader = cargo_cmd("build", build_debug, &["--message-format=json-render-diagnostics"])
@@ -69,16 +90,6 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
 
     Ok(artifact.into())
 }
-
-const CLIPPY_TOML: &str = r#"
-disallowed-macros = [
-    { path = "std::print",       reason = "print!() has no effect inside a spacetimedb module; use log::info!() instead" },
-    { path = "std::println",   reason = "println!() has no effect inside a spacetimedb module; use log::info!() instead" },
-    { path = "std::eprint",     reason = "eprint!() has no effect inside a spacetimedb module; use log::warn!() instead" },
-    { path = "std::eprintln", reason = "eprintln!() has no effect inside a spacetimedb module; use log::warn!() instead" },
-    { path = "std::dbg",      reason = "std::dbg!() has no effect inside a spacetimedb module; import spacetime's dbg!() macro instead" },
-]
-"#;
 
 fn check_for_issues(artifact: &Path) -> anyhow::Result<()> {
     // if this fails for some reason, just let it fail elsewhere
