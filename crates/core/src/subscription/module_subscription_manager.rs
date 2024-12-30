@@ -128,24 +128,14 @@ impl SubscriptionManager {
         if let Some(ci) = self.clients.get_mut(client) {
             let mut queries_to_remove = Vec::new();
             for query_hash in ci.legacy_subscriptions.iter() {
-                let query_state = self.queries.get_mut(query_hash);
-                if query_state.is_none() {
+                let Some(query_state) = self.queries.get_mut(query_hash) else {
                     tracing::warn!("Query state not found for query hash: {:?}", query_hash);
                     continue;
-                }
-                let query_state = query_state.unwrap();
+                };
+
                 query_state.legacy_subscribers.remove(client);
                 if !query_state.has_subscribers() {
-                    SubscriptionManager::remove_table_query(
-                        &mut self.tables,
-                        query_state.query.return_table(),
-                        query_hash,
-                    );
-                    SubscriptionManager::remove_table_query(
-                        &mut self.tables,
-                        query_state.query.filter_table(),
-                        query_hash,
-                    );
+                    SubscriptionManager::remove_query_from_tables(&mut self.tables, &query_state.query);
                     queries_to_remove.push(*query_hash);
                 }
             }
@@ -158,42 +148,21 @@ impl SubscriptionManager {
 
     pub fn remove_subscription(&mut self, client_id: ClientId, query_id: ClientQueryId) -> Result<Query, DBError> {
         let subscription_id = (client_id, query_id);
-        let ci = if let Some(ci) = self.clients.get_mut(&client_id) {
-            ci
-        } else {
+        let Some(ci) = self.clients.get_mut(&client_id) else {
             return Err(anyhow::anyhow!("Client not found: {:?}", client_id).into());
         };
 
-        let query_hash = if let Some(query_hash) = ci.subscriptions.remove(&subscription_id) {
-            query_hash
-        } else {
+        let Some(query_hash) = ci.subscriptions.remove(&subscription_id) else {
             return Err(anyhow::anyhow!("Subscription not found: {:?}", subscription_id).into());
         };
-        let query_state = match self.queries.get_mut(&query_hash) {
-            Some(query_state) => query_state,
-            None => return Err(anyhow::anyhow!("Query state not found for query hash: {:?}", query_hash).into()),
+        let Some(query_state) = self.queries.get_mut(&query_hash) else {
+            return Err(anyhow::anyhow!("Query state not found for query hash: {:?}", query_hash).into());
         };
         let query = query_state.query.clone();
         // Check if the query has any subscribers left.
-        let should_remove = {
-            query_state.subscriptions.remove(&subscription_id);
-            if !query_state.has_subscribers() {
-                SubscriptionManager::remove_table_query(
-                    &mut self.tables,
-                    query_state.query.return_table(),
-                    &query_hash,
-                );
-                SubscriptionManager::remove_table_query(
-                    &mut self.tables,
-                    query_state.query.filter_table(),
-                    &query_hash,
-                );
-                true
-            } else {
-                false
-            }
-        };
-        if should_remove {
+        query_state.subscriptions.remove(&subscription_id);
+        if !query_state.has_subscribers() {
+            SubscriptionManager::remove_query_from_tables(&mut self.tables, &query_state.query);
             self.queries.remove(&query_hash);
         }
         Ok(query)
@@ -262,19 +231,21 @@ impl SubscriptionManager {
             self.tables.entry(unit.return_table()).or_default().insert(hash);
             self.tables.entry(unit.filter_table()).or_default().insert(hash);
             query_state.legacy_subscribers.insert(client_id);
-            // self.subscribers.entry(hash).or_default().insert(id);
-            // self.queries.insert(hash, unit);
         }
     }
 
-    // Remove `hash` from the set of queries for `table_id`.
-    // When the table has no queries, cleanup the map entry altogether.
+    // Update the mapping from table id to related queries by removing the given query.
+    // If this removes all queries for a table, the map entry for that table is removed altogether.
     // This takes a ref to the table map instead of `self` to avoid borrowing issues.
-    fn remove_table_query(tables: &mut IntMap<TableId, HashSet<QueryHash>>, table_id: TableId, hash: &QueryHash) {
-        if let Entry::Occupied(mut entry) = tables.entry(table_id) {
-            let hashes = entry.get_mut();
-            if hashes.remove(hash) && hashes.is_empty() {
-                entry.remove();
+    fn remove_query_from_tables(tables: &mut IntMap<TableId, HashSet<QueryHash>>, query: &Query) {
+        let hash = query.hash();
+        let related_tables = [query.return_table(), query.filter_table()];
+        for table_id in related_tables.iter() {
+            if let Entry::Occupied(mut entry) = tables.entry(*table_id) {
+                let hashes = entry.get_mut();
+                if hashes.remove(&hash) && hashes.is_empty() {
+                    entry.remove();
+                }
             }
         }
     }
@@ -285,26 +256,21 @@ impl SubscriptionManager {
     #[tracing::instrument(skip_all)]
     pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
         self.remove_legacy_subscriptions(client);
-        let client_info = self.clients.get(client);
-        if client_info.is_none() {
+        let Some(client_info) = self.clients.get(client) else {
             return;
-        }
-        let client_info = client_info.unwrap();
+        };
         debug_assert!(client_info.legacy_subscriptions.is_empty());
         let mut queries_to_remove = Vec::new();
         client_info.subscriptions.iter().for_each(|(sub_id, query_hash)| {
-            let query_state = self.queries.get_mut(query_hash);
-            if query_state.is_none() {
+            let Some(query_state) = self.queries.get_mut(query_hash) else {
                 tracing::warn!("Query state not found for query hash: {:?}", query_hash);
                 return;
-            }
-            let query_state = query_state.unwrap();
+            };
             query_state.subscriptions.remove(sub_id);
             // This could happen twice for the same hash if a client has a duplicate, but that's fine. It is idepotent.
             if !query_state.has_subscribers() {
                 queries_to_remove.push(*query_hash);
-                SubscriptionManager::remove_table_query(&mut self.tables, query_state.query.return_table(), query_hash);
-                SubscriptionManager::remove_table_query(&mut self.tables, query_state.query.filter_table(), query_hash);
+                SubscriptionManager::remove_query_from_tables(&mut self.tables, &query_state.query);
             }
         });
         for query_hash in queries_to_remove {
