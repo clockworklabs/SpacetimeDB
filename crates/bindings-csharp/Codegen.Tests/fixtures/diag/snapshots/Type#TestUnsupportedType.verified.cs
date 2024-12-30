@@ -22,13 +22,12 @@ partial struct TestUnsupportedType : SpacetimeDB.BSATN.IStructuralReadWrite
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<TestUnsupportedType>
     {
-        internal static readonly SpacetimeDB.BSATN.IReadWrite<System.DateTime> UnsupportedSpecialType =
+        internal static readonly SpacetimeDB.BSATN.Unsupported<System.DateTime> UnsupportedSpecialType =
             new();
-        internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> UnsupportedSystemType =
+        internal static readonly SpacetimeDB.BSATN.Unsupported<System.Exception> UnsupportedSystemType =
             new();
-        internal static readonly SpacetimeDB.BSATN.IReadWrite<UnresolvedType> UnresolvedType =
-            new();
-        internal static readonly SpacetimeDB.BSATN.IReadWrite<LocalEnum> UnsupportedEnum = new();
+        internal static readonly SpacetimeDB.BSATN.Unsupported<object> UnresolvedType = new();
+        internal static readonly SpacetimeDB.BSATN.Unsupported<LocalEnum> UnsupportedEnum = new();
 
         public TestUnsupportedType Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<TestUnsupportedType>(reader);
