@@ -122,11 +122,7 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
         };
         module
     } else {
-        let wasm_path = if !project_path.is_dir() && project_path.extension().map_or(false, |ext| ext == "wasm") {
-            println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
-            println!("removed in a future release. Please use --bin-path instead.");
-            project_path.clone()
-        } else if let Some(path) = wasm_file {
+        let wasm_path = if let Some(path) = wasm_file {
             println!("Skipping build. Instead we are inspecting {}", path.display());
             path.clone()
         } else {
