@@ -69,17 +69,16 @@ public static partial class ia_loop
     }
 
     [SpacetimeDB.Table(Name = "game_live_targetable_state")]
-    [SpacetimeDB.Index(BTree = [nameof(quad)])]
     public partial struct GameLiveTargetableState(ulong entity_id, long quad)
     {
         [Unique]
         public ulong entity_id = entity_id;
 
+        [SpacetimeDB.Index.BTree]
         public long quad = quad;
     }
 
     [SpacetimeDB.Table(Name = "game_mobile_entity_state")]
-    [SpacetimeDB.Index(BTree = [nameof(location_x)])]
     public partial struct GameMobileEntityState(
         ulong entity_id,
         int location_x,
@@ -90,6 +89,7 @@ public static partial class ia_loop
         [PrimaryKey]
         public ulong entity_id = entity_id;
 
+        [SpacetimeDB.Index.BTree]
         public int location_x = location_x;
         public int location_y = location_y;
         public ulong timestamp = timestamp;

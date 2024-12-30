@@ -58,9 +58,9 @@ public abstract record BaseTypeDeclaration<M>
     public readonly string ShortName;
     public readonly string FullName;
     public readonly TypeKind Kind;
-    public EquatableArray<M> Members { get; init; }
+    public readonly EquatableArray<M> Members;
 
-    protected abstract M ConvertMember(IFieldSymbol field, DiagReporter diag);
+    protected abstract M ConvertMember(int index, IFieldSymbol field, DiagReporter diag);
 
     public BaseTypeDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
@@ -127,10 +127,12 @@ public abstract record BaseTypeDeclaration<M>
         Scope = new(typeSyntax);
         ShortName = type.Name;
         FullName = SymbolToName(type);
-        Members = new(fields.Select(field => ConvertMember(field, diag)).ToImmutableArray());
+        Members = new(
+            fields.Select((field, index) => ConvertMember(index, field, diag)).ToImmutableArray()
+        );
     }
 
-    public virtual Scope.Extensions ToExtensions()
+    public Scope.Extensions ToExtensions()
     {
         string read,
             write;
@@ -254,8 +256,11 @@ record TypeDeclaration : BaseTypeDeclaration<MemberDeclaration>
     public TypeDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
         : base(context, diag) { }
 
-    protected override MemberDeclaration ConvertMember(IFieldSymbol field, DiagReporter diag) =>
-        new(field, diag);
+    protected override MemberDeclaration ConvertMember(
+        int index,
+        IFieldSymbol field,
+        DiagReporter diag
+    ) => new(field, diag);
 }
 
 [Generator]
