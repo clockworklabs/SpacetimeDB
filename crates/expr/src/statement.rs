@@ -1,31 +1,28 @@
 use std::sync::Arc;
 
-use spacetimedb_lib::AlgebraicValue;
+use spacetimedb_lib::{AlgebraicType, AlgebraicValue};
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_sql_parser::{
     ast::{
-        sql::{QueryAst, SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlSetOp, SqlShow, SqlUpdate},
+        sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate},
         SqlIdent, SqlLiteral,
     },
     parser::sql::parse_sql,
 };
 use thiserror::Error;
 
-use crate::ty::TyId;
+use crate::{check::Relvars, expr::Project};
 
 use super::{
-    assert_eq_types,
     check::{SchemaView, TypeChecker, TypingResult},
-    errors::{InsertFieldsError, InsertValuesError, TypingError, UnexpectedType, Unresolved, Unsupported},
-    expr::{Expr, RelExpr},
-    parse,
-    ty::{TyCtx, TyEnv},
-    type_expr, type_proj, type_select, StatementCtx, StatementSource,
+    errors::{InsertFieldsError, InsertValuesError, TypingError, UnexpectedType, Unresolved},
+    expr::Expr,
+    parse, type_expr, type_proj, type_select, StatementCtx, StatementSource,
 };
 
 pub enum Statement {
-    Select(RelExpr),
+    Select(Project),
     Insert(TableInsert),
     Update(TableUpdate),
     Delete(TableDelete),
@@ -62,7 +59,7 @@ pub struct ShowVar {
 }
 
 /// Type check an INSERT statement
-pub fn type_insert(ctx: &mut TyCtx, insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<TableInsert> {
+pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<TableInsert> {
     let SqlInsert {
         table: SqlIdent(table_name),
         fields,
@@ -84,12 +81,6 @@ pub fn type_insert(ctx: &mut TyCtx, insert: SqlInsert, tx: &impl SchemaView) -> 
         }));
     }
 
-    let mut types = Vec::new();
-    for ColumnSchema { col_type, .. } in schema.columns() {
-        let id = ctx.add_algebraic_type(col_type);
-        types.push(id);
-    }
-
     let mut rows = Vec::new();
     for row in values.0 {
         // Expect each row to have n values
@@ -101,22 +92,24 @@ pub fn type_insert(ctx: &mut TyCtx, insert: SqlInsert, tx: &impl SchemaView) -> 
             }));
         }
         let mut values = Vec::new();
-        for (i, v) in row.into_iter().enumerate() {
-            match (v, types[i]) {
-                (SqlLiteral::Bool(v), TyId::BOOL) => {
+        for (value, ty) in row
+            .into_iter()
+            .zip(schema.columns().iter().map(|ColumnSchema { col_type, .. }| col_type))
+        {
+            match (value, ty) {
+                (SqlLiteral::Bool(v), AlgebraicType::Bool) => {
                     values.push(AlgebraicValue::Bool(v));
                 }
-                (SqlLiteral::Str(v), TyId::STR) => {
+                (SqlLiteral::Str(v), AlgebraicType::String) => {
                     values.push(AlgebraicValue::String(v));
                 }
-                (SqlLiteral::Bool(_), id) => {
-                    return Err(UnexpectedType::new(&ctx.bool(), &ctx.try_resolve(id)?).into());
+                (SqlLiteral::Bool(_), _) => {
+                    return Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into());
                 }
-                (SqlLiteral::Str(_), id) => {
-                    return Err(UnexpectedType::new(&ctx.str(), &ctx.try_resolve(id)?).into());
+                (SqlLiteral::Str(_), _) => {
+                    return Err(UnexpectedType::new(&AlgebraicType::String, ty).into());
                 }
-                (SqlLiteral::Hex(v), id) | (SqlLiteral::Num(v), id) => {
-                    let ty = ctx.try_resolve(id)?;
+                (SqlLiteral::Hex(v), ty) | (SqlLiteral::Num(v), ty) => {
                     values.push(parse(v.into_string(), ty)?);
                 }
             }
@@ -129,40 +122,25 @@ pub fn type_insert(ctx: &mut TyCtx, insert: SqlInsert, tx: &impl SchemaView) -> 
 }
 
 /// Type check a DELETE statement
-pub fn type_delete(ctx: &mut TyCtx, delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<TableDelete> {
+pub fn type_delete(delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<TableDelete> {
     let SqlDelete {
         table: SqlIdent(table_name),
         filter,
     } = delete;
-    let schema = tx
+    let from = tx
         .schema(&table_name)
         .ok_or_else(|| Unresolved::table(&table_name))
         .map_err(TypingError::from)?;
-
-    let table_name = ctx.gen_symbol(table_name);
-
-    let mut types = Vec::new();
-    let mut env = TyEnv::default();
-
-    for ColumnSchema { col_name, col_type, .. } in schema.columns() {
-        let id = ctx.add_algebraic_type(col_type);
-        let name = ctx.gen_symbol(col_name);
-        env.add(name, id);
-        types.push((name, id));
-    }
-
-    let ty = ctx.add_var_type(schema.table_id, types);
-    env.add(table_name, ty);
-
-    let from = schema;
+    let mut vars = Relvars::default();
+    vars.insert(table_name.clone(), from.clone());
     let expr = filter
-        .map(|expr| type_expr(ctx, &env, expr, Some(TyId::BOOL)))
+        .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
         .transpose()?;
     Ok(TableDelete { from, expr })
 }
 
 /// Type check an UPDATE statement
-pub fn type_update(ctx: &mut TyCtx, update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<TableUpdate> {
+pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<TableUpdate> {
     let SqlUpdate {
         table: SqlIdent(table_name),
         assignments,
@@ -172,44 +150,38 @@ pub fn type_update(ctx: &mut TyCtx, update: SqlUpdate, tx: &impl SchemaView) -> 
         .schema(&table_name)
         .ok_or_else(|| Unresolved::table(&table_name))
         .map_err(TypingError::from)?;
-    let mut env = TyEnv::default();
-    for ColumnSchema { col_name, col_type, .. } in schema.columns() {
-        let id = ctx.add_algebraic_type(col_type);
-        let name = ctx.gen_symbol(col_name);
-        env.add(name, id);
-    }
     let mut values = Vec::new();
     for SqlSet(SqlIdent(field), lit) in assignments {
-        let col_id = schema
-            .get_column_id_by_name(&field)
-            .ok_or_else(|| Unresolved::field(&table_name, &field))?;
-        let field_name = ctx
-            .get_symbol(&field)
-            .ok_or_else(|| Unresolved::field(&table_name, &field))?;
-        let ty = env
-            .find(field_name)
+        let ColumnSchema {
+            col_pos: col_id,
+            col_type: ty,
+            ..
+        } = schema
+            .get_column_by_name(&field)
             .ok_or_else(|| Unresolved::field(&table_name, &field))?;
         match (lit, ty) {
-            (SqlLiteral::Bool(v), TyId::BOOL) => {
-                values.push((col_id, AlgebraicValue::Bool(v)));
+            (SqlLiteral::Bool(v), AlgebraicType::Bool) => {
+                values.push((*col_id, AlgebraicValue::Bool(v)));
             }
-            (SqlLiteral::Str(v), TyId::STR) => {
-                values.push((col_id, AlgebraicValue::String(v)));
+            (SqlLiteral::Str(v), AlgebraicType::String) => {
+                values.push((*col_id, AlgebraicValue::String(v)));
             }
-            (SqlLiteral::Bool(_), id) => {
-                return Err(UnexpectedType::new(&ctx.bool(), &ctx.try_resolve(id)?).into());
+            (SqlLiteral::Bool(_), _) => {
+                return Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into());
             }
-            (SqlLiteral::Str(_), id) => {
-                return Err(UnexpectedType::new(&ctx.str(), &ctx.try_resolve(id)?).into());
+            (SqlLiteral::Str(_), _) => {
+                return Err(UnexpectedType::new(&AlgebraicType::String, ty).into());
             }
-            (SqlLiteral::Hex(v), id) | (SqlLiteral::Num(v), id) => {
-                values.push((col_id, parse(v.into_string(), ctx.try_resolve(id)?)?));
+            (SqlLiteral::Hex(v), ty) | (SqlLiteral::Num(v), ty) => {
+                values.push((*col_id, parse(v.into_string(), ty)?));
             }
         }
     }
+    let mut vars = Relvars::default();
+    vars.insert(table_name.clone(), schema.clone());
     let values = values.into_boxed_slice();
     let filter = filter
-        .map(|expr| type_expr(ctx, &env, expr, Some(TyId::BOOL)))
+        .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
         .transpose()?;
     Ok(TableUpdate { schema, values, filter })
 }
@@ -229,7 +201,7 @@ fn is_var_valid(var: &str) -> bool {
     var == VAR_ROW_LIMIT || var == VAR_SLOW_QUERY || var == VAR_SLOW_UPDATE || var == VAR_SLOW_SUB
 }
 
-pub fn type_set(ctx: &TyCtx, set: SqlSet) -> TypingResult<SetVar> {
+pub fn type_set(set: SqlSet) -> TypingResult<SetVar> {
     let SqlSet(SqlIdent(name), lit) = set;
     if !is_var_valid(&name) {
         return Err(InvalidVar {
@@ -238,12 +210,12 @@ pub fn type_set(ctx: &TyCtx, set: SqlSet) -> TypingResult<SetVar> {
         .into());
     }
     match lit {
-        SqlLiteral::Bool(_) => Err(UnexpectedType::new(&ctx.u64(), &ctx.bool()).into()),
-        SqlLiteral::Str(_) => Err(UnexpectedType::new(&ctx.u64(), &ctx.str()).into()),
-        SqlLiteral::Hex(_) => Err(UnexpectedType::new(&ctx.u64(), &ctx.bytes()).into()),
+        SqlLiteral::Bool(_) => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::Bool).into()),
+        SqlLiteral::Str(_) => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::String).into()),
+        SqlLiteral::Hex(_) => Err(UnexpectedType::new(&AlgebraicType::U64, &AlgebraicType::bytes()).into()),
         SqlLiteral::Num(n) => Ok(SetVar {
             name: name.into_string(),
-            value: parse(n.into_string(), ctx.u64())?,
+            value: parse(n.into_string(), &AlgebraicType::U64)?,
         }),
     }
 }
@@ -265,84 +237,30 @@ pub fn type_show(show: SqlShow) -> TypingResult<ShowVar> {
 struct SqlChecker;
 
 impl TypeChecker for SqlChecker {
-    type Ast = QueryAst;
-    type Set = SqlSetOp;
+    type Ast = SqlSelect;
+    type Set = SqlSelect;
 
-    fn type_ast(ctx: &mut TyCtx, ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<RelExpr> {
-        let QueryAst { query, order, limit } = ast;
-        if !order.is_empty() {
-            return Err(Unsupported::OrderBy.into());
-        }
-        if limit.is_some() {
-            return Err(Unsupported::Limit.into());
-        }
-        Self::type_set(ctx, query, tx)
+    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<Project> {
+        Self::type_set(ast, &mut Relvars::default(), tx)
     }
 
-    fn type_set(ctx: &mut TyCtx, ast: Self::Set, tx: &impl SchemaView) -> TypingResult<RelExpr> {
+    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<Project> {
         match ast {
-            SqlSetOp::Union(a, b, true) => {
-                let a = Self::type_set(ctx, *a, tx)?;
-                let b = Self::type_set(ctx, *b, tx)?;
-                assert_eq_types(ctx, a.ty_id(), b.ty_id())?;
-                Ok(RelExpr::Union(Box::new(a), Box::new(b)))
-            }
-            SqlSetOp::Union(a, b, false) => {
-                let a = Self::type_set(ctx, *a, tx)?;
-                let b = Self::type_set(ctx, *b, tx)?;
-                assert_eq_types(ctx, a.ty_id(), b.ty_id())?;
-                Ok(RelExpr::Dedup(Box::new(RelExpr::Union(Box::new(a), Box::new(b)))))
-            }
-            SqlSetOp::Minus(a, b, true) => {
-                let a = Self::type_set(ctx, *a, tx)?;
-                let b = Self::type_set(ctx, *b, tx)?;
-                assert_eq_types(ctx, a.ty_id(), b.ty_id())?;
-                Ok(RelExpr::Minus(Box::new(a), Box::new(b)))
-            }
-            SqlSetOp::Minus(a, b, false) => {
-                let a = Self::type_set(ctx, *a, tx)?;
-                let b = Self::type_set(ctx, *b, tx)?;
-                assert_eq_types(ctx, a.ty_id(), b.ty_id())?;
-                Ok(RelExpr::Dedup(Box::new(RelExpr::Minus(Box::new(a), Box::new(b)))))
-            }
-            SqlSetOp::Query(ast) => Self::type_ast(ctx, *ast, tx),
-            SqlSetOp::Select(SqlSelect {
+            SqlSelect {
                 project,
-                distinct: false,
                 from,
                 filter: None,
-            }) => {
-                let (input, alias) = Self::type_from(ctx, from, tx)?;
-                type_proj(ctx, input, alias, project)
+            } => {
+                let input = Self::type_from(from, vars, tx)?;
+                type_proj(input, project, vars)
             }
-            SqlSetOp::Select(SqlSelect {
+            SqlSelect {
                 project,
-                distinct: true,
-                from,
-                filter: None,
-            }) => {
-                let (input, alias) = Self::type_from(ctx, from, tx)?;
-                Ok(RelExpr::Dedup(Box::new(type_proj(ctx, input, alias, project)?)))
-            }
-            SqlSetOp::Select(SqlSelect {
-                project,
-                distinct: false,
                 from,
                 filter: Some(expr),
-            }) => {
-                let (from, alias) = Self::type_from(ctx, from, tx)?;
-                let input = type_select(ctx, from, alias, expr)?;
-                type_proj(ctx, input, alias, project)
-            }
-            SqlSetOp::Select(SqlSelect {
-                project,
-                distinct: true,
-                from,
-                filter: Some(expr),
-            }) => {
-                let (from, alias) = Self::type_from(ctx, from, tx)?;
-                let input = type_select(ctx, from, alias, expr)?;
-                Ok(RelExpr::Dedup(Box::new(type_proj(ctx, input, alias, project)?)))
+            } => {
+                let input = Self::type_from(from, vars, tx)?;
+                type_proj(type_select(input, expr, vars)?, project, vars)
             }
         }
     }
@@ -350,11 +268,11 @@ impl TypeChecker for SqlChecker {
 
 fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<Statement> {
     match parse_sql(sql)? {
-        SqlAst::Insert(insert) => Ok(Statement::Insert(type_insert(&mut TyCtx::default(), insert, tx)?)),
-        SqlAst::Delete(delete) => Ok(Statement::Delete(type_delete(&mut TyCtx::default(), delete, tx)?)),
-        SqlAst::Update(update) => Ok(Statement::Update(type_update(&mut TyCtx::default(), update, tx)?)),
-        SqlAst::Query(ast) => Ok(Statement::Select(SqlChecker::type_ast(&mut TyCtx::default(), ast, tx)?)),
-        SqlAst::Set(set) => Ok(Statement::Set(type_set(&TyCtx::default(), set)?)),
+        SqlAst::Insert(insert) => Ok(Statement::Insert(type_insert(insert, tx)?)),
+        SqlAst::Delete(delete) => Ok(Statement::Delete(type_delete(delete, tx)?)),
+        SqlAst::Update(update) => Ok(Statement::Update(type_update(update, tx)?)),
+        SqlAst::Select(ast) => Ok(Statement::Select(SqlChecker::type_ast(ast, tx)?)),
+        SqlAst::Set(set) => Ok(Statement::Set(type_set(set)?)),
         SqlAst::Show(show) => Ok(Statement::Show(type_show(show)?)),
     }
 }
@@ -367,4 +285,62 @@ pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<
         sql,
         source: StatementSource::Query,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+    use spacetimedb_schema::def::ModuleDef;
+
+    use crate::{
+        check::test_utils::{build_module_def, SchemaViewer},
+        statement::parse_and_type_sql,
+    };
+
+    fn module_def() -> ModuleDef {
+        build_module_def(vec![
+            (
+                "t",
+                ProductType::from([
+                    ("u32", AlgebraicType::U32),
+                    ("f32", AlgebraicType::F32),
+                    ("str", AlgebraicType::String),
+                    ("arr", AlgebraicType::array(AlgebraicType::String)),
+                ]),
+            ),
+            (
+                "s",
+                ProductType::from([
+                    ("id", AlgebraicType::identity()),
+                    ("u32", AlgebraicType::U32),
+                    ("arr", AlgebraicType::array(AlgebraicType::String)),
+                    ("bytes", AlgebraicType::bytes()),
+                ]),
+            ),
+        ])
+    }
+
+    #[test]
+    fn valid() {
+        let tx = SchemaViewer(module_def());
+
+        for sql in [
+            "select str from t",
+            "select str, arr from t",
+            "select t.str, arr from t",
+        ] {
+            let result = parse_and_type_sql(sql, &tx);
+            assert!(result.is_ok());
+        }
+    }
+
+    #[test]
+    fn invalid() {
+        let tx = SchemaViewer(module_def());
+
+        // Unqualified columns in a join
+        let sql = "select id, str from s join t";
+        let result = parse_and_type_sql(sql, &tx);
+        assert!(result.is_err());
+    }
 }

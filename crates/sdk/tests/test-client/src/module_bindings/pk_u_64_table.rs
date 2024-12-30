@@ -84,7 +84,7 @@ impl<'ctx> __sdk::Table for PkU64TableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<PkU64>("pk_u64");
-    _table.add_unique_constraint::<u64>("n", |row| &row.n)
+    _table.add_unique_constraint::<u64>("n", |row| &row.n);
 }
 pub struct PkU64UpdateCallbackId(__sdk::CallbackId);
 

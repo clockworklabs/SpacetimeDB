@@ -313,7 +313,11 @@ public static class Utils
                         sb.Append(" : ").AppendJoin(", ", BaseTypes);
                     }
 
-                    sb.Append(typeScope.Constraints).AppendLine(" {");
+                    if (typeScope.Constraints.Length > 0)
+                    {
+                        sb.Append(' ').Append(typeScope.Constraints);
+                    }
+                    sb.AppendLine(" {");
                 }
 
                 sb.AppendLine();

@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdateUniqueI256 {
+pub(super) struct UpdateUniqueI256Args {
     pub n: __sats::i256,
     pub data: i32,
 }
 
-impl __sdk::InModule for UpdateUniqueI256 {
+impl From<UpdateUniqueI256Args> for super::Reducer {
+    fn from(args: UpdateUniqueI256Args) -> Self {
+        Self::UpdateUniqueI256 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdateUniqueI256Args {
     type Module = super::RemoteModule;
 }
 
@@ -53,20 +62,32 @@ pub trait update_unique_i_256 {
 impl update_unique_i_256 for super::RemoteReducers {
     fn update_unique_i_256(&self, n: __sats::i256, data: i32) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("update_unique_i256", UpdateUniqueI256 { n, data })
+            .call_reducer("update_unique_i256", UpdateUniqueI256Args { n, data })
     }
     fn on_update_unique_i_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::i256, &i32) + Send + 'static,
     ) -> UpdateUniqueI256CallbackId {
-        UpdateUniqueI256CallbackId(self.imp.on_reducer::<UpdateUniqueI256>(
+        UpdateUniqueI256CallbackId(self.imp.on_reducer(
             "update_unique_i256",
-            Box::new(move |ctx: &super::EventContext, args: &UpdateUniqueI256| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdateUniqueI256 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_update_unique_i_256(&self, callback: UpdateUniqueI256CallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdateUniqueI256>("update_unique_i256", callback.0)
+        self.imp.remove_on_reducer("update_unique_i256", callback.0)
     }
 }
 

@@ -16,6 +16,8 @@ pub enum DecodeError {
         expected: usize,
         given: usize,
     },
+    /// Length did not match the statically expected length.
+    InvalidLen { expected: usize, given: usize },
     /// The tag does not exist for the sum.
     InvalidTag { tag: u8, sum_name: Option<String> },
     /// Expected data to be UTF-8 but it wasn't.
@@ -34,6 +36,9 @@ impl fmt::Display for DecodeError {
                 expected,
                 given,
             } => write!(f, "data too short for {for_type}: Expected {expected}, given {given}"),
+            DecodeError::InvalidLen { expected, given } => {
+                write!(f, "unexpected data length: Expected {expected}, given {given}")
+            }
             DecodeError::InvalidTag { tag, sum_name } => {
                 write!(
                     f,

@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeletePkU16 {
+pub(super) struct DeletePkU16Args {
     pub n: u16,
 }
 
-impl __sdk::InModule for DeletePkU16 {
+impl From<DeletePkU16Args> for super::Reducer {
+    fn from(args: DeletePkU16Args) -> Self {
+        Self::DeletePkU16 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for DeletePkU16Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,19 +57,32 @@ pub trait delete_pk_u_16 {
 
 impl delete_pk_u_16 for super::RemoteReducers {
     fn delete_pk_u_16(&self, n: u16) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_u16", DeletePkU16 { n })
+        self.imp.call_reducer("delete_pk_u16", DeletePkU16Args { n })
     }
     fn on_delete_pk_u_16(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u16) + Send + 'static,
     ) -> DeletePkU16CallbackId {
-        DeletePkU16CallbackId(self.imp.on_reducer::<DeletePkU16>(
+        DeletePkU16CallbackId(self.imp.on_reducer(
             "delete_pk_u16",
-            Box::new(move |ctx: &super::EventContext, args: &DeletePkU16| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeletePkU16 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_delete_pk_u_16(&self, callback: DeletePkU16CallbackId) {
-        self.imp.remove_on_reducer::<DeletePkU16>("delete_pk_u16", callback.0)
+        self.imp.remove_on_reducer("delete_pk_u16", callback.0)
     }
 }
 

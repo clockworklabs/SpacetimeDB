@@ -9,9 +9,15 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct NoOpSucceeds {}
+pub(super) struct NoOpSucceedsArgs {}
 
-impl __sdk::InModule for NoOpSucceeds {
+impl From<NoOpSucceedsArgs> for super::Reducer {
+    fn from(args: NoOpSucceedsArgs) -> Self {
+        Self::NoOpSucceeds
+    }
+}
+
+impl __sdk::InModule for NoOpSucceedsArgs {
     type Module = super::RemoteModule;
 }
 
@@ -46,19 +52,32 @@ pub trait no_op_succeeds {
 
 impl no_op_succeeds for super::RemoteReducers {
     fn no_op_succeeds(&self) -> __anyhow::Result<()> {
-        self.imp.call_reducer("no_op_succeeds", NoOpSucceeds {})
+        self.imp.call_reducer("no_op_succeeds", NoOpSucceedsArgs {})
     }
     fn on_no_op_succeeds(
         &self,
         mut callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> NoOpSucceedsCallbackId {
-        NoOpSucceedsCallbackId(self.imp.on_reducer::<NoOpSucceeds>(
+        NoOpSucceedsCallbackId(self.imp.on_reducer(
             "no_op_succeeds",
-            Box::new(move |ctx: &super::EventContext, args: &NoOpSucceeds| callback(ctx)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::NoOpSucceeds {},
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx)
+            }),
         ))
     }
     fn remove_on_no_op_succeeds(&self, callback: NoOpSucceedsCallbackId) {
-        self.imp.remove_on_reducer::<NoOpSucceeds>("no_op_succeeds", callback.0)
+        self.imp.remove_on_reducer("no_op_succeeds", callback.0)
     }
 }
 

@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertUniqueI256 {
+pub(super) struct InsertUniqueI256Args {
     pub n: __sats::i256,
     pub data: i32,
 }
 
-impl __sdk::InModule for InsertUniqueI256 {
+impl From<InsertUniqueI256Args> for super::Reducer {
+    fn from(args: InsertUniqueI256Args) -> Self {
+        Self::InsertUniqueI256 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertUniqueI256Args {
     type Module = super::RemoteModule;
 }
 
@@ -53,20 +62,32 @@ pub trait insert_unique_i_256 {
 impl insert_unique_i_256 for super::RemoteReducers {
     fn insert_unique_i_256(&self, n: __sats::i256, data: i32) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_unique_i256", InsertUniqueI256 { n, data })
+            .call_reducer("insert_unique_i256", InsertUniqueI256Args { n, data })
     }
     fn on_insert_unique_i_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::i256, &i32) + Send + 'static,
     ) -> InsertUniqueI256CallbackId {
-        InsertUniqueI256CallbackId(self.imp.on_reducer::<InsertUniqueI256>(
+        InsertUniqueI256CallbackId(self.imp.on_reducer(
             "insert_unique_i256",
-            Box::new(move |ctx: &super::EventContext, args: &InsertUniqueI256| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertUniqueI256 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_insert_unique_i_256(&self, callback: InsertUniqueI256CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueI256>("insert_unique_i256", callback.0)
+        self.imp.remove_on_reducer("insert_unique_i256", callback.0)
     }
 }
 

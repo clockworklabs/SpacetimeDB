@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::routes::router;
@@ -54,14 +53,6 @@ impl ProgramMode {
             ProgramMode::CLI => "Run `spacetime help start` for more information.",
         }
     }
-}
-
-pub fn default_data_dir() -> PathBuf {
-    dirs::data_local_dir().unwrap().join(if cfg!(windows) {
-        "SpacetimeDB/data"
-    } else {
-        "spacetime/data"
-    })
 }
 
 pub fn cli(mode: ProgramMode) -> clap::Command {

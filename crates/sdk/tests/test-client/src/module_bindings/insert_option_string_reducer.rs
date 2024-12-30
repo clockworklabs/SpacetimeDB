@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOptionString {
+pub(super) struct InsertOptionStringArgs {
     pub s: Option<String>,
 }
 
-impl __sdk::InModule for InsertOptionString {
+impl From<InsertOptionStringArgs> for super::Reducer {
+    fn from(args: InsertOptionStringArgs) -> Self {
+        Self::InsertOptionString { s: args.s }
+    }
+}
+
+impl __sdk::InModule for InsertOptionStringArgs {
     type Module = super::RemoteModule;
 }
 
@@ -51,20 +57,33 @@ pub trait insert_option_string {
 
 impl insert_option_string for super::RemoteReducers {
     fn insert_option_string(&self, s: Option<String>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_option_string", InsertOptionString { s })
+        self.imp
+            .call_reducer("insert_option_string", InsertOptionStringArgs { s })
     }
     fn on_insert_option_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Option<String>) + Send + 'static,
     ) -> InsertOptionStringCallbackId {
-        InsertOptionStringCallbackId(self.imp.on_reducer::<InsertOptionString>(
+        InsertOptionStringCallbackId(self.imp.on_reducer(
             "insert_option_string",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOptionString| callback(ctx, &args.s)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOptionString { s },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
+            }),
         ))
     }
     fn remove_on_insert_option_string(&self, callback: InsertOptionStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOptionString>("insert_option_string", callback.0)
+        self.imp.remove_on_reducer("insert_option_string", callback.0)
     }
 }
 

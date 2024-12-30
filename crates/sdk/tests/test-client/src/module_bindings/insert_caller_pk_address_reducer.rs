@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertCallerPkAddress {
+pub(super) struct InsertCallerPkAddressArgs {
     pub data: i32,
 }
 
-impl __sdk::InModule for InsertCallerPkAddress {
+impl From<InsertCallerPkAddressArgs> for super::Reducer {
+    fn from(args: InsertCallerPkAddressArgs) -> Self {
+        Self::InsertCallerPkAddress { data: args.data }
+    }
+}
+
+impl __sdk::InModule for InsertCallerPkAddressArgs {
     type Module = super::RemoteModule;
 }
 
@@ -52,20 +58,32 @@ pub trait insert_caller_pk_address {
 impl insert_caller_pk_address for super::RemoteReducers {
     fn insert_caller_pk_address(&self, data: i32) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_caller_pk_address", InsertCallerPkAddress { data })
+            .call_reducer("insert_caller_pk_address", InsertCallerPkAddressArgs { data })
     }
     fn on_insert_caller_pk_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i32) + Send + 'static,
     ) -> InsertCallerPkAddressCallbackId {
-        InsertCallerPkAddressCallbackId(self.imp.on_reducer::<InsertCallerPkAddress>(
+        InsertCallerPkAddressCallbackId(self.imp.on_reducer(
             "insert_caller_pk_address",
-            Box::new(move |ctx: &super::EventContext, args: &InsertCallerPkAddress| callback(ctx, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertCallerPkAddress { data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, data)
+            }),
         ))
     }
     fn remove_on_insert_caller_pk_address(&self, callback: InsertCallerPkAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertCallerPkAddress>("insert_caller_pk_address", callback.0)
+        self.imp.remove_on_reducer("insert_caller_pk_address", callback.0)
     }
 }
 

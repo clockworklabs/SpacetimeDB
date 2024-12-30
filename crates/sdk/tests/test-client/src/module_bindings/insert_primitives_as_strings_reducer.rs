@@ -11,11 +11,17 @@ use super::every_primitive_struct_type::EveryPrimitiveStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertPrimitivesAsStrings {
+pub(super) struct InsertPrimitivesAsStringsArgs {
     pub s: EveryPrimitiveStruct,
 }
 
-impl __sdk::InModule for InsertPrimitivesAsStrings {
+impl From<InsertPrimitivesAsStringsArgs> for super::Reducer {
+    fn from(args: InsertPrimitivesAsStringsArgs) -> Self {
+        Self::InsertPrimitivesAsStrings { s: args.s }
+    }
+}
+
+impl __sdk::InModule for InsertPrimitivesAsStringsArgs {
     type Module = super::RemoteModule;
 }
 
@@ -54,20 +60,32 @@ pub trait insert_primitives_as_strings {
 impl insert_primitives_as_strings for super::RemoteReducers {
     fn insert_primitives_as_strings(&self, s: EveryPrimitiveStruct) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_primitives_as_strings", InsertPrimitivesAsStrings { s })
+            .call_reducer("insert_primitives_as_strings", InsertPrimitivesAsStringsArgs { s })
     }
     fn on_insert_primitives_as_strings(
         &self,
         mut callback: impl FnMut(&super::EventContext, &EveryPrimitiveStruct) + Send + 'static,
     ) -> InsertPrimitivesAsStringsCallbackId {
-        InsertPrimitivesAsStringsCallbackId(self.imp.on_reducer::<InsertPrimitivesAsStrings>(
+        InsertPrimitivesAsStringsCallbackId(self.imp.on_reducer(
             "insert_primitives_as_strings",
-            Box::new(move |ctx: &super::EventContext, args: &InsertPrimitivesAsStrings| callback(ctx, &args.s)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertPrimitivesAsStrings { s },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
+            }),
         ))
     }
     fn remove_on_insert_primitives_as_strings(&self, callback: InsertPrimitivesAsStringsCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertPrimitivesAsStrings>("insert_primitives_as_strings", callback.0)
+        self.imp.remove_on_reducer("insert_primitives_as_strings", callback.0)
     }
 }
 

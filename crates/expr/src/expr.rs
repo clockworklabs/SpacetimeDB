@@ -1,152 +1,130 @@
 use std::sync::Arc;
 
-use crate::errors::{FilterReturnType, TypingError};
-use crate::static_assert_size;
-use spacetimedb_lib::AlgebraicValue;
+use spacetimedb_lib::{AlgebraicType, AlgebraicValue};
 use spacetimedb_primitives::TableId;
 use spacetimedb_schema::schema::TableSchema;
-use spacetimedb_sql_parser::ast::BinOp;
+use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
-use super::ty::{InvalidTypeId, Symbol, TyCtx, TyId, Type, TypeWithCtx};
+/// A projection is the root of any relation expression
+#[derive(Debug)]
+pub enum Project {
+    None(RelExpr),
+    Relvar(RelExpr, Box<str>),
+    Fields(RelExpr, Vec<(Box<str>, FieldProject)>),
+}
+
+impl Project {
+    /// What is the [TableId] for this projection?
+    pub fn table_id(&self) -> Option<TableId> {
+        match self {
+            Self::Fields(..) => None,
+            Self::Relvar(input, var) => input.table_id(Some(var.as_ref())),
+            Self::None(input) => input.table_id(None),
+        }
+    }
+}
 
 /// A logical relational expression
 #[derive(Debug)]
 pub enum RelExpr {
-    /// A base table
-    RelVar(Arc<TableSchema>, TyId),
-    /// A filter
-    Select(Box<Select>),
-    /// A projection
-    Proj(Box<Project>),
-    /// An n-ary join
-    Join(Box<[RelExpr]>, TyId),
-    /// Bag union
-    Union(Box<RelExpr>, Box<RelExpr>),
-    /// Bag difference
-    Minus(Box<RelExpr>, Box<RelExpr>),
-    /// Bag -> set
-    Dedup(Box<RelExpr>),
+    /// A relvar or table reference
+    RelVar(Arc<TableSchema>, Box<str>),
+    /// A logical select for filter
+    Select(Box<RelExpr>, Expr),
+    /// A left deep binary cross product
+    LeftDeepJoin(LeftDeepJoin),
+    /// A left deep binary equi-join
+    EqJoin(LeftDeepJoin, FieldProject, FieldProject),
 }
-
-static_assert_size!(RelExpr, 24);
 
 impl RelExpr {
-    /// Instantiate a projection [RelExpr::Proj]
-    pub fn project(input: RelExpr, expr: Let) -> Self {
-        Self::Proj(Box::new(Project { input, expr }))
-    }
-
-    /// Instantiate a selection [RelExpr::Select]
-    pub fn select(input: RelExpr, expr: Let) -> Self {
-        Self::Select(Box::new(Select { input, expr }))
-    }
-
-    /// The type id of this relation expression
-    pub fn ty_id(&self) -> TyId {
+    /// The number of fields this expression returns
+    pub fn nfields(&self) -> usize {
         match self {
-            Self::RelVar(_, id) | Self::Join(_, id) => *id,
-            Self::Select(op) => op.input.ty_id(),
-            Self::Proj(op) => op.expr.exprs[0].ty_id(),
-            Self::Union(input, _) | Self::Minus(input, _) | Self::Dedup(input) => input.ty_id(),
+            Self::RelVar(..) => 1,
+            Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => join.lhs.nfields() + 1,
+            Self::Select(input, _) => input.nfields(),
         }
     }
 
-    /// The type of this relation expression
-    pub fn ty<'a>(&self, ctx: &'a TyCtx) -> Result<TypeWithCtx<'a>, InvalidTypeId> {
-        ctx.try_resolve(self.ty_id())
+    /// Does this expression return this field?
+    pub fn has_field(&self, field: &str) -> bool {
+        match self {
+            Self::RelVar(_, name) => name.as_ref() == field,
+            Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => {
+                join.var.as_ref() == field || join.lhs.has_field(field)
+            }
+            Self::Select(input, _) => input.has_field(field),
+        }
     }
 
-    pub fn table_id(&self, ctx: &mut TyCtx) -> Result<TableId, TypingError> {
-        match &*self.ty(ctx)? {
-            Type::Var(id, _) => Ok(*id),
-            _ => Err(FilterReturnType.into()),
+    /// What is the [TableId] for this expression or relvar?
+    pub fn table_id(&self, var: Option<&str>) -> Option<TableId> {
+        match (self, var) {
+            (Self::RelVar(schema, _), None) => Some(schema.table_id),
+            (Self::RelVar(schema, name), Some(var)) if name.as_ref() == var => Some(schema.table_id),
+            (Self::RelVar(schema, _), Some(_)) => Some(schema.table_id),
+            (Self::Select(input, _), _) => input.table_id(var),
+            (Self::LeftDeepJoin(..) | Self::EqJoin(..), None) => None,
+            (Self::LeftDeepJoin(join) | Self::EqJoin(join, ..), Some(name)) => {
+                if join.var.as_ref() == name {
+                    Some(join.rhs.table_id)
+                } else {
+                    join.lhs.table_id(var)
+                }
+            }
         }
     }
 }
 
-/// A relational select operation or filter
+/// A left deep binary cross product
 #[derive(Debug)]
-pub struct Select {
-    /// The input relation
-    pub input: RelExpr,
-    /// The predicate expression
-    pub expr: Let,
-}
-
-/// A relational project operation or map
-#[derive(Debug)]
-pub struct Project {
-    /// The input relation
-    pub input: RelExpr,
-    /// The projection expression
-    pub expr: Let,
-}
-
-/// Let variables for selections and projections.
-///
-/// Relational operators take a single input paramter.
-/// Let variables explicitly destructure the input row.
-#[derive(Debug, Clone)]
-pub struct Let {
-    /// The variable definitions for this let expression
-    pub vars: Vec<(Symbol, Expr)>,
-    /// The expressions for which the above variables are in scope
-    pub exprs: Vec<Expr>,
-}
-
-/// A let context for variable resolution
-pub struct LetCtx<'a> {
-    pub vars: &'a [(Symbol, Expr)],
-}
-
-impl<'a> LetCtx<'a> {
-    pub fn get_var(&self, sym: Symbol) -> Option<&Expr> {
-        self.vars
-            .iter()
-            .find_map(|(s, e)| if *s == sym { Some(e) } else { None })
-    }
+pub struct LeftDeepJoin {
+    /// The lhs is recursive
+    pub lhs: Box<RelExpr>,
+    /// The rhs is a relvar
+    pub rhs: Arc<TableSchema>,
+    /// The rhs relvar name
+    pub var: Box<str>,
 }
 
 /// A typed scalar expression
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Expr {
     /// A binary expression
-    Bin(BinOp, Box<Expr>, Box<Expr>),
-    /// A variable reference
-    Var(Symbol, TyId),
-    /// A row or projection expression
-    Row(Box<[(Symbol, Expr)]>, TyId),
+    BinOp(BinOp, Box<Expr>, Box<Expr>),
+    /// A binary logic expression
+    LogOp(LogOp, Box<Expr>, Box<Expr>),
     /// A typed literal expression
-    Lit(AlgebraicValue, TyId),
-    /// A field expression
-    Field(Box<Expr>, usize, TyId),
-    /// The input parameter to a relop
-    Input(TyId),
+    Value(AlgebraicValue, AlgebraicType),
+    /// A field projection
+    Field(FieldProject),
 }
 
-static_assert_size!(Expr, 32);
-
 impl Expr {
-    /// Returns a boolean literal
+    /// A literal boolean value
     pub const fn bool(v: bool) -> Self {
-        Self::Lit(AlgebraicValue::Bool(v), TyId::BOOL)
+        Self::Value(AlgebraicValue::Bool(v), AlgebraicType::Bool)
     }
 
-    /// Returns a string literal
-    pub fn str(v: Box<str>) -> Self {
-        Self::Lit(AlgebraicValue::String(v), TyId::STR)
+    /// A literal string value
+    pub const fn str(v: Box<str>) -> Self {
+        Self::Value(AlgebraicValue::String(v), AlgebraicType::String)
     }
 
-    /// The type id of this expression
-    pub fn ty_id(&self) -> TyId {
+    /// The [AlgebraicType] of this scalar expression
+    pub fn ty(&self) -> &AlgebraicType {
         match self {
-            Self::Bin(..) => TyId::BOOL,
-            Self::Lit(_, id) | Self::Var(_, id) | Self::Input(id) | Self::Field(_, _, id) | Self::Row(_, id) => *id,
+            Self::BinOp(..) | Self::LogOp(..) => &AlgebraicType::Bool,
+            Self::Value(_, ty) | Self::Field(FieldProject { ty, .. }) => ty,
         }
     }
+}
 
-    /// The type of this expression
-    pub fn ty<'a>(&self, ctx: &'a TyCtx) -> Result<TypeWithCtx<'a>, InvalidTypeId> {
-        ctx.try_resolve(self.ty_id())
-    }
+/// A typed qualified field projection
+#[derive(Debug)]
+pub struct FieldProject {
+    pub table: Box<str>,
+    pub field: usize,
+    pub ty: AlgebraicType,
 }

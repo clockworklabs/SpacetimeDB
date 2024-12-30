@@ -11,11 +11,17 @@ use super::every_primitive_struct_type::EveryPrimitiveStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneEveryPrimitiveStruct {
+pub(super) struct InsertOneEveryPrimitiveStructArgs {
     pub s: EveryPrimitiveStruct,
 }
 
-impl __sdk::InModule for InsertOneEveryPrimitiveStruct {
+impl From<InsertOneEveryPrimitiveStructArgs> for super::Reducer {
+    fn from(args: InsertOneEveryPrimitiveStructArgs) -> Self {
+        Self::InsertOneEveryPrimitiveStruct { s: args.s }
+    }
+}
+
+impl __sdk::InModule for InsertOneEveryPrimitiveStructArgs {
     type Module = super::RemoteModule;
 }
 
@@ -53,21 +59,36 @@ pub trait insert_one_every_primitive_struct {
 
 impl insert_one_every_primitive_struct for super::RemoteReducers {
     fn insert_one_every_primitive_struct(&self, s: EveryPrimitiveStruct) -> __anyhow::Result<()> {
-        self.imp
-            .call_reducer("insert_one_every_primitive_struct", InsertOneEveryPrimitiveStruct { s })
+        self.imp.call_reducer(
+            "insert_one_every_primitive_struct",
+            InsertOneEveryPrimitiveStructArgs { s },
+        )
     }
     fn on_insert_one_every_primitive_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &EveryPrimitiveStruct) + Send + 'static,
     ) -> InsertOneEveryPrimitiveStructCallbackId {
-        InsertOneEveryPrimitiveStructCallbackId(self.imp.on_reducer::<InsertOneEveryPrimitiveStruct>(
+        InsertOneEveryPrimitiveStructCallbackId(self.imp.on_reducer(
             "insert_one_every_primitive_struct",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneEveryPrimitiveStruct| callback(ctx, &args.s)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneEveryPrimitiveStruct { s },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
+            }),
         ))
     }
     fn remove_on_insert_one_every_primitive_struct(&self, callback: InsertOneEveryPrimitiveStructCallbackId) {
         self.imp
-            .remove_on_reducer::<InsertOneEveryPrimitiveStruct>("insert_one_every_primitive_struct", callback.0)
+            .remove_on_reducer("insert_one_every_primitive_struct", callback.0)
     }
 }
 

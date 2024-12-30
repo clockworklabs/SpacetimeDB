@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdateUniqueI128 {
+pub(super) struct UpdateUniqueI128Args {
     pub n: i128,
     pub data: i32,
 }
 
-impl __sdk::InModule for UpdateUniqueI128 {
+impl From<UpdateUniqueI128Args> for super::Reducer {
+    fn from(args: UpdateUniqueI128Args) -> Self {
+        Self::UpdateUniqueI128 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdateUniqueI128Args {
     type Module = super::RemoteModule;
 }
 
@@ -53,20 +62,32 @@ pub trait update_unique_i_128 {
 impl update_unique_i_128 for super::RemoteReducers {
     fn update_unique_i_128(&self, n: i128, data: i32) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("update_unique_i128", UpdateUniqueI128 { n, data })
+            .call_reducer("update_unique_i128", UpdateUniqueI128Args { n, data })
     }
     fn on_update_unique_i_128(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i128, &i32) + Send + 'static,
     ) -> UpdateUniqueI128CallbackId {
-        UpdateUniqueI128CallbackId(self.imp.on_reducer::<UpdateUniqueI128>(
+        UpdateUniqueI128CallbackId(self.imp.on_reducer(
             "update_unique_i128",
-            Box::new(move |ctx: &super::EventContext, args: &UpdateUniqueI128| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdateUniqueI128 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_update_unique_i_128(&self, callback: UpdateUniqueI128CallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdateUniqueI128>("update_unique_i128", callback.0)
+        self.imp.remove_on_reducer("update_unique_i128", callback.0)
     }
 }
 

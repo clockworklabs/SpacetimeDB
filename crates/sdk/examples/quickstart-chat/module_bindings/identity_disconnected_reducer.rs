@@ -9,9 +9,15 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct IdentityDisconnected {}
+pub(super) struct IdentityDisconnectedArgs {}
 
-impl __sdk::InModule for IdentityDisconnected {
+impl From<IdentityDisconnectedArgs> for super::Reducer {
+    fn from(args: IdentityDisconnectedArgs) -> Self {
+        Self::IdentityDisconnected
+    }
+}
+
+impl __sdk::InModule for IdentityDisconnectedArgs {
     type Module = super::RemoteModule;
 }
 
@@ -50,20 +56,32 @@ pub trait identity_disconnected {
 impl identity_disconnected for super::RemoteReducers {
     fn identity_disconnected(&self) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("__identity_disconnected__", IdentityDisconnected {})
+            .call_reducer("__identity_disconnected__", IdentityDisconnectedArgs {})
     }
     fn on_identity_disconnected(
         &self,
         mut callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> IdentityDisconnectedCallbackId {
-        IdentityDisconnectedCallbackId(self.imp.on_reducer::<IdentityDisconnected>(
+        IdentityDisconnectedCallbackId(self.imp.on_reducer(
             "__identity_disconnected__",
-            Box::new(move |ctx: &super::EventContext, args: &IdentityDisconnected| callback(ctx)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::IdentityDisconnected {},
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx)
+            }),
         ))
     }
     fn remove_on_identity_disconnected(&self, callback: IdentityDisconnectedCallbackId) {
-        self.imp
-            .remove_on_reducer::<IdentityDisconnected>("__identity_disconnected__", callback.0)
+        self.imp.remove_on_reducer("__identity_disconnected__", callback.0)
     }
 }
 

@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdateUniqueI8 {
+pub(super) struct UpdateUniqueI8Args {
     pub n: i8,
     pub data: i32,
 }
 
-impl __sdk::InModule for UpdateUniqueI8 {
+impl From<UpdateUniqueI8Args> for super::Reducer {
+    fn from(args: UpdateUniqueI8Args) -> Self {
+        Self::UpdateUniqueI8 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdateUniqueI8Args {
     type Module = super::RemoteModule;
 }
 
@@ -52,20 +61,33 @@ pub trait update_unique_i_8 {
 
 impl update_unique_i_8 for super::RemoteReducers {
     fn update_unique_i_8(&self, n: i8, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_unique_i8", UpdateUniqueI8 { n, data })
+        self.imp
+            .call_reducer("update_unique_i8", UpdateUniqueI8Args { n, data })
     }
     fn on_update_unique_i_8(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i8, &i32) + Send + 'static,
     ) -> UpdateUniqueI8CallbackId {
-        UpdateUniqueI8CallbackId(self.imp.on_reducer::<UpdateUniqueI8>(
+        UpdateUniqueI8CallbackId(self.imp.on_reducer(
             "update_unique_i8",
-            Box::new(move |ctx: &super::EventContext, args: &UpdateUniqueI8| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdateUniqueI8 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_update_unique_i_8(&self, callback: UpdateUniqueI8CallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdateUniqueI8>("update_unique_i8", callback.0)
+        self.imp.remove_on_reducer("update_unique_i8", callback.0)
     }
 }
 

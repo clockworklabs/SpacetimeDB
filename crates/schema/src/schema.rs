@@ -290,6 +290,14 @@ impl TableSchema {
             .map(|x| x.into())
     }
 
+    /// Is there a unique constraint for this set of columns?
+    pub fn is_unique(&self, cols: &ColSet) -> bool {
+        self.constraints
+            .iter()
+            .filter_map(|cs| cs.data.unique_columns())
+            .any(|unique_cols| unique_cols == cols)
+    }
+
     /// Project the fields from the supplied `indexes`.
     pub fn project(&self, indexes: impl Iterator<Item = ColId>) -> Result<Vec<&ColumnSchema>, InvalidFieldError> {
         indexes

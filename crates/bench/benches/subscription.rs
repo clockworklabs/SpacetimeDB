@@ -110,7 +110,7 @@ fn eval(c: &mut Criterion) {
                     &raw.db,
                     &tx,
                     None,
-                    Compression::Brotli,
+                    Compression::None,
                 )))
             })
         });

@@ -5089,6 +5089,7 @@ dependencies = [
 name = "spacetimedb-physical-plan"
 version = "1.0.0-rc2"
 dependencies = [
+ "derive_more",
  "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-primitives",
@@ -5156,9 +5157,9 @@ dependencies = [
  "itertools 0.12.1",
  "lazy_static",
  "petgraph",
- "pretty_assertions",
  "proptest",
  "serde_json",
+ "serial_test",
  "smallvec",
  "spacetimedb-cli",
  "spacetimedb-data-structures",

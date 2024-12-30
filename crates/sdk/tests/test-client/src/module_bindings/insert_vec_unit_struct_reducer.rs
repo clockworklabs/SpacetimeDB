@@ -11,11 +11,17 @@ use super::unit_struct_type::UnitStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecUnitStruct {
+pub(super) struct InsertVecUnitStructArgs {
     pub s: Vec<UnitStruct>,
 }
 
-impl __sdk::InModule for InsertVecUnitStruct {
+impl From<InsertVecUnitStructArgs> for super::Reducer {
+    fn from(args: InsertVecUnitStructArgs) -> Self {
+        Self::InsertVecUnitStruct { s: args.s }
+    }
+}
+
+impl __sdk::InModule for InsertVecUnitStructArgs {
     type Module = super::RemoteModule;
 }
 
@@ -54,20 +60,32 @@ pub trait insert_vec_unit_struct {
 impl insert_vec_unit_struct for super::RemoteReducers {
     fn insert_vec_unit_struct(&self, s: Vec<UnitStruct>) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_vec_unit_struct", InsertVecUnitStruct { s })
+            .call_reducer("insert_vec_unit_struct", InsertVecUnitStructArgs { s })
     }
     fn on_insert_vec_unit_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<UnitStruct>) + Send + 'static,
     ) -> InsertVecUnitStructCallbackId {
-        InsertVecUnitStructCallbackId(self.imp.on_reducer::<InsertVecUnitStruct>(
+        InsertVecUnitStructCallbackId(self.imp.on_reducer(
             "insert_vec_unit_struct",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecUnitStruct| callback(ctx, &args.s)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecUnitStruct { s },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
+            }),
         ))
     }
     fn remove_on_insert_vec_unit_struct(&self, callback: InsertVecUnitStructCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecUnitStruct>("insert_vec_unit_struct", callback.0)
+        self.imp.remove_on_reducer("insert_vec_unit_struct", callback.0)
     }
 }
 

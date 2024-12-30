@@ -1,10 +1,7 @@
-use crate::var_len::VarLenMembers;
-
 use super::{
     bflatn_from::serialize_row_from_page,
     bflatn_to::write_row_to_pages,
-    bflatn_to_bsatn_fast_path::StaticBsatnLayout,
-    blob_store::{BlobStore, NullBlobStore},
+    blob_store::BlobStore,
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     eq::eq_row_in_page,
     eq_to_pv::eq_row_in_page_to_pv,
@@ -16,7 +13,10 @@ use super::{
     read_column::{ReadColumn, TypeError},
     row_hash::hash_row_in_page,
     row_type_visitor::{row_type_visitor, VarLenVisitorProgram},
-    static_assert_size, MemoryUsage,
+    static_assert_size,
+    static_layout::StaticLayout,
+    var_len::VarLenMembers,
+    MemoryUsage,
 };
 use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
@@ -79,9 +79,9 @@ pub struct Table {
 pub(crate) struct TableInner {
     /// The type of rows this table stores, with layout information included.
     row_layout: RowTypeLayout,
-    /// A [`StaticBsatnLayout`] for fast BFLATN -> BSATN serialization,
+    /// A [`StaticLayout`] for fast BFLATN <-> BSATN conversion,
     /// if the [`RowTypeLayout`] has a static BSATN length and layout.
-    static_bsatn_layout: Option<StaticBsatnLayout>,
+    static_layout: Option<StaticLayout>,
     /// The visitor program for `row_layout`.
     ///
     /// Must be in the `TableInner` so that [`RowRef::blob_store_bytes`] can use it.
@@ -152,11 +152,11 @@ impl MemoryUsage for TableInner {
     fn heap_usage(&self) -> usize {
         let Self {
             row_layout,
-            static_bsatn_layout,
+            static_layout,
             visitor_prog,
             pages,
         } = self;
-        row_layout.heap_usage() + static_bsatn_layout.heap_usage() + visitor_prog.heap_usage() + pages.heap_usage()
+        row_layout.heap_usage() + static_layout.heap_usage() + visitor_prog.heap_usage() + pages.heap_usage()
     }
 }
 
@@ -191,16 +191,9 @@ impl Table {
     /// Creates a new empty table with the given `schema` and `squashed_offset`.
     pub fn new(schema: Arc<TableSchema>, squashed_offset: SquashedOffset) -> Self {
         let row_layout: RowTypeLayout = schema.get_row_type().clone().into();
-        let static_bsatn_layout = StaticBsatnLayout::for_row_type(&row_layout);
+        let static_layout = StaticLayout::for_row_type(&row_layout);
         let visitor_prog = row_type_visitor(&row_layout);
-        Self::new_with_indexes_capacity(
-            schema,
-            row_layout,
-            static_bsatn_layout,
-            visitor_prog,
-            squashed_offset,
-            0,
-        )
+        Self::new_with_indexes_capacity(schema, row_layout, static_layout, visitor_prog, squashed_offset, 0)
     }
 
     /// Check if the `row` conflicts with any unique index on `self`,
@@ -212,15 +205,13 @@ impl Table {
     /// `MutTxId::insert` will ignore rows which are listed in the delete table.
     pub fn check_unique_constraints(
         &self,
-        row: &ProductValue,
+        row: RowRef<'_>,
         mut is_deleted: impl FnMut(RowPointer) -> bool,
     ) -> Result<(), UniqueConstraintViolation> {
-        for (cols, index) in self.indexes.iter().filter(|(_, index)| index.is_unique) {
+        for (cols, index) in self.indexes.iter().filter(|(_, index)| index.is_unique()) {
             let value = row.project(cols).unwrap();
-            if let Some(mut conflicts) = index.get_rows_that_violate_unique_constraint(&value) {
-                if conflicts.any(|ptr| !is_deleted(ptr)) {
-                    return Err(self.build_error_unique(index, cols, value));
-                }
+            if index.seek(&value).next().is_some_and(|ptr| !is_deleted(ptr)) {
+                return Err(self.build_error_unique(index, cols, value));
             }
         }
         Ok(())
@@ -243,27 +234,54 @@ impl Table {
         blob_store: &'a mut dyn BlobStore,
         row: &ProductValue,
     ) -> Result<(RowHash, RowRef<'a>), InsertError> {
-        // Check unique constraints.
-        // This error should take precedence over any other potential failures.
-        self.check_unique_constraints(
-            row,
-            // No need to worry about the committed vs tx state dichotomy here;
-            // just treat all rows in the table as live.
-            |_| false,
-        )?;
-
         // Insert the row into the page manager.
         let (hash, ptr) = self.insert_internal(blob_store, row)?;
 
+        // Insert row into indices and check unique constraints.
         // SAFETY: We just inserted `ptr`, so it must be present.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
-
-        // Insert row into indices.
-        for (cols, index) in self.indexes.iter_mut() {
-            index.insert(cols, row_ref).unwrap();
+        unsafe {
+            self.insert_into_indices(blob_store, ptr)?;
         }
 
+        // SAFETY: We just inserted `ptr`,
+        // and `insert_into_indices` didn't remove it,
+        // so it must be present.
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
         Ok((hash, row_ref))
+    }
+
+    /// Insert row identified by `ptr` into indices.
+    /// This also checks unique constraints.
+    /// Deletes the row if there were any violations.
+    ///
+    /// SAFETY: `self.is_row_present(row)` must hold.
+    /// Post-condition: If this method returns `Ok(_)`, the row still exists.
+    unsafe fn insert_into_indices<'a>(
+        &'a mut self,
+        blob_store: &'a mut dyn BlobStore,
+        ptr: RowPointer,
+    ) -> Result<(), InsertError> {
+        let mut index_error = None;
+        for (cols, index) in self.indexes.iter_mut() {
+            // SAFETY: We just inserted `ptr`, so it must be present.
+            let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+            if index.check_and_insert(cols, row_ref).unwrap().is_some() {
+                let value = row_ref.project(cols).unwrap();
+                let error = InsertError::IndexError(UniqueConstraintViolation::build(&self.schema, index, cols, value));
+                index_error = Some(error);
+                break;
+            }
+        }
+        if let Some(err) = index_error {
+            // Found unique constraint violation.
+            // Undo the insertion.
+            // SAFETY: We just inserted `ptr`, so it must be present.
+            unsafe {
+                self.delete_unchecked(blob_store, ptr);
+            }
+            return Err(err);
+        }
+        Ok(())
     }
 
     /// Insert a `row` into this table.
@@ -371,6 +389,8 @@ impl Table {
                 // `committed_ptr` is in `committed_table.pointer_map`,
                 // so it must be valid and therefore `committed_page` and `committed_offset` are valid.
                 // Our invariants mean `committed_table.row_layout` applies to both tables.
+                // Moreover was `committed_table.inner.static_layout`
+                // derived from `committed_table.row_layout`.
                 unsafe {
                     eq_row_in_page(
                         committed_page,
@@ -378,6 +398,7 @@ impl Table {
                         committed_offset,
                         tx_offset,
                         &committed_table.inner.row_layout,
+                        committed_table.inner.static_layout.as_ref(),
                     )
                 }
             })
@@ -471,8 +492,7 @@ impl Table {
         // Do this before the actual deletion, as `index.delete` needs a `RowRef`
         // so it can extract the appropriate value.
         for (cols, index) in self.indexes.iter_mut() {
-            let deleted = index.delete(cols, row_ref).unwrap();
-            debug_assert!(deleted);
+            index.delete(cols, row_ref).unwrap();
         }
 
         // SAFETY: We've checked above that `self.is_row_present(ptr)`.
@@ -587,9 +607,16 @@ impl Table {
     /// Inserts a new `index` into the table.
     ///
     /// The index will be populated using the rows of the table.
+    ///
+    /// # Panics
+    ///
     /// Panics if `cols` has some column that is out of bounds of the table's row layout.
+    /// Also panics if any row would violate `index`'s unique constraint, if it has one.
     pub fn insert_index(&mut self, blob_store: &dyn BlobStore, cols: ColList, mut index: BTreeIndex) {
-        index.build_from_rows(&cols, self.scan_rows(blob_store)).unwrap();
+        index
+            .build_from_rows(&cols, self.scan_rows(blob_store))
+            .expect("`cols` should consist of valid columns for this table")
+            .inspect(|ptr| panic!("adding `index` should cause no unique constraint violations, but {ptr:?} would"));
         self.indexes.insert(cols, index);
     }
 
@@ -631,16 +658,14 @@ impl Table {
     pub fn clone_structure(&self, squashed_offset: SquashedOffset) -> Self {
         let schema = self.schema.clone();
         let layout = self.row_layout().clone();
-        let sbl = self.static_bsatn_layout().cloned();
+        let sbl = self.static_layout().cloned();
         let visitor = self.inner.visitor_prog.clone();
         let mut new =
             Table::new_with_indexes_capacity(schema, layout, sbl, visitor, squashed_offset, self.indexes.len());
 
+        // Clone the index structure. The table is empty, so no need to `build_from_rows`.
         for (cols, index) in self.indexes.iter() {
-            // `new` is known to be empty (we just constructed it!),
-            // so no need for an actual blob store here.
-            let index = new.new_index(index.index_id, cols, index.is_unique).unwrap();
-            new.insert_index(&NullBlobStore, cols.clone(), index);
+            new.indexes.insert(cols.clone(), index.clone_structure());
         }
         new
     }
@@ -749,7 +774,7 @@ impl<'a> RowRef<'a> {
     ///
     /// If `cols` contains zero or more than one column, the values of the projected columns are wrapped in a [`ProductValue`].
     /// If `cols` is a single column, the value of that column is returned without wrapping in a `ProductValue`.
-    pub fn project_not_empty(self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
+    pub fn project(self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
         if let Some(head) = cols.as_singleton() {
             return self.read_col(head).map_err(|_| head.into());
         }
@@ -804,7 +829,7 @@ impl<'a> RowRef<'a> {
     /// Only available for rows whose types have a static BSATN layout.
     /// Returns `None` for rows of other types, e.g. rows containing strings.
     pub fn bsatn_length(&self) -> Option<usize> {
-        self.table.static_bsatn_layout.as_ref().map(|s| s.bsatn_length as usize)
+        self.table.static_layout.as_ref().map(|s| s.bsatn_length as usize)
     }
 
     /// Encode the row referred to by `self` into a `Vec<u8>` using BSATN and then deserialize it.
@@ -858,16 +883,16 @@ impl Serialize for RowRef<'_> {
 impl ToBsatn for RowRef<'_> {
     /// BSATN-encode the row referred to by `self` into a freshly-allocated `Vec<u8>`.
     ///
-    /// This method will use a [`StaticBsatnLayout`] if one is available,
+    /// This method will use a [`StaticLayout`] if one is available,
     /// and may therefore be faster than calling [`bsatn::to_vec`].
     fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
-        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
+        if let Some(static_layout) = &self.table.static_layout {
             // Use fast path, by first fetching the row data and then using the static layout.
             let row = self.get_row_data();
             // SAFETY:
             // - Existence of a `RowRef` treated as proof
             //   of row's validity and type information's correctness.
-            Ok(unsafe { static_bsatn_layout.serialize_row_into_vec(row) })
+            Ok(unsafe { static_layout.serialize_row_into_vec(row) })
         } else {
             bsatn::to_vec(self)
         }
@@ -876,17 +901,17 @@ impl ToBsatn for RowRef<'_> {
     /// BSATN-encode the row referred to by `self` into `buf`,
     /// pushing `self`'s bytes onto the end of `buf`, similar to [`Vec::extend`].
     ///
-    /// This method will use a [`StaticBsatnLayout`] if one is available,
+    /// This method will use a [`StaticLayout`] if one is available,
     /// and may therefore be faster than calling [`bsatn::to_writer`].
     fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
-        if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
+        if let Some(static_layout) = &self.table.static_layout {
             // Use fast path, by first fetching the row data and then using the static layout.
             let row = self.get_row_data();
             // SAFETY:
             // - Existence of a `RowRef` treated as proof
             //   of row's validity and type information's correctness.
             unsafe {
-                static_bsatn_layout.serialize_row_extend(buf, row);
+                static_layout.serialize_row_extend(buf, row);
             }
             Ok(())
         } else {
@@ -896,7 +921,7 @@ impl ToBsatn for RowRef<'_> {
     }
 
     fn static_bsatn_size(&self) -> Option<u16> {
-        self.table.static_bsatn_layout.as_ref().map(|sbl| sbl.bsatn_length)
+        self.table.static_layout.as_ref().map(|sbl| sbl.bsatn_length)
     }
 }
 
@@ -915,8 +940,10 @@ impl PartialEq for RowRef<'_> {
         }
         let (page_a, offset_a) = self.page_and_offset();
         let (page_b, offset_b) = other.page_and_offset();
-        // SAFETY: `offset_a/b` are valid rows in `page_a/b` typed at `a_ty`.
-        unsafe { eq_row_in_page(page_a, page_b, offset_a, offset_b, a_ty) }
+        let static_layout = self.table.static_layout.as_ref();
+        // SAFETY: `offset_a/b` are valid rows in `page_a/b` typed at `a_ty`
+        // and `static_bsatn_layout` is derived from `a_ty`.
+        unsafe { eq_row_in_page(page_a, page_b, offset_a, offset_b, a_ty, static_layout) }
     }
 }
 
@@ -1030,13 +1057,6 @@ impl<'a> Iterator for IndexScanIter<'a> {
     }
 }
 
-impl IndexScanIter<'_> {
-    /// Returns the current number of pointers the iterator has returned thus far.
-    pub fn num_pointers_yielded(&self) -> u64 {
-        self.btree_index_iter.num_pointers_yielded()
-    }
-}
-
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
 pub struct UniqueConstraintViolation {
@@ -1046,18 +1066,10 @@ pub struct UniqueConstraintViolation {
     pub value: AlgebraicValue,
 }
 
-// Private API:
-impl Table {
+impl UniqueConstraintViolation {
     /// Returns a unique constraint violation error for the given `index`
     /// and the `value` that would have been duplicated.
-    fn build_error_unique(
-        &self,
-        index: &BTreeIndex,
-        cols: &ColList,
-        value: AlgebraicValue,
-    ) -> UniqueConstraintViolation {
-        let schema = self.get_schema();
-
+    fn build(schema: &TableSchema, index: &BTreeIndex, cols: &ColList, value: AlgebraicValue) -> Self {
         // Fetch the table name.
         let table_name = schema.table_name.clone();
 
@@ -1076,20 +1088,35 @@ impl Table {
             .index_name
             .clone();
 
-        UniqueConstraintViolation {
+        Self {
             constraint_name,
             table_name,
             cols,
             value,
         }
     }
+}
 
-    /// Returns a new empty table with the given `schema`, `row_layout`, and `static_bsatn_layout`s
+// Private API:
+impl Table {
+    /// Returns a unique constraint violation error for the given `index`
+    /// and the `value` that would have been duplicated.
+    pub fn build_error_unique(
+        &self,
+        index: &BTreeIndex,
+        cols: &ColList,
+        value: AlgebraicValue,
+    ) -> UniqueConstraintViolation {
+        let schema = self.get_schema();
+        UniqueConstraintViolation::build(schema, index, cols, value)
+    }
+
+    /// Returns a new empty table with the given `schema`, `row_layout`, and `static_layout`s
     /// and with a specified capacity for the `indexes` of the table.
     fn new_with_indexes_capacity(
         schema: Arc<TableSchema>,
         row_layout: RowTypeLayout,
-        static_bsatn_layout: Option<StaticBsatnLayout>,
+        static_layout: Option<StaticLayout>,
         visitor_prog: VarLenVisitorProgram,
         squashed_offset: SquashedOffset,
         indexes_capacity: usize,
@@ -1097,7 +1124,7 @@ impl Table {
         Self {
             inner: TableInner {
                 row_layout,
-                static_bsatn_layout,
+                static_layout,
                 visitor_prog,
                 pages: Pages::default(),
             },
@@ -1169,9 +1196,9 @@ impl Table {
         self.inner.pages.len()
     }
 
-    /// Returns the [`StaticBsatnLayout`] for this table,
-    pub(crate) fn static_bsatn_layout(&self) -> Option<&StaticBsatnLayout> {
-        self.inner.static_bsatn_layout.as_ref()
+    /// Returns the [`StaticLayout`] for this table,
+    pub(crate) fn static_layout(&self) -> Option<&StaticLayout> {
+        self.inner.static_layout.as_ref()
     }
 
     /// Rebuild the [`PointerMap`] by iterating over all the rows in `self` and inserting them.
@@ -1209,7 +1236,7 @@ impl Table {
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
-    use crate::blob_store::HashMapBlobStore;
+    use crate::blob_store::{HashMapBlobStore, NullBlobStore};
     use crate::page::tests::hash_unmodified_save_get;
     use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
@@ -1289,8 +1316,9 @@ pub(crate) mod test {
             Err(e) => panic!("Expected UniqueConstraintViolation but found {:?}", e),
         }
 
-        // Second insert did not clear the hash as we had a constraint violation.
-        assert_eq!(hash_post_ins, *table.inner.pages[pi].unmodified_hash().unwrap());
+        // Second insert did clear the hash while we had a constraint violation,
+        // as constraint checking is done after insertion and then rolled back.
+        assert_eq!(table.inner.pages[pi].unmodified_hash(), None);
     }
 
     fn insert_retrieve_body(ty: impl Into<ProductType>, val: impl Into<ProductValue>) -> TestCaseResult {

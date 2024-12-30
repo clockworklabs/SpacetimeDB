@@ -84,7 +84,7 @@ impl<'ctx> __sdk::Table for PkIdentityTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<PkIdentity>("pk_identity");
-    _table.add_unique_constraint::<__sdk::Identity>("i", |row| &row.i)
+    _table.add_unique_constraint::<__sdk::Identity>("i", |row| &row.i);
 }
 pub struct PkIdentityUpdateCallbackId(__sdk::CallbackId);
 

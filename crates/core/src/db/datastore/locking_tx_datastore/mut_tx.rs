@@ -399,15 +399,35 @@ impl MutTxId {
             _ => unimplemented!(),
         };
         // Create and build the index.
+        //
+        // Ensure adding the index does not cause a unique constraint violation due to
+        // the existing rows having the same value for some column(s).
         let mut insert_index = table.new_index(index.index_id, &columns, is_unique)?;
-        insert_index.build_from_rows(&columns, table.scan_rows(blob_store))?;
+        let mut build_from_rows = |table: &Table, bs: &dyn BlobStore| -> Result<()> {
+            if let Some(violation) = insert_index.build_from_rows(&columns, table.scan_rows(bs))? {
+                let violation = table
+                    .get_row_ref(bs, violation)
+                    .expect("row came from scanning the table")
+                    .project(&columns)
+                    .expect("`cols` should consist of valid columns for this table");
+                return Err(IndexError::from(table.build_error_unique(&insert_index, &columns, violation)).into());
+            }
+            Ok(())
+        };
+        build_from_rows(table, blob_store)?;
         // NOTE: Also add all the rows in the already committed table to the index.
+        //
         // FIXME: Is this correct? Index scan iterators (incl. the existing `Locking` versions)
         // appear to assume that a table's index refers only to rows within that table,
         // and does not handle the case where a `TxState` index refers to `CommittedState` rows.
-        if let Some(committed_table) = commit_table {
-            insert_index.build_from_rows(&columns, committed_table.scan_rows(commit_blob_store))?;
+        //
+        // TODO(centril): An alternative here is to actually add this index to `CommittedState`,
+        // pretending that it was already committed, and recording this pretense.
+        // Then, we can roll that back on a failed tx.
+        if let Some(commit_table) = commit_table {
+            build_from_rows(commit_table, commit_blob_store)?;
         }
+
         table.indexes.insert(columns.clone(), insert_index);
         // Associate `index_id -> (table_id, col_list)` for fast lookup.
         idx_map.insert(index_id, (table_id, columns.clone()));
@@ -1196,16 +1216,6 @@ impl MutTxId {
     pub(super) fn insert_row_internal(&mut self, table_id: TableId, row: &ProductValue) -> Result<RowRefInsertion<'_>> {
         let commit_table = self.committed_state_write_lock.get_table(table_id);
 
-        // Check for constraint violations as early as possible,
-        // to ensure that `UniqueConstraintViolation` errors have precedence over other errors.
-        // `tx_table.insert` will later perform the same check on the tx table,
-        // so this method needs only to check the committed state.
-        if let Some(commit_table) = commit_table {
-            commit_table
-                .check_unique_constraints(row, |maybe_conflict| self.tx_state.is_deleted(table_id, maybe_conflict))
-                .map_err(IndexError::from)?;
-        }
-
         // Get the insert table, so we can write the row into it.
         let (tx_table, tx_blob_store, _, delete_table) = self
             .tx_state
@@ -1213,18 +1223,22 @@ impl MutTxId {
             .ok_or(TableError::IdNotFoundState(table_id))?;
 
         match tx_table.insert(tx_blob_store, row) {
-            Ok((hash, row_ref)) => {
-                // `row` not previously present in insert tables,
-                // but may still be a set-semantic conflict with a row
-                // in the committed state.
-
-                let ptr = row_ref.pointer();
+            Ok((tx_row_hash, tx_row_ref)) => {
+                let tx_row_ptr = tx_row_ref.pointer();
                 if let Some(commit_table) = commit_table {
-                    // Safety:
+                    // The `tx_row_ref` was not previously present in insert tables,
+                    // but may still be a set-semantic conflict
+                    // or may violate a unique constraint with a row in the committed state.
+                    // We'll check the set-semantic aspect in (1) and the constraint in (2).
+
+                    // (1) Rule out a set-semantic conflict with the committed state.
+                    // SAFETY:
                     // - `commit_table` and `tx_table` use the same schema
                     //   because `tx_table` is derived from `commit_table`.
-                    // - `ptr` and `hash` are correct because we just got them from `tx_table.insert`.
-                    if let Some(committed_ptr) = unsafe { Table::find_same_row(commit_table, tx_table, ptr, hash) } {
+                    // - `tx_row_ptr` and `tx_row_hash` are correct because we just got them from `tx_table.insert`.
+                    if let Some(commit_ptr) =
+                        unsafe { Table::find_same_row(commit_table, tx_table, tx_row_ptr, tx_row_hash) }
+                    {
                         // If `row` was already present in the committed state,
                         // either this is a set-semantic duplicate,
                         // or the row is marked as deleted, so we will undelete it
@@ -1250,26 +1264,43 @@ impl MutTxId {
                         // - Insert Row A
                         // This is impossible to recover if `Running 2` elides its insert.
                         tx_table
-                            .delete(tx_blob_store, ptr, |_| ())
+                            .delete(tx_blob_store, tx_row_ptr, |_| ())
                             .expect("Failed to delete a row we just inserted");
 
                         // It's possible that `row` appears in the committed state,
                         // but is marked as deleted.
                         // In this case, undelete it, so it remains in the committed state.
-                        delete_table.remove(&committed_ptr);
+                        delete_table.remove(&commit_ptr);
 
                         // No new row was inserted, but return `committed_ptr`.
                         let blob_store = &self.committed_state_write_lock.blob_store;
                         return Ok(RowRefInsertion::Existed(
                             // SAFETY: `find_same_row` told us that `ptr` refers to a valid row in `commit_table`.
-                            unsafe { commit_table.get_row_ref_unchecked(blob_store, committed_ptr) },
+                            unsafe { commit_table.get_row_ref_unchecked(blob_store, commit_ptr) },
                         ));
+                    }
+
+                    // Pacify the borrow checker.
+                    // SAFETY: `tx_row_ptr` came from `tx_table.insert` just now
+                    // without any interleaving `&mut` calls that could invalidate the pointer.
+                    let tx_row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
+
+                    // (2) The `tx_row_ref` did not violate a unique constraint *within* the `tx_table`,
+                    // but it could do so wrt., `commit_table`,
+                    // assuming the conflicting row hasn't been deleted since.
+                    // Ensure that it doesn't, or roll back the insertion.
+                    if let Err(e) = commit_table
+                        .check_unique_constraints(tx_row_ref, |commit_ptr| delete_table.contains(&commit_ptr))
+                    {
+                        // There was a constraint violation, so undo the insertion.
+                        tx_table.delete(tx_blob_store, tx_row_ptr, |_| {});
+                        return Err(IndexError::from(e).into());
                     }
                 }
 
                 Ok(RowRefInsertion::Inserted(unsafe {
                     // SAFETY: `ptr` came from `tx_table.insert` just now without any interleaving calls.
-                    tx_table.get_row_ref_unchecked(tx_blob_store, ptr)
+                    tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr)
                 }))
             }
             // `row` previously present in insert tables; do nothing but return `ptr`.

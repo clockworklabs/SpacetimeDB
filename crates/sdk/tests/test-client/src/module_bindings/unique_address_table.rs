@@ -84,7 +84,7 @@ impl<'ctx> __sdk::Table for UniqueAddressTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<UniqueAddress>("unique_address");
-    _table.add_unique_constraint::<__sdk::Address>("a", |row| &row.a)
+    _table.add_unique_constraint::<__sdk::Address>("a", |row| &row.a);
 }
 #[doc(hidden)]
 pub(super) fn parse_table_update(

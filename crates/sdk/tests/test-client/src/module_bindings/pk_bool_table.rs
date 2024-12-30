@@ -84,7 +84,7 @@ impl<'ctx> __sdk::Table for PkBoolTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<PkBool>("pk_bool");
-    _table.add_unique_constraint::<bool>("b", |row| &row.b)
+    _table.add_unique_constraint::<bool>("b", |row| &row.b);
 }
 pub struct PkBoolUpdateCallbackId(__sdk::CallbackId);
 
