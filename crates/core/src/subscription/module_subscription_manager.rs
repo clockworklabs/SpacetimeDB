@@ -200,7 +200,6 @@ impl SubscriptionManager {
         if !query_state.has_subscribers() {
             self.tables.entry(query.return_table()).or_default().insert(hash);
             self.tables.entry(query.filter_table()).or_default().insert(hash);
-            query_state.subscriptions.insert(subscription_id);
         }
 
         query_state.subscriptions.insert(subscription_id);
@@ -215,7 +214,6 @@ impl SubscriptionManager {
     /// its table ids added to the inverted index.
     // #[tracing::instrument(skip_all)]
     pub fn set_legacy_subscription(&mut self, client: Client, queries: impl IntoIterator<Item = Query>) {
-        // TODO: Remove existing subscriptions.
         let client_id = (client.id.identity, client.id.address);
         // First, remove any existing legacy subscriptions.
         self.remove_legacy_subscriptions(&client_id);
