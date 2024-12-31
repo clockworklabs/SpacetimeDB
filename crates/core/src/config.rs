@@ -2,7 +2,7 @@ use std::path::Path;
 use std::{fmt, io};
 
 use toml;
-use toml_edit::{DocumentMut, Formatted, Item, Table, Value};
+use toml_edit;
 
 use spacetimedb_lib::Address;
 use spacetimedb_paths::cli::{ConfigDir, PrivKeyPath, PubKeyPath};
@@ -10,23 +10,6 @@ use spacetimedb_paths::server::{ConfigToml, MetadataTomlPath};
 
 pub fn current_version() -> semver::Version {
     env!("CARGO_PKG_VERSION").parse().unwrap()
-}
-
-/// Parse a TOML file at the given path, returning `None` if the file does not exist.
-///
-/// **NOTE**: Comments and formatting in the file could be preserved.
-pub fn parse_preserving_config<T: for<'a> From<&'a DocumentMut>>(
-    path: &Path,
-) -> anyhow::Result<Option<(DocumentMut, T)>> {
-    match std::fs::read_to_string(path) {
-        Ok(contents) => {
-            let doc = contents.parse::<DocumentMut>()?;
-            let config = T::from(&doc);
-            Ok(Some((doc, config)))
-        }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e.into()),
-    }
 }
 
 /// Parse a TOML file at the given path, returning `None` if the file does not exist.
@@ -122,27 +105,36 @@ pub struct LogConfig {
     pub directives: Vec<String>,
 }
 
-/// Patch the value of a key in a TOML document,
-/// preserving the formatting and comments of the original value.
-fn patch_value(item: Option<&Item>, value: Option<&str>) -> Option<Item> {
-    match (value, item) {
-        (Some(value), Some(Item::Value(Value::String(v)))) => {
-            let mut new = Value::String(Formatted::new(value.to_string()));
+/// Update the value of a key in a `TOML` document, preserving the formatting and comments of the original value.
+///
+/// ie:
+///
+/// ```toml;no_run
+/// # Moving key = value to key = new_value
+/// old = "value" # Comment
+/// new = "new_value" # Comment
+/// ```
+fn copy_value_with_decor(old_value: Option<&toml_edit::Item>, new_value: &str) -> toml_edit::Item {
+    match old_value {
+        Some(toml_edit::Item::Value(toml_edit::Value::String(old_value))) => {
+            // Creates a new `toml_edit::Value` with the same formatting as the old value.
+            let mut new = toml_edit::Value::String(toml_edit::Formatted::new(new_value.to_string()));
             let decor = new.decor_mut();
-            *decor = v.decor().clone();
-            Some(new.into())
+            // Copy the comments and formatting from the old value.
+            *decor = old_value.decor().clone();
+            new.into()
         }
-        (Some(val), _) => Some(val.into()),
-        (None, _) => None,
+        _ => new_value.into(),
     }
 }
 
 /// Set the value of a key in a `TOML` document, removing the key if the value is `None`.
 ///
 /// **NOTE**: This function will preserve the formatting and comments of the original value.
-pub fn set_opt_value(doc: &mut DocumentMut, key: &str, value: Option<&str>) {
-    if let Some(value) = patch_value(doc.get(key), value) {
-        doc[key] = value;
+pub fn set_opt_value(doc: &mut toml_edit::DocumentMut, key: &str, value: Option<&str>) {
+    let old_value = doc.get(key);
+    if let Some(new) = value {
+        doc[key] = copy_value_with_decor(old_value, new);
     } else {
         doc.remove(key);
     }
@@ -151,9 +143,10 @@ pub fn set_opt_value(doc: &mut DocumentMut, key: &str, value: Option<&str>) {
 /// Set the value of a key in a `TOML` table, removing the key if the value is `None`.
 ///
 /// **NOTE**: This function will preserve the formatting and comments of the original value.
-pub fn set_table_opt_value(table: &mut Table, key: &str, value: Option<&str>) {
-    if let Some(value) = patch_value(table.get(key), value) {
-        table[key] = value;
+pub fn set_table_opt_value(table: &mut toml_edit::Table, key: &str, value: Option<&str>) {
+    let old_value = table.get(key);
+    if let Some(new) = value {
+        table[key] = copy_value_with_decor(old_value, new);
     } else {
         table.remove(key);
     }
