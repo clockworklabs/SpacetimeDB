@@ -1,9 +1,9 @@
 name: Validate nav.ts Matches nav.js
-    branches:
-      - master
 
 on:
   pull_request:
+    branches:
+      - master
 
 jobs:
   validate-build:
