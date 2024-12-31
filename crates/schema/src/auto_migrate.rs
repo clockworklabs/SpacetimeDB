@@ -49,7 +49,7 @@ pub struct AutoMigratePlan<'def> {
 
 /// Checks that must be performed before performing an automatic migration.
 /// These checks can access table contents and other database state.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum AutoMigratePrecheck<'def> {
     /// Perform a check that adding a sequence is valid (the relevant column contains no values
     /// greater than the sequence's start value).
@@ -57,7 +57,7 @@ pub enum AutoMigratePrecheck<'def> {
 }
 
 /// A step in an automatic migration.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum AutoMigrateStep<'def> {
     /// Add a table, including all indexes, constraints, and sequences.
     /// There will NOT be separate steps in the plan for adding indexes, constraints, and sequences.
@@ -171,6 +171,9 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
     let rls_ok = auto_migrate_row_level_security(&mut plan);
 
     let ((), (), (), (), ()) = (tables_ok, indexes_ok, sequences_ok, constraints_ok, rls_ok).combine_errors()?;
+
+    plan.steps.sort();
+    plan.prechecks.sort();
 
     Ok(plan)
 }

@@ -59,8 +59,14 @@ pub enum PublishResult {
         op: PublishOp,
 
         /// If the database was updated, may contain a string describing the update.
-        /// Contains ANSI escape codes for color.
-        /// Suitable for printing to the console.
+        /// Contains ANSI escape codes for color. You can use
+        /// `spacetimedb_schema::auto_migrate::pretty_print::strip_ansi_escape_codes`
+        /// to remove these if needed.
+        ///
+        /// TODO: it would be much better to put a more structured data type here.
+        /// This could then be formatted on client, possibly in a machine-readable form;
+        /// it could also allow, say, a GUI that shows migration histories on the website.
+        /// However, this requires reworking the `MigrationPlan` type to be serializable.
         update_summary: Option<String>,
     },
 

@@ -2,10 +2,13 @@
 
 use super::{IndexAlgorithm, MigratePlan, TableDef};
 use crate::{auto_migrate::AutoMigrateStep, def::ConstraintData};
-use colored::{self, ColoredString, Colorize};
+use colored::{self, Colorize};
 use lazy_static::lazy_static;
 use regex::Regex;
-use spacetimedb_lib::db::raw_def::v9::{TableAccess, TableType};
+use spacetimedb_lib::{
+    db::raw_def::v9::{TableAccess, TableType},
+    AlgebraicType,
+};
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::{algebraic_type::fmt::fmt_algebraic_type, WithTypespace};
 use std::fmt::{self, Write};
@@ -32,7 +35,8 @@ pub fn strip_ansi_escape_codes(s: &str) -> String {
 }
 
 /// Pretty print a migration plan, resulting in a string (containing ANSI escape codes).
-/// If you are printing
+/// If you are printing to a console without ANSI escape code support, call [`strip_ansi_escape_codes`] on the
+/// resulting string.
 pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
     let plan = match plan {
         MigratePlan::Auto(plan) => plan,
@@ -40,27 +44,28 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
     let mut out = String::new();
     let outr = &mut out;
 
-    writeln!(outr, "{}", "Migration plan".blue())?;
     writeln!(outr, "{}", "--------------")?;
-    writeln!(outr, "")?;
+    writeln!(outr, "{}", "Performed automatic migration".blue())?;
+    writeln!(outr, "{}", "--------------")?;
 
-    let added = "+".green().bold();
-    let removed = "-".red().bold();
+    let created = "Created".green().bold();
+    let removed = "Removed".red().bold();
 
     for step in &plan.steps {
         match step {
             AutoMigrateStep::AddTable(t) => {
                 let table = plan.new.table(*t).ok_or(fmt::Error)?;
 
-                write!(outr, "{} table: {}", added, table_name(&*table.name))?;
+                write!(outr, "- {} table: {}", created, table_name(&*table.name))?;
                 if table.table_type == TableType::System {
                     write!(outr, " (system)")?;
                 }
                 match table.table_access {
-                    TableAccess::Private => write!(outr, "(private)")?,
-                    TableAccess::Public => write!(outr, "(public)")?,
+                    TableAccess::Private => write!(outr, " (private)")?,
+                    TableAccess::Public => write!(outr, " (public)")?,
                 }
                 writeln!(outr)?;
+                writeln!(outr, "    - Columns:")?;
                 for column in &table.columns {
                     let resolved = WithTypespace::new(plan.new.typespace(), &column.ty)
                         .resolve_refs()
@@ -68,63 +73,82 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
 
                     writeln!(
                         outr,
-                        "  {} column: {}: {}",
-                        added,
-                        column.name,
-                        fmt_algebraic_type(&resolved)
+                        "        - {}: {}",
+                        column_name(&column.name),
+                        type_name(&resolved)
                     )?;
                 }
-                for constraint in table.constraints.values() {
-                    match &constraint.data {
-                        ConstraintData::Unique(unique) => {
-                            write!(outr, "  {} unique constraint on ", added)?;
-                            write_col_list(outr, &unique.columns.clone().into(), table)?;
-                            writeln!(outr)?;
+                if !table.constraints.is_empty() {
+                    writeln!(outr, "    - Unique constraints:")?;
+                    for constraint in table.constraints.values() {
+                        match &constraint.data {
+                            ConstraintData::Unique(unique) => {
+                                writeln!(
+                                    outr,
+                                    "        - {} on {}",
+                                    constraint_name(&constraint.name),
+                                    format_col_list(&unique.columns.clone().into(), table)?
+                                )?;
+                            }
                         }
                     }
                 }
-                for index in table.indexes.values() {
-                    match &index.algorithm {
-                        IndexAlgorithm::BTree(btree) => {
-                            write!(outr, "  {} btree index on ", added)?;
-                            write_col_list(outr, &btree.columns, table)?;
-                            writeln!(outr)?;
+                if !table.indexes.is_empty() {
+                    writeln!(outr, "    - Indexes:")?;
+                    for index in table.indexes.values() {
+                        match &index.algorithm {
+                            IndexAlgorithm::BTree(btree) => {
+                                write!(
+                                    outr,
+                                    "        - {} on {}",
+                                    index_name(&index.name),
+                                    format_col_list(&btree.columns, table)?
+                                )?;
+                                writeln!(outr)?;
+                            }
                         }
                     }
                 }
-                for sequence in table.sequences.values() {
-                    let column = column_name(table, sequence.column);
-                    writeln!(outr, "  {} sequence on {}", added, column)?;
+                if !table.sequences.is_empty() {
+                    writeln!(outr, "    - Auto-increment constraints:")?;
+                    for sequence in table.sequences.values() {
+                        let column = column_name_from_id(table, sequence.column);
+                        writeln!(outr, "        - {} on {}", sequence_name(&sequence.name), column)?;
+                    }
                 }
                 if let Some(schedule) = &table.schedule {
                     let reducer = reducer_name(&*schedule.reducer_name);
-                    writeln!(outr, "  {} schedule calling {}", added, reducer)?;
+                    writeln!(outr, "        - Scheduled, calling reducer: {}", reducer)?;
                 }
             }
             AutoMigrateStep::AddIndex(index) => {
                 let table_def = plan.new.stored_in_table_def(*index).ok_or(fmt::Error)?;
                 let index_def = table_def.indexes.get(*index).ok_or(fmt::Error)?;
 
-                write!(
+                writeln!(
                     outr,
-                    "{} index on table {} columns ",
-                    added,
-                    table_name(&*table_def.name)
+                    "- {} index {} on columns {} of table {}",
+                    created,
+                    index_name(*index),
+                    format_col_list(index_def.algorithm.columns(), table_def)?,
+                    table_name(&*table_def.name),
                 )?;
-                write_col_list(outr, index_def.algorithm.columns(), table_def)?;
-                writeln!(outr)?;
             }
             AutoMigrateStep::RemoveIndex(index) => {
                 let table_def = plan.old.stored_in_table_def(*index).ok_or(fmt::Error)?;
                 let index_def = table_def.indexes.get(*index).ok_or(fmt::Error)?;
 
+                let col_list = match &index_def.algorithm {
+                    IndexAlgorithm::BTree(b) => &b.columns,
+                };
                 write!(
                     outr,
-                    "{} index on table {} columns ",
+                    "- {} index {} on columns {} of table {}",
                     removed,
+                    index_name(*index),
+                    format_col_list(col_list, table_def)?,
                     table_name(&*table_def.name)
                 )?;
-                write_col_list(outr, index_def.algorithm.columns(), table_def)?;
                 writeln!(outr)?;
             }
             AutoMigrateStep::RemoveConstraint(constraint) => {
@@ -134,11 +158,12 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
                     ConstraintData::Unique(unique_constraint_data) => {
                         write!(
                             outr,
-                            "{} unique constraint on table {} columns ",
+                            "- {} unique constraint {} on columns {} of table {}",
                             removed,
+                            constraint_name(*constraint),
+                            format_col_list(&unique_constraint_data.columns, table_def)?,
                             table_name(&*table_def.name)
                         )?;
-                        write_col_list(outr, &unique_constraint_data.columns.clone().into(), table_def)?;
                         writeln!(outr)?;
                     }
                 }
@@ -149,10 +174,11 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
 
                 write!(
                     outr,
-                    "{} sequence on table {} column {}",
-                    added,
+                    "- {} auto-increment constraint {} on column {} of table {}",
+                    created,
+                    constraint_name(*sequence),
+                    column_name_from_id(table_def, sequence_def.column),
                     table_name(&*table_def.name),
-                    column_name(table_def, sequence_def.column)
                 )?;
                 writeln!(outr)?;
             }
@@ -162,22 +188,17 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
 
                 write!(
                     outr,
-                    "{} sequence on table {} column {}",
+                    "- {} auto-increment constraint on column {} of table {}",
                     removed,
+                    column_name_from_id(table_def, sequence_def.column),
                     table_name(&*table_def.name),
-                    column_name(table_def, sequence_def.column)
                 )?;
                 writeln!(outr)?;
             }
             AutoMigrateStep::ChangeAccess(table) => {
                 let table_def = plan.new.table(*table).ok_or(fmt::Error)?;
 
-                write!(
-                    outr,
-                    "{} table access for table {}",
-                    added,
-                    table_name(&*table_def.name)
-                )?;
+                write!(outr, "- Changed access for table {}", table_name(&*table_def.name))?;
                 match table_def.table_access {
                     TableAccess::Private => write!(outr, " (public -> private)")?,
                     TableAccess::Public => write!(outr, " (private -> public)")?,
@@ -189,40 +210,34 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
                 let schedule_def = table_def.schedule.as_ref().ok_or(fmt::Error)?;
 
                 let reducer = reducer_name(&*schedule_def.reducer_name);
-                write!(
+                writeln!(
                     outr,
-                    "{} schedule for table {} calling {}",
-                    added,
+                    "- {} schedule for table {} calling reducer {}",
+                    created,
                     table_name(&*table_def.name),
                     reducer
                 )?;
-                writeln!(outr)?;
             }
             AutoMigrateStep::RemoveSchedule(schedule) => {
                 let table_def = plan.old.table(*schedule).ok_or(fmt::Error)?;
                 let schedule_def = table_def.schedule.as_ref().ok_or(fmt::Error)?;
 
                 let reducer = reducer_name(&*schedule_def.reducer_name);
-                write!(
+                writeln!(
                     outr,
-                    "{} schedule for table {} calling {}",
+                    "- {} schedule for table {} calling reducer {}",
                     removed,
                     table_name(&*table_def.name),
                     reducer
                 )?;
-                writeln!(outr)?;
             }
             AutoMigrateStep::AddRowLevelSecurity(rls) => {
-                writeln!(outr, "{} row level security policy:", added)?;
-                writeln!(outr, "=============================")?;
-                writeln!(outr, "{}", rls)?;
-                writeln!(outr, "=============================")?;
+                writeln!(outr, "- {} row level security policy:", created)?;
+                writeln!(outr, "    `{}`", rls.blue())?;
             }
             AutoMigrateStep::RemoveRowLevelSecurity(rls) => {
-                writeln!(outr, "{} row level security policy:", removed)?;
-                writeln!(outr, "=============================")?;
-                writeln!(outr, "{}", rls)?;
-                writeln!(outr, "=============================")?;
+                writeln!(outr, "- {} row level security policy:", removed)?;
+                writeln!(outr, "    `{}`", rls.blue())?;
             }
         }
     }
@@ -230,32 +245,53 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
     Ok(out)
 }
 
-fn column_name(table_def: &TableDef, col_id: ColId) -> ColoredString {
-    table_def
-        .columns
-        .get(col_id.idx())
-        .map(|def| &*def.name)
-        .unwrap_or("unknown_column")
-        .magenta()
+fn reducer_name(name: &str) -> String {
+    format!("`{}`", name.yellow())
 }
 
-fn reducer_name(name: &str) -> ColoredString {
-    name.blue()
+fn table_name(name: &str) -> String {
+    format!("`{}`", name.cyan())
 }
 
-fn table_name(name: &str) -> ColoredString {
-    name.green()
+fn column_name(name: &str) -> String {
+    table_name(name)
 }
 
-fn write_col_list(out: &mut String, col_list: &ColList, table_def: &TableDef) -> Result<(), fmt::Error> {
-    write!(out, "[")?;
+fn column_name_from_id(table_def: &TableDef, col_id: ColId) -> String {
+    column_name(
+        table_def
+            .columns
+            .get(col_id.idx())
+            .map(|def| &*def.name)
+            .unwrap_or("unknown_column"),
+    )
+}
+
+fn index_name(name: &str) -> String {
+    format!("`{}`", name.purple())
+}
+
+fn constraint_name(name: &str) -> String {
+    index_name(name)
+}
+
+fn sequence_name(name: &str) -> String {
+    index_name(name)
+}
+
+fn type_name(type_: &AlgebraicType) -> String {
+    format!("{}", fmt_algebraic_type(type_).to_string().green())
+}
+
+fn format_col_list(col_list: &ColList, table_def: &TableDef) -> Result<String, fmt::Error> {
+    let mut out = String::new();
+    write!(&mut out, "[")?;
     for (i, col) in col_list.iter().enumerate() {
         let join = if i == 0 { "" } else { ", " };
-        write!(out, "{}{}", join, column_name(table_def, col))?;
+        write!(&mut out, "{}{}", join, column_name_from_id(table_def, col))?;
     }
-    write!(out, "]")?;
-
-    Ok(())
+    write!(&mut out, "]")?;
+    Ok(out)
 }
 
 #[cfg(test)]
