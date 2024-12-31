@@ -3,6 +3,8 @@
     "target": "ESNext",
     "module": "commonjs",
     "outDir": "./docs",
+    "esModuleInterop": true,
+    "strict": true,
     "skipLibCheck": true
   }
 }

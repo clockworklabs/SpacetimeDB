@@ -5,10 +5,13 @@
   "main": "index.js",
   "dependencies": {},
   "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
     "typescript": "^5.3.2"
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc nav.ts --outDir docs",
+    "check-links": "tsx scripts/checkLinks.ts"
   },
   "author": "Clockwork Labs",
   "license": "ISC"
