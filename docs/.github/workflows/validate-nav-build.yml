@@ -20,16 +20,21 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install
+          npm ci
+
+      - name: Backup existing nav.js
+        run: |
+          mv docs/nav.js docs/nav.js.original
 
       - name: Build nav.ts
         run: |
           npm run build
 
-      - name: Compare generated nav.js with committed nav.js
+      - name: Compare generated nav.js with original nav.js
         run: |
-          diff -q docs/nav.js docs/nav.js.built || (echo "Generated nav.js differs from committed version. Run 'npm run build' and commit the updated file." && exit 1)
+          diff -q docs/nav.js docs/nav.js.original || (echo "Generated nav.js differs from committed version. Run 'npm run build' and commit the updated file." && exit 1)
 
-      - name: Success message
-        if: success()
-        run: echo "nav.ts builds identically to the committed nav.js"
+      - name: Restore original nav.js
+        if: success() || failure()
+        run: |
+          mv docs/nav.js.original docs/nav.js
