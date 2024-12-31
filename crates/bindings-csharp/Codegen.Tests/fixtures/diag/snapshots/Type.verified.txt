@@ -86,23 +86,6 @@
       }
     },
     {/*
-    public Exception UnsupportedSystemType;
-    public UnresolvedType UnresolvedType;
-                          ^^^^^^^^^^^^^^
-    public LocalEnum UnsupportedEnum;
-*/
-      Message: BSATN implementation for UnresolvedType is not found: Could not resolve type UnresolvedType,
-      Severity: Error,
-      Descriptor: {
-        Id: BSATN0001,
-        Title: Unsupported type,
-        MessageFormat: BSATN implementation for {0} is not found: {1},
-        Category: SpacetimeDB.BSATN,
-        DefaultSeverity: Error,
-        IsEnabledByDefault: true
-      }
-    },
-    {/*
     public UnresolvedType UnresolvedType;
     public LocalEnum UnsupportedEnum;
                      ^^^^^^^^^^^^^^^

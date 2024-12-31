@@ -68,7 +68,7 @@
 
         public string? Name { get; init; }
 
-        public required string[] BTree { get; init; }
+        public string[] BTree { get; init; } = [];
     }
 
     public sealed class AutoIncAttribute : Internal.ColumnAttribute
