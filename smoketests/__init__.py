@@ -191,6 +191,7 @@ class Smoketest(unittest.TestCase):
         )
         self.resolved_identity = re.search(r"identity: ([0-9a-fA-F]+)", publish_output)[1]
         self.database_identity = domain if domain is not None else self.resolved_identity
+        return publish_output
 
     @classmethod
     def reset_config(cls):
