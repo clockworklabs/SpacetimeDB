@@ -25,14 +25,14 @@ pub struct ServerConfig {
 }
 
 impl ServerConfig {
-    /// Generate a new [Table] representing this [ServerConfig].
+    /// Generate a new [`Table`] representing this [`ServerConfig`].
     pub fn as_table(&self) -> Table {
         let mut table = Table::new();
         Self::update_table(&mut table, self);
         table
     }
 
-    /// Update an existing [Table] with the values of a [ServerConfig].
+    /// Update an existing [`Table`] with the values of a [`ServerConfig`].
     pub fn update_table(edit: &mut Table, from: &ServerConfig) {
         set_table_opt_value(edit, NICKNAME_KEY, from.nickname.as_deref());
         edit[HOST_KEY] = from.host.as_str().into();
@@ -93,8 +93,9 @@ pub struct RawConfig {
 pub struct Config {
     home: RawConfig,
     home_path: CliTomlPath,
-    // The TOML document that was parsed to create `home`.
-    // We need to keep it to preserve comments and formatting when saving the config.
+    /// The TOML document that was parsed to create `home`.
+    ///
+    /// We need to keep it to preserve comments and formatting when saving the config.
     doc: DocumentMut,
 }
 
@@ -590,7 +591,7 @@ impl Config {
         }
     }
 
-    /// Returns a preserving copy of [Config].
+    /// Returns a preserving copy of [`Config`].
     fn doc(&self) -> DocumentMut {
         let mut doc = self.doc.clone();
 
@@ -629,7 +630,10 @@ impl Config {
             .map(|cfg| (cfg.nick_or_host(), cfg))
             .collect::<HashMap<_, _>>();
 
-        // Update the existing servers.
+        // Update the existing servers, and remove deleted servers.
+        // We'll add new servers later.
+        // We do this somewhat elaborate dance rather than just overwriting the config
+        // in order to preserve the order and formatting of pre-existing server configs in the file.
         let mut new_vec = Vec::with_capacity(server_configs.len());
         for old_config in server_configs.iter_mut() {
             let nick_or_host = old_config
@@ -643,7 +647,8 @@ impl Config {
             }
         }
 
-        // Add the new servers.
+        // Add the new servers. This appends them to the end of the config file,
+        // after the (preserved) existing configs.
         new_vec.extend(new_configs.values().cloned().map(ServerConfig::as_table));
         *server_configs = ArrayOfTables::from_iter(new_vec);
 
