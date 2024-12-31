@@ -6,7 +6,7 @@ use colored::{self, Colorize};
 use lazy_static::lazy_static;
 use regex::Regex;
 use spacetimedb_lib::{
-    db::raw_def::v9::{TableAccess, TableType},
+    db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess, TableType},
     AlgebraicType,
 };
 use spacetimedb_primitives::{ColId, ColList};
@@ -188,8 +188,9 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
 
                 write!(
                     outr,
-                    "- {} auto-increment constraint on column {} of table {}",
+                    "- {} auto-increment constraint {} on column {} of table {}",
                     removed,
+                    constraint_name(*sequence),
                     column_name_from_id(table_def, sequence_def.column),
                     table_name(&*table_def.name),
                 )?;
@@ -232,10 +233,26 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
                 )?;
             }
             AutoMigrateStep::AddRowLevelSecurity(rls) => {
+                // Implementation detail: Row-level-security policies are always removed and re-added
+                // because the `core` crate needs to recompile some stuff.
+                // We hide this from the user.
+                if plan.old.lookup::<RawRowLevelSecurityDefV9>(*rls)
+                    == plan.new.lookup::<RawRowLevelSecurityDefV9>(*rls)
+                {
+                    continue;
+                }
                 writeln!(outr, "- {} row level security policy:", created)?;
                 writeln!(outr, "    `{}`", rls.blue())?;
             }
             AutoMigrateStep::RemoveRowLevelSecurity(rls) => {
+                // Implementation detail: Row-level-security policies are always removed and re-added
+                // because the `core` crate needs to recompile some stuff.
+                // We hide this from the user.
+                if plan.old.lookup::<RawRowLevelSecurityDefV9>(*rls)
+                    == plan.new.lookup::<RawRowLevelSecurityDefV9>(*rls)
+                {
+                    continue;
+                }
                 writeln!(outr, "- {} row level security policy:", removed)?;
                 writeln!(outr, "    `{}`", rls.blue())?;
             }

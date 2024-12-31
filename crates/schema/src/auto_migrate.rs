@@ -43,7 +43,7 @@ pub struct AutoMigratePlan<'def> {
     /// There is also an implied check: that the schema in the database is compatible with the old ModuleDef.
     pub prechecks: Vec<AutoMigratePrecheck<'def>>,
     /// The migration steps to perform.
-    /// Order should not matter, as the steps are independent.
+    /// Order matters: `Remove`s of a particular `Def` must be ordered before `Add`s.
     pub steps: Vec<AutoMigrateStep<'def>>,
 }
 
@@ -59,29 +59,46 @@ pub enum AutoMigratePrecheck<'def> {
 /// A step in an automatic migration.
 #[derive(PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum AutoMigrateStep<'def> {
+    // It is important FOR CORRECTNESS that `Remove` variants are declared before `Add` variants in this enum!
+    //
+    // The ordering is used to sort the steps of an auto-migration.
+    // If adds go before removes, the following can occur:
+    //
+    // 1. `AddIndex("my_special_boy)`
+    // 2. `RemoveIndex("my_special_boy)`
+    //
+    // You see the problem.
+    //
+    // For now, we just ensure that we declare all `Remove` variants before `Add` variants
+    // and let `#[derive(PartialOrd)]` take care of the rest.
+    // TODO: when this enum is made serializable, a more durable fix will be needed here.
+    // Probably we will want to have separate arrays of add and remove steps.
+    //
+    /// Remove an index.
+    RemoveIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
+    /// Remove a constraint.
+    RemoveConstraint(<ConstraintDef as ModuleDefLookup>::Key<'def>),
+    /// Remove a sequence.
+    RemoveSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
+    /// Remove a schedule annotation from a table.
+    RemoveSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
+    /// Remove a row-level security query.
+    RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
+
     /// Add a table, including all indexes, constraints, and sequences.
     /// There will NOT be separate steps in the plan for adding indexes, constraints, and sequences.
     AddTable(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Add an index.
     AddIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
-    /// Remove an index.
-    RemoveIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
-    /// Remove a constraint.
-    RemoveConstraint(<ConstraintDef as ModuleDefLookup>::Key<'def>),
     /// Add a sequence.
     AddSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
-    /// Remove a sequence.
-    RemoveSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
-    /// Change the access of a table.
-    ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Add a schedule annotation to a table.
     AddSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
-    /// Remove a schedule annotation from a table.
-    RemoveSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
     /// Add a row-level security query.
     AddRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
-    /// Remove a row-level security query.
-    RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
+
+    /// Change the access of a table.
+    ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
 }
 
 /// Something that might prevent an automatic migration.
@@ -412,9 +429,14 @@ fn auto_migrate_constraints(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Id
         .collect_all_errors()
 }
 
-// Because we can refer to many tables and fields on the row level-security query, we need to remove all of them,
-// then add the new ones, instead of trying to track the graph of dependencies.
 fn auto_migrate_row_level_security(plan: &mut AutoMigratePlan) -> Result<()> {
+    // Because we can refer to many tables and fields on the row level-security query, we need to remove all of them,
+    // then add the new ones, instead of trying to track the graph of dependencies.
+    // When pretty-printing, steps to remove and re-add a row-level-security policy are not shown,
+    // since they are an implementation detail that will be surprising to users.
+    // TODO: change this to not add-and-remove unchanged policies, and hand the responsibility for reinitializing
+    // queries to the `core` crate instead.
+    // When you do this, you will need to update `pretty_print.rs`.
     for rls in plan.old.row_level_security() {
         plan.steps.push(AutoMigrateStep::RemoveRowLevelSecurity(rls.key()));
     }
