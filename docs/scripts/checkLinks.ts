@@ -37,6 +37,20 @@ function extractLinksFromMarkdown(filePath: string): { link: string; line: numbe
   return links;
 }
 
+// Resolve relative links based on the current file's location
+function resolveLink(link: string, filePath: string): string {
+  // If the link is absolute (starts with `/`), return it as is
+  if (link.startsWith('/')) {
+    return link;
+  }
+  // Resolve the relative link to an absolute path
+  const fileDir = path.dirname(filePath);
+  const resolvedPath = path.join(fileDir, link);
+  // Convert to a normalized format (e.g., `/docs/...`)
+  const relativePath = path.relative(path.resolve(__dirname, '../docs'), resolvedPath);
+  return `/docs/${relativePath}`;
+}
+
 // Function to check if the links in .md files match the slugs in nav.ts
 function checkLinks(): void {
   const brokenLinks: { file: string; link: string; line: number }[] = [];
@@ -56,37 +70,32 @@ function checkLinks(): void {
       // Exclude external links (starting with http://, https://, mailto:, etc.)
       if (/^([a-z][a-z0-9+.-]*):/.test(link)) {
         // Skip the external links
-        // console.log(`Skipping external link: ${link}`);
         return;
       }
 
-      const siteLinks = [
-        '/install',
-        '/images',
-      ];
+      const siteLinks = ['/install', '/images'];
       for (const siteLink of siteLinks) {
         if (link.startsWith(siteLink)) {
           // Skip the site links
-          // console.log(`Skipping site link: ${link}`);
           return;
         }
       }
 
       // For now remove the fragment part of the link and check if it is a valid slug
-      // TODO: Check if the fragment part references a valid heading in the file specified
-      // by the link
       const fragmentIndex = link.indexOf('#');
       if (fragmentIndex !== -1) {
         link = link.substring(0, fragmentIndex);
-        // If the link is empty after removing the fragment, it is
-        // a reference to the current file, so we skip it
         if (link === '') {
+          // Skip references to the current file
           return;
         }
       }
-      
-      if (!validSlugs.includes(link)) {
-        brokenLinks.push({ file, link, line });
+
+      // Resolve the link to its absolute counterpart
+      const resolvedLink = resolveLink(link, file);
+
+      if (!validSlugs.includes(resolvedLink)) {
+        brokenLinks.push({ file, link: resolvedLink, line });
       }
     });
   });
@@ -94,7 +103,7 @@ function checkLinks(): void {
   if (brokenLinks.length > 0) {
     console.error(`\nFound ${brokenLinks.length} broken links:`);
     brokenLinks.forEach(({ file, link, line }) => {
-      console.error(`File: ${file}, Line: ${line}, Link: ${link}`);
+      console.error(`File: ${file}:${line}, Link: ${link}`);
     });
     process.exit(1); // Exit with error if any invalid links are found
   } else {

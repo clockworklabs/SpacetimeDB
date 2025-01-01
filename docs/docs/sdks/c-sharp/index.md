@@ -16,10 +16,10 @@ The SpacetimeDB client C# for Rust contains all the tools you need to build nati
     - [Method `SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect)
     - [Event `SpacetimeDBClient.onIdentityReceived`](#event-spacetimedbclientonidentityreceived)
     - [Event `SpacetimeDBClient.onConnect`](#event-spacetimedbclientonconnect)
-  - [Query subscriptions & one-time actions](#subscribe-to-queries)
+  - [Subscribe to queries](#subscribe-to-queries)
     - [Method `SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe)
     - [Event `SpacetimeDBClient.onSubscriptionApplied`](#event-spacetimedbclientonsubscriptionapplied)
-    - [Method `SpacetimeDBClient.OneOffQuery`](#method-spacetimedbclientoneoffquery)
+    - [Method \[`SpacetimeDBClient.OneOffQuery`\]](#method-spacetimedbclientoneoffquery)
   - [View rows of subscribed tables](#view-rows-of-subscribed-tables)
     - [Class `{TABLE}`](#class-table)
       - [Static Method `{TABLE}.Iter`](#static-method-tableiter)
@@ -45,7 +45,6 @@ The SpacetimeDB client C# for Rust contains all the tools you need to build nati
       - [Static Property `AuthToken.Token`](#static-property-authtokentoken)
       - [Static Method `AuthToken.SaveToken`](#static-method-authtokensavetoken)
     - [Class `Identity`](#class-identity)
-    - [Class `Identity`](#class-identity-1)
   - [Customizing logging](#customizing-logging)
     - [Interface `ISpacetimeDBLogger`](#interface-ispacetimedblogger)
     - [Class `ConsoleLogger`](#class-consolelogger)
@@ -104,7 +103,7 @@ The Unity SpacetimeDB SDK relies on there being a `NetworkManager` somewhere in 
 
 ![Unity-AddNetworkManager](/images/unity-tutorial/Unity-AddNetworkManager.JPG)
 
-This component will handle updating and closing the [`SpacetimeDBClient.instance`](#property-spacetimedbclientinstance) for you, but will not call [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect), you still need to handle that yourself. See the [Unity Quickstart](./UnityQuickStart) and [Unity Tutorial](./UnityTutorialPart1) for more information.
+This component will handle updating and closing the [`SpacetimeDBClient.instance`](#property-spacetimedbclientinstance) for you, but will not call [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect), you still need to handle that yourself. See the [Unity Tutorial](/docs/unity-tutorial) for more information.
 
 ### Method `SpacetimeDBClient.Connect`
 
