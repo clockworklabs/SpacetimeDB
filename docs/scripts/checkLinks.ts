@@ -2,14 +2,15 @@ import fs from 'fs';
 import path from 'path';
 import nav from '../nav'; // Import the nav object directly
 
-// Function to extract slugs from the nav object and prefix them with /docs
-function extractSlugsFromNav(nav: { items: any[] }): string[] {
-  const slugs: string[] = [];
+// Function to map slugs to file paths from nav.ts
+function extractSlugToPathMap(nav: { items: any[] }): Map<string, string> {
+  const slugToPath = new Map<string, string>();
 
   function traverseNav(items: any[]): void {
     items.forEach((item) => {
-      if (item.type === 'page' && item.slug) {
-        slugs.push(`/docs/${item.slug}`); // Prefix slugs with /docs
+      if (item.type === 'page' && item.slug && item.path) {
+        const resolvedPath = path.resolve(__dirname, '../docs', item.path);
+        slugToPath.set(`/docs/${item.slug}`, resolvedPath);
       } else if (item.type === 'section' && item.items) {
         traverseNav(item.items); // Recursively traverse sections
       }
@@ -17,7 +18,16 @@ function extractSlugsFromNav(nav: { items: any[] }): string[] {
   }
 
   traverseNav(nav.items);
-  return slugs;
+  return slugToPath;
+}
+
+// Function to assert that all files in slugToPath exist
+function validatePathsExist(slugToPath: Map<string, string>): void {
+  slugToPath.forEach((filePath, slug) => {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath} (Referenced by slug: ${slug})`);
+    }
+  });
 }
 
 // Function to extract links from markdown files with line numbers
@@ -37,28 +47,64 @@ function extractLinksFromMarkdown(filePath: string): { link: string; line: numbe
   return links;
 }
 
-// Resolve relative links based on the current file's location
+// Function to resolve relative links based on the current file's location
 function resolveLink(link: string, filePath: string): string {
-  // If the link is absolute (starts with `/`), return it as is
-  if (link.startsWith('/')) {
-    return link;
+  if (link.startsWith('#')) {
+    // If the link is a fragment, resolve it to the current file
+    const currentSlug = `/docs/${path.relative(
+      path.resolve(__dirname, '../docs'),
+      filePath
+    ).replace(/\\/g, '/')}`.replace(/\.md$/, ''); // Normalize to slug format
+    return `${currentSlug}${link}`;
   }
-  // Resolve the relative link to an absolute path
+
+  if (link.startsWith('/')) {
+    return link; // Absolute links are already resolved
+  }
+
   const fileDir = path.dirname(filePath);
   const resolvedPath = path.join(fileDir, link);
-  // Convert to a normalized format (e.g., `/docs/...`)
   const relativePath = path.relative(path.resolve(__dirname, '../docs'), resolvedPath);
-  return `/docs/${relativePath}`;
+  return `/docs/${relativePath}`; // Ensure resolved links are prefixed with /docs
 }
 
-// Function to check if the links in .md files match the slugs in nav.ts
+// Function to extract headings from a markdown file
+function extractHeadingsFromMarkdown(filePath: string): string[] {
+  if (!fs.existsSync(filePath) || !fs.lstatSync(filePath).isFile()) {
+    return []; // Return an empty list if the file does not exist or is not a file
+  }
+
+  const fileContent = fs.readFileSync(filePath, 'utf-8');
+  const headingRegex = /^(#{1,6})\s+(.*)$/gm; // Match markdown headings like # Heading
+  const headings: string[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = headingRegex.exec(fileContent)) !== null) {
+    const heading = match[2].trim(); // Extract the heading text
+    const slug = heading
+      .toLowerCase()
+      .replace(/[^\w\- ]+/g, '') // Remove special characters
+      .replace(/\s+/g, '-'); // Replace spaces with hyphens
+    headings.push(slug);
+  }
+
+  return headings;
+}
+
+// Function to check if the links in .md files match the slugs in nav.ts and validate fragments
 function checkLinks(): void {
   const brokenLinks: { file: string; link: string; line: number }[] = [];
 
-  // Extract slugs from the nav object
-  const validSlugs = extractSlugsFromNav(nav);
+  // Extract the slug-to-path mapping from nav.ts
+  const slugToPath = extractSlugToPathMap(nav);
 
-  console.log(`Extracted ${validSlugs.length} slugs from nav.ts`);
+  // Validate that all paths in slugToPath exist
+  validatePathsExist(slugToPath);
+
+  console.log(`Validated ${slugToPath.size} paths from nav.ts`);
+
+  // Extract valid slugs
+  const validSlugs = Array.from(slugToPath.keys());
 
   // Get all .md files to check
   const mdFiles = getMarkdownFiles(path.resolve(__dirname, '../docs'));
@@ -69,33 +115,41 @@ function checkLinks(): void {
     links.forEach(({ link, line }) => {
       // Exclude external links (starting with http://, https://, mailto:, etc.)
       if (/^([a-z][a-z0-9+.-]*):/.test(link)) {
-        // Skip the external links
-        return;
+        return; // Skip external links
       }
 
       const siteLinks = ['/install', '/images'];
       for (const siteLink of siteLinks) {
         if (link.startsWith(siteLink)) {
-          // Skip the site links
-          return;
+          return; // Skip site links
         }
       }
 
-      // For now remove the fragment part of the link and check if it is a valid slug
-      const fragmentIndex = link.indexOf('#');
-      if (fragmentIndex !== -1) {
-        link = link.substring(0, fragmentIndex);
-        if (link === '') {
-          // Skip references to the current file
-          return;
-        }
-      }
-
-      // Resolve the link to its absolute counterpart
+      // Resolve the link
       const resolvedLink = resolveLink(link, file);
 
-      if (!validSlugs.includes(resolvedLink)) {
+      // Split the resolved link into base and fragment
+      const [baseLink, fragmentRaw] = resolvedLink.split('#');
+      const fragment: string | null = fragmentRaw || null;
+
+      // Check if the base link matches a valid slug
+      if (!validSlugs.includes(baseLink)) {
         brokenLinks.push({ file, link: resolvedLink, line });
+        return;
+      }
+
+      // Validate the fragment, if present
+      if (fragment) {
+        const targetFile = slugToPath.get(baseLink);
+        if (targetFile) {
+          const targetHeadings = extractHeadingsFromMarkdown(targetFile);
+
+          if (!targetHeadings.includes(fragment)) {
+            brokenLinks.push({ file, link: resolvedLink, line });
+          } else {
+            console.log(`Found valid link: ${file}:${line} ${resolvedLink}`);
+          }
+        }
       }
     });
   });
