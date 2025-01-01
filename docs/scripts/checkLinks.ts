@@ -203,6 +203,10 @@ function checkLinks(): void {
   console.log(`  Invalid links with fragments: ${invalidFragments}`);
   console.log(`Fragments referring to the current file: ${currentFileFragments}`);
   console.log('=================================');
+
+  if (brokenLinks.length > 0) {
+    process.exit(1); // Exit with an error code if there are broken links
+  }
 }
 
 // Function to get all markdown files recursively
