@@ -10,6 +10,7 @@ use spacetimedb_vm::expr::{self, Crud, CrudExpr, QueryExpr};
 pub(crate) static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 
+// TODO: Remove this after the SubscribeSingle migration.
 // TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
 // as it can only return back the changes valid for the tables in scope *right now*
 // instead of **continuously updating** the db changes
@@ -20,7 +21,7 @@ pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 ///
 /// This is necessary when merging multiple SQL queries into a single query set,
 /// as in [`crate::subscription::module_subscription_actor::ModuleSubscriptions::add_subscriber`].
-pub fn compile_read_only_query(
+pub fn compile_read_only_queryset(
     relational_db: &RelationalDB,
     auth: &AuthCtx,
     tx: &Tx,
@@ -59,6 +60,45 @@ pub fn compile_read_only_query(
     } else {
         Err(SubscriptionError::Empty.into())
     }
+}
+
+/// Compile a string into a single read-only query.
+/// This returns an error if the string has multiple queries or mutations.
+pub fn compile_read_only_query(
+    relational_db: &RelationalDB,
+    auth: &AuthCtx,
+    tx: &Tx,
+    input: &str,
+) -> Result<SupportedQuery, DBError> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Err(SubscriptionError::Empty.into());
+    }
+
+    // Remove redundant whitespace, and in particular newlines, for debug info.
+    let input = WHITESPACE.replace_all(input, " ");
+
+    let single: CrudExpr = {
+        let mut compiled = compile_sql(relational_db, auth, tx, &input)?;
+        // Return an error if this doesn't produce exactly one query.
+        let first_query = compiled.pop();
+        let other_queries = compiled.len();
+        match (first_query, other_queries) {
+            (None, _) => return Err(SubscriptionError::Empty.into()),
+            (Some(q), 0) => q,
+            _ => return Err(SubscriptionError::Multiple.into()),
+        }
+    };
+
+    Err(SubscriptionError::SideEffect(match single {
+        CrudExpr::Query(query) => return SupportedQuery::new(query, input.to_string()),
+        CrudExpr::Insert { .. } => Crud::Insert,
+        CrudExpr::Update { .. } => Crud::Update,
+        CrudExpr::Delete { .. } => Crud::Delete,
+        CrudExpr::SetVar { .. } => Crud::Config,
+        CrudExpr::ReadVar { .. } => Crud::Config,
+    })
+    .into())
 }
 
 /// The kind of [`QueryExpr`] currently supported for incremental evaluation.
@@ -506,7 +546,7 @@ mod tests {
         AND MobileEntityState.location_z < 192000";
 
         let tx = db.begin_tx(Workload::ForTests);
-        let qset = compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, sql_query)?;
+        let qset = compile_read_only_queryset(&db, &AuthCtx::for_testing(), &tx, sql_query)?;
 
         for q in qset {
             let result = run_query(
@@ -592,7 +632,7 @@ mod tests {
             "SELECT * FROM lhs WHERE id > 5",
         ];
         for scan in scans {
-            let expr = compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, scan)?
+            let expr = compile_read_only_queryset(&db, &AuthCtx::for_testing(), &tx, scan)?
                 .pop()
                 .unwrap();
             assert_eq!(expr.kind(), Supported::Select, "{scan}\n{expr:#?}");
@@ -601,7 +641,7 @@ mod tests {
         // Only index semijoins are supported
         let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
         for join in joins {
-            let expr = compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, join)?
+            let expr = compile_read_only_queryset(&db, &AuthCtx::for_testing(), &tx, join)?
                 .pop()
                 .unwrap();
             assert_eq!(expr.kind(), Supported::Semijoin, "{join}\n{expr:#?}");
@@ -614,7 +654,7 @@ mod tests {
             "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
         ];
         for join in joins {
-            match compile_read_only_query(&db, &AuthCtx::for_testing(), &tx, join) {
+            match compile_read_only_queryset(&db, &AuthCtx::for_testing(), &tx, join) {
                 Err(DBError::Subscription(SubscriptionError::Unsupported(_)) | DBError::TypeError(_)) => (),
                 x => panic!("Unexpected: {x:?}"),
             }
