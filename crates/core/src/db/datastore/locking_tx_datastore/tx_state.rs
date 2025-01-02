@@ -145,6 +145,12 @@ impl TxState {
             .unwrap_or(false)
     }
 
+    /// Returns the [DeleteTable] for the given `table_id`, checking if it's empty.
+    pub(super) fn get_delete_table(&self, table_id: TableId) -> Option<&DeleteTable> {
+        self.delete_tables.get(&table_id).filter(|x| !x.is_empty())
+    }
+
+    /// Guarantees that the `table_id` returns a `DeleteTable`.
     pub(super) fn get_delete_table_mut(&mut self, table_id: TableId) -> &mut DeleteTable {
         self.delete_tables.entry(table_id).or_default()
     }
