@@ -10,7 +10,7 @@ use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
     buffer::{CountWriter, TeeWriter},
-    ProductValue,
+    AlgebraicValue, ProductValue,
 };
 use spacetimedb_table::table::UniqueConstraintViolation;
 use std::ops::DerefMut;
@@ -124,11 +124,17 @@ impl InstanceEnv {
         let (row_len, row_ptr) = stdb
             .insert(tx, table_id, buffer)
             .map(|(gen_cols, row_ref)| {
-                // Write back the generated column values to `buffer`
-                // and the encoded length to `row_len`.
+                // We get back a col-list with the columns with generated values.
+                // Write those back to `buffer` and then the encoded length to `row_len`.
                 let counter = CountWriter::default();
                 let mut writer = TeeWriter::new(counter, buffer);
-                bsatn::to_writer(&mut writer, &gen_cols).unwrap();
+                for col in gen_cols.iter() {
+                    // Read the column value to AV and then serialize.
+                    let val = row_ref
+                        .read_col::<AlgebraicValue>(col)
+                        .expect("reading col as AV never panics");
+                    bsatn::to_writer(&mut writer, &val).unwrap();
+                }
                 let row_len = writer.w1.finish();
 
                 (row_len, row_ref.pointer())
