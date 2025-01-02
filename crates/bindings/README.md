@@ -1,38 +1,38 @@
-# SpacetimeDB Rust Module SDK
+# SpacetimeDB Rust Module Library
 
 <!-- n.b. This file is used as the top-level library documentation in `src/lib.rs`. -->
 
 SpacetimeDB allows using the Rust language to write server-side applications. These applications are called **modules** and have access to a built-in database.
 
-Rust modules are written with the the Rust Module SDK (this crate). They are built using [cargo](https://doc.rust-lang.org/cargo/) and deployed using the [`spacetime` CLI tool](https://spacetimedb.com/install). Rust modules can import any Rust [crate](https://crates.io/) that supports being compiled to WebAssembly.
+Rust modules are written with the the Rust Module Library (this crate). They are built using [cargo](https://doc.rust-lang.org/cargo/) and deployed using the [`spacetime` CLI tool](https://spacetimedb.com/install). Rust modules can import any Rust [crate](https://crates.io/) that supports being compiled to WebAssembly.
 
 This reference assumes you are familiar with the basics of Rust. If you aren't, check out Rust's [excellent documentation](https://www.rust-lang.org/learn). For a guided introduction to Rust Modules, see the [rust module quickstart](https://spacetimedb.com/docs/modules/rust/quickstart).
 
 ## Overview
 
-SpacetimeDB modules have two ways to interact with the outside world. They can:
+SpacetimeDB modules have two ways to interact with the outside world: tables and reducers.
 
-- Declare [tables](#tables), which are exactly like tables in a SQL database.
-- Declare [reducers](#reducers), which are public functions that can be invoked by [clients](https://spacetimedb.com/docs/#client) over the network.
+- [Tables](#tables) store data and optionally make it readable by [clients](https://spacetimedb.com/docs/#client). 
 
-Tables and reducers are declared using ordinary Rust code, annotated with special macros. Declarations can use any type deriving the [`SpacetimeType`](#spacetimetype) trait.
+- [Reducers](#reducers) modify data and can be invoked by [clients](https://spacetimedb.com/docs/#client) over the network. They can read and write data in tables, and write to a private debug log.
 
-The `spacetime publish` command compiles a module and uploads it to the public SpacetimeDB host. After this:
-- The host loads the module into memory and starts running it.
-- If needed, the host creates a new [`Identity`](#identity) and assigns it to the module.
-  If the module is already running, its existing `Identity` will be reused.
-- The host creates a persistent database attached to the module, with all of the requested tables.
-  If a database already exists, the host tries to [automatically migrate](#automatic-migrations) it to the current
-  schema.
-- The host begins running the module's [lifecycle reducers](#life-cycle-annotations) and [scheduled reducers](#scheduled-reducers).
-- The host allows clients to connect to the module.
-  Connected clients can subscribe to [public tables](#public-and-private-tables) and call [reducers](#reducers).
+These are the only ways for a Spacetime module to interact with the outside world. Calling functions from `std::net` or `std::fs` inside a module will result in runtime errors. (Rust crates that don't interact with the network can be used freely.)
 
-(The easiest way to make requests to a module is to use the [SpacetimeDB client SDKs](https://spacetimedb.com/docs/sdks).)
+This results in a simplified development experience. When writing a SpacetimeDB module, it isn't necessary to choose between a vast array of databases and networking libraries. Only one database is available, SpacetimeDB, and only one networking library is available, SpacetimeDB. User authentication -- login through Google or Facebook, or any other [OpenID Connect](https://openid.net/developers/how-connect-works/) provider -- is automatically implemented, requiring no work from the module author.
 
-Reducers run in [transactions](https://en.wikipedia.org/wiki/Database_transaction) that allow access to the database. Reducers can see information about the [Identity](#identity) and [Address](#address) of their callers, and use this to determine what a client should be allowed to do. Reducers that [`panic!()`](https://doc.rust-lang.org/std/macro.panic.html) have any modifications they made to the database automatically rolled back.
+SpacetimeDB modules are compiled to WebAssembly by `cargo` and administered using the `spacetime` CLI command. Modules run on a server called a [host](https://spacetimedb.com/docs/#host). A host can run many modules at a time. You can run your own host, or use a public host administered by [Clockwork Labs](https://clockworklabs.io/). <!-- TODO: remark about SLAs and SKUs once those are finalized? -->
 
-The module SDK has built-in support for the [log crate](https://docs.rs/log/latest/log/index.html). All modules automatically install a suitable logger when they are first loaded by SpacetimeDB. Log macros can be used anywhere in module code, and log outputs can be inspected using the `spacetime logs` command.
+SpacetimeDB is a SQL database, and builds on the long tradition of reliability offered by SQL databases. Tables and reducers are built on SQL concepts:
+
+- Tables are SQL database tables with easy-to-use Rust interfaces. They are declared in Rust code using the `#[spacetime::table]` macro. Clients can open read-only subscriptions to [`public`](https://doc.rust-lang.org/std/net/index.html) tables, and SpacetimeDB will automatically stream updates to them as those tables change. Tables are automatically logged to disk and are durable across system restarts and crashes. Tables can be queried with SQL; SpacetimeDB supports a subset of ANSI:SQL 2011. <!-- TODO: document precisely which subset this is. -->
+
+- Reducers are Rust functions decorated with the `#[spacetime::reducer]` macro. Reducers run in [transactions](#transactions) with read-write access to the entire database; if a reducer [panics](https://doc.rust-lang.org/std/macro.panic.html), its modifications to the database will be rolled back. Reducers run on the server, not on the client; they can see information about the [Identity](#identity) and [Address](#address) of their callers, and use this to determine what clients should be allowed to do. <!-- TODO: what SQL transaction level do we implement? -->
+
+Tables can store any any Rust type implementing the [`SpacetimeType`, `Serialize`, and `Deserialize`](#spacetimetype) traits; all of these can be be derived at once using `#[derive(SpacetimeType)]`. Similarly, Rust types implementing these traits can be used for reducer arguments.
+
+`Serialize` and `Deserialize` allow types to automatically serialize and deserialize themselves, in a manner similar to [`serde`](https://serde.rs/). `SpacetimeType` allows types to register their internal structure with `SpacetimeDB`. This allows SpacetimeDB to correctly format tables storing these types.
+
+Importantly, the data provided by `SpacetimeType` also enables the `spacetime generate` CLI command. This command can be used to generate bindings to a module in any supported client language. See the documentation on [client SDKs](https://spacetimedb.com/docs/#client) for more information.
 
 ## Setup
 
@@ -92,6 +92,31 @@ Under the hood, SpacetimeDB modules are WebAssembly modules that import a [speci
 
 The SpacetimeDB host is an application that knows how to load and run SpacetimeDB modules. It is [open source](https://github.com/clockworklabs/SpacetimeDB). You can run your own host, or you can upload your module to the public SpacetimeDB network. <!-- TODO(1.0): want a link to some dashboard for the public network. -->
 
+### Publishing a module
+
+The `spacetime publish` command compiles a module and uploads it to a SpacetimeDB host. After this:
+- The host loads the module into memory and starts running it.
+- If needed, the host creates a new [`Identity`](#identity) and assigns it to the module.
+  If an earlier version of the module is already running, its existing `Identity` will be reused.
+- The host creates a persistent database attached to the module, with all of the requested tables.
+  If a database already exists, the host tries to [automatically migrate](#automatic-migrations) it to the current
+  schema. If this fails, an error is returned, and publishing fails.
+- The host begins running the module's [lifecycle reducers](#life-cycle-annotations) and [scheduled reducers](#scheduled-reducers).
+- The host allows clients to connect to the module.
+  Connected clients can subscribe to [public tables](#public-and-private-tables) and call [reducers](#reducers).
+
+Once a module is running, the `spacetime` CLI will print the `Identity` it has been assigned. This is a hexadecimal string that you should write down. <!-- TODO: is there a CLI command that says "list all Identities running this version of a module?" --> It is used when administering the module, for example using the [`spacetime logs`](#the-log-crate) command.
+
+(The easiest way to make requests to a module is to use the [SpacetimeDB client SDKs](https://spacetimedb.com/docs/sdks).)
+
+### The `log` crate
+
+SpacetimeDB Rust modules have built-in support for the [log crate](https://docs.rs/log/latest/log/index.html). All modules automatically install a suitable logger when they are first loaded by SpacetimeDB. Log macros can be used anywhere in module code, and log outputs of a running module can be inspected using the `spacetime logs` command:
+
+```text
+spacetime logs <DATABASE_IDENTITY>
+```
+
 ## Tables
 
 Tables are declared using the [`#[table(name = table_name)]` macro](https://docs.rs/spacetimedb/latest/spacetimedb/attr.table.html).   
@@ -101,7 +126,7 @@ This macro is applied to a Rust struct with named fields. All of the fields of t
 The resulting type is used to store rows of the table. It is normal struct type. Row values are not special -- operations on them do not, by themselves, modify the table. Instead, a [`ReducerContext`](#reducercontext) is used to get access to the global database.
 
 ```rust
-use spacetimedb::{table, ReducerCtx};
+use spacetimedb::{table, reducer, ReducerContext};
 
 /// A `Person` is a row of the table `people`.
 #[table(name = people, public)]
@@ -116,36 +141,47 @@ pub struct Person {
 // `Person` is a normal Rust struct type.
 // Operations on a `Person` do not, by themselves, do anything.
 // The following function does not interact with the database at all.
-fn does_nothing() {
-    // Creating a `Person` does not modify the database.
+fn do_nothing() {
+    // Creating a `Person` DOES NOT modify the database.
     let mut person = Person { id: 0, name: "Joe Banana".to_string() };
-    // Updating a `Person` does not modify the database.
+    // Updating a `Person` DOES NOT modify the database.
     person.name = "Joanna Banana";
-    // Dropping a `Person` does not modify the database.
+    // Dropping a `Person` DOES NOT modify the database.
     drop(person);
 }
 
 // To interact with the database, you need a `ReducerContext`.
-fn does_something(ctx: &ReducerCtx) {
-    // `ctx.db.table_name()` gets a handle to a table.
+// The first argument of a reducer is always a `ReducerContext`.
+#[reducer]
+fn do_something(ctx: &ReducerContext) {
+    // `ctx.db.{table_name}()` gets a handle to a global database table.
     let people = ctx.db.people();
 
-    // The following inserts a row into the global database:
-    let mut person = people.insert(Person { id: 0, name: "Joe Banana".to_string() });
-
-    // Next, the row is updated:
-    person.name = "Joanna Banana".to_string();
-    person = people.update_by_id(person);
+    // The following inserts a row into the database:
+    let mut person: Person = people.insert(Person { id: 0, name: "Joe Banana".to_string() });
     
-    // And then removed:
+    // `person` is a COPY of the row stored in the database.
+    // If we update it:
+    person.name = "Joanna Banana".to_string();
+    // Our copy is now updated, but the database's copy is unchanged.
+
+    // To push our change through, we can call an `update_by_...` function:
+    person = people.update_by_id(person);
+    // Now the database and our copy are in sync again.
+    
+    // We can also delete the row in the database using a `delete_by_...`.
     people.delete_by_id(person.id);
 }
 ```
 
+See the [reducers](#reducers) section for more information on the `#[reducer]` macro.
+Also see [generated table functions](#generated-table-functions) for information on automatically-generated functions like `update_by_id` and `delete_by_id`.
+
 ### Public and Private tables
 
-By default, tables are considered **private**. This means that they are only readable by the table owner, and by server module code.
-The `#[table(name = table_name, public)]` macro makes a table public. **Public** tables are readable by all users, but can still only be modified by your server module code.
+By default, tables are considered **private**. This means that they are only readable by the table owner and by reducers. Reducers run on the server, so clients cannot see private tables at all.
+
+The `#[table(name = table_name, public)]` macro makes a table public. **Public** tables are readable by all clients. They can still only be modified by reducers. 
 
 ```rust
 use spacetimedb::table;
@@ -165,9 +201,7 @@ pub struct LootItem {
 
 To learn how to subscribe to a table, see the [client SDK documentation](https://spacetimedb.com/docs/sdks).
 
-### Generated functions on a SpacetimeDB table
-
-<!-- TODO: rewrite this section -->
+### Generated table functions
 
 We'll work off these structs to see what functions SpacetimeDB generates:
 
@@ -395,6 +429,9 @@ Reducers have access to a special [`ReducerContext`](https://docs.rs/spacetimedb
 The most important field of `ReducerContext` is `.db`. This field provides a [local view](https://docs.rs/spacetimedb/latest/spacetimedb/struct.Local.html) of the module's database. The `#[table]` macro generates traits that add accessor methods to this field.
 
 To see all of the available methods on `ReducerContext.db`, run `cargo doc` in your module's directory, and navigate to the `spacetimedb::Local` struct in the generated documentation.
+
+### Transactions
+https://en.wikipedia.org/wiki/Database_transaction
 
 ### Life cycle annotations
 
