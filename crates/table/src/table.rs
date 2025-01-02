@@ -30,7 +30,7 @@ use core::{
     hash::{Hash, Hasher},
     hint::unreachable_unchecked,
 };
-use derive_more::{Add, AddAssign, From, Sub};
+use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{DefaultHashBuilder, HashCollectionExt, HashMap};
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
@@ -49,7 +49,7 @@ use std::sync::Arc;
 use thiserror::Error;
 
 /// The number of bytes used by, added to, or removed from a [`Table`]'s share of a [`BlobStore`].
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, From, Add, Sub, AddAssign)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, From, Add, Sub, AddAssign, SubAssign)]
 pub struct BlobNumBytes(usize);
 
 impl MemoryUsage for BlobNumBytes {}
@@ -484,6 +484,13 @@ impl Table {
         self.blob_store_bytes += blob_bytes;
     }
 
+    /// We've removed a row, update the statistics to record this.
+    #[inline]
+    fn update_statistics_deleted_row(&mut self, blob_bytes: BlobNumBytes) {
+        self.row_count -= 1;
+        self.blob_store_bytes -= blob_bytes;
+    }
+
     /// Insert row identified by `ptr` into indices.
     /// This also checks unique constraints.
     /// Deletes the row if there were any violations.
@@ -661,31 +668,31 @@ impl Table {
 
     /// Deletes the row identified by `ptr` from the table.
     ///
+    /// Returns the number of blob bytes added. This method does not update statistics by itself.
+    ///
     /// NOTE: This method skips updating indexes.
     /// Use `delete_unchecked` or `delete` to delete a row with index updating.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_internal(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) {
+    unsafe fn delete_internal(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) -> BlobNumBytes {
         // SAFETY: `self.is_row_present(row)` holds.
         let row = unsafe { self.get_row_ref_unchecked(blob_store, ptr) };
 
         // Remove the set semantic association.
         let _remove_result = self.pointer_map.remove(row.row_hash(), ptr);
         debug_assert!(_remove_result);
-        self.row_count -= 1;
 
         // Delete the physical row.
         // SAFETY: `ptr` points to a valid row in this table as `self.is_row_present(row)` holds.
-        let blob_store_deleted_bytes = unsafe { self.delete_internal_skip_pointer_map(blob_store, ptr) };
-        // Just deleted bytes (`blob_store_deleted_bytes`)
-        // cannot be greater than the total number of bytes (`self.blob_store_bytes`).
-        self.blob_store_bytes = self.blob_store_bytes - blob_store_deleted_bytes;
+        unsafe { self.delete_internal_skip_pointer_map(blob_store, ptr) }
     }
 
     /// Deletes the row identified by `ptr` from the table.
     ///
+    /// Returns the number of blob bytes added. This method does not update statistics by itself.
+    ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_unchecked(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) {
+    unsafe fn delete_unchecked(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) -> BlobNumBytes {
         // SAFETY: `self.is_row_present(row)` holds.
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
 
@@ -724,7 +731,8 @@ impl Table {
         let ret = before(row_ref);
 
         // SAFETY: We've checked above that `self.is_row_present(ptr)`.
-        unsafe { self.delete_unchecked(blob_store, ptr) }
+        let blob_bytes_deleted = unsafe { self.delete_unchecked(blob_store, ptr) };
+        self.update_statistics_deleted_row(blob_bytes_deleted);
 
         Some(ret)
     }
@@ -761,13 +769,14 @@ impl Table {
 
         // If an equal row was present, delete it.
         if let Some(existing_row_ptr) = existing_row_ptr {
-            if skip_index_update {
+            let blob_bytes_deleted = if skip_index_update {
                 // SAFETY: `find_same_row` ensures that the pointer is valid.
                 unsafe { self.delete_internal(blob_store, existing_row_ptr) }
             } else {
                 // SAFETY: `find_same_row` ensures that the pointer is valid.
                 unsafe { self.delete_unchecked(blob_store, existing_row_ptr) }
-            }
+            };
+            self.update_statistics_deleted_row(blob_bytes_deleted);
         }
 
         // Remove the temporary row we inserted in the beginning.
