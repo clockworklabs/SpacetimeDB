@@ -312,7 +312,7 @@ impl<'a> Iterator for LeftDeepJoinIter<'a> {
 }
 
 /// A semijoin iterator.
-/// Returns [RowRef]s for right semijoins.
+/// Returns [RowRef]s if this is a right semijoin.
 /// Returns [Tuple]s otherwise.
 pub enum SemiJoin<All, Lhs, Rhs> {
     All(All),

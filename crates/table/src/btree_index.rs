@@ -33,10 +33,10 @@ use spacetimedb_sats::{
 mod multimap;
 mod uniquemap;
 
-pub type Index<K> = multimap::MultiMap<K, RowPointer>;
-pub type IndexIter<'a, K> = multimap::MultiMapRangeIter<'a, K, RowPointer>;
-pub type UniqueIndex<K> = uniquemap::UniqueMap<K, RowPointer>;
-pub type UniqueIndexIter<'a, K> = uniquemap::UniqueMapRangeIter<'a, K, RowPointer>;
+type Index<K> = multimap::MultiMap<K, RowPointer>;
+type IndexIter<'a, K> = multimap::MultiMapRangeIter<'a, K, RowPointer>;
+type UniqueIndex<K> = uniquemap::UniqueMap<K, RowPointer>;
+type UniqueIndexIter<'a, K> = uniquemap::UniqueMapRangeIter<'a, K, RowPointer>;
 
 /// An iterator over a [`TypedIndex`], with a specialized key type.
 ///

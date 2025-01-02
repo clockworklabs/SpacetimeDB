@@ -482,6 +482,7 @@ pub struct SchemaViewer<'a, T> {
 impl<T: StateView> SchemaView for SchemaViewer<'_, T> {
     fn table_id(&self, name: &str) -> Option<TableId> {
         let AuthCtx { owner, caller } = self.auth;
+        // Get the schema from the in-memory state instead of fetching from the database for speed
         self.tx
             .table_id_from_name(name)
             .ok()
