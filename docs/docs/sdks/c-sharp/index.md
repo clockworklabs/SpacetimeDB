@@ -171,7 +171,7 @@ class SpacetimeDBClient {
 }
 ```
 
-Called when we receive an auth token, [`Identity`](#class-identity) and [`Address`](#class-address) from the server. The [`Identity`](#class-identity) serves as a unique public identifier for a user of the database. It can be for several purposes, such as filtering rows in a database for the rows created by a particular user. The auth token is a private access token that allows us to assume an identity. The [`Address`](#class-address) is opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
+Called when we receive an auth token, [`Identity`](#class-identity) and `Address` from the server. The [`Identity`](#class-identity) serves as a unique public identifier for a user of the database. It can be for several purposes, such as filtering rows in a database for the rows created by a particular user. The auth token is a private access token that allows us to assume an identity. The `Address` is opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
 
 To store the auth token to the filesystem, use the static method [`AuthToken.SaveToken`](#static-method-authtokensavetoken). You may also want to store the returned [`Identity`](#class-identity) in a local variable.
 

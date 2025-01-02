@@ -34,7 +34,7 @@ The tag is an index into the [`SumType.variants`](#sumtype) array of the value's
 
 ### `ProductValue`
 
-An instance of a [`ProductType`](#producttype). `ProductValue`s are encoded as JSON arrays. Each element of the `ProductValue` array is of the type of the corresponding index in the [`ProductType.elements`](#productype) array of the value's [`ProductType`](#producttype).
+An instance of a [`ProductType`](#producttype). `ProductValue`s are encoded as JSON arrays. Each element of the `ProductValue` array is of the type of the corresponding index in the [`ProductType.elements`](#producttype) array of the value's [`ProductType`](#producttype).
 
 ```json
 array<AlgebraicValue>
@@ -69,7 +69,7 @@ All SATS types are JSON-encoded by converting them to an `AlgebraicValue`, then 
 | --------------------------------------- | ------------------------------------------------------------------------------------ |
 | [`AlgebraicType`](#algebraictype)       | Any SATS type.                                                                       |
 | [`SumType`](#sumtype)                   | Sum types, i.e. tagged unions.                                                       |
-| [`ProductType`](#productype)            | Product types, i.e. structures.                                                      |
+| [`ProductType`](#producttype)            | Product types, i.e. structures.                                                      |
 | [`BuiltinType`](#builtintype)           | Built-in and primitive types, including booleans, numbers, strings, arrays and maps. |
 | [`AlgebraicTypeRef`](#algebraictyperef) | An indirect reference to a type, used to implement recursive types.                  |
 

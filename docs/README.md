@@ -32,6 +32,10 @@ git push -u origin a-branch-name-that-describes-my-change
 
 > NOTE! If you make a change to `nav.ts` you will have to run `npm run build` to generate a new `docs/nav.js` file.
 
+### Checking Links
+
+We have a CI job which validates internal links. You can run it locally with `npm run check-links`. This will print any internal links (i.e. links to other docs pages) whose targets do not exist, including fragment links (i.e. `#`-ey links to anchors).
+
 ## License
 
 This documentation repository is licensed under Apache 2.0. See LICENSE.txt for more details.

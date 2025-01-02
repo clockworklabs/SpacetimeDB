@@ -149,7 +149,7 @@ impl DbConnection {
 
 `frame_tick` will advance the connection until no work remains, then return rather than blocking or `await`-ing. Games might arrange for this message to be called every frame. `frame_tick` returns `Ok` if the connection remains active afterwards, or `Err` if the connection disconnected before or during the call.
 
-## Trait `spacetimedb_sdk::DbContext`
+## Trait `DbContext`
 
 [`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontext) both implement `DbContext`, which allows 
 
@@ -185,7 +185,7 @@ impl SubscriptionBuilder {
 }
 ```
 
-Register a callback to run when the subscription is applied and the matching rows are inserted into the client cache. The [`EventContext`](#type-module_bindings-eventcontext) passed to the callback will have `Event::SubscribeApplied` as its `event`.
+Register a callback to run when the subscription is applied and the matching rows are inserted into the client cache. The [`EventContext`](#type-eventcontext) passed to the callback will have `Event::SubscribeApplied` as its `event`.
 
 #### Method `subscribe`
 
