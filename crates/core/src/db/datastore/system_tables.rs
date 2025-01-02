@@ -1312,7 +1312,7 @@ pub(crate) fn with_sys_table_buf<R>(run: impl FnOnce(&mut Vec<u8>) -> R) -> R {
     })
 }
 
-/// Read a value from a system table via BSatn.
+/// Read a value from a system table via BSATN.
 fn read_via_bsatn<T: DeserializeOwned>(row: RowRef<'_>) -> Result<T, DBError> {
     with_sys_table_buf(|buf| Ok(row.read_via_bsatn::<T>(buf)?))
 }

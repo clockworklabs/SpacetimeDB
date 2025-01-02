@@ -23,6 +23,7 @@ use crate::{
     error::{IndexError, SequenceError, TableError},
     execution_context::ExecutionContext,
 };
+use core::cell::RefCell;
 use core::ops::RangeBounds;
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
@@ -1165,7 +1166,11 @@ impl MutTxId {
         table_id: TableId,
         row: &T,
     ) -> Result<(ColList, RowRefInsertion<'a>)> {
-        with_sys_table_buf(|buf| {
+        thread_local! {
+            static BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+        }
+        BUF.with_borrow_mut(|buf| {
+            buf.clear();
             to_writer(buf, row).unwrap();
             self.insert::<true>(table_id, buf)
         })
