@@ -145,9 +145,9 @@ pub struct Person {
 // The following function does not interact with the database at all.
 fn do_nothing() {
     // Creating a `Person` DOES NOT modify the database.
-    let mut person = Person { id: 0, name: "Joe Banana".to_string() };
+    let mut person = Person { id: 0, name: "Joe Average".to_string() };
     // Updating a `Person` DOES NOT modify the database.
-    person.name = "Joanna Banana";
+    person.name = "Joanna Average";
     // Dropping a `Person` DOES NOT modify the database.
     drop(person);
 }
@@ -160,11 +160,11 @@ fn do_something(ctx: &ReducerContext) {
     let people = ctx.db.people();
 
     // The following inserts a row into the database:
-    let mut person: Person = people.insert(Person { id: 0, name: "Joe Banana".to_string() });
+    let mut person: Person = people.insert(Person { id: 0, name: "Joe Average".to_string() });
     
     // `person` is a COPY of the row stored in the database.
     // If we update it:
-    person.name = "Joanna Banana".to_string();
+    person.name = "Joanna Average".to_string();
     // Our copy is now updated, but the database's copy is UNCHANGED.
 
     // To push our change through, we can call an `update_by_...` function:
