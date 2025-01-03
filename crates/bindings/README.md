@@ -131,7 +131,7 @@ This macro is applied to a Rust struct with named fields. All of the fields of t
 The resulting type is used to store rows of the table. It is normal struct type. Row values are not special -- operations on them do not, by themselves, modify the table. Instead, a [`ReducerContext`](#reducercontext) is used to get access to the global database.
 
 ```rust
-use spacetimedb::{table, reducer, ReducerContext};
+use spacetimedb::{table, reducer, ReducerContext, Table};
 
 /// A `Person` is a row of the table `people`.
 #[table(name = people, public)]
@@ -150,7 +150,7 @@ fn do_nothing() {
     // Creating a `Person` DOES NOT modify the database.
     let mut person = Person { id: 0, name: "Joe Average".to_string() };
     // Updating a `Person` DOES NOT modify the database.
-    person.name = "Joanna Average";
+    person.name = "Joanna Average".to_string();
     // Dropping a `Person` DOES NOT modify the database.
     drop(person);
 }
@@ -345,7 +345,17 @@ ctx.db.my_table().iter()
 
 `iter()` returns a regular old Rust iterator, giving us a sequence of `Person`. The database sends us over rows, one at a time, for each time through the loop. This means we get them by value, and own the contents of `String` fields and so on.
 
-```
+```rust
+# #[table(name = person, public)]
+# struct Person {
+#     #[unique]
+#     id: u64,
+# 
+#     #[index(btree)]
+#     age: u32,
+#     name: String,
+#     address: String,
+# }
 #[reducer]
 fn iteration(ctx: &ReducerContext) {
     let mut addresses = HashSet::new();
@@ -390,7 +400,7 @@ fn filtering_non_unique(ctx: &ReducerContext) {
 ```
 
 > NOTE: An unfortunate interaction between Rust's trait solver and integer literal defaulting rules means that you must specify the types of integer literals passed to `filter` and `find` methods via the suffix syntax, like `21u32`. If you don't, you'll see a compiler error like:
-> ```
+> ```text
 > error[E0271]: type mismatch resolving `<i32 as FilterableValue>::Column == u32`
 >    --> modules/rust-wasm-test/src/lib.rs:356:48
 >     |
@@ -448,65 +458,80 @@ https://en.wikipedia.org/wiki/Database_transaction
 
 ### Scheduled reducers
 
-In addition to life cycle annotations, reducers can be made **scheduled** using the `scheduled` attribute. 
+In addition to life cycle annotations, reducers can be made **scheduled**.
+This allows calling the reducers at a particular time, or in a loop.
+This can be used for game loops.
 
-```rust
-// The `scheduled` attribute links this table to a reducer.
-#[table(name = send_message_timer, scheduled(send_message)]
-struct SendMessageTimer {
-    text: String,
-}
-```
-
-The `scheduled` attribute adds a couple of default fields and expands as follows:
-
-```rust
-#[table(name = send_message_timer, scheduled(send_message)]
- struct SendMessageTimer {
-    text: String,   // original field
-    #[primary_key]
-    #[autoinc]
-    scheduled_id: u64, // identifier for internal purpose
-    scheduled_at: ScheduleAt, //schedule details
-}
-
-pub enum ScheduleAt {
-    /// A specific time at which the reducer is scheduled.
-    /// Value is a UNIX timestamp in microseconds.
-    Time(u64),
-    /// A regular interval at which the repeated reducer is scheduled.
-    /// Value is a duration in microseconds.
-    Interval(u64),
-}
-```
-
+The scheduling information for a reducer is stored in a table.
+This table has two mandatory fields:
+- A primary key that identifies scheduled reducer calls.
+- A [`ScheduleAt`] field that says when to call the reducer.
 Managing timers with a scheduled table is as simple as inserting or deleting rows from the table.
 
+A [`ScheduleAt`] can be created from a [`Timestamp`], in which case the reducer will be scheduled once,
+or from a [`std::time::Duration`], in which case the reducer will be scheduled in a loop. In either case the conversion can be performed using [`Into::into`].
+
 ```rust
-#[reducer]
-// Reducers linked to the scheduler table should have their first argument as `&ReducerContext`
-// and the second as an instance of the table struct it is linked to.
-fn send_message(ctx: &ReducerContext, arg: SendMessageTimer) -> Result<(), String> {
-    // ...
+use spacetime::{table, reducer, Timestamp, ScheduleAt, Table}
+use std::time::Duration;
+use log::debug;
+
+// First, we declare the table with scheduling information.
+
+#[table(name = send_message_timer, scheduled(send_message))]
+struct SendMessageSchedule {
+    // Mandatory fields:
+    // ============================
+
+    /// An identifier for the scheduled reducer call.
+    #[primary_key]
+    #[autoinc]
+    scheduled_id: u64,
+
+    /// Information about when the reducer should be called.
+    #[scheduled_at]
+    scheduled_at: ScheduleAt,
+
+    // After the mandatory fields, any number of fields can be added.
+    // These can be used to provide extra information to the scheduled reducer.
+
+    // Custom fields:
+    // ============================
+
+    /// The text of the scheduled message to send.
+    text: String,
 }
 
-// Scheduling reducers inside `init` reducer
+// Then, we declare the scheduled reducer.
+// The first argument of the reducer should be, as always, a `&ReducerContext`.
+// The second argument should be a row of the scheduling information table.
+
+#[reducer]
+fn send_message(ctx: &ReducerContext, arg: SendMessageSchedule) -> Result<(), String> {
+    let message_to_send = arg.text;
+
+    // ... send the message ..
+}
+
+// Now, we want to actually start scheduling reducers.
+// It's convenient to do this inside the `init` reducer.
 #[reducer(init)]
 fn init(ctx: &ReducerContext) {
-    // Scheduling a reducer for a specific Timestamp
+
+    let current_time = ctx.timestamp;
+
+    let future_timestamp: Timestamp = ctx.timestamp.plus(Duration::from_secs(10)).into();
     ctx.db.send_message_timer().insert(SendMessageTimer {
         scheduled_id: 1,
-        text:"bot sending a message".to_string(),
-        //`spacetimedb::Timestamp` implements `From` trait to `ScheduleAt::Time`.
-        scheduled_at: ctx.timestamp.plus(Duration::from_secs(10)).into()
+        text:"I'm a bot sending a message one time".to_string(),
+        scheduled_at: future_timestamp.into()
     });
 
-    // Scheduling a reducer to be called at fixed interval of 100 milliseconds.
+    let loop_duration: Duration = Duration::from_secs(10);
     ctx.db.send_message_timer().insert(SendMessageTimer {
         scheduled_id: 0,
-        text:"bot sending a message".to_string(),
-        //`std::time::Duration` implements `From` trait to `ScheduleAt::Duration`.
-        scheduled_at: duration!(100ms).into(),
+        text:"I'm a bot sending a message every 10 seconds".to_string(),
+        scheduled_at: loop_duration.into()
     });
 }
 ```

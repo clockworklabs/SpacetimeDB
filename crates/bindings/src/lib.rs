@@ -44,6 +44,7 @@ pub use spacetimedb_bindings_macro::duration;
 /// Generates code for registering a row-level security `SQL` function.
 ///
 /// A row-level security function takes a `SQL` query expression that is used to filter rows.
+/// <!-- TODO(1.0): what does this mean. -->
 ///
 /// The query follows the same syntax as a subscription query.
 ///
@@ -377,11 +378,8 @@ pub use spacetimedb_bindings_macro::table;
 /// If an error occurs when initializing, the module will not be published.
 ///
 ///
-/// [`&ReducerContext`]: https://docs.rs/spacetimedb/latest/spacetimedb/struct.ReducerContext.html
-/// [`SpacetimeType`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.SpacetimeType.html
-/// [`Serialize`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Serialize.html
-/// [`Deserialize`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Deserialize.html
-/// [clients]: (https://spacetimedb.com/docs/#client)
+/// [`&ReducerContext`]: `ReducerContext`
+/// [clients]: https://spacetimedb.com/docs/#client
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::reducer;
 
