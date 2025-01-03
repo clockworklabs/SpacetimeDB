@@ -290,6 +290,7 @@ fn print_message(ctx: &EventContext, message: &Message) {
         .unwrap_or_else(|| "unknown".to_string());
     println!("{}: {}", sender, message.text);
 }
+```
 
 ### Print past messages in order
 
