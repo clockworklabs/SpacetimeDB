@@ -317,43 +317,22 @@ impl RewriteRule for EqToIxScan {
                 if let (PhysicalExpr::Field(TupleField { field_pos: pos, .. }), PhysicalExpr::Value(_)) =
                     (&**expr, &**value)
                 {
-                    return schema
-                        .indexes
-                        .iter()
-                        .find_map(
-                            |IndexSchema {
-                                 index_id,
-                                 index_algorithm,
-                                 ..
-                             }| {
-                                index_algorithm
-                                    .columns()
-                                    .as_singleton()
-                                    .filter(|col_id| col_id.idx() == *pos)
-                                    .map(|col_id| IxScanInfo {
-                                        index_id: *index_id,
-                                        col_id,
-                                    })
-                            },
-                        )
-                        .or_else(|| {
-                            schema.indexes.iter().find_map(
-                                |IndexSchema {
-                                     index_id,
-                                     index_algorithm,
-                                     ..
-                                 }| {
-                                    index_algorithm
-                                        .columns()
-                                        .head()
-                                        .filter(|col_id| col_id.idx() == *pos)
-                                        .map(|col_id| IxScanInfo {
-                                            index_id: *index_id,
-                                            col_id,
-                                        })
-                                },
-                            )
-                        });
+                    return schema.indexes.iter().find_map(
+                        |IndexSchema {
+                             index_id,
+                             index_algorithm,
+                             ..
+                         }| {
+                            index_algorithm
+                                .columns()
+                                .as_singleton()
+                                .filter(|col_id| col_id.idx() == *pos)
+                                .map(|col_id| IxScanInfo {
+                                    index_id: *index_id,
+                                    col_id,
+                                })
+                        },
+                    );
                 }
             }
         }
@@ -395,53 +374,27 @@ impl RewriteRule for ConjunctionToIxScan {
                         if let (PhysicalExpr::Field(TupleField { field_pos: pos, .. }), PhysicalExpr::Value(_)) =
                             (&**lhs, &**value)
                         {
-                            return schema
-                                .indexes
-                                .iter()
-                                .find_map(
-                                    |IndexSchema {
-                                         index_id,
-                                         index_algorithm,
-                                         ..
-                                     }| {
-                                        index_algorithm
-                                            .columns()
-                                            .as_singleton()
-                                            .filter(|col_id| col_id.idx() == *pos)
-                                            .map(|col_id| {
-                                                (
-                                                    i,
-                                                    IxScanInfo {
-                                                        index_id: *index_id,
-                                                        col_id,
-                                                    },
-                                                )
-                                            })
-                                    },
-                                )
-                                .or_else(|| {
-                                    schema.indexes.iter().find_map(
-                                        |IndexSchema {
-                                             index_id,
-                                             index_algorithm,
-                                             ..
-                                         }| {
-                                            index_algorithm
-                                                .columns()
-                                                .head()
-                                                .filter(|col_id| col_id.idx() == *pos)
-                                                .map(|col_id| {
-                                                    (
-                                                        i,
-                                                        IxScanInfo {
-                                                            index_id: *index_id,
-                                                            col_id,
-                                                        },
-                                                    )
-                                                })
-                                        },
-                                    )
-                                });
+                            return schema.indexes.iter().find_map(
+                                |IndexSchema {
+                                     index_id,
+                                     index_algorithm,
+                                     ..
+                                 }| {
+                                    index_algorithm
+                                        .columns()
+                                        .as_singleton()
+                                        .filter(|col_id| col_id.idx() == *pos)
+                                        .map(|col_id| {
+                                            (
+                                                i,
+                                                IxScanInfo {
+                                                    index_id: *index_id,
+                                                    col_id,
+                                                },
+                                            )
+                                        })
+                                },
+                            );
                         }
                     }
                     None
