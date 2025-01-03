@@ -379,7 +379,7 @@ impl RelationalDB {
             program_bytes: program.bytes,
             module_version: ONLY_MODULE_VERSION.into(),
         };
-        self.insert(tx, ST_MODULE_ID, row.into()).map(drop)
+        tx.insert_via_serialize_bsatn(ST_MODULE_ID, &row).map(drop)
     }
 
     /// Obtain the [`Metadata`] of this database.
@@ -1125,23 +1125,9 @@ impl RelationalDB {
         &'a self,
         tx: &'a mut MutTx,
         table_id: TableId,
-        row: ProductValue,
-    ) -> Result<(AlgebraicValue, RowRef<'a>), DBError> {
+        row: &[u8],
+    ) -> Result<(ColList, RowRef<'a>), DBError> {
         self.inner.insert_mut_tx(tx, table_id, row)
-    }
-
-    pub fn insert_bytes_as_row<'a>(
-        &'a self,
-        tx: &'a mut MutTx,
-        table_id: TableId,
-        row_bytes: &[u8],
-    ) -> Result<(AlgebraicValue, RowRef<'a>), DBError> {
-        // Decode the `row_bytes` as a `ProductValue` according to the schema.
-        let ty = self.inner.row_type_for_table_mut_tx(tx, table_id)?;
-        let row = ProductValue::decode(&ty, &mut &row_bytes[..])?;
-
-        // Insert the row.
-        self.insert(tx, table_id, row)
     }
 
     pub fn delete(&self, tx: &mut MutTx, table_id: TableId, row_ids: impl IntoIterator<Item = RowPointer>) -> u32 {
@@ -1165,11 +1151,6 @@ impl RelationalDB {
             .collect::<Vec<_>>();
         self.delete(tx, table_id, relation);
         Ok(())
-    }
-
-    /// Generated the next value for the [SequenceId]
-    pub fn next_sequence(&self, tx: &mut MutTx, seq_id: SequenceId) -> Result<i128, DBError> {
-        self.inner.get_next_sequence_value_mut_tx(tx, seq_id)
     }
 
     pub fn create_sequence(&self, tx: &mut MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId, DBError> {
@@ -1320,6 +1301,7 @@ pub mod tests_utils {
     use super::*;
     use core::ops::Deref;
     use durability::EmptyHistory;
+    use spacetimedb_lib::{bsatn::to_vec, ser::Serialize};
     use spacetimedb_paths::FromPathUnchecked;
     use tempfile::TempDir;
 
@@ -1537,6 +1519,17 @@ pub mod tests_utils {
             &self.db
         }
     }
+
+    pub fn insert<'a, T: Serialize>(
+        db: &'a RelationalDB,
+        tx: &'a mut MutTx,
+        table_id: TableId,
+        row: &T,
+    ) -> Result<(AlgebraicValue, RowRef<'a>), DBError> {
+        let (gen_cols, row_ref) = db.insert(tx, table_id, &to_vec(row).unwrap())?;
+        let gen_cols = row_ref.project(&gen_cols).unwrap();
+        Ok((gen_cols, row_ref))
+    }
 }
 
 #[cfg(test)]
@@ -1551,7 +1544,7 @@ mod tests {
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
     };
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::error::IndexError;
     use crate::execution_context::ReducerContext;
     use anyhow::bail;
@@ -1724,7 +1717,7 @@ mod tests {
 
     fn insert_three_i32s(stdb: &RelationalDB, tx: &mut MutTx, table_id: TableId) -> ResultTest<()> {
         for v in [-1, 0, 1] {
-            stdb.insert(tx, table_id, product![v])?;
+            insert(stdb, tx, table_id, &product![v])?;
         }
         Ok(())
     }
@@ -1838,8 +1831,8 @@ mod tests {
         let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
-        stdb.insert(&mut tx, table_id, product![0i64])?;
-        stdb.insert(&mut tx, table_id, product![0i64])?;
+        insert(&stdb, &mut tx, table_id, &product![0i64])?;
+        insert(&stdb, &mut tx, table_id, &product![0i64])?;
 
         assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1, 2]);
         Ok(())
@@ -1856,8 +1849,8 @@ mod tests {
         let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
-        stdb.insert(&mut tx, table_id, product![5i64])?;
-        stdb.insert(&mut tx, table_id, product![6i64])?;
+        insert(&stdb, &mut tx, table_id, &product![5i64])?;
+        insert(&stdb, &mut tx, table_id, &product![6i64])?;
 
         assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![5, 6]);
         Ok(())
@@ -1881,7 +1874,7 @@ mod tests {
         let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
-        stdb.insert(&mut tx, table_id, product![0i64])?;
+        insert(&stdb, &mut tx, table_id, &product![0i64])?;
         assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1]);
 
         stdb.commit_tx(tx)?;
@@ -1889,7 +1882,7 @@ mod tests {
         let stdb = stdb.reopen()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        stdb.insert(&mut tx, table_id, product![0i64]).unwrap();
+        insert(&stdb, &mut tx, table_id, &product![0i64]).unwrap();
 
         // Check the second row start after `SEQUENCE_PREALLOCATION_AMOUNT`
         assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1, 4098]);
@@ -1910,8 +1903,8 @@ mod tests {
             "Index not created"
         );
 
-        stdb.insert(&mut tx, table_id, product![1i64, 1i64])?;
-        stdb.insert(&mut tx, table_id, product![1i64, 1i64])?;
+        insert(&stdb, &mut tx, table_id, &product![1i64, 1i64])?;
+        insert(&stdb, &mut tx, table_id, &product![1i64, 1i64])?;
 
         assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1]);
         Ok(())
@@ -1924,8 +1917,8 @@ mod tests {
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let schema = my_table(AlgebraicType::I64);
         let table_id = stdb.create_table(&mut tx, schema)?;
-        stdb.insert(&mut tx, table_id, product![1i64])?;
-        stdb.insert(&mut tx, table_id, product![2i64])?;
+        insert(&stdb, &mut tx, table_id, &product![1i64])?;
+        insert(&stdb, &mut tx, table_id, &product![2i64])?;
         stdb.commit_tx(tx)?;
 
         let stdb = stdb.reopen()?;
@@ -1981,9 +1974,8 @@ mod tests {
             "Index not created"
         );
 
-        stdb.insert(&mut tx, table_id, product![1i64, 0i64])
-            .expect("stdb.insert failed");
-        match stdb.insert(&mut tx, table_id, product![1i64, 1i64]) {
+        insert(&stdb, &mut tx, table_id, &product![1i64, 0i64]).expect("stdb.insert failed");
+        match insert(&stdb, &mut tx, table_id, &product![1i64, 1i64]) {
             Ok(_) => panic!("Allow to insert duplicate row"),
             Err(DBError::Index(IndexError::UniqueConstraintViolation { .. })) => {}
             Err(err) => panic!("Expected error `UniqueConstraintViolation`, got {err}"),
@@ -2013,8 +2005,8 @@ mod tests {
         let sequence = stdb.sequence_id_from_name(&tx, "MyTable_my_col_seq")?;
         assert!(sequence.is_some(), "Sequence not created");
 
-        stdb.insert(&mut tx, table_id, product![0i64])?;
-        stdb.insert(&mut tx, table_id, product![0i64])?;
+        insert(&stdb, &mut tx, table_id, &product![0i64])?;
+        insert(&stdb, &mut tx, table_id, &product![0i64])?;
 
         assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1, 2]);
         Ok(())
@@ -2141,9 +2133,9 @@ mod tests {
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        stdb.insert(&mut tx, table_id, product![0u64, 0u64, 1u64])?;
-        stdb.insert(&mut tx, table_id, product![0u64, 1u64, 2u64])?;
-        stdb.insert(&mut tx, table_id, product![1u64, 2u64, 2u64])?;
+        insert(&stdb, &mut tx, table_id, &product![0u64, 0u64, 1u64])?;
+        insert(&stdb, &mut tx, table_id, &product![0u64, 1u64, 2u64])?;
+        insert(&stdb, &mut tx, table_id, &product![1u64, 2u64, 2u64])?;
 
         let cols = col_list![0, 1];
         let value = product![0u64, 1u64].into();
@@ -2178,8 +2170,7 @@ mod tests {
 
         // Insert a row and commit it, so the row is in the committed_state.
         let mut insert_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        stdb.insert(&mut insert_tx, table_id, product!(AlgebraicValue::I32(0)))
-            .expect("Insert insert_tx failed");
+        insert(&stdb, &mut insert_tx, table_id, &product!(AlgebraicValue::I32(0))).expect("Insert insert_tx failed");
         stdb.commit_tx(insert_tx).expect("Commit insert_tx failed");
 
         let mut delete_insert_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
@@ -2192,8 +2183,13 @@ mod tests {
         // Insert the row again, so that depending on the datastore internals,
         // it may now be only in the committed_state,
         // or in all three of the committed_state, delete_tables and insert_tables.
-        stdb.insert(&mut delete_insert_tx, table_id, product!(AlgebraicValue::I32(0)))
-            .expect("Insert delete_insert_tx failed");
+        insert(
+            &stdb,
+            &mut delete_insert_tx,
+            table_id,
+            &product!(AlgebraicValue::I32(0)),
+        )
+        .expect("Insert delete_insert_tx failed");
 
         // Iterate over the table and assert that we see the committed-deleted-inserted row only once.
         assert_eq!(
@@ -2257,8 +2253,7 @@ mod tests {
         let table_id = {
             let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Reducer(ctx));
             let table_id = stdb.create_table(&mut tx, schema).expect("failed to create table");
-            stdb.insert(&mut tx, table_id, product!(AlgebraicValue::I32(0)))
-                .expect("failed to insert row");
+            insert(&stdb, &mut tx, table_id, &product!(AlgebraicValue::I32(0))).expect("failed to insert row");
             stdb.commit_tx(tx).expect("failed to commit tx");
 
             table_id
@@ -2268,8 +2263,7 @@ mod tests {
         // created by a mutable SQL transaction
         {
             let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql);
-            stdb.insert(&mut tx, table_id, product!(AlgebraicValue::I32(-42)))
-                .expect("failed to insert row");
+            insert(&stdb, &mut tx, table_id, &product!(AlgebraicValue::I32(-42))).expect("failed to insert row");
             stdb.commit_tx(tx).expect("failed to commit tx");
         }
 

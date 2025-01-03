@@ -11,7 +11,7 @@ use core::ops::{ControlFlow, Deref, Index, IndexMut};
 use std::ops::DerefMut;
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum Error {
     #[error("Attempt to allocate more than {} pages.", PageIndex::MAX.idx())]
     TooManyPages,
@@ -34,7 +34,7 @@ impl IndexMut<PageIndex> for Pages {
 }
 
 /// A manager of [`Page`]s.
-#[derive(Default)]
+#[derive(Default, Debug, PartialEq, Eq)]
 pub struct Pages {
     /// The collection of pages under management.
     pages: Vec<Box<Page>>,
@@ -64,7 +64,6 @@ impl Pages {
     ///
     /// Used in benchmarks. Internal operators will prefer directly indexing into `self.pages`,
     /// as that allows split borrows.
-    #[doc(hidden)] // Used in benchmarks.
     pub fn get_page_mut(&mut self, page: PageIndex) -> &mut Page {
         &mut self.pages[page.idx()]
     }

@@ -16,18 +16,46 @@ use super::{
     var_len::{VarLenGranule, VarLenMembers, VarLenRef},
 };
 use spacetimedb_sats::{
-    bsatn::to_writer, buffer::BufWriter, i256, u256, AlgebraicType, AlgebraicValue, ProductValue, SumValue,
+    bsatn::{self, to_writer, DecodeError},
+    buffer::BufWriter,
+    de::DeserializeSeed as _,
+    i256, u256, AlgebraicType, AlgebraicValue, ProductValue, SumValue,
 };
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum Error {
+    #[error(transparent)]
+    Decode(#[from] DecodeError),
     #[error("Expected a value of type {0:?}, but found {1:?}")]
     WrongType(AlgebraicType, AlgebraicValue),
     #[error(transparent)]
     PageError(#[from] super::page::Error),
     #[error(transparent)]
     PagesError(#[from] super::pages::Error),
+}
+
+/// Writes `row` typed at `ty` to `pages`
+/// using `blob_store` as needed to write large blobs.
+///
+/// Panics if `val` is not of type `ty`.
+///
+/// # Safety
+///
+/// `pages` must be specialized to store rows of `ty`.
+/// This includes that its `visitor` must be prepared to visit var-len members within `ty`,
+/// and must do so in the same order as a `VarLenVisitorProgram` for `ty` would,
+/// i.e. by monotonically increasing offsets.
+pub unsafe fn write_row_to_pages_bsatn(
+    pages: &mut Pages,
+    visitor: &impl VarLenMembers,
+    blob_store: &mut dyn BlobStore,
+    ty: &RowTypeLayout,
+    mut bytes: &[u8],
+    squashed_offset: SquashedOffset,
+) -> Result<(RowPointer, BlobNumBytes), Error> {
+    let val = ty.product().deserialize(bsatn::Deserializer::new(&mut bytes))?;
+    unsafe { write_row_to_pages(pages, visitor, blob_store, ty, &val, squashed_offset) }
 }
 
 /// Writes `row` typed at `ty` to `pages`

@@ -640,7 +640,7 @@ impl ModuleHost {
         };
 
         if connected {
-            db.insert(mut_tx, ST_CLIENT_ID, row.into()).map(|_| ())
+            mut_tx.insert_via_serialize_bsatn(ST_CLIENT_ID, &row).map(|_| ())
         } else {
             let row = db
                 .iter_by_col_eq_mut(

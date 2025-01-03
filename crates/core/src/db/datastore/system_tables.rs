@@ -989,8 +989,7 @@ impl StVarTable {
         {
             db.delete(tx, ST_VAR_ID, [row_ref.pointer()]);
         }
-        let row = value_serialize(&StVarRow { name, value });
-        db.insert(tx, ST_VAR_ID, row.into_product().expect("should be product"))?;
+        tx.insert_via_serialize_bsatn(ST_VAR_ID, &StVarRow { name, value })?;
         Ok(())
     }
 
@@ -1305,9 +1304,17 @@ thread_local! {
     static READ_BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Read a value from a system table via BSatn.
+/// Provides access to a buffer to which bytes can be written.
+pub(crate) fn with_sys_table_buf<R>(run: impl FnOnce(&mut Vec<u8>) -> R) -> R {
+    READ_BUF.with_borrow_mut(|buf| {
+        buf.clear();
+        run(buf)
+    })
+}
+
+/// Read a value from a system table via BSATN.
 fn read_via_bsatn<T: DeserializeOwned>(row: RowRef<'_>) -> Result<T, DBError> {
-    READ_BUF.with_borrow_mut(|buf| Ok(row.read_via_bsatn::<T>(buf)?))
+    with_sys_table_buf(|buf| Ok(row.read_via_bsatn::<T>(buf)?))
 }
 
 /// Convert a value to a product value.

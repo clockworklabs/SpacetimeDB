@@ -134,7 +134,7 @@ impl Iterator for BTreeIndexRangeIter<'_> {
 /// An index from a key type determined at runtime to `RowPointer`(s).
 ///
 /// See module docs for info about specialization.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum TypedIndex {
     // All the non-unique index types.
     Bool(Index<bool>),
@@ -627,7 +627,7 @@ impl TypedIndex {
 }
 
 /// A B-Tree based index on a set of [`ColId`]s of a table.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct BTreeIndex {
     /// The ID of this index.
     pub index_id: IndexId,
