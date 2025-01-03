@@ -1,6 +1,13 @@
 //! Defines procedural macros like `#[spacetimedb::table]`,
 //! simplifying writing SpacetimeDB modules in Rust.
 
+// DO NOT WRITE (public) DOCS IN THIS MODULE.
+// Docs should be written in the `spacetimedb` crate (i.e. `bindings/`) at reexport sites
+// using `#[doc(inline)]`.
+// We do this so that links to library traits, structs, etc can resolve correctly.
+//
+// (private documentation for the macro authors is totally fine here and you SHOULD write that!)
+
 mod filter;
 mod reducer;
 mod sats;
@@ -81,76 +88,6 @@ mod sym {
     }
 }
 
-/// Marks a function as a spacetimedb reducer.
-///
-/// A reducer is a function which traverses and updates the database,
-/// a sort of stored procedure that lives in the database, and which can be invoked remotely.
-/// Each reducer call runs in its own transaction,
-/// and its updates to the database are only committed if the reducer returns successfully.
-///
-/// A reducer may take no arguments, like so:
-///
-/// ```rust,ignore
-/// #[spacetimedb::reducer]
-/// pub fn hello_world() {
-///     println!("Hello, World!");
-/// }
-/// ```
-///
-/// But it may also take some:
-/// ```rust,ignore
-/// #[spacetimedb::reducer]
-/// pub fn add_person(name: String, age: u16) {
-///     // Logic to add a person with `name` and `age`.
-/// }
-/// ```
-///
-/// Reducers cannot return values, but can return errors.
-/// To do so, a reducer must have a return type of `Result<(), impl Debug>`.
-/// When such an error occurs, it will be formatted and printed out to logs,
-/// resulting in an aborted transaction.
-///
-/// # Lifecycle Reducers
-///
-/// You can specify special lifecycle reducers that are run at set points in
-/// the module's lifecycle. You can have one each per module.
-///
-/// ## `#[spacetimedb::reducer(init)]`
-///
-/// This reducer is run the first time a module is published
-/// and anytime the database is cleared.
-///
-/// The reducer cannot be called manually
-/// and may not have any parameters except for `ReducerContext`.
-/// If an error occurs when initializing, the module will not be published.
-///
-/// ## `#[spacetimedb::reducer(client_connected)]`
-///
-/// This reducer is run when a client connects to the SpacetimeDB module.
-/// Their identity can be found in the sender value of the `ReducerContext`.
-///
-/// The reducer cannot be called manually
-/// and may not have any parameters except for `ReducerContext`.
-/// If an error occurs in the reducer, the client will be disconnected.
-///
-///
-/// ## `#[spacetimedb::reducer(client_disconnected)]`
-///
-/// This reducer is run when a client disconnects from the SpacetimeDB module.
-/// Their identity can be found in the sender value of the `ReducerContext`.
-///
-/// The reducer cannot be called manually
-/// and may not have any parameters except for `ReducerContext`.
-/// If an error occurs in the disconnect reducer,
-/// the client is still recorded as disconnected.
-///
-/// ## `#[spacetimedb::reducer(update)]`
-///
-/// This reducer is run when the module is updated,
-/// i.e., when publishing a module for a database that has already been initialized.
-///
-/// The reducer cannot be called manually and may not have any parameters.
-/// If an error occurs when initializing, the module will not be published.
 #[proc_macro_attribute]
 pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
@@ -159,205 +96,7 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     })
 }
 
-/// Generates code for treating a struct type as a row of a table.
-///
-/// This derives [`Serialize`], [`Deserialize`], [`SpacetimeType`], and [`Debug`] for the type.
-///
-/// Elements of the struct type are NOT automatically inserted into any global table. They are regular structs,
-/// with no special behavior. In particular, modifying them does not automatically modify the database!
-///
-/// Instead, a struct implementing [`Table<Row = Self>`] is generated. This can be looked up in a [`ReducerContext`]
-/// using `ctx.db().table_name()`. This struct represents a handle to a database table, and can be used to
-/// iterate and modify the table's elements. It is a view of the entire table -- the entire set of rows at the time of the reducer call.
-///
-/// # Example
-///
-/// ```ignore
-/// use spacetimedb::{table, ReducerCtx};
-/// use log::debug;
-///
-/// #[table(name = users, public,
-///         index(name = id_and_username, btree(id, username)))]
-/// pub struct User {
-///     #[auto_inc]
-///     #[primary_key]
-///     pub id: u32,
-///     #[unique]
-///     pub username: String,
-///     #[index(btree)]
-///     pub popularity: u32,
-/// }
-///
-/// fn demo(ctx: &ReducerCtx) {
-///     // Use the *name* of the table to get a struct
-///     // implementing `spacetimedb::Table<Row = User>`.
-///     let users = ctx.db().users();
-///
-///     // You can use methods from `spacetimedb::Table`
-///     // on the table.
-///     debug!("User count: {}", users.count());
-///     for user in users.iter() {
-///         debug!("{:?}", user);
-///     }
-///
-///     // For every named `index`, the table has an extra method
-///     // for getting a corresponding `spacetimedb::BTreeIndex`.
-///     let by_id_and_username: spacetimedb::BTreeIndex<_, (u32, String), _> =
-///         users.id_and_username();
-///     by_id_and_username.delete((&57, &"Billy".to_string()));
-///
-///     // For every `#[unique]` or `#[primary_key]` field,
-///     // the table has an extra method that allows getting a
-///     // corresponding `spacetimedb::UniqueColumn`.
-///     let by_username: spacetimedb::UniqueColumn<_, String, _> = users.id();
-///     by_username.delete(&"test_user".to_string());
-/// }
-/// ```
-///
-/// # Macro arguments
-///
-/// * `name = my_table`
-///
-///    Specify the name of the table in the database, if you want it to be different from
-///    the name of the struct.
-///    Multiple `table` annotations can be present on the same type. This will generate
-///    multiple tables of the same row type, but with different names.
-///
-/// * `public` and `private`
-///
-///    Tables are private by default. If you'd like to make your table publically
-///    accessible by anyone, put `public` in the macro arguments (e.g.
-///    `#[spacetimedb::table(public)]`). You can also specify `private` if
-///    you'd like to be specific. This is fully separate from Rust's module visibility
-///    system; `pub struct` or `pub(crate) struct` do not affect the table visibility, only
-///    the visibility of the items in your own source code.
-///
-/// * `index(name = my_index, btree(columns = [a, b, c]))`
-///
-///    You can specify an index on one or more of the table's columns with the above syntax.
-///    You can also just put `#[index(btree)]` on the field itself if you only need
-///    a single-column attribute; see column attributes below.
-///    Multiple indexes are permitted.
-///
-/// * `scheduled(reducer_name)`
-///
-///    Scheduled [reducers](macro@crate::reducer) need a table storing scheduling information.
-///    The rows of this table store all information needed when invoking a scheduled reducer.
-///    This can be any information you want, but we require that the tables store at least an
-///    invocation ID field and timestamp field.
-///
-///    The corresponding reducer should accept a single argument
-///
-///    These can be declared like so:
-///
-/// ```ignore
-/// #[table(name = train_schedule, scheduled(run_train))]
-/// pub struct TrainSchedule {
-///     // Required fields.
-///     #[primary_key]
-///     #[auto_inc]
-///     scheduled_id: u64,
-///     #[scheduled_at]
-///     scheduled_at: spacetimedb::ScheduleAt,
-///
-///     // Any other fields needed.
-///     train: TrainID,
-///     source_station: StationID,
-///     target_station: StationID
-/// }
-///
-/// #[reducer]
-/// pub fn run_train(ctx: &ReducerCtx, schedule: TrainSchedule) {
-///     /* ... */
-/// }
-/// ```
-///
-/// # Column (field) attributes
-///
-/// * `#[auto_inc]`
-///
-///    Creates a database sequence.
-///
-///    When a row is inserted with the annotated field set to `0` (zero),
-///    the sequence is incremented, and this value is used instead.
-///    Can only be used on numeric types and may be combined with indexes.
-///
-///    Note that using `#[auto_inc]` on a field does not also imply `#[primary_key]` or `#[unique]`.
-///    If those semantics are desired, those attributes should also be used.
-///
-/// * `#[unique]`
-///
-///    Creates an index and unique constraint for the annotated field.
-///
-/// * `#[primary_key]`
-///
-///    Similar to `#[unique]`, but generates additional CRUD methods.
-///
-/// * `#[index(btree)]`
-///
-///    Creates a single-column index with the specified algorithm.
-///
-/// * `#[scheduled_at]`
-///    Used in scheduled reducer tables, see above.
-///
-/// * `#[scheduled_id]`
-///    Used in scheduled reducer tables, see above.
-///
-/// # Generated code
-///
-/// For each `[table(name = {name})]` annotation on a type `{T}`, generates a struct
-/// `{name}Handle` implementing `Table<Row={T}>`, and a trait that allows looking up such a
-/// `{name}Handle` in a `ReducerContext`.
-///
-/// The struct `{name}Handle` is hidden in an anonymous scope and cannot be accessed.
-///
-/// For each named index declaration, add a method to `{name}Handle` for getting a corresponding
-/// `BTreeIndex`.
-///
-/// For each field  with a `#[unique]` or `#[primary_key]` annotation,
-/// add a method to `{name}Handle` for getting a corresponding `UniqueColumn`.
-///
-/// The following pseudocode illustrates the general idea. Curly braces are used to indicate templated
-/// names.
-///
-/// ```ignore
-/// use spacetimedb::{BTreeIndex, UniqueColumn, Table, DbView};
-///
-/// // This generated struct is hidden and cannot be directly accessed.
-/// struct {name}Handle { /* ... */ };
-///
-/// // It is a table handle.
-/// impl Table for {name}Handle {
-///     type Row = {T};
-///     /* ... */
-/// }
-///
-/// // It can be looked up in a `ReducerContext`,
-/// // using `ctx.db().{name}()`.
-/// trait {name} {
-///     fn {name}(&self) -> Row = {T}>;
-/// }
-/// impl {name} for <ReducerContext as DbContext>::DbView { /* ... */ }
-///
-/// // Once looked up, it can be used to look up indexes.
-/// impl {name}Handle {
-///     // For each `#[unique]` or `#[primary_key]` field `{field}` of type `{F}`:
-///     fn {field}(&self) -> UniqueColumn<_, {F}, _> { /* ... */ };
-///     
-///     // For each named index `{index}` on fields of type `{(F1, ..., FN)}`:
-///     fn {index}(&self) -> BTreeIndex<_, {(F1, ..., FN)}, _>;
-/// }
-/// ```
-///
-/// [`Serialize`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Serialize.html
-/// [`Deserialize`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Deserialize.html
-/// [`SpacetimeType`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.SpacetimeType.html
-/// [`TableType`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.TableType.html
-/// [`Table`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Table.html
-/// [`Table<Row = Self>`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Table.html
-/// [`ReducerContext`]: https://docs.rs/spacetimedb/latest/spacetimedb/struct.ReducerContext.html
-/// [`UniqueColumn`]: https://docs.rs/spacetimedb/latest/spacetimedb/struct.UniqueColumn.html
-/// [`BTreeIndex`]: https://docs.rs/spacetimedb/latest/spacetimedb/struct.BTreeIndex.html
+
 #[proc_macro_attribute]
 pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     // put this on the struct so we don't get unknown attribute errors
@@ -444,29 +183,6 @@ pub fn schema_type(input: StdTokenStream) -> StdTokenStream {
     })
 }
 
-/// Generates code for registering a row-level security `SQL` function.
-///
-/// A row-level security function takes a `SQL` query expression that is used to filter rows.
-///
-/// The query follows the same syntax as a subscription query.
-///
-/// **Example:**
-///
-/// ```rust,ignore
-/// /// Players can only see what's in their chunk
-/// spacetimedb::filter!("
-///     SELECT * FROM LocationState WHERE chunk_index IN (
-///         SELECT chunk_index FROM LocationState WHERE entity_id IN (
-///             SELECT entity_id FROM UserState WHERE identity = @sender
-///         )
-///     )
-/// ");
-/// ```
-///
-/// **NOTE:** The `SQL` query expression is pre-parsed at compile time, but only check is a valid
-/// subscription query *syntactically*, not that the query is valid when executed.
-///
-/// For example, it could refer to a non-existent table.
 #[proc_macro]
 pub fn filter(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let arg = syn::parse_macro_input!(input);

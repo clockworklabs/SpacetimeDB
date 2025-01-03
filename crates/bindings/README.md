@@ -1,34 +1,37 @@
 # SpacetimeDB Rust Module Library
 
-<!-- n.b. This file is used as the top-level library documentation in `src/lib.rs`. -->
+<!-- n.b. This file is used as the top-level library documentation in `src/lib.rs`.
+          Some of the links in this file are not resolved when previewing on GitHub,
+          but *are* resolved when compiled by Rustdoc.
+-->
 
 SpacetimeDB allows using the Rust language to write server-side applications. These applications are called **modules** and have access to a built-in database.
 
 Rust modules are written with the the Rust Module Library (this crate). They are built using [cargo](https://doc.rust-lang.org/cargo/) and deployed using the [`spacetime` CLI tool](https://spacetimedb.com/install). Rust modules can import any Rust [crate](https://crates.io/) that supports being compiled to WebAssembly.
 
-(Note: Rust can also be used for *clients* of SpacetimeDB modules, but this requires using a completely different library, the SpacetimeDB Rust Client SDK. See the SpacetimeDB documentation on [clients](https://spacetimedb.com/docs/#client) for more information.)
+(Note: Rust can also be used for **clients** of SpacetimeDB modules, but this requires using a completely different library, the SpacetimeDB Rust Client SDK. See the SpacetimeDB documentation on [clients] for more information.)
 
-This reference assumes you are familiar with the basics of Rust. If you aren't, check out Rust's [excellent documentation](https://www.rust-lang.org/learn). For a guided introduction to Rust Modules, see the [rust module quickstart](https://spacetimedb.com/docs/modules/rust/quickstart). The documentation of this crate is reference-style and in-depth.
+This reference assumes you are familiar with the basics of Rust. If you aren't, check out Rust's [excellent documentation](https://www.rust-lang.org/learn). For a guided introduction to Rust Modules, see the [rust module quickstart](https://spacetimedb.com/docs/modules/rust/quickstart).
 
 ## Overview
 
 SpacetimeDB modules have two ways to interact with the outside world: tables and reducers.
 
-- [Tables](#tables) store data and optionally make it readable by [clients](https://spacetimedb.com/docs/#client). 
+- [Tables](#tables) store data and optionally make it readable by [clients]. 
 
-- [Reducers](#reducers) modify data and can be invoked by [clients](https://spacetimedb.com/docs/#client) over the network. They can read and write data in tables, and write to a private debug log.
+- [Reducers](#reducers) modify data and can be invoked by [clients] over the network. They can read and write data in tables, and write to a private debug log.
 
 These are the only ways for a Spacetime module to interact with the outside world. Calling functions from `std::net` or `std::fs` inside a module will result in runtime errors. (Rust crates that don't interact with the network can be used freely.)
 
 This results in a simplified development experience. When writing a SpacetimeDB module, it isn't necessary to choose between a vast array of databases and networking libraries. Only one database is available, SpacetimeDB, and only one networking library is available, SpacetimeDB. User authentication -- login through Google or Facebook, or any other [OpenID Connect](https://openid.net/developers/how-connect-works/) provider -- is automatically implemented, requiring no work from the module author.
 
-SpacetimeDB modules are compiled to WebAssembly by `cargo` and administered using the `spacetime` CLI command. Modules run on a server called a [host](https://spacetimedb.com/docs/#host). A host can run many modules at a time. You can run your own host, or use a public host administered by [Clockwork Labs](https://clockworklabs.io/). <!-- TODO: remark about SLAs and SKUs once those are finalized? -->
+SpacetimeDB modules are compiled to WebAssembly by `cargo` and administered using the `spacetime` CLI command. Modules run on a server called a [host]. A host can run many modules at a time. You can run your own host, or use a public host administered by [Clockwork Labs](https://clockworklabs.io/). <!-- TODO: remark about SLAs and SKUs once those are finalized? -->
 
 SpacetimeDB is a SQL database, and builds on the long tradition of reliability offered by SQL databases. Tables and reducers are built on SQL concepts:
 
-- Tables are SQL database tables with easy-to-use Rust interfaces. They are declared in Rust code using the `#[spacetime::table]` macro. Clients can open read-only subscriptions to [`public`](https://doc.rust-lang.org/std/net/index.html) tables, and SpacetimeDB will automatically stream updates to them as those tables change. Tables are automatically logged to disk and are durable across system restarts and crashes. Tables can be queried with SQL; SpacetimeDB supports a subset of ANSI:SQL 2011. <!-- TODO: document precisely which subset this is. -->
+- Tables are SQL database tables with easy-to-use Rust interfaces. They are declared in Rust code using the `#[spacetime::table]` macro. Clients can open read-only subscriptions to [`public`](#public-and-private-tables) tables, and SpacetimeDB will automatically stream updates to them as those tables change. Tables are automatically logged to disk and are durable across system restarts and crashes. Tables can be queried with SQL; SpacetimeDB supports a subset of ANSI:SQL 2011. <!-- TODO: document precisely which subset this is. -->
 
-- Reducers are Rust functions decorated with the `#[spacetime::reducer]` macro. Reducers run in [transactions](#transactions) with read-write access to the entire database; if a reducer [panics](https://doc.rust-lang.org/std/macro.panic.html), its modifications to the database will be rolled back. Reducers run on the server, not on the client; they can see information about the [Identity](#identity) and [Address](#address) of their callers, and use this to determine what clients should be allowed to do. <!-- TODO: what SQL transaction level do we implement? -->
+- Reducers are Rust functions decorated with the `#[spacetime::reducer]` macro. Reducers run in [transactions](#transactions) with read-write access to the entire database; if a reducer returns an error or [panic](`panic`), its modifications to the database will be rolled back. Reducers run on the server, not on the client; they can see information about the [Identity](#identity) and [Address](#address) of their callers, and use this to determine what clients should be allowed to do. <!-- TODO: what SQL transaction level do we implement? -->
 
 Tables can store any any Rust type implementing the [`SpacetimeType`, `Serialize`, and `Deserialize`](#spacetimetype) traits; all of these can be be derived at once using `#[derive(SpacetimeType)]`. Similarly, Rust types implementing these traits can be used for reducer arguments.
 
@@ -177,7 +180,9 @@ fn do_something(ctx: &ReducerContext) {
 ```
 
 See the [reducers](#reducers) section for more information on the `#[reducer]` macro.
-Also see [generated table functions](#generated-table-functions) for information on automatically-generated functions like `update_by_id` and `delete_by_id`.
+
+### Table attributes
+
 
 ### Public and Private tables
 
@@ -200,6 +205,8 @@ pub struct LootItem {
     /* ... */
 }
 ```
+
+<!-- TODO: can module owner `spacetime sql` write/read private tables?-->
 
 To learn how to subscribe to a table, see the [client SDK documentation](https://spacetimedb.com/docs/sdks).
 
@@ -660,3 +667,6 @@ fn output(ctx: &ReducerContext, i: i32) {
 [macro library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/bindings-macro
 [module library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/lib
 [demo]: /#demo
+[clients]: https://spacetimedb.com/docs/#client
+[client SDK documentation]: https://spacetimedb.com/docs/#client
+[host]: https://spacetimedb.com/docs/#host
