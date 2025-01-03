@@ -116,14 +116,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     };
     if server_address != "localhost" && server_address != "127.0.0.1" {
         println!("You are about to publish to a non-local server: {}", server_address);
-        if !y_or_n(
-            force,
-            format!(
-                "Are you sure you want to proceed with publishing to {}?",
-                server_address
-            )
-            .as_str(),
-        )? {
+        if !y_or_n(force, "Are you sure you want to proceed?")? {
             println!("Aborting");
             return Ok(());
         }
