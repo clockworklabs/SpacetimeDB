@@ -9,8 +9,8 @@ use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
 
 use crate::rules::{
-    ComputePositions, ConjunctionToIxScan, EqToIxScan, HashToIxJoin, PushConjunction, PushConstFilter, RewriteRule,
-    UniqueHashJoinRule, UniqueIxJoinRule,
+    ComputePositions, EqIxScan1, EqIxScan2, EqIxScan2Col, EqIxScan3Col, HashToIxJoin, PushConjunction, PushConstFilter,
+    RewriteRule, UniqueHashJoinRule, UniqueIxJoinRule,
 };
 
 /// Table aliases are replaced with labels in the physical plan
@@ -295,8 +295,10 @@ impl PhysicalPlan {
         self.map(&Self::canonicalize)
             .apply_until::<PushConjunction>()
             .apply_until::<PushConstFilter>()
-            .apply_rec::<EqToIxScan>()
-            .apply_rec::<ConjunctionToIxScan>()
+            .apply_rec::<EqIxScan3Col>()
+            .apply_rec::<EqIxScan2Col>()
+            .apply_rec::<EqIxScan1>()
+            .apply_rec::<EqIxScan2>()
             .apply_rec::<HashToIxJoin>()
             .apply_rec::<UniqueIxJoinRule>()
             .apply_rec::<UniqueHashJoinRule>()
@@ -1490,5 +1492,121 @@ mod tests {
             }
             plan => panic!("unexpected plan: {:#?}", plan),
         }
+    }
+
+    /// Test single and multi-column index selections
+    #[test]
+    fn index_scans() {
+        let t_id = TableId(1);
+
+        let t = Arc::new(schema(
+            t_id,
+            "t",
+            &[
+                ("w", AlgebraicType::U8),
+                ("x", AlgebraicType::U8),
+                ("y", AlgebraicType::U8),
+                ("z", AlgebraicType::U8),
+            ],
+            &[&[1], &[2, 3], &[1, 2, 3]],
+            &[],
+            None,
+        ));
+
+        let db = SchemaViewer {
+            schemas: vec![t.clone()],
+        };
+
+        let sql = "select * from t where x = 3 and y = 4 and z = 5";
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_sub(lp).optimize();
+
+        // Select index on (x, y, z)
+        match pp {
+            ProjectPlan::None(PhysicalPlan::IxScan(
+                IxScan {
+                    schema, prefix, arg, ..
+                },
+                _,
+            )) => {
+                assert_eq!(schema.table_id, t_id);
+                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(5)));
+                assert_eq!(
+                    prefix,
+                    vec![(ColId(1), AlgebraicValue::U8(3)), (ColId(2), AlgebraicValue::U8(4))]
+                );
+            }
+            proj => panic!("unexpected plan: {:#?}", proj),
+        };
+
+        let sql = "select * from t where x = 3 and y = 4";
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_sub(lp).optimize();
+
+        // Select index on x
+        let plan = match pp {
+            ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
+                assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 2, .. })));
+                assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(4))));
+                *input
+            }
+            proj => panic!("unexpected plan: {:#?}", proj),
+        };
+
+        match plan {
+            PhysicalPlan::IxScan(
+                IxScan {
+                    schema, prefix, arg, ..
+                },
+                _,
+            ) => {
+                assert_eq!(schema.table_id, t_id);
+                assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(3)));
+                assert!(prefix.is_empty());
+            }
+            plan => panic!("unexpected plan: {:#?}", plan),
+        };
+
+        let sql = "select * from t where w = 5 and x = 4";
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_sub(lp).optimize();
+
+        // Select index on x
+        let plan = match pp {
+            ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
+                assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 0, .. })));
+                assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(5))));
+                *input
+            }
+            proj => panic!("unexpected plan: {:#?}", proj),
+        };
+
+        match plan {
+            PhysicalPlan::IxScan(
+                IxScan {
+                    schema, prefix, arg, ..
+                },
+                _,
+            ) => {
+                assert_eq!(schema.table_id, t_id);
+                assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(4)));
+                assert!(prefix.is_empty());
+            }
+            plan => panic!("unexpected plan: {:#?}", plan),
+        };
+
+        let sql = "select * from t where y = 1";
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_sub(lp).optimize();
+
+        // Do not select index on (y, z)
+        match pp {
+            ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
+                assert!(matches!(*input, PhysicalPlan::TableScan(..)));
+                assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 2, .. })));
+                assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U8(1))));
+            }
+            proj => panic!("unexpected plan: {:#?}", proj),
+        };
     }
 }

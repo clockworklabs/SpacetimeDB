@@ -136,7 +136,7 @@ fn eval(c: &mut Criterion) {
 
     // Join 1M rows on the left with 12K rows on the right.
     // Note, this should use an index join so as not to read the entire footprint table.
-    let name = format!(
+    let semijoin = format!(
         r#"
         select f.*
         from location l join footprint f on l.entity_id = f.entity_id
@@ -144,8 +144,11 @@ fn eval(c: &mut Criterion) {
         "#
     );
 
+    let index_scan_multi = "select * from location WHERE x = 0 AND z = 10000 AND dimension = 0";
+
     bench_query(c, "footprint-scan", "select * from footprint");
-    bench_query(c, "footprint-semijoin", &name);
+    bench_query(c, "footprint-semijoin", &semijoin);
+    bench_query(c, "index-scan-multi", index_scan_multi);
 
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-scan --exact --profile-time=30
