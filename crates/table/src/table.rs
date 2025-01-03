@@ -61,6 +61,7 @@ static_assert_size!(SeqIdList, 24);
 ///
 /// The table stores the rows into a page manager
 /// and uses an internal map to ensure that no identical row is stored more than once.
+#[derive(Debug, PartialEq, Eq)]
 pub struct Table {
     /// Page manager and row layout grouped together, for `RowRef` purposes.
     inner: TableInner,
@@ -90,6 +91,7 @@ pub struct Table {
 /// while other mutable references to the `indexes` exist.
 /// This is necessary because index insertions and deletions take a `RowRef` as an argument,
 /// from which they [`ReadColumn::read_column`] their keys.
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct TableInner {
     /// The type of rows this table stores, with layout information included.
     row_layout: RowTypeLayout,
@@ -175,7 +177,7 @@ impl MemoryUsage for TableInner {
 }
 
 /// Various error that can happen on table insertion.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum InsertError {
     /// There was already a row with the same value.
     #[error("Duplicate insertion of row {0:?} violates set semantics")]
@@ -248,39 +250,37 @@ impl Table {
         blob_store: &'a mut dyn BlobStore,
         row: &ProductValue,
     ) -> Result<(RowHash, RowRef<'a>), InsertError> {
-        // Insert the row into the page manager.
-        let (hash, ptr) = self.insert_internal(blob_store, row)?;
+        // Optimistically insert the `row` before checking any constraints
+        // under the assumption that errors (unique constraint & set semantic violations) are rare.
+        let (row_ref, blob_bytes) = self.insert_physically_pv(blob_store, row)?;
+        let row_ptr = row_ref.pointer();
 
-        // Insert row into indices and check unique constraints.
+        // Confirm the insertion, checking any constraints, removing the physical row on error.
         // SAFETY: We just inserted `ptr`, so it must be present.
-        unsafe { self.insert_into_indices(blob_store, ptr) }?;
-
-        // SAFETY: We just inserted `ptr`,
-        // and `insert_into_indices` didn't remove it,
-        // so it must be present.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+        let (hash, row_ptr) = unsafe { self.confirm_insertion(blob_store, row_ptr, blob_bytes) }?;
+        // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, row_ptr) };
         Ok((hash, row_ref))
     }
 
-    /// Insert a `row` into this table.
+    /// Insert a `row` into this table during replay.
+    ///
     /// NOTE: This method skips index updating. Use `insert` to insert a row with index updating.
-    pub fn insert_internal(
+    pub fn insert_for_replay(
         &mut self,
         blob_store: &mut dyn BlobStore,
         row: &ProductValue,
     ) -> Result<(RowHash, RowPointer), InsertError> {
-        // Optimistically insert the `row` before checking for set-semantic collisions,
-        // under the assumption that set-semantic collisions are rare.
-        let (row_ref, blob_bytes) = self.insert_internal_allow_duplicate(blob_store, row)?;
+        // Insert the `row`. There should be no errors
+        let (row_ref, blob_bytes) = self.insert_physically_pv(blob_store, row)?;
+        let row_ptr = row_ref.pointer();
 
-        let hash = row_ref.row_hash();
-        let ptr = row_ref.pointer();
-        // SAFETY: `ptr` was derived from `row_ref` without interleaving calls, so it must be valid.
-        unsafe { self.insert_into_pointer_map(blob_store, ptr, hash) }?;
+        // SAFETY: We just inserted the row, so `self.is_row_present(row_ptr)` holds.
+        let row_hash = unsafe { self.insert_into_pointer_map(blob_store, row_ptr) }?;
 
         self.update_statistics_added_row(blob_bytes);
 
-        Ok((hash, ptr))
+        Ok((row_hash, row_ptr))
     }
 
     /// Physically inserts `row` into the page
@@ -288,7 +288,7 @@ impl Table {
     ///
     /// This is useful when we need to insert a row temporarily to get back a `RowPointer`.
     /// A call to this method should be followed by a call to [`delete_internal_skip_pointer_map`].
-    pub fn insert_internal_allow_duplicate<'a>(
+    pub fn insert_physically_pv<'a>(
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         row: &ProductValue,
@@ -459,18 +459,15 @@ impl Table {
     /// # Safety
     ///
     /// `self.is_row_present(row)` must hold.
-    pub fn confirm_insertion<'a>(
+    pub unsafe fn confirm_insertion<'a>(
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         ptr: RowPointer,
         blob_bytes: BlobNumBytes,
     ) -> Result<(RowHash, RowPointer), InsertError> {
-        // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, ptr) };
-        let hash = row_ref.row_hash();
-        // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        unsafe { self.insert_into_pointer_map(blob_store, ptr, hash) }?;
-        // SAFETY: Caller promised that `self.is_row_present(row)` holds.
+        // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
+        let hash = unsafe { self.insert_into_pointer_map(blob_store, ptr) }?;
+        // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
         unsafe { self.insert_into_indices(blob_store, ptr) }?;
 
         self.update_statistics_added_row(blob_bytes);
@@ -528,6 +525,7 @@ impl Table {
     /// Insert row identified by `ptr` into the pointer map.
     /// This checks for set semantic violations.
     /// Deletes the row and returns an error if there were any violations.
+    /// Returns the row hash computed.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
     /// Post-condition: If this method returns `Ok(_)`, the row still exists.
@@ -535,8 +533,11 @@ impl Table {
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         ptr: RowPointer,
-        hash: RowHash,
-    ) -> Result<(), InsertError> {
+    ) -> Result<RowHash, InsertError> {
+        // SAFETY: Caller promised that `self.is_row_present(row)` holds.
+        let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, ptr) };
+        let hash = row_ref.row_hash();
+
         // SAFETY:
         // - `self` trivially has the same `row_layout` as `self`.
         // - Caller promised that `ptr` is a valid row in `self`.
@@ -560,7 +561,7 @@ impl Table {
         // add it to the `pointer_map`.
         self.pointer_map.insert(hash, ptr);
 
-        Ok(())
+        Ok(hash)
     }
 
     /// Finds the [`RowPointer`] to the row in `committed_table`
@@ -757,7 +758,7 @@ impl Table {
         // Insert `row` temporarily so `temp_ptr` and `hash` can be used to find the row.
         // This must avoid consulting and inserting to the pointer map,
         // as the row is already present, set-semantically.
-        let (temp_row, _) = self.insert_internal_allow_duplicate(blob_store, row)?;
+        let (temp_row, _) = self.insert_physically_pv(blob_store, row)?;
         let temp_ptr = temp_row.pointer();
         let hash = temp_row.row_hash();
 
@@ -1637,6 +1638,41 @@ pub(crate) mod test {
             prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 1);
             prop_assert_eq!(&table.scan_rows(&blob_store).map(|r| r.pointer()).collect::<Vec<_>>(), &[ptr]);
         }
+
+        #[test]
+        fn insert_bsatn_same_as_pv((ty, val) in generate_typed_row()) {
+            let mut bs_pv = HashMapBlobStore::default();
+            let mut table_pv = table(ty.clone());
+            let res_pv = table_pv.insert(&mut bs_pv, &val);
+
+            let mut bs_bsatn = HashMapBlobStore::default();
+            let mut table_bsatn = table(ty);
+            let res_bsatn = insert_bsatn(&mut table_bsatn, &mut bs_bsatn, &val);
+
+            prop_assert_eq!(res_pv, res_bsatn);
+            prop_assert_eq!(bs_pv, bs_bsatn);
+            prop_assert_eq!(table_pv, table_bsatn);
+        }
+    }
+
+    fn insert_bsatn<'a>(
+        table: &'a mut Table,
+        blob_store: &'a mut dyn BlobStore,
+        val: &ProductValue,
+    ) -> Result<(RowHash, RowRef<'a>), InsertError> {
+        let row = &to_vec(&val).unwrap();
+
+        // Optimistically insert the `row` before checking any constraints
+        // under the assumption that errors (unique constraint & set semantic violations) are rare.
+        let (row_ref, blob_bytes) = table.insert_physically_bsatn(blob_store, row)?;
+        let row_ptr = row_ref.pointer();
+
+        // Confirm the insertion, checking any constraints, removing the physical row on error.
+        // SAFETY: We just inserted `ptr`, so it must be present.
+        let (hash, row_ptr) = unsafe { table.confirm_insertion(blob_store, row_ptr, blob_bytes) }?;
+        // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
+        let row_ref = unsafe { table.inner.get_row_ref_unchecked(blob_store, row_ptr) };
+        Ok((hash, row_ref))
     }
 
     // Compare `scan_rows` against a simpler implementation.

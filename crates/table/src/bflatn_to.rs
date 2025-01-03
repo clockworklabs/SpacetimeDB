@@ -23,7 +23,7 @@ use spacetimedb_sats::{
 };
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum Error {
     #[error(transparent)]
     Decode(#[from] DecodeError),

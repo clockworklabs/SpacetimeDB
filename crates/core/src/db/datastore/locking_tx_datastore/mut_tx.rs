@@ -1202,6 +1202,12 @@ impl MutTxId {
         // 1. Insert the physical row.
         // 2. Detect, generate, write sequence values.
         // 3. Confirm that the insertion respects constraints and update statistics.
+        // 4. Post condition (PC.INS.1):
+        //        `res = Ok((hash, ptr))`
+        //     => `ptr` refers to a valid row in `table_id` for `tx_table`
+        //      ∧ `hash` is the hash of this row
+        //    This follows from both `Ok(_)` branches leading to `confirm_insertion`
+        //    which both entail the above post-condition.
         let ((tx_table, tx_blob_store, delete_table), gen_cols, res) = match tx_table
             .insert_physically_bsatn(tx_blob_store, row)
         {
@@ -1229,12 +1235,15 @@ impl MutTxId {
                     unsafe { tx_table.write_gen_val_to_col(col_id, tx_row_ptr, seq_val) };
                 }
 
-                let res = tx_table.confirm_insertion(tx_blob_store, tx_row_ptr, blob_bytes);
+                // SAFETY: `self.is_row_present(row)` holds as we still haven't deleted the row,
+                // in particular, the `write_gen_val_to_col` call does not remove the row.
+                let res = unsafe { tx_table.confirm_insertion(tx_blob_store, tx_row_ptr, blob_bytes) };
                 ((tx_table, tx_blob_store, delete_table), cols_to_gen, res)
             }
             Ok((tx_row_ref, blob_bytes)) => {
                 let tx_row_ptr = tx_row_ref.pointer();
-                let res = tx_table.confirm_insertion(tx_blob_store, tx_row_ptr, blob_bytes);
+                // SAFETY: `self.is_row_present(row)` holds as we just inserted the row.
+                let res = unsafe { tx_table.confirm_insertion(tx_blob_store, tx_row_ptr, blob_bytes) };
                 // SAFETY: By virtue of `get_table_and_blob_store_or_maybe_create_from` above succeeding,
                 // we can assume we have an insert and delete table.
                 (
@@ -1266,7 +1275,7 @@ impl MutTxId {
                     // SAFETY:
                     // - `commit_table` and `tx_table` use the same schema
                     //   because `tx_table` is derived from `commit_table`.
-                    // - `tx_row_ptr` and `tx_row_hash` are correct because we just got them from `tx_table.insert`.
+                    // - `tx_row_ptr` and `tx_row_hash` are correct per (PC.INS.1).
                     if let Some(commit_ptr) =
                         unsafe { Table::find_same_row(commit_table, tx_table, tx_row_ptr, tx_row_hash) }
                     {
@@ -1313,8 +1322,8 @@ impl MutTxId {
                     }
 
                     // Pacify the borrow checker.
-                    // SAFETY: `tx_row_ptr` came from `tx_table.insert` just now
-                    // without any interleaving `&mut` calls that could invalidate the pointer.
+                    // SAFETY: `tx_row_ptr` is still correct for `tx_table` per (PC.INS.1).
+                    // as there haven't been any interleaving `&mut` calls that could invalidate the pointer.
                     let tx_row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
 
                     // (2) The `tx_row_ref` did not violate a unique constraint *within* the `tx_table`,
@@ -1331,7 +1340,8 @@ impl MutTxId {
                 }
 
                 let rri = RowRefInsertion::Inserted(unsafe {
-                    // SAFETY: `ptr` came from `tx_table.insert` just now without any interleaving calls.
+                    // SAFETY: `tx_row_ptr` is still correct for `tx_table` per (PC.INS.1).
+                    // as there haven't been any interleaving `&mut` calls that could invalidate the pointer.
                     tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr)
                 });
                 Ok((gen_cols, rri))
@@ -1407,7 +1417,7 @@ impl MutTxId {
 
         // We need `insert_internal_allow_duplicate` rather than `insert` here
         // to bypass unique constraint checks.
-        match tx_table.insert_internal_allow_duplicate(tx_blob_store, rel) {
+        match tx_table.insert_physically_pv(tx_blob_store, rel) {
             Err(err @ InsertError::Bflatn(_)) => Err(TableError::Insert(err).into()),
             Err(e) => unreachable!(
                 "Table::insert_internal_allow_duplicates returned error of unexpected variant: {:?}",

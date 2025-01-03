@@ -6,7 +6,7 @@ use std::collections::btree_map::{BTreeMap, Range};
 use crate::MemoryUsage;
 
 /// A multi map that relates a `K` to a *set* of `V`s.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct MultiMap<K, V> {
     /// The map is backed by a `BTreeMap` for relating keys to values.
     ///
