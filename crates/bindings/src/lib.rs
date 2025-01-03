@@ -73,6 +73,19 @@ impl ReducerContext {
             rng: std::cell::OnceCell::new(),
         }
     }
+
+    /// Read the current module's [`Identity`].
+    pub fn identity(&self) -> Identity {
+        // Hypothetically, we *could* read the module identity out of the system tables.
+        // However, this would be:
+        // - Onerous, because we have no tooling to inspect the system tables from module code.
+        // - Slow (at least relatively),
+        //   because it would involve multiple host calls which hit the datastore,
+        //   as compared to a single host call which does not.
+        // As such, we've just defined a host call
+        // which reads the module identity out of the `InstanceEnv`.
+        Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+    }
 }
 
 /// A handle on a database with a particular table schema.

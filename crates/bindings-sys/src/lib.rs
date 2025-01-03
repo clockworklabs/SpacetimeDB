@@ -499,6 +499,15 @@ pub mod raw {
         /// Returns an error:
         /// - `NO_SUCH_CONSOLE_TIMER`, when `timer_id` does not exist.
         pub fn console_timer_end(timer_id: u32) -> u16;
+
+        /// Writes the identity of the module into `out = out_ptr[..32]`.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        ///
+        /// - `out_ptr` is NULL or `out` is not in bounds of WASM memory.
+        pub fn identity(out_ptr: *mut u8);
     }
 
     /// What strategy does the database index use?
@@ -960,6 +969,18 @@ pub fn console_log(
 #[inline]
 pub fn volatile_nonatomic_schedule_immediate(name: &str, args: &[u8]) {
     unsafe { raw::volatile_nonatomic_schedule_immediate(name.as_ptr(), name.len(), args.as_ptr(), args.len()) }
+}
+
+/// Read the current module's identity, as a little-endian byte array.
+///
+/// Doesn't return a proper typed `Identity` because this crate doesn't depend on `spacetimedb_lib`.
+#[inline]
+pub fn identity() -> [u8; 32] {
+    let mut buf = [0u8; 32];
+    unsafe {
+        raw::identity(buf.as_mut_ptr());
+    }
+    buf
 }
 
 pub struct RowIter {

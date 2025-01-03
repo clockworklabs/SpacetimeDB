@@ -343,3 +343,14 @@ fn test_btree_index_args(ctx: &ReducerContext) {
 
     // ctx.db.points().multi_column_index().filter((0i64..3i64, 1i64)); // SHOULD FAIL
 }
+
+#[spacetimedb::reducer]
+fn assert_caller_identity_is_module_identity(ctx: &ReducerContext) {
+    let caller = ctx.sender;
+    let owner = ctx.identity();
+    if caller != owner {
+        panic!("Caller {caller} is not the owner {owner}");
+    } else {
+        log::info!("Called by the owner {owner}");
+    }
+}
