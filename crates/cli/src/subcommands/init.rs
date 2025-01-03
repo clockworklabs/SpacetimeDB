@@ -178,6 +178,7 @@ pub async fn exec_init_csharp(args: &ArgMatches) -> anyhow::Result<()> {
         (include_str!("project/csharp/StdbModule._csproj"), "StdbModule.csproj"),
         (include_str!("project/csharp/Lib._cs"), "Lib.cs"),
         (include_str!("project/csharp/_gitignore"), ".gitignore"),
+        (include_str!("project/csharp/global._json"), "global.json"),
     ];
 
     // Check all dependencies
