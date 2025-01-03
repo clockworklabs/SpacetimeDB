@@ -1,0 +1,40 @@
+name: Validate nav.ts Matches nav.js
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  validate-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Install dependencies
+        run: |
+          npm install
+
+      - name: Backup existing nav.js
+        run: |
+          mv docs/nav.js docs/nav.js.original
+
+      - name: Build nav.ts
+        run: |
+          npm run build
+
+      - name: Compare generated nav.js with original nav.js
+        run: |
+          diff -q docs/nav.js docs/nav.js.original || (echo "Generated nav.js differs from committed version. Run 'npm run build' and commit the updated file." && exit 1)
+
+      - name: Restore original nav.js
+        if: success() || failure()
+        run: |
+          mv docs/nav.js.original docs/nav.js

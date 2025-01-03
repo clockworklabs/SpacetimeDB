@@ -24,12 +24,12 @@ To do this, we use inductive definitions, and define the following notation:
 
 ### At a glance
 
-| Type             | Description                                                      |
-| ---------------- | ---------------------------------------------------------------- |
-| `AlgebraicValue` | A value whose type may be any [`AlgebraicType`](#algebraictype). |
-| `SumValue`       | A value whose type is a [`SumType`](#sumtype).                   |
-| `ProductValue`   | A value whose type is a [`ProductType`](#producttype).           |
-| `BuiltinValue`   | A value whose type is a [`BuiltinType`](#builtintype).           |
+| Type                                | Description                                                           |
+|-------------------------------------|-----------------------------------------------------------------------|
+| [`AlgebraicValue`](#algebraicvalue) | A value of any type.                                                  |
+| [`SumValue`](#sumvalue)             | A value of a sum type, i.e. an enum or tagged union.                  |
+| [`ProductValue`](#productvalue)     | A value of a product type, i.e. a struct or tuple.                    |
+| [`BuiltinValue`](#builtinvalue)     | A value of a builtin type, including numbers, booleans and sequences. |
 
 ### `AlgebraicValue`
 
@@ -41,17 +41,17 @@ bsatn(AlgebraicValue) = bsatn(SumValue) | bsatn(ProductValue) | bsatn(BuiltinVal
 
 ### `SumValue`
 
-An instance of a [`SumType`](#sumtype).
+An instance of a sum type, i.e. an enum or tagged union.
 `SumValue`s are binary-encoded as `bsatn(tag) ++ bsatn(variant_data)`
-where `tag: u8` is an index into the [`SumType.variants`](#sumtype)
-array of the value's [`SumType`](#sumtype),
+where `tag: u8` is an index into the `SumType.variants`
+array of the value's `SumType`,
 and where `variant_data` is the data of the variant.
 For variants holding no data, i.e., of some zero sized type,
 `bsatn(variant_data) = []`.
 
 ### `ProductValue`
 
-An instance of a [`ProductType`](#producttype).
+An instance of a product type, i.e. a struct or tuple.
 `ProductValue`s are binary encoded as:
 
 ```fsharp
@@ -62,7 +62,8 @@ Field names are not encoded.
 
 ### `BuiltinValue`
 
-An instance of a [`BuiltinType`](#builtintype).
+An instance of a buil-in type.
+Built-in types include booleans, integers, floats, strings and arrays.
 The BSATN encoding of `BuiltinValue`s defers to the encoding of each variant:
 
 ```fsharp
@@ -73,7 +74,6 @@ bsatn(BuiltinValue)
     | bsatn(F32) | bsatn(F64)
     | bsatn(String)
     | bsatn(Array)
-    | bsatn(Map)
 
 bsatn(Bool(b)) = bsatn(b as u8)
 bsatn(U8(x)) = [x]
@@ -91,10 +91,6 @@ bsatn(F64(x: f64)) = bsatn(f64_to_raw_bits(x)) // lossless conversion
 bsatn(String(s)) = bsatn(len(s) as u32) ++ bsatn(bytes(s))
 bsatn(Array(a)) = bsatn(len(a) as u32)
                ++ bsatn(normalize(a)_0) ++ .. ++ bsatn(normalize(a)_n)
-bsatn(Map(map)) = bsatn(len(m) as u32)
-               ++ bsatn(key(map_0)) ++ bsatn(value(map_0))
-               ..
-               ++ bsatn(key(map_n)) ++ bsatn(value(map_n))
 ```
 
 Where
@@ -102,14 +98,12 @@ Where
 - `f32_to_raw_bits(x)` is the raw transmute of `x: f32` to `u32`
 - `f64_to_raw_bits(x)` is the raw transmute of `x: f64` to `u64`
 - `normalize(a)` for `a: ArrayValue` converts `a` to a list of `AlgebraicValue`s
-- `key(map_i)` extracts the key of the `i`th entry of `map`
-- `value(map_i)` extracts the value of the `i`th entry of `map`
 
 ## Types
 
 All SATS types are BSATN-encoded by converting them to an `AlgebraicValue`,
 then BSATN-encoding that meta-value.
 
-See [the SATN JSON Format](/docs/satn-reference-json-format)
+See [the SATN JSON Format](/docs/satn)
 for more details of the conversion to meta values.
 Note that these meta values are converted to BSATN and _not JSON_.

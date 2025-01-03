@@ -11,8 +11,6 @@ The HTTP endpoints in `/database` allow clients to interact with Spacetime datab
 | [`/database/set_name GET`](#databaseset_name-get)                                                                   | Set a database's name, given its address.                         |
 | [`/database/ping GET`](#databaseping-get)                                                                           | No-op. Used to determine whether a client can connect.            |
 | [`/database/register_tld GET`](#databaseregister_tld-get)                                                           | Register a top-level domain.                                      |
-| [`/database/request_recovery_code GET`](#databaserequest_recovery_code-get)                                         | Request a recovery code to the email associated with an identity. |
-| [`/database/confirm_recovery_code GET`](#databaseconfirm_recovery_code-get)                                         | Recover a login token from a recovery code.                       |
 | [`/database/publish POST`](#databasepublish-post)                                                                   | Publish a database given its module code.                         |
 | [`/database/delete/:address POST`](#databasedeleteaddress-post)                                                     | Delete a database.                                                |
 | [`/database/subscribe/:name_or_address GET`](#databasesubscribename_or_address-get)                                 | Begin a [WebSocket connection](/docs/ws).                         |
@@ -173,43 +171,6 @@ If the domain is already registered to another identity, returns JSON in the for
 { "Unauthorized": {
     "domain": string
 } }
-```
-
-## `/database/request_recovery_code GET`
-
-Request a recovery code or link via email, in order to recover the token associated with an identity.
-
-Accessible through the CLI as `spacetime identity recover <email> <identity>`.
-
-#### Query Parameters
-
-| Name       | Value                                                                                                                                                                                                                                                                                 |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `identity` | The identity whose token should be recovered.                                                                                                                                                                                                                                         |
-| `email`    | The email to send the recovery code or link to. This email must be associated with the identity, either during creation via [`/identity`](/docs/http/identity#identity-post) or afterwards via [`/identity/:identity/set-email`](/docs/http/identity#identityidentityset_email-post). |
-| `link`     | A boolean; whether to send a clickable link rather than a recovery code.                                                                                                                                                                                                              |
-
-## `/database/confirm_recovery_code GET`
-
-Confirm a recovery code received via email following a [`/database/request_recovery_code GET`](#-database-request_recovery_code-get) request, and retrieve the identity's token.
-
-Accessible through the CLI as `spacetime identity recover <email> <identity>`.
-
-#### Query Parameters
-
-| Name       | Value                                         |
-| ---------- | --------------------------------------------- |
-| `identity` | The identity whose token should be recovered. |
-| `email`    | The email which received the recovery code.   |
-| `code`     | The recovery code received via email.         |
-
-On success, returns JSON in the form:
-
-```typescript
-{
-    "identity": string,
-    "token": string
-}
 ```
 
 ## `/database/publish POST`

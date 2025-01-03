@@ -16,10 +16,10 @@ The SpacetimeDB client C# for Rust contains all the tools you need to build nati
     - [Method `SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect)
     - [Event `SpacetimeDBClient.onIdentityReceived`](#event-spacetimedbclientonidentityreceived)
     - [Event `SpacetimeDBClient.onConnect`](#event-spacetimedbclientonconnect)
-  - [Query subscriptions & one-time actions](#subscribe-to-queries)
+  - [Subscribe to queries](#subscribe-to-queries)
     - [Method `SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe)
     - [Event `SpacetimeDBClient.onSubscriptionApplied`](#event-spacetimedbclientonsubscriptionapplied)
-    - [Method `SpacetimeDBClient.OneOffQuery`](#method-spacetimedbclientoneoffquery)
+    - [Method \[`SpacetimeDBClient.OneOffQuery`\]](#method-spacetimedbclientoneoffquery)
   - [View rows of subscribed tables](#view-rows-of-subscribed-tables)
     - [Class `{TABLE}`](#class-table)
       - [Static Method `{TABLE}.Iter`](#static-method-tableiter)
@@ -45,7 +45,6 @@ The SpacetimeDB client C# for Rust contains all the tools you need to build nati
       - [Static Property `AuthToken.Token`](#static-property-authtokentoken)
       - [Static Method `AuthToken.SaveToken`](#static-method-authtokensavetoken)
     - [Class `Identity`](#class-identity)
-    - [Class `Identity`](#class-identity-1)
   - [Customizing logging](#customizing-logging)
     - [Interface `ISpacetimeDBLogger`](#interface-ispacetimedblogger)
     - [Class `ConsoleLogger`](#class-consolelogger)
@@ -104,7 +103,7 @@ The Unity SpacetimeDB SDK relies on there being a `NetworkManager` somewhere in 
 
 ![Unity-AddNetworkManager](/images/unity-tutorial/Unity-AddNetworkManager.JPG)
 
-This component will handle updating and closing the [`SpacetimeDBClient.instance`](#property-spacetimedbclientinstance) for you, but will not call [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect), you still need to handle that yourself. See the [Unity Quickstart](./UnityQuickStart) and [Unity Tutorial](./UnityTutorialPart1) for more information.
+This component will handle updating and closing the [`SpacetimeDBClient.instance`](#property-spacetimedbclientinstance) for you, but will not call [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect), you still need to handle that yourself. See the [Unity Tutorial](/docs/unity-tutorial) for more information.
 
 ### Method `SpacetimeDBClient.Connect`
 
@@ -172,7 +171,7 @@ class SpacetimeDBClient {
 }
 ```
 
-Called when we receive an auth token, [`Identity`](#class-identity) and [`Address`](#class-address) from the server. The [`Identity`](#class-identity) serves as a unique public identifier for a user of the database. It can be for several purposes, such as filtering rows in a database for the rows created by a particular user. The auth token is a private access token that allows us to assume an identity. The [`Address`](#class-address) is opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
+Called when we receive an auth token, [`Identity`](#class-identity) and `Address` from the server. The [`Identity`](#class-identity) serves as a unique public identifier for a user of the database. It can be for several purposes, such as filtering rows in a database for the rows created by a particular user. The auth token is a private access token that allows us to assume an identity. The `Address` is opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
 
 To store the auth token to the filesystem, use the static method [`AuthToken.SaveToken`](#static-method-authtokensavetoken). You may also want to store the returned [`Identity`](#class-identity) in a local variable.
 
