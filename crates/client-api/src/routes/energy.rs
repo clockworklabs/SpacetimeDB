@@ -131,7 +131,7 @@ where
 {
     use axum::routing::get;
     axum::Router::new().route(
-        "/:identity",
+        "/{identity}",
         get(get_energy_balance::<S>)
             .put(set_energy_balance::<S>)
             .post(add_energy::<S>),
