@@ -46,7 +46,7 @@ pub async fn spacetime_dns(
 /// identity will be looked up in the config and it will be used instead. Returns Ok() if the
 /// domain is successfully registered, returns Err otherwise.
 pub async fn spacetime_register_tld(
-    config: &mut Config,
+    config: &Config,
     tld: &str,
     server: Option<&str>,
 ) -> Result<RegisterTldResult, anyhow::Error> {
