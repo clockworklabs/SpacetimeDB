@@ -15,12 +15,14 @@
 
 OPAQUE_TYPEDEF(Status, uint16_t);
 OPAQUE_TYPEDEF(TableId, uint32_t);
+OPAQUE_TYPEDEF(IndexId, uint32_t);
 OPAQUE_TYPEDEF(ColId, uint16_t);
 OPAQUE_TYPEDEF(IndexType, uint8_t);
 OPAQUE_TYPEDEF(LogLevel, uint8_t);
 OPAQUE_TYPEDEF(BytesSink, uint32_t);
 OPAQUE_TYPEDEF(BytesSource, uint32_t);
 OPAQUE_TYPEDEF(RowIter, uint32_t);
+OPAQUE_TYPEDEF(ConsoleTimerId, uint32_t);
 
 #define CSTR(s) (uint8_t*)s, sizeof(s) - 1
 
@@ -35,50 +37,55 @@ OPAQUE_TYPEDEF(RowIter, uint32_t);
 #define IMPORT(ret, name, params, args) STDB_EXTERN(name) ret name params;
 #endif
 
-IMPORT(void, _console_log,
+IMPORT(Status, table_id_from_name,
+       (const uint8_t* name, uint32_t name_len, TableId* id),
+       (name, name_len, id));
+IMPORT(Status, index_id_from_name,
+       (const uint8_t* name, uint32_t name_len, IndexId* id),
+       (name, name_len, id));
+IMPORT(Status, datastore_table_row_count,
+       (TableId table_id, uint64_t* count),
+       (table_id, count));
+IMPORT(Status, datastore_table_scan_bsatn,
+       (TableId table_id, RowIter* iter),
+       (table_id, iter));
+IMPORT(Status, datastore_btree_scan_bsatn,
+       (IndexId index_id, const uint8_t* prefix, uint32_t prefix_len, ColId prefix_elems,
+        const uint8_t* rstart, uint32_t rstart_len, const uint8_t* rend, uint32_t rend_len, RowIter* iter),
+       (index_id, prefix, prefix_len, prefix_elems, rstart, rstart_len, rend, rend_len, iter));
+IMPORT(int16_t, row_iter_bsatn_advance,
+       (RowIter iter, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
+       (iter, buffer_ptr, buffer_len_ptr));
+IMPORT(uint16_t, row_iter_bsatn_close, (RowIter iter), (iter));
+IMPORT(Status, datastore_insert_bsatn, (TableId table_id, const uint8_t* row_ptr, size_t* row_len_ptr),
+       (table_id, row_ptr, row_len_ptr));
+IMPORT(Status, datastore_delete_by_btree_scan_bsatn,
+       (IndexId index_id, const uint8_t* prefix, uint32_t prefix_len, ColId prefix_elems,
+        const uint8_t* rstart, uint32_t rstart_len, const uint8_t* rend, uint32_t rend_len, uint32_t* num_deleted),
+       (index_id, prefix, prefix_len, prefix_elems, rstart, rstart_len, rend, rend_len, num_deleted));
+IMPORT(Status, datastore_delete_all_by_eq_bsatn,
+       (TableId table_id, const uint8_t* rel_ptr, uint32_t rel_len,
+        uint32_t* num_deleted),
+       (table_id, rel_ptr, rel_len, num_deleted));
+IMPORT(int16_t, bytes_source_read, (BytesSource source, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
+       (source, buffer_ptr, buffer_len_ptr));
+IMPORT(uint16_t, bytes_sink_write, (BytesSink sink, const uint8_t* buffer_ptr, size_t* buffer_len_ptr),
+       (sink, buffer_ptr, buffer_len_ptr));
+IMPORT(void, console_log,
        (LogLevel level, const uint8_t* target_ptr, uint32_t target_len,
         const uint8_t* filename_ptr, uint32_t filename_len, uint32_t line_number,
         const uint8_t* message_ptr, uint32_t message_len),
        (level, target_ptr, target_len, filename_ptr, filename_len, line_number,
         message_ptr, message_len));
-
-IMPORT(Status, _table_id_from_name,
-       (const uint8_t* name, uint32_t name_len, TableId* id),
-       (name, name_len, id));
-IMPORT(Status, _datastore_table_row_count,
-       (TableId table_id, uint64_t* count),
-       (table_id, count));
-IMPORT(Status, _datastore_table_scan_bsatn, (TableId table_id, RowIter* iter),
-       (table_id, iter));
-IMPORT(Status, _iter_by_col_eq,
-       (TableId table_id, ColId col_id, const uint8_t* value,
-        uint32_t value_len, RowIter* iter),
-       (table_id, col_id, value, value_len, iter));
-IMPORT(Status, _datastore_insert_bsatn, (TableId table_id, const uint8_t* row_ptr, size_t* row_len_ptr),
-       (table_id, row_ptr, row_len_ptr));
-IMPORT(Status, _delete_by_col_eq,
-       (TableId table_id, ColId col_id, const uint8_t* value,
-        uint32_t value_len, uint32_t* num_deleted),
-       (table_id, col_id, value, value_len, num_deleted));
-IMPORT(Status, _iter_start_filtered,
-       (TableId table_id, const uint8_t* filter, uint32_t filter_len,
-        RowIter* iter),
-       (table_id, filter, filter_len, iter));
-IMPORT(int16_t, _row_iter_bsatn_advance,
-       (RowIter iter, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
-       (iter, buffer_ptr, buffer_len_ptr));
-IMPORT(uint16_t, _row_iter_bsatn_close, (RowIter iter), (iter));
-IMPORT(Status, _datastore_delete_all_by_eq_bsatn,
-       (TableId table_id, const uint8_t* rel_ptr, uint32_t rel_len,
-        uint32_t* num_deleted),
-       (table_id, rel_ptr, rel_len, num_deleted));
-IMPORT(void, _volatile_nonatomic_schedule_immediate,
+IMPORT(ConsoleTimerId, console_timer_start,
+       (const uint8_t* name, size_t name_len),
+       (name, name_len));
+IMPORT(Status, console_timer_end,
+       (ConsoleTimerId stopwatch_id),
+       (stopwatch_id));
+IMPORT(void, volatile_nonatomic_schedule_immediate,
        (const uint8_t* name, size_t name_len, const uint8_t* args, size_t args_len),
        (name, name_len, args, args_len));
-IMPORT(int16_t, _bytes_source_read, (BytesSource source, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
-       (source, buffer_ptr, buffer_len_ptr));
-IMPORT(uint16_t, _bytes_sink_write, (BytesSink sink, const uint8_t* buffer_ptr, size_t* buffer_len_ptr),
-       (sink, buffer_ptr, buffer_len_ptr));
 
 #ifndef EXPERIMENTAL_WASM_AOT
 static MonoClass* ffi_class;
@@ -229,7 +236,7 @@ int32_t WASI_NAME(fd_write)(__wasi_fd_t fd, const __wasi_ciovec_t* iovs,
     // Note: this will produce ugly broken output, but there's not much we can
     // do about it until we have proper line-buffered WASI writer in the core.
     // It's better than nothing though.
-    _console_log((LogLevel){fd == STDERR_FILENO ? /*WARN*/ 1 : /*INFO*/
+    console_log((LogLevel){fd == STDERR_FILENO ? /*WARN*/ 1 : /*INFO*/
                                 2},
                  CSTR("wasi"), CSTR(__FILE__), __LINE__, iovs[i].buf,
                  iovs[i].buf_len);

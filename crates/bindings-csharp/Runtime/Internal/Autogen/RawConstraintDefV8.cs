@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Internal
@@ -34,10 +33,11 @@ namespace SpacetimeDB.Internal
 			this.Columns = Columns;
 		}
 
-		public RawConstraintDefV8() : this(
-			"",
-			default!,
-			new()
-		) { }
+		public RawConstraintDefV8()
+		{
+			this.ConstraintName = "";
+			this.Columns = new();
+		}
+
 	}
 }

@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Internal
@@ -50,14 +49,10 @@ namespace SpacetimeDB.Internal
 			this.Allocated = Allocated;
 		}
 
-		public RawSequenceDefV8() : this(
-			"",
-			default!,
-			default!,
-			default!,
-			default!,
-			default!,
-			default!
-		) { }
+		public RawSequenceDefV8()
+		{
+			this.SequenceName = "";
+		}
+
 	}
 }

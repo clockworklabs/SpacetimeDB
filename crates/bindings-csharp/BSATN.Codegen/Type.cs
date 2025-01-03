@@ -8,11 +8,30 @@ using static Utils;
 
 public record MemberDeclaration(string Name, string Type, string TypeInfo)
 {
-    public MemberDeclaration(string name, ITypeSymbol type)
-        : this(name, SymbolToName(type), GetTypeInfo(type)) { }
+    public MemberDeclaration(ISymbol member, ITypeSymbol type, DiagReporter diag)
+        : this(member.Name, SymbolToName(type), "")
+    {
+        try
+        {
+            TypeInfo = GetTypeInfo(type);
+        }
+        catch (UnresolvedTypeException)
+        {
+            // If it's an unresolved type, this error will have been already highlighted by .NET itself, no need to add noise.
+            // Just add some dummy type to avoid further errors.
+            // Note that we just use `object` here because emitting the unresolved type's name again would produce more of said noise.
+            TypeInfo = "SpacetimeDB.BSATN.Unsupported<object>";
+        }
+        catch (Exception e)
+        {
+            diag.Report(ErrorDescriptor.UnsupportedType, (member, type, e));
+            // dummy BSATN implementation to produce fewer noisy errors
+            TypeInfo = $"SpacetimeDB.BSATN.Unsupported<{Type}>";
+        }
+    }
 
-    public MemberDeclaration(IFieldSymbol field)
-        : this(field.Name, field.Type) { }
+    public MemberDeclaration(IFieldSymbol field, DiagReporter diag)
+        : this(field, field.Type, diag) { }
 
     public static string GenerateBsatnFields(
         Accessibility visibility,
@@ -48,9 +67,9 @@ public abstract record BaseTypeDeclaration<M>
     public readonly TypeKind Kind;
     public EquatableArray<M> Members { get; init; }
 
-    protected abstract M ConvertMember(IFieldSymbol field);
+    protected abstract M ConvertMember(IFieldSymbol field, DiagReporter diag);
 
-    public BaseTypeDeclaration(GeneratorAttributeSyntaxContext context)
+    public BaseTypeDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
         var typeSyntax = (TypeDeclarationSyntax)context.TargetNode;
         var type = (INamedTypeSymbol)context.TargetSymbol;
@@ -79,8 +98,7 @@ public abstract record BaseTypeDeclaration<M>
         var fields = typeSyntax
             .Members.OfType<FieldDeclarationSyntax>()
             .SelectMany(f => f.Declaration.Variables)
-            .SelectMany(v => type.GetMembers(v.Identifier.Text))
-            .OfType<IFieldSymbol>()
+            .Select(v => type.GetMembers(v.Identifier.Text).OfType<IFieldSymbol>().Single())
             .Where(f => !f.IsStatic);
 
         // Check if type implements generic `SpacetimeDB.TaggedEnum<Variants>` and, if so, extract the `Variants` type.
@@ -89,16 +107,16 @@ public abstract record BaseTypeDeclaration<M>
             Kind = TypeKind.Sum;
 
             if (
-                type.BaseType.TypeArguments[0]
+                type.BaseType.TypeArguments.FirstOrDefault()
                 is not INamedTypeSymbol { IsTupleType: true, TupleElements: var taggedEnumVariants }
             )
             {
-                throw new InvalidOperationException("TaggedEnum must have a tuple type argument.");
+                diag.Report(ErrorDescriptor.TaggedEnumInlineTuple, type.BaseType);
             }
 
-            if (fields.Any())
+            if (fields.FirstOrDefault() is { } field)
             {
-                throw new InvalidOperationException("Tagged enums cannot have fields.");
+                diag.Report(ErrorDescriptor.TaggedEnumField, field);
             }
 
             fields = taggedEnumVariants;
@@ -108,17 +126,15 @@ public abstract record BaseTypeDeclaration<M>
             Kind = TypeKind.Product;
         }
 
-        if (typeSyntax.TypeParameterList is not null)
+        if (typeSyntax.TypeParameterList is { } typeParams)
         {
-            throw new InvalidOperationException(
-                "Types with type parameters are not yet supported."
-            );
+            diag.Report(ErrorDescriptor.TypeParams, typeParams);
         }
 
         Scope = new(typeSyntax);
         ShortName = type.Name;
         FullName = SymbolToName(type);
-        Members = new(fields.Select(ConvertMember).ToImmutableArray());
+        Members = new(fields.Select(field => ConvertMember(field, diag)).ToImmutableArray());
     }
 
     public virtual Scope.Extensions ToExtensions()
@@ -208,27 +224,30 @@ public abstract record BaseTypeDeclaration<M>
                 """
             );
 
-            read = $"SpacetimeDB.BSATN.IStructuralReadWrite.Read<{ShortName}>(reader)";
+            read = $"SpacetimeDB.BSATN.IStructuralReadWrite.Read<{FullName}>(reader)";
 
             write = "value.WriteFields(writer);";
         }
 
         extensions.Contents.Append(
             $$"""
-            public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<{{ShortName}}>
+            public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<{{FullName}}>
             {
                 {{MemberDeclaration.GenerateBsatnFields(Accessibility.Internal, bsatnDecls)}}
 
-                public {{ShortName}} Read(System.IO.BinaryReader reader) => {{read}};
+                public {{FullName}} Read(System.IO.BinaryReader reader) => {{read}};
 
-                public void Write(System.IO.BinaryWriter writer, {{ShortName}} value) {
+                public void Write(System.IO.BinaryWriter writer, {{FullName}} value) {
                     {{write}}
                 }
 
-                public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                    registrar.RegisterType<{{ShortName}}>(_ => new SpacetimeDB.BSATN.AlgebraicType.{{Kind}}(new SpacetimeDB.BSATN.AggregateElement[] {
+                public SpacetimeDB.BSATN.AlgebraicType.Ref GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                    registrar.RegisterType<{{FullName}}>(_ => new SpacetimeDB.BSATN.AlgebraicType.{{Kind}}(new SpacetimeDB.BSATN.AggregateElement[] {
                         {{MemberDeclaration.GenerateDefs(Members)}}
                     }));
+
+                SpacetimeDB.BSATN.AlgebraicType SpacetimeDB.BSATN.IReadWrite<{{FullName}}>.GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                    GetAlgebraicType(registrar);
             }
             """
         );
@@ -239,10 +258,11 @@ public abstract record BaseTypeDeclaration<M>
 
 record TypeDeclaration : BaseTypeDeclaration<MemberDeclaration>
 {
-    public TypeDeclaration(GeneratorAttributeSyntaxContext context)
-        : base(context) { }
+    public TypeDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
+        : base(context, diag) { }
 
-    protected override MemberDeclaration ConvertMember(IFieldSymbol field) => new(field);
+    protected override MemberDeclaration ConvertMember(IFieldSymbol field, DiagReporter diag) =>
+        new(field, diag);
 }
 
 [Generator]
@@ -253,34 +273,47 @@ public class Type : IIncrementalGenerator
         context
             .SyntaxProvider.ForAttributeWithMetadataName(
                 "SpacetimeDB.TypeAttribute",
-                predicate: (node, ct) =>
-                {
-                    // structs and classes should be always processed
-                    if (node is not EnumDeclarationSyntax enumType)
-                        return true;
-
-                    // Ensure variants are contiguous as SATS enums don't support explicit tags.
-                    if (enumType.Members.Any(m => m.EqualsValue is not null))
+                // for enums, we just do diagnostics, nothing else
+                predicate: (node, ct) => node is EnumDeclarationSyntax,
+                transform: (context, ct) =>
+                    context.ParseWithDiags(diag =>
                     {
-                        throw new InvalidOperationException(
-                            "[SpacetimeDB.Type] enums cannot have explicit values: "
-                                + enumType.Identifier
-                        );
-                    }
+                        var enumType = (EnumDeclarationSyntax)context.TargetNode;
 
-                    // Ensure all enums fit in `byte` as that's what SATS uses for tags.
-                    if (enumType.Members.Count > 256)
-                    {
-                        throw new InvalidOperationException(
-                            "[SpacetimeDB.Type] enums cannot have more than 256 variants."
-                        );
-                    }
+                        // Ensure variants are contiguous as SATS enums don't support explicit tags.
+                        foreach (var variant in enumType.Members)
+                        {
+                            if (variant.EqualsValue is { } equalsValue)
+                            {
+                                diag.Report(
+                                    ErrorDescriptor.EnumWithExplicitValues,
+                                    (equalsValue, variant, enumType)
+                                );
+                            }
+                        }
 
-                    // Check that enums are compatible with SATS but otherwise skip from extra processing.
-                    return false;
-                },
-                transform: (context, ct) => new TypeDeclaration(context)
+                        // Ensure all enums fit in `byte` as that's what SATS uses for tags.
+                        if (enumType.Members.Count > 256)
+                        {
+                            diag.Report(ErrorDescriptor.EnumTooManyVariants, enumType);
+                        }
+
+                        // Unused empty type.
+                        return default(ValueTuple);
+                    })
             )
+            .ReportDiagnostics(context)
+            .WithTrackingName("SpacetimeDB.Type.ParseEnum");
+
+        context
+            .SyntaxProvider.ForAttributeWithMetadataName(
+                "SpacetimeDB.TypeAttribute",
+                // parse anything except enums here (they're handled above)
+                predicate: (node, ct) => node is not EnumDeclarationSyntax,
+                transform: (context, ct) =>
+                    context.ParseWithDiags(diag => new TypeDeclaration(context, diag))
+            )
+            .ReportDiagnostics(context)
             .WithTrackingName("SpacetimeDB.Type.Parse")
             .Select((type, ct) => type.ToExtensions())
             .WithTrackingName("SpacetimeDB.Type.GenerateExtensions")

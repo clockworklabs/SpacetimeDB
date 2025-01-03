@@ -45,9 +45,9 @@ class DockerRestartModule(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
     MODULE_CODE = """
-use spacetimedb::println;
+use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = people, index(name = name_idx, btree(columns = [name])))]
+#[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -56,16 +56,16 @@ pub struct Person {
 }
 
 #[spacetimedb::reducer]
-pub fn add(name: String) {
-Person::insert(Person { id: 0, name }).unwrap();
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { id: 0, name });
 }
 
 #[spacetimedb::reducer]
-pub fn say_hello() {
-    for person in Person::iter() {
-        println!("Hello, {}!", person.name);
+pub fn say_hello(ctx: &ReducerContext) {
+    for person in ctx.db.person().iter() {
+        log::info!("Hello, {}!", person.name);
     }
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """
 
@@ -91,9 +91,9 @@ class DockerRestartSql(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
     MODULE_CODE = """
-use spacetimedb::println;
+use spacetimedb::{log, ReducerContext, Table};
 
-#[spacetimedb::table(name = people, index(name = name_idx, btree(columns = [name])))]
+#[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -102,16 +102,16 @@ pub struct Person {
 }
 
 #[spacetimedb::reducer]
-pub fn add(name: String) {
-Person::insert(Person { id: 0, name }).unwrap();
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { id: 0, name });
 }
 
 #[spacetimedb::reducer]
-pub fn say_hello() {
-    for person in Person::iter() {
-        println!("Hello, {}!", person.name);
+pub fn say_hello(ctx: &ReducerContext) {
+    for person in ctx.db.person().iter() {
+        log::info!("Hello, {}!", person.name);
     }
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """
 
@@ -130,44 +130,44 @@ pub fn say_hello() {
 
         restart_docker()
 
-        sql_out = self.spacetime("sql", self.address, "SELECT name FROM people WHERE id = 3")
+        sql_out = self.spacetime("sql", self.database_identity, "SELECT name FROM person WHERE id = 3")
         self.assertMultiLineEqual(sql_out, """ name       \n------------\n "Samantha" \n""")
 
 @requires_docker
 class DockerRestartAutoDisconnect(Smoketest):
     MODULE_CODE = """
 use log::info;
-use spacetimedb::{Address, Identity, ReducerContext, TableType};
+use spacetimedb::{Address, Identity, ReducerContext, Table};
 
-#[spacetimedb::table(name = connected_clients)]
-pub struct ConnectedClients {
+#[spacetimedb::table(name = connected_client)]
+pub struct ConnectedClient {
     identity: Identity,
     address: Address,
 }
 
 #[spacetimedb::reducer(client_connected)]
-fn on_connect(ctx: ReducerContext) {
-    ConnectedClients::insert(ConnectedClients {
+fn on_connect(ctx: &ReducerContext) {
+    ctx.db.connected_client().insert(ConnectedClient {
         identity: ctx.sender,
         address: ctx.address.expect("sender address unset"),
     });
 }
 
 #[spacetimedb::reducer(client_disconnected)]
-fn on_disconnect(ctx: ReducerContext) {
+fn on_disconnect(ctx: &ReducerContext) {
     let sender_identity = &ctx.sender;
     let sender_address = ctx.address.as_ref().expect("sender address unset");
-    let match_client = |row: &ConnectedClients| {
+    let match_client = |row: &ConnectedClient| {
         &row.identity == sender_identity && &row.address == sender_address
     };
-    if let Some(client) = ConnectedClients::iter().find(match_client) {
-        ConnectedClients::delete(&client);
+    if let Some(client) = ctx.db.connected_client().iter().find(match_client) {
+        ctx.db.connected_client().delete(client);
     }
 }
 
 #[spacetimedb::reducer]
-fn print_num_connected() {
-    let n = ConnectedClients::iter().count();
+fn print_num_connected(ctx: &ReducerContext) {
+    let n = ctx.db.connected_client().count();
     info!("CONNECTED CLIENTS: {n}")
 }
 """
@@ -176,8 +176,8 @@ fn print_num_connected() {
         """Tests if clients are automatically disconnected after a restart"""
 
         # Start two subscribers
-        self.subscribe("SELECT * FROM connected_clients", n=2)
-        self.subscribe("SELECT * FROM connected_clients", n=2)
+        self.subscribe("SELECT * FROM connected_client", n=2)
+        self.subscribe("SELECT * FROM connected_client", n=2)
 
         # Assert that we have two clients + the reducer call
         self.call("print_num_connected")

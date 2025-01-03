@@ -4,16 +4,19 @@ use async_trait::async_trait;
 use axum::response::ErrorResponse;
 use http::StatusCode;
 
-use spacetimedb::address::Address;
-use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{HostController, UpdateDatabaseResult};
-use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, IdentityEmail, Node};
-use spacetimedb::sendgrid_controller::SendGridController;
+use spacetimedb::execution_context::Workload;
+use spacetimedb::host::{HostController, ModuleHost, NoSuchModule, UpdateDatabaseResult};
+use spacetimedb::identity::{AuthCtx, Identity};
+use spacetimedb::json::client_api::StmtResultJson;
+use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
+use spacetimedb::sql;
+use spacetimedb::sql::execute::translate_col;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
-use spacetimedb_client_api_messages::recovery::RecoveryCode;
+use spacetimedb_lib::ProductTypeElement;
+use spacetimedb_paths::server::ModuleLogsDir;
+use tokio::sync::watch;
 
 pub mod auth;
 pub mod routes;
@@ -24,32 +27,120 @@ pub mod util;
 ///
 /// Types returned here should be considered internal state and **never** be
 /// surfaced to the API.
+#[async_trait]
 pub trait NodeDelegate: Send + Sync {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily>;
-    fn host_controller(&self) -> &HostController;
     fn client_actor_index(&self) -> &ClientActorIndex;
-    fn sendgrid_controller(&self) -> Option<&SendGridController>;
 
-    /// Return a JWT decoding key for verifying credentials.
-    fn public_key(&self) -> &DecodingKey;
-
-    /// Return the public key used to verify JWTs, as the bytes of a PEM public key file.
+    type JwtAuthProviderT: auth::JwtAuthProvider;
+    fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT;
+    /// Return the leader [`Host`] of `database_id`.
     ///
-    /// The `/identity/public-key` route calls this method to return the public key to callers.
-    fn public_key_bytes(&self) -> &[u8];
+    /// Returns `None` if the current leader is not hosted by this node.
+    /// The [`Host`] is spawned implicitly if not already running.
+    async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>>;
+    fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir;
+}
 
-    /// Return a JWT encoding key for signing credentials.
-    fn private_key(&self) -> &EncodingKey;
+/// Client view of a running module.
+pub struct Host {
+    pub replica_id: u64,
+    host_controller: HostController,
+}
+
+impl Host {
+    pub fn new(replica_id: u64, host_controller: HostController) -> Self {
+        Self {
+            replica_id,
+            host_controller,
+        }
+    }
+
+    pub async fn module(&self) -> Result<ModuleHost, NoSuchModule> {
+        self.host_controller.get_module_host(self.replica_id).await
+    }
+
+    pub async fn module_watcher(&self) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
+        self.host_controller.watch_module_host(self.replica_id).await
+    }
+
+    pub async fn exec_sql(
+        &self,
+        auth: AuthCtx,
+        database: Database,
+        body: String,
+    ) -> axum::response::Result<Vec<StmtResultJson>> {
+        let module_host = self
+            .module()
+            .await
+            .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
+
+        let json = self
+            .host_controller
+            .using_database(
+                database,
+                self.replica_id,
+                move |db| -> axum::response::Result<_, (StatusCode, String)> {
+                    tracing::info!(sql = body);
+                    let results =
+                        sql::execute::run(db, &body, auth, Some(&module_host.info().subscriptions)).map_err(|e| {
+                            log::warn!("{}", e);
+                            if let Some(auth_err) = e.get_auth_error() {
+                                (StatusCode::UNAUTHORIZED, auth_err.to_string())
+                            } else {
+                                (StatusCode::BAD_REQUEST, e.to_string())
+                            }
+                        })?;
+
+                    let json = db.with_read_only(Workload::Sql, |tx| {
+                        results
+                            .into_iter()
+                            .map(|result| {
+                                let rows = result.data;
+                                let schema = result
+                                    .head
+                                    .fields
+                                    .iter()
+                                    .map(|x| {
+                                        let ty = x.algebraic_type.clone();
+                                        let name = translate_col(tx, x.field);
+                                        ProductTypeElement::new(ty, name)
+                                    })
+                                    .collect();
+                                StmtResultJson { schema, rows }
+                            })
+                            .collect::<Vec<_>>()
+                    });
+
+                    Ok(json)
+                },
+            )
+            .await
+            .map_err(log_and_500)??;
+
+        Ok(json)
+    }
+
+    pub async fn update(
+        &self,
+        database: Database,
+        host_type: HostType,
+        program_bytes: Box<[u8]>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        self.host_controller
+            .update_module_host(database, host_type, self.replica_id, program_bytes)
+            .await
+    }
 }
 
 /// Parameters for publishing a database.
 ///
 /// See [`ControlStateDelegate::publish_database`].
 pub struct DatabaseDef {
-    /// The [`Address`] the database shall have.
+    /// The [`Identity`] the database shall have.
     ///
     /// Addresses are allocated via [`ControlStateDelegate::create_address`].
-    pub address: Address,
+    pub database_identity: Identity,
     /// The compiled program of the database module.
     pub program_bytes: Vec<u8>,
     /// The desired number of replicas the database shall have.
@@ -89,33 +180,25 @@ pub trait ControlStateReadAccess {
 
     // Databases
     fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>>;
-    fn get_database_by_address(&self, address: &Address) -> anyhow::Result<Option<Database>>;
+    fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>>;
     fn get_databases(&self) -> anyhow::Result<Vec<Database>>;
 
-    // Database instances
-    fn get_database_instance_by_id(&self, id: u64) -> anyhow::Result<Option<DatabaseInstance>>;
-    fn get_database_instances(&self) -> anyhow::Result<Vec<DatabaseInstance>>;
-    fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance>;
-
-    // Identities
-    fn get_identities_for_email(&self, email: &str) -> anyhow::Result<Vec<IdentityEmail>>;
-    fn get_emails_for_identity(&self, identity: &Identity) -> anyhow::Result<Vec<IdentityEmail>>;
-    fn get_recovery_codes(&self, email: &str) -> anyhow::Result<Vec<RecoveryCode>>;
+    // Replicas
+    fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>>;
+    fn get_replicas(&self) -> anyhow::Result<Vec<Replica>>;
+    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica>;
 
     // Energy
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
 
     // DNS
-    fn lookup_address(&self, domain: &DomainName) -> anyhow::Result<Option<Address>>;
-    fn reverse_lookup(&self, address: &Address) -> anyhow::Result<Vec<DomainName>>;
+    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Identity>>;
+    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
 }
 
 /// Write operations on the SpacetimeDB control plane.
 #[async_trait]
 pub trait ControlStateWriteAccess: Send + Sync {
-    // Databases
-    async fn create_address(&self) -> anyhow::Result<Address>;
-
     /// Publish a database acc. to [`DatabaseDef`].
     ///
     /// If the database with the given address was successfully published before,
@@ -126,16 +209,11 @@ pub trait ControlStateWriteAccess: Send + Sync {
     /// initialized.
     async fn publish_database(
         &self,
-        identity: &Identity,
+        publisher: &Identity,
         spec: DatabaseDef,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>>;
 
-    async fn delete_database(&self, identity: &Identity, address: &Address) -> anyhow::Result<()>;
-
-    // Identities
-    async fn create_identity(&self) -> anyhow::Result<Identity>;
-    async fn add_email(&self, identity: &Identity, email: &str) -> anyhow::Result<()>;
-    async fn insert_recovery_code(&self, identity: &Identity, email: &str, code: RecoveryCode) -> anyhow::Result<()>;
+    async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
 
     // Energy
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()>;
@@ -145,9 +223,9 @@ pub trait ControlStateWriteAccess: Send + Sync {
     async fn register_tld(&self, identity: &Identity, tld: Tld) -> anyhow::Result<RegisterTldResult>;
     async fn create_dns_record(
         &self,
-        identity: &Identity,
+        owner_identity: &Identity,
         domain: &DomainName,
-        address: &Address,
+        database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult>;
 }
 
@@ -167,33 +245,19 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
         (**self).get_database_by_id(id)
     }
-    fn get_database_by_address(&self, address: &Address) -> anyhow::Result<Option<Database>> {
-        (**self).get_database_by_address(address)
+    fn get_database_by_identity(&self, identity: &Identity) -> anyhow::Result<Option<Database>> {
+        (**self).get_database_by_identity(identity)
     }
     fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
         (**self).get_databases()
     }
 
-    // Database instances
-    fn get_database_instance_by_id(&self, id: u64) -> anyhow::Result<Option<DatabaseInstance>> {
-        (**self).get_database_instance_by_id(id)
+    // Replicas
+    fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>> {
+        (**self).get_replica_by_id(id)
     }
-    fn get_database_instances(&self) -> anyhow::Result<Vec<DatabaseInstance>> {
-        (**self).get_database_instances()
-    }
-    fn get_leader_database_instance_by_database(&self, database_id: u64) -> Option<DatabaseInstance> {
-        (**self).get_leader_database_instance_by_database(database_id)
-    }
-
-    // Identities
-    fn get_identities_for_email(&self, email: &str) -> anyhow::Result<Vec<IdentityEmail>> {
-        (**self).get_identities_for_email(email)
-    }
-    fn get_emails_for_identity(&self, identity: &Identity) -> anyhow::Result<Vec<IdentityEmail>> {
-        (**self).get_emails_for_identity(identity)
-    }
-    fn get_recovery_codes(&self, email: &str) -> anyhow::Result<Vec<RecoveryCode>> {
-        (**self).get_recovery_codes(email)
+    fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
+        (**self).get_replicas()
     }
 
     // Energy
@@ -202,21 +266,21 @@ impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
     }
 
     // DNS
-    fn lookup_address(&self, domain: &DomainName) -> anyhow::Result<Option<Address>> {
-        (**self).lookup_address(domain)
+    fn lookup_identity(&self, domain: &DomainName) -> anyhow::Result<Option<Identity>> {
+        (**self).lookup_identity(domain)
     }
 
-    fn reverse_lookup(&self, address: &Address) -> anyhow::Result<Vec<DomainName>> {
-        (**self).reverse_lookup(address)
+    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
+        (**self).reverse_lookup(database_identity)
+    }
+
+    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+        (**self).get_leader_replica_by_database(database_id)
     }
 }
 
 #[async_trait]
 impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
-    async fn create_address(&self) -> anyhow::Result<Address> {
-        (**self).create_address().await
-    }
-
     async fn publish_database(
         &self,
         identity: &Identity,
@@ -225,20 +289,8 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         (**self).publish_database(identity, spec).await
     }
 
-    async fn delete_database(&self, identity: &Identity, address: &Address) -> anyhow::Result<()> {
-        (**self).delete_database(identity, address).await
-    }
-
-    async fn create_identity(&self) -> anyhow::Result<Identity> {
-        (**self).create_identity().await
-    }
-
-    async fn add_email(&self, identity: &Identity, email: &str) -> anyhow::Result<()> {
-        (**self).add_email(identity, email).await
-    }
-
-    async fn insert_recovery_code(&self, identity: &Identity, email: &str, code: RecoveryCode) -> anyhow::Result<()> {
-        (**self).insert_recovery_code(identity, email, code).await
+    async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
+        (**self).delete_database(caller_identity, database_identity).await
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
@@ -256,39 +308,33 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
         &self,
         identity: &Identity,
         domain: &DomainName,
-        address: &Address,
+        database_identity: &Identity,
     ) -> anyhow::Result<InsertDomainResult> {
-        (**self).create_dns_record(identity, domain, address).await
+        (**self).create_dns_record(identity, domain, database_identity).await
     }
 }
 
+#[async_trait]
 impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
+    type JwtAuthProviderT = T::JwtAuthProviderT;
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         (**self).gather_metrics()
-    }
-
-    fn host_controller(&self) -> &HostController {
-        (**self).host_controller()
     }
 
     fn client_actor_index(&self) -> &ClientActorIndex {
         (**self).client_actor_index()
     }
 
-    fn public_key(&self) -> &DecodingKey {
-        (**self).public_key()
+    fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT {
+        (**self).jwt_auth_provider()
     }
 
-    fn public_key_bytes(&self) -> &[u8] {
-        (**self).public_key_bytes()
+    async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>> {
+        (**self).leader(database_id).await
     }
 
-    fn private_key(&self) -> &EncodingKey {
-        (**self).private_key()
-    }
-
-    fn sendgrid_controller(&self) -> Option<&SendGridController> {
-        (**self).sendgrid_controller()
+    fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
+        (**self).module_logs_dir(replica_id)
     }
 }
 

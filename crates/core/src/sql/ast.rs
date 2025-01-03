@@ -1,7 +1,11 @@
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
+use spacetimedb_expr::check::SchemaView;
+use spacetimedb_expr::statement::compile_sql_stmt;
+use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::error::RelationError;
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::{ColExpr, FieldName};
 use spacetimedb_primitives::ColId;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
@@ -469,6 +473,36 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
     }
 }
 
+pub struct SchemaViewer<'a, T> {
+    db: &'a RelationalDB,
+    tx: &'a T,
+    auth: &'a AuthCtx,
+}
+
+impl<T: TableSchemaView> SchemaView for SchemaViewer<'_, T> {
+    fn schema(&self, name: &str) -> Option<Arc<TableSchema>> {
+        let name = name.to_owned().into_boxed_str();
+        let schema = self
+            .tx
+            .find_table(self.db, Table { name })
+            .map(Some)
+            // If there was an error fetching the table schema,
+            // we swallow it and return None.
+            // It will be surfaced as a name resolution error instead.
+            .unwrap_or_else(|_| None)?;
+        if schema.table_access == StAccess::Private && self.auth.caller != self.auth.owner {
+            return None;
+        }
+        Some(schema)
+    }
+}
+
+impl<'a, T> SchemaViewer<'a, T> {
+    pub fn new(db: &'a RelationalDB, tx: &'a T, auth: &'a AuthCtx) -> Self {
+        Self { db, tx, auth }
+    }
+}
+
 pub trait TableSchemaView {
     fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Arc<TableSchema>, PlanError>;
 }
@@ -912,9 +946,14 @@ fn compile_statement<T: TableSchemaView>(db: &RelationalDB, tx: &T, statement: S
 /// Compiles a `sql` string into a `Vec<SqlAst>` using a SQL parser with [PostgreSqlDialect]
 pub(crate) fn compile_to_ast<T: TableSchemaView>(
     db: &RelationalDB,
+    auth: &AuthCtx,
     tx: &T,
     sql_text: &str,
 ) -> Result<Vec<SqlAst>, DBError> {
+    // NOTE: The following ensures compliance with the 1.0 sql api.
+    // Come 1.0, it will have replaced the current compilation stack.
+    compile_sql_stmt(sql_text, &SchemaViewer::new(db, tx, auth))?;
+
     let dialect = PostgreSqlDialect {};
     let ast = Parser::parse_sql(&dialect, sql_text).map_err(|error| DBError::SqlParser {
         sql: sql_text.to_string(),

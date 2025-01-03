@@ -12,6 +12,8 @@ use crate::{
     Commit, Encode, Options,
 };
 
+pub use crate::segment::Committed;
+
 /// A commitlog generic over the storage backend as well as the type of records
 /// its [`Commit`]s contain.
 #[derive(Debug)]
@@ -53,11 +55,11 @@ impl<R: Repo, T> Generic<R, T> {
             debug!("resuming last segment: {last}");
             repo::resume_segment_writer(&repo, opts, last)?.or_else(|meta| {
                 tail.push(meta.tx_range.start);
-                repo::create_segment_writer(&repo, opts, meta.tx_range.end)
+                repo::create_segment_writer(&repo, opts, meta.max_epoch, meta.tx_range.end)
             })?
         } else {
             debug!("starting fresh log");
-            repo::create_segment_writer(&repo, opts, 0)?
+            repo::create_segment_writer(&repo, opts, Commit::DEFAULT_EPOCH, 0)?
         };
 
         Ok(Self {
@@ -68,6 +70,43 @@ impl<R: Repo, T> Generic<R, T> {
             _record: PhantomData,
             panicked: false,
         })
+    }
+
+    /// Get the current epoch.
+    ///
+    /// See also: [`Commit::epoch`].
+    pub fn epoch(&self) -> u64 {
+        self.head.commit.epoch
+    }
+
+    /// Update the current epoch.
+    ///
+    /// Calls [`Self::commit`] to flush all data of the previous epoch, and
+    /// returns the result.
+    ///
+    /// Does nothing if the given `epoch` is equal to the current epoch.
+    ///
+    /// # Errors
+    ///
+    /// If `epoch` is smaller than the current epoch, an error of kind
+    /// [`io::ErrorKind::InvalidInput`] is returned.
+    ///
+    /// Also see [`Self::commit`].
+    pub fn set_epoch(&mut self, epoch: u64) -> io::Result<Option<Committed>> {
+        use std::cmp::Ordering::*;
+
+        match epoch.cmp(&self.head.epoch()) {
+            Less => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "new epoch is smaller than current epoch",
+            )),
+            Equal => Ok(None),
+            Greater => {
+                let res = self.commit()?;
+                self.head.set_epoch(epoch);
+                Ok(res)
+            }
+        }
     }
 
     /// Write the currently buffered data to storage and rotate segments as
@@ -87,7 +126,7 @@ impl<R: Repo, T> Generic<R, T> {
     /// fail with [`io::ErrorKind::AlreadyExists`]. Encountering this error kind
     /// this means that something is seriously wrong underlying storage, and the
     /// caller should stop writing to the log.
-    pub fn commit(&mut self) -> io::Result<usize> {
+    pub fn commit(&mut self) -> io::Result<Option<Committed>> {
         self.panicked = true;
         let writer = &mut self.head;
         let sz = writer.commit.encoded_len();
@@ -102,15 +141,13 @@ impl<R: Repo, T> Generic<R, T> {
             writer
         };
 
-        let ret = if let Err(e) = writer.commit() {
+        let ret = writer.commit().or_else(|e| {
             warn!("Commit failed: {e}");
             // Nb.: Don't risk a panic by calling `self.sync()`.
             // We already gave up on the last commit, and will retry it next time.
             self.start_new_segment()?;
             Err(e)
-        } else {
-            Ok(sz)
-        };
+        });
         self.panicked = false;
         ret
     }
@@ -169,7 +206,6 @@ impl<R: Repo, T> Generic<R, T> {
 
     pub fn commits_from(&self, offset: u64) -> Commits<R> {
         let offsets = self.segment_offsets_from(offset);
-        let next_offset = offsets.first().cloned().unwrap_or(offset);
         let segments = Segments {
             offs: offsets.into_iter(),
             repo: self.repo.clone(),
@@ -178,7 +214,7 @@ impl<R: Repo, T> Generic<R, T> {
         Commits {
             inner: None,
             segments,
-            last_commit: CommitInfo::Initial { next_offset },
+            last_commit: CommitInfo::Initial { next_offset: offset },
             last_error: None,
         }
     }
@@ -230,8 +266,11 @@ impl<R: Repo, T> Generic<R, T> {
                 } else {
                     let byte_offset = segment::Header::LEN as u64 + bytes_read;
                     debug!("truncating segment {segment} to {offset} at {byte_offset}");
-                    let file = self.repo.open_segment(segment)?;
-                    file.ftruncate(byte_offset)?;
+                    let mut file = self.repo.open_segment(segment)?;
+                    // Note: The offset index truncates equal or greater,
+                    // inclusive. We'd like to retain `offset` in the index, as
+                    // the commit is also retained in the log.
+                    file.ftruncate(offset + 1, byte_offset)?;
                     // Some filesystems require fsync after ftruncate.
                     file.fsync()?;
                     break;
@@ -255,7 +294,7 @@ impl<R: Repo, T> Generic<R, T> {
             self.head.next_tx_offset(),
             self.head.min_tx_offset()
         );
-        let new = repo::create_segment_writer(&self.repo, self.opts, self.head.next_tx_offset())?;
+        let new = repo::create_segment_writer(&self.repo, self.opts, self.head.epoch(), self.head.next_tx_offset())?;
         let old = mem::replace(&mut self.head, new);
         self.tail.push(old.min_tx_offset());
         self.head.commit = old.commit;
@@ -307,7 +346,6 @@ pub fn commits_from<R: Repo>(repo: R, max_log_format_version: u8, offset: u64) -
     if let Some(pos) = offsets.iter().rposition(|&off| off <= offset) {
         offsets = offsets.split_off(pos);
     }
-    let next_offset = offsets.first().cloned().unwrap_or(offset);
     let segments = Segments {
         offs: offsets.into_iter(),
         repo,
@@ -316,7 +354,7 @@ pub fn commits_from<R: Repo>(repo: R, max_log_format_version: u8, offset: u64) -
     Ok(Commits {
         inner: None,
         segments,
-        last_commit: CommitInfo::Initial { next_offset },
+        last_commit: CommitInfo::Initial { next_offset: offset },
         last_error: None,
     })
 }
@@ -359,11 +397,10 @@ where
     T: 'a,
 {
     commits
-        .map(|x| x.map_err(Into::into))
-        .map_ok(move |(version, commit)| commit.into_transactions(version, de))
+        .map(|x| x.map_err(D::Error::from))
+        .map_ok(move |(version, commit)| commit.into_transactions(version, offset, de))
         .flatten_ok()
-        .flatten_ok()
-        .skip_while(move |x| x.as_ref().map(|tx| tx.offset < offset).unwrap_or(false))
+        .map(|x| x.and_then(|y| y))
 }
 
 fn fold_transactions_internal<R, D>(mut commits: CommitsWithVersion<R>, de: D, from: u64) -> Result<(), D::Error>
@@ -468,6 +505,26 @@ impl CommitInfo {
             Self::LastSeen { tx_range, .. } => &tx_range.end,
         }
     }
+
+    // If initial offset falls within a commit, adjust it to the commit boundary.
+    //
+    // Returns `true` if the initial offset is past `commit`.
+    // Returns `false` if `self` isn't `Self::Initial`,
+    // or the initial offset has been adjusted to the starting offset of `commit`.
+    //
+    // For iteration, `true` means to skip the commit, `false` to yield it.
+    fn adjust_initial_offset(&mut self, commit: &StoredCommit) -> bool {
+        if let Self::Initial { next_offset } = self {
+            let last_tx_offset = commit.min_tx_offset + commit.n as u64 - 1;
+            if *next_offset > last_tx_offset {
+                return true;
+            } else {
+                *next_offset = commit.min_tx_offset;
+            }
+        }
+
+        false
+    }
 }
 
 pub struct Commits<R: Repo> {
@@ -488,45 +545,75 @@ impl<R: Repo> Commits<R> {
         CommitsWithVersion { inner: self }
     }
 
-    /// Helper to handle a successfully extracted commit in [`Self::next`].
+    /// Advance the current-segment iterator to yield the next commit.
     ///
-    /// Checks that the offset sequence is contiguous.
-    fn next_commit(&mut self, commit: StoredCommit) -> Option<Result<Commit, error::Traversal>> {
-        // Pop the last error. Either we'll return it below, or it's no longer
-        // interesting.
-        let prev_error = self.last_error.take();
+    /// Checks that the offset sequence is contiguous, and may skip commits
+    /// until the requested offset.
+    ///
+    /// Returns `None` if the segment iterator is exhausted or returns an error.
+    fn next_commit(&mut self) -> Option<Result<StoredCommit, error::Traversal>> {
+        loop {
+            match self.inner.as_mut()?.next()? {
+                Ok(commit) => {
+                    // Pop the last error. Either we'll return it below, or it's no longer
+                    // interesting.
+                    let prev_error = self.last_error.take();
 
-        // Same offset: ignore if duplicate (same crc), else report a "fork".
-        if self.last_commit.same_offset_as(&commit) {
-            if !self.last_commit.same_checksum_as(&commit) {
-                warn!(
-                    "forked: commit={:?} last-error={:?} last-crc={:?}",
-                    commit,
-                    prev_error,
-                    self.last_commit.checksum()
-                );
-                Some(Err(error::Traversal::Forked {
-                    offset: commit.min_tx_offset,
-                }))
-            } else {
-                self.next()
+                    // Skip entries before the initial commit.
+                    if self.last_commit.adjust_initial_offset(&commit) {
+                        trace!("adjust initial offset");
+                        continue;
+                    // Same offset: ignore if duplicate (same crc), else report a "fork".
+                    } else if self.last_commit.same_offset_as(&commit) {
+                        if !self.last_commit.same_checksum_as(&commit) {
+                            warn!(
+                                "forked: commit={:?} last-error={:?} last-crc={:?}",
+                                commit,
+                                prev_error,
+                                self.last_commit.checksum()
+                            );
+                            return Some(Err(error::Traversal::Forked {
+                                offset: commit.min_tx_offset,
+                            }));
+                        } else {
+                            trace!("ignore duplicate");
+                            continue;
+                        }
+                    // Not the expected offset: report out-of-order.
+                    } else if self.last_commit.expected_offset() != &commit.min_tx_offset {
+                        warn!("out-of-order: commit={:?} last-error={:?}", commit, prev_error);
+                        return Some(Err(error::Traversal::OutOfOrder {
+                            expected_offset: *self.last_commit.expected_offset(),
+                            actual_offset: commit.min_tx_offset,
+                            prev_error: prev_error.map(Box::new),
+                        }));
+                    // Seems legit, record info.
+                    } else {
+                        self.last_commit = CommitInfo::LastSeen {
+                            tx_range: commit.tx_range(),
+                            checksum: commit.checksum,
+                        };
+
+                        return Some(Ok(commit));
+                    }
+                }
+
+                Err(e) => {
+                    warn!("error reading next commit: {e}");
+                    // Stop traversing this segment here.
+                    //
+                    // If this is just a partial write at the end of the segment,
+                    // we may be able to obtain a commit with right offset from
+                    // the next segment.
+                    //
+                    // If we don't, the error here is likely more helpful, but
+                    // would be clobbered by `OutOfOrder`. Therefore we store it
+                    // here.
+                    self.set_last_error(e);
+
+                    return None;
+                }
             }
-        // Not the expected offset: report out-of-order.
-        } else if self.last_commit.expected_offset() != &commit.min_tx_offset {
-            warn!("out-of-order: commit={:?} last-error={:?}", commit, prev_error);
-            Some(Err(error::Traversal::OutOfOrder {
-                expected_offset: *self.last_commit.expected_offset(),
-                actual_offset: commit.min_tx_offset,
-                prev_error: prev_error.map(Box::new),
-            }))
-        // Seems legit, record info.
-        } else {
-            self.last_commit = CommitInfo::LastSeen {
-                tx_range: commit.tx_range(),
-                checksum: commit.checksum,
-            };
-
-            Some(Ok(Commit::from(commit)))
         }
     }
 
@@ -547,31 +634,33 @@ impl<R: Repo> Commits<R> {
         };
         self.last_error = Some(last_error);
     }
+
+    /// If we're still looking for the initial commit, try to use the offset
+    /// index to advance the segment reader.
+    fn try_seek_to_initial_offset(&self, segment: &mut segment::Reader<R::Segment>) {
+        if let CommitInfo::Initial { next_offset } = &self.last_commit {
+            let _ = self
+                .segments
+                .repo
+                .get_offset_index(segment.min_tx_offset)
+                .map_err(Into::into)
+                .and_then(|index_file| segment.seek_to_offset(&index_file, *next_offset))
+                .inspect_err(|e| {
+                    warn!(
+                        "commitlog offset index is not used at segment {}: {}",
+                        segment.min_tx_offset, e
+                    );
+                });
+        }
+    }
 }
 
 impl<R: Repo> Iterator for Commits<R> {
-    type Item = Result<Commit, error::Traversal>;
+    type Item = Result<StoredCommit, error::Traversal>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(commits) = self.inner.as_mut() {
-            if let Some(commit) = commits.next() {
-                match commit {
-                    Ok(commit) => return self.next_commit(commit),
-                    Err(e) => {
-                        warn!("error reading next commit: {e}");
-                        // Fall through to peek at next segment.
-                        //
-                        // If this is just a partial write at the end of a
-                        // segment, we may be able to obtain a commit with the
-                        // right offset from the next segment.
-                        //
-                        // However, the error here may be more helpful and would
-                        // be clobbered by `OutOfOrder`, and so we store it
-                        // until we recurse below.
-                        self.set_last_error(e);
-                    }
-                }
-            }
+        if let Some(item) = self.next_commit() {
+            return Some(item);
         }
 
         match self.segments.next() {
@@ -579,7 +668,8 @@ impl<R: Repo> Iterator for Commits<R> {
             None => self.last_error.take().map(Err),
             Some(segment) => segment.map_or_else(
                 |e| Some(Err(e.into())),
-                |segment| {
+                |mut segment| {
+                    self.try_seek_to_initial_offset(&mut segment);
                     self.inner = Some(segment.commits());
                     self.next()
                 },
@@ -604,7 +694,7 @@ impl<R: Repo> Iterator for CommitsWithVersion<R> {
                     .current_segment_header()
                     .map(|hdr| hdr.log_format_version)
                     .expect("segment header none even though segment yielded a commit");
-                Some(Ok((version, commit)))
+                Some(Ok((version, commit.into())))
             }
             Err(e) => Some(Err(e)),
         }
@@ -614,6 +704,8 @@ impl<R: Repo> Iterator for CommitsWithVersion<R> {
 #[cfg(test)]
 mod tests {
     use std::{cell::Cell, iter::repeat};
+
+    use pretty_assertions::assert_matches;
 
     use super::*;
     use crate::{
@@ -671,9 +763,7 @@ mod tests {
                 assert!(commit.min_tx_offset >= offset);
             }
         }
-        // Nb.: the head commit is always returned,
-        // because we don't know its offset upper bound
-        assert_eq!(1, log.commits_from(10).count());
+        assert_eq!(0, log.commits_from(10).count());
     }
 
     #[test]
@@ -756,7 +846,10 @@ mod tests {
 
         assert_eq!(
             [commit1, commit2].as_slice(),
-            &log.commits_from(0).collect::<Result<Vec<_>, _>>().unwrap()
+            &log.commits_from(0)
+                .map_ok(Commit::from)
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
         );
     }
 
@@ -770,6 +863,7 @@ mod tests {
             min_tx_offset: 0,
             n: 1,
             records: [43; 32].to_vec(),
+            epoch: 0,
         };
         log.commit().unwrap();
 
@@ -928,5 +1022,34 @@ mod tests {
             total_txs,
             log.transactions_from(0, &ArrayDecoder).map(Result::unwrap).count()
         );
+    }
+
+    #[test]
+    fn set_same_epoch_does_nothing() {
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(), <_>::default()).unwrap();
+        assert_eq!(log.epoch(), Commit::DEFAULT_EPOCH);
+        let committed = log.set_epoch(Commit::DEFAULT_EPOCH).unwrap();
+        assert_eq!(committed, None);
+    }
+
+    #[test]
+    fn set_new_epoch_commits() {
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(), <_>::default()).unwrap();
+        assert_eq!(log.epoch(), Commit::DEFAULT_EPOCH);
+        log.append(<_>::default()).unwrap();
+        let committed = log
+            .set_epoch(42)
+            .unwrap()
+            .expect("should have committed the pending transaction");
+        assert_eq!(log.epoch(), 42);
+        assert_eq!(committed.tx_range.start, 0);
+    }
+
+    #[test]
+    fn set_lower_epoch_returns_error() {
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(), <_>::default()).unwrap();
+        log.set_epoch(42).unwrap();
+        assert_eq!(log.epoch(), 42);
+        assert_matches!(log.set_epoch(7), Err(e) if e.kind() == io::ErrorKind::InvalidInput)
     }
 }

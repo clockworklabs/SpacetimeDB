@@ -34,6 +34,8 @@ pub enum SqlUnsupported {
     BinOp(BinaryOperator),
     #[error("Unsupported projection: {0}")]
     Projection(SelectItem),
+    #[error("Unsupported projection expression: {0}")]
+    ProjectionExpr(Expr),
     #[error("Unsupported FROM expression: {0}")]
     From(TableFactor),
     #[error("Unsupported set operation: {0}")]
@@ -60,6 +62,10 @@ pub enum SqlUnsupported {
     MultiStatement,
     #[error("Multi-table DELETE is not supported")]
     MultiTableDelete,
+    #[error("Empty SQL query")]
+    Empty,
+    #[error("Names must be qualified when using joins")]
+    UnqualifiedNames,
 }
 
 impl SqlUnsupported {

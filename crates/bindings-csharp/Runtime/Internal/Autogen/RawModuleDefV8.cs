@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Internal
@@ -38,11 +37,13 @@ namespace SpacetimeDB.Internal
 			this.MiscExports = MiscExports;
 		}
 
-		public RawModuleDefV8() : this(
-			new(),
-			new(),
-			new(),
-			new()
-		) { }
+		public RawModuleDefV8()
+		{
+			this.Typespace = new();
+			this.Tables = new();
+			this.Reducers = new();
+			this.MiscExports = new();
+		}
+
 	}
 }

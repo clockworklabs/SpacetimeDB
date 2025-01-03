@@ -15,30 +15,40 @@
 //! After validation, a `ModuleDef` can be converted to the `*Schema` types in `crate::schema` for use in the database.
 //! (Eventually, we may unify these types...)
 
+use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Write};
 use std::hash::Hash;
 
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::Identifier;
+use crate::schema::{Schema, TableSchema};
+use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
+use deserialize::ReducerArgsDeserializeSeed;
 use hashbrown::Equivalent;
+use indexmap::IndexMap;
 use itertools::Itertools;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v9::{
-    Lifecycle, RawIdentifier, RawIndexAlgorithm, RawIndexDefV9, RawModuleDefV9, RawReducerDefV9, RawScheduleDefV9,
-    RawScopedTypeNameV9, RawSequenceDefV9, RawTableDefV9, RawTypeDefV9, RawUniqueConstraintDefV9, TableAccess,
-    TableType,
+    Lifecycle, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm, RawIndexDefV9,
+    RawModuleDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9, RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9,
+    RawSql, RawTableDefV9, RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
-use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
+use validate::v9::generate_index_name;
 
+pub mod deserialize;
 pub mod validate;
 
 /// A map from `Identifier`s to values of type `T`.
 pub type IdentifierMap<T> = HashMap<Identifier, T>;
+
+/// A map from `Box<str>`s to values of type `T`.
+pub type StrMap<T> = HashMap<Box<str>, T>;
 
 // We may eventually want to reorganize this module to look more
 // like the system tables, with numeric IDs used for lookups
@@ -64,15 +74,22 @@ pub type IdentifierMap<T> = HashMap<Identifier, T>;
 /// let raw_module_def = read_raw_module_def_from_file();
 /// let module_def = ModuleDef::try_from(raw_module_def).expect("valid module def");
 ///
-/// let table_name = Identifier::new("my_table".into()).expect("valid identifier");
-/// let index_name = Identifier::new("my_index".into()).expect("valid identifier");
+/// let table_name = Identifier::new("my_table".into()).expect("valid table name");
+/// let index_name = "my_table_my_column_idx_btree";
 /// let scoped_type_name = ScopedTypeName::try_new([], "MyType").expect("valid scoped type name");
 ///
 /// let table: Option<&TableDef> = module_def.lookup(&table_name);
-/// let index: Option<&IndexDef> = module_def.lookup(&index_name);
+/// let index: Option<&IndexDef> = module_def.lookup(index_name);
 /// let type_def: Option<&TypeDef> = module_def.lookup(&scoped_type_name);
 /// // etc.
 /// ```
+///
+/// Author's apology:
+/// If you find yourself asking:
+/// "Why are we using strings to look up everything here, rather than integer indexes?"
+/// The answer is "I tried to get rid of the strings, but people thought it would be too confusing to have multiple
+/// kinds of integer index." Because the system tables and stuff would be using a different sort of integer index.
+/// shrug emoji.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ModuleDef {
@@ -80,7 +97,9 @@ pub struct ModuleDef {
     tables: IdentifierMap<TableDef>,
 
     /// The reducers of the module definition.
-    reducers: IdentifierMap<ReducerDef>,
+    /// Note: this is using IndexMap because reducer order is important
+    /// and must be preserved for future calls to `__call_reducer__`.
+    reducers: IndexMap<Identifier, ReducerDef>,
 
     /// The type definitions of the module definition.
     types: HashMap<ScopedTypeName, TypeDef>,
@@ -88,28 +107,63 @@ pub struct ModuleDef {
     /// The typespace of the module definition.
     typespace: Typespace,
 
+    /// The typespace, restructured to be useful for client codegen.
+    typespace_for_generate: TypespaceForGenerate,
+
     /// The global namespace of the module:
     /// tables, indexes, constraints, schedules, and sequences live in the global namespace.
     /// Concretely, though, they're stored in the `TableDef` data structures.
     /// This map allows looking up which `TableDef` stores the `Def` you're looking for.
-    stored_in_table_def: IdentifierMap<Identifier>,
+    stored_in_table_def: StrMap<Identifier>,
+
+    /// A map from type defs to their names.
+    refmap: HashMap<AlgebraicTypeRef, ScopedTypeName>,
+
+    /// The row-level security policies.
+    ///
+    /// **Note**: Are only validated syntax-wise.
+    row_level_security_raw: HashMap<RawSql, RawRowLevelSecurityDefV9>,
 }
 
 impl ModuleDef {
-    /// Construct a `ModuleDef` by validating a `RawModuleDef`.
-    /// This is the only way to construct a `ModuleDef`.
-    /// (The `TryFrom` impls for this type just call this method.)
-    pub fn validate(raw: RawModuleDef) -> Result<Self, ValidationErrors> {
-        match raw {
-            RawModuleDef::V8BackCompat(v8_mod) => validate::v8::validate(v8_mod),
-            RawModuleDef::V9(v9_mod) => validate::v9::validate(v9_mod),
-            _ => unimplemented!(),
-        }
-    }
-
     /// The tables of the module definition.
     pub fn tables(&self) -> impl Iterator<Item = &TableDef> {
         self.tables.values()
+    }
+
+    /// The indexes of the module definition.
+    pub fn indexes(&self) -> impl Iterator<Item = &IndexDef> {
+        self.tables().flat_map(|table| table.indexes.values())
+    }
+
+    /// The constraints of the module definition.
+    pub fn constraints(&self) -> impl Iterator<Item = &ConstraintDef> {
+        self.tables().flat_map(|table| table.constraints.values())
+    }
+
+    /// The sequences of the module definition.
+    pub fn sequences(&self) -> impl Iterator<Item = &SequenceDef> {
+        self.tables().flat_map(|table| table.sequences.values())
+    }
+
+    /// The schedules of the module definition.
+    pub fn schedules(&self) -> impl Iterator<Item = &ScheduleDef> {
+        self.tables().filter_map(|table| table.schedule.as_ref())
+    }
+
+    /// The reducers of the module definition.
+    pub fn reducers(&self) -> impl Iterator<Item = &ReducerDef> {
+        self.reducers.values()
+    }
+
+    /// The type definitions of the module definition.
+    pub fn types(&self) -> impl Iterator<Item = &TypeDef> {
+        self.types.values()
+    }
+
+    /// The row-level security policies of the module definition.
+    pub fn row_level_security(&self) -> impl Iterator<Item = &RawRowLevelSecurityDefV9> {
+        self.row_level_security_raw.values()
     }
 
     /// The `Typespace` used by the module.
@@ -128,10 +182,15 @@ impl ModuleDef {
         &self.typespace
     }
 
+    /// The typespace of the module from a different perspective, one useful for client code generation.
+    pub fn typespace_for_generate(&self) -> &TypespaceForGenerate {
+        &self.typespace_for_generate
+    }
+
     /// The `TableDef` an entity in the global namespace is stored in, if any.
     ///
     /// Generally, you will want to use the `lookup` method on the entity type instead.
-    pub fn stored_in_table_def(&self, name: &Identifier) -> Option<&TableDef> {
+    pub fn stored_in_table_def(&self, name: &str) -> Option<&TableDef> {
         self.stored_in_table_def
             .get(name)
             .and_then(|table_name| self.tables.get(table_name))
@@ -142,10 +201,55 @@ impl ModuleDef {
         T::lookup(self, key)
     }
 
+    /// Lookup a definition by its key in `self`, panicking if not found.
+    /// Only use this method if you are sure the key exists in the module definition.
+    pub fn lookup_expect<T: ModuleDefLookup>(&self, key: T::Key<'_>) -> &T {
+        T::lookup(self, key).expect("expected ModuleDef to contain key, but it does not")
+    }
+
     /// Convenience method to look up a table, possibly by a string.
     pub fn table<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&TableDef> {
         // If the string IS a valid identifier, we can just look it up.
         self.tables.get(name)
+    }
+
+    /// Convenience method to look up a reducer, possibly by a string.
+    pub fn reducer<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&ReducerDef> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.reducers.get(name)
+    }
+
+    /// Get a `DeserializeSeed` that can pull data from a `Deserializer` and format it into a `ProductType`
+    /// at the parameter type of the reducer named `name`.
+    pub fn reducer_arg_deserialize_seed<K: ?Sized + Hash + Equivalent<Identifier>>(
+        &self,
+        name: &K,
+    ) -> Option<ReducerArgsDeserializeSeed> {
+        let reducer = self.reducer(name)?;
+        Some(ReducerArgsDeserializeSeed(self.typespace.with_type(reducer)))
+    }
+
+    /// Look up the name corresponding to an `AlgebraicTypeRef`.
+    pub fn type_def_from_ref(&self, r: AlgebraicTypeRef) -> Option<(&ScopedTypeName, &TypeDef)> {
+        let name = self.refmap.get(&r)?;
+        let def = self
+            .types
+            .get(name)
+            .expect("if it was in refmap, it should be in types");
+
+        Some((name, def))
+    }
+
+    /// Convenience method to look up a table and convert it to a `TableSchema`.
+    /// All indexes, constraints, etc inside the table will have ID 0!
+    pub fn table_schema<K: ?Sized + Hash + Equivalent<Identifier>>(
+        &self,
+        name: &K,
+        table_id: TableId,
+    ) -> Option<TableSchema> {
+        // If the string IS a valid identifier, we can just look it up.
+        let table_def = self.tables.get(name)?;
+        Some(TableSchema::from_module_def(self, table_def, (), table_id))
     }
 
     /// Generate indexes for the module definition.
@@ -154,46 +258,46 @@ impl ModuleDef {
     /// This is a noop if there are already usable indexes present.
     fn generate_indexes(&mut self) {
         for table in self.tables.values_mut() {
-            for constraint in table.unique_constraints.values() {
+            for constraint in table.constraints.values() {
+                let ConstraintData::Unique(UniqueConstraintData { columns }) = &constraint.data;
+
                 // if we have a constraint for the index, we're fine.
                 if table.indexes.values().any(|index| {
                     let IndexDef {
-                        algorithm: IndexAlgorithm::BTree { columns },
+                        algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: index_columns }),
                         ..
                     } = index;
 
-                    columns == &constraint.columns
+                    index_columns == &**columns
                 }) {
                     continue;
                 }
 
-                let column_names = constraint
-                    .columns
-                    .iter()
-                    .map(|col_id| &*table.get_column(col_id).expect("validated unique constraint").name)
-                    .join("_");
+                let index_name = generate_index_name(
+                    &table.name,
+                    self.typespace
+                        .get(table.product_type_ref)
+                        .unwrap()
+                        .as_product()
+                        .unwrap(),
+                    &RawIndexAlgorithm::BTree {
+                        columns: columns.clone().into(),
+                    },
+                );
 
-                // TODO(1.0): ensure generated index names are identical when upgrading the Rust module bindings.
-                let mut index_name =
-                    Identifier::new(format!("idx_{}_{}_{}_unique", table.name, column_names, constraint.name).into())
-                        .expect("validated identifier parts");
-
-                // incredibly janky loop to avoid name collisions.
-                // hey, somebody could be being malicious.
-                while self.stored_in_table_def.contains_key(&index_name) {
-                    index_name =
-                        Identifier::new(format!("{}_1", index_name).into()).expect("validated identifier parts");
-                }
-
-                table.indexes.insert(
+                let was_present = table.indexes.insert(
                     index_name.clone(),
                     IndexDef {
                         name: index_name.clone(),
-                        algorithm: IndexAlgorithm::BTree {
-                            columns: constraint.columns.clone(),
-                        },
+                        algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
+                            columns: columns.clone().into(),
+                        }),
                         accessor_name: None, // this is a generated index.
                     },
+                );
+                assert!(
+                    was_present.is_none(),
+                    "generated index already present, which should be impossible"
                 );
                 self.stored_in_table_def.insert(index_name, table.name.clone());
             }
@@ -260,14 +364,18 @@ impl From<ModuleDef> for RawModuleDefV9 {
             types,
             typespace,
             stored_in_table_def: _,
+            typespace_for_generate: _,
+            refmap: _,
+            row_level_security_raw,
         } = val;
 
         RawModuleDefV9 {
-            tables: to_raw(tables, |table: &RawTableDefV9| &table.name),
-            reducers: to_raw(reducers, |reducer: &RawReducerDefV9| &reducer.name),
-            types: to_raw(types, |type_: &RawTypeDefV9| &type_.name),
+            tables: to_raw(tables),
+            reducers: reducers.into_iter().map(|(_, def)| def.into()).collect(),
+            types: to_raw(types),
             misc_exports: vec![],
             typespace,
+            row_level_security: row_level_security_raw.into_iter().map(|(_, def)| def).collect(),
         }
     }
 }
@@ -288,7 +396,8 @@ pub trait ModuleDefLookup: Sized + Debug + 'static {
 
 /// A data structure representing the validated definition of a database table.
 ///
-/// Cannot be created directly. Instead, add a [spacetimedb_sats::db::raw_def::RawTableDef] to a [spacetimedb_sats::db::raw_def::RawDatabaseDef] and call [spacetimedb_sats::db::raw_def::RawDatabaseDef::validate].
+/// Cannot be created directly. Construct a [`ModuleDef`] by validating a [`RawModuleDef`] instead,
+/// and then access the tables from there.
 ///
 /// This struct holds information about the table, including its name, columns, indexes,
 /// constraints, sequences, type, and access rights.
@@ -327,13 +436,13 @@ pub struct TableDef {
     pub columns: Vec<ColumnDef>,
 
     /// The indices on the table, indexed by name.
-    pub indexes: IdentifierMap<IndexDef>,
+    pub indexes: StrMap<IndexDef>,
 
     /// The unique constraints on the table, indexed by name.
-    pub unique_constraints: IdentifierMap<UniqueConstraintDef>,
+    pub constraints: StrMap<ConstraintDef>,
 
     /// The sequences for the table, indexed by name.
-    pub sequences: IdentifierMap<SequenceDef>,
+    pub sequences: StrMap<SequenceDef>,
 
     /// The schedule for the table, if present.
     pub schedule: Option<ScheduleDef>,
@@ -364,7 +473,7 @@ impl From<TableDef> for RawTableDefV9 {
             primary_key,
             columns: _, // will be reconstructed from the product type.
             indexes,
-            unique_constraints,
+            constraints,
             sequences,
             schedule,
             table_type,
@@ -374,12 +483,10 @@ impl From<TableDef> for RawTableDefV9 {
         RawTableDefV9 {
             name: name.into(),
             product_type_ref,
-            primary_key,
-            indexes: to_raw(indexes, |index: &RawIndexDefV9| &index.name),
-            unique_constraints: to_raw(unique_constraints, |constraint: &RawUniqueConstraintDefV9| {
-                &constraint.name
-            }),
-            sequences: to_raw(sequences, |sequence: &RawSequenceDefV9| &sequence.name),
+            primary_key: ColList::from_iter(primary_key),
+            indexes: to_raw(indexes),
+            constraints: to_raw(constraints),
+            sequences: to_raw(sequences),
             schedule: schedule.map(Into::into),
             table_type,
             table_access,
@@ -390,8 +497,8 @@ impl From<TableDef> for RawTableDefV9 {
 /// A sequence definition for a database table column.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SequenceDef {
-    /// The name of the sequence. Must be unique within the containing `RawDatabaseDef`.
-    pub name: Identifier,
+    /// The name of the sequence. Must be unique within the containing `ModuleDef`.
+    pub name: Box<str>,
 
     /// The position of the column associated with this sequence.
     /// This refers to a column in the same `RawTableDef` that contains this `RawSequenceDef`.
@@ -419,7 +526,7 @@ pub struct SequenceDef {
 impl From<SequenceDef> for RawSequenceDefV9 {
     fn from(val: SequenceDef) -> Self {
         RawSequenceDefV9 {
-            name: val.name.into(),
+            name: Some(val.name),
             column: val.column,
             start: val.start,
             min_value: val.min_value,
@@ -431,12 +538,13 @@ impl From<SequenceDef> for RawSequenceDefV9 {
 
 /// A struct representing the validated definition of a database index.
 ///
-/// Cannot be created directly. Instead, add a [spacetimedb_sats::db::raw_def::RawIndexDef] to a [spacetimedb_sats::db::raw_def::RawDatabaseDef] and call [spacetimedb_sats::db::raw_def::RawDatabaseDef::validate].
+/// Cannot be created directly. Construct a [`ModuleDef`] by validating a [`RawModuleDef`] instead,
+/// and then access the index from there.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct IndexDef {
-    /// The name of the index. Must be unique within the containing `RawDatabaseDef`.
-    pub name: Identifier,
+    /// The name of the index. Must be unique within the containing `ModuleDef`.
+    pub name: Box<str>,
 
     /// Accessor name for the index used in client codegen.
     ///
@@ -464,9 +572,9 @@ impl IndexDef {
 impl From<IndexDef> for RawIndexDefV9 {
     fn from(val: IndexDef) -> Self {
         RawIndexDefV9 {
-            name: val.name.into(),
+            name: Some(val.name),
             algorithm: match val.algorithm {
-                IndexAlgorithm::BTree { columns } => RawIndexAlgorithm::BTree { columns },
+                IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => RawIndexAlgorithm::BTree { columns },
             },
             accessor_name: val.accessor_name.map(Into::into),
         }
@@ -478,23 +586,43 @@ impl From<IndexDef> for RawIndexDefV9 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum IndexAlgorithm {
     /// Implemented using a rust `std::collections::BTreeMap`.
-    BTree {
-        /// The columns to index on. These are ordered.
-        columns: ColList,
-    },
+    BTree(BTreeAlgorithm),
+}
+
+impl IndexAlgorithm {
+    /// Get the columns of the index.
+    pub fn columns(&self) -> &ColList {
+        match self {
+            IndexAlgorithm::BTree(btree) => &btree.columns,
+        }
+    }
 }
 
 impl From<IndexAlgorithm> for RawIndexAlgorithm {
     fn from(val: IndexAlgorithm) -> Self {
         match val {
-            IndexAlgorithm::BTree { columns } => RawIndexAlgorithm::BTree { columns },
+            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => RawIndexAlgorithm::BTree { columns },
         }
+    }
+}
+
+/// Data specifying a BTree index.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct BTreeAlgorithm {
+    /// The columns to index.
+    pub columns: ColList,
+}
+
+impl From<BTreeAlgorithm> for IndexAlgorithm {
+    fn from(val: BTreeAlgorithm) -> Self {
+        IndexAlgorithm::BTree(val)
     }
 }
 
 /// A struct representing the validated definition of a database column.
 ///
-/// Cannot be created directly. Instead, add a [spacetimedb_sats::db::raw_def::RawColumnDef] to a [spacetimedb_sats::db::raw_def::RawDatabaseDef] and call [spacetimedb_sats::db::raw_def::RawDatabaseDef::validate].
+/// Cannot be created directly. Construct a [`ModuleDef`] by validating a [`RawModuleDef`] instead,
+/// and then access the column from there.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ColumnDef {
@@ -514,29 +642,90 @@ pub struct ColumnDef {
     /// with name `Some(name.as_str())`.
     pub ty: AlgebraicType,
 
+    /// The type of the column, formatted for client code generation.
+    pub ty_for_generate: AlgebraicTypeUse,
+
     /// The table this `ColumnDef` is stored in.
     pub table_name: Identifier,
+}
+
+/// A constraint definition attached to a table.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ConstraintDef {
+    /// The name of the constraint. Unique within the containing `ModuleDef`.
+    pub name: Box<str>,
+
+    /// The data for the constraint.
+    pub data: ConstraintData,
+}
+
+impl From<ConstraintDef> for RawConstraintDefV9 {
+    fn from(val: ConstraintDef) -> Self {
+        RawConstraintDefV9 {
+            name: Some(val.name),
+            data: val.data.into(),
+        }
+    }
+}
+
+/// Data for a constraint attached to a table.
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ConstraintData {
+    Unique(UniqueConstraintData),
+}
+
+impl ConstraintData {
+    /// If this is a unique constraint, returns the columns that must be unique.
+    /// Otherwise, returns `None`.
+    pub fn unique_columns(&self) -> Option<&ColSet> {
+        match &self {
+            ConstraintData::Unique(UniqueConstraintData { columns }) => Some(columns),
+        }
+    }
+}
+
+impl From<ConstraintData> for RawConstraintDataV9 {
+    fn from(val: ConstraintData) -> Self {
+        match val {
+            ConstraintData::Unique(unique) => RawConstraintDataV9::Unique(unique.into()),
+        }
+    }
 }
 
 /// Requires that the projection of the table onto these columns is an bijection.
 ///
 /// That is, there must be a one-to-one relationship between a row and the `columns` of that row.
 #[derive(Debug, Clone, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct UniqueConstraintDef {
-    /// The name of the unique constraint. Must be unique within the containing `RawDatabaseDef`.
-    pub name: Identifier,
-
+pub struct UniqueConstraintData {
     /// The columns on the containing `TableDef`
-    pub columns: ColList,
+    pub columns: ColSet,
 }
 
-impl From<UniqueConstraintDef> for RawUniqueConstraintDefV9 {
-    fn from(val: UniqueConstraintDef) -> Self {
-        RawUniqueConstraintDefV9 {
-            name: val.name.into(),
-            columns: val.columns,
+impl From<UniqueConstraintData> for RawUniqueConstraintDataV9 {
+    fn from(val: UniqueConstraintData) -> Self {
+        RawUniqueConstraintDataV9 {
+            columns: val.columns.into(),
         }
+    }
+}
+
+impl From<UniqueConstraintData> for ConstraintData {
+    fn from(val: UniqueConstraintData) -> Self {
+        ConstraintData::Unique(val)
+    }
+}
+
+/// Data for the `RLS` policy on a table.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RowLevelSecurityDef {
+    /// The `sql` expression to use for row-level security.
+    pub sql: RawSql,
+}
+
+impl From<RowLevelSecurityDef> for RawRowLevelSecurityDefV9 {
+    fn from(val: RowLevelSecurityDef) -> Self {
+        RawRowLevelSecurityDefV9 { sql: val.sql }
     }
 }
 
@@ -544,8 +733,8 @@ impl From<UniqueConstraintDef> for RawUniqueConstraintDefV9 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ScheduleDef {
-    /// The name of the schedule. Must be unique within the containing `RawDatabaseDef`.
-    pub name: Identifier,
+    /// The name of the schedule. Must be unique within the containing `ModuleDef`.
+    pub name: Box<str>,
 
     /// The name of the column that stores the desired invocation time.
     ///
@@ -565,8 +754,9 @@ pub struct ScheduleDef {
 impl From<ScheduleDef> for RawScheduleDefV9 {
     fn from(val: ScheduleDef) -> Self {
         RawScheduleDefV9 {
-            name: val.name.into(),
+            name: Some(val.name),
             reducer_name: val.reducer_name.into(),
+            scheduled_at_column: val.at_column,
         }
     }
 }
@@ -579,6 +769,8 @@ pub struct TypeDef {
     pub name: ScopedTypeName,
 
     /// The type to which the alias refers.
+    /// Look in `ModuleDef.typespace` for the actual type,
+    /// or in `ModuleDef.typespace_for_generate` for the client codegen version.
     pub ty: AlgebraicTypeRef,
 
     /// Whether this type has a custom ordering.
@@ -639,6 +831,21 @@ impl ScopedTypeName {
             name,
         }
     }
+
+    /// Retrieve the name of this type.
+    pub fn name(&self) -> &Identifier {
+        &self.name
+    }
+
+    /// Retrieve the name of this type, if the scope is empty.
+    pub fn as_identifier(&self) -> Option<&Identifier> {
+        self.scope.is_empty().then_some(&self.name)
+    }
+
+    /// Iterate over the segments of this name.
+    pub fn name_segments(&self) -> impl Iterator<Item = &Identifier> {
+        self.scope.iter().chain(std::iter::once(&self.name))
+    }
 }
 impl fmt::Debug for ScopedTypeName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -687,6 +894,11 @@ pub struct ReducerDef {
     /// This `ProductType` need not be registered in the module's `Typespace`.
     pub params: ProductType,
 
+    /// The parameters of the reducer, formatted for client codegen.
+    ///
+    /// This `ProductType` need not be registered in the module's `TypespaceForGenerate`.
+    pub params_for_generate: ProductTypeDef,
+
     /// The special role of this reducer in the module lifecycle, if any.
     pub lifecycle: Option<Lifecycle>,
 }
@@ -714,7 +926,7 @@ impl ModuleDefLookup for TableDef {
 }
 
 impl ModuleDefLookup for SequenceDef {
-    type Key<'a> = &'a Identifier;
+    type Key<'a> = &'a str;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
@@ -726,7 +938,7 @@ impl ModuleDefLookup for SequenceDef {
 }
 
 impl ModuleDefLookup for IndexDef {
-    type Key<'a> = &'a Identifier;
+    type Key<'a> = &'a str;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
@@ -755,20 +967,32 @@ impl ModuleDefLookup for ColumnDef {
     }
 }
 
-impl ModuleDefLookup for UniqueConstraintDef {
-    type Key<'a> = &'a Identifier;
+impl ModuleDefLookup for ConstraintDef {
+    type Key<'a> = &'a str;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
     }
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
-        module_def.stored_in_table_def(key)?.unique_constraints.get(key)
+        module_def.stored_in_table_def(key)?.constraints.get(key)
+    }
+}
+
+impl ModuleDefLookup for RawRowLevelSecurityDefV9 {
+    type Key<'a> = &'a RawSql;
+
+    fn key(&self) -> Self::Key<'_> {
+        &self.sql
+    }
+
+    fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
+        module_def.row_level_security_raw.get(key)
     }
 }
 
 impl ModuleDefLookup for ScheduleDef {
-    type Key<'a> = &'a Identifier;
+    type Key<'a> = &'a str;
 
     fn key(&self) -> Self::Key<'_> {
         &self.name
@@ -776,7 +1000,7 @@ impl ModuleDefLookup for ScheduleDef {
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
         let schedule = module_def.stored_in_table_def(key)?.schedule.as_ref()?;
-        if &schedule.name == key {
+        if &schedule.name[..] == key {
             Some(schedule)
         } else {
             None
@@ -808,12 +1032,32 @@ impl ModuleDefLookup for ReducerDef {
     }
 }
 
-fn to_raw<Def, RawDef, Name, RawName>(data: HashMap<Name, Def>, f: impl Fn(&RawDef) -> &RawName) -> Vec<RawDef>
+fn to_raw<Def, RawDef, Name, A>(data: HashMap<Name, Def, A>) -> Vec<RawDef>
 where
     Def: ModuleDefLookup + Into<RawDef>,
-    RawName: Eq + Ord + 'static,
+    Name: Eq + Ord + 'static,
 {
-    let mut result: Vec<RawDef> = data.into_iter().map(|(_, def)| def.into()).collect();
-    result.sort_by(|a, b| f(a).cmp(f(b)));
-    result
+    let sorted: BTreeMap<Name, Def> = data.into_iter().collect();
+    sorted.into_values().map_into().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn to_raw_deterministic(vec in prop::collection::vec(any::<u32>(), 0..5)) {
+            let mut map = HashMap::new();
+            let name = ScopedTypeName::try_new([], "fake_name").unwrap();
+            for k in vec {
+                let def = TypeDef { name: name.clone(), ty: AlgebraicTypeRef(k), custom_ordering: false };
+                map.insert(k, def);
+            }
+            let raw: Vec<RawTypeDefV9> = to_raw(map.clone());
+            let raw2: Vec<RawTypeDefV9> = to_raw(map);
+            prop_assert_eq!(raw, raw2);
+        }
+    }
 }

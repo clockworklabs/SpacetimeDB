@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Internal
@@ -30,9 +29,10 @@ namespace SpacetimeDB.Internal
 			this.Data = Data;
 		}
 
-		public TableDesc() : this(
-			new(),
-			default!
-		) { }
+		public TableDesc()
+		{
+			this.Schema = new();
+		}
+
 	}
 }

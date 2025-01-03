@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Internal
@@ -17,7 +16,7 @@ namespace SpacetimeDB.Internal
 	public partial class RawSequenceDefV9
 	{
 		[DataMember(Name = "name")]
-		public string Name;
+		public string? Name;
 		[DataMember(Name = "column")]
 		public ushort Column;
 		[DataMember(Name = "start")]
@@ -30,7 +29,7 @@ namespace SpacetimeDB.Internal
 		public I128 Increment;
 
 		public RawSequenceDefV9(
-			string Name,
+			string? Name,
 			ushort Column,
 			I128? Start,
 			I128? MinValue,
@@ -46,13 +45,9 @@ namespace SpacetimeDB.Internal
 			this.Increment = Increment;
 		}
 
-		public RawSequenceDefV9() : this(
-			"",
-			default!,
-			default!,
-			default!,
-			default!,
-			default!
-		) { }
+		public RawSequenceDefV9()
+		{
+		}
+
 	}
 }

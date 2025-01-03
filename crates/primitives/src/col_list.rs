@@ -11,11 +11,12 @@ use core::{
     hash::{Hash, Hasher},
     iter,
     mem::{size_of, ManuallyDrop},
-    ops::Deref,
+    ops::{Deref, DerefMut},
     ptr::NonNull,
-    slice::from_raw_parts,
+    slice::{from_raw_parts, from_raw_parts_mut},
 };
 use either::Either;
+use itertools::Itertools;
 
 /// Constructs a `ColList` like so `col_list![0, 2]`.
 ///
@@ -31,7 +32,12 @@ macro_rules! col_list {
 /// but packed into a `u64` in a way that takes advantage of the fact that
 /// in almost all cases, we won't store a `ColId` larger than 62.
 /// In the rare case that we store larger ids, we fall back to a thin vec approach.
-/// We also fall back to a thin vec if the ids stored are not in sorted order, from low to high.
+///
+/// We also fall back to a thin vec if the ids stored are not in sorted order, from low to high,
+/// or if the list contains duplicates.
+///
+/// If you want a set of columns, use [`ColSet`] instead. It is more likely to be compressed,
+/// and so is a better choice if you don't require ordering information.
 #[repr(C)]
 pub union ColList {
     /// Used to determine whether the list is stored inline or not.
@@ -194,6 +200,22 @@ impl ColList {
         self.push_inner(col, self.last().map_or(true, |l| l < col));
     }
 
+    /// Sort and deduplicate the list.
+    /// If the list is already sorted and deduplicated, does nothing.
+    /// This will typically result in an inline list unless there are large `ColId`s in play.
+    fn sort_dedup(&mut self) {
+        if let Err(heap) = self.as_inline_mut() {
+            heap.sort();
+
+            // Don't reallocate if the list is already sorted and deduplicated.
+            let is_deduped = is_sorted_and_deduped(heap);
+            let wants_inline = heap.last().unwrap_or(&ColId(0)).0 < Self::FIRST_HEAP_COL_U16;
+            if !is_deduped || wants_inline {
+                *self = Self::from_iter(heap.iter().copied().dedup());
+            }
+        }
+    }
+
     /// Push `col` onto the list.
     ///
     /// If `col >= 63` or `!preserves_set_order`,
@@ -254,6 +276,14 @@ impl ColList {
         let addr = unsafe { self.check };
         addr & 1 != 0
     }
+
+    #[doc(hidden)]
+    pub fn heap_size(&self) -> usize {
+        match self.as_inline() {
+            Ok(_) => 0,
+            Err(heap) => heap.capacity() as usize,
+        }
+    }
 }
 
 impl Drop for ColList {
@@ -308,6 +338,72 @@ impl Hash for ColList {
 impl fmt::Debug for ColList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl From<ColSet> for ColList {
+    fn from(value: ColSet) -> Self {
+        value.0
+    }
+}
+
+/// A compressed set of columns. Like a `ColList`, but guaranteed to be sorted and to contain no duplicate entries.
+/// Dereferences to a `ColList` for convenience.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ColSet(ColList);
+
+impl ColSet {
+    /// Check if a `ColSet` contains a given column.
+    pub fn contains(&self, needle: ColId) -> bool {
+        match self.as_inline() {
+            Ok(inline) => inline.contains(needle),
+            // We can use binary search because the vector is guaranteed to be sorted.
+            Err(heap) => heap.binary_search(&needle).is_ok(),
+        }
+    }
+
+    // Don't implement `insert` because repeated insertions will be O(n^2) if we want to keep the set sorted on the heap.
+    // Use iterator methods to create a new `ColSet` instead.
+}
+
+impl<C: Into<ColId>> FromIterator<C> for ColSet {
+    fn from_iter<T: IntoIterator<Item = C>>(iter: T) -> Self {
+        // TODO: implement a fast path here that avoids allocation, by lying about
+        // `preserves_set_order` to `push_inner`.
+        Self::from(iter.into_iter().collect::<ColList>())
+    }
+}
+
+impl From<ColList> for ColSet {
+    fn from(mut list: ColList) -> Self {
+        list.sort_dedup();
+        Self(list)
+    }
+}
+
+impl From<&ColList> for ColSet {
+    fn from(value: &ColList) -> Self {
+        value.iter().collect()
+    }
+}
+
+impl From<ColId> for ColSet {
+    fn from(id: ColId) -> Self {
+        Self::from(ColList::new(id))
+    }
+}
+
+impl Deref for ColSet {
+    type Target = ColList;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl fmt::Debug for ColSet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_set().entries(self.iter()).finish()
     }
 }
 
@@ -508,6 +604,20 @@ impl Deref for ColListVec {
     }
 }
 
+impl DerefMut for ColListVec {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        let len = self.len() as usize;
+        let ptr = self.0.as_ptr();
+        // SAFETY: `ptr + 2` is always in bounds of the allocation and `ptr <= isize::MAX`.
+        let ptr = unsafe { ptr.add(2) }.cast::<ColId>();
+        // SAFETY:
+        // - `ptr` is valid for reads and writes for `len * size_of::<ColId>` and it is properly aligned.
+        // - `len`  elements are initialized.
+        // - `len * size_of::<ColId> <= isize::MAX` holds.
+        unsafe { from_raw_parts_mut(ptr, len) }
+    }
+}
+
 impl Drop for ColListVec {
     fn drop(&mut self) {
         let capacity = self.capacity();
@@ -526,6 +636,18 @@ impl Clone for ColListVec {
             vec.push(col);
         }
         vec
+    }
+}
+
+/// Check if a buffer is sorted and deduplicated.
+fn is_sorted_and_deduped(data: &[ColId]) -> bool {
+    match data {
+        [] => true,
+        [mut prev, rest @ ..] => !rest.iter().any(|elem| {
+            let bad = prev >= *elem;
+            prev = *elem;
+            bad
+        }),
     }
 }
 
@@ -615,6 +737,42 @@ mod tests {
                 },
                 _ => prop_assert_eq!(list.as_singleton(), None),
             }
+        }
+
+        #[test]
+        fn test_set_inlines(mut cols in vec((0..ColList::FIRST_HEAP_COL_U16).prop_map_into(), 1..100)) {
+            prop_assume!(!is_sorted_and_deduped(&cols[..]));
+
+            let list = ColList::from_iter(cols.iter().copied());
+            prop_assert!(!list.is_inline());
+            let set = ColSet::from(list);
+            prop_assert!(set.is_inline());
+
+            for col in cols.iter() {
+                prop_assert!(set.contains(*col));
+            }
+
+            cols.sort();
+            cols.dedup();
+            prop_assert_eq!(set.iter().collect::<Vec<_>>(), cols);
+        }
+
+        #[test]
+        fn test_set_heap(mut cols in vec((ColList::FIRST_HEAP_COL_U16..).prop_map_into(), 1..100)) {
+            prop_assume!(!is_sorted_and_deduped(&cols[..]));
+
+            let list = ColList::from_iter(cols.iter().copied());
+            prop_assert!(!list.is_inline());
+            let set = ColSet::from(list);
+            prop_assert!(!set.is_inline());
+
+            for col in cols.iter() {
+                prop_assert!(set.contains(*col));
+            }
+
+            cols.sort();
+            cols.dedup();
+            prop_assert_eq!(set.iter().collect::<Vec<_>>(), cols);
         }
     }
 }

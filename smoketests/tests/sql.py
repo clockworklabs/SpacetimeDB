@@ -3,6 +3,7 @@ from .. import Smoketest
 class SqlFormat(Smoketest):
     MODULE_CODE = """
 use spacetimedb::sats::{i256, u256};
+use spacetimedb::{ReducerContext, Table};
 
 #[derive(Copy, Clone)]
 #[spacetimedb::table(name = t_ints)]
@@ -52,7 +53,7 @@ pub struct TOthersTuple {
 }
 
 #[spacetimedb::reducer]
-pub fn test() {
+pub fn test(ctx: &ReducerContext) {
     let tuple = TInts {
         i8: -25,
         i16: -3224,
@@ -61,8 +62,8 @@ pub fn test() {
         i128: -234434897853,
         i256: (-234434897853i128).into(),
     };
-    TInts::insert(tuple);
-    TIntsTuple::insert(TIntsTuple { tuple });
+    ctx.db.t_ints().insert(tuple);
+    ctx.db.t_ints_tuple().insert(TIntsTuple { tuple });
 
     let tuple = TUints {
         u8: 105,
@@ -72,8 +73,8 @@ pub fn test() {
         u128: 4378528978889,
         u256: 4378528978889u128.into(),
     };
-    TUints::insert(tuple);
-    TUintsTuple::insert(TUintsTuple { tuple });
+    ctx.db.t_uints().insert(tuple);
+    ctx.db.t_uints_tuple().insert(TUintsTuple { tuple });
 
     let tuple = TOthers {
         bool: true,
@@ -82,14 +83,14 @@ pub fn test() {
         str: "This is spacetimedb".to_string(),
         bytes: vec!(1, 2, 3, 4, 5, 6, 7),
     };
-    TOthers::insert(tuple.clone());
-    TOthersTuple::insert(TOthersTuple { tuple });
+    ctx.db.t_others().insert(tuple.clone());
+    ctx.db.t_others_tuple().insert(TOthersTuple { tuple });
 }
 """
 
     def assertSql(self, sql, expected):
         self.maxDiff = None
-        sql_out = self.spacetime("sql", self.address, sql)
+        sql_out = self.spacetime("sql", self.database_identity, sql)
         sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
         expected = "\n".join([line.rstrip() for line in expected.splitlines()])
         self.assertMultiLineEqual(sql_out, expected)

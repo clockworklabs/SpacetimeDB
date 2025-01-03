@@ -2,10 +2,10 @@
 //!
 //! This notably excludes `Ref` types.
 
-use crate::{i256, u256};
+use crate::{i256, u256, ProductTypeElement, SumTypeVariant};
 use crate::{
-    AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ArrayValue, MapType, MapValue, ProductType, ProductValue, SumType,
-    SumValue, Typespace, F32, F64,
+    AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumType, SumValue,
+    Typespace, F32, F64,
 };
 use proptest::{
     collection::{vec, SizeRange},
@@ -53,16 +53,30 @@ fn generate_algebraic_type_from_leaves(
     leaves.prop_recursive(depth, SIZE as u32, SIZE as u32, |gen_element| {
         prop_oneof![
             gen_element.clone().prop_map(AlgebraicType::array),
-            (gen_element.clone(), gen_element.clone()).prop_map(|(key, val)| AlgebraicType::map(key, val)),
-            // No need for field or variant names.
-
             // No need to generate units here;
             // we already generate them in `generate_non_compound_algebraic_type`.
             vec(gen_element.clone().prop_map_into(), 1..=SIZE)
+                .prop_map(|vec| vec
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, ty)| ProductTypeElement {
+                        // Generate names because the validation code in the `schema` crate requires them.
+                        name: Some(format!("field_{i}").into()),
+                        algebraic_type: ty
+                    })
+                    .collect())
                 .prop_map(Vec::into_boxed_slice)
                 .prop_map(AlgebraicType::product),
             // Do not generate nevers here; we can't store never in a page.
             vec(gen_element.clone().prop_map_into(), 1..=SIZE)
+                .prop_map(|vec| vec
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, ty)| SumTypeVariant {
+                        name: Some(format!("variant_{i}").into()),
+                        algebraic_type: ty
+                    })
+                    .collect::<Vec<_>>())
                 .prop_map(Vec::into_boxed_slice)
                 .prop_map(AlgebraicType::sum),
         ]
@@ -119,8 +133,6 @@ pub fn generate_algebraic_value(ty: AlgebraicType) -> impl Strategy<Value = Alge
 
         AlgebraicType::Array(ty) => generate_array_value(*ty.elem_ty).prop_map_into().boxed(),
 
-        AlgebraicType::Map(ty) => generate_map_value(*ty).prop_map_into().boxed(),
-
         AlgebraicType::Product(ty) => generate_product_value(ty).prop_map_into().boxed(),
 
         AlgebraicType::Sum(ty) => generate_sum_value(ty).prop_map_into().boxed(),
@@ -150,15 +162,6 @@ fn generate_sum_value(ty: SumType) -> impl Strategy<Value = SumValue> {
             value: Box::new(value),
         })
     })
-}
-
-/// Generates a `MapValue` typed at `ty`.
-fn generate_map_value(ty: MapType) -> impl Strategy<Value = MapValue> {
-    vec(
-        (generate_algebraic_value(ty.key_ty), generate_algebraic_value(ty.ty)),
-        0..=SIZE,
-    )
-    .prop_map(|entries| entries.into_iter().collect())
 }
 
 /// Generates an array value given an element generator `gen_elem`.
@@ -195,7 +198,6 @@ fn generate_array_value(ty: AlgebraicType) -> BoxedStrategy<ArrayValue> {
         AlgebraicType::Product(ty) => generate_array_of(generate_product_value(ty)),
         AlgebraicType::Sum(ty) => generate_array_of(generate_sum_value(ty)),
         AlgebraicType::Array(ty) => generate_array_of(generate_array_value(*ty.elem_ty)),
-        AlgebraicType::Map(ty) => generate_array_of(generate_map_value(*ty)),
         AlgebraicType::Ref(_) => unreachable!(),
     }
 }
@@ -229,7 +231,6 @@ fn generate_type_valid_for_client_use() -> impl Strategy<Value = AlgebraicType> 
     leaf.prop_recursive(size, size, size, |gen_element| {
         prop_oneof![
             gen_element.clone().prop_map(AlgebraicType::array),
-            (gen_element.clone(), gen_element.clone()).prop_map(|(key, val)| AlgebraicType::map(key, val)),
             gen_element.clone().prop_map(AlgebraicType::option),
         ]
     })

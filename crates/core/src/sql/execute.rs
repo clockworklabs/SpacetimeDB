@@ -7,7 +7,7 @@ use crate::db::datastore::traits::IsolationLevel;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
-use crate::execution_context::ExecutionContext;
+use crate::execution_context::Workload;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::ArgsTuple;
 use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
@@ -60,10 +60,6 @@ pub(crate) fn collect_result(
     Ok(())
 }
 
-pub fn ctx_sql(db: &RelationalDB) -> ExecutionContext {
-    ExecutionContext::sql(db.address())
-}
-
 fn execute(
     p: &mut DbProgram<'_, '_>,
     ast: Vec<CrudExpr>,
@@ -71,11 +67,11 @@ fn execute(
     updates: &mut Vec<DatabaseTableUpdate>,
 ) -> Result<Vec<MemTable>, DBError> {
     let slow_query_threshold = if let TxMode::Tx(tx) = p.tx {
-        StVarTable::query_limit(p.ctx, p.db, tx)?.map(Duration::from_millis)
+        StVarTable::query_limit(p.db, tx)?.map(Duration::from_millis)
     } else {
         None
     };
-    let _slow_query_logger = SlowQueryLogger::new(sql, slow_query_threshold, p.ctx.workload()).log_guard();
+    let _slow_query_logger = SlowQueryLogger::new(sql, slow_query_threshold, p.tx.ctx().workload()).log_guard();
     let mut result = Vec::with_capacity(ast.len());
     let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
     // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
@@ -95,12 +91,11 @@ pub fn execute_sql(
     auth: AuthCtx,
     subs: Option<&ModuleSubscriptions>,
 ) -> Result<Vec<MemTable>, DBError> {
-    let ctx = ctx_sql(db);
     if CrudExpr::is_reads(&ast) {
         let mut updates = Vec::new();
-        db.with_read_only(&ctx, |tx| {
+        db.with_read_only(Workload::Sql, |tx| {
             execute(
-                &mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth),
+                &mut DbProgram::new(db, &mut TxMode::Tx(tx), auth),
                 ast,
                 sql,
                 &mut updates,
@@ -108,19 +103,19 @@ pub fn execute_sql(
         })
     } else if subs.is_none() {
         let mut updates = Vec::new();
-        db.with_auto_commit(&ctx, |mut_tx| {
+        db.with_auto_commit(Workload::Sql, |mut_tx| {
             execute(
-                &mut DbProgram::new(&ctx, db, &mut mut_tx.into(), auth),
+                &mut DbProgram::new(db, &mut mut_tx.into(), auth),
                 ast,
                 sql,
                 &mut updates,
             )
         })
     } else {
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql);
         let mut updates = Vec::with_capacity(ast.len());
         let res = execute(
-            &mut DbProgram::new(&ctx, db, &mut (&mut tx).into(), auth),
+            &mut DbProgram::new(db, &mut (&mut tx).into(), auth),
             ast,
             sql,
             &mut updates,
@@ -141,12 +136,12 @@ pub fn execute_sql(
                 request_id: None,
                 timer: None,
             };
-            match subs.unwrap().commit_and_broadcast_event(None, event, &ctx, tx).unwrap() {
+            match subs.unwrap().commit_and_broadcast_event(None, event, tx).unwrap() {
                 Ok(_) => res,
                 Err(WriteConflict) => todo!("See module_host_actor::call_reducer_with_tx"),
             }
         } else {
-            db.finish_tx(&ctx, tx, res)
+            db.finish_tx(tx, res)
         }
     }
 }
@@ -167,9 +162,8 @@ pub fn execute_sql_tx<'a>(
         return Ok(None);
     }
 
-    let ctx = ctx_sql(db);
     let mut updates = Vec::new(); // No subscription updates in this path, because it requires owning the tx.
-    execute(&mut DbProgram::new(&ctx, db, &mut tx, auth), ast, sql, &mut updates).map(Some)
+    execute(&mut DbProgram::new(db, &mut tx, auth), ast, sql, &mut updates).map(Some)
 }
 
 /// Run the `SQL` string using the `auth` credentials
@@ -179,13 +173,12 @@ pub fn run(
     auth: AuthCtx,
     subs: Option<&ModuleSubscriptions>,
 ) -> Result<Vec<MemTable>, DBError> {
-    let ctx = ctx_sql(db);
-    let result = db.with_read_only(&ctx, |tx| {
-        let ast = compile_sql(db, tx, sql_text)?;
+    let result = db.with_read_only(Workload::Sql, |tx| {
+        let ast = compile_sql(db, &AuthCtx::for_testing(), tx, sql_text)?;
         if CrudExpr::is_reads(&ast) {
             let mut updates = Vec::new();
             let result = execute(
-                &mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth),
+                &mut DbProgram::new(db, &mut TxMode::Tx(tx), auth),
                 ast,
                 sql_text,
                 &mut updates,
@@ -219,16 +212,17 @@ pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::db::datastore::system_tables::{ST_TABLE_ID, ST_TABLE_NAME};
+    use crate::db::datastore::system_tables::{StTableFields, ST_TABLE_ID, ST_TABLE_NAME};
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::vm::tests::create_table_with_rows;
+    use pretty_assertions::assert_eq;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::relation::ColExpr;
     use spacetimedb_lib::relation::Header;
-    use spacetimedb_lib::Identity;
+    use spacetimedb_lib::{AlgebraicValue, Identity};
     use spacetimedb_primitives::{col_list, ColId};
-    use spacetimedb_sats::{product, AlgebraicType, ProductType};
+    use spacetimedb_sats::{product, AlgebraicType, ArrayValue, ProductType};
     use spacetimedb_vm::eval::test_helpers::{create_game_data, mem_table, mem_table_without_table_name};
     use std::sync::Arc;
 
@@ -255,7 +249,7 @@ pub(crate) mod tests {
             .collect();
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
-        let schema = stdb.with_auto_commit(&ExecutionContext::default(), |tx| {
+        let schema = stdb.with_auto_commit(Workload::ForTests, |tx| {
             create_table_with_rows(&stdb, tx, "inventory", head.clone(), &rows, StAccess::Public)
         })?;
         let header = Header::from(&*schema).into();
@@ -315,50 +309,13 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn test_select_scalar() -> ResultTest<()> {
-        let (db, input) = create_data(1)?;
-
-        let result = run_for_testing(&db, "SELECT 1 FROM inventory")?;
-
-        assert_eq!(result.len(), 1, "Not return results");
-        let result = result.first().unwrap().clone();
-        let schema = ProductType::from([AlgebraicType::I32]);
-        let row = product!(1);
-        let input = mem_table(input.head.table_id, schema, vec![row]);
-
-        assert_eq!(
-            mem_table_without_table_name(&result),
-            mem_table_without_table_name(&input),
-            "Scalar"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_select_multiple() -> ResultTest<()> {
-        let (db, input) = create_data(1)?;
-
-        let result = run_for_testing(&db, "SELECT * FROM inventory;\nSELECT * FROM inventory")?;
-
-        assert_eq!(result.len(), 2, "Not return results");
-
-        for result in result {
-            assert_eq!(
-                mem_table_without_table_name(&result),
-                mem_table_without_table_name(&input),
-                "Inventory"
-            );
-        }
-        Ok(())
-    }
-
-    #[test]
     fn test_select_catalog() -> ResultTest<()> {
         let (db, _) = create_data(1)?;
 
-        let tx = db.begin_tx();
+        let tx = db.begin_tx(Workload::ForTests);
         let schema = db.schema_for_table(&tx, ST_TABLE_ID).unwrap();
-        db.release_tx(&ExecutionContext::internal(db.address()), tx);
+        db.release_tx(tx);
+
         let result = run_for_testing(
             &db,
             &format!("SELECT * FROM {} WHERE table_id = {}", ST_TABLE_NAME, ST_TABLE_ID),
@@ -366,11 +323,13 @@ pub(crate) mod tests {
 
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
+        let pk_col_id: ColId = StTableFields::TableId.into();
         let row = product![
             ST_TABLE_ID,
             ST_TABLE_NAME,
             StTableType::System.as_str(),
             StAccess::Public.as_str(),
+            Some(AlgebraicValue::Array(ArrayValue::U16(vec![pk_col_id.0].into()))),
         ];
         let input = MemTable::new(Header::from(&*schema).into(), schema.table_access, vec![row]);
 
@@ -458,7 +417,7 @@ pub(crate) mod tests {
 
         let result = run_for_testing(
             &db,
-            "SELECT (inventory_id) FROM inventory WHERE (inventory_id = 1 OR inventory_id = 2 AND (1=1))",
+            "SELECT inventory_id FROM inventory WHERE (inventory_id = 1 OR inventory_id = 2 AND (true))",
         )?;
 
         assert_eq!(result.len(), 1, "Not return results");
@@ -483,7 +442,7 @@ pub(crate) mod tests {
 
         let db = TestDB::durable()?;
 
-        let (p_schema, inv_schema) = db.with_auto_commit::<_, _, TestError>(&ExecutionContext::default(), |tx| {
+        let (p_schema, inv_schema) = db.with_auto_commit::<_, _, TestError>(Workload::ForTests, |tx| {
             let i = create_table_with_rows(&db, tx, "Inventory", data.inv_ty, &data.inv.data, StAccess::Public)?;
             let p = create_table_with_rows(&db, tx, "Player", data.player_ty, &data.player.data, StAccess::Public)?;
             create_table_with_rows(
@@ -505,7 +464,7 @@ pub(crate) mod tests {
         Player
         JOIN Location
         ON Location.entity_id = Player.entity_id
-        WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32",
+        WHERE Location.x > 0 AND Location.x <= 32 AND Location.z > 0 AND Location.z <= 32",
         )?[0];
 
         let row1 = product!(100u64, 1u64);
@@ -527,7 +486,7 @@ pub(crate) mod tests {
         ON Inventory.inventory_id = Player.inventory_id
         JOIN Location
         ON Player.entity_id = Location.entity_id
-        WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32",
+        WHERE Location.x > 0 AND Location.x <= 32 AND Location.z > 0 AND Location.z <= 32",
         )?[0];
 
         let row1 = product!(1u64, "health");
@@ -648,24 +607,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn test_big_sql() -> ResultTest<()> {
-        let (db, _input) = create_data(1)?;
-
-        let result = run_for_testing(
-            &db,
-            "insert into inventory (inventory_id, name) values (1, 'Kiley');
-insert into inventory (inventory_id, name) values (2, 'Terza');
-insert into inventory (inventory_id, name) values (3, 'Alvie');
-SELECT * FROM inventory",
-        )?;
-
-        let result = result.first().unwrap().clone();
-        assert_eq!(result.data.len(), 4);
-
-        Ok(())
-    }
-
-    #[test]
     fn test_multi_column() -> ResultTest<()> {
         let (db, _input) = create_data(1)?;
 
@@ -677,7 +618,7 @@ SELECT * FROM inventory",
             ("d", AlgebraicType::I32),
         ];
         let table_id = db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+        db.with_auto_commit(Workload::ForTests, |tx| {
             db.insert(tx, table_id, product![1, 1, 1, 1]).map(drop)
         })?;
 
@@ -719,10 +660,10 @@ SELECT * FROM inventory",
         let db = TestDB::durable()?;
 
         let table_id = db
-            .create_table_for_test("test", &[("x", AlgebraicType::I32)], &[(ColId(0), "test_x")])
+            .create_table_for_test("test", &[("x", AlgebraicType::I32)], &[ColId(0)])
             .unwrap();
 
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+        db.with_auto_commit(Workload::ForTests, |tx| {
             for i in 0..1000i32 {
                 db.insert(tx, table_id, product!(i)).unwrap();
             }
@@ -756,9 +697,7 @@ SELECT * FROM inventory",
         let schema = &[("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
         let table_id = db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
         let row = product![4u8, 8u8];
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            db.insert(tx, table_id, row.clone()).map(drop)
-        })?;
+        db.with_auto_commit(Workload::ForTests, |tx| db.insert(tx, table_id, row.clone()).map(drop))?;
 
         let result = run_for_testing(&db, "select * from test where a >= 3 and a <= 5 and b >= 3 and b <= 5")?;
 
@@ -773,7 +712,7 @@ SELECT * FROM inventory",
         let db = TestDB::durable()?;
 
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<_, DBError> {
+        db.with_auto_commit(Workload::ForTests, |tx| -> Result<_, DBError> {
             for i in 0..5u8 {
                 db.insert(tx, table_id, product!(i))?;
             }

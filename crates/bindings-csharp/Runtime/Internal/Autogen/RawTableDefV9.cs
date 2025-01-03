@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Internal
@@ -21,11 +20,11 @@ namespace SpacetimeDB.Internal
 		[DataMember(Name = "product_type_ref")]
 		public uint ProductTypeRef;
 		[DataMember(Name = "primary_key")]
-		public ushort? PrimaryKey;
+		public System.Collections.Generic.List<ushort> PrimaryKey;
 		[DataMember(Name = "indexes")]
 		public System.Collections.Generic.List<SpacetimeDB.Internal.RawIndexDefV9> Indexes;
-		[DataMember(Name = "unique_constraints")]
-		public System.Collections.Generic.List<SpacetimeDB.Internal.RawUniqueConstraintDefV9> UniqueConstraints;
+		[DataMember(Name = "constraints")]
+		public System.Collections.Generic.List<SpacetimeDB.Internal.RawConstraintDefV9> Constraints;
 		[DataMember(Name = "sequences")]
 		public System.Collections.Generic.List<SpacetimeDB.Internal.RawSequenceDefV9> Sequences;
 		[DataMember(Name = "schedule")]
@@ -38,9 +37,9 @@ namespace SpacetimeDB.Internal
 		public RawTableDefV9(
 			string Name,
 			uint ProductTypeRef,
-			ushort? PrimaryKey,
+			System.Collections.Generic.List<ushort> PrimaryKey,
 			System.Collections.Generic.List<SpacetimeDB.Internal.RawIndexDefV9> Indexes,
-			System.Collections.Generic.List<SpacetimeDB.Internal.RawUniqueConstraintDefV9> UniqueConstraints,
+			System.Collections.Generic.List<SpacetimeDB.Internal.RawConstraintDefV9> Constraints,
 			System.Collections.Generic.List<SpacetimeDB.Internal.RawSequenceDefV9> Sequences,
 			SpacetimeDB.Internal.RawScheduleDefV9? Schedule,
 			SpacetimeDB.Internal.TableType TableType,
@@ -51,23 +50,21 @@ namespace SpacetimeDB.Internal
 			this.ProductTypeRef = ProductTypeRef;
 			this.PrimaryKey = PrimaryKey;
 			this.Indexes = Indexes;
-			this.UniqueConstraints = UniqueConstraints;
+			this.Constraints = Constraints;
 			this.Sequences = Sequences;
 			this.Schedule = Schedule;
 			this.TableType = TableType;
 			this.TableAccess = TableAccess;
 		}
 
-		public RawTableDefV9() : this(
-			"",
-			default!,
-			default!,
-			new(),
-			new(),
-			new(),
-			default!,
-			default!,
-			default!
-		) { }
+		public RawTableDefV9()
+		{
+			this.Name = "";
+			this.PrimaryKey = new();
+			this.Indexes = new();
+			this.Constraints = new();
+			this.Sequences = new();
+		}
+
 	}
 }

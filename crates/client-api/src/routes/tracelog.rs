@@ -6,12 +6,12 @@ use serde::Deserialize;
 use tempfile::TempDir;
 
 use spacetimedb::address::Address;
-use spacetimedb::database_instance_context::DatabaseInstanceContext;
 use spacetimedb::db::Storage;
 use spacetimedb::hash::hash_bytes;
 use spacetimedb::host::instance_env::InstanceEnv;
 use spacetimedb::host::tracelog::replay::replay_report;
 use spacetimedb::host::Scheduler;
+use spacetimedb::replica_context::ReplicaContext;
 use spacetimedb_lib::Identity;
 
 use crate::{log_and_500, ControlStateReadAccess, NodeDelegate};
@@ -28,13 +28,13 @@ pub async fn get_tracelog<S: ControlStateReadAccess + NodeDelegate>(
         .get_database_by_address(&address)
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
-    let database_instance = ctx.get_leader_database_instance_by_database(database.id);
-    let instance_id = database_instance.unwrap().id;
+    let replica = ctx.get_leader_replica_by_database(database.id);
+    let replica_id = replica.unwrap().id;
 
     let host = ctx.host_controller();
-    let trace = host.get_trace(instance_id).await.map_err(|e| {
+    let trace = host.get_trace(replica_id).await.map_err(|e| {
         log::error!("Unable to retrieve tracelog {}", e);
-        (StatusCode::SERVICE_UNAVAILABLE, "Database instance not ready.")
+        (StatusCode::SERVICE_UNAVAILABLE, "Replica not ready.")
     })?;
 
     let trace = trace.ok_or(StatusCode::NOT_FOUND)?;
@@ -54,13 +54,13 @@ pub async fn stop_tracelog<S: ControlStateReadAccess + NodeDelegate>(
         .get_database_by_address(&address)
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
-    let database_instance = ctx.get_leader_database_instance_by_database(database.id);
-    let instance_id = database_instance.unwrap().id;
+    let replica = ctx.get_leader_replica_by_database(database.id);
+    let replica_id = replica.unwrap().id;
 
     let host = ctx.host_controller();
-    host.stop_trace(instance_id).await.map_err(|e| {
+    host.stop_trace(replica_id).await.map_err(|e| {
         log::error!("Unable to retrieve tracelog {}", e);
-        (StatusCode::SERVICE_UNAVAILABLE, "Database instance not ready.")
+        (StatusCode::SERVICE_UNAVAILABLE, "Replica not ready.")
     })?;
 
     Ok(())
@@ -74,7 +74,7 @@ pub async fn perform_tracelog_replay(body: Bytes) -> axum::response::Result<impl
     let logger_path = tmp_dir.path();
     let identity = Identity::from_byte_array(hash_bytes(b"This is a fake identity.").data);
     let address = Address::from_slice(&identity.as_bytes()[0..16]);
-    let dbic = DatabaseInstanceContext::new(
+    let replica_ctx = ReplicaContext::new(
         storage,
         0,
         0,
@@ -84,9 +84,9 @@ pub async fn perform_tracelog_replay(body: Bytes) -> axum::response::Result<impl
         db_path.to_path_buf(),
         logger_path,
     );
-    let iv = InstanceEnv::new(dbic, Scheduler::dummy(&tmp_dir.path().join("scheduler")), None);
+    let iv = InstanceEnv::new(replica_ctx, Scheduler::dummy(&tmp_dir.path().join("scheduler")), None);
 
-    let tx = iv.dbic.relational_db.begin_mut_tx(IsolationLevel::Serializable);
+    let tx = iv.replica_ctx.relational_db.begin_mut_tx(IsolationLevel::Serializable);
 
     let (_, resp_body) = iv.tx.set(tx, || replay_report(&iv, &mut &body[..]));
 

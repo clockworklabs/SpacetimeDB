@@ -5,17 +5,7 @@ using System.Runtime.InteropServices;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
 
-partial class RawConstraintDefV8
-{
-    public RawConstraintDefV8(string tableName, ushort colIndex, string colName, ColumnAttrs attrs)
-        : this(
-            ConstraintName: $"ct_{tableName}_{colName}_{attrs}",
-            Constraints: (byte)attrs,
-            Columns: [colIndex]
-        ) { }
-}
-
-partial class RawModuleDefV8
+partial class RawModuleDefV9
 {
     // Note: this intends to generate a valid identifier, but it's not guaranteed to be unique as it's not proper mangling.
     // Fix it up to a different mangling scheme if it causes problems.
@@ -26,14 +16,8 @@ partial class RawModuleDefV8
 
     private void RegisterTypeName<T>(AlgebraicType.Ref typeRef)
     {
-        // If it's a table, it doesn't need an alias as name will be registered automatically.
-        if (typeof(T).IsDefined(typeof(TableAttribute), false))
-        {
-            return;
-        }
-        MiscExports.Add(
-            new MiscModuleExport.TypeAlias(new(GetFriendlyName(typeof(T)), (uint)typeRef.Ref_))
-        );
+        var scopedName = new RawScopedTypeNameV9([], GetFriendlyName(typeof(T)));
+        Types.Add(new(scopedName, (uint)typeRef.Ref_, CustomOrdering: true));
     }
 
     internal AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
@@ -48,15 +32,22 @@ partial class RawModuleDefV8
         return typeRef;
     }
 
-    internal void RegisterReducer(ReducerDef reducer) => Reducers.Add(reducer);
+    internal void RegisterReducer(RawReducerDefV9 reducer) => Reducers.Add(reducer);
 
-    internal void RegisterTable(TableDesc table) => Tables.Add(table);
+    internal void RegisterTable(RawTableDefV9 table) => Tables.Add(table);
 }
 
 public static class Module
 {
-    private static readonly RawModuleDefV8 moduleDef = new();
+    private static readonly RawModuleDefV9 moduleDef = new();
     private static readonly List<IReducer> reducers = [];
+
+    private static Func<Identity, Address?, Random, DateTimeOffset, IReducerContext>? newContext =
+        null;
+
+    public static void SetReducerContextConstructor(
+        Func<Identity, Address?, Random, DateTimeOffset, IReducerContext> ctor
+    ) => newContext = ctor;
 
     readonly struct TypeRegistrar() : ITypeRegistrar
     {
@@ -97,10 +88,11 @@ public static class Module
         moduleDef.RegisterReducer(reducer.MakeReducerDef(typeRegistrar));
     }
 
-    public static void RegisterTable<T>()
-        where T : ITable<T>, new()
+    public static void RegisterTable<T, View>()
+        where T : IStructuralReadWrite, new()
+        where View : ITableView<View, T>, new()
     {
-        moduleDef.RegisterTable(T.MakeTableDesc(typeRegistrar));
+        moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar));
     }
 
     private static byte[] Consume(this BytesSource source)
@@ -116,7 +108,7 @@ public static class Module
             // Write into the spare capacity of the buffer.
             var spare = buffer.AsSpan((int)written);
             var buf_len = (uint)spare.Length;
-            var ret = FFI._bytes_source_read(source, spare, ref buf_len);
+            var ret = FFI.bytes_source_read(source, spare, ref buf_len);
             written += buf_len;
             switch (ret)
             {
@@ -150,7 +142,7 @@ public static class Module
         {
             var written = (uint)bytes.Length;
             var buffer = bytes.AsSpan((int)start);
-            FFI._bytes_sink_write(sink, buffer, ref written);
+            FFI.bytes_sink_write(sink, buffer, ref written);
             start += written;
         }
     }
@@ -159,18 +151,16 @@ public static class Module
 
     public static void __describe_module__(BytesSink description)
     {
-        // replace `module` with a temporary internal module that will register RawModuleDefV8, AlgebraicType and other internal types
-        // during the RawModuleDefV8.GetSatsTypeInfo() instead of exposing them via user's module.
         try
         {
             // We need this explicit cast here to make `ToBytes` understand the types correctly.
-            RawModuleDef versioned = new RawModuleDef.V8BackCompat(moduleDef);
+            RawModuleDef versioned = new RawModuleDef.V9(moduleDef);
             var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
             description.Write(moduleBytes);
         }
         catch (Exception e)
         {
-            Runtime.Log($"Error while describing the module: {e}", Runtime.LogLevel.Error);
+            Log.Error($"Error while describing the module: {e}");
         }
     }
 
@@ -187,21 +177,22 @@ public static class Module
         BytesSink error
     )
     {
-        // Piece together the sender identity.
-        var sender = Identity.From(
-            MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
-        );
-
-        // Piece together the sender address.
-        var address = Address.From(MemoryMarshal.AsBytes([address_0, address_1]).ToArray());
-
         try
         {
-            Runtime.Random = new((int)timestamp.MicrosecondsSinceEpoch);
+            var senderIdentity = Identity.From(
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+            );
+            var senderAddress = Address.From(
+                MemoryMarshal.AsBytes([address_0, address_1]).ToArray()
+            );
+            var random = new Random((int)timestamp.MicrosecondsSinceEpoch);
+            var time = timestamp.ToStd();
+
+            var ctx = newContext!(senderIdentity, senderAddress, random, time);
 
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            reducers[(int)id].Invoke(reader, new(sender, address, timestamp.ToStd()));
+            reducers[(int)id].Invoke(reader, ctx);
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");

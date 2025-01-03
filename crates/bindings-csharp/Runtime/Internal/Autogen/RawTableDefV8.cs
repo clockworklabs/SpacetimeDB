@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Internal
@@ -54,15 +53,16 @@ namespace SpacetimeDB.Internal
 			this.Scheduled = Scheduled;
 		}
 
-		public RawTableDefV8() : this(
-			"",
-			new(),
-			new(),
-			new(),
-			new(),
-			"",
-			"",
-			default!
-		) { }
+		public RawTableDefV8()
+		{
+			this.TableName = "";
+			this.Columns = new();
+			this.Indexes = new();
+			this.Constraints = new();
+			this.Sequences = new();
+			this.TableType = "";
+			this.TableAccess = "";
+		}
+
 	}
 }

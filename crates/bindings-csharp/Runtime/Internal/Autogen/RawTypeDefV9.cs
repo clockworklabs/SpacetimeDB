@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Internal
@@ -34,10 +33,10 @@ namespace SpacetimeDB.Internal
 			this.CustomOrdering = CustomOrdering;
 		}
 
-		public RawTypeDefV9() : this(
-			new(),
-			default!,
-			default!
-		) { }
+		public RawTypeDefV9()
+		{
+			this.Name = new();
+		}
+
 	}
 }

@@ -25,7 +25,8 @@ pub async fn error_for_status(response: Response) -> Result<Response, CliError> 
     if let Some(kind) = status
         .is_client_error()
         .then_some(RequestSource::Client)
-        .or_else(|| status.is_client_error().then_some(RequestSource::Server))
+        // Anything that is not a success is an error for the client, even a redirect that is not followed.
+        .or_else(|| (!status.is_success()).then_some(RequestSource::Server))
     {
         let msg = response.text().await?;
         return Err(CliError::Request { kind, msg, status });

@@ -4,10 +4,12 @@ use std::path::PathBuf;
 use std::sync::{MutexGuard, PoisonError};
 
 use hex::FromHexError;
+use spacetimedb_expr::errors::TypingError;
 use spacetimedb_sats::AlgebraicType;
+use spacetimedb_schema::error::ValidationErrors;
 use spacetimedb_snapshot::SnapshotError;
 use spacetimedb_table::read_column;
-use spacetimedb_table::table::{self, UniqueConstraintViolation};
+use spacetimedb_table::table::{self, ReadViaBsatnError, UniqueConstraintViolation};
 use thiserror::Error;
 
 use crate::client::ClientActorId;
@@ -15,6 +17,7 @@ use crate::db::datastore::system_tables::SystemTable;
 use crate::host::scheduler::ScheduleError;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::db::error::{LibError, RelationError, SchemaErrors};
+use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::raw_def::RawIndexDefV8;
 use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::ProductValue;
@@ -35,6 +38,8 @@ pub enum TableError {
     NotFound(String),
     #[error("Table with ID `{1}` not found in `{0}`.")]
     IdNotFound(SystemTable, u32),
+    #[error("Sql `{1}` not found in `{0}`.")]
+    RawSqlNotFound(SystemTable, RawSql),
     #[error("Table with ID `{0}` not found in `TxState`.")]
     IdNotFoundState(TableId),
     #[error("Column `{0}.{1}` is missing a name")]
@@ -72,14 +77,14 @@ pub enum TableError {
 pub enum IndexError {
     #[error("Index not found: {0:?}")]
     NotFound(IndexId),
-    #[error("Index already exist: {0:?}: {1}")]
-    IndexAlreadyExists(RawIndexDefV8, String),
     #[error("Column not found: {0:?}")]
     ColumnNotFound(RawIndexDefV8),
     #[error(transparent)]
     UniqueConstraintViolation(#[from] UniqueConstraintViolation),
     #[error("Attempt to define a index with more than 1 auto_inc column: Table: {0:?}, Columns: {1:?}")]
     OneAutoInc(TableId, Vec<String>),
+    #[error("Could not decode arguments to index scan")]
+    Decode(DecodeError),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -98,6 +103,8 @@ pub enum SubscriptionError {
     SideEffect(Crud),
     #[error("Unsupported query on subscription: {0:?}")]
     Unsupported(String),
+    #[error("Subscribing to queries in one call is not supported")]
+    Multiple,
 }
 
 #[derive(Error, Debug)]
@@ -130,7 +137,7 @@ pub enum PlanError {
 
 #[derive(Error, Debug)]
 pub enum DatabaseError {
-    #[error("Database instance not found: {0}")]
+    #[error("Replica not found: {0}")]
     NotFound(u64),
     #[error("Database is already opened. Path:`{0}`. Error:{1}")]
     DatabasedOpened(PathBuf, anyhow::Error),
@@ -208,8 +215,14 @@ pub enum DBError {
     #[error(transparent)]
     // Box the inner [`SnapshotError`] to keep Clippy quiet about large `Err` variants.
     Snapshot(#[from] Box<SnapshotError>),
+    #[error("Error reading a value from a table through BSATN: {0}")]
+    ReadViaBsatnError(#[from] ReadViaBsatnError),
+    #[error("Module validation errors: {0}")]
+    ModuleValidationErrors(#[from] ValidationErrors),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+    #[error(transparent)]
+    TypeError(#[from] TypingError),
 }
 
 impl From<SnapshotError> for DBError {
@@ -322,6 +335,8 @@ pub enum NodesError {
     DecodeFilter(#[source] DecodeError),
     #[error("table with provided name or id doesn't exist")]
     TableNotFound,
+    #[error("index with provided name or id doesn't exist")]
+    IndexNotFound,
     #[error("column is out of bounds")]
     BadColumn,
     #[error("can't perform operation; not inside transaction")]
@@ -347,6 +362,8 @@ impl From<DBError> for NodesError {
             DBError::Table(TableError::System(name)) => Self::SystemName(name),
             DBError::Table(TableError::IdNotFound(_, _) | TableError::NotFound(_)) => Self::TableNotFound,
             DBError::Table(TableError::ColumnNotFound(_)) => Self::BadColumn,
+            DBError::Index(IndexError::NotFound(_)) => Self::IndexNotFound,
+            DBError::Index(IndexError::Decode(e)) => Self::DecodeRow(e),
             _ => Self::Internal(Box::new(e)),
         }
     }

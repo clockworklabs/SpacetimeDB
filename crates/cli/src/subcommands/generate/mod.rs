@@ -1,24 +1,32 @@
 #![warn(clippy::uninlined_format_args)]
 
+use anyhow::Context;
+use clap::parser::ValueSource;
 use clap::Arg;
-use clap::ArgAction::SetTrue;
+use clap::ArgAction::Set;
 use convert_case::{Case, Casing};
 use core::mem;
 use duct::cmd;
+use itertools::Itertools;
 use spacetimedb::host::wasmtime::{Mem, MemView, WasmPointee as _};
-use spacetimedb_lib::db::raw_def::RawColumnDefV8;
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
-use spacetimedb_lib::sats::{AlgebraicType, Typespace};
-use spacetimedb_lib::{bsatn, MiscModuleExport, RawModuleDefV8, ReducerDef, TableDesc, TypeAlias};
+use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, Typespace};
+use spacetimedb_lib::{bsatn, RawModuleDefV8, TypeAlias};
 use spacetimedb_lib::{RawModuleDef, MODULE_ABI_MAJOR_VERSION};
 use spacetimedb_primitives::errno;
+use spacetimedb_schema;
+use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
+use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::schema::{Schema, TableSchema};
 use std::fs;
-use std::io::Write;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use wasmtime::{Caller, StoreContextMut};
 
+use crate::detect::{has_rust_fmt, has_rust_up};
+use crate::util::y_or_n;
 use crate::Config;
+use crate::{build, common_args};
 
 mod code_indenter;
 pub mod csharp;
@@ -26,19 +34,19 @@ pub mod rust;
 pub mod typescript;
 mod util;
 
-const INDENT: &str = "\t";
-
 pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")
-        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --wasm-file <PATH>]")
+        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH>]")
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
-                .long("wasm-file")
-                .short('w')
+                .long("bin-path")
+                .short('b')
                 .group("source")
-                .help("The system path (absolute or relative) to the wasm file we should inspect"),
+                .conflicts_with("project_path")
+                .conflicts_with("build_options")
+                .help("The system path (absolute or relative) to the compiled wasm binary we should inspect"),
         )
         .arg(
             Arg::new("project_path")
@@ -54,7 +62,7 @@ pub fn cli() -> clap::Command {
                 .hide(true)
                 .num_args(0..=1)
                 .value_parser(clap::value_parser!(PathBuf))
-                .long("json-module")
+                .long("module-def")
                 .group("source")
                 .help("Generate from a ModuleDef encoded as json"),
         )
@@ -70,7 +78,6 @@ pub fn cli() -> clap::Command {
             Arg::new("namespace")
                 .default_value("SpacetimeDB.Types")
                 .long("namespace")
-                .short('n')
                 .help("The namespace that should be used"),
         )
         .arg(
@@ -82,49 +89,30 @@ pub fn cli() -> clap::Command {
                 .help("The language to generate"),
         )
         .arg(
-            Arg::new("skip_clippy")
-                .long("skip_clippy")
-                .short('s')
-                .short('S')
-                .action(SetTrue)
-                .env("SPACETIME_SKIP_CLIPPY")
-                .value_parser(clap::builder::FalseyValueParser::new())
-                .help(
-                    "Skips running clippy on the module before generating \
-                     (intended to speed up local iteration, not recommended \
-                     for CI)",
-                ),
+            Arg::new("build_options")
+                .long("build-options")
+                .alias("build-opts")
+                .action(Set)
+                .default_value("")
+                .help("Options to pass to the build command, for example --build-options='--skip-println-checks'"),
         )
-        .arg(Arg::new("delete_files").long("delete-files").action(SetTrue).help(
-            "Delete outdated generated files whose definitions have been \
-             removed from the module. Prompts before deleting unless --force is \
-             supplied.",
-        ))
-        .arg(
-            Arg::new("force")
-                .long("force")
-                .action(SetTrue)
-                .requires("delete_files")
-                .help("delete-files without prompting first. Useful for scripts."),
-        )
-        .arg(Arg::new("debug").long("debug").short('d').action(SetTrue).help(
-            "Builds the module using debug instead of release (intended to \
-             speed up local iteration, not recommended for CI)",
-        ))
+        .arg(common_args::yes())
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
-pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
+pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let wasm_file = args.get_one::<PathBuf>("wasm_file").cloned();
     let json_module = args.get_many::<PathBuf>("json_module");
     let out_dir = args.get_one::<PathBuf>("out_dir").unwrap();
     let lang = *args.get_one::<Language>("lang").unwrap();
     let namespace = args.get_one::<String>("namespace").unwrap();
-    let skip_clippy = args.get_flag("skip_clippy");
-    let build_debug = args.get_flag("debug");
-    let delete_files = args.get_flag("delete_files");
     let force = args.get_flag("force");
+    let build_options = args.get_one::<String>("build_options").unwrap();
+
+    if args.value_source("namespace") == Some(ValueSource::CommandLine) && lang != Language::Csharp {
+        return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
+    }
 
     let module = if let Some(mut json_module) = json_module {
         let DeserializeWrapper(module) = if let Some(path) = json_module.next() {
@@ -134,15 +122,11 @@ pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
         };
         module
     } else {
-        let wasm_path = if !project_path.is_dir() && project_path.extension().map_or(false, |ext| ext == "wasm") {
-            println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
-            println!("removed in a future release. Please use --wasm-file instead.");
-            project_path.clone()
-        } else if let Some(path) = wasm_file {
+        let wasm_path = if let Some(path) = wasm_file {
             println!("Skipping build. Instead we are inspecting {}", path.display());
             path.clone()
         } else {
-            crate::tasks::build(project_path, skip_clippy, build_debug)?
+            build::exec_with_argstring(config.clone(), project_path, build_options).await?
         };
         extract_descriptions(&wasm_path)?
     };
@@ -163,51 +147,40 @@ pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
 
     format_files(paths.clone(), lang)?;
 
-    if delete_files {
-        let mut files_to_delete = vec![];
-        for entry in fs::read_dir(out_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file() {
-                if let Ok(contents) = fs::read_to_string(&path) {
-                    if !contents.starts_with("// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB.") {
-                        continue;
-                    }
-                }
-
-                if paths
-                    .iter()
-                    .any(|x| x.file_name().unwrap() == path.file_name().unwrap())
-                {
+    // TODO: We should probably just delete all generated files before we generate any, rather than selectively deleting some afterward.
+    let mut files_to_delete = vec![];
+    for entry in fs::read_dir(out_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            if let Ok(contents) = fs::read_to_string(&path) {
+                if !contents.starts_with("// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB.") {
                     continue;
                 }
-                files_to_delete.push(path);
             }
+
+            if paths
+                .iter()
+                .any(|x| x.file_name().unwrap() == path.file_name().unwrap())
+            {
+                continue;
+            }
+            files_to_delete.push(path);
         }
-        if !files_to_delete.is_empty() {
-            let mut input = "y".to_string();
-            println!("The following files were not generated by this command and will be deleted:");
-            for path in &files_to_delete {
-                println!("  {}", path.to_str().unwrap());
-            }
+    }
+    if !files_to_delete.is_empty() {
+        println!("The following files were not generated by this command and will be deleted:");
+        for path in &files_to_delete {
+            println!("  {}", path.to_str().unwrap());
+        }
 
-            if !force {
-                print!("Are you sure you want to delete these files? [y/N] ");
-                input = "".to_string();
-                std::io::stdout().flush()?;
-                std::io::stdin().read_line(&mut input)?;
-            } else {
-                println!("Force flag present, deleting files without prompting.");
+        if y_or_n(force, "Are you sure you want to delete these files?")? {
+            for path in files_to_delete {
+                fs::remove_file(path)?;
             }
-
-            if input.trim().to_lowercase() == "y" || input.trim().to_lowercase() == "yes" {
-                for path in files_to_delete {
-                    fs::remove_file(path)?;
-                }
-                println!("Files deleted successfully.");
-            } else {
-                println!("Files not deleted.");
-            }
+            println!("Files deleted successfully.");
+        } else {
+            println!("Files not deleted.");
         }
     }
 
@@ -240,143 +213,134 @@ pub struct GenCtx {
     names: Vec<Option<String>>,
 }
 
-pub fn generate(module: RawModuleDefV8, lang: Language, namespace: &str) -> anyhow::Result<Vec<(String, String)>> {
-    let (ctx, items) = extract_from_moduledef(module);
-    let items: Vec<GenItem> = items.collect();
-    let mut files: Vec<(String, String)> = items
-        .iter()
-        .filter_map(|item| item.generate(&ctx, lang, namespace))
-        .collect();
-    files.extend(generate_globals(&ctx, lang, namespace, &items));
+pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow::Result<Vec<(String, String)>> {
+    let module = ModuleDef::try_from(module)?;
+    Ok(match lang {
+        Language::Rust => generate_lang(&module, rust::Rust, namespace),
+        Language::TypeScript => generate_lang(&module, typescript::TypeScript, namespace),
+        Language::Csharp => {
+            let ctx = GenCtx {
+                typespace: module.typespace().clone(),
+                names: (0..module.typespace().types.len())
+                    .map(|r| {
+                        module
+                            .type_def_from_ref(AlgebraicTypeRef(r as _))
+                            .map(|(name, _)| name.name_segments().join("."))
+                    })
+                    .collect(),
+            };
 
-    Ok(files)
+            let tableset = module.tables().map(|t| t.product_type_ref).collect::<HashSet<_>>();
+            let tables = module
+                .tables()
+                .map(|table| TableDescHack {
+                    schema: TableSchema::from_module_def(&module, table, (), 0.into()),
+                    data: table.product_type_ref,
+                })
+                .sorted_by(|a, b| a.schema.table_name.cmp(&b.schema.table_name));
+
+            // HACK: Patch the fields to have the types that point to `AlgebraicTypeRef` because all generators depend on that
+            // `register_table` in rt.rs resolve the types early, but the generators do it late. This impact enums where
+            // the enum name is not preserved in the `AlgebraicType`.
+            // x.schema.columns =
+            //     RawColumnDefV8::from_product_type(typespace[x.data].as_product().unwrap().clone());
+
+            let types = module.types().filter(|typ| !tableset.contains(&typ.ty)).map(|typ| {
+                GenItem::TypeAlias(TypeAlias {
+                    name: typ.name.name_segments().join("."),
+                    ty: typ.ty,
+                })
+            });
+
+            let reducers = module
+                .reducers()
+                .map(|reducer| spacetimedb_lib::ReducerDef {
+                    name: reducer.name.clone().into(),
+                    args: reducer.params.elements.to_vec(),
+                })
+                .sorted_by(|a, b| a.name.cmp(&b.name));
+
+            let items = itertools::chain!(
+                types,
+                tables.into_iter().map(GenItem::Table),
+                reducers
+                    .filter(|r| !(r.name.starts_with("__") && r.name.ends_with("__")))
+                    .map(GenItem::Reducer),
+            );
+
+            let items: Vec<GenItem> = items.collect();
+            let mut files: Vec<(String, String)> = items
+                .iter()
+                .filter_map(|item| item.generate(&ctx, lang, namespace))
+                .collect();
+            files.extend(generate_globals(&ctx, lang, namespace, &items));
+            files
+        }
+    })
+}
+
+fn generate_lang(module: &ModuleDef, lang: impl Lang, namespace: &str) -> Vec<(String, String)> {
+    itertools::chain!(
+        module.tables().map(|tbl| {
+            (
+                lang.table_filename(module, tbl),
+                lang.generate_table(module, namespace, tbl),
+            )
+        }),
+        module.types().map(|typ| {
+            (
+                lang.type_filename(&typ.name),
+                lang.generate_type(module, namespace, typ),
+            )
+        }),
+        module.reducers().map(|reducer| {
+            (
+                lang.reducer_filename(&reducer.name),
+                lang.generate_reducer(module, namespace, reducer),
+            )
+        }),
+        lang.generate_globals(module, namespace),
+    )
+    .collect()
+}
+
+trait Lang {
+    fn table_filename(&self, module: &ModuleDef, table: &TableDef) -> String;
+    fn type_filename(&self, type_name: &ScopedTypeName) -> String;
+    fn reducer_filename(&self, reducer_name: &Identifier) -> String;
+
+    fn generate_table(&self, module: &ModuleDef, namespace: &str, tbl: &TableDef) -> String;
+    fn generate_type(&self, module: &ModuleDef, namespace: &str, typ: &TypeDef) -> String;
+    fn generate_reducer(&self, module: &ModuleDef, namespace: &str, reducer: &ReducerDef) -> String;
+    fn generate_globals(&self, module: &ModuleDef, namespace: &str) -> Vec<(String, String)>;
+}
+
+/// Backwards-compatibible imitation of `TableDesc` that should be removed once the generators are updated to rely on `ModuleDef`.
+pub struct TableDescHack {
+    schema: TableSchema,
+    data: AlgebraicTypeRef,
+}
+
+pub enum GenItem {
+    Table(TableDescHack),
+    TypeAlias(TypeAlias),
+    Reducer(spacetimedb_lib::ReducerDef),
 }
 
 fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenItem]) -> Vec<(String, String)> {
     match lang {
         Language::Csharp => csharp::autogen_csharp_globals(ctx, items, namespace),
-        Language::TypeScript => typescript::autogen_typescript_globals(ctx, items),
-        Language::Rust => rust::autogen_rust_globals(ctx, items),
+        Language::TypeScript => unreachable!(),
+        Language::Rust => unreachable!(),
     }
-}
-
-pub fn extract_from_moduledef(module: RawModuleDefV8) -> (GenCtx, impl Iterator<Item = GenItem>) {
-    let RawModuleDefV8 {
-        typespace,
-        tables,
-        reducers,
-        misc_exports,
-    } = module;
-    // HACK: Patch the fields to have the types that point to `AlgebraicTypeRef` because all generators depend on that
-    // `register_table` in rt.rs resolve the types early, but the generators do it late. This impact enums where
-    // the enum name is not preserved in the `AlgebraicType`.
-    let tables: Vec<_> = tables
-        .into_iter()
-        .map(|mut x| {
-            x.schema.columns = RawColumnDefV8::from_product_type(typespace[x.data].as_product().unwrap().clone());
-            x
-        })
-        .collect();
-    let tableset = tables
-        .iter()
-        .map(|t| t.data)
-        .collect::<spacetimedb_data_structures::map::HashSet<_>>();
-
-    let mut names = vec![None; typespace.types.len()];
-    let name_info = itertools::chain!(
-        tables.iter().map(|t| (t.data, &*t.schema.table_name)),
-        misc_exports
-            .iter()
-            .map(|MiscModuleExport::TypeAlias(a)| (a.ty, &*a.name)),
-    );
-    for (typeref, name) in name_info {
-        names[typeref.idx()] = Some(name.into())
-    }
-    let ctx = GenCtx { typespace, names };
-    let iter = itertools::chain!(
-        misc_exports
-            .into_iter()
-            .filter(move |MiscModuleExport::TypeAlias(a)| !tableset.contains(&a.ty))
-            .map(GenItem::from_misc_export),
-        tables.into_iter().map(GenItem::Table),
-        reducers
-            .into_iter()
-            .filter(|r| !(r.name.starts_with("__") && r.name.ends_with("__")))
-            .map(GenItem::Reducer),
-    );
-    (ctx, iter)
-}
-
-pub enum GenItem {
-    Table(TableDesc),
-    TypeAlias(TypeAlias),
-    Reducer(ReducerDef),
 }
 
 impl GenItem {
-    fn from_misc_export(exp: MiscModuleExport) -> Self {
-        match exp {
-            MiscModuleExport::TypeAlias(a) => Self::TypeAlias(a),
-        }
-    }
-
     fn generate(&self, ctx: &GenCtx, lang: Language, namespace: &str) -> Option<(String, String)> {
         match lang {
             Language::Csharp => self.generate_csharp(ctx, namespace),
-            Language::TypeScript => self.generate_typescript(ctx),
-            Language::Rust => self.generate_rust(ctx),
-        }
-    }
-
-    fn generate_rust(&self, ctx: &GenCtx) -> Option<(String, String)> {
-        match self {
-            GenItem::Table(table) => {
-                let code = rust::autogen_rust_table(ctx, table);
-                // TODO: this is not ideal (should use table name, not row type name)
-                let tyname = ctx.names[table.data.idx()].as_ref().unwrap();
-                Some((rust::rust_type_file_name(tyname), code))
-            }
-            GenItem::TypeAlias(TypeAlias { name, ty }) => {
-                let code = match &ctx.typespace[*ty] {
-                    AlgebraicType::Sum(sum) => rust::autogen_rust_sum(ctx, name, sum),
-                    AlgebraicType::Product(prod) => rust::autogen_rust_tuple(ctx, name, prod),
-                    _ => todo!(),
-                };
-                Some((rust::rust_type_file_name(name), code))
-            }
-            GenItem::Reducer(reducer) => {
-                let code = rust::autogen_rust_reducer(ctx, reducer);
-                Some((rust::rust_reducer_file_name(&reducer.name), code))
-            }
-        }
-    }
-
-    fn generate_typescript(&self, ctx: &GenCtx) -> Option<(String, String)> {
-        match self {
-            GenItem::Table(table) => {
-                let code = typescript::autogen_typescript_table(ctx, table);
-                // TODO: this is not ideal (should use table name, not row type name)
-                let name = ctx.names[table.data.idx()].as_ref().unwrap().to_case(Case::Snake);
-                Some((name + ".ts", code))
-            }
-            GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
-                AlgebraicType::Sum(sum) => {
-                    let filename = name.replace('.', "").to_case(Case::Snake);
-                    let code = typescript::autogen_typescript_sum(ctx, name, sum);
-                    Some((filename + ".ts", code))
-                }
-                AlgebraicType::Product(prod) => {
-                    let code = typescript::autogen_typescript_tuple(ctx, name, prod);
-                    let name = name.to_case(Case::Snake);
-                    Some((name + ".ts", code))
-                }
-                _ => todo!(),
-            },
-            GenItem::Reducer(reducer) => {
-                let code = typescript::autogen_typescript_reducer(ctx, reducer);
-                let name = reducer.name.deref().to_case(Case::Snake);
-                Some((name + "_reducer.ts", code))
-            }
+            Language::TypeScript => unreachable!(),
+            Language::Rust => unreachable!(),
         }
     }
 
@@ -398,16 +362,12 @@ impl GenItem {
                 }
                 _ => todo!(),
             },
-            GenItem::Reducer(reducer) => {
-                let code = csharp::autogen_csharp_reducer(ctx, reducer, namespace);
-                let pascalcase = reducer.name.deref().to_case(Case::Pascal);
-                Some((pascalcase + "Reducer.cs", code))
-            }
+            GenItem::Reducer(_) => None,
         }
     }
 }
 
-pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDefV8> {
+pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDef> {
     let engine = wasmtime::Engine::default();
     let t = std::time::Instant::now();
     let module = wasmtime::Module::from_file(&engine, wasm_file)?;
@@ -422,7 +382,7 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDefV8> 
     let module_name = &*format!("spacetime_{MODULE_ABI_MAJOR_VERSION}.0");
     linker.func_wrap(
         module_name,
-        "_console_log",
+        "console_log",
         |mut caller: Caller<'_, WasmCtx>,
          _level: u32,
          _target_ptr: u32,
@@ -437,7 +397,7 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDefV8> 
             println!("from wasm: {}", String::from_utf8_lossy(slice));
         },
     )?;
-    linker.func_wrap(module_name, "_bytes_sink_write", WasmCtx::bytes_sink_write)?;
+    linker.func_wrap(module_name, "bytes_sink_write", WasmCtx::bytes_sink_write)?;
     let instance = linker.instantiate(&mut store, &module)?;
     let memory = Mem::extract(&instance, &mut store)?;
     store.data_mut().mem = Some(memory);
@@ -459,10 +419,6 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDefV8> 
         }
         // TODO: shouldn't we return an error here?
         None => RawModuleDef::V8BackCompat(RawModuleDefV8::default()),
-    };
-    let module = match module {
-        RawModuleDef::V8BackCompat(v8) => v8,
-        _ => anyhow::bail!("Unimplemented module definition version"),
     };
     Ok(module)
 }
@@ -508,9 +464,17 @@ impl WasmCtx {
 fn format_files(generated_files: Vec<PathBuf>, lang: Language) -> anyhow::Result<()> {
     match lang {
         Language::Rust => {
-            cmd!("rustup", "component", "add", "rustfmt").run()?;
+            if !has_rust_fmt() {
+                if has_rust_up() {
+                    cmd!("rustup", "component", "add", "rustfmt")
+                        .run()
+                        .context("Failed to install rustfmt with Rustup")?;
+                } else {
+                    anyhow::bail!("rustfmt is not installed. Please install it.");
+                }
+            }
             for path in generated_files {
-                cmd!("rustfmt", path.to_str().unwrap()).run()?;
+                cmd!("rustfmt", "--edition", "2021", path.to_str().unwrap()).run()?;
             }
         }
         Language::Csharp => {}

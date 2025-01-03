@@ -1,20 +1,23 @@
+use std::env;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use spacetimedb::config::CertificateAuthority;
 use spacetimedb::messages::control_db::HostType;
-use spacetimedb_lib::ser::serde::SerializeWrapper;
+use spacetimedb::Identity;
+use spacetimedb_client_api::auth::SpacetimeAuth;
+use spacetimedb_client_api::routes::subscribe::generate_random_address;
+use spacetimedb_paths::{RootDir, SpacetimePaths};
 use tokio::runtime::{Builder, Runtime};
 
-use spacetimedb::address::Address;
-
-use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
-use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
+use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
-use spacetimedb::messages::websocket::{self as ws, EncodedValue};
+use spacetimedb::host::ReducerArgs;
+use spacetimedb::messages::websocket::CallReducerFlags;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_lib::{bsatn, sats};
 
@@ -45,28 +48,33 @@ pub struct ModuleHandle {
     // Needs to hold a reference to the standalone env.
     _env: Arc<StandaloneEnv>,
     pub client: ClientConnection,
-    pub db_address: Address,
+    pub db_identity: Identity,
 }
 
 impl ModuleHandle {
-    pub async fn call_reducer_json(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
-        let args = serde_json::to_string(&args).unwrap();
-        let message = ws::ClientMessage::CallReducer(ws::CallReducer {
-            reducer: reducer.to_string(),
-            args: EncodedValue::Text(args.into()),
-            request_id: 0,
-        });
-        self.send(serde_json::to_string(&SerializeWrapper::new(message)).unwrap())
-            .await
+    async fn call_reducer(&self, reducer: &str, args: ReducerArgs) -> anyhow::Result<()> {
+        let result = self
+            .client
+            .call_reducer(reducer, args, 0, Instant::now(), CallReducerFlags::FullUpdate)
+            .await;
+        let result = match result {
+            Ok(result) => result.into(),
+            Err(err) => Err(err.into()),
+        };
+        match result {
+            Ok(()) => Ok(()),
+            Err(err) => Err(err.context(format!("Logs:\n{}", self.read_log(None).await))),
+        }
     }
 
-    pub async fn call_reducer_binary(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
-        let message = ws::ClientMessage::CallReducer(ws::CallReducer {
-            reducer: reducer.to_string(),
-            args: EncodedValue::Binary(bsatn::to_vec(&args).unwrap().into()),
-            request_id: 0,
-        });
-        self.send(bsatn::to_vec(&message).unwrap()).await
+    pub async fn call_reducer_json(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
+        let args = serde_json::to_string(&args).unwrap();
+        self.call_reducer(reducer, ReducerArgs::Json(args.into())).await
+    }
+
+    pub async fn call_reducer_binary(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
+        let args = bsatn::to_vec(&args).unwrap();
+        self.call_reducer(reducer, ReducerArgs::Bsatn(args.into())).await
     }
 
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {
@@ -75,8 +83,8 @@ impl ModuleHandle {
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
-        let filepath = DatabaseLogger::filepath(&self.db_address, self.client.database_instance_id);
-        DatabaseLogger::read_latest(&filepath, size).await
+        let logs_dir = self._env.data_dir().replica(self.client.replica_id).module_logs();
+        DatabaseLogger::read_latest(logs_dir, size).await
     }
 }
 
@@ -135,24 +143,28 @@ impl CompiledModule {
     /// If "reuse_db_path" is set, the module will be loaded in the given path,
     /// without resetting the database.
     /// This is used to speed up benchmarks running under callgrind (it allows them to reuse native-compiled wasm modules).
-    pub async fn load_module(&self, config: Config, reuse_db_path: Option<&Path>) -> ModuleHandle {
+    pub async fn load_module(&self, config: Config, reuse_db_path: Option<&RootDir>) -> ModuleHandle {
         let paths = match reuse_db_path {
-            Some(path) => FilesLocal::hidden(path),
+            Some(path) => SpacetimePaths::from_root_dir(path),
             None => {
-                let paths = FilesLocal::temp(&self.name);
+                let root_dir = RootDir(env::temp_dir().join("stdb").join(&self.name));
 
                 // The database created in the `temp` folder can't be randomized,
                 // so it persists after running the test.
-                std::fs::remove_dir(paths.db_path()).ok();
-                paths
+                std::fs::remove_dir(&root_dir).ok();
+
+                SpacetimePaths::from_root_dir(&root_dir)
             }
         };
 
-        crate::set_key_env_vars(&paths);
-        let env = spacetimedb_standalone::StandaloneEnv::init(config).await.unwrap();
-        let identity = env.create_identity().await.unwrap();
-        let db_address = env.create_address().await.unwrap();
-        let client_address = env.create_address().await.unwrap();
+        let certs = CertificateAuthority::in_cli_config_dir(&paths.cli_config_dir);
+        let env = spacetimedb_standalone::StandaloneEnv::init(config, &certs, paths.data_dir.into())
+            .await
+            .unwrap();
+        // TODO: Fix this when we update identity generation.
+        let identity = Identity::ZERO;
+        let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().identity;
+        let client_address = generate_random_address();
 
         let program_bytes = self
             .program_bytes
@@ -162,7 +174,7 @@ impl CompiledModule {
         env.publish_database(
             &identity,
             DatabaseDef {
-                address: db_address,
+                database_identity: db_identity,
                 program_bytes,
                 num_replicas: 1,
                 host_type: HostType::Wasm,
@@ -171,8 +183,8 @@ impl CompiledModule {
         .await
         .unwrap();
 
-        let database = env.get_database_by_address(&db_address).unwrap().unwrap();
-        let instance = env.get_leader_database_instance_by_database(database.id).unwrap();
+        let database = env.get_database_by_identity(&db_identity).unwrap().unwrap();
+        let instance = env.get_leader_replica_by_database(database.id).unwrap();
 
         let client_id = ClientActorId {
             identity,
@@ -180,12 +192,12 @@ impl CompiledModule {
             name: env.client_actor_index().next_client_name(),
         };
 
-        let module = env
-            .host_controller()
-            .get_module_host(instance.id)
+        let host = env
+            .leader(database.id)
             .await
+            .expect("host should be running")
             .expect("host should be running");
-        let (_, module_rx) = tokio::sync::watch::channel(module);
+        let module_rx = host.module_watcher().await.unwrap();
 
         // TODO: it might be neat to add some functionality to module handle to make
         // it easier to interact with the database. For example it could include
@@ -193,8 +205,8 @@ impl CompiledModule {
         // for stuff like "get logs" or "get message log"
         ModuleHandle {
             _env: env,
-            client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module_rx),
-            db_address,
+            client: ClientConnection::dummy(client_id, ClientConfig::for_test(), instance.id, module_rx),
+            db_identity,
         }
     }
 }
@@ -218,4 +230,44 @@ pub struct LoggerRecord {
     pub filename: Option<String>,
     pub line_number: Option<u32>,
     pub message: String,
+}
+
+const COMPILATION_MODE: CompilationMode = if cfg!(debug_assertions) {
+    CompilationMode::Debug
+} else {
+    CompilationMode::Release
+};
+
+pub trait ModuleLanguage {
+    const NAME: &'static str;
+
+    fn get_module() -> &'static CompiledModule;
+}
+
+pub struct Csharp;
+
+impl ModuleLanguage for Csharp {
+    const NAME: &'static str = "csharp";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-cs", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
+}
+
+pub struct Rust;
+
+impl ModuleLanguage for Rust {
+    const NAME: &'static str = "rust";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
 }

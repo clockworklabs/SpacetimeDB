@@ -4,6 +4,8 @@ class AddRemoveIndex(Smoketest):
     AUTOPUBLISH = False
 
     MODULE_CODE = """
+use spacetimedb::{ReducerContext, Table};
+
 #[spacetimedb::table(name = t1)]
 pub struct T1 { id: u64 }
 
@@ -11,14 +13,16 @@ pub struct T1 { id: u64 }
 pub struct T2 { id: u64 }
 
 #[spacetimedb::reducer(init)]
-pub fn init() {
+pub fn init(ctx: &ReducerContext) {
     for id in 0..1_000 {
-        T1::insert(T1 { id });
-        T2::insert(T2 { id });
+        ctx.db.t1().insert(T1 { id });
+        ctx.db.t2().insert(T2 { id });
     }
 }
 """
     MODULE_CODE_INDEXED = """
+use spacetimedb::{ReducerContext, Table};
+
 #[spacetimedb::table(name = t1)]
 pub struct T1 { #[index(btree)] id: u64 }
 
@@ -26,18 +30,18 @@ pub struct T1 { #[index(btree)] id: u64 }
 pub struct T2 { #[index(btree)] id: u64 }
 
 #[spacetimedb::reducer(init)]
-pub fn init() {
+pub fn init(ctx: &ReducerContext) {
     for id in 0..1_000 {
-        T1::insert(T1 { id });
-        T2::insert(T2 { id });
+        ctx.db.t1().insert(T1 { id });
+        ctx.db.t2().insert(T2 { id });
     }
 }
 
 #[spacetimedb::reducer]
-pub fn add() {
+pub fn add(ctx: &ReducerContext) {
     let id = 1_001;
-    T1::insert(T1 { id });
-    T2::insert(T2 { id });
+    ctx.db.t1().insert(T1 { id });
+    ctx.db.t2().insert(T2 { id });
 }
 """
 

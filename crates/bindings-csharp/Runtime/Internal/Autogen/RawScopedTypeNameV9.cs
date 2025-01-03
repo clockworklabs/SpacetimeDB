@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Internal
@@ -30,9 +29,11 @@ namespace SpacetimeDB.Internal
 			this.Name = Name;
 		}
 
-		public RawScopedTypeNameV9() : this(
-			new(),
-			""
-		) { }
+		public RawScopedTypeNameV9()
+		{
+			this.Scope = new();
+			this.Name = "";
+		}
+
 	}
 }

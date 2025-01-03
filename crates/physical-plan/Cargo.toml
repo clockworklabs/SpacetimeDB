@@ -1,0 +1,15 @@
+[package]
+name = "spacetimedb-physical-plan"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+description = "The physical query plan for the SpacetimeDB query engine"
+
+[dependencies]
+derive_more.workspace = true
+spacetimedb-lib.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-schema.workspace = true
+spacetimedb-expr.workspace = true
+spacetimedb-sql-parser.workspace = true

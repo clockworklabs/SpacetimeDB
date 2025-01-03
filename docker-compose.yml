@@ -27,7 +27,11 @@ services:
       - "3000:3000"
       # Tracy
       - "8086:8086"
-    entrypoint: cargo watch -i flamegraphs -i log.conf --why -C crates/standalone -x 'run start'
+    entrypoint:
+      cargo watch -i flamegraphs -i log.conf --why -C crates/standalone -x 'run
+      start --data-dir=/stdb/data
+      --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub
+      --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa'
     healthcheck:
       test: curl -f http://localhost/database/ping || exit 1
     privileged: true
@@ -36,13 +40,11 @@ services:
       SPACETIMEDB_TRACY: 1
       RUST_BACKTRACE: 1
       ENV: dev
-      SENDGRID_API_KEY:
-      SENDGRID_SENDER:
     networks:
       - spacetimedb_default
 
 networks:
   spacetimedb_default:
-     name: spacetimedb_default
+    name: spacetimedb_default
 volumes:
   key_files:

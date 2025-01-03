@@ -3,7 +3,9 @@
 use core::fmt;
 
 macro_rules! system_id {
-    ($name:ident, $backing_ty:ty) => {
+    ($(#[$($doc_comment:tt)*])* pub struct $name:ident(pub $backing_ty:ty);) => {
+
+        $(#[$($doc_comment)*])*
         #[derive(Debug, Default, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
         #[repr(transparent)]
         pub struct $name(pub $backing_ty);
@@ -20,9 +22,11 @@ macro_rules! system_id {
         }
 
         impl $name {
+            /// Convert `self` to a `usize` suitable for indexing into an array.
             pub fn idx(self) -> usize {
                 self.0 as usize
             }
+
         }
 
         impl nohash_hasher::IsEnabled for $name {}
@@ -47,9 +51,59 @@ macro_rules! system_id {
         }
     };
 }
+// TODO(1.0): convert this into a proper trait.
+macro_rules! auto_inc_system_id {
+    ($name:ident) => {
+        impl $name {
+            /// The sentinel value for this type.
+            /// This will be initialized to a valid ID upon insertion into a system table as a primary key.
+            pub const SENTINEL: Self = Self(0);
 
-system_id!(TableId, u32);
-system_id!(SequenceId, u32);
-system_id!(IndexId, u32);
-system_id!(ConstraintId, u32);
-system_id!(ColId, u16);
+            /// Check if this ID is the sentinel value.
+            pub fn is_sentinel(self) -> bool {
+                self == Self::SENTINEL
+            }
+        }
+    };
+}
+
+system_id! {
+    /// An identifier for a table, unique within a database.
+    pub struct TableId(pub u32);
+}
+auto_inc_system_id!(TableId);
+
+system_id! {
+    /// An identifier for a sequence, unique within a database.
+    pub struct SequenceId(pub u32);
+}
+auto_inc_system_id!(SequenceId);
+
+system_id! {
+    /// An identifier for an index, unique within a database.
+    pub struct IndexId(pub u32);
+}
+auto_inc_system_id!(IndexId);
+
+system_id! {
+    /// An identifier for a constraint, unique within a database.
+    pub struct ConstraintId(pub u32);
+}
+auto_inc_system_id!(ConstraintId);
+
+system_id! {
+    /// An identifier for a schedule, unique within a database.
+    pub struct ScheduleId(pub u32);
+}
+auto_inc_system_id!(ScheduleId);
+
+system_id! {
+    /// The position of a column within a table.
+    ///
+    /// A `ColId` does NOT uniquely identify a column within a database!
+    /// A pair `(TableId, ColId)` is required for this.
+    /// Each table will have columns with `ColId` values ranging from `0` to `n-1`, where `n` is the number of columns in the table.
+    /// A table may have at most `u16::MAX` columns.
+    pub struct ColId(pub u16);
+}
+// ColId works differently from other system IDs and is not auto-incremented.

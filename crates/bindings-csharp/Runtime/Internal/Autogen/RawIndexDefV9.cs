@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Internal
@@ -17,14 +16,14 @@ namespace SpacetimeDB.Internal
 	public partial class RawIndexDefV9
 	{
 		[DataMember(Name = "name")]
-		public string Name;
+		public string? Name;
 		[DataMember(Name = "accessor_name")]
 		public string? AccessorName;
 		[DataMember(Name = "algorithm")]
 		public SpacetimeDB.Internal.RawIndexAlgorithm Algorithm;
 
 		public RawIndexDefV9(
-			string Name,
+			string? Name,
 			string? AccessorName,
 			SpacetimeDB.Internal.RawIndexAlgorithm Algorithm
 		)
@@ -34,10 +33,10 @@ namespace SpacetimeDB.Internal
 			this.Algorithm = Algorithm;
 		}
 
-		public RawIndexDefV9() : this(
-			"",
-			default!,
-			default!
-		) { }
+		public RawIndexDefV9()
+		{
+			this.Algorithm = null!;
+		}
+
 	}
 }

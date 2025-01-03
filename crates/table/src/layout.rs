@@ -6,6 +6,8 @@
 //! These, and others, determine what the layout of objects typed at those types are.
 //! They also implement [`HasLayout`] which generalizes over layout annotated types.
 
+use crate::MemoryUsage;
+
 use super::{
     indexes::Size,
     var_len::{VarLenGranule, VarLenRef},
@@ -16,6 +18,7 @@ use enum_as_inner::EnumAsInner;
 use spacetimedb_sats::{
     bsatn, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant,
 };
+pub use spacetimedb_schema::type_for_generate::PrimitiveType;
 
 /// Aligns a `base` offset to the `required_alignment` (in the positive direction) and returns it.
 ///
@@ -52,7 +55,12 @@ pub struct Layout {
     pub size: u16,
     /// The alignment of the object / expected object in bytes.
     pub align: u16,
+    /// Whether this is the layout of a fixed object
+    /// and not the layout of a var-len type's fixed component.
+    pub fixed: bool,
 }
+
+impl MemoryUsage for Layout {}
 
 /// A type which knows what its layout is.
 ///
@@ -104,6 +112,17 @@ pub enum AlgebraicTypeLayout {
     Primitive(PrimitiveType),
     /// A variable length type, annotated with its layout.
     VarLen(VarLenType),
+}
+
+impl MemoryUsage for AlgebraicTypeLayout {
+    fn heap_usage(&self) -> usize {
+        match self {
+            AlgebraicTypeLayout::Sum(x) => x.heap_usage(),
+            AlgebraicTypeLayout::Product(x) => x.heap_usage(),
+            AlgebraicTypeLayout::Primitive(x) => x.heap_usage(),
+            AlgebraicTypeLayout::VarLen(x) => x.heap_usage(),
+        }
+    }
 }
 
 impl HasLayout for AlgebraicTypeLayout {
@@ -169,6 +188,13 @@ pub const fn row_size_for_type<T>() -> Size {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RowTypeLayout(ProductTypeLayout);
 
+impl MemoryUsage for RowTypeLayout {
+    fn heap_usage(&self) -> usize {
+        let Self(layout) = self;
+        layout.heap_usage()
+    }
+}
+
 impl RowTypeLayout {
     /// Returns a view of this row type as a product type.
     pub fn product(&self) -> &ProductTypeLayout {
@@ -216,6 +242,13 @@ pub struct ProductTypeLayout {
     pub elements: Collection<ProductTypeElementLayout>,
 }
 
+impl MemoryUsage for ProductTypeLayout {
+    fn heap_usage(&self) -> usize {
+        let Self { layout, elements } = self;
+        layout.heap_usage() + elements.heap_usage()
+    }
+}
+
 impl HasLayout for ProductTypeLayout {
     fn layout(&self) -> &Layout {
         &self.layout
@@ -238,6 +271,13 @@ pub struct ProductTypeElementLayout {
     pub name: Option<Box<str>>,
 }
 
+impl MemoryUsage for ProductTypeElementLayout {
+    fn heap_usage(&self) -> usize {
+        let Self { offset, ty, name } = self;
+        offset.heap_usage() + ty.heap_usage() + name.heap_usage()
+    }
+}
+
 /// A mirrior of [`SumType`] annotated with a [`Layout`].
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SumTypeLayout {
@@ -248,6 +288,17 @@ pub struct SumTypeLayout {
     /// The relative offset of a sum value's payload for sums of this type.
     /// Sum value tags are always at offset 0.
     pub payload_offset: u16,
+}
+
+impl MemoryUsage for SumTypeLayout {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            layout,
+            variants,
+            payload_offset,
+        } = self;
+        layout.heap_usage() + variants.heap_usage() + payload_offset.heap_usage()
+    }
 }
 
 impl HasLayout for SumTypeLayout {
@@ -269,36 +320,48 @@ pub struct SumTypeVariantLayout {
     pub name: Option<Box<str>>,
 }
 
-/// Scalar types, i.e. bools, integers and floats.
-/// These types do not require a `VarLenRef` indirection.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum PrimitiveType {
-    Bool,
-    I8,
-    U8,
-    I16,
-    U16,
-    I32,
-    U32,
-    I64,
-    U64,
-    I128,
-    U128,
-    I256,
-    U256,
-    F32,
-    F64,
+impl MemoryUsage for SumTypeVariantLayout {
+    fn heap_usage(&self) -> usize {
+        let Self { ty, name } = self;
+        ty.heap_usage() + name.heap_usage()
+    }
 }
+
+impl MemoryUsage for PrimitiveType {}
 
 impl HasLayout for PrimitiveType {
     fn layout(&self) -> &'static Layout {
         match self {
-            Self::Bool | Self::I8 | Self::U8 => &Layout { size: 1, align: 1 },
-            Self::I16 | Self::U16 => &Layout { size: 2, align: 2 },
-            Self::I32 | Self::U32 | Self::F32 => &Layout { size: 4, align: 4 },
-            Self::I64 | Self::U64 | Self::F64 => &Layout { size: 8, align: 8 },
-            Self::I128 | Self::U128 => &Layout { size: 16, align: 16 },
-            Self::I256 | Self::U256 => &Layout { size: 32, align: 32 },
+            Self::Bool | Self::I8 | Self::U8 => &Layout {
+                size: 1,
+                align: 1,
+                fixed: true,
+            },
+            Self::I16 | Self::U16 => &Layout {
+                size: 2,
+                align: 2,
+                fixed: true,
+            },
+            Self::I32 | Self::U32 | Self::F32 => &Layout {
+                size: 4,
+                align: 4,
+                fixed: true,
+            },
+            Self::I64 | Self::U64 | Self::F64 => &Layout {
+                size: 8,
+                align: 8,
+                fixed: true,
+            },
+            Self::I128 | Self::U128 => &Layout {
+                size: 16,
+                align: 16,
+                fixed: true,
+            },
+            Self::I256 | Self::U256 => &Layout {
+                size: 32,
+                align: 32,
+                fixed: true,
+            },
         }
     }
 }
@@ -314,15 +377,23 @@ pub enum VarLenType {
     /// Storing the whole `AlgebraicType` here allows us to directly call BSATN ser/de,
     /// and to report type errors.
     Array(Box<AlgebraicType>),
-    /// A map type.  The whole outer `AlgebraicType` is stored here.
-    ///
-    /// Storing the whole `AlgebraicType` here allows us to directly call BSATN ser/de,
-    /// and to report type errors.
-    Map(Box<AlgebraicType>),
+}
+
+impl MemoryUsage for VarLenType {
+    fn heap_usage(&self) -> usize {
+        match self {
+            VarLenType::String => 0,
+            VarLenType::Array(x) => x.heap_usage(),
+        }
+    }
 }
 
 /// The layout of var-len objects. Aligned at a `u16` which it has 2 of.
-const VAR_LEN_REF_LAYOUT: Layout = Layout { size: 4, align: 2 };
+const VAR_LEN_REF_LAYOUT: Layout = Layout {
+    size: 4,
+    align: 2,
+    fixed: false,
+};
 const _: () = assert!(VAR_LEN_REF_LAYOUT.size as usize == mem::size_of::<VarLenRef>());
 const _: () = assert!(VAR_LEN_REF_LAYOUT.align as usize == mem::align_of::<VarLenRef>());
 
@@ -342,7 +413,7 @@ impl From<AlgebraicType> for AlgebraicTypeLayout {
 
             AlgebraicType::String => AlgebraicTypeLayout::VarLen(VarLenType::String),
             AlgebraicType::Array(_) => AlgebraicTypeLayout::VarLen(VarLenType::Array(Box::new(ty))),
-            AlgebraicType::Map(_) => AlgebraicTypeLayout::VarLen(VarLenType::Map(Box::new(ty))),
+
             AlgebraicType::Bool => AlgebraicTypeLayout::Bool,
             AlgebraicType::I8 => AlgebraicTypeLayout::I8,
             AlgebraicType::U8 => AlgebraicTypeLayout::U8,
@@ -372,10 +443,12 @@ impl From<ProductType> for ProductTypeLayout {
         // This is consistent with Rust.
         let mut max_child_align = 1;
 
+        let mut fixed = true;
         let elements = Vec::from(ty.elements)
             .into_iter()
             .map(|elem| {
                 let layout_type: AlgebraicTypeLayout = elem.algebraic_type.into();
+                fixed &= layout_type.layout().fixed;
                 let this_offset = align_to(current_offset, layout_type.align());
                 max_child_align = usize::max(max_child_align, layout_type.align());
 
@@ -393,6 +466,7 @@ impl From<ProductType> for ProductTypeLayout {
         let layout = Layout {
             align: max_child_align as u16,
             size: align_to(current_offset, max_child_align) as u16,
+            fixed,
         };
 
         Self { layout, elements }
@@ -407,10 +481,12 @@ impl From<SumType> for SumTypeLayout {
         // This is consistent with Rust.
         let mut max_child_align = 0;
 
+        let mut fixed = true;
         let variants = Vec::from(ty.variants)
             .into_iter()
             .map(|variant| {
                 let layout_type: AlgebraicTypeLayout = variant.algebraic_type.into();
+                fixed &= layout_type.layout().fixed;
 
                 max_child_align = usize::max(max_child_align, layout_type.align());
                 max_child_size = usize::max(max_child_size, layout_type.size());
@@ -438,7 +514,7 @@ impl From<SumType> for SumTypeLayout {
         // [tag | pad to align | payload]
         let size = align + payload_size as u16;
         let payload_offset = align;
-        let layout = Layout { align, size };
+        let layout = Layout { align, size, fixed };
         Self {
             layout,
             payload_offset,
@@ -467,34 +543,11 @@ impl AlgebraicTypeLayout {
     }
 }
 
-impl PrimitiveType {
-    fn algebraic_type(&self) -> AlgebraicType {
-        match self {
-            PrimitiveType::Bool => AlgebraicType::Bool,
-            PrimitiveType::I8 => AlgebraicType::I8,
-            PrimitiveType::U8 => AlgebraicType::U8,
-            PrimitiveType::I16 => AlgebraicType::I16,
-            PrimitiveType::U16 => AlgebraicType::U16,
-            PrimitiveType::I32 => AlgebraicType::I32,
-            PrimitiveType::U32 => AlgebraicType::U32,
-            PrimitiveType::I64 => AlgebraicType::I64,
-            PrimitiveType::U64 => AlgebraicType::U64,
-            PrimitiveType::I128 => AlgebraicType::I128,
-            PrimitiveType::U128 => AlgebraicType::U128,
-            PrimitiveType::I256 => AlgebraicType::I256,
-            PrimitiveType::U256 => AlgebraicType::U256,
-            PrimitiveType::F32 => AlgebraicType::F32,
-            PrimitiveType::F64 => AlgebraicType::F64,
-        }
-    }
-}
-
 impl VarLenType {
     fn algebraic_type(&self) -> AlgebraicType {
         match self {
             VarLenType::String => AlgebraicType::String,
             VarLenType::Array(ty) => ty.as_ref().clone(),
-            VarLenType::Map(ty) => ty.as_ref().clone(),
         }
     }
 }
@@ -589,7 +642,7 @@ pub fn required_var_len_granules_for_row(val: &ProductValue) -> usize {
         match val {
             AlgebraicValue::Product(val) => traverse_product(val, count),
             AlgebraicValue::Sum(val) => traverse_av(&val.value, count),
-            AlgebraicValue::Array(_) | AlgebraicValue::Map(_) => add_for_bytestring(bsatn_len(val), count),
+            AlgebraicValue::Array(_) => add_for_bytestring(bsatn_len(val), count),
             AlgebraicValue::String(val) => add_for_bytestring(val.len(), count),
             _ => (),
         }

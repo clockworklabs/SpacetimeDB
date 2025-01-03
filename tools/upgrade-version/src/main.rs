@@ -18,9 +18,9 @@ fn process_license_file(upgrade_version: &str) {
     fs::write(path, &*file).unwrap();
 }
 
-fn edit_toml(path: impl AsRef<Path>, f: impl FnOnce(&mut toml_edit::Document)) -> anyhow::Result<()> {
+fn edit_toml(path: impl AsRef<Path>, f: impl FnOnce(&mut toml_edit::DocumentMut)) -> anyhow::Result<()> {
     let path = path.as_ref();
-    let mut doc = fs::read_to_string(path)?.parse::<toml_edit::Document>()?;
+    let mut doc = fs::read_to_string(path)?.parse::<toml_edit::DocumentMut>()?;
     f(&mut doc);
     fs::write(path, doc.to_string())?;
     Ok(())

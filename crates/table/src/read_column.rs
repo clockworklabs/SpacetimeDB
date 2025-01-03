@@ -11,7 +11,7 @@ use crate::{
 };
 use spacetimedb_sats::{
     algebraic_value::{ser::ValueSerializer, Packed},
-    i256, u256, AlgebraicType, AlgebraicValue, ArrayValue, MapValue, ProductType, ProductValue, SumValue,
+    i256, u256, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumValue,
 };
 use std::{cell::Cell, mem};
 use thiserror::Error;
@@ -305,7 +305,6 @@ macro_rules! impl_read_column_via_av {
 impl_read_column_via_av! {
     AlgebraicTypeLayout::VarLen(VarLenType::String) => into_string => Box<str>;
     AlgebraicTypeLayout::VarLen(VarLenType::Array(_)) => into_array => ArrayValue;
-    AlgebraicTypeLayout::VarLen(VarLenType::Map(_)) => into_map => Box<MapValue>;
     AlgebraicTypeLayout::Sum(_) => into_sum => SumValue;
     AlgebraicTypeLayout::Product(_) => into_product => ProductValue;
 }
@@ -342,18 +341,10 @@ impl_read_column_via_from! {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{blob_store::HashMapBlobStore, indexes::SquashedOffset, table::Table};
+    use crate::blob_store::HashMapBlobStore;
+    use crate::table::test::table;
     use proptest::{prelude::*, prop_assert_eq, proptest, test_runner::TestCaseResult};
-    use spacetimedb_lib::db::raw_def::RawTableDefV8;
     use spacetimedb_sats::{product, proptest::generate_typed_row};
-    use spacetimedb_schema::schema::TableSchema;
-
-    fn table(ty: ProductType) -> Table {
-        let def = RawTableDefV8::from_product("", ty);
-        #[allow(deprecated)]
-        let schema = TableSchema::from_def(0.into(), def);
-        Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
-    }
 
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]

@@ -6,14 +6,13 @@ use std::{ops::RangeBounds, sync::Arc};
 use super::system_tables::ModuleKind;
 use super::Result;
 use crate::db::datastore::system_tables::ST_TABLE_ID;
-use crate::execution_context::ExecutionContext;
+use crate::execution_context::{ReducerContext, Workload};
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_lib::db::raw_def::*;
-use spacetimedb_lib::{hash_bytes, Address, Identity};
+use spacetimedb_lib::{hash_bytes, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_table::table::RowRef;
 
 /// The `IsolationLevel` enum specifies the degree to which a transaction is
@@ -247,6 +246,18 @@ impl TxData {
             (table_id, table_name.as_str(), rows)
         })
     }
+
+    /// Check if this [`TxData`] contains any `inserted | deleted` rows or `connect/disconnect` operations.
+    ///
+    /// This is used to determine if a transaction should be written to disk.
+    pub fn has_rows_or_connect_disconnect(&self, reducer_context: Option<&ReducerContext>) -> bool {
+        self.inserts().any(|(_, inserted_rows)| !inserted_rows.is_empty())
+            || self.deletes().any(|(_, deleted_rows)| !deleted_rows.is_empty())
+            || matches!(
+                reducer_context.map(|rcx| rcx.name.strip_prefix("__identity_")),
+                Some(Some("connected__" | "disconnected__"))
+            )
+    }
 }
 
 /// The result of [`MutTxDatastore::row_type_for_table_mut_tx`] and friends.
@@ -286,29 +297,23 @@ pub trait DataRow: Send + Sync {
 pub trait Tx {
     type Tx;
 
-    fn begin_tx(&self) -> Self::Tx;
-    fn release_tx(&self, ctx: &ExecutionContext, tx: Self::Tx);
+    fn begin_tx(&self, workload: Workload) -> Self::Tx;
+    fn release_tx(&self, tx: Self::Tx);
 }
 
 pub trait MutTx {
     type MutTx;
 
-    fn begin_mut_tx(&self, isolation_level: IsolationLevel) -> Self::MutTx;
-    fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>>;
-    fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx);
-
-    #[cfg(test)]
-    fn commit_mut_tx_for_test(&self, tx: Self::MutTx) -> Result<Option<TxData>>;
-
-    #[cfg(test)]
-    fn rollback_mut_tx_for_test(&self, tx: Self::MutTx);
+    fn begin_mut_tx(&self, isolation_level: IsolationLevel, workload: Workload) -> Self::MutTx;
+    fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<TxData>>;
+    fn rollback_mut_tx(&self, tx: Self::MutTx);
 }
 
 /// Standard metadata associated with a database.
 #[derive(Debug)]
 pub struct Metadata {
     /// The stable address of the database.
-    pub database_address: Address,
+    pub database_identity: Identity,
     /// The identity of the database's owner .
     pub owner_identity: Identity,
     /// The hash of the binary module set for the database.
@@ -341,58 +346,67 @@ impl Program {
 }
 
 pub trait TxDatastore: DataRow + Tx {
-    type Iter<'a>: Iterator<Item = Self::RowRef<'a>>
+    type IterTx<'a>: Iterator<Item = Self::RowRef<'a>>
     where
         Self: 'a;
 
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::RowRef<'a>>
+    type IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::RowRef<'a>>
+    where
+        Self: 'a;
+    type IterByColEqTx<'a, 'r>: Iterator<Item = Self::RowRef<'a>>
     where
         Self: 'a;
 
-    type IterByColEq<'a, 'r>: Iterator<Item = Self::RowRef<'a>>
-    where
-        Self: 'a;
-
-    fn iter_tx<'a>(&'a self, ctx: &'a ExecutionContext, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>>;
+    fn iter_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::IterTx<'a>>;
 
     fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
-        ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
         cols: impl Into<ColList>,
         range: R,
-    ) -> Result<Self::IterByColRange<'a, R>>;
+    ) -> Result<Self::IterByColRangeTx<'a, R>>;
 
     fn iter_by_col_eq_tx<'a, 'r>(
         &'a self,
-        ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a, 'r>>;
+    ) -> Result<Self::IterByColEqTx<'a, 'r>>;
 
     fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool;
     fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> Result<Option<TableId>>;
     fn table_name_from_id_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Option<Cow<'a, str>>>;
     fn schema_for_table_tx(&self, tx: &Self::Tx, table_id: TableId) -> super::Result<Arc<TableSchema>>;
-    fn get_all_tables_tx(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> super::Result<Vec<Arc<TableSchema>>>;
+    fn get_all_tables_tx(&self, tx: &Self::Tx) -> super::Result<Vec<Arc<TableSchema>>>;
 
     /// Obtain the [`Metadata`] for this datastore.
     ///
     /// A `None` return value means that the datastore is not fully initialized yet.
-    fn metadata(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Metadata>>;
+    fn metadata(&self, tx: &Self::Tx) -> Result<Option<Metadata>>;
 
     /// Obtain the compiled module associated with this datastore.
     ///
     /// A `None` return value means that the datastore is not fully initialized yet.
-    fn program(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Program>>;
+    fn program(&self, tx: &Self::Tx) -> Result<Option<Program>>;
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
+    type IterMutTx<'a>: Iterator<Item = Self::RowRef<'a>>
+    where
+        Self: 'a;
+
+    type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = Self::RowRef<'a>>
+    where
+        Self: 'a;
+
+    type IterByColEqMutTx<'a, 'r>: Iterator<Item = Self::RowRef<'a>>
+    where
+        Self: 'a;
+
     // Tables
-    fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: RawTableDefV8) -> Result<TableId>;
+    fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: TableSchema) -> Result<TableId>;
     // In these methods, we use `'tx` because the return type must borrow data
     // from `Inner` in the `Locking` implementation,
     // and `Inner` lives in `tx: &MutTxId`.
@@ -402,15 +416,10 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: &str) -> Result<()>;
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTx, table_name: &str) -> Result<Option<TableId>>;
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool;
-    fn table_name_from_id_mut_tx<'a>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTx,
-        table_id: TableId,
-    ) -> Result<Option<Cow<'a, str>>>;
-    fn get_all_tables_mut_tx(&self, ctx: &ExecutionContext, tx: &Self::MutTx) -> super::Result<Vec<Arc<TableSchema>>> {
+    fn table_name_from_id_mut_tx<'a>(&'a self, tx: &'a Self::MutTx, table_id: TableId) -> Result<Option<Cow<'a, str>>>;
+    fn get_all_tables_mut_tx(&self, tx: &Self::MutTx) -> super::Result<Vec<Arc<TableSchema>>> {
         let mut tables = Vec::new();
-        let table_rows = self.iter_mut_tx(ctx, tx, ST_TABLE_ID)?.collect::<Vec<_>>();
+        let table_rows = self.iter_mut_tx(tx, ST_TABLE_ID)?.collect::<Vec<_>>();
         for row in table_rows {
             let table_id = self.read_table_id(row)?;
             tables.push(self.schema_for_table_mut_tx(tx, table_id)?);
@@ -419,7 +428,8 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     }
 
     // Indexes
-    fn create_index_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, index: RawIndexDefV8) -> Result<IndexId>;
+
+    fn create_index_mut_tx(&self, tx: &mut Self::MutTx, index_schema: IndexSchema, is_unique: bool) -> Result<IndexId>;
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTx, index_id: IndexId) -> Result<()>;
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> super::Result<Option<IndexId>>;
 
@@ -430,12 +440,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 
     // Sequences
     fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<i128>;
-    fn create_sequence_mut_tx(
-        &self,
-        tx: &mut Self::MutTx,
-        table_id: TableId,
-        seq: RawSequenceDefV8,
-    ) -> Result<SequenceId>;
+    fn create_sequence_mut_tx(&self, tx: &mut Self::MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId>;
     fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<()>;
     fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> super::Result<Option<SequenceId>>;
 
@@ -444,28 +449,21 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn constraint_id_from_name(&self, tx: &Self::MutTx, constraint_name: &str) -> super::Result<Option<ConstraintId>>;
 
     // Data
-    fn iter_mut_tx<'a>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        tx: &'a Self::MutTx,
-        table_id: TableId,
-    ) -> Result<Self::Iter<'a>>;
+    fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTx, table_id: TableId) -> Result<Self::IterMutTx<'a>>;
     fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
-        ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
         cols: impl Into<ColList>,
         range: R,
-    ) -> Result<Self::IterByColRange<'a, R>>;
+    ) -> Result<Self::IterByColRangeMutTx<'a, R>>;
     fn iter_by_col_eq_mut_tx<'a, 'r>(
         &'a self,
-        ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a, 'r>>;
+    ) -> Result<Self::IterByColEqMutTx<'a, 'r>>;
     fn get_mut_tx<'a>(
         &self,
         tx: &'a Self::MutTx,
@@ -509,58 +507,4 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 
     /// Update the datastore with the supplied binary program.
     fn update_program(&self, tx: &mut Self::MutTx, program_kind: ModuleKind, program: Program) -> Result<()>;
-}
-
-#[cfg(test)]
-mod tests {
-    use spacetimedb_lib::db::raw_def::RawConstraintDefV8;
-    use spacetimedb_primitives::{col_list, ColId, Constraints};
-    use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, Typespace};
-
-    use super::{RawColumnDefV8, RawIndexDefV8, RawTableDefV8};
-
-    #[test]
-    fn test_tabledef_from_lib_tabledef() -> anyhow::Result<()> {
-        let mut expected_schema = RawTableDefV8::new(
-            "Person".into(),
-            vec![
-                RawColumnDefV8 {
-                    col_name: "id".into(),
-                    col_type: AlgebraicType::U32,
-                },
-                RawColumnDefV8 {
-                    col_name: "name".into(),
-                    col_type: AlgebraicType::String,
-                },
-            ],
-        )
-        .with_indexes(vec![
-            RawIndexDefV8::btree("id_and_name".into(), col_list![0, 1], false),
-            RawIndexDefV8::btree("just_name".into(), ColId(1), false),
-        ])
-        .with_constraints(vec![RawConstraintDefV8::new(
-            "identity".into(),
-            Constraints::identity(),
-            ColId(0),
-        )]);
-
-        let lib_table_def = spacetimedb_lib::TableDesc {
-            schema: expected_schema.clone(),
-            data: AlgebraicTypeRef(0),
-        };
-        let row_type = ProductType::from([("id", AlgebraicType::U32), ("name", AlgebraicType::String)]);
-
-        let mut datastore_schema = spacetimedb_lib::TableDesc::into_table_def(
-            Typespace::new(vec![row_type.into()]).with_type(&lib_table_def),
-        )?;
-
-        for schema in [&mut datastore_schema, &mut expected_schema] {
-            schema.columns.sort_by(|a, b| a.col_name.cmp(&b.col_name));
-            schema.indexes.sort_by(|a, b| a.index_name.cmp(&b.index_name));
-        }
-
-        assert_eq!(expected_schema, datastore_schema);
-
-        Ok(())
-    }
 }

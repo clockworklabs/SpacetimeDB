@@ -9,22 +9,22 @@ metrics_group!(
     pub struct WorkerMetrics {
         #[name = spacetime_worker_connected_clients]
         #[help = "Number of clients connected to the worker."]
-        #[labels(database_address: Address)]
+        #[labels(database_identity: Identity)]
         pub connected_clients: IntGaugeVec,
 
         #[name = spacetime_websocket_requests_total]
         #[help = "The cumulative number of websocket request messages"]
-        #[labels(instance_id: u64, protocol: str)]
+        #[labels(replica_id: u64, protocol: str)]
         pub websocket_requests: IntCounterVec,
 
         #[name = spacetime_websocket_request_msg_size]
         #[help = "The size of messages received on connected sessions"]
-        #[labels(instance_id: u64, protocol: str)]
+        #[labels(replica_id: u64, protocol: str)]
         pub websocket_request_msg_size: HistogramVec,
 
         #[name = spacetime_websocket_sent_msg_size_bytes]
         #[help = "The size of messages sent to connected sessions"]
-        #[labels(db: Address, workload: WorkloadType)]
+        #[labels(db: Identity, workload: WorkloadType)]
         // Prometheus histograms have default buckets,
         // which broadly speaking,
         // are tailored to measure the response time of a network service.
@@ -39,7 +39,7 @@ metrics_group!(
 
         #[name = spacetime_websocket_sent_num_rows]
         #[help = "The number of rows sent to connected sessions"]
-        #[labels(db: Address, workload: WorkloadType)]
+        #[labels(db: Identity, workload: WorkloadType)]
         // Prometheus histograms have default buckets,
         // which broadly speaking,
         // are tailored to measure the response time of a network service.
@@ -54,12 +54,12 @@ metrics_group!(
 
         #[name = spacetime_worker_instance_operation_queue_length]
         #[help = "Length of the wait queue for access to a module instance."]
-        #[labels(database_address: Address)]
+        #[labels(database_identity: Identity)]
         pub instance_queue_length: IntGaugeVec,
 
         #[name = spacetime_worker_instance_operation_queue_length_histogram]
         #[help = "Length of the wait queue for access to a module instance."]
-        #[labels(database_address: Address)]
+        #[labels(database_identity: Identity)]
         // Prometheus histograms have default buckets,
         // which broadly speaking,
         // are tailored to measure the response time of a network service.
@@ -69,7 +69,7 @@ metrics_group!(
 
         #[name = spacetime_reducer_wait_time_sec]
         #[help = "The amount of time (in seconds) a reducer spends in the queue waiting to run"]
-        #[labels(db: Address, reducer: str)]
+        #[labels(db: Identity, reducer: str)]
         // Prometheus histograms have default buckets,
         // which broadly speaking,
         // are tailored to measure the response time of a network service.
@@ -82,22 +82,22 @@ metrics_group!(
 
         #[name = spacetime_worker_wasm_instance_errors_total]
         #[help = "The number of fatal WASM instance errors, such as reducer panics."]
-        #[labels(identity: Identity, module_hash: Hash, database_address: Address, reducer_symbol: str)]
+        #[labels(caller_identity: Identity, module_hash: Hash, caller_address: Address, reducer_symbol: str)]
         pub wasm_instance_errors: IntCounterVec,
 
         #[name = spacetime_active_queries]
         #[help = "The number of active subscription queries"]
-        #[labels(database_address: Address)]
+        #[labels(database_identity: Identity)]
         pub subscription_queries: IntGaugeVec,
 
         #[name = spacetime_request_round_trip_time]
         #[help = "The total time it takes for request to complete"]
-        #[labels(txn_type: WorkloadType, database_address: Address, reducer_symbol: str)]
+        #[labels(txn_type: WorkloadType, database_identity: Identity, reducer_symbol: str)]
         pub request_round_trip: HistogramVec,
 
         #[name = spacetime_reducer_plus_query_duration_sec]
         #[help = "The time spent executing a reducer (in seconds), plus the time spent evaluating its subscription queries"]
-        #[labels(db: Address, reducer: str)]
+        #[labels(db: Identity, reducer: str)]
         pub reducer_plus_query_duration: HistogramVec,
     }
 );

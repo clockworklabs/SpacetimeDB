@@ -1,11 +1,11 @@
-use super::{Serialize, SerializeArray, SerializeMap, SerializeNamedProduct, SerializeSeqProduct, Serializer};
+use super::{Serialize, SerializeArray, SerializeNamedProduct, SerializeSeqProduct, Serializer};
 use crate::{i256, u256};
-use crate::{
-    impl_st, AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType, F32,
-    F64,
-};
-use spacetimedb_primitives::ColList;
-use std::collections::BTreeMap;
+use crate::{AlgebraicType, AlgebraicValue, ArrayValue, ProductValue, SumValue, ValueWithType, F32, F64};
+use core::ops::Bound;
+use smallvec::SmallVec;
+use spacetimedb_primitives::{ColList, ColSet};
+use std::rc::Rc;
+use std::sync::Arc;
 
 /// Implements [`Serialize`] for a type in a simplified manner.
 ///
@@ -74,9 +74,12 @@ impl Serialize for u8 {
 impl_serialize!([] F32, (self, ser) => f32::from(*self).serialize(ser));
 impl_serialize!([] F64, (self, ser) => f64::from(*self).serialize(ser));
 impl_serialize!([T: Serialize] Vec<T>, (self, ser)  => (**self).serialize(ser));
+impl_serialize!([T: Serialize, const N: usize] SmallVec<[T; N]>, (self, ser)  => (**self).serialize(ser));
 impl_serialize!([T: Serialize] [T], (self, ser) => T::__serialize_array(self, ser));
 impl_serialize!([T: Serialize, const N: usize] [T; N], (self, ser) => T::__serialize_array(self, ser));
 impl_serialize!([T: Serialize + ?Sized] Box<T>, (self, ser) => (**self).serialize(ser));
+impl_serialize!([T: Serialize + ?Sized] Rc<T>, (self, ser) => (**self).serialize(ser));
+impl_serialize!([T: Serialize + ?Sized] Arc<T>, (self, ser) => (**self).serialize(ser));
 impl_serialize!([T: Serialize + ?Sized] &T, (self, ser) => (**self).serialize(ser));
 impl_serialize!([] String, (self, ser) => ser.serialize_str(self));
 impl_serialize!([T: Serialize] Option<T>, (self, ser) => match self {
@@ -87,18 +90,15 @@ impl_serialize!([T: Serialize, E: Serialize] Result<T, E>, (self, ser) => match 
     Ok(v) => ser.serialize_variant(0, Some("ok"), v),
     Err(e) => ser.serialize_variant(1, Some("err"), e),
 });
-impl_serialize!([K: Serialize, V: Serialize] BTreeMap<K, V>, (self, ser) => {
-    let mut map = ser.serialize_map(self.len())?;
-    for (k, v) in self {
-        map.serialize_entry(k, v)?;
-    }
-    map.end()
+impl_serialize!([T: Serialize] Bound<T>, (self, ser) => match self {
+    Bound::Included(x) => ser.serialize_variant(0, Some("included"), x),
+    Bound::Excluded(x) => ser.serialize_variant(1, Some("excluded"), x),
+    Bound::Unbounded => ser.serialize_variant(2, Some("unbounded"), &()),
 });
 impl_serialize!([] AlgebraicValue, (self, ser) => match self {
     Self::Sum(sum) => sum.serialize(ser),
     Self::Product(prod) => prod.serialize(ser),
     Self::Array(arr) => arr.serialize(ser),
-    Self::Map(map) => map.serialize(ser),
     Self::Bool(v) => ser.serialize_bool(*v),
     Self::I8(v) => ser.serialize_i8(*v),
     Self::U8(v) => ser.serialize_u8(*v),
@@ -116,6 +116,7 @@ impl_serialize!([] AlgebraicValue, (self, ser) => match self {
     Self::F64(v) => ser.serialize_f64((*v).into()),
     // Self::Bytes(v) => ser.serialize_bytes(v),
     Self::String(v) => ser.serialize_str(v),
+    Self::Min | Self::Max => panic!("not defined for Min/Max"),
 });
 impl_serialize!([] ProductValue, (self, ser) => {
     let mut tup = ser.serialize_seq_product(self.elements.len())?;
@@ -145,7 +146,6 @@ impl_serialize!([] ArrayValue, (self, ser) => match self {
     Self::F64(v) => v.serialize(ser),
     Self::String(v) => v.serialize(ser),
     Self::Array(v) => v.serialize(ser),
-    Self::Map(v) => v.serialize(ser),
 });
 impl_serialize!([] ValueWithType<'_, AlgebraicValue>, (self, ser) => {
     let mut ty = self.ty();
@@ -158,7 +158,6 @@ impl_serialize!([] ValueWithType<'_, AlgebraicValue>, (self, ser) => {
             (AlgebraicValue::Sum(val), AlgebraicType::Sum(ty)) => self.with(ty, val).serialize(ser),
             (AlgebraicValue::Product(val), AlgebraicType::Product(ty)) => self.with(ty, val).serialize(ser),
             (AlgebraicValue::Array(val), AlgebraicType::Array(ty)) => self.with(ty, val).serialize(ser),
-            (AlgebraicValue::Map(val), AlgebraicType::Map(ty)) => self.with(&**ty, &**val).serialize(ser),
             (AlgebraicValue::Bool(v), AlgebraicType::Bool) => ser.serialize_bool(*v),
             (AlgebraicValue::I8(v), AlgebraicType::I8) => ser.serialize_i8(*v),
             (AlgebraicValue::U8(v), AlgebraicType::U8) => ser.serialize_u8(*v),
@@ -208,7 +207,6 @@ impl_serialize!([] ValueWithType<'_, ProductValue>, (self, ser) => {
 impl_serialize!([] ValueWithType<'_, ArrayValue>, (self, ser) => match (self.value(), &*self.ty().elem_ty) {
     (ArrayValue::Sum(v), AlgebraicType::Sum(ty)) => self.with(ty, v).serialize(ser),
     (ArrayValue::Product(v), AlgebraicType::Product(ty)) => self.with(ty, v).serialize(ser),
-    (ArrayValue::Map(v), AlgebraicType::Map(m)) => self.with(&**m, v).serialize(ser),
     (ArrayValue::Bool(v), AlgebraicType::Bool) => v.serialize(ser),
     (ArrayValue::I8(v), AlgebraicType::I8) => v.serialize(ser),
     (ArrayValue::U8(v), AlgebraicType::U8) => v.serialize(ser),
@@ -229,20 +227,13 @@ impl_serialize!([] ValueWithType<'_, ArrayValue>, (self, ser) => match (self.val
     (val, _) if val.is_empty() => ser.serialize_array(0)?.end(),
     (val, ty) => panic!("mismatched value and schema: {val:?} {ty:?}"),
 });
-impl_serialize!([] ValueWithType<'_, MapValue>, (self, ser) => {
-    let val = self.value();
-    let MapType { key_ty, ty } = self.ty();
-    let mut map = ser.serialize_map(val.len())?;
-    for (key, val) in val {
-        map.serialize_entry(&self.with(key_ty, key), &self.with(ty, val))?;
-    }
-    map.end()
-});
 
-impl_serialize!([] spacetimedb_primitives::ColId, (self, ser) => ser.serialize_u16(self.0));
 impl_serialize!([] spacetimedb_primitives::TableId, (self, ser) => ser.serialize_u32(self.0));
-impl_serialize!([] spacetimedb_primitives::IndexId, (self, ser) => ser.serialize_u32(self.0));
 impl_serialize!([] spacetimedb_primitives::SequenceId, (self, ser) => ser.serialize_u32(self.0));
+impl_serialize!([] spacetimedb_primitives::IndexId, (self, ser) => ser.serialize_u32(self.0));
+impl_serialize!([] spacetimedb_primitives::ConstraintId, (self, ser) => ser.serialize_u32(self.0));
+impl_serialize!([] spacetimedb_primitives::ColId, (self, ser) => ser.serialize_u16(self.0));
+impl_serialize!([] spacetimedb_primitives::ScheduleId, (self, ser) => ser.serialize_u32(self.0));
 
 impl_serialize!([] ColList, (self, ser) => {
     let mut arr = ser.serialize_array(self.len() as usize)?;
@@ -251,8 +242,10 @@ impl_serialize!([] ColList, (self, ser) => {
        }
        arr.end()
 });
-
-impl_st!([] ColList, ts => AlgebraicType::array(spacetimedb_primitives::ColId::make_type(ts)));
+impl_serialize!([] ColSet, (self, ser) => {
+    let list: &ColList = self;
+    list.serialize(ser)
+});
 
 #[cfg(feature = "blake3")]
 impl_serialize!([] blake3::Hash, (self, ser) => self.as_bytes().serialize(ser));
@@ -261,3 +254,9 @@ impl_serialize!([] bytes::Bytes, (self, ser) => ser.serialize_bytes(self));
 
 #[cfg(feature = "bytestring")]
 impl_serialize!([] bytestring::ByteString, (self, ser) => ser.serialize_str(self));
+
+impl_serialize!([] std::time::SystemTime, (self, ser) => {
+        let duration = self.duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap();
+        let micros: u64 = duration.as_micros().try_into().expect("SystemTime exceeded 2^64 us since the Unix epoch");
+        ser.serialize_u64(micros)
+});

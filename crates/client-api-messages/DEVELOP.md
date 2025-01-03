@@ -8,5 +8,5 @@ In this directory:
 cargo run --example get_ws_schema > ws_schema.json
 spacetime generate --lang <SDK lang> \
   --out-dir <sdk WebSocket schema bindings dir>
-  --json-module ws_schema.json
+  --module-def ws_schema.json
 ```

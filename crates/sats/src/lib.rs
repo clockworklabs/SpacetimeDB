@@ -10,8 +10,6 @@ pub mod convert;
 pub mod de;
 pub mod hash;
 pub mod hex;
-pub mod map_type;
-pub mod map_value;
 pub mod meta_type;
 pub mod primitives;
 pub mod product_type;
@@ -39,8 +37,6 @@ pub use algebraic_value::{i256, u256, AlgebraicValue, F32, F64};
 pub use algebraic_value_hash::hash_bsatn;
 pub use array_type::ArrayType;
 pub use array_value::ArrayValue;
-pub use map_type::MapType;
-pub use map_value::MapValue;
 pub use product_type::ProductType;
 pub use product_type_element::ProductTypeElement;
 pub use product_value::ProductValue;
@@ -142,6 +138,11 @@ impl<'a, T: ?Sized> WithTypespace<'a, T> {
         Self { typespace, ty }
     }
 
+    /// Wraps `ty` in an empty context.
+    pub const fn empty(ty: &'a T) -> Self {
+        Self::new(Typespace::EMPTY, ty)
+    }
+
     /// Returns the object that the context was created with.
     pub const fn ty(&self) -> &'a T {
         self.ty
@@ -232,4 +233,9 @@ where
 #[doc(hidden)]
 macro_rules! __make_register_reftype {
     ($ty:ty, $name:literal) => {};
+}
+
+/// A helper for prettier Debug implementation, without extra indirection around Some("name").
+fn dbg_aggregate_name(opt: &Option<Box<str>>) -> &dyn std::fmt::Debug {
+    opt.as_ref().map_or(opt, |s| s)
 }

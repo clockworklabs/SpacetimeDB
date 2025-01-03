@@ -1,0 +1,48 @@
+﻿[
+  {/*
+    public Exception UnsupportedSystemType;
+    public UnresolvedType UnresolvedType;
+           ^^^^^^^^^^^^^^
+    public LocalEnum UnsupportedEnum;
+*/
+    Message: The type or namespace name 'UnresolvedType' could not be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0246,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
+      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+{
+    internal static readonly TRW Field = new();
+                             ^^^
+
+*/
+    Message: The type or namespace name 'TRW' could not be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0246,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
+      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  }
+]

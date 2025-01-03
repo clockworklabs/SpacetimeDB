@@ -3,12 +3,13 @@ use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawIdentifier, RawScopedTypeNa
 use spacetimedb_lib::{ProductType, SumType};
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
-use spacetimedb_sats::{typespace::TypeRefError, AlgebraicType, AlgebraicTypeRef};
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef};
 use std::borrow::Cow;
 use std::fmt;
 
 use crate::def::ScopedTypeName;
 use crate::identifier::Identifier;
+use crate::type_for_generate::ClientCodegenError;
 
 /// A stream of validation errors, defined using the `ErrorStream` type.
 pub type ValidationErrors = ErrorStream<ValidationError>;
@@ -21,7 +22,7 @@ pub type ValidationErrors = ErrorStream<ValidationError>;
 #[non_exhaustive]
 pub enum ValidationError {
     #[error("name `{name}` is used for multiple entities")]
-    DuplicateName { name: Identifier },
+    DuplicateName { name: Box<str> },
     #[error("name `{name}` is used for multiple types")]
     DuplicateTypeName { name: ScopedTypeName },
     #[error("Multiple reducers defined for lifecycle event {lifecycle:?}")]
@@ -85,18 +86,10 @@ pub enum ValidationError {
     },
     #[error("A scheduled table must have columns `scheduled_id: u64` and `scheduled_at: ScheduledAt`, but table `{table}` has columns {columns:?}")]
     ScheduledIncorrectColumns { table: RawIdentifier, columns: ProductType },
-    #[error("{location} has type {ty:?} which cannot be used to generate a type use")]
-    NotValidForTypeUse {
+    #[error("error at {location}: {error}")]
+    ClientCodegenError {
         location: TypeLocation<'static>,
-        ty: PrettyAlgebraicType,
-    },
-    #[error("{ref_} stores type {ty:?} which cannot be used to generate a type definition")]
-    NotValidForTypeDefinition { ref_: AlgebraicTypeRef, ty: AlgebraicType },
-    #[error("Type {ty} failed to resolve")]
-    ResolutionFailure {
-        location: TypeLocation<'static>,
-        ty: PrettyAlgebraicType,
-        error: TypeRefError,
+        error: ClientCodegenError,
     },
     #[error("Missing type definition for ref: {ref_}, holds type: {ty}")]
     MissingTypeDef {
@@ -108,13 +101,17 @@ pub enum ValidationError {
     #[error("Table {table} should have a type definition for its product_type_element, but does not")]
     TableTypeNameMismatch { table: Identifier },
     #[error("Schedule {schedule} refers to a scheduled reducer {reducer} that does not exist")]
-    MissingScheduledReducer { schedule: Identifier, reducer: Identifier },
+    MissingScheduledReducer { schedule: Box<str>, reducer: Identifier },
     #[error("Scheduled reducer {reducer} expected to have type {expected}, but has type {actual}")]
     IncorrectScheduledReducerParams {
         reducer: RawIdentifier,
         expected: PrettyAlgebraicType,
         actual: PrettyAlgebraicType,
     },
+    #[error("Table name is reserved for system use: {table}")]
+    TableNameReserved { table: Identifier },
+    #[error("Row-level security invalid: `{error}`, query: `{sql}")]
+    InvalidRowLevelQuery { sql: String, error: String },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

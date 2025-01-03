@@ -10,7 +10,6 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help version` for more detailed information.\n")
         .arg(
             Arg::new("cli")
-                .short('c')
                 .long("cli")
                 .action(SetTrue)
                 .help("Prints only the CLI version"),

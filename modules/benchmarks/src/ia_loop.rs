@@ -3,7 +3,7 @@
 #![allow(clippy::too_many_arguments, unused_variables)]
 
 use crate::Load;
-use spacetimedb::{log, SpacetimeType, Timestamp};
+use spacetimedb::{log, ReducerContext, SpacetimeType, Table, Timestamp};
 use std::hash::{Hash, Hasher};
 
 #[spacetimedb::table(name = velocity)]
@@ -138,17 +138,21 @@ fn calculate_hash<T: Hash>(t: &T) -> u64 {
 
 // ---------- insert bulk ----------
 #[spacetimedb::reducer]
-pub fn insert_bulk_position(count: u32) {
+pub fn insert_bulk_position(ctx: &ReducerContext, count: u32) {
     for id in 0..count {
-        Position::insert(Position::new(id, id as f32, (id + 5) as f32, (id * 5) as f32)).unwrap();
+        ctx.db
+            .position()
+            .insert(Position::new(id, id as f32, (id + 5) as f32, (id * 5) as f32));
     }
     log::info!("INSERT POSITION: {count}");
 }
 
 #[spacetimedb::reducer]
-pub fn insert_bulk_velocity(count: u32) {
+pub fn insert_bulk_velocity(ctx: &ReducerContext, count: u32) {
     for id in 0..count {
-        Velocity::insert(Velocity::new(id, id as f32, (id + 5) as f32, (id * 5) as f32)).unwrap();
+        ctx.db
+            .velocity()
+            .insert(Velocity::new(id, id as f32, (id + 5) as f32, (id * 5) as f32));
     }
     log::info!("INSERT VELOCITY: {count}");
 }
@@ -161,15 +165,15 @@ pub fn insert_bulk_velocity(count: u32) {
 // z = z + vz;
 // ```
 #[spacetimedb::reducer]
-pub fn update_position_all(expected: u32) {
+pub fn update_position_all(ctx: &ReducerContext, expected: u32) {
     let mut count = 0;
-    for mut position in Position::iter() {
+    for mut position in ctx.db.position().iter() {
         position.x += position.vx;
         position.y += position.vy;
         position.z += position.vz;
 
         let id = position.entity_id;
-        Position::update_by_entity_id(&id, position);
+        ctx.db.position().entity_id().update(position);
         count += 1;
     }
     log::info!("UPDATE POSITION ALL: {expected}, processed: {count}");
@@ -186,10 +190,10 @@ pub fn update_position_all(expected: u32) {
 // WHERE Position.entity_id = Velocity.entity_id;
 // ```
 #[spacetimedb::reducer]
-pub fn update_position_with_velocity(expected: u32) {
+pub fn update_position_with_velocity(ctx: &ReducerContext, expected: u32) {
     let mut count = 0;
-    for velocity in Velocity::iter() {
-        let Some(mut position) = Position::filter_by_entity_id(&velocity.entity_id) else {
+    for velocity in ctx.db.velocity().iter() {
+        let Some(mut position) = ctx.db.position().entity_id().find(velocity.entity_id) else {
             continue;
         };
 
@@ -198,7 +202,7 @@ pub fn update_position_with_velocity(expected: u32) {
         position.z += velocity.z;
 
         let id = position.entity_id;
-        Position::update_by_entity_id(&id, position);
+        ctx.db.position().entity_id().update(position);
         count += 1;
     }
     log::info!("UPDATE POSITION BY VELOCITY: {expected}, processed: {count}");
@@ -207,7 +211,7 @@ pub fn update_position_with_velocity(expected: u32) {
 // Simulations for a game loop
 
 #[spacetimedb::reducer]
-pub fn insert_world(players: u64) {
+pub fn insert_world(ctx: &ReducerContext, players: u64) {
     for (i, id) in (0..players).enumerate() {
         let next_action_timestamp = if i & 2 == 2 {
             moment_milliseconds() + 2000 // Check every 2secs
@@ -215,41 +219,36 @@ pub fn insert_world(players: u64) {
             moment_milliseconds()
         };
 
-        GameEnemyAiAgentState::insert(GameEnemyAiAgentState {
+        ctx.db.game_enemy_ai_agent_state().insert(GameEnemyAiAgentState {
             entity_id: id,
             next_action_timestamp,
             last_move_timestamps: vec![id, 0, id * 2],
             action: AgentAction::Idle,
-        })
-        .unwrap();
+        });
 
-        GameLiveTargetableState::insert(GameLiveTargetableState {
+        ctx.db.game_live_targetable_state().insert(GameLiveTargetableState {
             entity_id: id,
             quad: id as i64,
-        })
-        .unwrap();
+        });
 
-        GameTargetableState::insert(GameTargetableState {
+        ctx.db.game_targetable_state().insert(GameTargetableState {
             entity_id: id,
             quad: id as i64,
-        })
-        .unwrap();
+        });
 
-        GameMobileEntityState::insert(GameMobileEntityState {
+        ctx.db.game_mobile_entity_state().insert(GameMobileEntityState {
             entity_id: id,
             location_x: id as i32,
             location_y: id as i32,
             timestamp: next_action_timestamp,
-        })
-        .unwrap();
+        });
 
-        GameEnemyState::insert(GameEnemyState {
+        ctx.db.game_enemy_state().insert(GameEnemyState {
             entity_id: id,
             herd_id: id as i32,
-        })
-        .unwrap();
+        });
 
-        GameHerdCache::insert(GameHerdCache {
+        ctx.db.game_herd_cache().insert(GameHerdCache {
             id: id as i32,
             dimension_id: id as u32,
             current_population: id as i32 * 2,
@@ -261,18 +260,23 @@ pub fn insert_world(players: u64) {
                 z: id as i32,
                 dimension: id as u32 * 2,
             },
-        })
-        .unwrap();
+        });
     }
     log::info!("INSERT WORLD PLAYERS: {players}");
 }
 
-fn get_targetables_near_quad(entity_id: u64, num_players: u64) -> Vec<GameTargetableState> {
+fn get_targetables_near_quad(ctx: &ReducerContext, entity_id: u64, num_players: u64) -> Vec<GameTargetableState> {
     let mut result = Vec::with_capacity(4);
 
     for id in entity_id..num_players {
-        for t in GameLiveTargetableState::filter_by_quad(&(id as i64)) {
-            result.push(GameTargetableState::filter_by_entity_id(&t.entity_id).expect("Identity not found"))
+        for t in ctx.db.game_live_targetable_state().quad().filter(&(id as i64)) {
+            result.push(
+                ctx.db
+                    .game_targetable_state()
+                    .entity_id()
+                    .find(t.entity_id)
+                    .expect("Identity not found"),
+            )
         }
     }
 
@@ -280,13 +284,22 @@ fn get_targetables_near_quad(entity_id: u64, num_players: u64) -> Vec<GameTarget
 }
 
 const MAX_MOVE_TIMESTAMPS: usize = 20;
-fn move_agent(agent: &mut GameEnemyAiAgentState, agent_coord: SmallHexTile, current_time_ms: u64) {
+fn move_agent(
+    ctx: &ReducerContext,
+    agent: &mut GameEnemyAiAgentState,
+    agent_coord: SmallHexTile,
+    current_time_ms: u64,
+) {
     let entity_id = agent.entity_id;
 
-    let enemy = GameEnemyState::filter_by_entity_id(&entity_id)
+    let enemy = ctx
+        .db
+        .game_enemy_state()
+        .entity_id()
+        .find(entity_id)
         .expect("GameEnemyState Entity ID not found")
         .clone();
-    GameEnemyState::update_by_entity_id(&entity_id, enemy);
+    ctx.db.game_enemy_state().entity_id().update(enemy);
 
     agent.next_action_timestamp = current_time_ms + 2000;
 
@@ -297,73 +310,102 @@ fn move_agent(agent: &mut GameEnemyAiAgentState, agent_coord: SmallHexTile, curr
     }
 
     // Update targetable to the destination
-    let mut targetable =
-        GameTargetableState::filter_by_entity_id(&entity_id).expect("GameTargetableState Entity ID not found");
+    let mut targetable = ctx
+        .db
+        .game_targetable_state()
+        .entity_id()
+        .find(entity_id)
+        .expect("GameTargetableState Entity ID not found");
     let new_hash = calculate_hash(&targetable.quad) as i64;
     targetable.quad = new_hash;
-    GameTargetableState::update_by_entity_id(&entity_id, targetable);
+    ctx.db.game_targetable_state().entity_id().update(targetable);
 
     // If the entity is alive (which it should be),
     // also update the `LiveTargetableState` used by `enemy_ai_agent_loop`.
-    if GameLiveTargetableState::filter_by_entity_id(&entity_id).is_some() {
-        GameLiveTargetableState::update_by_entity_id(
-            &entity_id,
-            GameLiveTargetableState {
+    if ctx
+        .db
+        .game_live_targetable_state()
+        .entity_id()
+        .find(entity_id)
+        .is_some()
+    {
+        ctx.db
+            .game_live_targetable_state()
+            .entity_id()
+            .update(GameLiveTargetableState {
                 entity_id,
                 quad: new_hash,
-            },
-        );
+            });
     }
-    let mobile_entity =
-        GameMobileEntityState::filter_by_entity_id(&entity_id).expect("GameMobileEntityState Entity ID not found");
+    let mobile_entity = ctx
+        .db
+        .game_mobile_entity_state()
+        .entity_id()
+        .find(entity_id)
+        .expect("GameMobileEntityState Entity ID not found");
     let mobile_entity = GameMobileEntityState {
         entity_id,
         location_x: mobile_entity.location_x + 1,
         location_y: mobile_entity.location_y + 1,
-        timestamp: moment_milliseconds(),
+        timestamp: agent.next_action_timestamp,
     };
 
-    GameEnemyAiAgentState::update_by_entity_id(&entity_id, agent.clone());
+    ctx.db.game_enemy_ai_agent_state().entity_id().update(agent.clone());
 
-    GameMobileEntityState::update_by_entity_id(&entity_id, mobile_entity);
+    ctx.db.game_mobile_entity_state().entity_id().update(mobile_entity);
 }
 
 fn agent_loop(
+    ctx: &ReducerContext,
     mut agent: GameEnemyAiAgentState,
     agent_targetable: GameTargetableState,
     surrounding_agents: &[GameTargetableState],
     current_time_ms: u64,
 ) {
     let entity_id = agent.entity_id;
-    let coordinates =
-        GameMobileEntityState::filter_by_entity_id(&entity_id).expect("GameMobileEntityState Entity ID not found");
+    let coordinates = ctx
+        .db
+        .game_mobile_entity_state()
+        .entity_id()
+        .find(entity_id)
+        .expect("GameMobileEntityState Entity ID not found");
 
-    let agent_entity = GameEnemyState::filter_by_entity_id(&entity_id).expect("GameEnemyState Entity ID not found");
-    let agent_herd = GameHerdCache::filter_by_id(&agent_entity.herd_id).expect("GameHerdCache Entity ID not found");
+    let agent_entity = ctx
+        .db
+        .game_enemy_state()
+        .entity_id()
+        .find(entity_id)
+        .expect("GameEnemyState Entity ID not found");
+    let agent_herd = ctx
+        .db
+        .game_herd_cache()
+        .id()
+        .find(agent_entity.herd_id)
+        .expect("GameHerdCache Entity ID not found");
     let agent_herd_coordinates = agent_herd.location;
 
-    move_agent(&mut agent, agent_herd_coordinates, current_time_ms);
+    move_agent(ctx, &mut agent, agent_herd_coordinates, current_time_ms);
 }
 
 // We check only for a single pass in the game loop.
 #[spacetimedb::reducer]
-pub fn game_loop_enemy_ia(players: u64) {
+pub fn game_loop_enemy_ia(ctx: &ReducerContext, players: u64) {
     let mut count = 0;
     let current_time_ms = moment_milliseconds();
 
-    for mut agent in GameEnemyAiAgentState::iter() {
-        if agent.next_action_timestamp > current_time_ms {
-            continue;
-        }
-
-        let agent_targetable = GameTargetableState::filter_by_entity_id(&agent.entity_id)
+    for mut agent in ctx.db.game_enemy_ai_agent_state().iter() {
+        let agent_targetable = ctx
+            .db
+            .game_targetable_state()
+            .entity_id()
+            .find(agent.entity_id)
             .expect("No TargetableState for AgentState entity");
 
-        let surrounding_agents = get_targetables_near_quad(agent_targetable.entity_id, players);
+        let surrounding_agents = get_targetables_near_quad(ctx, agent_targetable.entity_id, players);
 
         agent.action = AgentAction::Fighting;
 
-        agent_loop(agent, agent_targetable, &surrounding_agents, current_time_ms);
+        agent_loop(ctx, agent, agent_targetable, &surrounding_agents, current_time_ms);
 
         count += 1;
     }
@@ -372,20 +414,20 @@ pub fn game_loop_enemy_ia(players: u64) {
 }
 
 #[spacetimedb::reducer]
-pub fn init_game_ia_loop(initial_load: u32) {
+pub fn init_game_ia_loop(ctx: &ReducerContext, initial_load: u32) {
     let load = Load::new(initial_load);
 
-    insert_bulk_position(load.biggest_table);
-    insert_bulk_velocity(load.big_table);
-    update_position_all(load.biggest_table);
-    update_position_with_velocity(load.big_table);
+    insert_bulk_position(ctx, load.biggest_table);
+    insert_bulk_velocity(ctx, load.big_table);
+    update_position_all(ctx, load.biggest_table);
+    update_position_with_velocity(ctx, load.big_table);
 
-    insert_world(load.num_players as u64);
+    insert_world(ctx, load.num_players as u64);
 }
 
 #[spacetimedb::reducer]
-pub fn run_game_ia_loop(initial_load: u32) {
+pub fn run_game_ia_loop(ctx: &ReducerContext, initial_load: u32) {
     let load = Load::new(initial_load);
 
-    game_loop_enemy_ia(load.num_players as u64);
+    game_loop_enemy_ia(ctx, load.num_players as u64);
 }

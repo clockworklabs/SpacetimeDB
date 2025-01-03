@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Internal
@@ -34,10 +33,11 @@ namespace SpacetimeDB.Internal
 			this.Lifecycle = Lifecycle;
 		}
 
-		public RawReducerDefV9() : this(
-			"",
-			new(),
-			default!
-		) { }
+		public RawReducerDefV9()
+		{
+			this.Name = "";
+			this.Params = new();
+		}
+
 	}
 }

@@ -1,38 +1,15 @@
-use crate::util::{contains_protocol, host_or_url_to_host_and_protocol, is_hex_identity};
+use crate::util::{contains_protocol, host_or_url_to_host_and_protocol};
 use anyhow::Context;
 use jsonwebtoken::DecodingKey;
 use serde::{Deserialize, Serialize};
-use spacetimedb::auth::identity::decode_token;
-use spacetimedb_fs_utils::{atomic_write, create_parent_dir};
-use spacetimedb_lib::Identity;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct IdentityConfig {
-    pub nickname: Option<String>,
-    pub identity: Identity,
-    pub token: String,
-}
-
-impl IdentityConfig {
-    pub fn nick_or_identity(&self) -> impl std::fmt::Display + '_ {
-        if let Some(nick) = &self.nickname {
-            itertools::Either::Left(nick)
-        } else {
-            itertools::Either::Right(&self.identity)
-        }
-    }
-}
+use spacetimedb_fs_utils::atomic_write;
+use spacetimedb_paths::cli::CliTomlPath;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ServerConfig {
     pub nickname: Option<String>,
     pub host: String,
     pub protocol: String,
-    pub default_identity: Option<String>,
     pub ecdsa_public_key: Option<String>,
 }
 
@@ -48,52 +25,11 @@ impl ServerConfig {
         format!("{}://{}", self.protocol, self.host)
     }
 
-    pub fn set_default_identity(&mut self, default_identity: String) {
-        self.default_identity = Some(default_identity);
-        // TODO: verify the identity exists and its token conforms to the server's `ecdsa_public_key`
-    }
-
     pub fn nick_or_host_or_url_is(&self, name: &str) -> bool {
         self.nickname.as_deref() == Some(name) || self.host == name || {
             let (host, _) = host_or_url_to_host_and_protocol(name);
             self.host == host
         }
-    }
-
-    fn default_identity(&self) -> anyhow::Result<&str> {
-        self.default_identity.as_deref().ok_or_else(|| {
-            let server = self.nick_or_host();
-            anyhow::anyhow!(
-                "No default identity for server: {server}
-Set the default identity with:
-\tspacetime identity set-default -s {server} <identity>
-Or initialize a default identity with:
-\tspacetime identity init-default -s {server}"
-            )
-        })
-    }
-
-    fn assert_identity_applies(&self, id: &IdentityConfig) -> anyhow::Result<()> {
-        if let Some(fingerprint) = &self.ecdsa_public_key {
-            let decoder = DecodingKey::from_ec_pem(fingerprint.as_bytes()).with_context(|| {
-                let server = self.nick_or_host();
-                format!(
-                    "Cannot verify tokens using invalid saved fingerprint from server: {server}
-Update the fingerprint with:
-\tspacetime server fingerprint -s {server}",
-                )
-            })?;
-            decode_token(&decoder, &id.token).map_err(|_| {
-                let id_name = id.nick_or_identity();
-                let server_name = self.nick_or_host();
-                anyhow::anyhow!(
-                    "Identity {id_name} is not valid for server {server_name}
-List valid identities for server {server_name} with:
-\tspacetime identity list -s {server_name}",
-                )
-            })?;
-        }
-        Ok(())
     }
 }
 
@@ -101,33 +37,30 @@ List valid identities for server {server_name} with:
 pub struct RawConfig {
     default_server: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    identity_configs: Vec<IdentityConfig>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     server_configs: Vec<ServerConfig>,
+    // TODO: Consider how these tokens should look to be backwards-compatible with the future changes (e.g. we may want to allow users to `login` to switch between multiple accounts - what will we cache and where?)
+    // TODO: Move these IDs/tokens out of config so we're no longer storing sensitive tokens in a human-edited file.
+    web_session_token: Option<String>,
+    spacetimedb_token: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    proj: RawConfig,
     home: RawConfig,
+    home_path: CliTomlPath,
 }
-
-const HOME_CONFIG_DIR: &str = ".spacetime";
-const CONFIG_FILENAME: &str = "config.toml";
-const SPACETIME_FILENAME: &str = "spacetime.toml";
-const DOT_SPACETIME_FILENAME: &str = ".spacetime.toml";
 
 const NO_DEFAULT_SERVER_ERROR_MESSAGE: &str = "No default server configuration.
 Set an existing server as the default with:
 \tspacetime server set-default <server>
 Or add a new server which will become the default:
-\tspacetime server add <url> --default";
+\tspacetime server add {server} <url> --default";
 
 fn no_such_server_error(server: &str) -> anyhow::Error {
     anyhow::anyhow!(
         "No such saved server configuration: {server}
 Add a new server configuration with:
-\tspacetime server add <url>",
+\tspacetime server add {server} --url <url>",
     )
 }
 
@@ -138,23 +71,22 @@ fn hanging_default_server_context(server: &str) -> String {
 impl RawConfig {
     fn new_with_localhost() -> Self {
         let local = ServerConfig {
-            default_identity: None,
             host: "127.0.0.1:3000".to_string(),
             protocol: "http".to_string(),
             nickname: Some("local".to_string()),
             ecdsa_public_key: None,
         };
         let testnet = ServerConfig {
-            default_identity: None,
             host: "testnet.spacetimedb.com".to_string(),
             protocol: "https".to_string(),
             nickname: Some("testnet".to_string()),
             ecdsa_public_key: None,
         };
         RawConfig {
-            default_server: testnet.nickname.clone(),
-            identity_configs: Vec::new(),
+            default_server: local.nickname.clone(),
             server_configs: vec![local, testnet],
+            web_session_token: None,
+            spacetimedb_token: None,
         }
     }
 
@@ -195,19 +127,6 @@ impl RawConfig {
         }
     }
 
-    fn find_identity_config(&self, identity: &str) -> anyhow::Result<&IdentityConfig> {
-        for cfg in &self.identity_configs {
-            if cfg.nickname.as_deref() == Some(identity) || &*cfg.identity.to_hex() == identity {
-                return Ok(cfg);
-            }
-        }
-        Err(anyhow::anyhow!(
-            "No such saved identity configuration: {identity}
-Import an existing identity with:
-\tspacetime identity import <identity> <token>",
-        ))
-    }
-
     fn add_server(
         &mut self,
         host: String,
@@ -240,7 +159,6 @@ Import an existing identity with:
             host,
             protocol,
             ecdsa_public_key,
-            default_identity: None,
         });
         Ok(())
     }
@@ -267,89 +185,6 @@ Import an existing identity with:
             .map(|cfg| cfg.protocol.as_ref())
     }
 
-    fn default_identity(&self, server: &str) -> anyhow::Result<&str> {
-        self.find_server(server).and_then(ServerConfig::default_identity)
-    }
-
-    fn default_server_default_identity(&self) -> anyhow::Result<&str> {
-        self.default_server().and_then(ServerConfig::default_identity)
-    }
-
-    fn assert_identity_matches_server(&self, server: &str, identity: &str) -> anyhow::Result<()> {
-        let ident = self
-            .find_identity_config(identity)
-            .with_context(|| format!("Cannot verify that unknown identity {identity} applies to server {server}",))?;
-        let server_cfg = self
-            .find_server(server)
-            .with_context(|| format!("Cannot verify that identity {identity} applies to unknown server {server}",))?;
-        server_cfg.assert_identity_applies(ident)
-    }
-
-    fn set_server_default_identity(&mut self, server: &str, default_identity: String) -> anyhow::Result<()> {
-        self.assert_identity_matches_server(server, &default_identity)?;
-        let cfg = self.find_server_mut(server)?;
-        // TODO: create the server config if it doesn't already exist
-        // TODO: fetch the server's fingerprint to check if it has changed
-        cfg.default_identity = Some(default_identity);
-        Ok(())
-    }
-
-    fn set_default_server_default_identity(&mut self, default_identity: String) -> anyhow::Result<()> {
-        if let Some(default_server) = &self.default_server {
-            self.assert_identity_matches_server(default_server, &default_identity)
-                .with_context(|| {
-                    format!("Cannot set {default_identity} as default identity for server {default_server}")
-                })?;
-
-            // Unfortunate clone,
-            // because `set_server_default_identity` needs a unique ref to `self`.
-            let def = default_server.to_string();
-            self.set_server_default_identity(&def, default_identity)
-        } else {
-            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
-        }
-    }
-
-    fn unset_all_default_identities(&mut self) {
-        for cfg in &mut self.server_configs {
-            cfg.default_identity = None;
-        }
-    }
-
-    fn update_all_default_identities(&mut self) {
-        for server in &mut self.server_configs {
-            if let Some(default_identity) = &server.default_identity {
-                // can't use find_identity_config because of borrow checker
-                if self.identity_configs.iter().any(|cfg| {
-                    cfg.nickname.as_deref() == Some(&**default_identity) || &*cfg.identity.to_hex() == default_identity
-                }) {
-                    server.default_identity = None;
-                    println!(
-                        "Unsetting removed default identity for server: {}",
-                        server.nick_or_host(),
-                    );
-                    // TODO: Find an appropriate identity and set it as the default?
-                }
-            }
-        }
-    }
-
-    fn set_default_identity_if_unset(&mut self, server: &str, identity: &str) -> anyhow::Result<()> {
-        let cfg = self.find_server_mut(server)?;
-        if cfg.default_identity.is_none() {
-            cfg.default_identity = Some(identity.to_string());
-        }
-        Ok(())
-    }
-
-    fn default_server_set_default_identity_if_unset(&mut self, identity: &str) -> anyhow::Result<()> {
-        let cfg = self.default_server_mut()?;
-        if cfg.default_identity.is_none() {
-            cfg.default_identity = Some(identity.to_string());
-        }
-        Ok(())
-    }
-
     fn set_default_server(&mut self, server: &str) -> anyhow::Result<()> {
         // Check that such a server exists before setting the default.
         self.find_server(server)
@@ -361,7 +196,7 @@ Import an existing identity with:
     }
 
     /// Implements `spacetime server remove`.
-    fn remove_server(&mut self, server: &str, delete_identities: bool) -> anyhow::Result<Vec<IdentityConfig>> {
+    fn remove_server(&mut self, server: &str) -> anyhow::Result<()> {
         // Have to find the server config manually instead of doing `find_server_mut`
         // because we need to mutably borrow multiple components of `self`.
         if let Some(idx) = self
@@ -380,70 +215,9 @@ Import an existing identity with:
                 }
             }
 
-            // If requested, delete all identities which match the server.
-            // This requires a fingerprint.
-            let deleted_ids = if delete_identities {
-                let fingerprint = cfg.ecdsa_public_key.ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Cannot delete identities for server without saved identity: {server}
-Fetch the server's fingerprint with:
-\tspacetime server fingerprint -s {server}"
-                    )
-                })?;
-                self.remove_identities_for_fingerprint(&fingerprint)?
-            } else {
-                Vec::new()
-            };
-
-            return Ok(deleted_ids);
+            return Ok(());
         }
         Err(no_such_server_error(server))
-    }
-
-    fn remove_identities_for_fingerprint(&mut self, fingerprint: &str) -> anyhow::Result<Vec<IdentityConfig>> {
-        let decoder = DecodingKey::from_ec_pem(fingerprint.as_bytes()).with_context(|| {
-            "Cannot delete identities for server without saved identity: {server}
-Fetch the server's fingerprint with:
-\tspacetime server fingerprint -s {server}"
-        })?;
-
-        // TODO: use `Vec::extract_if` instead when it stabilizes.
-        let (to_keep, to_discard) = self
-            .identity_configs
-            .drain(..)
-            .partition(|cfg| decode_token(&decoder, &cfg.token).is_err());
-        self.identity_configs = to_keep;
-        Ok(to_discard)
-    }
-
-    /// Remove all stored `IdentityConfig`s which apply to the server named by `server`.
-    ///
-    /// Implements `spacetime identity remove --all-server`.
-    fn remove_identities_for_server(&mut self, server: &str) -> anyhow::Result<Vec<IdentityConfig>> {
-        // Have to find the server config manually instead of doing `find_server_mut`
-        // because we need to mutably borrow multiple components of `self`.
-        if let Some(cfg) = self
-            .server_configs
-            .iter_mut()
-            .find(|cfg| cfg.nick_or_host_or_url_is(server))
-        {
-            let fingerprint = cfg
-                .ecdsa_public_key
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("No fingerprint saved for server: {}", server))?;
-            return self.remove_identities_for_fingerprint(&fingerprint);
-        }
-        Err(no_such_server_error(server))
-    }
-
-    /// Remove all storied `IdentityConfig`s which apply to the default server.
-    fn remove_identities_for_default_server(&mut self) -> anyhow::Result<Vec<IdentityConfig>> {
-        if let Some(default_server) = &self.default_server {
-            let default_server = default_server.clone();
-            self.remove_identities_for_server(&default_server)
-        } else {
-            Err(anyhow::anyhow!(NO_DEFAULT_SERVER_ERROR_MESSAGE))
-        }
     }
 
     /// Return the ECDSA public key in PEM format for the server named by `server`.
@@ -579,14 +353,24 @@ Fetch the server's fingerprint with:
         cfg.ecdsa_public_key = None;
         Ok(())
     }
+
+    pub fn set_web_session_token(&mut self, token: String) {
+        self.web_session_token = Some(token);
+    }
+
+    pub fn set_spacetimedb_token(&mut self, token: String) {
+        self.spacetimedb_token = Some(token);
+    }
+
+    pub fn clear_login_tokens(&mut self) {
+        self.web_session_token = None;
+        self.spacetimedb_token = None;
+    }
 }
 
 impl Config {
     pub fn default_server_name(&self) -> Option<&str> {
-        self.proj
-            .default_server
-            .as_deref()
-            .or(self.home.default_server.as_deref())
+        self.home.default_server.as_deref()
     }
 
     /// Add a `ServerConfig` to the home configuration.
@@ -625,27 +409,16 @@ impl Config {
     /// does not refer to an existing `ServerConfig`
     /// in the home configuration.
     ///
-    /// If `delete_identities` is true,
-    /// also removes any saved `IdentityConfig`s
-    /// which apply to the removed server.
-    /// This requires that the server have a saved fingerprint.
-    ///
     /// Callers should call `Config::save` afterwards
     /// to ensure modifications are persisted to disk.
-    pub fn remove_server(
-        &mut self,
-        nickname_or_host_or_url: &str,
-        delete_identities: bool,
-    ) -> anyhow::Result<Vec<IdentityConfig>> {
+    pub fn remove_server(&mut self, nickname_or_host_or_url: &str) -> anyhow::Result<()> {
         let (host, _) = host_or_url_to_host_and_protocol(nickname_or_host_or_url);
-        self.home.remove_server(host, delete_identities)
+        self.home.remove_server(host)
     }
 
     /// Get a URL for the specified `server`.
     ///
     /// Returns the URL of the default server if `server` is `None`.
-    ///
-    /// Entries in the project configuration supersede entries in the home configuration.
     ///
     /// If `server` is `Some` and is a complete URL,
     /// including protocol and hostname,
@@ -654,9 +427,8 @@ impl Config {
     /// Returns an `Err` if:
     /// - `server` is `Some`, but not a complete URL,
     ///   and the supplied name does not refer to any server
-    ///   in either the project or the home configuration.
-    /// - `server` is `None`, but neither the home nor the project configuration
-    ///   has a default server.
+    ///   in the configuration.
+    /// - `server` is `None`, but the configuration does not have a default server.
     pub fn get_host_url(&self, server: Option<&str>) -> anyhow::Result<String> {
         Ok(format!("{}://{}", self.protocol(server)?, self.host(server)?))
     }
@@ -665,8 +437,6 @@ impl Config {
     ///
     /// Returns the hostname of the default server if `server` is `None`.
     ///
-    /// Entries in the project configuration supersede entries in the home configuration.
-    ///
     /// If `server` is `Some` and is a complete URL,
     /// including protocol and hostname,
     /// returns that hostname without accessing the configuration.
@@ -674,26 +444,24 @@ impl Config {
     /// Returns an `Err` if:
     /// - `server` is `Some`, but not a complete URL,
     ///   and the supplied name does not refer to any server
-    ///   in either the project or the home configuration.
-    /// - `server` is `None`, but neither the home nor the project configuration
-    ///   has a default server.
+    ///   in the configuration.
+    /// - `server` is `None`, but the configuration does not
+    ///   have a default server.
     pub fn host<'a>(&'a self, server: Option<&'a str>) -> anyhow::Result<&'a str> {
         if let Some(server) = server {
             if contains_protocol(server) {
                 Ok(host_or_url_to_host_and_protocol(server).0)
             } else {
-                self.proj.host(server).or_else(|_| self.home.host(server))
+                self.home.host(server)
             }
         } else {
-            self.proj.default_host().or_else(|_| self.home.default_host())
+            self.home.default_host()
         }
     }
 
     /// Get the protocol of the specified `server`, either `"http"` or `"https"`.
     ///
     /// Returns the protocol of the default server if `server` is `None`.
-    ///
-    /// Entries in the project configuration supersede entries in the home configuration.
     ///
     /// If `server` is `Some` and is a complete URL,
     /// including protocol and hostname,
@@ -703,155 +471,57 @@ impl Config {
     /// Returns an `Err` if:
     /// - `server` is `Some`, but not a complete URL,
     ///   and the supplied name does not refer to any server
-    ///   in either the project or the home configuration.
-    /// - `server` is `None`, but neither the home nor the project configuration
-    ///   has a default server.
+    ///   in the configuration.
+    /// - `server` is `None`, but the configuration does not have a default server.
     pub fn protocol<'a>(&'a self, server: Option<&'a str>) -> anyhow::Result<&'a str> {
         if let Some(server) = server {
             if contains_protocol(server) {
                 Ok(host_or_url_to_host_and_protocol(server).1.unwrap())
             } else {
-                self.proj.protocol(server).or_else(|_| self.home.protocol(server))
+                self.home.protocol(server)
             }
         } else {
-            self.proj.default_protocol().or_else(|_| self.home.default_protocol())
+            self.home.default_protocol()
         }
-    }
-
-    pub fn default_identity(&self, server: Option<&str>) -> anyhow::Result<&str> {
-        if let Some(server) = server {
-            let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.proj
-                .default_identity(host)
-                .or_else(|_| self.home.default_identity(host))
-        } else {
-            self.proj
-                .default_server_default_identity()
-                .or_else(|_| self.home.default_server_default_identity())
-        }
-    }
-
-    /// Set the default identity for `server` in the home configuration.
-    ///
-    /// Does not validate that `default_identity` applies to `server`.
-    ///
-    /// Returns an `Err` if:
-    /// - `server` is `Some`, but does not refer to any server
-    ///   in the home configuration.
-    /// - `server` is `None`, but the home configuration
-    ///   does not have a default server.
-    pub fn set_default_identity(&mut self, default_identity: String, server: Option<&str>) -> anyhow::Result<()> {
-        if let Some(server) = server {
-            let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.home.set_server_default_identity(host, default_identity)
-        } else {
-            self.home.set_default_server_default_identity(default_identity)
-        }
-    }
-
-    /// Sets the `nickname` for the provided `identity`.
-    ///
-    /// If the `identity` already has a `nickname` set, it will be overwritten and returned. If the
-    /// `identity` is not found, an error will be returned.
-    ///
-    /// # Returns
-    /// * `Ok(Option<String>)` - If the identity was found, the old nickname will be returned.
-    /// * `Err(anyhow::Error)` - If the identity was not found.
-    pub fn set_identity_nickname(
-        &mut self,
-        identity: &Identity,
-        nickname: &str,
-    ) -> Result<Option<String>, anyhow::Error> {
-        let config = self
-            .home
-            .identity_configs
-            .iter_mut()
-            .find(|c| c.identity == *identity)
-            .ok_or_else(|| anyhow::anyhow!("Identity {} not found", identity))?;
-        let old_nickname = std::mem::replace(&mut config.nickname, Some(nickname.to_string()));
-        Ok(old_nickname)
-    }
-
-    pub fn identity_configs(&self) -> &[IdentityConfig] {
-        &self.home.identity_configs
-    }
-
-    pub fn identity_configs_mut(&mut self) -> &mut Vec<IdentityConfig> {
-        &mut self.home.identity_configs
     }
 
     pub fn server_configs(&self) -> &[ServerConfig] {
         &self.home.server_configs
     }
 
-    fn find_config_path(config_dir: &Path) -> Option<PathBuf> {
-        [DOT_SPACETIME_FILENAME, SPACETIME_FILENAME, CONFIG_FILENAME]
-            .iter()
-            .map(|filename| config_dir.join(filename))
-            .find(|path| path.exists())
-    }
-
-    fn system_config_path() -> PathBuf {
-        if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
-            config_path.into()
-        } else {
-            let mut config_path = dirs::home_dir().unwrap();
-            config_path.push(HOME_CONFIG_DIR);
-            Self::find_config_path(&config_path).unwrap_or_else(|| config_path.join(CONFIG_FILENAME))
-        }
-    }
-
-    fn load_from_file(config_path: &Path) -> anyhow::Result<RawConfig> {
-        let text = fs::read_to_string(config_path)?;
-        Ok(toml::from_str(&text)?)
-    }
-
-    fn load_proj_config() -> RawConfig {
-        // TODO(cloutiertyler): For now we're checking for a spacetime.toml file
-        // in the current directory. Eventually this should really be that we
-        // search parent directories above the current directory to find
-        // spacetime.toml files like a .gitignore file
-        let cur_dir = std::env::current_dir().expect("No current working directory!");
-        if let Some(config_path) = Self::find_config_path(&cur_dir) {
-            Self::load_from_file(&config_path)
-                .inspect_err(|e| eprintln!("config file {config_path:?} is invalid: {e:#}"))
-                .unwrap_or_default()
-        } else {
-            Default::default()
-        }
-    }
-
-    pub fn load() -> Self {
-        let home_path = Self::system_config_path();
-        let home = if home_path.exists() {
-            Self::load_from_file(&home_path)
-                .inspect_err(|e| eprintln!("config file {home_path:?} is invalid: {e:#?}"))
-                .unwrap_or_default()
-        } else {
-            RawConfig::new_with_localhost()
-        };
-
-        let proj = Self::load_proj_config();
-
-        Self { home, proj }
+    pub fn load(home_path: CliTomlPath) -> anyhow::Result<Self> {
+        let home = spacetimedb::config::parse_config::<RawConfig>(home_path.as_ref())
+            .with_context(|| format!("config file {} is invalid", home_path.display()))?;
+        Ok(match home {
+            Some(home) => Self { home, home_path },
+            None => {
+                let config = Self {
+                    home: RawConfig::new_with_localhost(),
+                    home_path,
+                };
+                config.save();
+                config
+            }
+        })
     }
 
     #[doc(hidden)]
     /// Used in tests.
-    pub fn new_with_localhost() -> Self {
+    pub fn new_with_localhost(home_path: CliTomlPath) -> Self {
         Self {
             home: RawConfig::new_with_localhost(),
-            proj: RawConfig::default(),
+            home_path,
         }
     }
 
     pub fn save(&self) {
-        let home_path = Self::system_config_path();
+        let home_path = &self.home_path;
         // If the `home_path` is in a directory, ensure it exists.
-        create_parent_dir(home_path.as_ref()).unwrap();
+        home_path.create_parent().unwrap();
 
         let config = toml::to_string_pretty(&self.home).unwrap();
 
+        eprintln!("Saving config to {}.", home_path.display());
         // TODO: We currently have a race condition if multiple processes are modifying the config.
         // If process X and process Y read the config, each make independent changes, and then save
         // the config, the first writer will have its changes clobbered by the second writer.
@@ -862,140 +532,8 @@ impl Config {
         //
         // We should address this issue, but we currently don't expect it to arise very frequently
         // (see https://github.com/clockworklabs/SpacetimeDB/pull/1341#issuecomment-2150857432).
-        if let Err(e) = atomic_write(&home_path, config) {
-            eprintln!("could not save config file: {e}")
-        }
-    }
-
-    pub fn get_default_identity_config(&self, server: Option<&str>) -> anyhow::Result<&IdentityConfig> {
-        let default_identity = self.default_identity(server)?;
-        self.get_identity_config(default_identity).ok_or_else(|| {
-            anyhow::anyhow!(
-                "No saved configuration for identity: {default_identity}
-Import an existing identity with:
-\tspacetime identity import <identity> <token>"
-            )
-        })
-    }
-
-    pub fn name_exists(&self, name: &str) -> bool {
-        self.get_identity_config_by_name(name).is_some()
-    }
-
-    pub fn identity_exists(&self, identity: &Identity) -> bool {
-        self.get_identity_config_by_identity(identity).is_some()
-    }
-
-    pub fn can_set_name(&self, new_nickname: &str) -> Result<(), anyhow::Error> {
-        if self.name_exists(new_nickname) {
-            return Err(anyhow::anyhow!("An identity with that name already exists."));
-        }
-        if is_hex_identity(new_nickname) {
-            return Err(anyhow::anyhow!("An identity name cannot be an identity."));
-        }
-        Ok(())
-    }
-
-    pub fn get_identity_config_by_name(&self, name: &str) -> Option<&IdentityConfig> {
-        self.identity_configs()
-            .iter()
-            .find(|c| c.nickname.as_ref() == Some(&name.to_string()))
-    }
-
-    pub fn get_identity_config_by_identity(&self, identity: &Identity) -> Option<&IdentityConfig> {
-        self.identity_configs().iter().find(|c| c.identity == *identity)
-    }
-
-    pub fn get_identity_config_by_identity_mut(&mut self, identity: &Identity) -> Option<&mut IdentityConfig> {
-        self.identity_configs_mut().iter_mut().find(|c| c.identity == *identity)
-    }
-
-    /// Converts some given `identity_or_name` into an identity.
-    ///
-    /// If `identity_or_name` is `None` then `None` is returned. If `identity_or_name` is `Some`,
-    /// then if its an identity then its just returned. If its not an identity it is assumed to be
-    /// a name and it is looked up as an identity nickname. If the identity exists it is returned,
-    /// otherwise we panic.
-    pub fn resolve_name_to_identity(&self, identity_or_name: &str) -> anyhow::Result<Identity> {
-        let cfg = self
-            .get_identity_config(identity_or_name)
-            .ok_or_else(|| anyhow::anyhow!("No such identity: {}", identity_or_name))?;
-        Ok(cfg.identity)
-    }
-
-    /// Converts some given `identity_or_name` into an `IdentityConfig`.
-    ///
-    /// # Returns
-    /// * `None` - If an identity config with the given `identity_or_name` does not exist.
-    /// * `Some` - A mutable reference to the `IdentityConfig` with the given `identity_or_name`.
-    pub fn get_identity_config(&self, identity_or_name: &str) -> Option<&IdentityConfig> {
-        if let Ok(identity) = Identity::from_hex(identity_or_name) {
-            self.get_identity_config_by_identity(&identity)
-        } else {
-            self.identity_configs()
-                .iter()
-                .find(|c| c.nickname.as_deref() == Some(identity_or_name))
-        }
-    }
-
-    /// Converts some given `identity_or_name` into a mutable `IdentityConfig`.
-    ///
-    /// # Returns
-    /// * `None` - If an identity config with the given `identity_or_name` does not exist.
-    /// * `Some` - A mutable reference to the `IdentityConfig` with the given `identity_or_name`.
-    pub fn get_identity_config_mut(&mut self, identity_or_name: &str) -> Option<&mut IdentityConfig> {
-        if let Ok(identity) = Identity::from_hex(identity_or_name) {
-            self.get_identity_config_by_identity_mut(&identity)
-        } else {
-            self.identity_configs_mut()
-                .iter_mut()
-                .find(|c| c.nickname.as_deref() == Some(identity_or_name))
-        }
-    }
-
-    pub fn delete_identity_config_by_name(&mut self, name: &str) -> Option<IdentityConfig> {
-        let index = self
-            .home
-            .identity_configs
-            .iter()
-            .position(|c| c.nickname.as_deref() == Some(name));
-        if let Some(index) = index {
-            Some(self.home.identity_configs.remove(index))
-        } else {
-            None
-        }
-    }
-
-    pub fn delete_identity_config_by_identity(&mut self, identity: &Identity) -> Option<IdentityConfig> {
-        let index = self.home.identity_configs.iter().position(|c| c.identity == *identity);
-        if let Some(index) = index {
-            Some(self.home.identity_configs.remove(index))
-        } else {
-            None
-        }
-    }
-
-    /// Deletes all stored identity configs. This function does not save the config after removing
-    /// all configs.
-    pub fn delete_all_identity_configs(&mut self) {
-        self.home.identity_configs.clear();
-        self.home.unset_all_default_identities();
-    }
-
-    pub fn update_all_default_identities(&mut self) {
-        self.home.update_all_default_identities();
-    }
-
-    pub fn set_default_identity_if_unset(&mut self, server: Option<&str>, identity: &str) -> anyhow::Result<()> {
-        if let Some(server) = server {
-            let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.proj
-                .set_default_identity_if_unset(host, identity)
-                .or_else(|_| self.home.set_default_identity_if_unset(host, identity))
-        } else {
-            self.proj
-                .default_server_set_default_identity_if_unset(identity)
-                .or_else(|_| self.home.default_server_set_default_identity_if_unset(identity))
+        if let Err(e) = atomic_write(&home_path.0, config) {
+            eprintln!("Could not save config file: {e}")
         }
     }
 
@@ -1006,7 +544,7 @@ Import an existing identity with:
                     format!(
                         "Unable to parse invalid saved server fingerprint as ECDSA public key.
 Update the server's fingerprint with:
-\tspacetime server fingerprint -s {}",
+\tspacetime server fingerprint {}",
                         server.unwrap_or("")
                     )
                 })
@@ -1024,23 +562,16 @@ Update the server's fingerprint with:
             let (host, _) = host_or_url_to_host_and_protocol(server);
             Ok(host)
         } else {
-            self.proj
-                .default_server()
-                .or_else(|_| self.home.default_server())
-                .map(ServerConfig::nick_or_host)
+            self.home.default_server().map(ServerConfig::nick_or_host)
         }
     }
 
     pub fn server_fingerprint(&self, server: Option<&str>) -> anyhow::Result<Option<&str>> {
         if let Some(server) = server {
             let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.proj
-                .server_fingerprint(host)
-                .or_else(|_| self.home.server_fingerprint(host))
+            self.home.server_fingerprint(host)
         } else {
-            self.proj
-                .default_server_fingerprint()
-                .or_else(|_| self.home.default_server_fingerprint())
+            self.home.default_server_fingerprint()
         }
     }
 
@@ -1051,19 +582,6 @@ Update the server's fingerprint with:
         } else {
             self.home.set_default_server_fingerprint(new_fingerprint)
         }
-    }
-
-    pub fn remove_identities_for_server(&mut self, server: Option<&str>) -> anyhow::Result<Vec<IdentityConfig>> {
-        if let Some(server) = server {
-            let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.home.remove_identities_for_server(host)
-        } else {
-            self.home.remove_identities_for_default_server()
-        }
-    }
-
-    pub fn remove_identities_for_fingerprint(&mut self, fingerprint: &str) -> anyhow::Result<Vec<IdentityConfig>> {
-        self.home.remove_identities_for_fingerprint(fingerprint)
     }
 
     pub fn edit_server(
@@ -1083,6 +601,34 @@ Update the server's fingerprint with:
             self.home.delete_server_fingerprint(host)
         } else {
             self.home.delete_default_server_fingerprint()
+        }
+    }
+
+    pub fn set_web_session_token(&mut self, token: String) {
+        self.home.set_web_session_token(token);
+    }
+
+    pub fn set_spacetimedb_token(&mut self, token: String) {
+        self.home.set_spacetimedb_token(token);
+    }
+
+    pub fn clear_login_tokens(&mut self) {
+        self.home.clear_login_tokens();
+    }
+
+    pub fn web_session_token(&self) -> Option<&String> {
+        self.home.web_session_token.as_ref()
+    }
+
+    pub fn spacetimedb_token(&self) -> Option<&String> {
+        self.home.spacetimedb_token.as_ref()
+    }
+
+    pub fn spacetimedb_token_or_error(&self) -> anyhow::Result<&String> {
+        if let Some(token) = self.spacetimedb_token() {
+            Ok(token)
+        } else {
+            Err(anyhow::anyhow!("No login token found. Please run `spacetime login`."))
         }
     }
 }

@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Internal
@@ -17,22 +16,27 @@ namespace SpacetimeDB.Internal
 	public partial class RawScheduleDefV9
 	{
 		[DataMember(Name = "name")]
-		public string Name;
+		public string? Name;
 		[DataMember(Name = "reducer_name")]
 		public string ReducerName;
+		[DataMember(Name = "scheduled_at_column")]
+		public ushort ScheduledAtColumn;
 
 		public RawScheduleDefV9(
-			string Name,
-			string ReducerName
+			string? Name,
+			string ReducerName,
+			ushort ScheduledAtColumn
 		)
 		{
 			this.Name = Name;
 			this.ReducerName = ReducerName;
+			this.ScheduledAtColumn = ScheduledAtColumn;
 		}
 
-		public RawScheduleDefV9() : this(
-			"",
-			""
-		) { }
+		public RawScheduleDefV9()
+		{
+			this.ReducerName = "";
+		}
+
 	}
 }

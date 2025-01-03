@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
 use crate::common_args;
-use clap::{Arg, ArgAction, ArgGroup, ArgMatches};
+use clap::{Arg, ArgAction, ArgMatches};
 use itertools::Itertools;
 use reqwest::RequestBuilder;
 use spacetimedb_lib::de::serde::SeedWrapper;
@@ -11,7 +11,7 @@ use tabled::settings::Style;
 
 use crate::config::Config;
 use crate::errors::error_for_status;
-use crate::util::{database_address, get_auth_header_only};
+use crate::util::{database_identity, get_auth_header};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("sql")
@@ -19,7 +19,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("database")
                 .required(true)
-                .help("The domain or address of the database you would like to query"),
+                .help("The name or identity of the database you would like to query"),
         )
         .arg(
             Arg::new("query")
@@ -28,47 +28,27 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("interactive")
                 .help("The SQL query to execute"),
         )
-        .arg(Arg::new("interactive")
-                 .long("interactive")
-                 .action(ArgAction::SetTrue)
-                 .conflicts_with("query")
-                 .help("Runs an interactive command prompt for `SQL` expressions"),)
-        .group(
-            ArgGroup::new("mode")
-                .args(["interactive","query"])
-                .multiple(false)
-                .required(true)
-        )
         .arg(
-            common_args::identity()
-                .conflicts_with("anon_identity")
-                .help("The identity to use for querying the database")
-                .long_help("The identity to use for querying the database. If no identity is provided, the default one will be used."),
-        )
-        .arg(
-            Arg::new("anon_identity")
-                .long("anon-identity")
-                .short('a')
-                .conflicts_with("identity")
+            Arg::new("interactive")
+                .long("interactive")
                 .action(ArgAction::SetTrue)
-                .help("If this flag is present, no identity will be provided when querying the database")
+                .conflicts_with("query")
+                .help("Instead of using a query, run an interactive command prompt for `SQL` expressions"),
         )
-        .arg(common_args::server()
-                .help("The nickname, host name or URL of the server hosting the database"),
-        )
+        .arg(common_args::anonymous())
+        .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
 }
 
-pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
+pub(crate) async fn parse_req(config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let database = args.get_one::<String>("database").unwrap();
-    let identity = args.get_one::<String>("identity");
+    let database_name_or_identity = args.get_one::<String>("database").unwrap();
     let anon_identity = args.get_flag("anon_identity");
 
     Ok(Connection {
         host: config.get_host_url(server)?,
-        auth_header: get_auth_header_only(&mut config, anon_identity, identity, server).await?,
-        address: database_address(&config, database, server).await?,
-        database: database.to_string(),
+        auth_header: get_auth_header(&config, anon_identity)?,
+        database_identity: database_identity(&config, database_name_or_identity, server).await?,
+        database: database_name_or_identity.to_string(),
     })
 }
 

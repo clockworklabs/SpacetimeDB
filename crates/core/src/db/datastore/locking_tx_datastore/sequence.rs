@@ -1,10 +1,19 @@
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_primitives::SequenceId;
 use spacetimedb_schema::schema::SequenceSchema;
+use spacetimedb_table::MemoryUsage;
 
 pub(super) struct Sequence {
     schema: SequenceSchema,
     pub(super) value: i128,
+}
+
+impl MemoryUsage for Sequence {
+    fn heap_usage(&self) -> usize {
+        // MEMUSE: intentionally ignoring schema
+        let Self { schema: _, value } = self;
+        value.heap_usage()
+    }
 }
 
 impl Sequence {
@@ -100,6 +109,13 @@ impl Sequence {
 #[derive(Default)]
 pub(super) struct SequencesState {
     sequences: IntMap<SequenceId, Sequence>,
+}
+
+impl MemoryUsage for SequencesState {
+    fn heap_usage(&self) -> usize {
+        let Self { sequences } = self;
+        sequences.heap_usage()
+    }
 }
 
 impl SequencesState {

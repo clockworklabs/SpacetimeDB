@@ -3,19 +3,23 @@
   <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
     <NativeLibrary Include="$(MSBuildThisFileDirectory)..\bindings.c" />
     <UnmanagedEntryPointsAssembly Include="SpacetimeDB.Runtime" />
-    <WasmImport Include="$(SpacetimeNamespace)!_iter_by_col_eq" />
-    <WasmImport Include="$(SpacetimeNamespace)!_delete_by_col_eq" />
-    <WasmImport Include="$(SpacetimeNamespace)!_iter_start_filtered" />
-    <WasmImport Include="$(SpacetimeNamespace)!_table_id_from_name" />
-    <WasmImport Include="$(SpacetimeNamespace)!_datastore_table_row_count" />
-    <WasmImport Include="$(SpacetimeNamespace)!_datastore_table_scan_bsatn" />
-    <WasmImport Include="$(SpacetimeNamespace)!_row_iter_bsatn_advance" />
-    <WasmImport Include="$(SpacetimeNamespace)!_row_iter_bsatn_close" />
-    <WasmImport Include="$(SpacetimeNamespace)!_datastore_insert_bsatn" />
-    <WasmImport Include="$(SpacetimeNamespace)!_datastore_delete_all_by_eq_bsatn" />
-    <WasmImport Include="$(SpacetimeNamespace)!_bytes_source_read" />
-    <WasmImport Include="$(SpacetimeNamespace)!_bytes_sink_write" />
-    <WasmImport Include="$(SpacetimeNamespace)!_console_log" />
+
+    <WasmImport Include="$(SpacetimeNamespace)!table_id_from_name" />
+    <WasmImport Include="$(SpacetimeNamespace)!index_id_from_name" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_table_row_count" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_table_scan_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_btree_scan_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!row_iter_bsatn_advance" />
+    <WasmImport Include="$(SpacetimeNamespace)!row_iter_bsatn_close" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_insert_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_delete_by_btree_scan_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!datastore_delete_all_by_eq_bsatn" />
+    <WasmImport Include="$(SpacetimeNamespace)!bytes_source_read" />
+    <WasmImport Include="$(SpacetimeNamespace)!bytes_sink_write" />
+    <WasmImport Include="$(SpacetimeNamespace)!console_log" />
+    <WasmImport Include="$(SpacetimeNamespace)!console_timer_start" />
+    <WasmImport Include="$(SpacetimeNamespace)!console_timer_end" />
+    <WasmImport Include="$(SpacetimeNamespace)!volatile_nonatomic_schedule_immediate" />
 
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
     <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
@@ -35,15 +39,18 @@
   <!-- TODO: remove when https://github.com/dotnet/runtime/issues/82788 is resolved. -->
   <Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk;CheckWasmSdks">
     <PropertyGroup>
-      <WasiSdkVersion>20</WasiSdkVersion>
+      <WasiSdkVersion>24</WasiSdkVersion>
 
       <WasiSdkDownloadTempFile>$([System.IO.Path]::Combine($(IntermediateOutputPath), "wasi-sdk.$(WasiSdkVersion).tar.gz"))</WasiSdkDownloadTempFile>
 
-      <WasiSdkFilenameSuffix Condition="$([MSBuild]::IsOSPlatform('Windows'))">.m-mingw</WasiSdkFilenameSuffix>
-      <WasiSdkFilenameSuffix Condition="$([MSBuild]::IsOSPlatform('Linux'))">-linux</WasiSdkFilenameSuffix>
-      <WasiSdkFilenameSuffix Condition="$([MSBuild]::IsOSPlatform('OSX'))">-macos</WasiSdkFilenameSuffix>
+      <WasiSdkArch Condition="$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == X64">x86_64</WasiSdkArch>
+      <WasiSdkArch Condition="$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == Arm64">arm64</WasiSdkArch>
 
-      <WasiSdkUrl>https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$(WasiSdkVersion)/wasi-sdk-$(WasiSdkVersion).0$(WasiSdkFilenameSuffix).tar.gz</WasiSdkUrl>
+      <WasiSdkOS Condition="$([MSBuild]::IsOSPlatform('Windows'))">windows</WasiSdkOS>
+      <WasiSdkOS Condition="$([MSBuild]::IsOSPlatform('Linux'))">linux</WasiSdkOS>
+      <WasiSdkOS Condition="$([MSBuild]::IsOSPlatform('OSX'))">macos</WasiSdkOS>
+
+      <WasiSdkUrl>https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$(WasiSdkVersion)/wasi-sdk-$(WasiSdkVersion).0-$(WasiSdkArch)-$(WasiSdkOS).tar.gz</WasiSdkUrl>
 
       <WasiSdkRoot>$([System.IO.Path]::Combine($([System.Environment]::GetFolderPath(SpecialFolder.UserProfile)), '.wasi-sdk', "wasi-sdk-$(WasiSdkVersion)"))</WasiSdkRoot>
       <WASI_SDK_PATH>$(WasiSdkRoot)</WASI_SDK_PATH>
@@ -56,7 +63,7 @@
             SourceUrl="$(WasiSdkUrl)"
             DestinationFolder="$(IntermediateOutputPath)"
             DestinationFileName="$([System.IO.Path]::GetFileName('$(WasiSdkDownloadTempFile)'))"
-            Condition="!Exists('$(WasiSdkDownloadTempFile)')" />
+            Condition="!Exists('$(WasiClang)')" />
 
     <Message Importance="high" Text="Extracting $(WasiSdkDownloadTempFile) to $(WasiSdkRoot)..." Condition="!Exists('$(WasiClang)')" />
     <MakeDir Directories="$(WasiSdkRoot)" />

@@ -22,7 +22,12 @@ public class NoSuchTableException : StdbException
     public override string Message => "No such table";
 }
 
-public class UniqueAlreadyExistsException : StdbException
+public class NoSuchIndexException : StdbException
+{
+    public override string Message => "No such index";
+}
+
+public class UniqueConstraintViolationException : StdbException
 {
     public override string Message => "Value with given unique identifier already exists";
 }
@@ -40,6 +45,11 @@ public class BufferTooSmallException : StdbException
 public class NoSuchIterException : StdbException
 {
     public override string Message => "The provided row iterator does not exist";
+}
+
+public class NoSuchLogStopwatch : StdbException
+{
+    public override string Message => "The provided stopwatch does not exist";
 }
 
 public class NoSuchBytesException : StdbException

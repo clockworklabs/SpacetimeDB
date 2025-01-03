@@ -12,6 +12,9 @@ use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
+use spacetimedb_client_api_messages::websocket::{
+    CallReducerFlags, Compression, FormatSwitch, SubscribeSingle, Unsubscribe,
+};
 use spacetimedb_lib::identity::RequestId;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
@@ -22,10 +25,41 @@ pub enum Protocol {
     Binary,
 }
 
+impl Protocol {
+    pub(crate) fn assert_matches_format_switch<B, J>(self, fs: &FormatSwitch<B, J>) {
+        match (self, fs) {
+            (Protocol::Text, FormatSwitch::Json(_)) | (Protocol::Binary, FormatSwitch::Bsatn(_)) => {}
+            _ => unreachable!("requested protocol does not match output format"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ClientConfig {
+    /// The client's desired protocol (format) when the host replies.
+    pub protocol: Protocol,
+    /// The client's desired (conditional) compression algorithm, if any.
+    pub compression: Compression,
+    /// Whether the client prefers full [`TransactionUpdate`]s
+    /// rather than  [`TransactionUpdateLight`]s on a successful update.
+    // TODO(centril): As more knobs are added, make this into a bitfield (when there's time).
+    pub tx_update_full: bool,
+}
+
+impl ClientConfig {
+    pub fn for_test() -> ClientConfig {
+        Self {
+            protocol: Protocol::Binary,
+            compression: <_>::default(),
+            tx_update_full: true,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ClientConnectionSender {
     pub id: ClientActorId,
-    pub protocol: Protocol,
+    pub config: ClientConfig,
     sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
@@ -40,7 +74,7 @@ pub enum ClientSendError {
 }
 
 impl ClientConnectionSender {
-    pub fn dummy_with_channel(id: ClientActorId, protocol: Protocol) -> (Self, mpsc::Receiver<SerializableMessage>) {
+    pub fn dummy_with_channel(id: ClientActorId, config: ClientConfig) -> (Self, mpsc::Receiver<SerializableMessage>) {
         let (sendtx, rx) = mpsc::channel(1);
         // just make something up, it doesn't need to be attached to a real task
         let abort_handle = match tokio::runtime::Handle::try_current() {
@@ -50,7 +84,7 @@ impl ClientConnectionSender {
         (
             Self {
                 id,
-                protocol,
+                config,
                 sendtx,
                 abort_handle,
                 cancelled: AtomicBool::new(false),
@@ -59,8 +93,8 @@ impl ClientConnectionSender {
         )
     }
 
-    pub fn dummy(id: ClientActorId, protocol: Protocol) -> Self {
-        Self::dummy_with_channel(id, protocol).0
+    pub fn dummy(id: ClientActorId, config: ClientConfig) -> Self {
+        Self::dummy_with_channel(id, config).0
     }
 
     pub fn send_message(&self, message: impl Into<SerializableMessage>) -> Result<(), ClientSendError> {
@@ -91,7 +125,7 @@ impl ClientConnectionSender {
 #[non_exhaustive]
 pub struct ClientConnection {
     sender: Arc<ClientConnectionSender>,
-    pub database_instance_id: u64,
+    pub replica_id: u64,
     pub module: ModuleHost,
     module_rx: watch::Receiver<ModuleHost>,
 }
@@ -130,20 +164,19 @@ const KB: usize = 1024;
 
 impl ClientConnection {
     /// Returns an error if ModuleHost closed
-    pub async fn spawn<F, Fut>(
+    pub async fn spawn<Fut>(
         id: ClientActorId,
-        protocol: Protocol,
-        database_instance_id: u64,
+        config: ClientConfig,
+        replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
-        actor: F,
+        actor: impl FnOnce(ClientConnection, mpsc::Receiver<SerializableMessage>) -> Fut,
     ) -> Result<ClientConnection, ReducerCallError>
     where
-        F: FnOnce(ClientConnection, mpsc::Receiver<SerializableMessage>) -> Fut,
         Fut: Future<Output = ()> + Send + 'static,
     {
         // Add this client as a subscriber
-        // TODO: Right now this is connecting clients directly to an instance, but their requests should be
-        // logically subscribed to the database, not any particular instance. We should handle failover for
+        // TODO: Right now this is connecting clients directly to a replica, but their requests should be
+        // logically subscribed to the database, not any particular replica. We should handle failover for
         // them and stuff. Not right now though.
         let module = module_rx.borrow_and_update().clone();
         module
@@ -152,7 +185,7 @@ impl ClientConnection {
 
         let (sendtx, sendrx) = mpsc::channel::<SerializableMessage>(CLIENT_CHANNEL_CAPACITY);
 
-        let db = module.info().address;
+        let db = module.info().database_identity;
 
         let (fut_tx, fut_rx) = oneshot::channel::<Fut>();
         // weird dance so that we can get an abort_handle into ClientConnection
@@ -167,14 +200,14 @@ impl ClientConnection {
 
         let sender = Arc::new(ClientConnectionSender {
             id,
-            protocol,
+            config,
             sendtx,
             abort_handle,
             cancelled: AtomicBool::new(false),
         });
         let this = Self {
             sender,
-            database_instance_id,
+            replica_id,
             module,
             module_rx,
         };
@@ -188,14 +221,14 @@ impl ClientConnection {
 
     pub fn dummy(
         id: ClientActorId,
-        protocol: Protocol,
-        database_instance_id: u64,
+        config: ClientConfig,
+        replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
     ) -> Self {
         let module = module_rx.borrow_and_update().clone();
         Self {
-            sender: Arc::new(ClientConnectionSender::dummy(id, protocol)),
-            database_instance_id,
+            sender: Arc::new(ClientConnectionSender::dummy(id, config)),
+            replica_id,
             module,
             module_rx,
         }
@@ -230,12 +263,20 @@ impl ClientConnection {
         args: ReducerArgs,
         request_id: RequestId,
         timer: Instant,
+        flags: CallReducerFlags,
     ) -> Result<ReducerCallResult, ReducerCallError> {
+        let caller = match flags {
+            CallReducerFlags::FullUpdate => Some(self.sender()),
+            // Setting `sender = None` causes `eval_updates` to skip sending to the caller
+            // as it has no access to the caller other than by id/addr.
+            CallReducerFlags::NoSuccessNotify => None,
+        };
+
         self.module
             .call_reducer(
                 self.id.identity,
                 Some(self.id.address),
-                Some(self.sender()),
+                caller,
                 Some(request_id),
                 Some(timer),
                 reducer,
@@ -244,12 +285,30 @@ impl ClientConnection {
             .await
     }
 
+    pub async fn subscribe_single(&self, subscription: SubscribeSingle, timer: Instant) -> Result<(), DBError> {
+        let me = self.clone();
+        tokio::task::spawn_blocking(move || {
+            me.module
+                .subscriptions()
+                .add_subscription(me.sender, subscription, timer, None)
+        })
+        .await
+        .unwrap() // TODO: is unwrapping right here?
+    }
+
+    pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<(), DBError> {
+        let me = self.clone();
+        tokio::task::spawn_blocking(move || me.module.subscriptions().remove_subscription(me.sender, request, timer))
+            .await
+            .unwrap() // TODO: is unwrapping right here?
+    }
+
     pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
         let me = self.clone();
         tokio::task::spawn_blocking(move || {
             me.module
                 .subscriptions()
-                .add_subscriber(me.sender, subscription, timer, None)
+                .add_legacy_subscriber(me.sender, subscription, timer, None)
         })
         .await
         .unwrap()

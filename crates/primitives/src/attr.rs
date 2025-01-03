@@ -197,6 +197,11 @@ impl Constraints {
         Self::new(ColumnAttribute::PRIMARY_KEY_IDENTITY)
     }
 
+    /// Creates a new `Constraints` instance with [ColumnAttribute::AUTO_INC] set.
+    pub const fn auto_inc() -> Self {
+        Self::new(ColumnAttribute::AUTO_INC)
+    }
+
     /// Adds a constraint to the existing constraints.
     ///
     /// # Example

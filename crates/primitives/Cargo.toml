@@ -9,6 +9,7 @@ description = "Primitives such as TableId and ColumnIndexAttribute"
 bitflags.workspace = true
 either.workspace = true
 nohash-hasher.workspace = true
+itertools.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

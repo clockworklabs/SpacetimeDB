@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Internal
@@ -26,13 +25,16 @@ namespace SpacetimeDB.Internal
 		public System.Collections.Generic.List<SpacetimeDB.Internal.RawTypeDefV9> Types;
 		[DataMember(Name = "misc_exports")]
 		public System.Collections.Generic.List<SpacetimeDB.Internal.RawMiscModuleExportV9> MiscExports;
+		[DataMember(Name = "row_level_security")]
+		public System.Collections.Generic.List<SpacetimeDB.Internal.RawRowLevelSecurityDefV9> RowLevelSecurity;
 
 		public RawModuleDefV9(
 			SpacetimeDB.Internal.Typespace Typespace,
 			System.Collections.Generic.List<SpacetimeDB.Internal.RawTableDefV9> Tables,
 			System.Collections.Generic.List<SpacetimeDB.Internal.RawReducerDefV9> Reducers,
 			System.Collections.Generic.List<SpacetimeDB.Internal.RawTypeDefV9> Types,
-			System.Collections.Generic.List<SpacetimeDB.Internal.RawMiscModuleExportV9> MiscExports
+			System.Collections.Generic.List<SpacetimeDB.Internal.RawMiscModuleExportV9> MiscExports,
+			System.Collections.Generic.List<SpacetimeDB.Internal.RawRowLevelSecurityDefV9> RowLevelSecurity
 		)
 		{
 			this.Typespace = Typespace;
@@ -40,14 +42,18 @@ namespace SpacetimeDB.Internal
 			this.Reducers = Reducers;
 			this.Types = Types;
 			this.MiscExports = MiscExports;
+			this.RowLevelSecurity = RowLevelSecurity;
 		}
 
-		public RawModuleDefV9() : this(
-			new(),
-			new(),
-			new(),
-			new(),
-			new()
-		) { }
+		public RawModuleDefV9()
+		{
+			this.Typespace = new();
+			this.Tables = new();
+			this.Reducers = new();
+			this.Types = new();
+			this.MiscExports = new();
+			this.RowLevelSecurity = new();
+		}
+
 	}
 }

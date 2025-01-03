@@ -4,11 +4,11 @@ use futures::{Sink, SinkExt, TryStream, TryStreamExt};
 use http::header;
 use http::uri::Scheme;
 use serde_json::Value;
-use spacetimedb_client_api_messages::websocket::{self as ws, EncodedValue};
+use spacetimedb_client_api_messages::websocket::{self as ws, JsonFormat};
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
 use spacetimedb_lib::ser::serde::SerializeWrapper;
-use spacetimedb_lib::RawModuleDefV8;
 use spacetimedb_standalone::TEXT_PROTOCOL;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
@@ -37,6 +37,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("num-updates")
                 .required(false)
+                .long("num-updates")
                 .short('n')
                 .action(ArgAction::Set)
                 .value_parser(value_parser!(u32))
@@ -62,71 +63,53 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("Print the initial update for the queries."),
         )
-        .arg(
-            common_args::identity()
-                .conflicts_with("anon_identity")
-                .help("The identity to use for querying the database")
-                .long_help(
-                    "The identity to use for querying the database. \
-                     If no identity is provided, the default one will be used.",
-                ),
-        )
-        .arg(
-            Arg::new("anon_identity")
-                .long("anon-identity")
-                .short('a')
-                .conflicts_with("identity")
-                .action(ArgAction::SetTrue)
-                .help("If this flag is present, no identity will be provided when querying the database"),
-        )
+        .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
 }
 
-fn parse_msg_json(msg: &WsMessage) -> Option<ws::ServerMessage> {
+fn parse_msg_json(msg: &WsMessage) -> Option<ws::ServerMessage<JsonFormat>> {
     let WsMessage::Text(msg) = msg else { return None };
-    serde_json::from_str::<DeserializeWrapper<ws::ServerMessage>>(msg)
+    serde_json::from_str::<DeserializeWrapper<ws::ServerMessage<JsonFormat>>>(msg)
         .inspect_err(|e| eprintln!("couldn't parse message from server: {e}"))
         .map(|wrapper| wrapper.0)
         .ok()
 }
 
-fn reformat_update(
-    msg: ws::DatabaseUpdate,
-    schema: &RawModuleDefV8,
-) -> anyhow::Result<HashMap<String, SubscriptionTable>> {
+fn reformat_update<'a>(
+    msg: &'a ws::DatabaseUpdate<JsonFormat>,
+    schema: &RawModuleDefV9,
+) -> anyhow::Result<HashMap<&'a str, SubscriptionTable>> {
     msg.tables
-        .into_iter()
+        .iter()
         .map(|upd| {
             let table_schema = schema
                 .tables
                 .iter()
-                .find(|tbl| tbl.schema.table_name.as_ref() == upd.table_name)
+                .find(|tbl| tbl.name == upd.table_name)
                 .context("table not found in schema")?;
-            let table_ty = schema.typespace.resolve(table_schema.data);
+            let table_ty = schema.typespace.resolve(table_schema.product_type_ref);
 
-            let reformat_row = |row: EncodedValue| {
-                let EncodedValue::Text(row) = row else {
-                    anyhow::bail!("Expected row in text format but found {row:?}");
-                };
-                let row = serde_json::from_str::<Value>(&row)?;
+            let reformat_row = |row: &str| -> anyhow::Result<Value> {
+                // TODO: can the following two calls be merged into a single call to reduce allocations?
+                let row = serde_json::from_str::<Value>(row)?;
                 let row = serde::de::DeserializeSeed::deserialize(SeedWrapper(table_ty), row)?;
                 let row = table_ty.with_value(&row);
                 let row = serde_json::to_value(SerializeWrapper::from_ref(&row))?;
                 Ok(row)
             };
 
-            let deletes = upd
-                .deletes
-                .into_iter()
-                .map(reformat_row)
-                .collect::<anyhow::Result<Vec<_>>>()?;
-            let inserts = upd
-                .inserts
-                .into_iter()
-                .map(reformat_row)
-                .collect::<anyhow::Result<Vec<_>>>()?;
+            let mut deletes = Vec::new();
+            let mut inserts = Vec::new();
+            for upd in &upd.updates {
+                for s in &upd.deletes {
+                    deletes.push(reformat_row(s)?);
+                }
+                for s in &upd.inserts {
+                    inserts.push(reformat_row(s)?);
+                }
+            }
 
-            Ok((upd.table_name, SubscriptionTable { deletes, inserts }))
+            Ok((&*upd.table_name, SubscriptionTable { deletes, inserts }))
         })
         .collect()
 }
@@ -169,7 +152,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
 
     let task = async {
-        subscribe(&mut ws, queries.cloned().collect()).await?;
+        subscribe(&mut ws, queries.cloned().map(Into::into).collect()).await?;
         await_initial_update(&mut ws, print_initial_update.then_some(&module_def)).await?;
         consume_transaction_updates(&mut ws, num, &module_def).await
     };
@@ -192,7 +175,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 }
 
 /// Send the subscribe message.
-async fn subscribe<S>(ws: &mut S, query_strings: Vec<String>) -> Result<(), S::Error>
+async fn subscribe<S>(ws: &mut S, query_strings: Box<[Box<str>]>) -> Result<(), S::Error>
 where
     S: Sink<WsMessage> + Unpin,
 {
@@ -208,28 +191,30 @@ where
 
 /// Await the initial [`ServerMessage::SubscriptionUpdate`].
 /// If `module_def` is `Some`, print a JSON representation to stdout.
-async fn await_initial_update<S>(ws: &mut S, module_def: Option<&RawModuleDefV8>) -> anyhow::Result<()>
+async fn await_initial_update<S>(ws: &mut S, module_def: Option<&RawModuleDefV9>) -> anyhow::Result<()>
 where
     S: TryStream<Ok = WsMessage> + Unpin,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
+    const RECV_TX_UPDATE: &str = "protocol error: received transaction update before initial subscription update";
+
     while let Some(msg) = ws.try_next().await? {
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
             ws::ServerMessage::InitialSubscription(sub) => {
                 if let Some(module_def) = module_def {
-                    let formatted = reformat_update(sub.database_update, module_def)?;
+                    let formatted = reformat_update(&sub.database_update, module_def)?;
                     let output = serde_json::to_string(&formatted)? + "\n";
                     tokio::io::stdout().write_all(output.as_bytes()).await?
                 }
                 break;
             }
-            ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate { status, .. }) => {
-                let message = match status {
-                    ws::UpdateStatus::Failed(msg) => msg,
-                    _ => "protocol error: received transaction update before initial subscription update".to_string(),
-                };
-                anyhow::bail!(message)
+            ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate { status, .. }) => anyhow::bail!(match status {
+                ws::UpdateStatus::Failed(msg) => msg,
+                _ => RECV_TX_UPDATE.into(),
+            }),
+            ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { .. }) => {
+                anyhow::bail!(RECV_TX_UPDATE)
             }
             _ => continue,
         }
@@ -243,7 +228,7 @@ where
 async fn consume_transaction_updates<S>(
     ws: &mut S,
     num: Option<u32>,
-    module_def: &RawModuleDefV8,
+    module_def: &RawModuleDefV9,
 ) -> anyhow::Result<bool>
 where
     S: TryStream<Ok = WsMessage> + Unpin,
@@ -265,11 +250,12 @@ where
             ws::ServerMessage::InitialSubscription(_) => {
                 anyhow::bail!("protocol error: received a second initial subscription update")
             }
-            ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate {
+            ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { update, .. })
+            | ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate {
                 status: ws::UpdateStatus::Committed(update),
                 ..
             }) => {
-                let output = serde_json::to_string(&reformat_update(update, module_def)?)? + "\n";
+                let output = serde_json::to_string(&reformat_update(&update, module_def)?)? + "\n";
                 stdout.write_all(output.as_bytes()).await?;
                 num_received += 1;
             }

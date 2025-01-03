@@ -7,8 +7,8 @@ use once_cell::sync::OnceCell;
 use spacetimedb_lib::bsatn;
 use spacetimedb_lib::de::serde::SeedWrapper;
 use spacetimedb_lib::de::DeserializeSeed;
-use spacetimedb_lib::{ProductValue, ReducerDef};
-use spacetimedb_sats::WithTypespace;
+use spacetimedb_lib::ProductValue;
+use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 
 mod disk_storage;
 mod host_controller;
@@ -22,9 +22,10 @@ mod wasm_common;
 
 pub use disk_storage::DiskStorage;
 pub use host_controller::{
-    DescribedEntityType, ExternalStorage, HostController, ProgramStorage, ReducerCallResult, ReducerOutcome,
+    DescribedEntityType, DurabilityProvider, ExternalDurability, ExternalStorage, HostController, ProgramStorage,
+    ReducerCallResult, ReducerOutcome,
 };
-pub use module_host::{EntityDef, ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult};
+pub use module_host::{ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult};
 pub use scheduler::Scheduler;
 pub use spacetimedb_client_api_messages::timestamp::Timestamp;
 
@@ -36,26 +37,29 @@ pub enum ReducerArgs {
 }
 
 impl ReducerArgs {
-    fn into_tuple(self, schema: WithTypespace<'_, ReducerDef>) -> Result<ArgsTuple, InvalidReducerArguments> {
-        self._into_tuple(schema).map_err(|err| InvalidReducerArguments {
+    fn into_tuple(self, seed: ReducerArgsDeserializeSeed) -> Result<ArgsTuple, InvalidReducerArguments> {
+        self._into_tuple(seed).map_err(|err| InvalidReducerArguments {
             err,
-            reducer: schema.ty().name.clone(),
+            reducer: (*seed.reducer_def().name).into(),
         })
     }
-    fn _into_tuple(self, schema: WithTypespace<'_, ReducerDef>) -> anyhow::Result<ArgsTuple> {
+    fn _into_tuple(self, seed: ReducerArgsDeserializeSeed) -> anyhow::Result<ArgsTuple> {
         Ok(match self {
             ReducerArgs::Json(json) => ArgsTuple {
-                tuple: from_json_seed(&json, SeedWrapper(ReducerDef::deserialize(schema)))?,
+                tuple: from_json_seed(&json, SeedWrapper(seed))?,
                 bsatn: OnceCell::new(),
                 json: OnceCell::with_value(json),
             },
             ReducerArgs::Bsatn(bytes) => ArgsTuple {
-                tuple: ReducerDef::deserialize(schema).deserialize(bsatn::Deserializer::new(&mut &bytes[..]))?,
+                tuple: seed.deserialize(bsatn::Deserializer::new(&mut &bytes[..]))?,
                 bsatn: OnceCell::with_value(bytes),
                 json: OnceCell::new(),
             },
             ReducerArgs::Nullary => {
-                anyhow::ensure!(schema.ty().args.is_empty(), "failed to typecheck args");
+                anyhow::ensure!(
+                    seed.reducer_def().params.elements.is_empty(),
+                    "failed to typecheck args"
+                );
                 ArgsTuple::nullary()
             }
         })
@@ -142,21 +146,20 @@ fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T)
 #[derive(Debug, Display, Enum, Clone, Copy, strum::AsRefStr)]
 pub enum AbiCall {
     TableIdFromName,
+    IndexIdFromName,
     DatastoreTableRowCount,
     DatastoreTableScanBsatn,
+    DatastoreBtreeScanBsatn,
     RowIterBsatnAdvance,
     RowIterBsatnClose,
     DatastoreInsertBsatn,
+    DatastoreDeleteByBtreeScanBsatn,
     DatastoreDeleteAllByEqBsatn,
     BytesSourceRead,
     BytesSinkWrite,
     ConsoleLog,
     ConsoleTimerStart,
     ConsoleTimerEnd,
-
-    DeleteByColEq,
-    IterByColEq,
-    IterStartFiltered,
 
     VolatileNonatomicScheduleImmediate,
 }

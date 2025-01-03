@@ -1,18 +1,25 @@
 use crate::identity::Identity;
 pub use jsonwebtoken::errors::Error as JwtError;
 pub use jsonwebtoken::errors::ErrorKind as JwtErrorKind;
-use jsonwebtoken::{decode, encode, Header, TokenData, Validation};
 pub use jsonwebtoken::{DecodingKey, EncodingKey};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::time::Duration;
 use std::time::SystemTime;
 
+use super::token_validation::TokenValidationError;
+
+// These are the claims that can be attached to a request/connection.
 #[serde_with::serde_as]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SpacetimeIdentityClaims {
     #[serde(rename = "hex_identity")]
     pub identity: Identity,
+    #[serde(rename = "sub")]
+    pub subject: String,
+    #[serde(rename = "iss")]
+    pub issuer: String,
+    #[serde(rename = "aud")]
+    pub audience: Vec<String>,
+
     /// The unix timestamp the token was issued at
     #[serde_as(as = "serde_with::TimestampSeconds")]
     pub iat: SystemTime,
@@ -20,33 +27,71 @@ pub struct SpacetimeIdentityClaims {
     pub exp: Option<SystemTime>,
 }
 
-/// Encode a JWT token using a private_key and an identity. Expiry is set in absolute seconds,
-/// the function will calculate a proper duration since unix epoch
-pub fn encode_token(private_key: &EncodingKey, identity: Identity) -> Result<String, JwtError> {
-    encode_token_with_expiry(private_key, identity, None)
+// IncomingClaims are from the token we receive from the client.
+// The signature should be verified already, but further validation is needed to have a SpacetimeIdentityClaims2.
+#[serde_with::serde_as]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IncomingClaims {
+    #[serde(rename = "hex_identity")]
+    pub identity: Option<Identity>,
+    #[serde(rename = "sub")]
+    pub subject: String,
+    #[serde(rename = "iss")]
+    pub issuer: String,
+    #[serde(rename = "aud", default)]
+    pub audience: Vec<String>,
+
+    /// The unix timestamp the token was issued at
+    #[serde_as(as = "serde_with::TimestampSeconds")]
+    pub iat: SystemTime,
+    #[serde_as(as = "Option<serde_with::TimestampSeconds>")]
+    pub exp: Option<SystemTime>,
 }
 
-pub fn encode_token_with_expiry(
-    private_key: &EncodingKey,
-    identity: Identity,
-    expiry: Option<Duration>,
-) -> Result<String, JwtError> {
-    let header = Header::new(jsonwebtoken::Algorithm::ES256);
+impl TryInto<SpacetimeIdentityClaims> for IncomingClaims {
+    type Error = TokenValidationError;
 
-    let now = SystemTime::now();
+    fn try_into(self) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
+        // The issuer and subject must be less than 128 bytes.
+        if self.issuer.len() > 128 {
+            return Err(TokenValidationError::Other(anyhow::anyhow!(
+                "Issuer too long: {:?}",
+                self.issuer
+            )));
+        }
+        if self.subject.len() > 128 {
+            return Err(TokenValidationError::Other(anyhow::anyhow!(
+                "Subject too long: {:?}",
+                self.subject
+            )));
+        }
+        // The issuer and subject must be non-empty.
+        if self.issuer.is_empty() {
+            return Err(TokenValidationError::Other(anyhow::anyhow!("Issuer empty")));
+        }
+        if self.subject.is_empty() {
+            return Err(TokenValidationError::Other(anyhow::anyhow!("Subject empty")));
+        }
 
-    let expiry = expiry.map(|dur| now + dur);
+        let computed_identity = Identity::from_claims(&self.issuer, &self.subject);
+        // If an identity is provided, it must match the computed identity.
+        if let Some(token_identity) = self.identity {
+            if token_identity != computed_identity {
+                return Err(TokenValidationError::Other(anyhow::anyhow!(
+                    "Identity mismatch: token identity {:?} does not match computed identity {:?}",
+                    token_identity,
+                    computed_identity
+                )));
+            }
+        }
 
-    let claims = SpacetimeIdentityClaims {
-        identity,
-        iat: now,
-        exp: expiry,
-    };
-    encode(&header, &claims, private_key)
-}
-
-pub fn decode_token(public_key: &DecodingKey, token: &str) -> Result<TokenData<SpacetimeIdentityClaims>, JwtError> {
-    let mut validation = Validation::new(jsonwebtoken::Algorithm::ES256);
-    validation.required_spec_claims = HashSet::new();
-    decode::<SpacetimeIdentityClaims>(token, public_key, &validation)
+        Ok(SpacetimeIdentityClaims {
+            identity: computed_identity,
+            subject: self.subject,
+            issuer: self.issuer,
+            audience: self.audience,
+            iat: self.iat,
+            exp: self.exp,
+        })
+    }
 }

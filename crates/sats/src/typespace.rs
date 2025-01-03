@@ -1,5 +1,7 @@
 use std::any::TypeId;
 use std::ops::{Index, IndexMut};
+use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_type_ref::AlgebraicTypeRef;
@@ -33,12 +35,19 @@ pub enum TypeRefError {
 /// where `&0` is the type reference at index `0`.
 ///
 /// [System F]: https://en.wikipedia.org/wiki/System_F
-#[derive(Debug, Clone, SpacetimeType)]
+#[derive(Clone, SpacetimeType)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct Typespace {
     /// The types in our typing context that can be referred to with [`AlgebraicTypeRef`]s.
     pub types: Vec<AlgebraicType>,
+}
+
+impl std::fmt::Debug for Typespace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Typespace ")?;
+        f.debug_list().entries(&self.types).finish()
+    }
 }
 
 impl Default for Typespace {
@@ -127,10 +136,6 @@ impl Typespace {
             AlgebraicType::Array(array_ty) => {
                 self.inline_typerefs_in_type(&mut array_ty.elem_ty)?;
             }
-            AlgebraicType::Map(map_type) => {
-                self.inline_typerefs_in_type(&mut map_type.key_ty)?;
-                self.inline_typerefs_in_type(&mut map_type.ty)?;
-            }
             AlgebraicType::Ref(r) => {
                 // Lazily resolve any nested references first.
                 let resolved_ty = self.inline_typerefs_in_ref(*r)?;
@@ -185,6 +190,14 @@ impl Typespace {
         Ok(())
     }
 
+    /// Iterate over types in the typespace with their references.
+    pub fn refs_with_types(&self) -> impl Iterator<Item = (AlgebraicTypeRef, &AlgebraicType)> {
+        self.types
+            .iter()
+            .enumerate()
+            .map(|(idx, ty)| (AlgebraicTypeRef(idx as _), ty))
+    }
+
     /// Check that the entire typespace is valid for generating a `SpacetimeDB` client module.
     /// See also the `spacetimedb_schema` crate, which layers additional validation on top
     /// of these checks.
@@ -221,6 +234,9 @@ pub trait GroundSpacetimeType {
 
 /// A trait for Rust types that can be represented as an [`AlgebraicType`]
 /// provided a typing context `typespace`.
+// TODO: we might want to have a note about what to do if you're trying to use a type from another crate in your table.
+// keep this note in sync with the ones on spacetimedb::rt::{ReducerArg, TableColumn}
+#[diagnostic::on_unimplemented(note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition")]
 pub trait SpacetimeType {
     /// Returns an `AlgebraicType` representing the type for `Self` in SATS
     /// and in the typing context in `typespace`.
@@ -228,6 +244,7 @@ pub trait SpacetimeType {
 }
 
 use ethnum::{i256, u256};
+use smallvec::SmallVec;
 pub use spacetimedb_bindings_macro::SpacetimeType;
 
 /// A trait for types that can build a [`Typespace`].
@@ -316,8 +333,12 @@ impl_primitives! {
 impl_st!([](), AlgebraicType::unit());
 impl_st!([] str, AlgebraicType::String);
 impl_st!([T] [T], ts => AlgebraicType::array(T::make_type(ts)));
+impl_st!([T: ?Sized] &T, ts => T::make_type(ts));
 impl_st!([T: ?Sized] Box<T>, ts => T::make_type(ts));
+impl_st!([T: ?Sized] Rc<T>, ts => T::make_type(ts));
+impl_st!([T: ?Sized] Arc<T>, ts => T::make_type(ts));
 impl_st!([T] Vec<T>, ts => <[T]>::make_type(ts));
+impl_st!([T, const N: usize] SmallVec<[T; N]>, ts => <[T]>::make_type(ts));
 impl_st!([T] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
 
 impl_st!([] spacetimedb_primitives::ColId, AlgebraicType::U16);
@@ -325,6 +346,10 @@ impl_st!([] spacetimedb_primitives::TableId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::IndexId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::SequenceId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::ConstraintId, AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::ScheduleId, AlgebraicType::U32);
+
+impl_st!([] spacetimedb_primitives::ColList, ts => AlgebraicType::array(spacetimedb_primitives::ColId::make_type(ts)));
+impl_st!([] spacetimedb_primitives::ColSet, ts => AlgebraicType::array(spacetimedb_primitives::ColId::make_type(ts)));
 
 impl_st!([] bytes::Bytes, AlgebraicType::bytes());
 
@@ -366,12 +391,6 @@ mod tests {
 
         assert_not_valid(AlgebraicType::option(bad_inner_1.clone()));
         assert_not_valid(AlgebraicType::option(bad_inner_2.clone()));
-
-        assert_not_valid(AlgebraicType::map(AlgebraicType::U8, bad_inner_1.clone()));
-        assert_not_valid(AlgebraicType::map(AlgebraicType::U8, bad_inner_2.clone()));
-
-        assert_not_valid(AlgebraicType::map(bad_inner_1.clone(), AlgebraicType::U8));
-        assert_not_valid(AlgebraicType::map(bad_inner_2.clone(), AlgebraicType::U8));
 
         assert_not_valid(AlgebraicType::option(AlgebraicType::array(AlgebraicType::option(
             bad_inner_1.clone(),

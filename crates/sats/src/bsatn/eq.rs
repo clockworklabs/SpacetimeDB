@@ -3,7 +3,7 @@
 //! The lifetime `'r` in `eq_bsatn` is the lifetime of `rhs`'s backing data, i.e., the BSATN itself.
 
 use super::Deserializer;
-use crate::{buffer::BufReader, de::Deserialize, AlgebraicValue, ArrayValue, MapValue, ProductValue, SumValue};
+use crate::{buffer::BufReader, de::Deserialize, AlgebraicValue, ArrayValue, ProductValue, SumValue};
 use core::{mem, slice};
 
 /// Equates `lhs` to a BSATN-encoded `AlgebraicValue` of the same type.
@@ -12,7 +12,6 @@ pub fn eq_bsatn<'r>(lhs: &AlgebraicValue, rhs: Deserializer<'_, impl BufReader<'
         AlgebraicValue::Sum(lhs) => eq_bsatn_sum(lhs, rhs),
         AlgebraicValue::Product(lhs) => eq_bsatn_prod(lhs, rhs),
         AlgebraicValue::Array(lhs) => eq_bsatn_array(lhs, rhs),
-        AlgebraicValue::Map(lhs) => eq_bsatn_map(lhs, rhs),
         AlgebraicValue::Bool(lhs) => eq_bsatn_de(lhs, rhs),
         AlgebraicValue::I8(lhs) => eq_bsatn_de(lhs, rhs),
         AlgebraicValue::U8(lhs) => eq_bsatn_de(lhs, rhs),
@@ -29,6 +28,7 @@ pub fn eq_bsatn<'r>(lhs: &AlgebraicValue, rhs: Deserializer<'_, impl BufReader<'
         AlgebraicValue::F32(lhs) => eq_bsatn_de(lhs, rhs),
         AlgebraicValue::F64(lhs) => eq_bsatn_de(lhs, rhs),
         AlgebraicValue::String(lhs) => eq_bsatn_str(lhs, rhs),
+        AlgebraicValue::Min | AlgebraicValue::Max => panic!("not defined for Min/Max"),
     }
 }
 
@@ -42,13 +42,6 @@ fn eq_bsatn_prod<'r>(lhs: &ProductValue, mut rhs: Deserializer<'_, impl BufReade
     lhs.elements.iter().all(|f| eq_bsatn(f, rhs.reborrow()))
 }
 
-/// Equates `lhs` to the `(key, value)`s in the BSATN-encoded map value.
-fn eq_bsatn_map<'r>(lhs: &MapValue, rhs: Deserializer<'_, impl BufReader<'r>>) -> bool {
-    eq_bsatn_seq(lhs, rhs, |(key, value), mut rhs| {
-        eq_bsatn(key, rhs.reborrow()) && eq_bsatn(value, rhs)
-    })
-}
-
 /// Equates every elem in `lhs` to those in the BSATN-encoded array value.
 fn eq_bsatn_array<'r>(lhs: &ArrayValue, rhs: Deserializer<'_, impl BufReader<'r>>) -> bool {
     match lhs {
@@ -59,7 +52,6 @@ fn eq_bsatn_array<'r>(lhs: &ArrayValue, rhs: Deserializer<'_, impl BufReader<'r>
         ArrayValue::F64(lhs) => eq_bsatn_seq(&**lhs, rhs, eq_bsatn_de),
         ArrayValue::String(lhs) => eq_bsatn_seq(&**lhs, rhs, eq_bsatn_str),
         ArrayValue::Array(lhs) => eq_bsatn_seq(&**lhs, rhs, eq_bsatn_array),
-        ArrayValue::Map(lhs) => eq_bsatn_seq(&**lhs, rhs, eq_bsatn_map),
         // SAFETY: For all of the below, the element types are integer types, as required.
         ArrayValue::I8(lhs) => unsafe { eq_bsatn_int_seq(lhs, rhs) },
         ArrayValue::U8(lhs) => unsafe { eq_bsatn_int_seq(lhs, rhs) },

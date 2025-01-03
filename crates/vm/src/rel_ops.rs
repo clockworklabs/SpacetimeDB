@@ -1,3 +1,5 @@
+use core::iter;
+
 use crate::relation::RelValue;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::relation::ColExpr;
@@ -84,6 +86,13 @@ pub trait RelOps<'a> {
             result.push(convert(row));
         }
         result
+    }
+
+    fn iter(&mut self) -> impl Iterator<Item = RelValue<'a>>
+    where
+        Self: Sized,
+    {
+        iter::from_fn(move || self.next())
     }
 }
 
@@ -172,7 +181,7 @@ pub struct JoinInner<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
 impl<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> JoinInner<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
     pub fn new(lhs: Lhs, rhs: Rhs, key_lhs: KeyLhs, key_rhs: KeyRhs, predicate: Pred, projection: Proj) -> Self {
         Self {
-            map: HashMap::new(),
+            map: HashMap::default(),
             lhs,
             rhs,
             key_lhs,
@@ -197,7 +206,7 @@ where
     fn next(&mut self) -> Option<RelValue<'a>> {
         // Consume `Rhs`, building a map `KeyRhs => Rhs`.
         if !self.filled_rhs {
-            self.map = HashMap::new();
+            self.map = HashMap::default();
             while let Some(row_rhs) = self.rhs.next() {
                 let key_rhs = (self.key_rhs)(&row_rhs);
                 self.map.entry(key_rhs).or_default().push(row_rhs);

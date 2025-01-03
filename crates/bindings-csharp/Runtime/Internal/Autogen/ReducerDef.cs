@@ -7,7 +7,6 @@
 using System;
 using SpacetimeDB;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Internal
@@ -30,9 +29,11 @@ namespace SpacetimeDB.Internal
 			this.Args = Args;
 		}
 
-		public ReducerDef() : this(
-			"",
-			new()
-		) { }
+		public ReducerDef()
+		{
+			this.Name = "";
+			this.Args = new();
+		}
+
 	}
 }

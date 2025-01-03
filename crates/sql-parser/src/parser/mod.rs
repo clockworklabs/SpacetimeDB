@@ -4,7 +4,7 @@ use sqlparser::ast::{
     TableFactor, TableWithJoins, Value, WildcardAdditionalOptions,
 };
 
-use crate::ast::{BinOp, Project, ProjectElem, RelExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral};
+use crate::ast::{BinOp, LogOp, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral};
 
 pub mod errors;
 pub mod sql;
@@ -22,7 +22,7 @@ trait RelParser {
     fn parse_query(query: Query) -> SqlParseResult<Self::Ast>;
 
     /// Parse a FROM clause
-    fn parse_from(mut tables: Vec<TableWithJoins>) -> SqlParseResult<SqlFrom<Self::Ast>> {
+    fn parse_from(mut tables: Vec<TableWithJoins>) -> SqlParseResult<SqlFrom> {
         if tables.is_empty() {
             return Err(SqlRequired::From.into());
         }
@@ -30,45 +30,47 @@ trait RelParser {
             return Err(SqlUnsupported::ImplicitJoins.into());
         }
         let TableWithJoins { relation, joins } = tables.swap_remove(0);
-        let (expr, alias) = Self::parse_rel(relation)?;
+        let (name, alias) = Self::parse_relvar(relation)?;
         if joins.is_empty() {
-            return Ok(SqlFrom::Expr(expr, alias));
+            return Ok(SqlFrom::Expr(name, alias));
         }
-        let (expr, alias) = Self::parse_alias((expr, alias))?;
-        Ok(SqlFrom::Join(expr, alias, Self::parse_joins(joins)?))
+        Ok(SqlFrom::Join(name, alias, Self::parse_joins(joins)?))
     }
 
     /// Parse a sequence of JOIN clauses
-    fn parse_joins(joins: Vec<Join>) -> SqlParseResult<Vec<SqlJoin<Self::Ast>>> {
+    fn parse_joins(joins: Vec<Join>) -> SqlParseResult<Vec<SqlJoin>> {
         joins.into_iter().map(Self::parse_join).collect()
     }
 
     /// Parse a single JOIN clause
-    fn parse_join(join: Join) -> SqlParseResult<SqlJoin<Self::Ast>> {
-        let (expr, alias) = Self::parse_alias(Self::parse_rel(join.relation)?)?;
+    fn parse_join(join: Join) -> SqlParseResult<SqlJoin> {
+        let (var, alias) = Self::parse_relvar(join.relation)?;
         match join.join_operator {
-            JoinOperator::CrossJoin => Ok(SqlJoin { expr, alias, on: None }),
-            JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin { expr, alias, on: None }),
-            JoinOperator::Inner(JoinConstraint::On(on)) => Ok(SqlJoin {
-                expr,
-                alias,
-                on: Some(parse_expr(on)?),
-            }),
+            JoinOperator::CrossJoin => Ok(SqlJoin { var, alias, on: None }),
+            JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin { var, alias, on: None }),
+            JoinOperator::Inner(JoinConstraint::On(Expr::BinaryOp {
+                left,
+                op: BinaryOperator::Eq,
+                right,
+            })) if matches!(*left, Expr::Identifier(..) | Expr::CompoundIdentifier(..))
+                && matches!(*right, Expr::Identifier(..) | Expr::CompoundIdentifier(..)) =>
+            {
+                Ok(SqlJoin {
+                    var,
+                    alias,
+                    on: Some(parse_expr(Expr::BinaryOp {
+                        left,
+                        op: BinaryOperator::Eq,
+                        right,
+                    })?),
+                })
+            }
             _ => Err(SqlUnsupported::JoinType.into()),
         }
     }
 
-    /// Check optional and required table aliases in a JOIN clause
-    fn parse_alias(item: (RelExpr<Self::Ast>, Option<SqlIdent>)) -> SqlParseResult<(RelExpr<Self::Ast>, SqlIdent)> {
-        match item {
-            (RelExpr::Var(alias), None) => Ok((RelExpr::Var(alias.clone()), alias)),
-            (expr, Some(alias)) => Ok((expr, alias)),
-            _ => Err(SqlRequired::JoinAlias.into()),
-        }
-    }
-
-    /// Parse a relation expression in a FROM clause
-    fn parse_rel(expr: TableFactor) -> SqlParseResult<(RelExpr<Self::Ast>, Option<SqlIdent>)> {
+    /// Parse a table reference in a FROM clause
+    fn parse_relvar(expr: TableFactor) -> SqlParseResult<(SqlIdent, SqlIdent)> {
         match expr {
             // Relvar no alias
             TableFactor::Table {
@@ -78,7 +80,11 @@ trait RelParser {
                 with_hints,
                 version: None,
                 partitions,
-            } if with_hints.is_empty() && partitions.is_empty() => Ok((RelExpr::Var(parse_ident(name)?), None)),
+            } if with_hints.is_empty() && partitions.is_empty() => {
+                let name = parse_ident(name)?;
+                let alias = name.clone();
+                Ok((name, alias))
+            }
             // Relvar with alias
             TableFactor::Table {
                 name,
@@ -88,20 +94,8 @@ trait RelParser {
                 version: None,
                 partitions,
             } if with_hints.is_empty() && partitions.is_empty() && columns.is_empty() => {
-                Ok((RelExpr::Var(parse_ident(name)?), Some(alias.into())))
+                Ok((parse_ident(name)?, alias.into()))
             }
-            // RelExpr no alias
-            TableFactor::Derived {
-                lateral: false,
-                subquery,
-                alias: None,
-            } => Ok((RelExpr::Ast(Box::new(Self::parse_query(*subquery)?)), None)),
-            // RelExpr with alias
-            TableFactor::Derived {
-                lateral: false,
-                subquery,
-                alias: Some(TableAlias { name, columns }),
-            } if columns.is_empty() => Ok((RelExpr::Ast(Box::new(Self::parse_query(*subquery)?)), Some(name.into()))),
             _ => Err(SqlUnsupported::From(expr).into()),
         }
     }
@@ -150,20 +144,55 @@ pub(crate) fn parse_project_elem(item: SelectItem) -> SqlParseResult<ProjectElem
     match item {
         SelectItem::Wildcard(_) => Err(SqlUnsupported::MixedWildcardProject.into()),
         SelectItem::QualifiedWildcard(..) => Err(SqlUnsupported::MixedWildcardProject.into()),
-        SelectItem::UnnamedExpr(expr) => Ok(ProjectElem(parse_expr(expr)?, None)),
-        SelectItem::ExprWithAlias { expr, alias } => Ok(ProjectElem(parse_expr(expr)?, Some(alias.into()))),
+        SelectItem::UnnamedExpr(expr) => match parse_proj(expr)? {
+            ProjectExpr::Var(name) => Ok(ProjectElem(ProjectExpr::Var(name.clone()), name)),
+            ProjectExpr::Field(name, field) => Ok(ProjectElem(ProjectExpr::Field(name, field.clone()), field)),
+        },
+        SelectItem::ExprWithAlias { expr, alias } => Ok(ProjectElem(parse_proj(expr)?, alias.into())),
+    }
+}
+
+/// Parse a column projection
+pub(crate) fn parse_proj(expr: Expr) -> SqlParseResult<ProjectExpr> {
+    match expr {
+        Expr::Identifier(ident) => Ok(ProjectExpr::Var(ident.into())),
+        Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
+            let table = idents.swap_remove(0).into();
+            let field = idents.swap_remove(0).into();
+            Ok(ProjectExpr::Field(table, field))
+        }
+        _ => Err(SqlUnsupported::ProjectionExpr(expr).into()),
     }
 }
 
 /// Parse a scalar expression
 pub(crate) fn parse_expr(expr: Expr) -> SqlParseResult<SqlExpr> {
     match expr {
+        Expr::Nested(expr) => parse_expr(*expr),
         Expr::Value(v) => Ok(SqlExpr::Lit(parse_literal(v)?)),
         Expr::Identifier(ident) => Ok(SqlExpr::Var(ident.into())),
         Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
             let table = idents.swap_remove(0).into();
             let field = idents.swap_remove(0).into();
             Ok(SqlExpr::Field(table, field))
+        }
+        Expr::BinaryOp {
+            left,
+            op: BinaryOperator::And,
+            right,
+        } => {
+            let l = parse_expr(*left)?;
+            let r = parse_expr(*right)?;
+            Ok(SqlExpr::Log(Box::new(l), Box::new(r), LogOp::And))
+        }
+        Expr::BinaryOp {
+            left,
+            op: BinaryOperator::Or,
+            right,
+        } => {
+            let l = parse_expr(*left)?;
+            let r = parse_expr(*right)?;
+            Ok(SqlExpr::Log(Box::new(l), Box::new(r), LogOp::Or))
         }
         Expr::BinaryOp { left, op, right } => {
             let l = parse_expr(*left)?;
@@ -188,8 +217,6 @@ pub(crate) fn parse_binop(op: BinaryOperator) -> SqlParseResult<BinOp> {
         BinaryOperator::LtEq => Ok(BinOp::Lte),
         BinaryOperator::Gt => Ok(BinOp::Gt),
         BinaryOperator::GtEq => Ok(BinOp::Gte),
-        BinaryOperator::And => Ok(BinOp::And),
-        BinaryOperator::Or => Ok(BinOp::Or),
         _ => Err(SqlUnsupported::BinOp(op).into()),
     }
 }
@@ -198,9 +225,9 @@ pub(crate) fn parse_binop(op: BinaryOperator) -> SqlParseResult<BinOp> {
 pub(crate) fn parse_literal(value: Value) -> SqlParseResult<SqlLiteral> {
     match value {
         Value::Boolean(v) => Ok(SqlLiteral::Bool(v)),
-        Value::Number(v, _) => Ok(SqlLiteral::Num(v)),
-        Value::SingleQuotedString(s) => Ok(SqlLiteral::Str(s)),
-        Value::HexStringLiteral(s) => Ok(SqlLiteral::Hex(s)),
+        Value::Number(v, _) => Ok(SqlLiteral::Num(v.into_boxed_str())),
+        Value::SingleQuotedString(s) => Ok(SqlLiteral::Str(s.into_boxed_str())),
+        Value::HexStringLiteral(s) => Ok(SqlLiteral::Hex(s.into_boxed_str())),
         _ => Err(SqlUnsupported::Literal(value).into()),
     }
 }
