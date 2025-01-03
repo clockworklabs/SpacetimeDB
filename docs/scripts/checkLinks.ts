@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import nav from '../nav'; // Import the nav object directly
+import GitHubSlugger from 'github-slugger';
 
 // Function to map slugs to file paths from nav.ts
 function extractSlugToPathMap(nav: { items: any[] }): Map<string, string> {
@@ -76,12 +77,10 @@ function extractHeadingsFromMarkdown(filePath: string): string[] {
   const headings: string[] = [];
   let match: RegExpExecArray | null;
 
+  const slugger = new GitHubSlugger();
   while ((match = headingRegex.exec(fileContent)) !== null) {
     const heading = match[2].trim(); // Extract the heading text
-    const slug = heading
-      .toLowerCase()
-      .replace(/[^\w\- ]+/g, '') // Remove special characters
-      .replace(/\s+/g, '-'); // Replace spaces with hyphens
+    const slug = slugger.slug(heading); // Slugify the heading text
     headings.push(slug);
   }
 

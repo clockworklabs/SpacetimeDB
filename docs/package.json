@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "description": "This repository contains the markdown files which are used to display documentation on our [website](https://spacetimedb.com/docs).",
   "main": "index.js",
-  "dependencies": {},
+  "dependencies": {
+    "github-slugger": "^2.0.0"
+  },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "tsx": "^4.19.2",
