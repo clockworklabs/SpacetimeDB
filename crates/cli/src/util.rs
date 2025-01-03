@@ -6,7 +6,7 @@ use base64::{
 use reqwest::RequestBuilder;
 use serde::Deserialize;
 use spacetimedb::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
-use spacetimedb_client_api_messages::name::DnsLookupResponse;
+use spacetimedb_client_api_messages::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::{AlgebraicType, Identity};
 use std::io::Write;
@@ -42,11 +42,44 @@ pub async fn spacetime_dns(
     Ok(serde_json::from_slice(&bytes[..]).unwrap())
 }
 
+/// Registers the given top level domain to the given identity. If None is passed in as identity, the default
+/// identity will be looked up in the config and it will be used instead. Returns Ok() if the
+/// domain is successfully registered, returns Err otherwise.
+pub async fn spacetime_register_tld(
+    config: &Config,
+    tld: &str,
+    server: Option<&str>,
+) -> Result<RegisterTldResult, anyhow::Error> {
+    let auth_header = get_auth_header(config, false)?;
+
+    // TODO(jdetter): Fix URL encoding on specifying this domain
+    let builder = reqwest::Client::new()
+        .get(format!("{}/database/register_tld?tld={}", config.get_host_url(server)?, tld).as_str());
+    let builder = add_auth_header_opt(builder, &auth_header);
+
+    let res = builder.send().await?.error_for_status()?;
+    let bytes = res.bytes().await.unwrap();
+    Ok(serde_json::from_slice(&bytes[..]).unwrap())
+}
+
 pub async fn spacetime_server_fingerprint(url: &str) -> anyhow::Result<String> {
     let builder = reqwest::Client::new().get(format!("{}/identity/public-key", url).as_str());
     let res = builder.send().await?.error_for_status()?;
     let fingerprint = res.text().await?;
     Ok(fingerprint)
+}
+
+/// Returns all known names for the given identity.
+pub async fn spacetime_reverse_dns(
+    config: &Config,
+    identity: &str,
+    server: Option<&str>,
+) -> Result<ReverseDNSResponse, anyhow::Error> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/database/reverse_dns/{}", config.get_host_url(server)?, identity);
+    let res = client.get(url).send().await?.error_for_status()?;
+    let bytes = res.bytes().await.unwrap();
+    Ok(serde_json::from_slice(&bytes[..]).unwrap())
 }
 
 #[derive(Deserialize)]
