@@ -109,6 +109,19 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         build::exec_with_argstring(config.clone(), path_to_project, build_options).await?
     };
     let program_bytes = fs::read(path_to_wasm)?;
+
+    let server_address = {
+        let url = Url::parse(&database_host)?;
+        url.host_str().unwrap_or("<default>").to_string()
+    };
+    if server_address != "localhost" && server_address != "127.0.0.1" {
+        println!("You are about to publish to a non-local server: {}", server_address);
+        if !y_or_n(force, "Are you sure you want to proceed?")? {
+            println!("Aborting");
+            return Ok(());
+        }
+    }
+
     println!(
         "Uploading to {} => {}",
         server.unwrap_or(config.default_server_name().unwrap_or("<default>")),
