@@ -6,7 +6,9 @@ SpacetimeDB allows using the Rust language to write server-side applications. Th
 
 Rust modules are written with the the Rust Module Library (this crate). They are built using [cargo](https://doc.rust-lang.org/cargo/) and deployed using the [`spacetime` CLI tool](https://spacetimedb.com/install). Rust modules can import any Rust [crate](https://crates.io/) that supports being compiled to WebAssembly.
 
-This reference assumes you are familiar with the basics of Rust. If you aren't, check out Rust's [excellent documentation](https://www.rust-lang.org/learn). For a guided introduction to Rust Modules, see the [rust module quickstart](https://spacetimedb.com/docs/modules/rust/quickstart).
+(Note: Rust can also be used for *clients* of SpacetimeDB modules, but this requires using a completely different library, the SpacetimeDB Rust Client SDK. See the SpacetimeDB documentation on [clients](https://spacetimedb.com/docs/#client) for more information.)
+
+This reference assumes you are familiar with the basics of Rust. If you aren't, check out Rust's [excellent documentation](https://www.rust-lang.org/learn). For a guided introduction to Rust Modules, see the [rust module quickstart](https://spacetimedb.com/docs/modules/rust/quickstart). The documentation of this crate is reference-style and in-depth.
 
 ## Overview
 
@@ -90,7 +92,7 @@ After modifying your project, you can run `spacetime publish` again to rebuild a
 
 Under the hood, SpacetimeDB modules are WebAssembly modules that import a [specific WebAssembly ABI](https://spacetimedb.com/docs/webassembly-abi) and export a small number of special functions. This is automatically configured when you add the `spacetime` crate as a dependency of your application.
 
-The SpacetimeDB host is an application that knows how to load and run SpacetimeDB modules. It is [open source](https://github.com/clockworklabs/SpacetimeDB). You can run your own host, or you can upload your module to the public SpacetimeDB network. <!-- TODO(1.0): want a link to some dashboard for the public network. -->
+The SpacetimeDB host is an application that knows how to load and run SpacetimeDB modules. It is [source available](https://github.com/clockworklabs/SpacetimeDB). You can run your own host, or you can upload your module to the public SpacetimeDB network. <!-- TODO(1.0): want a link to some dashboard for the public network. -->
 
 ### Publishing a module
 
@@ -105,13 +107,13 @@ The `spacetime publish` command compiles a module and uploads it to a SpacetimeD
 - The host allows clients to connect to the module.
   Connected clients can subscribe to [public tables](#public-and-private-tables) and call [reducers](#reducers).
 
-Once a module is running, the `spacetime` CLI will print the `Identity` it has been assigned. This is a hexadecimal string that you should write down. <!-- TODO: is there a CLI command that says "list all Identities running this version of a module?" --> It is used when administering the module, for example using the [`spacetime logs`](#the-log-crate) command.
+Once a module is running, the `spacetime` CLI will print the `Identity` it has been assigned. This is a hexadecimal string that you should write down. <!-- TODO: is there a CLI command that says "list all Identities running this version of a module?" --> It is used when administering the module, for example using the [`spacetime logs <DATABASE_IDENTITY>`](#the-log-crate) command.
 
 (The easiest way to make requests to a module is to use the [SpacetimeDB client SDKs](https://spacetimedb.com/docs/sdks).)
 
 ### The `log` crate
 
-SpacetimeDB Rust modules have built-in support for the [log crate](https://docs.rs/log/latest/log/index.html). All modules automatically install a suitable logger when they are first loaded by SpacetimeDB. Log macros can be used anywhere in module code, and log outputs of a running module can be inspected using the `spacetime logs` command:
+SpacetimeDB Rust modules have built-in support for the [log crate](https://docs.rs/log/latest/log/index.html). All modules automatically install a suitable logger when they are first loaded by SpacetimeDB. (At time of writing, this happens [here](https://github.com/clockworklabs/SpacetimeDB/blob/e9e287b8aab638ba6e8bf9c5d41d632db041029c/crates/bindings/src/logger.rs)). Log macros can be used anywhere in module code, and log outputs of a running module can be inspected using the `spacetime logs` command:
 
 ```text
 spacetime logs <DATABASE_IDENTITY>
@@ -163,7 +165,7 @@ fn do_something(ctx: &ReducerContext) {
     // `person` is a COPY of the row stored in the database.
     // If we update it:
     person.name = "Joanna Banana".to_string();
-    // Our copy is now updated, but the database's copy is unchanged.
+    // Our copy is now updated, but the database's copy is UNCHANGED.
 
     // To push our change through, we can call an `update_by_...` function:
     person = people.update_by_id(person);
@@ -202,6 +204,8 @@ pub struct LootItem {
 To learn how to subscribe to a table, see the [client SDK documentation](https://spacetimedb.com/docs/sdks).
 
 ### Generated table functions
+
+<!-- TODO: rewrite this section. -->
 
 We'll work off these structs to see what functions SpacetimeDB generates:
 
