@@ -113,7 +113,7 @@ impl RewriteRule for ComputePositions {
     }
 }
 
-/// Push equality conditions down to the leaves.
+/// Push constant comparisons down to the leaves.
 ///
 /// Example:
 ///
@@ -148,14 +148,14 @@ impl RewriteRule for ComputePositions {
 ///  |
 ///  a
 /// ```
-pub(crate) struct PushEqFilter;
+pub(crate) struct PushConstFilter;
 
-impl RewriteRule for PushEqFilter {
+impl RewriteRule for PushConstFilter {
     type Plan = PhysicalPlan;
     type Info = Label;
 
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
-        if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, expr, value)) = plan {
+        if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(_, expr, value)) = plan {
             if let (PhysicalExpr::Field(TupleField { label: var, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value) {
                 return match &**input {
                     PhysicalPlan::TableScan(..) => None,
@@ -185,7 +185,7 @@ impl RewriteRule for PushEqFilter {
     }
 }
 
-/// Push conjunctions down to the leaves.
+/// Push constant conjunctions down to the leaves.
 ///
 /// Example:
 ///
@@ -229,7 +229,7 @@ impl RewriteRule for PushConjunction {
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
         if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
             return exprs.iter().find_map(|expr| {
-                if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = expr {
+                if let PhysicalExpr::BinOp(_, expr, value) = expr {
                     if let (PhysicalExpr::Field(TupleField { label: var, .. }), PhysicalExpr::Value(_)) =
                         (&**expr, &**value)
                     {
@@ -255,7 +255,7 @@ impl RewriteRule for PushConjunction {
             let mut leaf_exprs = vec![];
             let mut root_exprs = vec![];
             for expr in exprs {
-                if let PhysicalExpr::BinOp(BinOp::Eq, lhs, value) = &expr {
+                if let PhysicalExpr::BinOp(_, lhs, value) = &expr {
                     if let (PhysicalExpr::Field(TupleField { label: var, .. }), PhysicalExpr::Value(_)) =
                         (&**lhs, &**value)
                     {

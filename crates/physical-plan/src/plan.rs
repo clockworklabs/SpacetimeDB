@@ -9,7 +9,7 @@ use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
 
 use crate::rules::{
-    ComputePositions, ConjunctionToIxScan, EqToIxScan, HashToIxJoin, PushConjunction, PushEqFilter, RewriteRule,
+    ComputePositions, ConjunctionToIxScan, EqToIxScan, HashToIxJoin, PushConjunction, PushConstFilter, RewriteRule,
     UniqueHashJoinRule, UniqueIxJoinRule,
 };
 
@@ -294,7 +294,7 @@ impl PhysicalPlan {
     pub fn optimize(self, reqs: Vec<Label>) -> Self {
         self.map(&Self::canonicalize)
             .apply_until::<PushConjunction>()
-            .apply_until::<PushEqFilter>()
+            .apply_until::<PushConstFilter>()
             .apply_rec::<EqToIxScan>()
             .apply_rec::<ConjunctionToIxScan>()
             .apply_rec::<HashToIxJoin>()
