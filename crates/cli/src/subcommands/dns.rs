@@ -31,7 +31,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let identity = decode_identity(&config)?;
     let auth_header = get_auth_header(&config, false)?;
 
-    match spacetime_register_tld(&config, &domain, server).await? {
+    match spacetime_register_tld(&config, domain, server).await? {
         RegisterTldResult::Success { domain } => {
             println!("Registered domain: {}", domain);
         }
