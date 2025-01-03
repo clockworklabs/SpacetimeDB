@@ -1084,6 +1084,28 @@ impl WasmInstanceEnv {
             Ok(0)
         })
     }
+
+    /// Writes the identity of the module into `out = out_ptr[..32]`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `out_ptr` is NULL or `out` is not in bounds of WASM memory.
+    pub fn identity(caller: Caller<'_, Self>, out_ptr: WasmPtr<u8>) -> RtResult<()> {
+        // Use `with_span` rather than one of the `cvt_*` functions,
+        // as we want to possibly trap, but not to return an error code.
+        Self::with_span(caller, AbiCall::Identity, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let identity = env.instance_env.replica_ctx.database.database_identity;
+            // We're implicitly casting `out_ptr` to `WasmPtr<Identity>` here.
+            // (Both types are actually `u32`.)
+            // This works because `Identity::write_to` does not require an aligned pointer,
+            // as it gets a `&mut [u8]` from WASM memory and does `copy_from_slice` with it.
+            identity.write_to(mem, out_ptr)?;
+            Ok(())
+        })
+    }
 }
 
 impl<T> BacktraceProvider for wasmtime::StoreContext<'_, T> {
