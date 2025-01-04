@@ -2,7 +2,7 @@ use spacetimedb_primitives::{ColId, ColSet, IndexId};
 use spacetimedb_schema::schema::IndexSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
-use crate::plan::{HashJoin, IxJoin, IxScan, Label, PhysicalExpr, PhysicalPlan, Sarg, TupleField};
+use crate::plan::{HashJoin, IxJoin, IxScan, Label, PhysicalExpr, PhysicalPlan, Sarg, Semi, TupleField};
 
 pub trait RewriteRule {
     type Plan;
@@ -760,6 +760,56 @@ impl RewriteRule for EqIxScan3Col {
                 }
                 unreachable!()
             }
+            _ => plan,
+        }
+    }
+}
+
+/// Reorder hash joins so that selections are on the lhs.
+///
+/// ```text
+///   x
+///  / \
+/// a  s(b)
+///     |
+///     b
+///
+/// ... to ...
+///
+///    x
+///   / \
+/// s(b) a
+///  |
+///  b
+/// ```
+pub(crate) struct ReorderHashJoin;
+
+impl RewriteRule for ReorderHashJoin {
+    type Plan = PhysicalPlan;
+    type Info = ();
+
+    fn matches(plan: &Self::Plan) -> Option<Self::Info> {
+        match plan {
+            PhysicalPlan::HashJoin(HashJoin { lhs, rhs, .. }, Semi::All) => {
+                (matches!(&**lhs, PhysicalPlan::TableScan(..)) && !matches!(&**rhs, PhysicalPlan::TableScan(..)))
+                    .then_some(())
+            }
+            _ => None,
+        }
+    }
+
+    fn rewrite(plan: Self::Plan, _: Self::Info) -> Self::Plan {
+        match plan {
+            PhysicalPlan::HashJoin(join, Semi::All) => PhysicalPlan::HashJoin(
+                HashJoin {
+                    lhs: join.rhs,
+                    rhs: join.lhs,
+                    lhs_field: join.rhs_field,
+                    rhs_field: join.lhs_field,
+                    unique: false,
+                },
+                Semi::All,
+            ),
             _ => plan,
         }
     }

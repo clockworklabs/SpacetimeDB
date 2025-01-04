@@ -9,6 +9,7 @@ use spacetimedb_physical_plan::{compile::compile_sub, plan::ProjectPlan};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sql_parser::parser::sub::parse_subscription;
 
+#[derive(Debug)]
 pub struct SubscribePlan {
     /// The query plan
     plan: ProjectPlan,

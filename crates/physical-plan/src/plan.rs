@@ -10,7 +10,7 @@ use spacetimedb_table::table::RowRef;
 
 use crate::rules::{
     ComputePositions, EqIxScan1, EqIxScan2, EqIxScan2Col, EqIxScan3Col, HashToIxJoin, PushConjunction, PushConstFilter,
-    RewriteRule, UniqueHashJoinRule, UniqueIxJoinRule,
+    ReorderHashJoin, RewriteRule, UniqueHashJoinRule, UniqueIxJoinRule,
 };
 
 /// Table aliases are replaced with labels in the physical plan
@@ -127,7 +127,7 @@ pub enum PhysicalPlan {
     IxScan(IxScan, Label),
     /// An index join + projection
     IxJoin(IxJoin, Semi),
-    /// An hash join + projection
+    /// A hash join + projection
     HashJoin(HashJoin, Semi),
     /// A nested loop join
     NLJoin(Box<PhysicalPlan>, Box<PhysicalPlan>),
@@ -299,6 +299,7 @@ impl PhysicalPlan {
             .apply_rec::<EqIxScan2Col>()
             .apply_rec::<EqIxScan1>()
             .apply_rec::<EqIxScan2>()
+            .apply_rec::<ReorderHashJoin>()
             .apply_rec::<HashToIxJoin>()
             .apply_rec::<UniqueIxJoinRule>()
             .apply_rec::<UniqueHashJoinRule>()

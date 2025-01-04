@@ -139,7 +139,7 @@ fn eval(c: &mut Criterion) {
     let semijoin = format!(
         r#"
         select f.*
-        from location l join footprint f on l.entity_id = f.entity_id
+        from footprint f join location l on f.entity_id = l.entity_id
         where l.chunk_index = {chunk_index}
         "#
     );
