@@ -165,6 +165,17 @@ struct Person {
 }
 ```
 
+You can create multiple tables backed by items of the same type by applying it with different names. For example, to store active and archived posts separately and with different privacy rules, you can declare two tables like this:
+
+```rust
+#[table(name = post, public)]
+#[table(name = archived_post)]
+struct Post {
+    title: String,
+    body: String,
+}
+```
+
 ### Defining reducers
 
 `#[reducer]` is always applied to top level Rust functions. They can take arguments of types known to SpacetimeDB (just like fields of structs must be known to SpacetimeDB), and either return nothing, or return a `Result<(), E: Debug>`.
