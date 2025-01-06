@@ -272,7 +272,7 @@ namespace SpacetimeDB
             public bool Delete(global::BTreeViews row) =>
                 SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoDelete(row);
 
-            internal sealed class BTreeViewsUniqueIndex
+            internal sealed class IdUniqueIndex
                 : UniqueIndex<
                     BTreeViews,
                     global::BTreeViews,
@@ -280,7 +280,7 @@ namespace SpacetimeDB
                     SpacetimeDB.Identity.BSATN
                 >
             {
-                internal BTreeViewsUniqueIndex(BTreeViews handle)
+                internal IdUniqueIndex(BTreeViews handle)
                     : base(handle, "BTreeViews_Id_idx_btree") { }
 
                 // Important: don't move this to the base class.
@@ -292,7 +292,7 @@ namespace SpacetimeDB
                 public bool Update(global::BTreeViews row) => DoUpdate(row.Id, row);
             }
 
-            internal BTreeViewsUniqueIndex Id => new(this);
+            internal IdUniqueIndex Id => new(this);
 
             internal sealed class LocationIndex()
                 : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_X_Y_idx_btree")
@@ -463,10 +463,10 @@ namespace SpacetimeDB
             public bool Delete(global::MultiTableRow row) =>
                 SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoDelete(row);
 
-            public sealed class MultiTable1UniqueIndex
+            public sealed class FooUniqueIndex
                 : UniqueIndex<MultiTable1, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
             {
-                internal MultiTable1UniqueIndex(MultiTable1 handle)
+                internal FooUniqueIndex(MultiTable1 handle)
                     : base(handle, "MultiTable1_Foo_idx_btree") { }
 
                 // Important: don't move this to the base class.
@@ -478,7 +478,7 @@ namespace SpacetimeDB
                 public bool Update(global::MultiTableRow row) => DoUpdate(row.Foo, row);
             }
 
-            public MultiTable1UniqueIndex Foo => new(this);
+            public FooUniqueIndex Foo => new(this);
 
             public sealed class NameIndex()
                 : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>(
@@ -580,10 +580,10 @@ namespace SpacetimeDB
             public bool Delete(global::MultiTableRow row) =>
                 SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoDelete(row);
 
-            public sealed class MultiTable2UniqueIndex
+            public sealed class BarUniqueIndex
                 : UniqueIndex<MultiTable2, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
             {
-                internal MultiTable2UniqueIndex(MultiTable2 handle)
+                internal BarUniqueIndex(MultiTable2 handle)
                     : base(handle, "MultiTable2_Bar_idx_btree") { }
 
                 // Important: don't move this to the base class.
@@ -595,7 +595,7 @@ namespace SpacetimeDB
                 public bool Update(global::MultiTableRow row) => DoUpdate(row.Bar, row);
             }
 
-            public MultiTable2UniqueIndex Bar => new(this);
+            public BarUniqueIndex Bar => new(this);
         }
 
         public readonly struct PrivateTable
@@ -702,10 +702,10 @@ namespace SpacetimeDB
             public bool Delete(global::PublicTable row) =>
                 SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoDelete(row);
 
-            public sealed class PublicTableUniqueIndex
+            public sealed class IdUniqueIndex
                 : UniqueIndex<PublicTable, global::PublicTable, int, SpacetimeDB.BSATN.I32>
             {
-                internal PublicTableUniqueIndex(PublicTable handle)
+                internal IdUniqueIndex(PublicTable handle)
                     : base(handle, "PublicTable_Id_idx_btree") { }
 
                 // Important: don't move this to the base class.
@@ -717,7 +717,7 @@ namespace SpacetimeDB
                 public bool Update(global::PublicTable row) => DoUpdate(row.Id, row);
             }
 
-            public PublicTableUniqueIndex Id => new(this);
+            public IdUniqueIndex Id => new(this);
         }
 
         internal readonly struct RegressionMultipleUniqueIndexesHadSameName
@@ -804,7 +804,7 @@ namespace SpacetimeDB
                     global::RegressionMultipleUniqueIndexesHadSameName
                 >.DoDelete(row);
 
-            internal sealed class RegressionMultipleUniqueIndexesHadSameNameUniqueIndex
+            internal sealed class Unique1UniqueIndex
                 : UniqueIndex<
                     RegressionMultipleUniqueIndexesHadSameName,
                     global::RegressionMultipleUniqueIndexesHadSameName,
@@ -812,9 +812,7 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.U32
                 >
             {
-                internal RegressionMultipleUniqueIndexesHadSameNameUniqueIndex(
-                    RegressionMultipleUniqueIndexesHadSameName handle
-                )
+                internal Unique1UniqueIndex(RegressionMultipleUniqueIndexesHadSameName handle)
                     : base(handle, "RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree")
                 { }
 
@@ -830,9 +828,9 @@ namespace SpacetimeDB
                     DoUpdate(row.Unique1, row);
             }
 
-            internal RegressionMultipleUniqueIndexesHadSameNameUniqueIndex Unique1 => new(this);
+            internal Unique1UniqueIndex Unique1 => new(this);
 
-            internal sealed class RegressionMultipleUniqueIndexesHadSameNameUniqueIndex
+            internal sealed class Unique2UniqueIndex
                 : UniqueIndex<
                     RegressionMultipleUniqueIndexesHadSameName,
                     global::RegressionMultipleUniqueIndexesHadSameName,
@@ -840,9 +838,7 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.U32
                 >
             {
-                internal RegressionMultipleUniqueIndexesHadSameNameUniqueIndex(
-                    RegressionMultipleUniqueIndexesHadSameName handle
-                )
+                internal Unique2UniqueIndex(RegressionMultipleUniqueIndexesHadSameName handle)
                     : base(handle, "RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree")
                 { }
 
@@ -858,7 +854,7 @@ namespace SpacetimeDB
                     DoUpdate(row.Unique2, row);
             }
 
-            internal RegressionMultipleUniqueIndexesHadSameNameUniqueIndex Unique2 => new(this);
+            internal Unique2UniqueIndex Unique2 => new(this);
         }
 
         public readonly struct SendMessageTimer
@@ -943,7 +939,7 @@ namespace SpacetimeDB
                     global::Timers.SendMessageTimer
                 >.DoDelete(row);
 
-            public sealed class SendMessageTimerUniqueIndex
+            public sealed class ScheduledIdUniqueIndex
                 : UniqueIndex<
                     SendMessageTimer,
                     global::Timers.SendMessageTimer,
@@ -951,7 +947,7 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.U64
                 >
             {
-                internal SendMessageTimerUniqueIndex(SendMessageTimer handle)
+                internal ScheduledIdUniqueIndex(SendMessageTimer handle)
                     : base(handle, "SendMessageTimer_ScheduledId_idx_btree") { }
 
                 // Important: don't move this to the base class.
@@ -964,7 +960,7 @@ namespace SpacetimeDB
                     DoUpdate(row.ScheduledId, row);
             }
 
-            public SendMessageTimerUniqueIndex ScheduledId => new(this);
+            public ScheduledIdUniqueIndex ScheduledId => new(this);
         }
     }
 
