@@ -1,8 +1,8 @@
 use anyhow::Context;
-use spacetimedb_paths::RootDir;
-use spacetimedb_paths::SpacetimePaths;
+use spacetimedb_paths::{FromPathUnchecked, RootDir, SpacetimePaths};
 use std::ffi::OsStr;
 use std::ffi::OsString;
+use std::path::PathBuf;
 use std::process::Command;
 use std::process::ExitCode;
 
@@ -14,8 +14,18 @@ pub(super) fn spacetimedb_cli_proxy(argv0: Option<&OsStr>, args: Vec<OsString>) 
     run_cli(&paths, argv0, args)
 }
 pub(crate) fn run_cli(paths: &SpacetimePaths, argv0: Option<&OsStr>, args: Vec<OsString>) -> anyhow::Result<ExitCode> {
-    let version = get_current_version();
-    let cli_path = paths.cli_bin_dir.version_dir(version).spacetimedb_cli();
+    let cli_path = if let Some(artifact_dir) = running_from_target_dir() {
+        let cli_path = spacetimedb_paths::cli::VersionBinDir::from_path_unchecked(artifact_dir).spacetimedb_cli();
+        anyhow::ensure!(
+            cli_path.0.exists(),
+            "running spacetimedb-update's cli proxy from a target/ directory, but the
+             spacetimedb-cli binary doesn't exist. try running `cargo build -p spacetimedb-cli`"
+        );
+        cli_path
+    } else {
+        let version = get_current_version();
+        paths.cli_bin_dir.version_dir(version).spacetimedb_cli()
+    };
     let mut cmd = Command::new(&cli_path);
     cmd.args(args);
     #[cfg(unix)]
@@ -35,6 +45,26 @@ pub(crate) fn run_cli(paths: &SpacetimePaths, argv0: Option<&OsStr>, args: Vec<O
             .with_context(|| format!("failed to run {}", cli_path.display()))?;
         Ok(ExitCode::from_raw(status.code().unwrap_or(1) as u32))
     }
+}
+
+/// Checks to see if we're running from a subdirectory of a `target` dir that has a `Cargo.toml`
+/// as a sibling, and returns the containing directory of the current executable if so.
+fn running_from_target_dir() -> Option<PathBuf> {
+    let mut exe_path = std::env::current_exe().ok()?;
+    exe_path.pop();
+    let artifact_dir = exe_path;
+    // check for target/debug/spacetimedb-update and target/x86_64-unknown-foobar/debug/spacetimedb-update
+    let target_dir = artifact_dir
+        .ancestors()
+        .skip(1)
+        .take(2)
+        .find(|p| p.file_name() == Some("target".as_ref()))?;
+    target_dir
+        .parent()?
+        .join("Cargo.toml")
+        .try_exists()
+        .ok()
+        .map(|_| artifact_dir)
 }
 
 fn get_current_version() -> semver::Version {
