@@ -106,7 +106,7 @@ namespace SpacetimeDB
         protected IEnumerable<Row> Query(Func<Row, bool> filter) => Iter().Where(filter);
 
         public Task<Row[]> RemoteQuery(string query) =>
-            conn!.RemoteQuery<Row>($"SELECT * FROM {name!} {query}");
+            conn!.RemoteQuery<Row>($"SELECT {name!}.* FROM {name!} {query}");
 
         void IRemoteTableHandle.InvokeInsert(IEventContext context, IDatabaseRow row) =>
             OnInsert?.Invoke((EventContext)context, (Row)row);
