@@ -20,7 +20,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 7.0.x
+        dotnet-version: 8.0.x
     - name: Checkout SpacetimeDB
       uses: actions/checkout@v4
       with:
@@ -29,7 +29,7 @@ jobs:
     - name: Setup SpacetimeDB packages
       working-directory: spacetimedb-csharp-sdk
       run: |
-        ( cd ../SpacetimeDB/crates/bindings-csharp/BSATN.Runtime && dotnet pack )
+        dotnet pack ../SpacetimeDB/crates/bindings-csharp/BSATN.Runtime
 
         # Write out the nuget config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
         # to be aware of the local versions of the `bindings-csharp` packages in SpacetimeDB, and use them if
