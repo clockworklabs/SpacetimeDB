@@ -188,3 +188,13 @@ partial struct BTreeViews
 
     public string Faction;
 }
+
+[SpacetimeDB.Table]
+partial struct RegressionMultipleUniqueIndexesHadSameName
+{
+    [SpacetimeDB.Unique]
+    public uint Unique1;
+
+    [SpacetimeDB.Unique]
+    public uint Unique2;
+}

@@ -78,7 +78,7 @@ namespace SpacetimeDB
                     global::TestAutoIncNotInteger
                 >.DoDelete(row);
 
-            public sealed class TestAutoIncNotIntegerUniqueIndex
+            public sealed class IdentityFieldUniqueIndex
                 : UniqueIndex<
                     TestAutoIncNotInteger,
                     global::TestAutoIncNotInteger,
@@ -86,7 +86,7 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.String
                 >
             {
-                internal TestAutoIncNotIntegerUniqueIndex(TestAutoIncNotInteger handle)
+                internal IdentityFieldUniqueIndex(TestAutoIncNotInteger handle)
                     : base(
                         handle,
                         "idx_TestAutoIncNotInteger_TestAutoIncNotInteger_IdentityField_unique"
@@ -102,7 +102,7 @@ namespace SpacetimeDB
                     DoUpdate(row.IdentityField, row);
             }
 
-            public TestAutoIncNotIntegerUniqueIndex IdentityField => new(this);
+            public IdentityFieldUniqueIndex IdentityField => new(this);
         }
 
         public readonly struct TestDuplicateTableName
@@ -188,7 +188,7 @@ namespace SpacetimeDB
                     global::TestIncompatibleSchedule
                 >.DoDelete(row);
 
-            public sealed class TestIncompatibleSchedule1UniqueIndex
+            public sealed class ScheduledIdUniqueIndex
                 : UniqueIndex<
                     TestIncompatibleSchedule1,
                     global::TestIncompatibleSchedule,
@@ -196,7 +196,7 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.U64
                 >
             {
-                internal TestIncompatibleSchedule1UniqueIndex(TestIncompatibleSchedule1 handle)
+                internal ScheduledIdUniqueIndex(TestIncompatibleSchedule1 handle)
                     : base(
                         handle,
                         "idx_TestIncompatibleSchedule1_TestIncompatibleSchedule1_ScheduledId_unique"
@@ -212,7 +212,7 @@ namespace SpacetimeDB
                     DoUpdate(row.ScheduledId, row);
             }
 
-            public TestIncompatibleSchedule1UniqueIndex ScheduledId => new(this);
+            public ScheduledIdUniqueIndex ScheduledId => new(this);
         }
 
         public readonly struct TestIncompatibleSchedule2
@@ -259,7 +259,7 @@ namespace SpacetimeDB
                     global::TestIncompatibleSchedule
                 >.DoDelete(row);
 
-            public sealed class TestIncompatibleSchedule2UniqueIndex
+            public sealed class ScheduledIdUniqueIndex
                 : UniqueIndex<
                     TestIncompatibleSchedule2,
                     global::TestIncompatibleSchedule,
@@ -267,7 +267,7 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.U64
                 >
             {
-                internal TestIncompatibleSchedule2UniqueIndex(TestIncompatibleSchedule2 handle)
+                internal ScheduledIdUniqueIndex(TestIncompatibleSchedule2 handle)
                     : base(
                         handle,
                         "idx_TestIncompatibleSchedule2_TestIncompatibleSchedule2_ScheduledId_unique"
@@ -283,7 +283,7 @@ namespace SpacetimeDB
                     DoUpdate(row.ScheduledId, row);
             }
 
-            public TestIncompatibleSchedule2UniqueIndex ScheduledId => new(this);
+            public ScheduledIdUniqueIndex ScheduledId => new(this);
         }
 
         public readonly struct TestTableTaggedEnum
@@ -360,7 +360,7 @@ namespace SpacetimeDB
                     global::TestUniqueNotEquatable
                 >.DoDelete(row);
 
-            public sealed class TestUniqueNotEquatableUniqueIndex
+            public sealed class UniqueFieldUniqueIndex
                 : UniqueIndex<
                     TestUniqueNotEquatable,
                     global::TestUniqueNotEquatable,
@@ -368,7 +368,7 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>
                 >
             {
-                internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle)
+                internal UniqueFieldUniqueIndex(TestUniqueNotEquatable handle)
                     : base(
                         handle,
                         "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique"
@@ -384,9 +384,9 @@ namespace SpacetimeDB
                     DoUpdate(row.UniqueField, row);
             }
 
-            public TestUniqueNotEquatableUniqueIndex UniqueField => new(this);
+            public UniqueFieldUniqueIndex UniqueField => new(this);
 
-            public sealed class TestUniqueNotEquatableUniqueIndex
+            public sealed class PrimaryKeyFieldUniqueIndex
                 : UniqueIndex<
                     TestUniqueNotEquatable,
                     global::TestUniqueNotEquatable,
@@ -394,7 +394,7 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>
                 >
             {
-                internal TestUniqueNotEquatableUniqueIndex(TestUniqueNotEquatable handle)
+                internal PrimaryKeyFieldUniqueIndex(TestUniqueNotEquatable handle)
                     : base(
                         handle,
                         "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique"
@@ -410,7 +410,7 @@ namespace SpacetimeDB
                     DoUpdate(row.PrimaryKeyField, row);
             }
 
-            public TestUniqueNotEquatableUniqueIndex PrimaryKeyField => new(this);
+            public PrimaryKeyFieldUniqueIndex PrimaryKeyField => new(this);
         }
     }
 

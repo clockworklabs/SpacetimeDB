@@ -289,15 +289,15 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             {
                 var iUniqueIndex = $"";
                 yield return $$"""
-                    {{vis}} sealed class {{viewName}}UniqueIndex : UniqueIndex<{{viewName}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
-                        internal {{viewName}}UniqueIndex({{viewName}} handle) : base(handle, "idx_{{viewName}}_{{viewName}}_{{ct.col.Name}}_unique") {}
+                    {{vis}} sealed class {{f.Name}}UniqueIndex : UniqueIndex<{{viewName}}, {{globalName}}, {{f.Type}}, {{f.TypeInfo}}> {
+                        internal {{f.Name}}UniqueIndex({{viewName}} handle) : base(handle, "idx_{{viewName}}_{{viewName}}_{{ct.col.Name}}_unique") {}
                         // Important: don't move this to the base class.
                         // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                         // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
                         public {{globalName}}? Find({{f.Type}} key) => DoFilter(key).Cast<{{globalName}}?>().SingleOrDefault();
                         public bool Update({{globalName}} row) => DoUpdate(row.{{f.Name}}, row);
                     }
-                    {{vis}} {{viewName}}UniqueIndex {{f.Name}} => new(this);
+                    {{vis}} {{f.Name}}UniqueIndex {{f.Name}} => new(this);
                     """;
             }
         }
