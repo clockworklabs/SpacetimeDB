@@ -10,4 +10,4 @@ class EnergyFlow(Smoketest):
         self.publish_module()
 
         out = self.spacetime("energy", "balance")
-        self.assertIn('{"balance":"', out)
+        self.assertRegex(out, '{"balance":"-?[0-9]+"}')
