@@ -720,6 +720,147 @@ namespace SpacetimeDB
             public PublicTableUniqueIndex Id => new(this);
         }
 
+        internal readonly struct RegressionMultipleUniqueIndexesHadSameName
+            : SpacetimeDB.Internal.ITableView<
+                RegressionMultipleUniqueIndexesHadSameName,
+                global::RegressionMultipleUniqueIndexesHadSameName
+            >
+        {
+            static global::RegressionMultipleUniqueIndexesHadSameName SpacetimeDB.Internal.ITableView<
+                RegressionMultipleUniqueIndexesHadSameName,
+                global::RegressionMultipleUniqueIndexesHadSameName
+            >.ReadGenFields(
+                System.IO.BinaryReader reader,
+                global::RegressionMultipleUniqueIndexesHadSameName row
+            )
+            {
+                return row;
+            }
+
+            static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
+                RegressionMultipleUniqueIndexesHadSameName,
+                global::RegressionMultipleUniqueIndexesHadSameName
+            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                new(
+                    Name: nameof(RegressionMultipleUniqueIndexesHadSameName),
+                    ProductTypeRef: (uint)
+                        new global::RegressionMultipleUniqueIndexesHadSameName.BSATN()
+                            .GetAlgebraicType(registrar)
+                            .Ref_,
+                    PrimaryKey: [],
+                    Indexes:
+                    [
+                        new(
+                            Name: null,
+                            AccessorName: "Unique1",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                        ),
+                        new(
+                            Name: null,
+                            AccessorName: "Unique2",
+                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                        )
+                    ],
+                    Constraints:
+                    [
+                        SpacetimeDB.Internal.ITableView<
+                            RegressionMultipleUniqueIndexesHadSameName,
+                            global::RegressionMultipleUniqueIndexesHadSameName
+                        >.MakeUniqueConstraint(0),
+                        SpacetimeDB.Internal.ITableView<
+                            RegressionMultipleUniqueIndexesHadSameName,
+                            global::RegressionMultipleUniqueIndexesHadSameName
+                        >.MakeUniqueConstraint(1)
+                    ],
+                    Sequences: [],
+                    Schedule: null,
+                    TableType: SpacetimeDB.Internal.TableType.User,
+                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+                );
+
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<
+                    RegressionMultipleUniqueIndexesHadSameName,
+                    global::RegressionMultipleUniqueIndexesHadSameName
+                >.DoCount();
+
+            public IEnumerable<global::RegressionMultipleUniqueIndexesHadSameName> Iter() =>
+                SpacetimeDB.Internal.ITableView<
+                    RegressionMultipleUniqueIndexesHadSameName,
+                    global::RegressionMultipleUniqueIndexesHadSameName
+                >.DoIter();
+
+            public global::RegressionMultipleUniqueIndexesHadSameName Insert(
+                global::RegressionMultipleUniqueIndexesHadSameName row
+            ) =>
+                SpacetimeDB.Internal.ITableView<
+                    RegressionMultipleUniqueIndexesHadSameName,
+                    global::RegressionMultipleUniqueIndexesHadSameName
+                >.DoInsert(row);
+
+            public bool Delete(global::RegressionMultipleUniqueIndexesHadSameName row) =>
+                SpacetimeDB.Internal.ITableView<
+                    RegressionMultipleUniqueIndexesHadSameName,
+                    global::RegressionMultipleUniqueIndexesHadSameName
+                >.DoDelete(row);
+
+            internal sealed class RegressionMultipleUniqueIndexesHadSameNameUniqueIndex
+                : UniqueIndex<
+                    RegressionMultipleUniqueIndexesHadSameName,
+                    global::RegressionMultipleUniqueIndexesHadSameName,
+                    uint,
+                    SpacetimeDB.BSATN.U32
+                >
+            {
+                internal RegressionMultipleUniqueIndexesHadSameNameUniqueIndex(
+                    RegressionMultipleUniqueIndexesHadSameName handle
+                )
+                    : base(handle, "RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree")
+                { }
+
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::RegressionMultipleUniqueIndexesHadSameName? Find(uint key) =>
+                    DoFilter(key)
+                        .Cast<global::RegressionMultipleUniqueIndexesHadSameName?>()
+                        .SingleOrDefault();
+
+                public bool Update(global::RegressionMultipleUniqueIndexesHadSameName row) =>
+                    DoUpdate(row.Unique1, row);
+            }
+
+            internal RegressionMultipleUniqueIndexesHadSameNameUniqueIndex Unique1 => new(this);
+
+            internal sealed class RegressionMultipleUniqueIndexesHadSameNameUniqueIndex
+                : UniqueIndex<
+                    RegressionMultipleUniqueIndexesHadSameName,
+                    global::RegressionMultipleUniqueIndexesHadSameName,
+                    uint,
+                    SpacetimeDB.BSATN.U32
+                >
+            {
+                internal RegressionMultipleUniqueIndexesHadSameNameUniqueIndex(
+                    RegressionMultipleUniqueIndexesHadSameName handle
+                )
+                    : base(handle, "RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree")
+                { }
+
+                // Important: don't move this to the base class.
+                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+                public global::RegressionMultipleUniqueIndexesHadSameName? Find(uint key) =>
+                    DoFilter(key)
+                        .Cast<global::RegressionMultipleUniqueIndexesHadSameName?>()
+                        .SingleOrDefault();
+
+                public bool Update(global::RegressionMultipleUniqueIndexesHadSameName row) =>
+                    DoUpdate(row.Unique2, row);
+            }
+
+            internal RegressionMultipleUniqueIndexesHadSameNameUniqueIndex Unique2 => new(this);
+        }
+
         public readonly struct SendMessageTimer
             : SpacetimeDB.Internal.ITableView<SendMessageTimer, global::Timers.SendMessageTimer>
         {
@@ -835,6 +976,8 @@ namespace SpacetimeDB
         public Internal.TableHandles.MultiTable2 MultiTable2 => new();
         public Internal.TableHandles.PrivateTable PrivateTable => new();
         public Internal.TableHandles.PublicTable PublicTable => new();
+        internal Internal.TableHandles.RegressionMultipleUniqueIndexesHadSameName RegressionMultipleUniqueIndexesHadSameName =>
+            new();
         public Internal.TableHandles.SendMessageTimer SendMessageTimer => new();
     }
 }
@@ -988,6 +1131,10 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterTable<
             global::PublicTable,
             SpacetimeDB.Internal.TableHandles.PublicTable
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::RegressionMultipleUniqueIndexesHadSameName,
+            SpacetimeDB.Internal.TableHandles.RegressionMultipleUniqueIndexesHadSameName
         >();
         SpacetimeDB.Internal.Module.RegisterTable<
             global::Timers.SendMessageTimer,
