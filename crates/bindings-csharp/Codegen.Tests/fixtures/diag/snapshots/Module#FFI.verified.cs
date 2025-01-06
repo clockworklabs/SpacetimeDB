@@ -118,7 +118,7 @@ namespace SpacetimeDB
                     global::TestAutoIncNotInteger
                 >.DoDelete(row);
 
-            public sealed class TestAutoIncNotIntegerUniqueIndex
+            public sealed class IdentityFieldUniqueIndex
                 : UniqueIndex<
                     TestAutoIncNotInteger,
                     global::TestAutoIncNotInteger,
@@ -126,7 +126,7 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.String
                 >
             {
-                internal TestAutoIncNotIntegerUniqueIndex(TestAutoIncNotInteger handle)
+                internal IdentityFieldUniqueIndex(TestAutoIncNotInteger handle)
                     : base(handle, "TestAutoIncNotInteger_IdentityField_idx_btree") { }
 
                 // Important: don't move this to the base class.
@@ -139,7 +139,7 @@ namespace SpacetimeDB
                     DoUpdate(row.IdentityField, row);
             }
 
-            public TestAutoIncNotIntegerUniqueIndex IdentityField => new(this);
+            public IdentityFieldUniqueIndex IdentityField => new(this);
         }
 
         public readonly struct TestDuplicateTableName
@@ -457,7 +457,7 @@ namespace SpacetimeDB
                     global::TestScheduleIssues
                 >.DoDelete(row);
 
-            public sealed class TestScheduleWithoutScheduleAtUniqueIndex
+            public sealed class IdCorrectTypeUniqueIndex
                 : UniqueIndex<
                     TestScheduleWithoutScheduleAt,
                     global::TestScheduleIssues,
@@ -465,9 +465,7 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.I32
                 >
             {
-                internal TestScheduleWithoutScheduleAtUniqueIndex(
-                    TestScheduleWithoutScheduleAt handle
-                )
+                internal IdCorrectTypeUniqueIndex(TestScheduleWithoutScheduleAt handle)
                     : base(handle, "TestScheduleWithoutScheduleAt_IdCorrectType_idx_btree") { }
 
                 // Important: don't move this to the base class.
@@ -480,7 +478,7 @@ namespace SpacetimeDB
                     DoUpdate(row.IdCorrectType, row);
             }
 
-            public TestScheduleWithoutScheduleAtUniqueIndex IdCorrectType => new(this);
+            public IdCorrectTypeUniqueIndex IdCorrectType => new(this);
         }
 
         public readonly struct TestScheduleWithWrongPrimaryKeyType
@@ -554,7 +552,7 @@ namespace SpacetimeDB
                     global::TestScheduleIssues
                 >.DoDelete(row);
 
-            public sealed class TestScheduleWithWrongPrimaryKeyTypeUniqueIndex
+            public sealed class IdWrongTypeUniqueIndex
                 : UniqueIndex<
                     TestScheduleWithWrongPrimaryKeyType,
                     global::TestScheduleIssues,
@@ -562,9 +560,7 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.String
                 >
             {
-                internal TestScheduleWithWrongPrimaryKeyTypeUniqueIndex(
-                    TestScheduleWithWrongPrimaryKeyType handle
-                )
+                internal IdWrongTypeUniqueIndex(TestScheduleWithWrongPrimaryKeyType handle)
                     : base(handle, "TestScheduleWithWrongPrimaryKeyType_IdWrongType_idx_btree") { }
 
                 // Important: don't move this to the base class.
@@ -577,7 +573,7 @@ namespace SpacetimeDB
                     DoUpdate(row.IdWrongType, row);
             }
 
-            public TestScheduleWithWrongPrimaryKeyTypeUniqueIndex IdWrongType => new(this);
+            public IdWrongTypeUniqueIndex IdWrongType => new(this);
         }
 
         public readonly struct TestScheduleWithWrongScheduleAtType
@@ -651,7 +647,7 @@ namespace SpacetimeDB
                     global::TestScheduleIssues
                 >.DoDelete(row);
 
-            public sealed class TestScheduleWithWrongScheduleAtTypeUniqueIndex
+            public sealed class IdCorrectTypeUniqueIndex
                 : UniqueIndex<
                     TestScheduleWithWrongScheduleAtType,
                     global::TestScheduleIssues,
@@ -659,9 +655,7 @@ namespace SpacetimeDB
                     SpacetimeDB.BSATN.I32
                 >
             {
-                internal TestScheduleWithWrongScheduleAtTypeUniqueIndex(
-                    TestScheduleWithWrongScheduleAtType handle
-                )
+                internal IdCorrectTypeUniqueIndex(TestScheduleWithWrongScheduleAtType handle)
                     : base(handle, "TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree")
                 { }
 
@@ -675,7 +669,7 @@ namespace SpacetimeDB
                     DoUpdate(row.IdCorrectType, row);
             }
 
-            public TestScheduleWithWrongScheduleAtTypeUniqueIndex IdCorrectType => new(this);
+            public IdCorrectTypeUniqueIndex IdCorrectType => new(this);
         }
 
         public readonly struct TestUniqueNotEquatable
