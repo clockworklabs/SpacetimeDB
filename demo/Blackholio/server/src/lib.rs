@@ -87,7 +87,6 @@ pub struct MoveAllPlayersTimer {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
 }
 
@@ -96,7 +95,6 @@ pub struct SpawnFoodTimer {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
 }
 
@@ -105,7 +103,6 @@ pub struct CircleDecayTimer {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
 }
 
