@@ -8,6 +8,9 @@ using SpacetimeDB.Internal;
 
 internal static class Util
 {
+    public static Span<byte> AsBytes<T>(ref T val)
+        where T : struct => MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref val, 1));
+
     /// <summary>
     /// Convert this object to a BIG-ENDIAN hex string.
     ///
@@ -24,7 +27,7 @@ internal static class Util
     public static string ToHexBigEndian<T>(T val)
         where T : struct
     {
-        var bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref val, 1));
+        var bytes = AsBytes(ref val);
         // If host is little-endian, reverse the bytes.
         // Note that this reverses our stack copy of `val`, not the original value, and doesn't require heap `byte[]` allocation.
         if (BitConverter.IsLittleEndian)
@@ -61,8 +64,7 @@ internal static class Util
 
         if (littleEndian != BitConverter.IsLittleEndian)
         {
-            var resultSpan = MemoryMarshal.CreateSpan(ref result, 1);
-            MemoryMarshal.AsBytes(resultSpan).Reverse();
+            AsBytes(ref result).Reverse();
         }
 
         return result;
@@ -171,7 +173,7 @@ public readonly record struct Address
     {
         var random = new Random();
         var addr = new Address();
-        random.NextBytes(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref addr, 1)));
+        random.NextBytes(Util.AsBytes(ref addr));
         return addr;
     }
 
