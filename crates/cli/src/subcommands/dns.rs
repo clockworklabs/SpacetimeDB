@@ -12,6 +12,7 @@ pub fn cli() -> Command {
         .about("Rename a database")
         .arg(
             Arg::new("new-name")
+                .long("to")
                 .required(true)
                 .help("The new name you would like to assign"),
         )
