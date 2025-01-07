@@ -1,5 +1,4 @@
 use anyhow::Context;
-use duct::cmd;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -8,27 +7,37 @@ fn parse_major_version(version: &str) -> Option<u8> {
 }
 
 pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Result<PathBuf> {
+    // All `dotnet` commands must execute in the project directory, otherwise
+    // global.json won't have any effect and wrong .NET SDK might be picked.
+    macro_rules! dotnet {
+        ($($arg:expr),*) => {
+            duct::cmd!("dotnet", $($arg),*).dir(project_path)
+        };
+    }
+
     // Check if the `wasi-experimental` workload is installed. Unfortunately, we
     // have to do this by inspecting the human-readable output. There is a
     // hidden `--machine-readable` flag but it also mixes in human-readable
     // output as well as unnecessarily updates various unrelated manifests.
-    match cmd!("dotnet", "workload", "list").read() {
+    match dotnet!("workload", "list").read() {
         Ok(workloads) if workloads.contains("wasi-experimental") => {}
         Ok(_) => {
             // If wasi-experimental is not found, first check if we're running
-            // on .NET 8.0. We can't even install that workload on older
-            // versions, so this helps to provide a nicer message than "Workload
-            // ID wasi-experimental is not recognized.".
-            let version = cmd!("dotnet", "--version").read().unwrap_or_default();
-            if parse_major_version(&version) < Some(8) {
-                anyhow::bail!(".NET 8.0 is required, but found {version}.");
+            // on .NET SDK 8.0. We can't even install that workload on older
+            // versions, and we don't support .NET 9.0 yet, so this helps to
+            // provide a nicer message than "Workload ID wasi-experimental is not recognized.".
+            let version = dotnet!("--version").read().unwrap_or_default();
+            if parse_major_version(&version) != Some(8) {
+                anyhow::bail!(concat!(
+                    ".NET SDK 8.0 is required, but found {version}.\n",
+                    "If you have multiple versions of .NET SDK installed, configure your project using https://learn.microsoft.com/en-us/dotnet/core/tools/global-json."
+                ));
             }
 
             // Finally, try to install the workload ourselves. On some systems
             // this might require elevated privileges, so print a nice error
             // message if it fails.
-            cmd!(
-                "dotnet",
+            dotnet!(
                 "workload",
                 "install",
                 "wasi-experimental",
@@ -41,7 +50,7 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
             ))?;
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            anyhow::bail!("dotnet not found in PATH. Please install .NET 8.0.")
+            anyhow::bail!("dotnet not found in PATH. Please install .NET SDK 8.0.")
         }
         Err(error) => anyhow::bail!("{error}"),
     };
@@ -57,9 +66,7 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
     })?;
 
     // run dotnet publish using cmd macro
-    cmd!("dotnet", "publish", "-c", config_name, "-v", "quiet")
-        .dir(project_path)
-        .run()?;
+    dotnet!("publish", "-c", config_name, "-v", "quiet").run()?;
 
     // check if file exists
     let subdir = if std::env::var_os("EXPERIMENTAL_WASM_AOT").map_or(false, |v| v == "1") {

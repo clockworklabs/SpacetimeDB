@@ -36,7 +36,7 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - uses: actions/setup-dotnet@v3
         with:
-          dotnet-version: "8.x"
+          global-json-file: modules/global.json
       - name: Start containers
         run: docker compose up -d
       - name: Run smoketests
@@ -70,7 +70,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v3
         with:
-          dotnet-version: "8.x"
+          global-json-file: modules/global.json
 
       - name: Create /stdb dir
         run: |
@@ -114,7 +114,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v3
         with:
-          dotnet-version: "8.x"
+          global-json-file: modules/global.json
 
       - name: Create /stdb dir
         run: |
