@@ -19,6 +19,21 @@ class Domains(Smoketest):
         # Now we're essentially just testing that it *doesn't* throw an exception
         self.spacetime("logs", rand_name)
 
+    def test_subdomain_behavior(self):
+        """Test how we treat the / character in published names"""
+
+        root_name = random_string()
+        self.publish_module(root_name)
+        id_to_rename = self.database_identity
+
+        self.publish_module(f"{root_name}/test")
+
+        with self.assertRaises(Exception):
+            self.publish_module(f"{root_name}//test")
+
+        with self.assertRaises(Exception):
+            self.publish_module(f"{root_name}/test/")
+
     def test_set_to_existing_name(self):
         """Test that we can't rename to a name already in use"""
 
