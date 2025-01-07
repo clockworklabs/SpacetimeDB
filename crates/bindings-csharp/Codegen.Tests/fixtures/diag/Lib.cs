@@ -362,12 +362,14 @@ public static partial class InAnotherNamespace
 }
 
 [SpacetimeDB.Table]
-[SpacetimeDB.Index]
-public partial struct TestIndexWithoutColumns { }
-
-[SpacetimeDB.Table]
-[SpacetimeDB.Index(BTree = [])]
-public partial struct TestIndexWithEmptyColumns { }
+[SpacetimeDB.Index.BTree(Name = "TestIndexWithoutColumns")]
+[SpacetimeDB.Index.BTree(Name = "TestIndexWithEmptyColumns", Columns = [])]
+[SpacetimeDB.Index.BTree(Name = "TestUnknownColumns", Columns = ["UnknownColumn"])]
+public partial struct TestIndexIssues
+{
+    [SpacetimeDB.Index.BTree(Name = "TestUnexpectedColumns", Columns = ["UnexpectedColumn"])]
+    public int SelfIndexingColumn;
+}
 
 [SpacetimeDB.Table(
     Name = "TestScheduleWithoutPrimaryKey",
@@ -384,6 +386,11 @@ public partial struct TestIndexWithEmptyColumns { }
     Name = "TestScheduleWithWrongScheduleAtType",
     Scheduled = "DummyScheduledReducer",
     ScheduledAt = nameof(ScheduleAtWrongType)
+)]
+[SpacetimeDB.Table(
+    Name = "TestScheduleWithMissingScheduleAtField",
+    Scheduled = "DummyScheduledReducer",
+    ScheduledAt = "MissingField"
 )]
 public partial struct TestScheduleIssues
 {

@@ -149,9 +149,9 @@ public static partial class Timers
 
 [SpacetimeDB.Table(Name = "MultiTable1", Public = true)]
 [SpacetimeDB.Table(Name = "MultiTable2")]
-[SpacetimeDB.Index(Table = "MultiTable1", BTree = ["Name"])]
 public partial struct MultiTableRow
 {
+    [SpacetimeDB.Index.BTree(Table = "MultiTable1")]
     public string Name;
 
     [SpacetimeDB.AutoInc]
@@ -171,7 +171,7 @@ public partial struct MultiTableRow
 }
 
 [SpacetimeDB.Table]
-[SpacetimeDB.Index(Name = "Location", BTree = ["X", "Y", "Z"])]
+[SpacetimeDB.Index.BTree(Name = "Location", Columns = ["X", "Y", "Z"])]
 partial struct BTreeMultiColumn
 {
     public uint X;
@@ -180,8 +180,7 @@ partial struct BTreeMultiColumn
 }
 
 [SpacetimeDB.Table]
-[SpacetimeDB.Index(Name = "Location", BTree = ["X", "Y"])]
-[SpacetimeDB.Index(Name = "Faction", BTree = ["Faction"])]
+[SpacetimeDB.Index.BTree(Name = "Location", Columns = ["X", "Y"])]
 partial struct BTreeViews
 {
     [SpacetimeDB.PrimaryKey]
@@ -190,6 +189,7 @@ partial struct BTreeViews
     public uint X;
     public uint Y;
 
+    [SpacetimeDB.Index.BTree]
     public string Faction;
 }
 
