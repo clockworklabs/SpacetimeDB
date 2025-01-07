@@ -160,6 +160,7 @@ pub enum AbiCall {
     ConsoleLog,
     ConsoleTimerStart,
     ConsoleTimerEnd,
+    Identity,
 
     VolatileNonatomicScheduleImmediate,
 }
