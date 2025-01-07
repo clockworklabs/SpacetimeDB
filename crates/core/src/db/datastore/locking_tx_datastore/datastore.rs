@@ -478,6 +478,10 @@ impl MutTxDatastore for Locking {
         tx.index_id_from_name(index_name)
     }
 
+    fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<i128> {
+        tx.get_next_sequence_value(seq_id)
+    }
+
     fn create_sequence_mut_tx(&self, tx: &mut Self::MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId> {
         tx.create_sequence(sequence_schema)
     }
