@@ -786,12 +786,7 @@ public class Module : IIncrementalGenerator
                             public readonly DateTimeOffset Timestamp;
 
                             // We need this property to be non-static for parity with client SDK.
-                            public Identity Identity {
-                                get {
-                                    SpacetimeDB.Internal.FFI.identity(out var result);
-                                    return result;
-                                }
-                            }
+                            public Identity Identity => Internal.IReducerContext.GetIdentity();
 
                             internal ReducerContext(Identity identity, Address? address, Random random, DateTimeOffset time) {
                                 CallerIdentity = identity;

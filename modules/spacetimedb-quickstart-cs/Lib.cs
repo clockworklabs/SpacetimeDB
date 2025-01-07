@@ -39,4 +39,12 @@ static partial class Module
             Log.Info($"{person.name} has age {person.age} >= {age}");
         }
     }
+
+    [SpacetimeDB.Reducer]
+    public static void log_module_identity(ReducerContext ctx)
+    {
+        // Note: we use ToLower() because Rust side stringifies identities as lowercase hex.
+        // Is this something we need to align on in the future?
+        Log.Info($"Module identity: {ctx.Identity.ToString().ToLower()}");
+    }
 }
