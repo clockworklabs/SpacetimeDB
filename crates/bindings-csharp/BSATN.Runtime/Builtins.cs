@@ -77,6 +77,10 @@ internal static class Util
     /// <returns></returns>
     public static byte[] StringToByteArray(string hex)
     {
+#if NET5_0_OR_GREATER
+        return Convert.FromHexString(hex);
+#else
+        // Manual implementation for .NET Standard compatibility.
         Debug.Assert(
             hex.Length % 2 == 0,
             $"Expected input string (\"{hex}\") to be of even length"
@@ -89,6 +93,7 @@ internal static class Util
             bytes[i / 2] = Convert.ToByte(hex.Substring(i, 2), 16);
         }
         return bytes;
+#endif
     }
 
     /// <summary>
