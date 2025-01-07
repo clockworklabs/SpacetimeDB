@@ -131,7 +131,7 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
 mod tests {
     use super::*;
     use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::db::relational_db::MutTx;
     use crate::execution_context::Workload;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
@@ -195,7 +195,7 @@ mod tests {
     }
 
     fn insert_row(db: &RelationalDB, tx: &mut MutTx, table_id: TableId, row: ProductValue) -> ResultTest<()> {
-        db.insert(tx, table_id, row)?;
+        insert(db, tx, table_id, &row)?;
         Ok(())
     }
 
@@ -376,7 +376,7 @@ mod tests {
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let mut deletes = Vec::new();
         for i in 0u64..9u64 {
-            db.insert(&mut tx, table_id, product!(i, i))?;
+            insert(&db, &mut tx, table_id, &product!(i, i))?;
             deletes.push(product!(i + 10, i))
         }
 
@@ -669,7 +669,7 @@ mod tests {
         let lhs_id = db.create_table_for_test("lhs", &[("id", I32), ("x", I32)], &[0.into()])?;
         db.with_auto_commit(Workload::ForTests, |tx| {
             for i in 0..5 {
-                db.insert(tx, lhs_id, product!(i, i + 5))?;
+                insert(db, tx, lhs_id, &product!(i, i + 5))?;
             }
             Ok(lhs_id)
         })
@@ -681,7 +681,7 @@ mod tests {
         let rhs_id = db.create_table_for_test("rhs", &[("rid", I32), ("id", I32), ("y", I32)], &[1.into()])?;
         db.with_auto_commit(Workload::ForTests, |tx| {
             for i in 10..20 {
-                db.insert(tx, rhs_id, product!(i, i - 10, i - 8))?;
+                insert(db, tx, rhs_id, &product!(i, i - 10, i - 8))?;
             }
             Ok(rhs_id)
         })

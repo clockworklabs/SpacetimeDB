@@ -44,7 +44,7 @@ use core::{mem, ops::ControlFlow, ptr};
 use spacetimedb_lib::{de::Deserialize, ser::Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum Error {
     #[error("Want to allocate a var-len object of {need} granules, but have only {have} granules available")]
     InsufficientVarLenSpace { need: u16, have: u16 },
@@ -55,7 +55,7 @@ pub enum Error {
 /// A cons-cell in a freelist either
 /// for an unused fixed-len cell or a variable-length granule.
 #[repr(C)] // Required for a stable ABI.
-#[derive(Clone, Copy, Debug, bytemuck::NoUninit, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, bytemuck::NoUninit, Serialize, Deserialize)]
 struct FreeCellRef {
     /// The address of the next free cell in a freelist.
     ///
@@ -133,7 +133,7 @@ impl FreeCellRef {
 
 /// All the fixed size header information.
 #[repr(C)] // Required for a stable ABI.
-#[derive(Serialize, Deserialize)] // So we can dump and restore pages during snapshotting.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)] // So we can dump and restore pages during snapshotting.
 struct FixedHeader {
     /// A pointer to the head of the freelist which stores
     /// all the unused (freed) fixed row cells.
@@ -226,7 +226,7 @@ impl FixedHeader {
 
 /// All the var-len header information.
 #[repr(C)] // Required for a stable ABI.
-#[derive(bytemuck::NoUninit, Clone, Copy, Serialize, Deserialize)]
+#[derive(bytemuck::NoUninit, Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct VarHeader {
     /// A pointer to the head of the freelist which stores
     /// all the unused (freed) var-len granules.
@@ -290,7 +290,7 @@ impl VarHeader {
 /// as the whole [`Page`] is `Box`ed.
 #[repr(C)] // Required for a stable ABI.
 #[repr(align(64))] // Alignment must be same as `VarLenGranule::SIZE`.
-#[derive(Serialize, Deserialize)] // So we can dump and restore pages during snapshotting.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)] // So we can dump and restore pages during snapshotting.
 struct PageHeader {
     /// The header data relating to the fixed component of a row.
     fixed: FixedHeader,
@@ -386,7 +386,7 @@ const _VLG_ALIGN_MULTIPLE_OF_FCR: () = assert!(mem::align_of::<VarLenGranule>() 
 // ^-- Must have align at least that of `VarLenGranule`,
 // so that `row_data[PageOffset::PAGE_END - VarLenGranule::SIZE]` is an aligned pointer to `VarLenGranule`.
 // TODO(bikeshedding): consider raising the alignment. We may want this to be OS page (4096) aligned.
-#[derive(Serialize, Deserialize)] // So we can dump and restore pages during snapshotting.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)] // So we can dump and restore pages during snapshotting.
 pub struct Page {
     /// The header containing metadata on how to interpret and modify the `row_data`.
     header: PageHeader,
@@ -1154,6 +1154,21 @@ impl Page {
         (fixed, var)
     }
 
+    /// Returns a mutable view of the row from `start` lasting `fixed_row_size` number of bytes.
+    ///
+    /// This method is safe, but callers should take care that `start` and `fixed_row_size`
+    /// are correct for this page, and that `start` is aligned.
+    /// Callers should further ensure that mutations to the row leave the row bytes
+    /// in an expected state, i.e. initialized where required by the row type,
+    /// and with `VarLenRef`s that point to valid granules and with correct lengths.
+    ///
+    /// This call will clear the unmodified hash
+    /// as it is expected that the caller will alter the the page.
+    pub fn get_fixed_row_data_mut(&mut self, start: PageOffset, fixed_row_size: Size) -> &mut Bytes {
+        self.header.unmodified_hash = None;
+        &mut self.row_data[start.range(fixed_row_size)]
+    }
+
     /// Return the total required var-len granules to store `objects`.
     pub fn total_granules_required_for_objects(objects: &[impl AsRef<[u8]>]) -> usize {
         objects
@@ -1279,6 +1294,8 @@ impl Page {
     }
 
     /// Allocates a space for a fixed size row of `fixed_row_size` in the freelist, if possible.
+    ///
+    /// This call will clear the unmodified hash.
     #[inline]
     fn alloc_fixed_len_from_freelist(&mut self, fixed_row_size: Size) -> Option<PageOffset> {
         let header = &mut self.header.fixed;
@@ -1293,6 +1310,8 @@ impl Page {
     }
 
     /// Allocates a space for a fixed size row of `fixed_row_size` in the freelist, if possible.
+    ///
+    /// This call will clear the unmodified hash.
     #[inline]
     fn alloc_fixed_len_from_gap(&mut self, fixed_row_size: Size) -> Option<PageOffset> {
         if gap_enough_size_for_row(self.header.var.first, self.header.fixed.last, fixed_row_size) {
@@ -1375,6 +1394,8 @@ impl Page {
     }
 
     /// Free a row, marking its fixed-len and var-len storage granules as available for re-use.
+    ///
+    /// This call will clear the unmodified hash.
     ///
     /// # Safety
     ///

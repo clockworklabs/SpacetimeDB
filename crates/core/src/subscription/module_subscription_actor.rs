@@ -393,7 +393,7 @@ pub struct WriteConflict;
 mod tests {
     use super::{AssertTxFn, ModuleSubscriptions};
     use crate::client::{ClientActorId, ClientConfig, ClientConnectionSender};
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
     use crate::execution_context::Workload;
@@ -431,7 +431,7 @@ mod tests {
         // Create table with one row
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
         db.with_auto_commit(Workload::ForTests, |tx| {
-            db.insert(tx, table_id, product!(1_u8)).map(drop)
+            insert(&db, tx, table_id, &product!(1_u8)).map(drop)
         })?;
 
         let (send, mut recv) = mpsc::unbounded_channel();
@@ -459,7 +459,7 @@ mod tests {
         let write_handle = runtime.spawn(async move {
             let _ = recv.recv().await;
             db2.with_auto_commit(Workload::ForTests, |tx| {
-                db2.insert(tx, table_id, product!(2_u8)).map(drop)
+                insert(&db2, tx, table_id, &product!(2_u8)).map(drop)
             })
         });
 

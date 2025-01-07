@@ -13,8 +13,6 @@ use crate::host::wasm_common::{
 use crate::host::AbiCall;
 use anyhow::Context as _;
 use spacetimedb_primitives::{errno, ColId};
-use spacetimedb_sats::bsatn;
-use spacetimedb_sats::buffer::{CountWriter, TeeWriter};
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
 use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
@@ -677,16 +675,8 @@ impl WasmInstanceEnv {
             // Get a mutable view to the `row`.
             let row = mem.deref_slice_mut(row_ptr, row_len)?;
 
-            // Insert the row into the DB.
-            // This will return back the generated column values.
-            let gen_cols = env.instance_env.insert(table_id.into(), row)?;
-
-            // Write back the generated column values to `row`
-            // and the encoded length to `row_len`.
-            let counter = CountWriter::default();
-            let mut writer = TeeWriter::new(counter, row);
-            bsatn::to_writer(&mut writer, &gen_cols).unwrap();
-            let row_len = writer.w1.finish();
+            // Insert the row into the DB and write back the generated column values.
+            let row_len = env.instance_env.insert(table_id.into(), row)?;
             u32::try_from(row_len).unwrap().write_to(mem, row_len_ptr)?;
             Ok(())
         })

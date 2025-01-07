@@ -5,7 +5,7 @@ use std::collections::btree_map::{BTreeMap, Entry, Range};
 /// A "unique map" that relates a `K` to a `V`.
 ///
 /// (This is just a `BTreeMap<K, V>`) with a slightly modified interface.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct UniqueMap<K, V> {
     /// The map is backed by a `BTreeMap` for relating a key to a value.
     map: BTreeMap<K, V>,

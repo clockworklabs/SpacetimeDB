@@ -230,7 +230,7 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
 mod tests {
     use super::*;
     use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::execution_context::Workload;
     use crate::sql::execute::tests::run_for_testing;
     use spacetimedb_lib::error::{ResultTest, TestError};
@@ -355,7 +355,7 @@ mod tests {
         ];
 
         db.with_auto_commit(Workload::ForTests, |tx| {
-            db.insert(tx, table_id, row.clone())?;
+            insert(&db, tx, table_id, &row.clone())?;
             Ok::<(), TestError>(())
         })?;
 
