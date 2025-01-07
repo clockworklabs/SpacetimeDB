@@ -15,6 +15,9 @@ namespace SpacetimeDB
         public readonly Random Rng;
         public readonly DateTimeOffset Timestamp;
 
+        // We need this property to be non-static for parity with client SDK.
+        public Identity Identity => Internal.IReducerContext.GetIdentity();
+
         internal ReducerContext(
             Identity identity,
             Address? address,
