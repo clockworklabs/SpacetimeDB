@@ -162,6 +162,7 @@ public readonly partial struct Unit
     }
 }
 
+[StructLayout(LayoutKind.Sequential)]
 public readonly record struct Address
 {
     private readonly U128 value;
@@ -236,6 +237,7 @@ public readonly record struct Address
     public override string ToString() => Util.ToHexBigEndian(value);
 }
 
+[StructLayout(LayoutKind.Sequential)]
 public readonly record struct Identity
 {
     private readonly U256 value;

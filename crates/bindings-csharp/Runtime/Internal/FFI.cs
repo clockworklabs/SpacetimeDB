@@ -270,4 +270,16 @@ internal static partial class FFI
         [In] byte[] args,
         uint args_len
     );
+
+    // Note #1: our Identity type has the same layout as a fixed-size 32-byte little-endian buffer,
+    // so instead of working around C#'s lack of fixed-size arrays, we just accept the pointer to
+    // the Identity itself. In this regard it's different from Rust declaration, but is still
+    // functionally the same.
+    // Note #2: we can't use `LibraryImport` here due to https://github.com/dotnet/runtime/issues/98616
+    // which prevents source-generated PInvokes from working with types from other assemblies, and
+    // `Identity` lives in another assembly (`BSATN.Runtime`). Luckily, `DllImport` is enough here.
+#pragma warning disable SYSLIB1054 // Suppress "Use 'LibraryImportAttribute' instead of 'DllImportAttribute'" warning.
+    [DllImport(StdbNamespace)]
+    public static extern void identity(out Identity dest);
+#pragma warning restore SYSLIB1054
 }
