@@ -484,7 +484,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     ) -> u32;
     /// Inserts `row`, encoded in BSATN, into the table identified by `table_id`.
     ///
-    /// Returns the list of columns where values were replaced with generated ones
+    /// Returns the list of columns with sequence-trigger values that were replaced with generated ones
     /// and a reference to the row as a [`RowRef`].
     ///
     /// Generated columns are columns with an auto-inc sequence

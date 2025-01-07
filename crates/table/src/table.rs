@@ -97,6 +97,9 @@ pub(crate) struct TableInner {
     row_layout: RowTypeLayout,
     /// A [`StaticLayout`] for fast BFLATN <-> BSATN conversion,
     /// if the [`RowTypeLayout`] has a static BSATN length and layout.
+    ///
+    /// A [`StaticBsatnValidator`] is also included.
+    /// It's used to validate BSATN-encoded rows before converting to BFLATN.
     static_layout: Option<(StaticLayout, StaticBsatnValidator)>,
     /// The visitor program for `row_layout`.
     ///
@@ -321,6 +324,9 @@ impl Table {
     ///
     /// This is also useful when we need to insert a row temporarily to get back a `RowPointer`.
     /// In this case, A call to this method should be followed by a call to [`delete_internal_skip_pointer_map`].
+    ///
+    /// When `row` is not valid BSATN at the table's row type,
+    /// an error is returned and there will be nothing for the caller to revert.
     pub fn insert_physically_bsatn<'a>(
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
@@ -399,7 +405,7 @@ impl Table {
                 // as `row_ty` was derived from the same schema as `seq` is part of.
                 let elem_ty = unsafe { &row_ty.elements.get_unchecked(seq.col_pos.idx()) };
                 // SAFETY:
-                // - `elem_ty` appears as a column in th row type.
+                // - `elem_ty` appears as a column in the row type.
                 // - `AlgebraicValue` is compatible with all types.
                 let val = unsafe { AlgebraicValue::unchecked_read_column(row_ref, elem_ty) };
                 val.is_numeric_zero()
@@ -415,9 +421,10 @@ impl Table {
     /// # Safety
     ///
     /// - `self.is_row_present(row)` must hold.
-    /// - `col_id` must be a valid column, with a primiive type, of the row type.
+    /// - `col_id` must be a valid column, with a primitive integer type, of the row type.
     pub unsafe fn write_gen_val_to_col(&mut self, col_id: ColId, ptr: RowPointer, seq_val: i128) {
         let row_ty = self.inner.row_layout.product();
+        // SAFETY: Caller promised that `col_id` was a valid column.
         let elem_ty = unsafe { row_ty.elements.get_unchecked(col_id.idx()) };
         let AlgebraicTypeLayout::Primitive(col_typ) = elem_ty.ty else {
             // SAFETY: Columns with sequences must be primitive types.
@@ -445,13 +452,14 @@ impl Table {
             PrimitiveType::U128 => write(fixed_buf, elem_ty.offset, (seq_val as u128).to_le_bytes()),
             PrimitiveType::I256 => write(fixed_buf, elem_ty.offset, (i256::from(seq_val)).to_le_bytes()),
             PrimitiveType::U256 => write(fixed_buf, elem_ty.offset, (u256::from(seq_val as u128)).to_le_bytes()),
-            PrimitiveType::Bool | PrimitiveType::F32 | PrimitiveType::F64 => {
-                panic!("`{:?}` is not a sequence integer type", &elem_ty.ty)
-            }
+            // SAFETY: Columns with sequences must be integer types.
+            PrimitiveType::Bool | PrimitiveType::F32 | PrimitiveType::F64 => unsafe { unreachable_unchecked() },
         }
     }
 
     /// Performs all the checks necessary after having fully decided on a rows contents.
+    ///
+    /// This includes inserting the row into any applicable indices and/or the pointer map.
     ///
     /// On `Ok(_)`, statistics of the table are also updated,
     /// and the `ptr` still points to a valid row, and otherwise not.

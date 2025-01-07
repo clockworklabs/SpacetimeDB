@@ -1178,6 +1178,11 @@ impl MutTxId {
 
     /// Insert a row, encoded in BSATN, into a table.
     ///
+    /// Zero placeholders, i.e., sequence triggers,
+    /// in auto-inc columns in the new row will be replaced with generated values
+    /// if and only if `GENERATE` is true.
+    /// This method is called with `GENERATE` false when updating the `st_sequence` system table.
+    ///
     /// Requires:
     /// - `TableId` must refer to a valid table for the database at `database_address`.
     /// - `row` must be a valid row for the table at `table_id`.
