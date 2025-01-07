@@ -37,8 +37,8 @@ internal static class Util
 #if NET5_0_OR_GREATER
         return Convert.ToHexString(bytes);
 #else
-        /// Similar to `Convert.ToHexString`, but that method is not available in .NET Standard
-        /// which we need to target for Unity support.
+        // Similar to `Convert.ToHexString`, but that method is not available in .NET Standard
+        // which we need to target for Unity support.
         return BitConverter.ToString(bytes.ToArray()).Replace("-", "");
 #endif
     }
@@ -95,17 +95,6 @@ internal static class Util
         return bytes;
 #endif
     }
-
-    /// <summary>
-    /// Read a value from a "big-endian" hex string.
-    /// All hex strings we expect to encounter are big-endian (store most significant bytes
-    /// at low indexes) so this should always be used.
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <param name="hex"></param>
-    /// <returns></returns>
-    public static T ReadFromBigEndianHexString<T>(string hex)
-        where T : struct => Read<T>(StringToByteArray(hex), littleEndian: false);
 }
 
 public readonly partial struct Unit
@@ -168,11 +157,7 @@ public readonly record struct Address
     /// </summary>
     /// <param name="hex"></param>
     /// <returns></returns>
-    public static Address? FromHexString(string hex)
-    {
-        var addr = Util.ReadFromBigEndianHexString<Address>(hex);
-        return addr == default ? null : addr;
-    }
+    public static Address? FromHexString(string hex) => FromBigEndian(Util.StringToByteArray(hex));
 
     public static Address Random()
     {
@@ -242,8 +227,7 @@ public readonly record struct Identity
     /// </summary>
     /// <param name="hex"></param>
     /// <returns></returns>
-    public static Identity FromHexString(string hex) =>
-        Util.ReadFromBigEndianHexString<Identity>(hex);
+    public static Identity FromHexString(string hex) => FromBigEndian(Util.StringToByteArray(hex));
 
     public readonly struct BSATN : IReadWrite<Identity>
     {
