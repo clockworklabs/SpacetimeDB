@@ -49,6 +49,8 @@ var nav = {
         page('Rust Reference', 'sdks/rust', 'sdks/rust/index.md'),
         page('C# Quickstart', 'sdks/c-sharp/quickstart', 'sdks/c-sharp/quickstart.md'),
         page('C# Reference', 'sdks/c-sharp', 'sdks/c-sharp/index.md'),
+        section('How To'),
+        page('Incremental Migrations', 'how-to/incremental-migrations', 'how-to/incremental-migrations.md'),
         section('WebAssembly ABI'),
         page('Module ABI Reference', 'webassembly-abi', 'webassembly-abi/index.md'),
         section('HTTP API'),
