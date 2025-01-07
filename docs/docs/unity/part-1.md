@@ -1,6 +1,6 @@
 # Unity Tutorial - Basic Multiplayer - Part 1 - Setup
 
-![UnityTutorial-HeroImage](/images/unity-tutorial/UnityTutorial-HeroImage.JPG)
+![Unity Tutorial Hero Image](./hero-image.png)
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
