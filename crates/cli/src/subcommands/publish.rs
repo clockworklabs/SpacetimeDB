@@ -193,9 +193,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         PublishResult::TldNotRegistered { domain } => {
             return Err(anyhow::anyhow!(
                 "The top level domain that you provided is not registered.\n\
-            This tld is not yet registered to any identity. You can register this domain with the following command:\n\
-            \n\
-            \tspacetime dns register-tld {}\n",
+            This tld is not yet registered to any identity: {}",
                 domain.tld()
             ));
         }
