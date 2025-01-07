@@ -65,6 +65,11 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
                 .to_string();
             module.send(json).await.unwrap();
 
+            let json =
+                r#"{"CallReducer": {"reducer": "log_module_identity", "args": "[]", "request_id": 4, "flags": 0 }}"#
+                    .to_string();
+            module.send(json).await.unwrap();
+
             assert_eq!(
                 read_logs(&module).await,
                 [
@@ -73,7 +78,10 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
                     "Hello, World!",
                     "Cersei has age 31 >= 30",
                 ]
+                .into_iter()
                 .map(String::from)
+                .chain(std::iter::once(format!("Module identity: {}", module.db_identity)))
+                .collect::<Vec<_>>()
             );
         },
     );
