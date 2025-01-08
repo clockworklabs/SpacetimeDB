@@ -63,6 +63,47 @@ Don't make promises, even weak ones, about what we plan to do in the future, wit
 
 If your document needs to describe a feature that isn't implemented yet, either rewrite to not depend on that feature, or just say that it's a "current limitation" without elaborating further. Include a workaround if there is one.
 
+## Key vocabulary
+
+There are a small number of key terms that we need to use consistently throughout the documentation.
+
+The most important distinction is the following:
+
+- **Database**: This is the active, running entity that lives on a host. It contains a bunch of tables, like a normal database. It also has extra features: clients can connect to it directly and remotely call its stored procedures.
+- **Module**: This is the source code that a developer uses to specify a database. It is a combination of a database schema and a collection of stored procedures. Once built and published, it becomes part of the running database.
+
+A database **has** a module; the module **is part of** the database.
+
+The module does NOT run on a host. The **database** runs on a host.
+
+A client does NOT "connect to the module". A client **connects to the database**.
+
+This distinction is subtle but important. People know what databases are, and we should reinforce that SpacetimeDB is a database. "Module" is a quirky bit of vocabulary we use to refer to collections of stored procedures. A RUNNING APPLICATION IS NOT CALLED A MODULE.
+
+Other key vocabulary:
+- (SpacetimeDB) **Host**: the application that hosts **databases**. It is multi-tenant and can host many **databases** at once.
+- **Client**: any application that connects to a **database**.
+- **End user**: anybody using a **client**.
+- **Database developer**: the person who maintains a **database**.
+    - DO NOT refer to database developers as "users" in documentation.
+      Sometimes we colloquially refer to them as "our users" internally,
+      but it is clearer to use the term "database developers" in public.
+- **Table**: A set of typed, labeled **rows**. Each row stores data for a number of **columns**. Used to store data in a **database**.
+- **Column**: you know what this is.
+- **Row**: you know what this is.
+    - DO NOT refer to rows as "tuples", because the term overlaps confusingly with "tuple types" in module languages.
+      We reserve the word "tuple" to refer to elements of these types.
+- **Reducer**: A stored procedure that can be called remotely in order to update a **database**.
+    - Confusingly, reducers do not actually "reduce" data in the sense of querying and compressing it to return a result.
+      But it is too late to change it. C'est la vie.
+- **Connection**: a connection between a **client** and a **database**. Receives an **Address**. A single connection may open multiple **subscriptions**.
+- **Subscription**: an active query that mirrors data from the database to a **client**.
+- **Address**: identifier for an active connection.
+- **Identity**: A combination of an issuing OpenID Connect provider and an Identity Token issued by that provider. Globally unique and public.
+    - Technically, "Identity" should be called "Identifier", but it is too late to change it.
+    - A particular **end user** may have multiple Identities issued by different providers.
+    - Each **database** also has an **Identity**.
+
 ## Reference pages
 
 Reference pages are where intermediate users will look to get a view of all of the capabilities of a tool, and where experienced users will check for specific information on behaviors of the types, functions, methods &c they're using. Each user-facing component in the SpacetimeDB ecosystem should have a reference page.
