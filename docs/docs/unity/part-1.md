@@ -1,12 +1,12 @@
-# Unity Tutorial - Basic Multiplayer - Part 1 - Setup
+# Unity Tutorial - Blackholio - Part 1 - Setup
 
-![Unity Tutorial Hero Image](./hero-image.png)
+![Unity Tutorial Hero Image](./part-1-hero-image.png)
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
 ## Prepare Project Structure
 
-This project is separated into two sub-projects;
+This project is separated into two subdirectories;
 
 1. Server (module) code
 2. Client code
@@ -14,8 +14,8 @@ This project is separated into two sub-projects;
 First, we'll create a project root directory (you can choose the name):
 
 ```bash
-mkdir SpacetimeDBUnityTutorial
-cd SpacetimeDBUnityTutorial
+mkdir blackholio
+cd blackholio
 ```
 
 We'll start by populating the client directory.
@@ -28,92 +28,56 @@ In this section, we will guide you through the process of setting up a Unity Pro
 
 Open Unity and create a new project by selecting "New" from the Unity Hub or going to **File -> New Project**.
 
-![UnityHub-NewProject](/images/unity-tutorial/UnityHub-NewProject.JPG)
+![Unity Hub New Project](./part-1-unity-hub-new-project.jpg)
 
-**⚠️ Important: Ensure `3D (URP)` is selected** to properly render the materials in the scene!
+**⚠️ Important: Choose the `Universal 2D`** template to select a template which uses the Unity Universal Render Pipeline.
 
-For Project Name use `client`. For Project Location make sure that you use your `SpacetimeDBUnityTutorial` directory. This is the directory that we created in a previous step.
+For `Project Name` use `client`. For Project Location make sure that you use your `blackholio` directory. This is the directory that we created in a previous step.
 
-![UnityHub-3DURP](/images/unity-tutorial/UnityHub-3DURP.JPG)
+![Universal 2D Template](./part-1-universal-2d-template.png)
 
 Click "Create" to generate the blank project.
 
-### Step 2: Adding Required Packages
+### Import the SpacetimeDB Unity SDK
 
-To work with SpacetimeDB and ensure compatibility, we need to add some essential packages to our Unity project. Follow these steps:
-
-1. Open the Unity Package Manager by going to **Window -> Package Manager**.
-2. In the Package Manager window, select the "Unity Registry" tab to view unity packages.
-3. Search for and install the following package:
-   - **Input System**: Enables the use of Unity's new Input system used by this project.
-
-![PackageManager-InputSystem](/images/unity-tutorial/PackageManager-InputSystem.JPG)
-
-4. You may need to restart the Unity Editor to switch to the new Input system.
-
-![PackageManager-Restart](/images/unity-tutorial/PackageManager-Restart.JPG)
-
-### Step 3: Importing the Tutorial Package
-
-In this step, we will import the provided Unity tutorial package that contains the basic single-player game setup. Follow these instructions:
-
-1. Download the tutorial package from the releases page on GitHub: [https://github.com/clockworklabs/SpacetimeDBUnityTutorial/releases/latest](https://github.com/clockworklabs/SpacetimeDBUnityTutorial/releases/latest)
-2. In Unity, go to **Assets -> Import Package -> Custom Package**.
-
-![Unity-ImportCustomPackageB](/images/unity-tutorial/Unity-ImportCustomPackageB.JPG)
-
-3. Browse and select the downloaded tutorial package file.
-4. Unity will prompt you with an import settings dialog. Ensure that all the files are selected and click "Import" to import the package into your project.
-5. At this point in the project, you shouldn't have any errors.
-
-![Unity-ImportCustomPackage2](/images/unity-tutorial/Unity-ImportCustomPackage2.JPG)
-
-### Step 4: Running the Project
-
-Now that we have everything set up, let's run the project and see it in action:
-
-1. Open the scene named "Main" in the Scenes folder provided in the project hierarchy by double-clicking it.
-
-![Unity-OpenSceneMain](/images/unity-tutorial/Unity-OpenSceneMain.JPG)
-
-**NOTE:** When you open the scene you may get a message saying you need to import TMP Essentials. When it appears, click the "Import TMP Essentials" button.
-
-🧹 Clear any false-positive TMPro errors that may show.
-
-![Unity Import TMP Essentials](/images/unity-tutorial/Unity-ImportTMPEssentials.JPG)
-
-2. Press the **Play** button located at the top of the Unity Editor.
-
-![Unity-Play](/images/unity-tutorial/Unity-Play.JPG)
-
-3. Enter any name and click "Continue"
-
-4. You should see a character loaded in the scene, and you can use the keyboard or mouse controls to move the character around.
-
-Congratulations! You have successfully set up the basic single-player game project. In the next section, we will start integrating SpacetimeDB functionality to enable multiplayer features.
-
-## Writing our SpacetimeDB Server Module
-
-At this point you should have the single player game working. In your CLI, your current working directory should be within your `SpacetimeDBUnityTutorial` directory that we created in a previous step.
-
-### Create the Module
-
-1. It is important that you already have the SpacetimeDB CLI tool [installed](/install).
-
-2. Run SpacetimeDB locally using the installed CLI. In a **new** terminal or command window, run the following command:
+Add the SpacetimeDB Unity Package using the Package Manager. Open the Package Manager window by clicking on Window -> Package Manager. Click on the + button in the top left corner of the window and select "Add package from git URL". Enter the following URL and click Add.
 
 ```bash
-spacetime start
+https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git
 ```
 
-💡 Standalone mode will run in the foreground.
-💡 Below examples Rust language, [but you may also use C#](../modules/c-sharp).
+The SpacetimeDB Unity SDK provides helpful tools for integrating SpacetimeDB into Unity, including a network manager which will synchronize your Unity client's state with your SpacetimeDB database in accordance with your subscription queries.
 
-### The Entity Component Systems (ECS)
+### Create the GameManager Script
 
-Before we continue to creating the server module, it's important to understand the basics of the ECS. This is a game development architecture that separates game objects into components for better flexibility and performance. You can read more about the ECS design pattern [here](https://en.wikipedia.org/wiki/Entity_component_system).
+1. In the Unity **Project** window, go to the folder where you want to keep your scripts (e.g., `Scripts` folder).
+2. **Right-click** in the folder, then select **Create > C# Script**.
+3. Name the script `GameManager`.
 
-We chose ECS for this example project because it promotes scalability, modularity, and efficient data management, making it ideal for building multiplayer games with SpacetimeDB.
+The `GameManager` script will be where we will put the high level initialization and coordination logic for our game.
+
+### Add the GameManager to the Scene
+
+1. **Create an Empty GameObject**:
+   - Go to the top menu and select **GameObject > Create Empty**.
+   - Alternatively, right-click in the **Hierarchy** window and select **Create Empty**.
+
+2. **Rename the GameObject**:
+   - In the **Inspector**, click on the GameObject’s name at the top and rename it to `GameManager`.
+
+3. **Attach the GameManager Script**:
+   - Drag and drop the `GameManager` script from the **Project** window onto the `GameManager` GameObject in the **Hierarchy** window.
+   - Alternatively, in the **Inspector**, click **Add Component**, search for `GameManager`, and select it.
+
+### Add the SpacetimeDB Network Manager
+
+The `SpacetimeDBNetworkManager` is a simple script which hooks into the Unity `Update` loop in order to drive the sending and processing of messages between your client and SpacetimeDB. You don't have to interact with this script, but it must be present on a single GameObject which is in the scene in order for it to facilitate the processing of messages.
+
+When you build a new connection to SpacetimeDB, that connection will be added to and managed by the `SpacetimeDBNetworkManager` automatically.
+
+Click on the `GameManager` object in the scene and click **Add Component**. Search for and select the `SpacetimeDBNetworkManager` to add it to your `GameManager` object.
+
+Our Unity project is all set up! If you press play, it will show a blank screen, but it should start the game without any errors. Now we're ready to get started on our SpacetimeDB server module, so we have something to connect to!
 
 ### Create the Server Module
 
