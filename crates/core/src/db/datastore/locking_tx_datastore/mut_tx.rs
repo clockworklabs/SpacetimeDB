@@ -553,12 +553,7 @@ impl MutTxId {
             .committed_state_write_lock
             .get_table_and_index_type(table_id, col_list)
         {
-            if self
-                .tx_state
-                .index_id_map_removals
-                .as_ref()
-                .is_some_and(|s| s.contains(&index_id))
-            {
+            if self.tx_state_removed_index(index_id) {
                 return None;
             }
             key_ty
@@ -567,6 +562,17 @@ impl MutTxId {
         };
 
         Some((table_id, col_list, key_ty))
+    }
+
+    /// Returns whether the index with `index_id` was removed in this transaction.
+    ///
+    /// An index removed in the tx state but existing physically in the committed state
+    /// does not exist semantically.
+    fn tx_state_removed_index(&self, index_id: IndexId) -> bool {
+        self.tx_state
+            .index_id_map_removals
+            .as_ref()
+            .is_some_and(|s| s.contains(&index_id))
     }
 
     /// Decode the bounds for a btree scan for an index typed at `key_type`.
