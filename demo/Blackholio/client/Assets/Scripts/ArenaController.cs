@@ -9,6 +9,7 @@ public class ArenaController : MonoBehaviour
     public SpriteRenderer backgroundInstance;
     public float borderThickness = 10;
     public Material borderMaterial;
+    public ParallaxBackground starBackgroundPrefab;
 
     private void Start()
     {
