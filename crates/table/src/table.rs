@@ -915,6 +915,35 @@ impl Table {
         self.compute_row_count(blob_store);
         self.rebuild_pointer_map(blob_store);
     }
+
+    /// Returns the number of rows resident in this table.
+    ///
+    /// This scales in runtime with the number of pages in the table.
+    pub fn num_rows(&self) -> u64 {
+        self.pages().iter().map(|page| page.num_rows() as u64).sum()
+    }
+
+    /// Returns the number of bytes used by rows resident in this table.
+    ///
+    /// This includes data bytes, padding bytes and some overhead bytes,
+    /// as described in the docs for [`Page::bytes_used_by_rows`],
+    /// but *does not* include:
+    ///
+    /// - Unallocated space within pages.
+    /// - Per-page overhead (e.g. page headers).
+    /// - Table overhead (e.g. the [`RowTypeLayout`], [`PointerMap`], [`Schema`] &c).
+    /// - Indices.
+    // TODO(energy): count memory usage by indices.
+    /// - Large blobs in the [`BlobStore`].
+    ///
+    /// Of these, the caller should inspect the blob store in order to account for memory usage by large blobs,
+    /// but we intend to eat all the other overheads when billing.
+    pub fn bytes_used_by_rows(&self) -> u64 {
+        self.pages()
+            .iter()
+            .map(|page| page.bytes_used_by_rows(self.inner.row_layout.size()) as u64)
+            .sum()
+    }
 }
 
 /// A reference to a single row within a table.

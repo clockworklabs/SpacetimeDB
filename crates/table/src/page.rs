@@ -1136,6 +1136,25 @@ impl Page {
         self.header.var.num_granules as usize
     }
 
+    /// Returns the number of bytes used by rows stored in this page.
+    ///
+    /// This is necessarily an overestimate of live data bytes, as it includes:
+    /// - Padding bytes within the fixed-length portion of the rows.
+    /// - [`VarLenRef`] pointer-like portions of rows.
+    /// - Unused trailing parts of partially-filled [`VarLenGranule`]s.
+    /// - [`VarLenGranule`]s used to store [`BlobHash`]es.
+    ///
+    /// Note that large blobs themselves are not counted.
+    /// The caller should obtain a count of the bytes used by large blobs
+    /// from the [`super::blob_store::BlobStore`].
+    ///
+    /// This method runs in constant time.
+    pub fn bytes_used_by_rows(&self, fixed_row_size: Size) -> usize {
+        let fixed_row_bytes = self.num_rows() * fixed_row_size.len();
+        let var_len_bytes = self.num_var_len_granules() * VarLenGranule::SIZE.len();
+        fixed_row_bytes + var_len_bytes
+    }
+
     /// Returns the range of row data starting at `offset` and lasting `size` bytes.
     pub fn get_row_data(&self, row: PageOffset, size: Size) -> &Bytes {
         &self.row_data[row.range(size)]
