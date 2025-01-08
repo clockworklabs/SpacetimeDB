@@ -38,9 +38,9 @@ public class CircleActor : EntityActor
         GetComponentInChildren<TMPro.TextMeshProUGUI>().text = owner.Username;
     }
 
-	public override void OnDelete()
+	public override void OnDelete(EventContext context)
 	{
-		base.OnDelete();
+		base.OnDelete(context);
         Owner.OnCircleDeleted(this);
 	}
 }

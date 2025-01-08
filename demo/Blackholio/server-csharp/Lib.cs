@@ -27,7 +27,7 @@ public static partial class Module
 		public uint id;
 		public ulong world_size;
 	}
-
+	
 	[Table(Name = "entity", Public = true)]
 	public partial struct Entity
 	{
@@ -36,7 +36,7 @@ public static partial class Module
 		public DbVector2 position;
 		public uint mass;
 	}
-
+	
 	[Table(Name = "circle", Public = true)]
 	[Index(Name = "player_id", BTree = ["player_id"])]
 	public partial struct Circle
@@ -48,7 +48,7 @@ public static partial class Module
 		public float speed;
 		public long last_split_time;
 	}
-
+	
 	[Table(Name = "player", Public = true)]
 	public partial struct Player
 	{
@@ -58,7 +58,7 @@ public static partial class Module
 		public uint player_id;
 		public string name;
 	}
-
+	
 	[Table(Name = "logged_out_player", Public = true)]
 	public partial struct LoggedOutPlayer
 	{
@@ -66,7 +66,7 @@ public static partial class Module
 		public Identity identity;
 		public Player player;
 	}
-
+	
 	[Table(Name = "food", Public = true)]
 	public partial struct Food
 	{
@@ -81,7 +81,7 @@ public static partial class Module
 		public ulong scheduled_id;
 		public ScheduleAt scheduled_at;
 	}
-
+	
 	[Table(Name = "spawn_food_timer", Scheduled = nameof(SpawnFood))]
 	public partial struct SpawnFoodTimer
 	{
@@ -89,7 +89,7 @@ public static partial class Module
 		public ulong scheduled_id;
 		public ScheduleAt scheduled_at;
 	}
-
+	
 	[Table(Name = "circle_decay_timer", Scheduled = nameof(CircleDecay))]
 	public partial struct CircleDecayTimer
 	{
@@ -97,7 +97,7 @@ public static partial class Module
 		public ulong scheduled_id;
 		public ScheduleAt scheduled_at;
 	}
-
+	
 	[Table(Name = "circle_recombine_timer", Scheduled = nameof(CircleRecombine))]
 	public partial struct CircleRecombineTimer
 	{
@@ -106,6 +106,16 @@ public static partial class Module
 		public ScheduleAt scheduled_at;
 		public uint player_id;
 	}
+
+	[Table(Name = "consume_entity_timer", Scheduled = nameof(consume_entity))]
+	public partial struct ConsumeEntityTimer
+	{
+		[AutoInc]
+		public ulong scheduled_id;
+		public ScheduleAt scheduled_at;
+		public uint consumed_entity_id;
+		public uint consumer_entity_id;
+}
 	#endregion
 
 
@@ -368,14 +378,6 @@ public static partial class Module
 
 				if (IsOverlapping(circle_entity, other_entity))
 				{
-					// Check to see if we're overlapping with food
-					if (ctx.Db.food.entity_id.Find(other_entity.entity_id).HasValue)
-					{
-						ctx.Db.entity.entity_id.Delete(other_entity.entity_id);
-						ctx.Db.food.entity_id.Delete(other_entity.entity_id);
-						circle_entity.mass += other_entity.mass;
-					}
-
 					// Check to see if we're overlapping with another circle owned by another player
 					var other_circle = ctx.Db.circle.entity_id.Find(other_entity.entity_id);
 					if (other_circle.HasValue)
@@ -385,20 +387,42 @@ public static partial class Module
 							var mass_ratio = (float)other_entity.mass / circle_entity.mass;
 							if (mass_ratio < MINIMUM_SAFE_MASS_RATIO)
 							{
-								ctx.Db.entity.entity_id.Delete(other_entity.entity_id);
-								ctx.Db.circle.entity_id.Delete(other_entity.entity_id);
-								circle_entity.mass += other_entity.mass;
+								schedule_consume_entity(ctx, circle_entity.entity_id, other_entity.entity_id);
 							}
 						}
+					}
+					else
+					{
+						schedule_consume_entity(ctx, circle_entity.entity_id, other_entity.entity_id);
 					}
 				}
 			}
 			//span.End();
-
-			ctx.Db.entity.entity_id.Update(circle_entity);
 		}
 
 		//span.End();
+	}
+
+	private static void schedule_consume_entity(ReducerContext ctx, uint consumer_id, uint consumed_id)
+	{
+		ctx.Db.consume_entity_timer.Insert(new ConsumeEntityTimer {
+			scheduled_at = new ScheduleAt.Time(DateTimeOffset.Now),
+			consumer_entity_id = consumer_id,
+			consumed_entity_id = consumed_id,
+		});
+	}
+
+	[Reducer]
+	public static void ConsumeEntity(ReducerContext ctx, ConsumeEntityTimer request)
+	{
+		var consumed_entity = ctx.Db.entity.entity_id.Find(request.consumed_entity_id) ?? throw new Exception("Consumed entity doesn't exist");
+		var consumer_entity = ctx.Db.entity.entity_id.Find(request.consumer_entity_id) ?? throw new Exception("Consumer entity doesn't exist");
+
+		consumer_entity.mass += consumed_entity.mass;
+		ctx.Db.food.entity_id.Delete(consumed_entity.entity_id);
+		ctx.Db.circle.entity_id.Delete(consumed_entity.entity_id);
+		ctx.Db.entity.entity_id.Delete(consumed_entity.entity_id);
+		ctx.Db.entity.entity_id.Update(consumer_entity);
 	}
 
 	[Reducer]
@@ -514,17 +538,11 @@ public static partial class Module
 			return; //No circles to recombine
 		}
 
-		var total_mass = (uint)recombining_entities.Sum(e => e.mass);
-		var center_of_mass = CalculateCenterOfMass(recombining_entities);
-		recombining_entities[0].mass = total_mass;
-		recombining_entities[0].position = center_of_mass;
+		var base_entity_id = recombining_entities[0].entity_id;
 
-		ctx.Db.entity.entity_id.Update(recombining_entities[0]);
 		for (int i = 1; i < recombining_entities.Length; i++)
 		{
-			var entity_id = recombining_entities[i].entity_id;
-			ctx.Db.entity.entity_id.Delete(entity_id);
-			ctx.Db.circle.entity_id.Delete(entity_id);
+			schedule_consume_entity(ctx, base_entity_id, recombining_entities[i].entity_id);
 		}
 	}
 	#endregion
@@ -532,6 +550,6 @@ public static partial class Module
 
 
 	public static float Range(this Random rng, float min, float max) => rng.NextSingle() * (max - min) + min;
-
+	
 	public static uint Range(this Random rng, uint min, uint max) => (uint)rng.NextInt64(min, max);
 }

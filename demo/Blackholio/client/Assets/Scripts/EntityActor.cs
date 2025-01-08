@@ -1,5 +1,6 @@
 ﻿using SpacetimeDB.Types;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using Unity.VisualScripting;
@@ -43,8 +44,35 @@ public abstract class EntityActor : MonoBehaviour
 		TargetScale = MassToScale(newVal.Mass);
 	}
 
-	public virtual void OnDelete()
+	public virtual void OnDelete(EventContext context)
 	{
+		if (context.Event is SpacetimeDB.Event<Reducer>.Reducer reducer &&
+			reducer.ReducerEvent.Reducer is Reducer.ConsumeEntity consume)
+		{
+			var consumerId = consume.Request.ConsumerEntityId;
+			if (EntityManager.Actors.TryGetValue(consumerId, out var consumerEntity))
+			{
+				StartCoroutine(DespawnCoroutine(consumerEntity.transform));
+				return;
+			}
+		}
+
+		Destroy(gameObject);
+	}
+
+	public IEnumerator DespawnCoroutine(Transform targetTransform)
+	{
+		const float DESPAWN_TIME = 0.2f;
+		var startPosition = transform.position;
+		var startScale = transform.localScale;
+		GetComponent<SpriteRenderer>().sortingOrder++; //Render consumed food above the circle that's consuming it
+		for (float time = Time.deltaTime; time < DESPAWN_TIME; time += Time.deltaTime)
+		{
+			float t = time / DESPAWN_TIME;
+			transform.position = Vector3.Lerp(startPosition, targetTransform.position, t);
+			transform.localScale = Vector3.Lerp(startScale, Vector3.zero, t);
+			yield return null;
+		}
 		Destroy(gameObject);
 	}
 
