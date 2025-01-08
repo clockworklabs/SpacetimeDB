@@ -6,13 +6,13 @@ use crate::replica_context::ReplicaContext;
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
-use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
     buffer::{CountWriter, TeeWriter},
     AlgebraicValue, ProductValue,
 };
-use spacetimedb_table::table::UniqueConstraintViolation;
+use spacetimedb_table::table::{RowRef, UniqueConstraintViolation};
 use std::ops::DerefMut;
 use std::sync::Arc;
 
@@ -117,6 +117,25 @@ impl InstanceEnv {
         );
     }
 
+    /// Project `cols` in `row_ref` encoded in BSATN to `buffer`
+    /// and return the full length of the BSATN.
+    ///
+    /// Assumes that the full encoding of `cols` will fit in `buffer`.
+    fn project_cols_bsatn(buffer: &mut [u8], cols: ColList, row_ref: RowRef<'_>) -> usize {
+        // We get back a col-list with the columns with generated values.
+        // Write those back to `buffer` and then the encoded length to `row_len`.
+        let counter = CountWriter::default();
+        let mut writer = TeeWriter::new(counter, buffer);
+        for col in cols.iter() {
+            // Read the column value to AV and then serialize.
+            let val = row_ref
+                .read_col::<AlgebraicValue>(col)
+                .expect("reading col as AV never panics");
+            bsatn::to_writer(&mut writer, &val).unwrap();
+        }
+        writer.w1.finish()
+    }
+
     pub fn insert(&self, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
@@ -124,19 +143,7 @@ impl InstanceEnv {
         let (row_len, row_ptr) = stdb
             .insert(tx, table_id, buffer)
             .map(|(gen_cols, row_ref)| {
-                // We get back a col-list with the columns with generated values.
-                // Write those back to `buffer` and then the encoded length to `row_len`.
-                let counter = CountWriter::default();
-                let mut writer = TeeWriter::new(counter, buffer);
-                for col in gen_cols.iter() {
-                    // Read the column value to AV and then serialize.
-                    let val = row_ref
-                        .read_col::<AlgebraicValue>(col)
-                        .expect("reading col as AV never panics");
-                    bsatn::to_writer(&mut writer, &val).unwrap();
-                }
-                let row_len = writer.w1.finish();
-
+                let row_len = Self::project_cols_bsatn(buffer, gen_cols, row_ref);
                 (row_len, row_ref.pointer())
             })
             .inspect_err(|e| match e {
