@@ -117,31 +117,10 @@
             
              (This might be wrong if the string is printed after, say, a unicode right-to-left marker.
              But, well, what can you do.)
-            
-             Similar to `Convert.ToHexString`, but that method is not available in .NET Standard
-             which we need to target for Unity support.
              </summary>
              <typeparam name="T"></typeparam>
              <param name="val"></param>
              <returns></returns>
-        </member>
-        <member name="M:SpacetimeDB.Util.ReadLittleEndian``1(System.ReadOnlySpan{System.Byte})">
-            <summary>
-            Read a value of type T from the passed span, which is assumed to be in little-endian format.
-            The behavior of this method is independent of the endianness of the host, unlike MemoryMarshal.Read.
-            </summary>
-            <typeparam name="T"></typeparam>
-            <param name="source"></param>
-            <returns></returns>
-        </member>
-        <member name="M:SpacetimeDB.Util.ReadBigEndian``1(System.ReadOnlySpan{System.Byte})">
-            <summary>
-            Read a value of type T from the passed span, which is assumed to be in big-endian format.
-            The behavior of this method is independent of the endianness of the host, unlike MemoryMarshal.Read.
-            </summary>
-            <typeparam name="T"></typeparam>
-            <param name="source"></param>
-            <returns></returns>
         </member>
         <member name="M:SpacetimeDB.Util.Read``1(System.ReadOnlySpan{System.Byte},System.Boolean)">
             <summary>
@@ -151,36 +130,7 @@
             </summary>
             <typeparam name="T"></typeparam>
             <param name="source"></param>
-            <param name="reverse"></param>
-            <returns></returns>
-        </member>
-        <member name="M:SpacetimeDB.Util.AsBytesLittleEndian``1(``0)">
-            <summary>
-            Convert the passed T to a little-endian byte array.
-            The behavior of this method is independent of the endianness of the host, unlike MemoryMarshal.Read.
-            </summary>
-            <typeparam name="T"></typeparam>
-            <param name="source"></param>
-            <returns></returns>
-        </member>
-        <member name="M:SpacetimeDB.Util.AsBytesBigEndian``1(``0)">
-            <summary>
-            Convert the passed T to a big-endian byte array.
-            The behavior of this method is independent of the endianness of the host, unlike MemoryMarshal.Read.
-            </summary>
-            <typeparam name="T"></typeparam>
-            <param name="source"></param>
-            <returns></returns>
-        </member>
-        <member name="M:SpacetimeDB.Util.AsBytes``1(``0,System.Boolean)">
-            <summary>
-            Convert the passed T to a byte array, and optionally reverse the array before returning it.
-            If the output is not reversed, it will have the native endianness of the host system.
-            (The endianness of the host system can be checked via System.BitConverter.IsLittleEndian.)
-            </summary>
-            <typeparam name="T"></typeparam>
-            <param name="source"></param>
-            <param name="reverse"></param>
+            <param name="littleEndian"></param>
             <returns></returns>
         </member>
         <member name="M:SpacetimeDB.Util.StringToByteArray(System.String)">
@@ -190,17 +140,7 @@
             <param name="hex"></param>
             <returns></returns>
         </member>
-        <member name="M:SpacetimeDB.Util.ReadFromBigEndianHexString``1(System.String)">
-            <summary>
-            Read a value from a "big-endian" hex string.
-            All hex strings we expect to encounter are big-endian (store most significant bytes
-            at low indexes) so this should always be used.
-            </summary>
-            <typeparam name="T"></typeparam>
-            <param name="hex"></param>
-            <returns></returns>
-        </member>
-        <member name="M:SpacetimeDB.Address.From(System.Byte[])">
+        <member name="M:SpacetimeDB.Address.From(System.ReadOnlySpan{System.Byte})">
              <summary>
              Create an Address from a LITTLE-ENDIAN byte array.
             
@@ -211,7 +151,7 @@
              </summary>
              <param name="bytes"></param>
         </member>
-        <member name="M:SpacetimeDB.Address.FromBigEndian(System.Byte[])">
+        <member name="M:SpacetimeDB.Address.FromBigEndian(System.ReadOnlySpan{System.Byte})">
              <summary>
              Create an Address from a BIG-ENDIAN byte array.
             
@@ -233,7 +173,7 @@
             <param name="hex"></param>
             <returns></returns>
         </member>
-        <member name="M:SpacetimeDB.Identity.#ctor(System.Byte[])">
+        <member name="M:SpacetimeDB.Identity.#ctor(System.ReadOnlySpan{System.Byte})">
              <summary>
              Create an Identity from a LITTLE-ENDIAN byte array.
             
@@ -242,7 +182,7 @@
              </summary>
              <param name="bytes"></param>
         </member>
-        <member name="M:SpacetimeDB.Identity.From(System.Byte[])">
+        <member name="M:SpacetimeDB.Identity.From(System.ReadOnlySpan{System.Byte})">
              <summary>
              Create an Identity from a LITTLE-ENDIAN byte array.
             
@@ -251,7 +191,7 @@
              </summary>
              <param name="bytes"></param>
         </member>
-        <member name="M:SpacetimeDB.Identity.FromBigEndian(System.Byte[])">
+        <member name="M:SpacetimeDB.Identity.FromBigEndian(System.ReadOnlySpan{System.Byte})">
              <summary>
              Create an Identity from a BIG-ENDIAN byte array.
             
