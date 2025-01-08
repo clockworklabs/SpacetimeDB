@@ -17,54 +17,71 @@ public class ConnectionManager : MonoBehaviour
     public static Identity LocalIdentity { get; private set; }
     public static DbConnection Conn { get; private set; }
 
-
-
     private void Start()
     {
         Instance = this;
         Application.targetFrameRate = 60;
 
-        // Now that we’ve registered all our callbacks, lets connect to spacetimedb
-        var builder = DbConnection.Builder().OnConnect((_conn, identity, token) => {
-            // Called when we connect to SpacetimeDB and receive our client identity
-            Debug.Log("Connected.");
-            AuthToken.SaveToken(token);
-            LocalIdentity = identity;
-
-			EntityManager.Initialize(Conn);
-            OnConnected?.Invoke();
-
-            // Request all tables
-            Conn.SubscriptionBuilder().OnApplied(ctx =>
-            {
-                Debug.Log("Subscription applied!");
-                OnSubscriptionApplied?.Invoke();
-            }).Subscribe("SELECT * FROM *");
-        }).OnConnectError((ex) =>
-        {
-            // Called when we have an error connecting to SpacetimeDB
-            Debug.LogError($"Connection error: {ex}");
-        }).OnDisconnect((_conn, ex) =>
-        {
-            // Called when we are disconnected from SpacetimeDB
-            Debug.Log("Disconnected.");
-            if (ex != null)
-            {
-                Debug.LogException(ex);
-            }
-        }).WithUri(SERVER_URL)
+        // In order to build a connection to SpacetimeDB we need to register
+        // our callbacks and specify a SpacetimeDB server URI and module name.
+        var builder = DbConnection.Builder()
+            .OnConnect(HandleConnect)
+            .OnConnectError(HandleConnectError)
+            .OnDisconnect(HandleDisconnect)
+            .WithUri(SERVER_URL)
             .WithModuleName(MODULE_NAME);
+
+        // If the user has a SpacetimeDB auth token stored in the Unity PlayerPrefs,
+        // we can use it to authenticate the connection.
 		if (PlayerPrefs.HasKey(AuthToken.GetTokenKey()))
         {
 			builder = builder.WithCredentials((default, AuthToken.Token));
         }
+
+        // Building the connection will establish a connection to the SpacetimeDB
+        // server.
         Conn = builder.Build();
 
+    /* BEGIN: not in tutorial */
 #pragma warning disable CS0612 // Type or member is obsolete
 		Conn.onUnhandledReducerError += InstanceOnUnhandledReducerError;
 #pragma warning restore CS0612 // Type or member is obsolete
+    /* END: not in tutorial */
     }
 
+    // Called when we connect to SpacetimeDB and receive our client identity
+    void HandleConnect(DbConnection _conn, Identity identity, string token)
+    {
+        Debug.Log("Connected.");
+        AuthToken.SaveToken(token);
+        LocalIdentity = identity;
+
+        EntityManager.Initialize(Conn);
+        OnConnected?.Invoke();
+
+        // Request all tables
+        Conn.SubscriptionBuilder().OnApplied(ctx =>
+        {
+            Debug.Log("Subscription applied!");
+            OnSubscriptionApplied?.Invoke();
+        }).Subscribe("SELECT * FROM *");
+    }
+
+    void HandleConnectError(Exception ex)
+    {
+        Debug.LogError($"Connection error: {ex}");
+    }
+
+    void HandleDisconnect(DbConnection _conn, Exception ex)
+    {
+        Debug.Log("Disconnected.");
+        if (ex != null)
+        {
+            Debug.LogException(ex);
+        }
+    }
+
+    /* BEGIN: not in tutorial */
     private void InstanceOnUnhandledReducerError(ReducerEvent<Reducer> reducerEvent)
     {
         Debug.LogError($"There was an error!\r\n{(reducerEvent.Status as Status.Failed)?.Failed_}");
@@ -80,4 +97,5 @@ public class ConnectionManager : MonoBehaviour
     {
         return Conn != null && Conn.IsActive;
     }
+    /* END: not in tutorial */
 }
