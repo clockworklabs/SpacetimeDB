@@ -114,6 +114,17 @@ pub struct CircleRecombineTimer {
     player_id: u32,
 }
 
+#[spacetimedb::table(name = consume_entity_timer, scheduled(consume_entity))]
+pub struct ConsumeEntityTimer {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    #[scheduled_at]
+    scheduled_at: spacetimedb::ScheduleAt,
+    consumed_entity_id: u32,
+    consumer_entity_id: u32,
+}
+
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) -> Result<(), String> {
     log::info!("Initializing...");
@@ -414,46 +425,79 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
     let entities: HashMap<u32, Entity> = ctx.db.entity().iter().map(|e| (e.entity_id, e)).collect();
     for circle in ctx.db.circle().iter() {
         // let span = spacetimedb::time_span::Span::start("collisions");
-        let mut circle_entity = entities.get(&circle.entity_id).unwrap().clone();
+        let circle_entity = entities.get(&circle.entity_id).unwrap();
         for (_, other_entity) in entities.iter() {
             if other_entity.entity_id == circle_entity.entity_id {
                 continue;
             }
 
             if is_overlapping(&circle_entity, &other_entity) {
-                // Check to see if we're overlapping with food
-                if ctx
-                    .db
-                    .food()
-                    .entity_id()
-                    .find(&other_entity.entity_id)
-                    .is_some()
-                {
-                    ctx.db.entity().entity_id().delete(&other_entity.entity_id);
-                    ctx.db.food().entity_id().delete(&other_entity.entity_id);
-                    circle_entity.mass += other_entity.mass;
-                }
-
-                // Check to see if we're overlapping with another circle owned by another player
                 let other_circle = ctx.db.circle().entity_id().find(&other_entity.entity_id);
                 if let Some(other_circle) = other_circle {
                     if other_circle.player_id != circle.player_id {
                         let mass_ratio = other_entity.mass as f32 / circle_entity.mass as f32;
                         if mass_ratio < MINIMUM_SAFE_MASS_RATIO {
-                            ctx.db.entity().entity_id().delete(&other_entity.entity_id);
-                            ctx.db.circle().entity_id().delete(&other_entity.entity_id);
-                            circle_entity.mass += other_entity.mass;
+                            schedule_consume_entity(
+                                ctx,
+                                circle_entity.entity_id,
+                                other_entity.entity_id,
+                            );
                         }
                     }
+                } else {
+                    schedule_consume_entity(ctx, circle_entity.entity_id, other_entity.entity_id);
                 }
             }
         }
         // span.end();
-
-        ctx.db.entity().entity_id().update(circle_entity);
     }
 
     //span.end();
+    Ok(())
+}
+
+fn schedule_consume_entity(ctx: &ReducerContext, consumer_id: u32, consumed_id: u32) {
+    ctx.db.consume_entity_timer().insert(ConsumeEntityTimer {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Time(Timestamp::now().into_micros_since_epoch()),
+        consumer_entity_id: consumer_id,
+        consumed_entity_id: consumed_id,
+    });
+}
+
+#[spacetimedb::reducer]
+pub fn consume_entity(ctx: &ReducerContext, request: ConsumeEntityTimer) -> Result<(), String> {
+    let consumed_entity = ctx
+        .db
+        .entity()
+        .entity_id()
+        .find(&request.consumed_entity_id);
+    let consumer_entity = ctx
+        .db
+        .entity()
+        .entity_id()
+        .find(&request.consumer_entity_id);
+    if consumed_entity.is_none() {
+        return Err("Consumed entity doesn't exist".into());
+    }
+    if consumer_entity.is_none() {
+        return Err("Consumer entity doesn't exist".into());
+    }
+    let consumed_entity = consumed_entity.unwrap();
+    let mut consumer_entity = consumer_entity.unwrap();
+
+    consumer_entity.mass += consumed_entity.mass;
+    ctx.db.food().entity_id().delete(&consumed_entity.entity_id);
+    ctx.db
+        .circle()
+        .entity_id()
+        .delete(&consumed_entity.entity_id);
+    ctx.db
+        .entity()
+        .entity_id()
+        .delete(&consumed_entity.entity_id);
+    ctx.db.entity().entity_id().update(consumer_entity);
+
     Ok(())
 }
 
@@ -591,7 +635,7 @@ pub fn circle_recombine(ctx: &ReducerContext, timer: CircleRecombineTimer) -> Re
         .player_id()
         .filter(&timer.player_id)
         .collect();
-    let mut recombining_entities: Vec<Entity> = circles
+    let recombining_entities: Vec<Entity> = circles
         .iter()
         .filter(|c| {
             ctx.timestamp
@@ -606,19 +650,9 @@ pub fn circle_recombine(ctx: &ReducerContext, timer: CircleRecombineTimer) -> Re
         return Ok(()); //No circles to recombine
     }
 
-    let total_mass = recombining_entities.iter().map(|e| e.mass).sum();
-    let center_of_mass = calculate_center_of_mass(&recombining_entities);
-    recombining_entities[0].mass = total_mass;
-    recombining_entities[0].position = center_of_mass;
-
-    ctx.db
-        .entity()
-        .entity_id()
-        .update(recombining_entities[0].clone());
+    let base_entity_id = recombining_entities[0].entity_id;
     for i in 1..recombining_entities.len() {
-        let entity_id = recombining_entities[i].entity_id;
-        ctx.db.entity().entity_id().delete(&entity_id);
-        ctx.db.circle().entity_id().delete(&entity_id);
+        schedule_consume_entity(ctx, base_entity_id, recombining_entities[i].entity_id);
     }
 
     Ok(())

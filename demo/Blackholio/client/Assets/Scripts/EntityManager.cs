@@ -36,7 +36,7 @@ public static class EntityManager
 	{
 		if (Actors.Remove(oldEntity.EntityId, out var actor))
 		{
-			actor.OnDelete();
+			actor.OnDelete(context);
 		}
 	}
 
