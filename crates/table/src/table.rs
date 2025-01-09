@@ -65,7 +65,13 @@ pub struct Table {
     /// Page manager and row layout grouped together, for `RowRef` purposes.
     inner: TableInner,
     /// Maps `RowHash -> [RowPointer]` where a [`RowPointer`] points into `pages`.
-    /// If `None`, there is a unique index that implies the set semantic constraint.
+    /// A [`PointerMap`] is effectively a specialized unique index on all the columns.
+    ///
+    /// In tables without any other unique constraints,
+    /// the pointer map is used to enforce set semantics,
+    /// i.e. to prevent duplicate rows.
+    /// If `self.indexes` contains at least one unique index,
+    /// duplicate rows are impossible regardless, so this will be `None`.
     pointer_map: Option<PointerMap>,
     /// The indices associated with a set of columns of the table.
     /// The order is used here to keep the smallest indices first.
@@ -214,7 +220,7 @@ impl Table {
         let static_layout = StaticLayout::for_row_type(&row_layout).map(|sl| (sl, static_bsatn_validator(&row_layout)));
         let visitor_prog = row_type_visitor(&row_layout);
         // By default, we start off with an empty pointer map,
-        // which is removed when the first unique index is.
+        // which is removed when the first unique index is added.
         let pm = Some(PointerMap::default());
         Self::new_with_indexes_capacity(schema, row_layout, static_layout, visitor_prog, squashed_offset, pm)
     }
@@ -243,7 +249,11 @@ impl Table {
     /// Insert a `row` into this table, storing its large var-len members in the `blob_store`.
     ///
     /// On success, returns the hash, if any, of the newly-inserted row,
-    /// and a `RowRef` referring to the row.
+    /// and a `RowRef` referring to the row.s
+    /// The hash is only computed if this table has a [`PointerMap`],
+    /// i.e., does not have any unique indexes.
+    /// If the table has unique indexes,
+    /// the returned `Option<RowHash>` will be `None`.
     ///
     /// When a row equal to `row` already exists in `self`,
     /// returns `InsertError::Duplicate(existing_row_pointer)`,
@@ -552,7 +562,7 @@ impl Table {
             .indexes
             .iter()
             .find(|(_, idx)| idx.is_unique())
-            .expect("there is at least one unique index");
+            .expect("there should be at least one unique index");
         // Project the needle row to the columns of the index, and then seek.
         // As this is a unique index, there are 0-1 rows for this key.
         let needle_row = unsafe { needle_table.get_row_ref_unchecked(needle_bs, needle_ptr) };
@@ -560,10 +570,17 @@ impl Table {
         idx.seek(&key).next()
     }
 
-    /// Insert row identified by `ptr` into the pointer map.
+    /// Insert the row identified by `ptr` into the table's [`PointerMap`],
+    /// if the table has one.
+    ///
     /// This checks for set semantic violations.
-    /// Deletes the row and returns an error if there were any violations.
-    /// Returns the row hash computed, if any.
+    /// If a set semantic conflict (i.e. duplicate row) is detected by the pointer map,
+    /// the row will be deleted and an error returned.
+    /// If the pointer map confirms that the row was unique, returns the `RowHash` of that row.
+    ///
+    /// If this table has no `PointerMap`, returns `Ok(None)`.
+    /// In that case, the row's uniqueness will be verified by [`Self::insert_into_indices`],
+    /// as this table has at least one unique index.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
     /// Post-condition: If this method returns `Ok(_)`, the row still exists.
@@ -600,25 +617,31 @@ impl Table {
         // add it to the `pointer_map`.
         self.pointer_map
             .as_mut()
-            .expect("pointer map was confirmed to exist previously")
+            .expect("pointer map should exist, as it did previously")
             .insert(hash, ptr);
 
         Ok(Some(hash))
     }
 
-    /// Returns the list of pointers for this `row_hash`.
+    /// Returns the list of pointers to rows which hash to `row_hash`.
+    ///
+    /// If `self` does not have a [`PointerMap`], always returns the empty slice.
     fn pointers_for(&self, row_hash: RowHash) -> &[RowPointer] {
         self.pointer_map.as_ref().map_or(&[], |pm| pm.pointers_for(row_hash))
     }
 
-    /// Finds the [`RowPointer`] to the row in `target_table` equal, if any,
-    /// by [`eq_row_in_page`], to the row at `needle_ptr` within `needle_table`,
-    /// using the pointer map.
+    /// Using the [`PointerMap`],
+    /// searches `target_table` for a row equal to `needle_table[needle_ptr]`.
+    ///
+    /// Rows are compared for equality by [`eq_row_in_page`].
     ///
     /// Lazily computes the row hash if needed and returns it, or uses the one provided, if any.
     ///
     /// Used for detecting set-semantic duplicates when inserting
-    /// but does nothing if there is a unique constraint that implies a set-semantic constraint.
+    /// into tables without any unique constraints.
+    ///
+    /// Does nothing and always returns `None` if `target_table` does not have a `PointerMap`,
+    /// in which case the caller should instead use [`Self::find_same_row_via_unique_index`].
     ///
     /// Note that we don't need the blob store to compute equality,
     /// as content-addressing means it's sufficient to compare the hashes of large blobs.
@@ -672,8 +695,10 @@ impl Table {
         (row_hash, row_ptr)
     }
 
-    /// Finds the [`RowPointer`] to the row in `target_table` equal, if any,
-    /// to the row at `needle_ptr` within `needle_table`.
+    /// Searches `target_table` for a row equal to `needle_table[needle_ptr]`,
+    /// and returns the [`RowPointer`] to that row in `target_table`, if it exists.
+    ///
+    /// Searches using the [`PointerMap`] or a unique index, as appropriate for the table.
     ///
     /// Lazily computes the row hash if needed and returns it, or uses the one provided, if any.
     ///
@@ -857,7 +882,11 @@ impl Table {
         // Find the row equal to the passed-in `row`.
         // This uses one of two approaches.
         // Either there is a pointer map, so we use that,
-        // or, here is at least one unique index, so we use the smallest one.
+        // or, here is at least one unique index, so we use the one with the smallest `ColList`.
+        // TODO(centril): this isn't what we actually want.
+        //    The `Ord for ColList` impl will say that `[0, 1] < [1]`.
+        //    However, we'd prefer the index with the simplest type.
+        //
         // SAFETY:
         // - `self` trivially has the same `row_layout` as `self`.
         // - We just inserted `temp_ptr`, so it's valid.
