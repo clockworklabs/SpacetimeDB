@@ -258,6 +258,10 @@ uuid = { version = "1.2.1", features = ["v4"] }
 walkdir = "2.2.5"
 wasmbin = "0.6"
 webbrowser = "1.0.2"
+zstd = { version = "0.13.2", features = ["arrays", "zdict_builder"] }
+snap = "1.1.1"
+lz4_flex = { version = "0.11" }
+
 xdg = "2.5"
 
 # Vendor the openssl we rely on, rather than depend on a

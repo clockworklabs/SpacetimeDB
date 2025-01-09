@@ -11,6 +11,9 @@ anyhow.workspace = true
 thiserror.workspace = true
 hex.workspace = true
 rand.workspace = true
+zstd.workspace = true
+snap.workspace = true
+lz4_flex.workspace = true
 
 [dev-dependencies]
 tempdir.workspace = true

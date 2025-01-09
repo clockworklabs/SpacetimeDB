@@ -1,17 +1,29 @@
 use criterion::async_executor::AsyncExecutor;
 use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 use mimalloc::MiMalloc;
+use spacetimedb::db::datastore::traits::IsolationLevel;
+use spacetimedb::db::relational_db::tests_utils::{make_snapshot, TestDB};
+use spacetimedb::db::relational_db::{open_snapshot_repo, RelationalDB};
+use spacetimedb::execution_context::Workload;
 use spacetimedb_bench::{
     database::BenchDatabase,
     schemas::{create_sequential, u32_u64_str, u32_u64_u64, u64_u64_u32, BenchTable, RandomTable},
     spacetime_module::SpacetimeModule,
 };
+use spacetimedb_fs_utils::compression::CompressType;
 use spacetimedb_lib::sats::{self, bsatn};
-use spacetimedb_lib::{bsatn::ToBsatn as _, ProductValue};
+use spacetimedb_lib::{bsatn::ToBsatn as _, Identity, ProductValue};
+use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
+use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_snapshot::{SnapshotRepository, SnapshotSize};
 use spacetimedb_testing::modules::{Csharp, ModuleLanguage, Rust};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::time::Duration;
+use tempdir::TempDir;
+use spacetimedb_sats::bsatn::to_vec;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -30,6 +42,9 @@ fn custom_benchmarks<L: ModuleLanguage>(c: &mut Criterion) {
 
     custom_module_benchmarks(&db, c);
     custom_db_benchmarks(&db, c);
+
+    snapshot(c);
+    snapshot_existing(c);
 }
 
 fn custom_module_benchmarks<L: ModuleLanguage>(m: &SpacetimeModule<L>, c: &mut Criterion) {
@@ -184,6 +199,124 @@ fn serialize_benchmarks<
         b.iter(|| serde_json::from_str::<Vec<T>>(&data_json).unwrap());
     });
     // TODO: deserialize benches (needs a typespace)
+}
+
+fn _snapshot<F>(c: &mut Criterion, name: &str, dir: SnapshotsPath, take: F)
+where
+    F: Fn(&SnapshotRepository),
+{
+    let mut disk_size = None;
+    let mut size_on_disk = |size: SnapshotSize| {
+        if size.compressed_type == CompressType::None {
+            // Save the size of the last snapshot to use as throughput
+            disk_size = Some(size.clone());
+        }
+        dbg!(&size);
+    };
+
+    let algos = [
+        CompressType::None,
+        CompressType::Zstd,
+        CompressType::Lz4,
+        CompressType::Snap,
+    ];
+    // For show the size of the last snapshot
+    for compress in &algos {
+        let (_, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, *compress, true);
+        take(&repo);
+        size_on_disk(repo.size_on_disk_last_snapshot().unwrap());
+    }
+
+    let mut group = c.benchmark_group(&format!("special/snapshot/{name}]"));
+    group.throughput(criterion::Throughput::Bytes(disk_size.unwrap().total_size));
+    group.sample_size(50);
+    group.warm_up_time(Duration::from_secs(10));
+    group.sampling_mode(SamplingMode::Flat);
+
+    for compress in &algos {
+        group.bench_function(format!("save_compression_{compress:?}"), |b| {
+            b.iter_batched(
+                || {},
+                |_| {
+                    let (_, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, *compress, true);
+                    take(&repo);
+                },
+                criterion::BatchSize::NumIterations(100),
+            );
+        });
+
+        group.bench_function(format!("open_compression_{compress:?}"), |b| {
+            b.iter_batched(
+                || {},
+                |_| {
+                    let (_, repo) = make_snapshot(dir.clone(), Identity::ZERO, 0, *compress, false);
+                    let last = repo.latest_snapshot().unwrap().unwrap();
+                    repo.read_snapshot(last).unwrap()
+                },
+                criterion::BatchSize::NumIterations(100),
+            );
+        });
+    }
+}
+
+fn snapshot(c: &mut Criterion) {
+    let db = TestDB::in_memory().unwrap();
+
+    let dir = db.path().snapshots();
+    dir.create().unwrap();
+    let mut t1 = TableSchema::from_product_type(u32_u64_str::product_type());
+    t1.table_name = "u32_u64_str".into();
+
+    let mut t2 = TableSchema::from_product_type(u32_u64_u64::product_type());
+    t2.table_name = "u32_u64_u64".into();
+
+    let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+    let t1 = db.create_table(&mut tx, t1).unwrap();
+    let t2 = db.create_table(&mut tx, t2).unwrap();
+
+    let data = create_sequential::<u32_u64_str>(0xdeadbeef, 1_000, 100);
+    for row in data.into_iter() {
+        db.insert(&mut tx, t1, &to_vec(&row.into_product_value()).unwrap()).unwrap();
+    }
+
+    let data = create_sequential::<u32_u64_u64>(0xdeadbeef, 1_000, 100);
+    for row in data.into_iter() {
+        db.insert(&mut tx, t2, &to_vec(&row.into_product_value()).unwrap()).unwrap();
+    }
+    db.commit_tx(tx).unwrap();
+
+    _snapshot(c, "synthetic", dir, |repo| {
+        db.take_snapshot(repo).unwrap();
+    });
+}
+
+// For test compression into an existing database.
+// Must supply the path to the database and the identity of the replica using the `ENV`:
+// - `SNAPSHOT` the path to the database, like `/tmp/db/replicas/.../8/database`
+// - `IDENTITY` the identity in hex format
+fn snapshot_existing(c: &mut Criterion) {
+    let path_db = if let Ok(path) = std::env::var("SNAPSHOT") {
+        PathBuf::from(path)
+    } else {
+        eprintln!("SNAPSHOT must be set to a valid path to the database");
+        return;
+    };
+    let identity =
+        Identity::from_hex(std::env::var("IDENTITY").expect("IDENTITY must be set to a valid hex identity")).unwrap();
+
+    let path = ReplicaDir::from_path_unchecked(path_db);
+    let repo = open_snapshot_repo(path.snapshots(), Identity::ZERO, 0).unwrap();
+
+    let last = repo.latest_snapshot().unwrap();
+    let db = RelationalDB::restore_from_snapshot_or_bootstrap(identity, Some(&repo), last).unwrap();
+
+    let out = TempDir::new("snapshots").unwrap();
+
+    let dir = SnapshotsPath::from_path_unchecked(out.path());
+
+    _snapshot(c, "existing", dir, |repo| {
+        db.take_snapshot(repo).unwrap();
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);

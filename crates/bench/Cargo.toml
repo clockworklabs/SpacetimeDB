@@ -36,9 +36,11 @@ spacetimedb-paths.workspace = true
 spacetimedb-primitives = { path = "../primitives" }
 spacetimedb-sats = { path = "../sats" }
 spacetimedb-schema = { workspace = true, features = ["test"] }
+spacetimedb-snapshot = { path = "../snapshot" }
 spacetimedb-standalone = { path = "../standalone" }
 spacetimedb-table = { path = "../table" }
 spacetimedb-testing = { path = "../testing" }
+spacetimedb-fs-utils.workspace = true
 
 anyhow.workspace = true
 anymap.workspace = true
