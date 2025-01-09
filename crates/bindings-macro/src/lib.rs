@@ -11,7 +11,6 @@ use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::time::Duration;
-use syn::parse::Parse;
 use syn::ItemFn;
 use syn::{parse::ParseStream, Attribute};
 use util::{cvt_attr, ok_or_compile_error};
@@ -169,17 +168,11 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 fn derive_table_helper_attr() -> Attribute {
     let source = quote!(#[derive(spacetimedb::__TableHelper)]);
 
-    struct Wrapper(Attribute);
-
-    impl Parse for Wrapper {
-        fn parse(input: ParseStream) -> syn::Result<Self> {
-            input
-                .call(Attribute::parse_outer)
-                .map(|attrs| Wrapper(attrs.into_iter().next().unwrap()))
-        }
-    }
-
-    syn::parse2::<Wrapper>(source).unwrap().0
+    syn::parse::Parser::parse2(Attribute::parse_outer, source)
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap()
 }
 
 /// Generates code for treating this struct type as a table.
