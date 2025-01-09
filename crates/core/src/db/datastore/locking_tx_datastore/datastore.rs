@@ -7,7 +7,7 @@ use super::{
     tx_state::TxState,
 };
 use crate::db::datastore::locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx};
-use crate::execution_context::Workload;
+use crate::execution_context::{ReducerContext, Workload};
 use crate::{
     db::{
         datastore::{
@@ -29,6 +29,7 @@ use crate::{
 use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
+use spacetimedb_commitlog::payload::txdata::{Inputs, Outputs};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::db::auth::StAccess;
@@ -150,6 +151,14 @@ impl Locking {
             database_identity: self.database_identity,
             committed_state: self.committed_state.clone(),
             progress: RefCell::new(progress),
+        }
+    }
+
+    /// Returns a [`ReplayStat`] that can be used to replay a [`spacetimedb_durability::History`]
+    pub fn replay_stat<F: FnMut(u64), Step: Fn(ReplayStep<'_>)>(&self, progress: F, step: Step) -> ReplayStat<F, Step> {
+        ReplayStat {
+            replay: self.replay(progress),
+            step,
         }
     }
 
@@ -324,15 +333,15 @@ impl Tx for Locking {
 
 impl TxDatastore for Locking {
     type IterTx<'a>
-        = IterTx<'a>
+    = IterTx<'a>
     where
         Self: 'a;
     type IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>>
-        = IterByColRangeTx<'a, R>
+    = IterByColRangeTx<'a, R>
     where
         Self: 'a;
     type IterByColEqTx<'a, 'r>
-        = IterByColRangeTx<'a, &'r AlgebraicValue>
+    = IterByColRangeTx<'a, &'r AlgebraicValue>
     where
         Self: 'a;
 
@@ -958,6 +967,233 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
     fn visit_tx_end(&mut self) -> std::result::Result<(), Self::Error> {
         self.committed_state.next_tx_offset += 1;
 
+        Ok(())
+    }
+}
+
+pub struct ReplayStat<F, Step> {
+    replay: Replay<F>,
+    step: Step,
+}
+
+impl<F, Step> ReplayStat<F, Step> {
+    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitorStats<F, Step>) -> T) -> T {
+        let mut committed_state = self.replay.committed_state.write_arc();
+        let mut visitor = ReplayVisitorStats {
+            replay_visitor: ReplayVisitor {
+                database_identity: &self.replay.database_identity,
+                committed_state: &mut committed_state,
+                progress: &mut *self.replay.progress.borrow_mut(),
+            },
+            step: &self.step,
+            duration: Instant::now(),
+        };
+        f(&mut visitor)
+    }
+
+    pub fn next_tx_offset(&self) -> u64 {
+        self.replay.next_tx_offset()
+    }
+}
+
+impl<F: FnMut(u64), Step: Fn(ReplayStep<'_>)> spacetimedb_commitlog::Decoder for ReplayStat<F, Step> {
+    type Record = Txdata<ProductValue>;
+    type Error = txdata::DecoderError<ReplayError>;
+
+    fn decode_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Record, Self::Error> {
+        self.using_visitor(|visitor| txdata::decode_record_fn(visitor, version, tx_offset, reader))
+    }
+
+    fn consume_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        self.using_visitor(|visitor| txdata::consume_record_fn(visitor, version, tx_offset, reader))
+    }
+
+    fn skip_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        _tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        self.using_visitor(|visitor| txdata::skip_record_fn(visitor, version, reader))
+    }
+}
+
+impl<F: FnMut(u64), Step: Fn(ReplayStep<'_>)> spacetimedb_commitlog::Decoder for &mut ReplayStat<F, Step> {
+    type Record = txdata::Txdata<ProductValue>;
+    type Error = txdata::DecoderError<ReplayError>;
+
+    #[inline]
+    fn decode_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Record, Self::Error> {
+        spacetimedb_commitlog::Decoder::decode_record(&**self, version, tx_offset, reader)
+    }
+
+    fn skip_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        spacetimedb_commitlog::Decoder::skip_record(&**self, version, tx_offset, reader)
+    }
+}
+
+/// Record the `Tx` offset and duration for each step.
+#[derive(Copy, Clone)]
+pub struct TxStep {
+    /// The offset of the transaction.
+    pub offset: u64,
+    /// The duration of the step.
+    pub duration: Duration,
+}
+
+impl TxStep {
+    fn new(instant: Instant, offset: u64) -> Self {
+        Self {
+            offset,
+            duration: instant.elapsed(),
+        }
+    }
+}
+
+pub enum ReplayStep<'a> {
+    Insert(&'a TableSchema, &'a ProductValue, TxStep),
+    Delete(&'a Arc<TableSchema>, &'a ProductValue, TxStep),
+    Skip(&'a Arc<TableSchema>, TxStep),
+    Truncate(&'a Arc<TableSchema>, TxStep),
+    TxStart(TxStep),
+    TxEnd(TxStep),
+    Inputs(ReducerContext, TxStep),
+    Outputs(&'a str, TxStep),
+}
+
+/// A visitor that records the replay steps, *after* applying them to the inner [`ReplayVisitor`].
+pub struct ReplayVisitorStats<'a, F, Step> {
+    replay_visitor: ReplayVisitor<'a, F>,
+    step: &'a Step,
+    duration: Instant,
+}
+
+impl<'a, F, Step> ReplayVisitorStats<'a, F, Step> {
+    fn schema_for_table(&self, table_id: TableId) -> Result<Arc<TableSchema>> {
+        self.replay_visitor.committed_state.schema_for_table(table_id)
+    }
+
+    fn next_tx_offset(&self) -> u64 {
+        self.replay_visitor.committed_state.next_tx_offset
+    }
+}
+
+impl<F, Step> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitorStats<'_, F, Step>
+where
+    F: FnMut(u64),
+    Step: Fn(ReplayStep<'_>),
+{
+    type Error = ReplayError;
+    type Row = ProductValue;
+
+    fn visit_insert<'a, R: BufReader<'a>>(
+        &mut self,
+        table_id: TableId,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Row, Self::Error> {
+        let schema = self.schema_for_table(table_id)?;
+
+        let instant = Instant::now();
+        let row = self.replay_visitor.visit_insert(table_id, reader)?;
+        (self.step)(ReplayStep::Insert(
+            &schema,
+            &row,
+            TxStep::new(instant, self.next_tx_offset()),
+        ));
+        Ok(row)
+    }
+
+    fn visit_delete<'a, R: BufReader<'a>>(
+        &mut self,
+        table_id: TableId,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Row, Self::Error> {
+        let schema = self.schema_for_table(table_id)?;
+
+        let instant = Instant::now();
+        let row = self.replay_visitor.visit_delete(table_id, reader)?;
+        (self.step)(ReplayStep::Delete(
+            &schema,
+            &row,
+            TxStep::new(instant, self.next_tx_offset()),
+        ));
+        Ok(row)
+    }
+
+    fn skip_row<'a, R: BufReader<'a>>(
+        &mut self,
+        table_id: TableId,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        let schema = self.schema_for_table(table_id)?;
+
+        let instant = Instant::now();
+        self.replay_visitor.skip_row(table_id, reader)?;
+        (self.step)(ReplayStep::Skip(&schema, TxStep::new(instant, self.next_tx_offset())));
+        Ok(())
+    }
+
+    fn visit_truncate(&mut self, table_id: TableId) -> std::result::Result<(), Self::Error> {
+        let schema = self.schema_for_table(table_id)?;
+
+        let instant = Instant::now();
+        self.replay_visitor.visit_truncate(table_id)?;
+        (self.step)(ReplayStep::Truncate(
+            &schema,
+            TxStep::new(instant, self.next_tx_offset()),
+        ));
+        Ok(())
+    }
+
+    fn visit_tx_start(&mut self, offset: u64) -> std::result::Result<(), Self::Error> {
+        let instant = Instant::now();
+        self.duration = instant;
+        self.replay_visitor.visit_tx_start(offset)?;
+        (self.step)(ReplayStep::TxStart(TxStep::new(instant, self.next_tx_offset())));
+        Ok(())
+    }
+
+    fn visit_tx_end(&mut self) -> std::result::Result<(), Self::Error> {
+        self.replay_visitor.visit_tx_end()?;
+        (self.step)(ReplayStep::TxEnd(TxStep::new(self.duration, self.next_tx_offset())));
+        Ok(())
+    }
+
+    fn visit_inputs(&mut self, inputs: &Inputs) -> std::result::Result<(), Self::Error> {
+        let instant = Instant::now();
+        self.replay_visitor.visit_inputs(inputs)?;
+        let reducer = ReducerContext::try_from(inputs)?;
+        (self.step)(ReplayStep::Inputs(reducer, TxStep::new(instant, self.next_tx_offset())));
+        Ok(())
+    }
+
+    fn visit_outputs(&mut self, outputs: &Outputs) -> std::result::Result<(), Self::Error> {
+        let instant = Instant::now();
+        self.replay_visitor.visit_outputs(outputs)?;
+        (self.step)(ReplayStep::Outputs(
+            outputs.reducer_output.as_str(),
+            TxStep::new(instant, self.next_tx_offset()),
+        ));
         Ok(())
     }
 }
