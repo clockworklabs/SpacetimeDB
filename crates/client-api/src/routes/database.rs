@@ -658,7 +658,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         .await
         .map_err(log_and_500)?;
 
-    if let Some(updated) = maybe_updated {
+    let update_summary = if let Some(updated) = maybe_updated {
         match updated {
             UpdateDatabaseResult::AutoMigrateError(errs) => {
                 return Err((StatusCode::BAD_REQUEST, format!("Database update rejected: {errs}")).into());
@@ -670,14 +670,18 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
                 )
                     .into());
             }
-            UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {}
+            UpdateDatabaseResult::NoUpdateNeeded => None,
+            UpdateDatabaseResult::UpdatePerformed(summary) => Some(summary),
         }
-    }
+    } else {
+        None
+    };
 
     Ok(axum::Json(PublishResult::Success {
         domain: db_name.as_ref().map(ToString::to_string),
         database_identity,
         op,
+        update_summary,
     }))
 }
 

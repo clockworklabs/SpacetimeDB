@@ -7,7 +7,7 @@ use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::ColSet;
-use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
+use spacetimedb_schema::auto_migrate::{AutoMigratePlan, MigratePlan};
 use spacetimedb_schema::def::TableDef;
 use spacetimedb_schema::schema::{IndexSchema, Schema, SequenceSchema, TableSchema};
 use std::sync::Arc;
@@ -45,20 +45,8 @@ pub fn update_database(
     }
 
     match plan {
-        MigratePlan::Manual(plan) => manual_migrate_database(stdb, tx, plan, system_logger, existing_tables),
         MigratePlan::Auto(plan) => auto_migrate_database(stdb, tx, auth_ctx, plan, system_logger, existing_tables),
     }
-}
-
-/// Manually migrate a database.
-fn manual_migrate_database(
-    _stdb: &RelationalDB,
-    _tx: &mut MutTxId,
-    _plan: ManualMigratePlan,
-    _system_logger: &SystemLogger,
-    _existing_tables: Vec<Arc<TableSchema>>,
-) -> anyhow::Result<()> {
-    unimplemented!("Manual database migrations are not yet implemented")
 }
 
 /// Automatically migrate a database.

@@ -426,7 +426,7 @@ impl HostController {
                 )
                 .await?;
             match update_result {
-                UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {
+                UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed(_) => {
                     *guard = Some(host);
                 }
                 UpdateDatabaseResult::AutoMigrateError(e) => {

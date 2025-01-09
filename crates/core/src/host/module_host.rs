@@ -448,7 +448,9 @@ pub struct WeakModuleHost {
 #[derive(Debug)]
 pub enum UpdateDatabaseResult {
     NoUpdateNeeded,
-    UpdatePerformed,
+    /// The string is a printable summary of the update that happened.
+    /// Contains ANSI escape sequences for color.
+    UpdatePerformed(String),
     AutoMigrateError(ErrorStream<AutoMigrateError>),
     ErrorExecutingMigration(anyhow::Error),
 }
@@ -457,7 +459,7 @@ impl UpdateDatabaseResult {
     pub fn was_successful(&self) -> bool {
         matches!(
             self,
-            UpdateDatabaseResult::UpdatePerformed | UpdateDatabaseResult::NoUpdateNeeded
+            UpdateDatabaseResult::UpdatePerformed(_) | UpdateDatabaseResult::NoUpdateNeeded
         )
     }
 }

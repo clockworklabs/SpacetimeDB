@@ -122,6 +122,7 @@ pub struct ModuleDef {
     /// The row-level security policies.
     ///
     /// **Note**: Are only validated syntax-wise.
+    // TODO: for consistency, this should be changed to store a `RowLevelSecurityDef` instead.
     row_level_security_raw: HashMap<RawSql, RawRowLevelSecurityDefV9>,
 }
 
