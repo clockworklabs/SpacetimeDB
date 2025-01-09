@@ -666,18 +666,14 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
-    let row_type_to_table = quote!(<#row_type as spacetimedb::table::__MapRowTypeToTable>::Table);
-
     // Output all macro data
     let trait_def = quote_spanned! {table_ident.span()=>
         #[allow(non_camel_case_types, dead_code)]
         #vis trait #table_ident {
-            fn #table_ident(&self) -> &#row_type_to_table;
+            fn #table_ident(&self) -> &#tablehandle_ident;
         }
         impl #table_ident for spacetimedb::Local {
-            fn #table_ident(&self) -> &#row_type_to_table {
-                #[allow(non_camel_case_types)]
-                type #tablehandle_ident = #row_type_to_table;
+            fn #table_ident(&self) -> &#tablehandle_ident {
                 &#tablehandle_ident {}
             }
         }
@@ -697,17 +693,9 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
         #trait_def
 
-        #[cfg(doc)]
         #tablehandle_def
 
         const _: () = {
-            #[cfg(not(doc))]
-            #tablehandle_def
-
-            impl spacetimedb::table::__MapRowTypeToTable for #row_type {
-                type Table = #tablehandle_ident;
-            }
-
             impl #tablehandle_ident {
                 #(#index_accessors)*
             }
