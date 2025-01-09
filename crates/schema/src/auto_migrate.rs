@@ -77,11 +77,12 @@ pub enum AutoMigrateStep<'def> {
     // 1. `AddIndex("indexname")`
     // 2. `RemoveIndex("indexname")`
     //
-    // This results in the index being added -- which, at time of writing, does nothing -- and then removed,
+    // This results in the existing index being re-added -- which, at time of writing, does nothing -- and then removed,
     // resulting in the intended index not being created.
     //
     // For now, we just ensure that we declare all `Remove` variants before `Add` variants
     // and let `#[derive(PartialOrd)]` take care of the rest.
+    //
     // TODO: when this enum is made serializable, a more durable fix will be needed here.
     // Probably we will want to have separate arrays of add and remove steps.
     //
