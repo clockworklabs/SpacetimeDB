@@ -247,8 +247,8 @@ Performed automatic migration
             """\
  sql
 ------------------------
- "SELECT * FROM person"
  "SELECT * FROM book"
+ "SELECT * FROM person"
 """,
         )
 
