@@ -62,12 +62,14 @@ pub enum AutoMigrateStep<'def> {
     // It is important FOR CORRECTNESS that `Remove` variants are declared before `Add` variants in this enum!
     //
     // The ordering is used to sort the steps of an auto-migration.
-    // If adds go before removes, the following can occur:
+    // If adds go before removes, and the user tries to remove an index and then re-add it with new configuration,
+    // the following can occur:
     //
-    // 1. `AddIndex("my_special_boy)`
-    // 2. `RemoveIndex("my_special_boy)`
+    // 1. `AddIndex("indexname")`
+    // 2. `RemoveIndex("indexname")`
     //
-    // You see the problem.
+    // This results in the index being added -- which, at time of writing, does nothing -- and then removed,
+    // resulting in the intended index not being created.
     //
     // For now, we just ensure that we declare all `Remove` variants before `Add` variants
     // and let `#[derive(PartialOrd)]` take care of the rest.

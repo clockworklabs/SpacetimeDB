@@ -38,15 +38,13 @@ pub fn strip_ansi_escape_codes(s: &str) -> String {
 /// If you are printing to a console without ANSI escape code support, call [`strip_ansi_escape_codes`] on the
 /// resulting string.
 pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
-    let plan = match plan {
-        MigratePlan::Auto(plan) => plan,
-    };
+    let MigratePlan::Auto(plan) = plan;
     let mut out = String::new();
     let outr = &mut out;
 
-    writeln!(outr, "{}", "--------------")?;
+    writeln!(outr, "--------------")?;
     writeln!(outr, "{}", "Performed automatic migration".blue())?;
-    writeln!(outr, "{}", "--------------")?;
+    writeln!(outr, "--------------")?;
 
     let created = "Created".green().bold();
     let removed = "Removed".red().bold();
@@ -56,7 +54,7 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
             AutoMigrateStep::AddTable(t) => {
                 let table = plan.new.table(*t).ok_or(fmt::Error)?;
 
-                write!(outr, "- {} table: {}", created, table_name(&*table.name))?;
+                write!(outr, "- {} table: {}", created, table_name(&table.name))?;
                 if table.table_type == TableType::System {
                     write!(outr, " (system)")?;
                 }
@@ -117,25 +115,25 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
                     }
                 }
                 if let Some(schedule) = &table.schedule {
-                    let reducer = reducer_name(&*schedule.reducer_name);
+                    let reducer = reducer_name(&schedule.reducer_name);
                     writeln!(outr, "        - Scheduled, calling reducer: {}", reducer)?;
                 }
             }
             AutoMigrateStep::AddIndex(index) => {
-                let table_def = plan.new.stored_in_table_def(*index).ok_or(fmt::Error)?;
+                let table_def = plan.new.stored_in_table_def(index).ok_or(fmt::Error)?;
                 let index_def = table_def.indexes.get(*index).ok_or(fmt::Error)?;
 
                 writeln!(
                     outr,
                     "- {} index {} on columns {} of table {}",
                     created,
-                    index_name(*index),
+                    index_name(index),
                     format_col_list(index_def.algorithm.columns(), table_def)?,
-                    table_name(&*table_def.name),
+                    table_name(&table_def.name),
                 )?;
             }
             AutoMigrateStep::RemoveIndex(index) => {
-                let table_def = plan.old.stored_in_table_def(*index).ok_or(fmt::Error)?;
+                let table_def = plan.old.stored_in_table_def(index).ok_or(fmt::Error)?;
                 let index_def = table_def.indexes.get(*index).ok_or(fmt::Error)?;
 
                 let col_list = match &index_def.algorithm {
@@ -145,9 +143,9 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
                     outr,
                     "- {} index {} on columns {} of table {}",
                     removed,
-                    index_name(*index),
+                    index_name(index),
                     format_col_list(col_list, table_def)?,
-                    table_name(&*table_def.name)
+                    table_name(&table_def.name)
                 )?;
                 writeln!(outr)?;
             }
@@ -160,46 +158,46 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
                             outr,
                             "- {} unique constraint {} on columns {} of table {}",
                             removed,
-                            constraint_name(*constraint),
+                            constraint_name(constraint),
                             format_col_list(&unique_constraint_data.columns, table_def)?,
-                            table_name(&*table_def.name)
+                            table_name(&table_def.name)
                         )?;
                         writeln!(outr)?;
                     }
                 }
             }
             AutoMigrateStep::AddSequence(sequence) => {
-                let table_def = plan.new.stored_in_table_def(*sequence).ok_or(fmt::Error)?;
+                let table_def = plan.new.stored_in_table_def(sequence).ok_or(fmt::Error)?;
                 let sequence_def = table_def.sequences.get(*sequence).ok_or(fmt::Error)?;
 
                 write!(
                     outr,
                     "- {} auto-increment constraint {} on column {} of table {}",
                     created,
-                    constraint_name(*sequence),
+                    constraint_name(sequence),
                     column_name_from_id(table_def, sequence_def.column),
-                    table_name(&*table_def.name),
+                    table_name(&table_def.name),
                 )?;
                 writeln!(outr)?;
             }
             AutoMigrateStep::RemoveSequence(sequence) => {
-                let table_def = plan.old.stored_in_table_def(*sequence).ok_or(fmt::Error)?;
+                let table_def = plan.old.stored_in_table_def(sequence).ok_or(fmt::Error)?;
                 let sequence_def = table_def.sequences.get(*sequence).ok_or(fmt::Error)?;
 
                 write!(
                     outr,
                     "- {} auto-increment constraint {} on column {} of table {}",
                     removed,
-                    constraint_name(*sequence),
+                    constraint_name(sequence),
                     column_name_from_id(table_def, sequence_def.column),
-                    table_name(&*table_def.name),
+                    table_name(&table_def.name),
                 )?;
                 writeln!(outr)?;
             }
             AutoMigrateStep::ChangeAccess(table) => {
                 let table_def = plan.new.table(*table).ok_or(fmt::Error)?;
 
-                write!(outr, "- Changed access for table {}", table_name(&*table_def.name))?;
+                write!(outr, "- Changed access for table {}", table_name(&table_def.name))?;
                 match table_def.table_access {
                     TableAccess::Private => write!(outr, " (public -> private)")?,
                     TableAccess::Public => write!(outr, " (private -> public)")?,
@@ -210,12 +208,12 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
                 let table_def = plan.new.table(*schedule).ok_or(fmt::Error)?;
                 let schedule_def = table_def.schedule.as_ref().ok_or(fmt::Error)?;
 
-                let reducer = reducer_name(&*schedule_def.reducer_name);
+                let reducer = reducer_name(&schedule_def.reducer_name);
                 writeln!(
                     outr,
                     "- {} schedule for table {} calling reducer {}",
                     created,
-                    table_name(&*table_def.name),
+                    table_name(&table_def.name),
                     reducer
                 )?;
             }
@@ -223,12 +221,12 @@ pub fn pretty_print(plan: &MigratePlan) -> Result<String, fmt::Error> {
                 let table_def = plan.old.table(*schedule).ok_or(fmt::Error)?;
                 let schedule_def = table_def.schedule.as_ref().ok_or(fmt::Error)?;
 
-                let reducer = reducer_name(&*schedule_def.reducer_name);
+                let reducer = reducer_name(&schedule_def.reducer_name);
                 writeln!(
                     outr,
                     "- {} schedule for table {} calling reducer {}",
                     removed,
-                    table_name(&*table_def.name),
+                    table_name(&table_def.name),
                     reducer
                 )?;
             }
