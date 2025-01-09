@@ -4,7 +4,8 @@ import logging
 import re
 
 # 7-bit C1 ANSI sequences
-ansi_escape = re.compile(r'''
+ansi_escape = re.compile(
+    r"""
     \x1B  # ESC
     (?:   # 7-bit C1 Fe (except CSI)
         [@-Z\\-_]
@@ -14,10 +15,13 @@ ansi_escape = re.compile(r'''
         [ -/]*  # Intermediate bytes
         [@-~]   # Final byte
     )
-''', re.VERBOSE)
+""",
+    re.VERBOSE,
+)
+
 
 def strip_ansi_escape_codes(text: str) -> str:
-    return ansi_escape.sub('', text)
+    return ansi_escape.sub("", text)
 
 
 class AddTableAutoMigration(Smoketest):
@@ -63,7 +67,6 @@ pub struct ScheduledTable {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
     text: String,
 }
@@ -120,7 +123,6 @@ pub struct ScheduledTable {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
     text: String,
 }
@@ -190,7 +192,6 @@ Performed automatic migration
     `SELECT * FROM book`
 - Changed access for table `point_mass` (private -> public)"""
 
-
     def assertSql(self, sql, expected):
         self.maxDiff = None
         sql_out = self.spacetime("sql", self.database_identity, sql)
@@ -202,11 +203,14 @@ Performed automatic migration
         """This tests uploading a module with a schema change that should not require clearing the database."""
 
         # Check the row-level SQL filter is created correctly
-        self.assertSql("SELECT sql FROM st_row_level_security", """\
+        self.assertSql(
+            "SELECT sql FROM st_row_level_security",
+            """\
  sql
 ------------------------
  "SELECT * FROM person"
-""")
+""",
+        )
 
         logging.info("Initial publish complete")
         # initial module code is already published by test framework
@@ -238,12 +242,15 @@ Performed automatic migration
         logging.info("Updated")
 
         # Check the row-level SQL filter is added correctly
-        self.assertSql("SELECT sql FROM st_row_level_security", """\
+        self.assertSql(
+            "SELECT sql FROM st_row_level_security",
+            """\
  sql
 ------------------------
  "SELECT * FROM person"
  "SELECT * FROM book"
-""")
+""",
+        )
 
         self.logs(100)
 
