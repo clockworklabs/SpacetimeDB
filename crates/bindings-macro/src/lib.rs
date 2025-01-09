@@ -7,13 +7,13 @@ mod sats;
 mod table;
 mod util;
 
-use crate::util::cvt_attr;
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::time::Duration;
 use syn::parse::ParseStream;
 use syn::ItemFn;
+use util::{cvt_attr, ok_or_compile_error};
 
 mod sym {
     /// A symbol known at compile-time against
@@ -233,10 +233,14 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 #[proc_macro_attribute]
 pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     // put this on the struct so we don't get unknown attribute errors
-    let extra_attr = quote!(#[derive(spacetimedb::__TableHelper)]);
-    cvt_attr::<syn::DeriveInput>(args, item, extra_attr, |args, item| {
-        let args = table::TableArgs::parse(args, &item.ident)?;
-        table::table_impl(args, item)
+    let derive_table_helper = quote!(#[derive(spacetimedb::__TableHelper)]);
+
+    ok_or_compile_error(|| {
+        let item = TokenStream::from(item);
+        let parsed_item = syn::parse2::<syn::DeriveInput>(item.clone())?;
+        let args = table::TableArgs::parse(args.into(), &parsed_item.ident)?;
+        let generated = table::table_impl(args, &parsed_item)?;
+        Ok(TokenStream::from_iter([derive_table_helper, item, generated]))
     })
 }
 
