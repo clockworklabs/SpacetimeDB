@@ -45,7 +45,7 @@ fn creds_store() -> credentials::File {
 /// Our `on_connect` callback: save our credentials to a file.
 fn on_connected(_ctx: &DbConnection, identity: Identity, token: &str) {
     if let Err(e) = creds_store().save(identity, token) {
-        log::error!("Failed to save credentials: {:?}", e);
+        eprintln!("Failed to save credentials: {:?}", e);
     }
 }
 
@@ -54,7 +54,7 @@ fn on_connected(_ctx: &DbConnection, identity: Identity, token: &str) {
 /// Our `User::on_insert` callback: if the user is online, print a notification.
 fn on_user_inserted(_ctx: &EventContext, user: &User) {
     if user.online {
-        log::info!("User {} connected.", user_name_or_identity(user));
+        println!("User {} connected.", user_name_or_identity(user));
     }
 }
 
@@ -70,17 +70,17 @@ fn user_name_or_identity(user: &User) -> String {
 /// print a notification about name and status changes.
 fn on_user_updated(_ctx: &EventContext, old: &User, new: &User) {
     if old.name != new.name {
-        log::info!(
+        println!(
             "User {} renamed to {}.",
             user_name_or_identity(old),
             user_name_or_identity(new)
         );
     }
     if old.online && !new.online {
-        log::info!("User {} disconnected.", user_name_or_identity(new));
+        println!("User {} disconnected.", user_name_or_identity(new));
     }
     if !old.online && new.online {
-        log::info!("User {} connected.", user_name_or_identity(new));
+        println!("User {} connected.", user_name_or_identity(new));
     }
 }
 
@@ -101,7 +101,7 @@ fn print_message(ctx: &EventContext, message: &Message) {
         .find(&message.sender)
         .map(|u| user_name_or_identity(&u))
         .unwrap_or_else(|| "unknown".to_string());
-    log::info!("{}: {}", sender, message.text);
+    println!("{}: {}", sender, message.text);
 }
 
 // ## Print message backlog
@@ -126,7 +126,7 @@ fn on_name_set(ctx: &EventContext, name: &String) {
         ..
     }) = &ctx.event
     {
-        log::error!("Failed to change name to {:?}: {}", name, err);
+        eprintln!("Failed to change name to {:?}: {}", name, err);
     }
 }
 
@@ -139,7 +139,7 @@ fn on_message_sent(ctx: &EventContext, text: &String) {
         ..
     }) = &ctx.event
     {
-        log::error!("Failed to send message {:?}: {}", text, err);
+        eprintln!("Failed to send message {:?}: {}", text, err);
     }
 }
 
@@ -150,7 +150,7 @@ fn on_disconnected(_ctx: &DbConnection, err: Option<&anyhow::Error>) {
     if let Some(err) = err {
         panic!("Disconnected abnormally: {err}")
     } else {
-        log::info!("Disconnected normally.");
+        println!("Disconnected normally.");
         std::process::exit(0)
     }
 }

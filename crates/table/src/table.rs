@@ -32,7 +32,6 @@ use core::{
 };
 use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use smallvec::SmallVec;
-use spacetimedb_data_structures::map::{DefaultHashBuilder, HashCollectionExt, HashMap};
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId};
 use spacetimedb_sats::{
@@ -45,7 +44,7 @@ use spacetimedb_sats::{
     u256, AlgebraicValue, ProductType, ProductValue,
 };
 use spacetimedb_schema::{schema::TableSchema, type_for_generate::PrimitiveType};
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 use thiserror::Error;
 
 /// The number of bytes used by, added to, or removed from a [`Table`]'s share of a [`BlobStore`].
@@ -66,9 +65,17 @@ pub struct Table {
     /// Page manager and row layout grouped together, for `RowRef` purposes.
     inner: TableInner,
     /// Maps `RowHash -> [RowPointer]` where a [`RowPointer`] points into `pages`.
-    pointer_map: PointerMap,
+    /// A [`PointerMap`] is effectively a specialized unique index on all the columns.
+    ///
+    /// In tables without any other unique constraints,
+    /// the pointer map is used to enforce set semantics,
+    /// i.e. to prevent duplicate rows.
+    /// If `self.indexes` contains at least one unique index,
+    /// duplicate rows are impossible regardless, so this will be `None`.
+    pointer_map: Option<PointerMap>,
     /// The indices associated with a set of columns of the table.
-    pub indexes: HashMap<ColList, BTreeIndex>,
+    /// The order is used here to keep the smallest indices first.
+    pub indexes: BTreeMap<ColList, BTreeIndex>,
     /// The schema of the table, from which the type, and other details are derived.
     pub schema: Arc<TableSchema>,
     /// `SquashedOffset::TX_STATE` or `SquashedOffset::COMMITTED_STATE`
@@ -144,7 +151,7 @@ impl TableInner {
     }
 }
 
-static_assert_size!(Table, 272);
+static_assert_size!(Table, 264);
 
 impl MemoryUsage for Table {
     fn heap_usage(&self) -> usize {
@@ -212,7 +219,10 @@ impl Table {
         let row_layout: RowTypeLayout = schema.get_row_type().clone().into();
         let static_layout = StaticLayout::for_row_type(&row_layout).map(|sl| (sl, static_bsatn_validator(&row_layout)));
         let visitor_prog = row_type_visitor(&row_layout);
-        Self::new_with_indexes_capacity(schema, row_layout, static_layout, visitor_prog, squashed_offset, 0)
+        // By default, we start off with an empty pointer map,
+        // which is removed when the first unique index is added.
+        let pm = Some(PointerMap::default());
+        Self::new_with_indexes_capacity(schema, row_layout, static_layout, visitor_prog, squashed_offset, pm)
     }
 
     /// Check if the `row` conflicts with any unique index on `self`,
@@ -238,8 +248,12 @@ impl Table {
 
     /// Insert a `row` into this table, storing its large var-len members in the `blob_store`.
     ///
-    /// On success, returns the hash of the newly-inserted row,
-    /// and a `RowRef` referring to the row.
+    /// On success, returns the hash, if any, of the newly-inserted row,
+    /// and a `RowRef` referring to the row.s
+    /// The hash is only computed if this table has a [`PointerMap`],
+    /// i.e., does not have any unique indexes.
+    /// If the table has unique indexes,
+    /// the returned `Option<RowHash>` will be `None`.
     ///
     /// When a row equal to `row` already exists in `self`,
     /// returns `InsertError::Duplicate(existing_row_pointer)`,
@@ -252,7 +266,7 @@ impl Table {
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         row: &ProductValue,
-    ) -> Result<(RowHash, RowRef<'a>), InsertError> {
+    ) -> Result<(Option<RowHash>, RowRef<'a>), InsertError> {
         // Optimistically insert the `row` before checking any constraints
         // under the assumption that errors (unique constraint & set semantic violations) are rare.
         let (row_ref, blob_bytes) = self.insert_physically_pv(blob_store, row)?;
@@ -273,7 +287,7 @@ impl Table {
         &mut self,
         blob_store: &mut dyn BlobStore,
         row: &ProductValue,
-    ) -> Result<(RowHash, RowPointer), InsertError> {
+    ) -> Result<(Option<RowHash>, RowPointer), InsertError> {
         // Insert the `row`. There should be no errors
         let (row_ref, blob_bytes) = self.insert_physically_pv(blob_store, row)?;
         let row_ptr = row_ref.pointer();
@@ -472,7 +486,7 @@ impl Table {
         blob_store: &'a mut dyn BlobStore,
         ptr: RowPointer,
         blob_bytes: BlobNumBytes,
-    ) -> Result<(RowHash, RowPointer), InsertError> {
+    ) -> Result<(Option<RowHash>, RowPointer), InsertError> {
         // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
         let hash = unsafe { self.insert_into_pointer_map(blob_store, ptr) }?;
         // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
@@ -530,10 +544,43 @@ impl Table {
         Ok(())
     }
 
-    /// Insert row identified by `ptr` into the pointer map.
+    /// Finds the [`RowPointer`] to the row in `target_table` equal, if any,
+    /// to the row `needle_ptr` in `needle_table`,
+    /// by any unique index in `target_table`.
+    ///
+    /// # Safety
+    ///
+    /// `needle_table.is_row_present(needle_ptr)` must hold.
+    unsafe fn find_same_row_via_unique_index(
+        target_table: &Table,
+        needle_table: &Table,
+        needle_bs: &dyn BlobStore,
+        needle_ptr: RowPointer,
+    ) -> Option<RowPointer> {
+        // Find the smallest unique index.
+        let (cols, idx) = target_table
+            .indexes
+            .iter()
+            .find(|(_, idx)| idx.is_unique())
+            .expect("there should be at least one unique index");
+        // Project the needle row to the columns of the index, and then seek.
+        // As this is a unique index, there are 0-1 rows for this key.
+        let needle_row = unsafe { needle_table.get_row_ref_unchecked(needle_bs, needle_ptr) };
+        let key = needle_row.project(cols).expect("needle row should be valid");
+        idx.seek(&key).next()
+    }
+
+    /// Insert the row identified by `ptr` into the table's [`PointerMap`],
+    /// if the table has one.
+    ///
     /// This checks for set semantic violations.
-    /// Deletes the row and returns an error if there were any violations.
-    /// Returns the row hash computed.
+    /// If a set semantic conflict (i.e. duplicate row) is detected by the pointer map,
+    /// the row will be deleted and an error returned.
+    /// If the pointer map confirms that the row was unique, returns the `RowHash` of that row.
+    ///
+    /// If this table has no `PointerMap`, returns `Ok(None)`.
+    /// In that case, the row's uniqueness will be verified by [`Self::insert_into_indices`],
+    /// as this table has at least one unique index.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
     /// Post-condition: If this method returns `Ok(_)`, the row still exists.
@@ -541,15 +588,16 @@ impl Table {
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         ptr: RowPointer,
-    ) -> Result<RowHash, InsertError> {
-        // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let row_ref = unsafe { self.get_row_ref_unchecked(blob_store, ptr) };
-        let hash = row_ref.row_hash();
+    ) -> Result<Option<RowHash>, InsertError> {
+        if self.pointer_map.is_none() {
+            // No pointer map? Set semantic constraint is checked by a unique index instead.
+            return Ok(None);
+        };
 
         // SAFETY:
         // - `self` trivially has the same `row_layout` as `self`.
-        // - Caller promised that `ptr` is a valid row in `self`.
-        let existing_row = unsafe { Self::find_same_row(self, self, ptr, hash) };
+        // - Caller promised that `self.is_row_present(row)` holds.
+        let (hash, existing_row) = unsafe { Self::find_same_row_via_pointer_map(self, self, blob_store, ptr, None) };
 
         if let Some(existing_row) = existing_row {
             // If an equal row was already present,
@@ -567,15 +615,33 @@ impl Table {
         // If the optimistic insertion was correct,
         // i.e. this is not a set-semantic duplicate,
         // add it to the `pointer_map`.
-        self.pointer_map.insert(hash, ptr);
+        self.pointer_map
+            .as_mut()
+            .expect("pointer map should exist, as it did previously")
+            .insert(hash, ptr);
 
-        Ok(hash)
+        Ok(Some(hash))
     }
 
-    /// Finds the [`RowPointer`] to the row in `committed_table`
-    /// equal, by [`eq_row_in_page`], to the row at `tx_ptr` within `tx_table`, if any.
+    /// Returns the list of pointers to rows which hash to `row_hash`.
     ///
-    /// Used for detecting set-semantic duplicates when inserting.
+    /// If `self` does not have a [`PointerMap`], always returns the empty slice.
+    fn pointers_for(&self, row_hash: RowHash) -> &[RowPointer] {
+        self.pointer_map.as_ref().map_or(&[], |pm| pm.pointers_for(row_hash))
+    }
+
+    /// Using the [`PointerMap`],
+    /// searches `target_table` for a row equal to `needle_table[needle_ptr]`.
+    ///
+    /// Rows are compared for equality by [`eq_row_in_page`].
+    ///
+    /// Lazily computes the row hash if needed and returns it, or uses the one provided, if any.
+    ///
+    /// Used for detecting set-semantic duplicates when inserting
+    /// into tables without any unique constraints.
+    ///
+    /// Does nothing and always returns `None` if `target_table` does not have a `PointerMap`,
+    /// in which case the caller should instead use [`Self::find_same_row_via_unique_index`].
     ///
     /// Note that we don't need the blob store to compute equality,
     /// as content-addressing means it's sufficient to compare the hashes of large blobs.
@@ -583,23 +649,29 @@ impl Table {
     ///
     /// # Safety
     ///
-    /// - The two tables must have the same `row_layout`.
-    /// - `tx_ptr` must refer to a valid row in `tx_table`.
-    pub unsafe fn find_same_row(
-        committed_table: &Table,
-        tx_table: &Table,
-        tx_ptr: RowPointer,
-        row_hash: RowHash,
-    ) -> Option<RowPointer> {
+    /// - `target_table` and `needle_table` must have the same `row_layout`.
+    /// - `needle_table.is_row_present(needle_ptr)`.
+    pub unsafe fn find_same_row_via_pointer_map(
+        target_table: &Table,
+        needle_table: &Table,
+        needle_bs: &dyn BlobStore,
+        needle_ptr: RowPointer,
+        row_hash: Option<RowHash>,
+    ) -> (RowHash, Option<RowPointer>) {
+        let row_hash = row_hash.unwrap_or_else(|| {
+            // SAFETY: Caller promised that `needle_table.is_row_present(needle_ptr)`.
+            let row_ref = unsafe { needle_table.get_row_ref_unchecked(needle_bs, needle_ptr) };
+            row_ref.row_hash()
+        });
+
         // Scan all the frow pointers with `row_hash` in the `committed_table`.
-        committed_table
-            .pointer_map
+        let row_ptr = target_table
             .pointers_for(row_hash)
             .iter()
             .copied()
             .find(|committed_ptr| {
-                let (committed_page, committed_offset) = committed_table.inner.page_and_offset(*committed_ptr);
-                let (tx_page, tx_offset) = tx_table.inner.page_and_offset(tx_ptr);
+                let (committed_page, committed_offset) = target_table.inner.page_and_offset(*committed_ptr);
+                let (tx_page, tx_offset) = needle_table.inner.page_and_offset(needle_ptr);
 
                 // SAFETY:
                 // Our invariants mean `tx_ptr` is valid, so `tx_page` and `tx_offset` are both valid.
@@ -614,11 +686,47 @@ impl Table {
                         tx_page,
                         committed_offset,
                         tx_offset,
-                        &committed_table.inner.row_layout,
-                        committed_table.static_layout(),
+                        &target_table.inner.row_layout,
+                        target_table.static_layout(),
                     )
                 }
-            })
+            });
+
+        (row_hash, row_ptr)
+    }
+
+    /// Searches `target_table` for a row equal to `needle_table[needle_ptr]`,
+    /// and returns the [`RowPointer`] to that row in `target_table`, if it exists.
+    ///
+    /// Searches using the [`PointerMap`] or a unique index, as appropriate for the table.
+    ///
+    /// Lazily computes the row hash if needed and returns it, or uses the one provided, if any.
+    ///
+    /// # Safety
+    ///
+    /// - `target_table` and `needle_table` must have the same `row_layout`.
+    /// - `needle_table.is_row_present(needle_ptr)` must hold.
+    pub unsafe fn find_same_row(
+        target_table: &Table,
+        needle_table: &Table,
+        needle_bs: &dyn BlobStore,
+        needle_ptr: RowPointer,
+        row_hash: Option<RowHash>,
+    ) -> (Option<RowHash>, Option<RowPointer>) {
+        if target_table.pointer_map.is_some() {
+            // SAFETY: Caller promised that `target_table` and `needle_table` have the same `row_layout`.
+            // SAFETY: Caller promised that `needle_table.is_row_present(needle_ptr)`.
+            let (row_hash, row_ptr) = unsafe {
+                Self::find_same_row_via_pointer_map(target_table, needle_table, needle_bs, needle_ptr, row_hash)
+            };
+            (Some(row_hash), row_ptr)
+        } else {
+            (
+                row_hash,
+                // SAFETY: Caller promised that `needle_table.is_row_present(needle_ptr)`.
+                unsafe { Self::find_same_row_via_unique_index(target_table, needle_table, needle_bs, needle_ptr) },
+            )
+        }
     }
 
     /// Returns a [`RowRef`] for `ptr` or `None` if the row isn't present.
@@ -684,12 +792,14 @@ impl Table {
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
     unsafe fn delete_internal(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) -> BlobNumBytes {
-        // SAFETY: `self.is_row_present(row)` holds.
-        let row = unsafe { self.get_row_ref_unchecked(blob_store, ptr) };
-
         // Remove the set semantic association.
-        let _remove_result = self.pointer_map.remove(row.row_hash(), ptr);
-        debug_assert!(_remove_result);
+        if let Some(pointer_map) = &mut self.pointer_map {
+            // SAFETY: `self.is_row_present(row)` holds.
+            let row = unsafe { RowRef::new(&self.inner, blob_store, ptr) };
+
+            let _remove_result = pointer_map.remove(row.row_hash(), ptr);
+            debug_assert!(_remove_result);
+        }
 
         // Delete the physical row.
         // SAFETY: `ptr` points to a valid row in this table as `self.is_row_present(row)` holds.
@@ -768,13 +878,19 @@ impl Table {
         // as the row is already present, set-semantically.
         let (temp_row, _) = self.insert_physically_pv(blob_store, row)?;
         let temp_ptr = temp_row.pointer();
-        let hash = temp_row.row_hash();
 
         // Find the row equal to the passed-in `row`.
+        // This uses one of two approaches.
+        // Either there is a pointer map, so we use that,
+        // or, here is at least one unique index, so we use the one with the smallest `ColList`.
+        // TODO(centril): this isn't what we actually want.
+        //    The `Ord for ColList` impl will say that `[0, 1] < [1]`.
+        //    However, we'd prefer the index with the simplest type.
+        //
         // SAFETY:
         // - `self` trivially has the same `row_layout` as `self`.
-        // - We just inserted `temp_ptr` and computed `hash`, so they're valid.
-        let existing_row_ptr = unsafe { Self::find_same_row(self, self, temp_ptr, hash) };
+        // - We just inserted `temp_ptr`, so it's valid.
+        let (_, existing_row_ptr) = unsafe { Self::find_same_row(self, self, blob_store, temp_ptr, None) };
 
         // If an equal row was present, delete it.
         if let Some(existing_row_ptr) = existing_row_ptr {
@@ -836,7 +952,28 @@ impl Table {
             .build_from_rows(&cols, self.scan_rows(blob_store))
             .expect("`cols` should consist of valid columns for this table")
             .inspect(|ptr| panic!("adding `index` should cause no unique constraint violations, but {ptr:?} would"));
+        self.add_index(cols, index);
+    }
+
+    /// Adds an index to the table without populating.
+    pub fn add_index(&mut self, cols: ColList, index: BTreeIndex) {
+        let is_unique = index.is_unique();
         self.indexes.insert(cols, index);
+
+        // Remove the pointer map, if any.
+        if is_unique {
+            self.pointer_map = None;
+        }
+    }
+
+    /// Removes an index from the table.
+    pub fn delete_index(&mut self, blob_store: &dyn BlobStore, cols: &ColList) {
+        self.indexes.remove(cols);
+
+        // We removed the last unique index, so add a pointer map.
+        if !self.indexes.values().any(|idx| idx.is_unique()) {
+            self.rebuild_pointer_map(blob_store);
+        }
     }
 
     /// Returns an iterator over all the rows of `self`, yielded as [`RefRef`]s.
@@ -879,8 +1016,9 @@ impl Table {
         let layout = self.row_layout().clone();
         let sbl = self.inner.static_layout.clone();
         let visitor = self.inner.visitor_prog.clone();
-        let mut new =
-            Table::new_with_indexes_capacity(schema, layout, sbl, visitor, squashed_offset, self.indexes.len());
+        // If we had a pointer map, we'll have one in the cloned one as well, but empty.
+        let pm = self.pointer_map.as_ref().map(|_| PointerMap::default());
+        let mut new = Table::new_with_indexes_capacity(schema, layout, sbl, visitor, squashed_offset, pm);
 
         // Clone the index structure. The table is empty, so no need to `build_from_rows`.
         for (cols, index) in self.indexes.iter() {
@@ -1325,15 +1463,14 @@ impl Table {
         UniqueConstraintViolation::build(schema, index, cols, value)
     }
 
-    /// Returns a new empty table with the given `schema`, `row_layout`, and `static_layout`s
-    /// and with a specified capacity for the `indexes` of the table.
+    /// Returns a new empty table using the particulars passed.
     fn new_with_indexes_capacity(
         schema: Arc<TableSchema>,
         row_layout: RowTypeLayout,
         static_layout: Option<(StaticLayout, StaticBsatnValidator)>,
         visitor_prog: VarLenVisitorProgram,
         squashed_offset: SquashedOffset,
-        indexes_capacity: usize,
+        pointer_map: Option<PointerMap>,
     ) -> Self {
         Self {
             inner: TableInner {
@@ -1343,8 +1480,8 @@ impl Table {
                 pages: Pages::default(),
             },
             schema,
-            indexes: HashMap::<_, _, DefaultHashBuilder>::with_capacity(indexes_capacity),
-            pointer_map: PointerMap::default(),
+            indexes: BTreeMap::new(),
+            pointer_map,
             squashed_offset,
             row_count: 0,
             blob_store_bytes: BlobNumBytes::default(),
@@ -1427,7 +1564,7 @@ impl Table {
             .scan_rows(blob_store)
             .map(|row_ref| (row_ref.row_hash(), row_ref.pointer()))
             .collect::<PointerMap>();
-        self.pointer_map = ptrs;
+        self.pointer_map = Some(ptrs);
     }
 
     /// Compute and store `self.row_count` and `self.blob_store_bytes`
@@ -1540,9 +1677,10 @@ pub(crate) mod test {
         let mut blob_store = HashMapBlobStore::default();
         let mut table = table(ty.into());
         let (hash, row) = table.insert(&mut blob_store, &val).unwrap();
+        let hash = hash.unwrap();
         prop_assert_eq!(row.row_hash(), hash);
         let ptr = row.pointer();
-        prop_assert_eq!(table.pointer_map.pointers_for(hash), &[ptr]);
+        prop_assert_eq!(table.pointers_for(hash), &[ptr]);
 
         prop_assert_eq!(table.inner.pages.len(), 1);
         prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 1);
@@ -1588,9 +1726,10 @@ pub(crate) mod test {
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty);
             let (hash, row) = table.insert(&mut blob_store, &val).unwrap();
+            let hash = hash.unwrap();
             prop_assert_eq!(row.row_hash(), hash);
             let ptr = row.pointer();
-            prop_assert_eq!(table.pointer_map.pointers_for(hash), &[ptr]);
+            prop_assert_eq!(table.pointers_for(hash), &[ptr]);
 
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 1);
@@ -1604,7 +1743,7 @@ pub(crate) mod test {
             let hash_post_del = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
             assert_ne!(hash_pre_del, hash_post_del);
 
-            prop_assert_eq!(table.pointer_map.pointers_for(hash), &[]);
+            prop_assert_eq!(table.pointers_for(hash), &[]);
 
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 0);
@@ -1619,10 +1758,11 @@ pub(crate) mod test {
             let mut table = table(ty);
 
             let (hash, row) = table.insert(&mut blob_store, &val).unwrap();
+            let hash = hash.unwrap();
             prop_assert_eq!(row.row_hash(), hash);
             let ptr = row.pointer();
             prop_assert_eq!(table.inner.pages.len(), 1);
-            prop_assert_eq!(table.pointer_map.pointers_for(hash), &[ptr]);
+            prop_assert_eq!(table.pointers_for(hash), &[ptr]);
             prop_assert_eq!(table.row_count, 1);
             prop_assert_eq!(&table.scan_rows(&blob_store).map(|r| r.pointer()).collect::<Vec<_>>(), &[ptr]);
 
@@ -1638,7 +1778,7 @@ pub(crate) mod test {
 
             prop_assert_eq!(table.row_count, 1);
             prop_assert_eq!(table.inner.pages.len(), 1);
-            prop_assert_eq!(table.pointer_map.pointers_for(hash), &[ptr]);
+            prop_assert_eq!(table.pointers_for(hash), &[ptr]);
 
             let blob_uses_after = blob_store.usage_counter();
 
@@ -1667,7 +1807,7 @@ pub(crate) mod test {
         table: &'a mut Table,
         blob_store: &'a mut dyn BlobStore,
         val: &ProductValue,
-    ) -> Result<(RowHash, RowRef<'a>), InsertError> {
+    ) -> Result<(Option<RowHash>, RowRef<'a>), InsertError> {
         let row = &to_vec(&val).unwrap();
 
         // Optimistically insert the `row` before checking any constraints
