@@ -457,7 +457,7 @@ fn auto_migrate_row_level_security(plan: &mut AutoMigratePlan) -> Result<()> {
 mod tests {
     use super::*;
     use spacetimedb_data_structures::expect_error_matching;
-    use spacetimedb_lib::{db::raw_def::*, AlgebraicType, ProductType, ScheduleAt};
+    use spacetimedb_lib::{db::raw_def::*, is_sorted, AlgebraicType, ProductType, ScheduleAt};
     use spacetimedb_primitives::{ColId, ColList};
     use v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess};
     use validate::tests::expect_identifier;
@@ -663,7 +663,7 @@ mod tests {
         let deliveries_schedule = "Deliveries_sched";
         let inspections_schedule = "Inspections_sched";
 
-        assert!(plan.prechecks.is_sorted());
+        assert!(is_sorted(plan.prechecks.iter()));
 
         assert_eq!(plan.prechecks.len(), 1);
         assert_eq!(
@@ -679,7 +679,8 @@ mod tests {
         };
 
         let steps = &plan.steps[..];
-        assert!(steps.is_sorted());
+
+        assert!(is_sorted(steps.iter()));
 
         assert!(
             steps.contains(&AutoMigrateStep::RemoveSequence(apples_sequence)),
