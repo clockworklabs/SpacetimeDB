@@ -38,7 +38,6 @@ use std::sync::Arc;
 /// so the resulting `StaticBsatnValidator` should be stored and re-used.
 pub(crate) fn static_bsatn_validator(ty: &RowTypeLayout) -> StaticBsatnValidator {
     let tree = row_type_to_tree(ty.product());
-    //dbg!(&tree);
     let insns = tree_to_insns(&tree).into();
     StaticBsatnValidator { insns }
 }
