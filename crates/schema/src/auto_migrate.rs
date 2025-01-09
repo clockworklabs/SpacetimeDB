@@ -663,6 +663,8 @@ mod tests {
         let deliveries_schedule = "Deliveries_sched";
         let inspections_schedule = "Inspections_sched";
 
+        assert!(plan.prechecks.is_sorted());
+
         assert_eq!(plan.prechecks.len(), 1);
         assert_eq!(
             plan.prechecks[0],
@@ -677,6 +679,7 @@ mod tests {
         };
 
         let steps = &plan.steps[..];
+        assert!(steps.is_sorted());
 
         assert!(
             steps.contains(&AutoMigrateStep::RemoveSequence(apples_sequence)),
