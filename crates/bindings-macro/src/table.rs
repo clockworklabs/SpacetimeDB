@@ -1,4 +1,4 @@
-use crate::sats::{self, derive_deserialize, derive_satstype, derive_serialize};
+use crate::sats;
 use crate::sym;
 use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
 use heck::ToSnakeCase;
@@ -543,10 +543,6 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     let tablehandle_ident = format_ident!("{}__TableHandle", table_ident);
 
-    let deserialize_impl = derive_deserialize(&sats_ty);
-    let serialize_impl = derive_serialize(&sats_ty);
-    let schema_impl = derive_satstype(&sats_ty);
-
     // Generate `integrate_generated_columns`
     // which will integrate all generated auto-inc col values into `_row`.
     let integrate_gen_col = sequenced_columns.iter().map(|col| {
@@ -711,10 +707,6 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
             #describe_table_func
         };
-
-        #schema_impl
-        #deserialize_impl
-        #serialize_impl
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {

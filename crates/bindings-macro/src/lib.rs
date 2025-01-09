@@ -11,8 +11,9 @@ use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::time::Duration;
-use syn::parse::ParseStream;
+use syn::parse::Parse;
 use syn::ItemFn;
+use syn::{parse::ParseStream, Attribute};
 use util::{cvt_attr, ok_or_compile_error};
 
 mod sym {
@@ -159,6 +160,28 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     })
 }
 
+/// It turns out to be shockingly difficult to construct an [`Attribute`].
+/// That type is not [`Parse`], instead having two distinct methods
+/// for parsing "inner" vs "outer" attributes.
+///
+/// We need this [`Attribute`] in [`table`] so that we can "pushnew" it
+/// onto the end of a list of attributes. See comments within [`table`].
+fn derive_table_helper_attr() -> Attribute {
+    let source = quote!(#[derive(spacetimedb::__TableHelper)]);
+
+    struct Wrapper(Attribute);
+
+    impl Parse for Wrapper {
+        fn parse(input: ParseStream) -> syn::Result<Self> {
+            input
+                .call(Attribute::parse_outer)
+                .map(|attrs| Wrapper(attrs.into_iter().next().unwrap()))
+        }
+    }
+
+    syn::parse2::<Wrapper>(source).unwrap().0
+}
+
 /// Generates code for treating this struct type as a table.
 ///
 /// Among other things, this derives `Serialize`, `Deserialize`,
@@ -233,22 +256,46 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 #[proc_macro_attribute]
 pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     // put this on the struct so we don't get unknown attribute errors
-    let derive_table_helper = quote!(#[derive(spacetimedb::__TableHelper)]);
+    let derive_table_helper: syn::Attribute = derive_table_helper_attr();
 
     ok_or_compile_error(|| {
         let item = TokenStream::from(item);
-        let parsed_item = syn::parse2::<syn::DeriveInput>(item.clone())?;
-        let args = table::TableArgs::parse(args.into(), &parsed_item.ident)?;
-        let generated = table::table_impl(args, &parsed_item)?;
-        Ok(TokenStream::from_iter([derive_table_helper, item, generated]))
+        let mut derive_input: syn::DeriveInput = syn::parse2(item.clone())?;
+
+        // Add `derive(__TableHelper)` only if it's not already in the attributes of the `derive_input.`
+        // If multiple `#[table]` attributes are applied to the same `struct` item,
+        // this will ensure that we don't emit multiple conflicting implementations
+        // for traits like `SpacetimeType`, `Serialize` and `Deserialize`.
+        //
+        // We need to push at the end, rather than the beginning,
+        // because rustc expands attribute macros (including derives) top-to-bottom,
+        // and we need *all* `#[table]` attributes *before* the `derive(__TableHelper)`.
+        // This way, the first `table` will insert a `derive(__TableHelper)`,
+        // and all subsequent `#[table]`s on the same `struct` will see it,
+        // and not add another.
+        //
+        // Note, thank goodness, that `syn`'s `PartialEq` impls (provided with the `extra-traits` feature)
+        // skip any [`Span`]s contained in the items,
+        // thereby comparing for syntactic rather than structural equality. This shouldn't matter,
+        // since we expect that the `derive_table_helper` will always have the same [`Span`]s,
+        // but it's nice to know.
+        if !derive_input.attrs.contains(&derive_table_helper) {
+            derive_input.attrs.push(derive_table_helper);
+        }
+
+        let args = table::TableArgs::parse(args.into(), &derive_input.ident)?;
+        let generated = table::table_impl(args, &derive_input)?;
+        Ok(TokenStream::from_iter([quote!(#derive_input), generated]))
     })
 }
 
+/// Special alias for `derive(SpacetimeType)`, aka [`schema_type`], for use by [`table`].
+///
 /// Provides helper attributes for `#[spacetimedb::table]`, so that we don't get unknown attribute errors.
 #[doc(hidden)]
 #[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index))]
-pub fn table_helper(_input: StdTokenStream) -> StdTokenStream {
-    Default::default()
+pub fn table_helper(input: StdTokenStream) -> StdTokenStream {
+    schema_type(input)
 }
 
 #[proc_macro]
