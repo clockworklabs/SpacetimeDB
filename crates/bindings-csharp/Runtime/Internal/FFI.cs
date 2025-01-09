@@ -34,6 +34,7 @@ public enum Errno : short
     BUFFER_TOO_SMALL = 11,
     UNIQUE_ALREADY_EXISTS = 12,
     SCHEDULE_AT_DELAY_TOO_LONG = 13,
+    INDEX_NOT_UNIQUE = 14,
 }
 
 #pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
@@ -84,6 +85,7 @@ internal static partial class FFI
                     Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
                     Errno.UNIQUE_ALREADY_EXISTS => new UniqueConstraintViolationException(),
                     Errno.SCHEDULE_AT_DELAY_TOO_LONG => new ScheduleAtDelayTooLongException(),
+                    Errno.INDEX_NOT_UNIQUE => new IndexNotUniqueException(),
                     _ => new UnknownException(status),
                 };
             }

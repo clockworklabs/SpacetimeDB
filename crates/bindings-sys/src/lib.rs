@@ -332,10 +332,57 @@ pub mod raw {
         /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
         /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
         /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`.
-        ///   typed at the `ProductType` the table's schema specifies.
+        ///    typed at the `ProductType` the table's schema specifies.
         /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
         /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
         pub fn datastore_insert_bsatn(table_id: TableId, row_ptr: *mut u8, row_len_ptr: *mut usize) -> u16;
+
+        /// Updates a row in the table identified by `table_id` to `row`
+        /// where the row is read from the byte string `row = row_ptr[..row_len]` in WASM memory
+        /// where `row_len = row_len_ptr[..size_of::<usize>()]` stores the capacity of `row`.
+        ///
+        /// The byte string `row` must be a BSATN-encoded `ProductValue`
+        /// typed at the table's `ProductType` row-schema.
+        ///
+        /// The row to update is found by projecting `row`
+        /// to the type of the *unique* index identified by `index_id`.
+        /// If no row is found, `row` is inserted.
+        ///
+        /// To handle auto-incrementing columns,
+        /// when the call is successful,
+        /// the `row` is written back to with the generated sequence values.
+        /// These values are written as a BSATN-encoded `pv: ProductValue`.
+        /// Each `v: AlgebraicValue` in `pv` is typed at the sequence's column type.
+        /// The `v`s in `pv` are ordered by the order of the columns, in the schema of the table.
+        /// When the table has no sequences,
+        /// this implies that the `pv`, and thus `row`, will be empty.
+        /// The `row_len` is set to the length of `bsatn(pv)`.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `row_len_ptr` is NULL or `row_len` is not in bounds of WASM memory.
+        /// - `row_ptr` is NULL or `row` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+        /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+        /// - `INDEX_NOT_UNIQUE`, when the index was not unique.
+        /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`
+        ///    typed at the `ProductType` the table's schema specifies
+        ///    or when it cannot be projected to the index identified by `index_id`.
+        /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
+        /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
+        pub fn datastore_update_bsatn(
+            table_id: TableId,
+            index_id: IndexId,
+            row_ptr: *mut u8,
+            row_len_ptr: *mut usize,
+        ) -> u16;
 
         /// Schedules a reducer to be called asynchronously, nonatomically,
         /// and immediately on a best effort basis.
@@ -750,6 +797,31 @@ pub fn datastore_insert_bsatn(table_id: TableId, row: &mut [u8]) -> Result<&[u8]
     let row_ptr = row.as_mut_ptr();
     let row_len = &mut row.len();
     cvt(unsafe { raw::datastore_insert_bsatn(table_id, row_ptr, row_len) }).map(|()| &row[..*row_len])
+}
+
+/// Updates a row into the table identified by `table_id`,
+/// where the row is a BSATN-encoded `ProductValue`
+/// matching the table's `ProductType` row-schema.
+///
+/// The row to update is found by projecting `row`
+/// to the type of the *unique* index identified by `index_id`.
+/// If no row is found, `row` is inserted.
+///
+/// The `row` is `&mut` due to auto-incrementing columns.
+/// So `row` is written to with the updated row re-encoded.
+///
+/// Returns an error if
+/// - a table with the provided `table_id` doesn't exist
+/// - an index with the provided `index_id` doesn't exist
+/// - there were unique constraint violations
+/// - `row` doesn't decode from BSATN to a `ProductValue`
+///   according to the `ProductType` that the table's schema specifies
+///   or if `row` cannot project to the index's type.
+#[inline]
+pub fn datastore_update_bsatn(table_id: TableId, index_id: IndexId, row: &mut [u8]) -> Result<&[u8], Errno> {
+    let row_ptr = row.as_mut_ptr();
+    let row_len = &mut row.len();
+    cvt(unsafe { raw::datastore_update_bsatn(table_id, index_id, row_ptr, row_len) }).map(|()| &row[..*row_len])
 }
 
 /// Deletes those rows, in the table identified by `table_id`,
