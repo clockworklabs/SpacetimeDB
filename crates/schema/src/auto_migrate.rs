@@ -52,13 +52,13 @@ pub struct AutoMigratePlan<'def> {
     /// There is also an implied check: that the schema in the database is compatible with the old ModuleDef.
     pub prechecks: Vec<AutoMigratePrecheck<'def>>,
     /// The migration steps to perform.
-    /// Order should not matter, as the steps are independent.
+    /// Order matters: `Remove`s of a particular `Def` must be ordered before `Add`s.
     pub steps: Vec<AutoMigrateStep<'def>>,
 }
 
 /// Checks that must be performed before performing an automatic migration.
 /// These checks can access table contents and other database state.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum AutoMigratePrecheck<'def> {
     /// Perform a check that adding a sequence is valid (the relevant column contains no values
     /// greater than the sequence's start value).
@@ -66,31 +66,51 @@ pub enum AutoMigratePrecheck<'def> {
 }
 
 /// A step in an automatic migration.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum AutoMigrateStep<'def> {
+    // It is important FOR CORRECTNESS that `Remove` variants are declared before `Add` variants in this enum!
+    //
+    // The ordering is used to sort the steps of an auto-migration.
+    // If adds go before removes, and the user tries to remove an index and then re-add it with new configuration,
+    // the following can occur:
+    //
+    // 1. `AddIndex("indexname")`
+    // 2. `RemoveIndex("indexname")`
+    //
+    // This results in the existing index being re-added -- which, at time of writing, does nothing -- and then removed,
+    // resulting in the intended index not being created.
+    //
+    // For now, we just ensure that we declare all `Remove` variants before `Add` variants
+    // and let `#[derive(PartialOrd)]` take care of the rest.
+    //
+    // TODO: when this enum is made serializable, a more durable fix will be needed here.
+    // Probably we will want to have separate arrays of add and remove steps.
+    //
+    /// Remove an index.
+    RemoveIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
+    /// Remove a constraint.
+    RemoveConstraint(<ConstraintDef as ModuleDefLookup>::Key<'def>),
+    /// Remove a sequence.
+    RemoveSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
+    /// Remove a schedule annotation from a table.
+    RemoveSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
+    /// Remove a row-level security query.
+    RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
+
     /// Add a table, including all indexes, constraints, and sequences.
     /// There will NOT be separate steps in the plan for adding indexes, constraints, and sequences.
     AddTable(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Add an index.
     AddIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
-    /// Remove an index.
-    RemoveIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
-    /// Remove a constraint.
-    RemoveConstraint(<ConstraintDef as ModuleDefLookup>::Key<'def>),
     /// Add a sequence.
     AddSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
-    /// Remove a sequence.
-    RemoveSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
-    /// Change the access of a table.
-    ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Add a schedule annotation to a table.
     AddSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
-    /// Remove a schedule annotation from a table.
-    RemoveSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
     /// Add a row-level security query.
     AddRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
-    /// Remove a row-level security query.
-    RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
+
+    /// Change the access of a table.
+    ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
 }
 
 /// Something that might prevent an automatic migration.
@@ -180,6 +200,9 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
     let rls_ok = auto_migrate_row_level_security(&mut plan);
 
     let ((), (), (), (), ()) = (tables_ok, indexes_ok, sequences_ok, constraints_ok, rls_ok).combine_errors()?;
+
+    plan.steps.sort();
+    plan.prechecks.sort();
 
     Ok(plan)
 }
@@ -435,7 +458,7 @@ fn auto_migrate_row_level_security(plan: &mut AutoMigratePlan) -> Result<()> {
 mod tests {
     use super::*;
     use spacetimedb_data_structures::expect_error_matching;
-    use spacetimedb_lib::{db::raw_def::*, AlgebraicType, ProductType, ScheduleAt};
+    use spacetimedb_lib::{db::raw_def::*, is_sorted, AlgebraicType, ProductType, ScheduleAt};
     use spacetimedb_primitives::{ColId, ColList};
     use v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess};
     use validate::tests::expect_identifier;
@@ -641,6 +664,8 @@ mod tests {
         let deliveries_schedule = "Deliveries_sched";
         let inspections_schedule = "Inspections_sched";
 
+        assert!(is_sorted(plan.prechecks.iter()));
+
         assert_eq!(plan.prechecks.len(), 1);
         assert_eq!(
             plan.prechecks[0],
@@ -655,6 +680,8 @@ mod tests {
         };
 
         let steps = &plan.steps[..];
+
+        assert!(is_sorted(steps.iter()));
 
         assert!(
             steps.contains(&AutoMigrateStep::RemoveSequence(apples_sequence)),

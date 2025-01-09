@@ -374,3 +374,17 @@ pub fn resolved_type_via_v9<T: SpacetimeType>() -> AlgebraicType {
         .resolve_refs()
         .expect("recursive types not supported")
 }
+
+/// Check that an iterator is sorted.
+///
+/// TODO: remove this when [`Iterator`::is_sorted`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.is_sorted) is stabilized.
+pub fn is_sorted<T: Ord>(mut it: impl Iterator<Item = T>) -> bool {
+    let Some(mut curr) = it.next() else {
+        return true;
+    };
+    it.all(|next| {
+        let ordered = curr <= next;
+        curr = next;
+        ordered
+    })
+}

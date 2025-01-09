@@ -75,11 +75,14 @@ spacetimedb::filter!("SELECT * FROM book");
         """This tests uploading a module with a schema change that should not require clearing the database."""
 
         # Check the row-level SQL filter is created correctly
-        self.assertSql("SELECT sql FROM st_row_level_security", """\
+        self.assertSql(
+            "SELECT sql FROM st_row_level_security",
+            """\
  sql
 ------------------------
  "SELECT * FROM person"
-""")
+""",
+        )
 
         logging.info("Initial publish complete")
         # initial module code is already published by test framework
@@ -103,12 +106,15 @@ spacetimedb::filter!("SELECT * FROM book");
         logging.info("Updated")
 
         # Check the row-level SQL filter is added correctly
-        self.assertSql("SELECT sql FROM st_row_level_security", """\
+        self.assertSql(
+            "SELECT sql FROM st_row_level_security",
+            """\
  sql
 ------------------------
- "SELECT * FROM person"
  "SELECT * FROM book"
-""")
+ "SELECT * FROM person"
+""",
+        )
 
         self.logs(100)
 
