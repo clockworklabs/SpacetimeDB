@@ -373,9 +373,9 @@ pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>)
 }
 
 /// Registers a row-level security policy.
-pub fn register_row_level_security<R: RowLevelSecurityInfo>() {
+pub fn register_row_level_security(sql: &'static str) {
     register_describer(|module| {
-        module.inner.add_row_level_security(R::SQL);
+        module.inner.add_row_level_security(sql);
     })
 }
 

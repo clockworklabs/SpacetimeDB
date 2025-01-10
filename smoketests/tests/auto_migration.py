@@ -37,7 +37,8 @@ pub struct Vector2 {
     y: f64,
 }
 
-spacetimedb::filter!("SELECT * FROM person");
+#[spacetimedb::client_visibility_filter]
+const PERSON_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM person");
 """
 
     MODULE_CODE_UPDATED = (
@@ -60,7 +61,8 @@ pub fn print_books(ctx: &ReducerContext, prefix: String) {
     }
 }
 
-spacetimedb::filter!("SELECT * FROM book");
+#[spacetimedb::client_visibility_filter]
+const BOOK_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM book");
 """
     )
 
