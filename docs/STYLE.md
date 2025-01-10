@@ -63,6 +63,12 @@ Don't make promises, even weak ones, about what we plan to do in the future, wit
 
 If your document needs to describe a feature that isn't implemented yet, either rewrite to not depend on that feature, or just say that it's a "current limitation" without elaborating further. Include a workaround if there is one.
 
+### Menu items
+
+When describing GUI menu items, like **File -> Quit** or **Window -> Package Manager**, use bolded text. When describing a chain of accesses through menus and submenus, use the **->** thin arrow (that's `->`, a hyphen followed by a greater-than sign) as a separator. List the top-level menu first, and proceed left-to-right until you reach the option you want the user to interact with. Include all nested submenus, like **Foo -> Bar -> Baz -> Quux**. Bold the whole sequence, including the arrows. 
+
+It's generally not necessary or desirable to tell users where to look for the top-level menu. You may be tempted to write something like, "Open the **File** menu in the upper left, and navigate **File -> Export as -> Export as PDF**." Do not include the "upper left" unless you are absolutely confident that the menu will be located there on any combination of OS, version, desktop environment, window manager, theming configuration &c. Even within a single system, UI designers are known to move graphical elements around during updates, making statements like "upper left" obsolete and stale. We can generally trust our readers to be familiar with their own systems and the software they use, and none of our documents involve introducing readers to new GUI software. (E.g. the Unity tutorial is targeted at introducing SpacetimeDB to people who already know Unity.)
+
 ## Key vocabulary
 
 There are a small number of key terms that we need to use consistently throughout the documentation.
