@@ -310,9 +310,20 @@ pub trait RowLevelSecurityInfo {
     const SQL: &'static str;
 }
 
+/// A function which will be registered by [`register_describer`] into [`DESCRIBERS`],
+/// which will be called by [`__describe_module__`] to construct a module definition.
+///
+/// May be a closure over static data, so that e.g.
+/// [`register_row_level_security`] doesn't need to take a type parameter.
+/// Permitted by the type system to be a [`FnMut`] mutable closure,
+/// since [`DESCRIBERS`] is in a [`Mutex`] anyways,
+/// but will likely cause weird misbehaviors if a non-idempotent function is used.
+trait DescriberFn: FnMut(&mut ModuleBuilder) + Send + 'static {}
+impl<F: FnMut(&mut ModuleBuilder) + Send + 'static> DescriberFn for F {}
+
 /// Registers into `DESCRIBERS` a function `f` to modify the module builder.
-fn register_describer(f: fn(&mut ModuleBuilder)) {
-    DESCRIBERS.lock().unwrap().push(f)
+fn register_describer(f: impl DescriberFn) {
+    DESCRIBERS.lock().unwrap().push(Box::new(f))
 }
 
 /// Registers a describer for the `SpacetimeType` `T`.
@@ -389,7 +400,7 @@ struct ModuleBuilder {
 }
 
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
-static DESCRIBERS: Mutex<Vec<fn(&mut ModuleBuilder)>> = Mutex::new(Vec::new());
+static DESCRIBERS: Mutex<Vec<Box<dyn DescriberFn>>> = Mutex::new(Vec::new());
 
 /// A reducer function takes in `(Sender, Timestamp, Args)`
 /// and returns a result with a possible error message.
@@ -415,7 +426,7 @@ static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 extern "C" fn __describe_module__(description: BytesSink) {
     // Collect the `module`.
     let mut module = ModuleBuilder::default();
-    for describer in &*DESCRIBERS.lock().unwrap() {
+    for describer in &mut *DESCRIBERS.lock().unwrap() {
         describer(&mut module)
     }
 
