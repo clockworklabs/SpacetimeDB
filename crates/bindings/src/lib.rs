@@ -591,7 +591,7 @@ pub use spacetimedb_bindings_macro::table;
 ///   See the `#[table]`(#table) macro documentation for information on how to declare and use tables.
 /// - They can call logging macros from the [`log`] crate.
 ///   This writes to a private debug log attached to the database.
-///   Run `spacetime logs <database_identity>` to browse these.
+///   Run `spacetime logs <DATABASE_IDENTITY>` to browse these.
 ///
 /// Reducers are permitted to call other reducers, simply by passing their `ReducerContext` as the first argument.
 /// This is a regular function call, and does not involve any network communication. The callee will run within the
@@ -599,45 +599,9 @@ pub use spacetimedb_bindings_macro::table;
 ///
 /// # Lifecycle Reducers
 ///
-/// You can specify special lifecycle reducers that are run at set points in
-/// the module's lifecycle. You can have one of each per module.
+/// A small group of reducers are called at set points in the module lifecycle.
 ///
-/// ## `#[spacetimedb::reducer(init)]`
-///
-/// This reducer is run the first time a module is published
-/// and anytime the database is cleared.
-///
-/// The reducer cannot be called manually
-/// and may not have any parameters except for `ReducerContext`.
-/// If an error occurs when initializing, the module will not be published.
-///
-/// ## `#[spacetimedb::reducer(client_connected)]`
-///
-/// This reducer is run when a client connects to the SpacetimeDB module.
-/// Their identity can be found in the sender value of the `ReducerContext`.
-///
-/// The reducer cannot be called manually
-/// and may not have any parameters except for `ReducerContext`.
-/// If an error occurs in the reducer, the client will be disconnected.
-///
-/// ## `#[spacetimedb::reducer(client_disconnected)]`
-///
-/// This reducer is run when a client disconnects from the SpacetimeDB module.
-/// Their identity can be found in the sender value of the `ReducerContext`.
-///
-/// The reducer cannot be called manually
-/// and may not have any parameters except for `ReducerContext`.
-/// If an error occurs in the disconnect reducer,
-/// the client is still recorded as disconnected.
-///
-/// ## `#[spacetimedb::reducer(update)]`
-///
-/// This reducer is run when the module is updated,
-/// i.e., when publishing a module for a database that has already been initialized.
-///
-/// The reducer cannot be called manually and may not have any parameters.
-/// If an error occurs when initializing, the module will not be published,
-/// and the previous version of the module attached to the database will continue executing.
+/// See the [Lifecycle Reducers](crate#lifecycle-reducers) documentation at the crate root.
 ///
 /// # Scheduled Reducers
 ///

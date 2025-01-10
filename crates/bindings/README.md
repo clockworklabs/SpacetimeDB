@@ -148,7 +148,7 @@ pub fn say_hello(ctx: &ReducerContext) {
 }
 ```
 
-This skeleton declares a [table](#tables), some [reducers](#reducers), and some [lifecycle reducers](#lifecycle-annotations).
+This skeleton declares a [table](#tables), some [reducers](#reducers), and some [lifecycle reducers](#lifecycle-reducers).
 
 To compile the project, run the following command:
 
@@ -201,7 +201,7 @@ The `spacetime publish [DATABASE_IDENTITY]` command compiles a module and upload
   - (Or creates a fresh database and identity, if no identity was provided).
 - The host loads the new module and inspects its requested database schema. If there are changes to the schema, the host tries perform an [automatic migration](#automatic-migrations). If the migration fails, publishing fails.
 - The host terminates the old module attached to the database.
-- The host installs the new module into the database. It begins running the module's [lifecycle reducers](#lifecycle-annotations) and [scheduled reducers](#scheduled-reducers).
+- The host installs the new module into the database. It begins running the module's [lifecycle reducers](#lifecycle-reducers) and [scheduled reducers](#scheduled-reducers).
 - The host begins allowing clients to call the module's reducers.
 
 From the perspective of clients, this process is mostly seamless. Open connections are maintained and subscriptions continue functioning. [Automatic migrations](#automatic-migrations) forbid most table changes except for adding new tables, so client code does not need to be recompiled.
@@ -343,7 +343,43 @@ SpacetimeDB Rust modules have built-in support for the [log crate](https://docs.
 spacetime logs <DATABASE_IDENTITY>
 ```
 
-#### Lifecycle annotations
+#### Lifecycle Reducers
+
+You can specify special lifecycle reducers that are run at set points in
+the module's lifecycle. You can have one of each per module.
+
+These reducers cannot be called manually
+and may not have any parameters except for `ReducerContext`.
+
+## `#[spacetimedb::reducer(init)]`
+
+This reducer is run the first time a module is published
+and any time the database is cleared.
+
+If an error occurs when initializing, the module will not be published.
+
+## `#[spacetimedb::reducer(client_connected)]`
+
+This reducer is run when a client connects to the SpacetimeDB module.
+Their identity can be found in the sender value of the `ReducerContext`.
+
+If an error occurs in the reducer, the client will be disconnected.
+
+## `#[spacetimedb::reducer(client_disconnected)]`
+
+This reducer is run when a client disconnects from the SpacetimeDB module.
+Their identity can be found in the sender value of the `ReducerContext`.
+
+If an error occurs in the disconnect reducer,
+the client is still recorded as disconnected.
+
+## `#[spacetimedb::reducer(update)]`
+
+This reducer is run when the module is updated,
+i.e., when publishing a module for a database that has already been initialized.
+
+If an error occurs when updating, the module will not be published,
+and the previous version of the module attached to the database will continue executing.
 
 #### Scheduled reducers
 
