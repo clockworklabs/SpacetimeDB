@@ -354,3 +354,21 @@ fn assert_caller_identity_is_module_identity(ctx: &ReducerContext) {
         log::info!("Called by the owner {owner}");
     }
 }
+
+/// These two tables defined with the same row type
+/// verify that we can define multiple tables with the same type.
+///
+/// In the past, we've had issues where each `#[table]` attribute
+/// would try to emit its own `impl` block for `SpacetimeType` (and some other traits),
+/// resulting in duplicate/conflicting trait definitions.
+/// See e.g. [SpacetimeDB issue #2097](https://github.com/clockworklabs/SpacetimeDB/issues/2097).
+#[spacetimedb::table(public, name = player)]
+#[spacetimedb::table(public, name = logged_out_player)]
+pub struct Player {
+    #[primary_key]
+    identity: Identity,
+    #[auto_inc]
+    #[unique]
+    player_id: u64,
+    name: String,
+}

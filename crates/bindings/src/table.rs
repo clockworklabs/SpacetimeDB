@@ -149,11 +149,6 @@ pub struct ScheduleDesc<'a> {
     pub scheduled_at_column: u16,
 }
 
-#[doc(hidden)]
-pub trait __MapRowTypeToTable {
-    type Table: Table;
-}
-
 /// A UNIQUE constraint violation on a table was attempted.
 // TODO: add column name for better error message
 #[derive(Debug)]
