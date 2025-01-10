@@ -270,6 +270,8 @@ fn do_something(ctx: &ReducerContext) {
 See [reducers](#reducers) for more information on declaring reducers.
 See the [`#[table]` macro](macro@crate::table) for more information on declaring and using tables.
 
+<!-- TODO: outline generated methods here, split up by annotations required. -->
+
 #### Public and Private tables
 
 By default, tables are considered **private**. This means that they are only readable by the table owner and by reducers. Reducers run inside the database, so clients cannot see private tables at all.
@@ -313,7 +315,7 @@ enum GiveItemError {
 }
 
 #[reducer]
-fn give_player_item(ctx: &ReducerContext, player_id: u64, item_id: u64) {
+fn give_player_item(ctx: &ReducerContext, player_id: u64, item_id: u64) -> Result<(), GiveItemError> {
     /* ... */
 }
 ```

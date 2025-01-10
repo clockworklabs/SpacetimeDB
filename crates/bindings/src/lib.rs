@@ -287,8 +287,8 @@ fn delete_id(ctx: &ReducerContext, id: u64) {
 /// They are regular structs, with no special behavior.
 /// In particular, modifying them does not automatically modify the database!
 ///
-/// Instead, a struct implementing [`Table<Row = Self>`] is generated. This can be looked up in a [`ReducerContext`]
-/// using `ctx.db.{table_name}()`. This method represents a handle to a database table, and can be used to
+/// Instead, a type implementing [`Table<Row = Self>`] is generated. This can be looked up in a [`ReducerContext`]
+/// using `ctx.db.{table_name}()`. This type represents a handle to a database table, and can be used to
 /// iterate and modify the table's elements. It is a view of the entire table -- the entire set of rows at the time of the reducer call.
 ///
 /// # Example
@@ -297,7 +297,6 @@ fn delete_id(ctx: &ReducerContext, id: u64) {
 /// use spacetimedb::{table, ReducerContext};
 ///
 /// #[table(name = users, public,
-///         index(name = id_and_username, btree(columns = [id, username])),
 ///         index(name = popularity_and_username, btree(columns = [popularity, username])),
 /// )]
 /// pub struct User {
@@ -322,6 +321,8 @@ fn delete_id(ctx: &ReducerContext, id: u64) {
 ///         log::debug!("{:?}", user);
 ///     }
 ///
+/// /*
+/// TODO: whoops, use filter, and popularity_and_username.
 ///     // For every named `index`, the table has an extra method
 ///     // for getting a corresponding `spacetimedb::BTreeIndex`.
 ///     let by_id_and_username: spacetimedb::BTreeIndex<_, (u32, String), _> =
@@ -329,6 +330,7 @@ fn delete_id(ctx: &ReducerContext, id: u64) {
 ///     let mut billy: User = by_id_and_username.find((&57, &"Billy".to_string()));
 ///     billy.popularity += 5;
 ///     by_id_and_username.update(billy);
+/// */
 ///
 ///     // For every `#[unique]` or `#[primary_key]` field,
 ///     // the table has an extra method that allows getting a
