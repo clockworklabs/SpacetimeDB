@@ -15,3 +15,11 @@ pub enum Filter {
     /// will be reported during `spacetime publish`, not at compile time.
     Sql(&'static str),
 }
+
+impl Filter {
+    #[doc(hidden)]
+    pub fn sql_text(&self) -> &'static str {
+        let Filter::Sql(sql) = self;
+        sql
+    }
+}

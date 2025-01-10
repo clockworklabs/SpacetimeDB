@@ -410,11 +410,10 @@ pub fn client_visibility_filter(args: StdTokenStream, item: StdTokenStream) -> S
 
             const _: () = {
                 #[export_name = #register_rls_symbol]
-                extern "C" fn #register_rls_symbol() {
-                    let spacetimedb::Filter::Sql(sql) = #rls_ident;
-                    spacetimedb::rt::register_row_level_security(sql)
+                extern "C" fn __register_client_visibility_filter() {
+                    spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())
                 }
-            }
+            };
         })
     })
 }
