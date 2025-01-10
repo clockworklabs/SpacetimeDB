@@ -44,9 +44,9 @@ members = [
   "tools/upgrade-version",
 ]
 default-members = ["crates/cli"]
-# cargo feature graph resolver. v2 is default in edition2021 but workspace
+# cargo feature graph resolver. v3 is default in edition2024 but workspace
 # manifests don't have editions.
-resolver = "2"
+resolver = "3"
 
 [profile.release]
 opt-level = 3
