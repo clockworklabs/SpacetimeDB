@@ -703,6 +703,9 @@ pub use spacetimedb_bindings_macro::table;
 ///     ctx.db.send_message_timer().insert(SendMessageTimer {
 ///         scheduled_id: 1,
 ///         text:"I'm a bot sending a message one time".to_string(),
+///
+///         // Creating a `ScheduleAt` from a `Timestamp` results in the reducer
+///         // being called once, at exactly the time `future_timestamp`.
 ///         scheduled_at: future_timestamp.into()
 ///     });
 ///
@@ -710,10 +713,18 @@ pub use spacetimedb_bindings_macro::table;
 ///     ctx.db.send_message_timer().insert(SendMessageTimer {
 ///         scheduled_id: 0,
 ///         text:"I'm a bot sending a message every 10 seconds".to_string(),
+///
+///         // Creating a `ScheduleAt` from a `Duration` results in the reducer
+///         // being called in a loop, once every `loop_duration`.
 ///         scheduled_at: loop_duration.into()
 ///     });
 /// }
 /// ```
+///
+/// Scheduled reducers are called on a best-effort basis and may be slightly delayed in their execution
+/// when a database is under heavy load.
+///
+/// <!-- TODO: SLAs? -->
 ///
 /// [`&ReducerContext`]: `ReducerContext`
 /// [clients]: https://spacetimedb.com/docs/#client
