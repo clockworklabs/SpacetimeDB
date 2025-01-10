@@ -43,19 +43,19 @@ Both of these can be declared in Rust code:
 ```no_run
 use spacetimedb::{table, reducer, ReducerContext, Table};
 
-#[table(name = person)]
+#[table(name = people)]
 pub struct Person {
     id: u32,
     name: String
 }
 
 #[reducer]
-fn add_person(ctx: &ReducerContext, 
-
-
+fn add_person(ctx: &ReducerContext, id: u32, name: String) {
+    ctx.db.people().insert(Person { id, name });
+}
 ```
 
-These are the only ways for a SpacetimeDB module to interact with the outside world. Calling functions from `std::net` or `std::fs` inside a module will result in runtime errors.
+Reducers and tables are the only ways for a SpacetimeDB module to interact with the outside world. Calling functions from `std::net` or `std::fs` inside a reducer will result in runtime errors.
 
 Reducers don't return data directly; they can only modify the database. Clients connect directly to the database and use SQL to query [public](#public-and-private-tables) tables. Clients can also open subscriptions to receive streaming updates as the results of a SQL query change.
 
@@ -212,7 +212,7 @@ However:
 
 ## Tables
 
-Tables are declared using the [`#[table(name = table_name)]` macro](https://docs.rs/spacetimedb/latest/spacetimedb/attr.table.html).
+Tables are declared using the [`#[table(name = table_name)]` macro](macro@crate::table).
 
 This macro is applied to a Rust struct with named fields. All of the fields of the table must implement [`SpacetimeType`].
 
@@ -224,7 +224,7 @@ use spacetimedb::{table, reducer, ReducerContext, Table};
 /// A `Person` is a row of the table `people`.
 #[table(name = people, public)]
 pub struct Person {
-    #[unique]
+    #[primary_key]
     #[auto_inc]
     id: u64,
     #[index(btree)]
@@ -267,7 +267,7 @@ fn do_something(ctx: &ReducerContext) {
 ```
 
 See [reducers](#reducers) for more information on declaring reducers.
-
+See the [`#[table]` macro](macro@crate::table) for more information on declaring and using tables.
 
 #### Public and Private tables
 
@@ -294,8 +294,7 @@ pub struct LootItem {
 <!-- TODO: can module owner `spacetime sql` write/read private tables? -->
 
 To learn how to subscribe to a public table, see the [client SDK documentation](https://spacetimedb.com/docs/sdks).
-
-See the [`#[table]` macro](macro@crate::table) for more information on declaring and using tables.
+<!-- TODO: more specific link. -->
 
 ## Reducers
 
@@ -326,8 +325,6 @@ Reducers have access to a special [`ReducerContext`] argument. This argument all
 
 The most important field of [`ReducerContext`] is [`.db`](ReducerContext#structfield.db). This field provides a view of the module's database. The [`#[table]`](macro@crate::table) macro generates traits that add accessor methods to this field.
 
-For example, if we declare a table named `bananas`, we will find a method `bananas`
-
 <!-- TODO: this seems to work sometimes, but not always... Sometimes the links to downstream trait implementations aren't generated for some reason. Maybe it only works in the same cargo workspace?
 
 To see all of the available methods on `ctx.db`, run `cargo doc` in your module's directory, and navigate to the `spacetimedb::Local` struct in the generated documentation. This will be at the path:
@@ -337,7 +334,7 @@ To see all of the available methods on `ctx.db`, run `cargo doc` in your module'
 
 #### The `log` crate
 
-SpacetimeDB Rust modules have built-in support for the [log crate](https://docs.rs/log/latest/log/index.html). All modules automatically install a suitable logger when they are first loaded by SpacetimeDB. (At time of writing, this happens [here](https://github.com/clockworklabs/SpacetimeDB/blob/e9e287b8aab638ba6e8bf9c5d41d632db041029c/crates/bindings/src/logger.rs)). Log macros can be used anywhere in module code, and log outputs of a running module can be inspected using the `spacetime logs` command:
+SpacetimeDB Rust modules have built-in support for the [log crate](log). All modules automatically install a suitable logger when they are first loaded by SpacetimeDB. (At time of writing, this happens [here](https://github.com/clockworklabs/SpacetimeDB/blob/e9e287b8aab638ba6e8bf9c5d41d632db041029c/crates/bindings/src/logger.rs)). Log macros can be used anywhere in module code, and log outputs of a running module can be inspected using the `spacetime logs` command:
 
 ```text
 spacetime logs <DATABASE_IDENTITY>
@@ -345,121 +342,13 @@ spacetime logs <DATABASE_IDENTITY>
 
 #### Lifecycle Reducers
 
-You can specify special lifecycle reducers that are run at set points in
-the module's lifecycle. You can have one of each per module.
+A small group of reducers are called at set points in the module lifecycle. These are used to initialize
+the database and respond to client connections. See [Lifecycle Reducers](macro@crate::reducer#lifecycle-reducers).
 
-These reducers cannot be called manually
-and may not have any parameters except for `ReducerContext`.
+#### Scheduled Reducers
 
-## `#[spacetimedb::reducer(init)]`
-
-This reducer is run the first time a module is published
-and any time the database is cleared.
-
-If an error occurs when initializing, the module will not be published.
-
-## `#[spacetimedb::reducer(client_connected)]`
-
-This reducer is run when a client connects to the SpacetimeDB module.
-Their identity can be found in the sender value of the `ReducerContext`.
-
-If an error occurs in the reducer, the client will be disconnected.
-
-## `#[spacetimedb::reducer(client_disconnected)]`
-
-This reducer is run when a client disconnects from the SpacetimeDB module.
-Their identity can be found in the sender value of the `ReducerContext`.
-
-If an error occurs in the disconnect reducer,
-the client is still recorded as disconnected.
-
-## `#[spacetimedb::reducer(update)]`
-
-This reducer is run when the module is updated,
-i.e., when publishing a module for a database that has already been initialized.
-
-If an error occurs when updating, the module will not be published,
-and the previous version of the module attached to the database will continue executing.
-
-#### Scheduled reducers
-
-In addition to life cycle annotations, reducers can be made **scheduled**.
-This allows calling the reducers at a particular time, or in a loop.
-This can be used for game loops.
-
-The scheduling information for a reducer is stored in a table.
-This table has two mandatory fields:
-- A primary key that identifies scheduled reducer calls.
-- A [`ScheduleAt`] field that says when to call the reducer.
-Managing timers with a scheduled table is as simple as inserting or deleting rows from the table.
-
-A [`ScheduleAt`] can be created from a [`spacetimedb::Timestamp`](crate::Timestamp), in which case the reducer will be scheduled once,
-or from a [`std::time::Duration`], in which case the reducer will be scheduled in a loop. In either case the conversion can be performed using [`Into::into`].
-
-```rust
-use spacetime::{table, reducer, Timestamp, ScheduleAt, Table}
-use std::time::Duration;
-use log::debug;
-
-// First, we declare the table with scheduling information.
-
-#[table(name = send_message_schedule, scheduled(send_message))]
-struct SendMessageSchedule {
-    // Mandatory fields:
-    // ============================
-
-    /// An identifier for the scheduled reducer call.
-    #[primary_key]
-    #[autoinc]
-    scheduled_id: u64,
-
-    /// Information about when the reducer should be called.
-    #[scheduled_at]
-    scheduled_at: ScheduleAt,
-
-    // After the mandatory fields, any number of fields can be added.
-    // These can be used to provide extra information to the scheduled reducer.
-
-    // Custom fields:
-    // ============================
-
-    /// The text of the scheduled message to send.
-    text: String,
-}
-
-// Then, we declare the scheduled reducer.
-// The first argument of the reducer should be, as always, a `&ReducerContext`.
-// The second argument should be a row of the scheduling information table.
-
-#[reducer]
-fn send_message(ctx: &ReducerContext, arg: SendMessageSchedule) -> Result<(), String> {
-    let message_to_send = arg.text;
-
-    // ... send the message ..
-}
-
-// Now, we want to actually start scheduling reducers.
-// It's convenient to do this inside the `init` reducer.
-#[reducer(init)]
-fn init(ctx: &ReducerContext) {
-
-    let current_time = ctx.timestamp;
-
-    let future_timestamp: Timestamp = ctx.timestamp.plus(Duration::from_secs(10)).into();
-    ctx.db.send_message_timer().insert(SendMessageTimer {
-        scheduled_id: 1,
-        text:"I'm a bot sending a message one time".to_string(),
-        scheduled_at: future_timestamp.into()
-    });
-
-    let loop_duration: Duration = Duration::from_secs(10);
-    ctx.db.send_message_timer().insert(SendMessageTimer {
-        scheduled_id: 0,
-        text:"I'm a bot sending a message every 10 seconds".to_string(),
-        scheduled_at: loop_duration.into()
-    });
-}
-```
+Reducers can be scheduled to run repeatedly. This can be used to implement timers, game loops, and
+maintenance tasks. See [Scheduled Reducers](macro@crate::reducer#scheduled-reducers).
 
 ## Automatic migrations
 

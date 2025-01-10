@@ -412,7 +412,7 @@ fn delete_id(ctx: &ReducerContext, id: u64) {
 ///
 /// * `scheduled(reducer_name)`
 ///
-///    Used to declare a [scheduled reducer](crate#scheduled-reducers).
+///    Used to declare a [scheduled reducer](macro@crate::reducer#scheduled-reducers).
 ///    
 ///    The annotated struct type must have at least the following fields:
 ///    - `scheduled_id: u64`
@@ -599,15 +599,121 @@ pub use spacetimedb_bindings_macro::table;
 ///
 /// # Lifecycle Reducers
 ///
-/// A small group of reducers are called at set points in the module lifecycle.
+/// You can specify special lifecycle reducers that are run at set points in
+/// the module's lifecycle. You can have one of each per module.
 ///
-/// See the [Lifecycle Reducers](crate#lifecycle-reducers) documentation at the crate root.
+/// These reducers cannot be called manually
+/// and may not have any parameters except for `ReducerContext`.
 ///
-/// # Scheduled Reducers
+/// #### `#[spacetimedb::reducer(init)]`
 ///
-/// Reducers can be scheduled to run repeatedly.
+/// This reducer is run the first time a module is published
+/// and any time the database is cleared.
 ///
-/// See the [Scheduled Reducers](crate#scheduled-reducers) documentation at the crate root.
+/// If an error occurs when initializing, the module will not be published.
+///
+/// #### `#[spacetimedb::reducer(client_connected)]`
+///
+/// This reducer is run when a client connects to the SpacetimeDB module.
+/// Their identity can be found in the sender value of the `ReducerContext`.
+///
+/// If an error occurs in the reducer, the client will be disconnected.
+///
+/// #### `#[spacetimedb::reducer(client_disconnected)]`
+///
+/// This reducer is run when a client disconnects from the SpacetimeDB module.
+/// Their identity can be found in the sender value of the `ReducerContext`.
+///
+/// If an error occurs in the disconnect reducer,
+/// the client is still recorded as disconnected.
+///
+/// #### `#[spacetimedb::reducer(update)]`
+///
+/// This reducer is run when the module is updated,
+/// i.e., when publishing a module for a database that has already been initialized.
+///
+/// If an error occurs when updating, the module will not be published,
+/// and the previous version of the module attached to the database will continue executing.
+///
+/// # Scheduled reducers
+///
+/// In addition to life cycle annotations, reducers can be made **scheduled**.
+/// This allows calling the reducers at a particular time, or in a loop.
+/// This can be used for game loops.
+///
+/// The scheduling information for a reducer is stored in a table.
+/// This table has two mandatory fields:
+/// - A primary key that identifies scheduled reducer calls.
+/// - A [`ScheduleAt`] field that says when to call the reducer.
+/// Managing timers with a scheduled table is as simple as inserting or deleting rows from the table.
+///
+/// A [`ScheduleAt`] can be created from a [`spacetimedb::Timestamp`](crate::Timestamp), in which case the reducer will be scheduled once,
+/// or from a [`std::time::Duration`], in which case the reducer will be scheduled in a loop. In either case the conversion can be performed using [`Into::into`].
+///
+/// ```rust
+/// use spacetime::{table, reducer, Timestamp, ScheduleAt, Table}
+/// use std::time::Duration;
+/// use log::debug;
+///
+/// // First, we declare the table with scheduling information.
+///
+/// #[table(name = send_message_schedule, scheduled(send_message))]
+/// struct SendMessageSchedule {
+///     // Mandatory fields:
+///     // ============================
+///
+///     /// An identifier for the scheduled reducer call.
+///     #[primary_key]
+///     #[autoinc]
+///     scheduled_id: u64,
+///
+///     /// Information about when the reducer should be called.
+///     #[scheduled_at]
+///     scheduled_at: ScheduleAt,
+///
+///     // After the mandatory fields, any number of fields can be added.
+///     // These can be used to provide extra information to the scheduled reducer.
+///
+///     // Custom fields:
+///     // ============================
+///
+///     /// The text of the scheduled message to send.
+///     text: String,
+/// }
+///
+/// // Then, we declare the scheduled reducer.
+/// // The first argument of the reducer should be, as always, a `&ReducerContext`.
+/// // The second argument should be a row of the scheduling information table.
+///
+/// #[reducer]
+/// fn send_message(ctx: &ReducerContext, arg: SendMessageSchedule) -> Result<(), String> {
+///     let message_to_send = arg.text;
+///
+///     // ... send the message ..
+/// }
+///
+/// // Now, we want to actually start scheduling reducers.
+/// // It's convenient to do this inside the `init` reducer.
+/// #[reducer(init)]
+/// fn init(ctx: &ReducerContext) {
+///
+///     let current_time = ctx.timestamp;
+///
+///     let future_timestamp: Timestamp = ctx.timestamp.plus(Duration::from_secs(10)).into();
+///     ctx.db.send_message_timer().insert(SendMessageTimer {
+///         scheduled_id: 1,
+///         text:"I'm a bot sending a message one time".to_string(),
+///         scheduled_at: future_timestamp.into()
+///     });
+///
+///     let loop_duration: Duration = Duration::from_secs(10);
+///     ctx.db.send_message_timer().insert(SendMessageTimer {
+///         scheduled_id: 0,
+///         text:"I'm a bot sending a message every 10 seconds".to_string(),
+///         scheduled_at: loop_duration.into()
+///     });
+/// }
+/// ```
 ///
 /// [`&ReducerContext`]: `ReducerContext`
 /// [clients]: https://spacetimedb.com/docs/#client
