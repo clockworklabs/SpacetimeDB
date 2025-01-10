@@ -265,26 +265,6 @@ fn filtering_non_unique(ctx: &ReducerContext) {
 }
 ```
 
-> NOTE: An unfortunate interaction between Rust's trait solver and integer literal defaulting rules means that you must specify the types of integer literals passed to `filter` and `find` methods via the suffix syntax, like `21u32`. If you don't, you'll see a compiler error like:
-> ```text
-> error[E0271]: type mismatch resolving `<i32 as FilterableValue>::Column == u32`
->    --> modules/rust-wasm-test/src/lib.rs:356:48
->     |
-> 356 |     for person in ctx.db.person().age().filter(21) {
->     |                                         ------ ^^ expected `u32`, found `i32`
->     |                                         |
->     |                                         required by a bound introduced by this call
->     |
->     = note: required for `i32` to implement `BTreeIndexBounds<(u32,), SingleBound>`
-> note: required by a bound in `BTreeIndex::<Tbl, IndexType, Idx>::filter`
->     |
-> 410 |     pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
->     |            ------ required by a bound in this associated function
-> 411 |     where
-> 412 |         B: BTreeIndexBounds<IndexType, K>,
->     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `BTreeIndex::<Tbl, IndexType, Idx>::filter`
-> ```
-
 #### Deleting
 
 Like filtering, we can delete by an indexed or unique column instead of the entire row.
