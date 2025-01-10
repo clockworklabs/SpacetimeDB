@@ -1,32 +1,122 @@
-# Unity Tutorial - Basic Multiplayer - Part 3 - Client
+# Unity Tutorial - Blackholio - Part 3 - Gameplay
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
-This progressive tutorial is continued from one of the Part 2 tutorials:
+This progressive tutorial is continued from part 2:
 
-- [Rust Server Module](/docs/unity/part-2a-rust)
-- [C# Server Module](/docs/unity/part-2b-c-sharp)
+- [Connecting to SpacetimeDB](/docs/unity/part-2)
 
-## Updating our Unity Project Client to use SpacetimeDB
+### Logging Players In
 
-Now we are ready to connect our _BitCraft Mini_ project to SpacetimeDB.
+Let's start by adding more functionality to our server module. We're going to modify our module to log in a player when they connect to the database, or to create a new player if they've never connected before.
 
-### Import the SDK and Generate Module Files
+Let's add a second table to our `Player` struct. Modify the `Player` struct by adding this above the struct:
 
-1. Add the SpacetimeDB Unity Package using the Package Manager. Open the Package Manager window by clicking on Window -> Package Manager. Click on the + button in the top left corner of the window and select "Add package from git URL". Enter the following URL and click Add.
-
-```bash
-https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git
+```rust
+#[spacetimedb::table(name = logged_out_player)]
 ```
 
-![Unity-PackageManager](/images/unity-tutorial/Unity-PackageManager.JPG)
+Your struct should now look like this:
 
-3. The next step is to generate the module specific client files using the SpacetimeDB CLI. The files created by this command provide an interface for retrieving values from the local client cache of the database and for registering for callbacks to events. In your terminal or command window, run the following commands.
-
-```bash
-mkdir -p ../client/Assets/module_bindings
-spacetime generate --out-dir ../client/Assets/module_bindings --lang=csharp
+```rust
+#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(name = logged_out_player)]
+#[derive(Debug, Clone)]
+pub struct Player {
+    #[primary_key]
+    identity: Identity,
+    #[unique]
+    #[auto_inc]
+    player_id: u32,
+    name: String,
+}
 ```
+
+This line creates an additional tabled called `logged_out_player` whose rows share the same `Player` type as in the `player` table.
+
+> IMPORTANT! Note that this new table is not marked `public`. This means that it can only be accessed by the database owner (which is almost always the database creator). In order to prevent any unintended data access, all SpacetimeDB tables are private by default.
+>
+> If your client isn't syncing rows from the server, check that your table is not accidentally marked private.
+
+Next, modify your `connect` reducer and add a new `disconnect` reducer below it:
+
+```rust
+#[spacetimedb::reducer(client_connected)]
+pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
+    if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender) {
+        ctx.db.player().insert(player.clone());
+        ctx.db.logged_out_player().delete(player);
+    } else {
+        ctx.db.player().try_insert(Player {
+            identity: ctx.sender,
+            player_id: 0,
+            name: String::new(),
+        })?;
+    }
+    Ok(())
+}
+
+#[spacetimedb::reducer(client_disconnected)]
+pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
+    let player = ctx
+        .db
+        .player()
+        .identity()
+        .find(&ctx.sender)
+        .ok_or("Player not found")?;
+    ctx.db.logged_out_player().insert(player);
+    ctx.db.player().identity().delete(&ctx.sender);
+    Ok(())
+}
+```
+
+Now when a client connects, if the player corresponding to the client is in the `logged_out_player` table, we will move them into the `player` table, thus indicating that they are logged in and connected. For any new unrecognized client connects we will create a `Player` and insert it into the `player` table.
+
+When a player disconnects, we will transfer their player row from the `player` table to the `logged_out_player` table to indicate they're offline.
+
+> Note that we could have added a `logged_in` boolean to the `Player` type to indicated whether the player is logged in. There's nothing incorrect about that approach, however for several reasons we recommend this two table approach:
+> - We can iterate over all logged in players without any `if` statements or branching
+> - The `Player` type now uses less program memory improving cache efficiency
+> - We can easily check whether a player is logged in, based on whether their row exists in the `player` table
+>
+> This approach is more generally referred to as [existence based processing](https://www.dataorienteddesign.com/dodmain/node4.html) and it is a common technique in data-oriented design.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ### Connect to Your SpacetimeDB Module
 
@@ -36,92 +126,7 @@ The Unity SpacetimeDB SDK relies on there being a `NetworkManager` somewhere in 
 
 Next we are going to connect to our SpacetimeDB module. Open `Assets/_Project/Game/BitcraftMiniGameManager.cs` in your editor of choice and add the following code at the top of the file:
 
-**Append to the top of BitcraftMiniGameManager.cs**
-
-```csharp
-using SpacetimeDB;
-using SpacetimeDB.Types;
-using System.Linq;
-```
-
-At the top of the class definition add the following members:
-
-**Append to the top of BitcraftMiniGameManager class inside of BitcraftMiniGameManager.cs**
-
-```csharp
-// These are connection variables that are exposed on the GameManager
-// inspector.
-[SerializeField] private string moduleAddress = "unity-tutorial";
-[SerializeField] private string hostName = "localhost:3000";
-
-// This is the identity for this player that is automatically generated
-// the first time you log in. We set this variable when the
-// onIdentityReceived callback is triggered by the SDK after connecting
-private Identity local_identity;
-```
-
-The first three fields will appear in your Inspector so you can update your connection details without editing the code. The `moduleAddress` should be set to the domain you used in the publish command. You should not need to change `hostName` if you are using SpacetimeDB locally.
-
-Now add the following code to the `Start()` function. For clarity, replace your entire `Start()` function with the function below.
-
-**REPLACE the Start() function in BitcraftMiniGameManager.cs**
-
-```csharp
-// Start is called before the first frame update
-void Start()
-{
-    instance = this;
-
-    Application.runInBackground = true;
-
-    SpacetimeDBClient.instance.onConnect += () =>
-    {
-        Debug.Log("Connected.");
-
-        // Request all tables
-        SpacetimeDBClient.instance.Subscribe(new List<string>()
-        {
-            "SELECT * FROM *",
-        });
-    };
-
-    // Called when we have an error connecting to SpacetimeDB
-    SpacetimeDBClient.instance.onConnectError += (error, message) =>
-    {
-        Debug.LogError($"Connection error: {error} - {message}");
-    };
-
-    // Called when we are disconnected from SpacetimeDB
-    SpacetimeDBClient.instance.onDisconnect += (closeStatus, error) =>
-    {
-        Debug.Log("Disconnected.");
-    };
-
-    // Called when we receive the client identity from SpacetimeDB
-    SpacetimeDBClient.instance.onIdentityReceived += (token, identity, address) => {
-        AuthToken.SaveToken(token);
-        local_identity = identity;
-    };
-
-    // Called after our local cache is populated from a Subscribe call
-    SpacetimeDBClient.instance.onSubscriptionApplied += OnSubscriptionApplied;
-
-    // Now that we’ve registered all our callbacks, lets connect to spacetimedb
-    SpacetimeDBClient.instance.Connect(AuthToken.Token, hostName, moduleAddress);
-}
-```
-
-In our `onConnect` callback we are calling `Subscribe` and subscribing to all data in the database. You can also subscribe to specific tables using SQL syntax like `SELECT * FROM MyTable`. Our SQL documentation enumerates the operations that are accepted in our SQL syntax.
-
 Subscribing to tables tells SpacetimeDB what rows we want in our local client cache. We will also not get row update callbacks or event callbacks for any reducer that does not modify a row that matches at least one of our queries. This means that events can happen on the server and the client won't be notified unless they are subscribed to at least 1 row in the change.
-
----
-
-**Local Client Cache**
-
-The "local client cache" is a client-side view of the database defined by the supplied queries to the `Subscribe` function. It contains the requested data which allows efficient access without unnecessary server queries. Accessing data from the client cache is done using the auto-generated `Iter`, `FilterBy`, and `FindBy` functions for each table, and it ensures that update and event callbacks are limited to the subscribed rows.
-
----
 
 Next we write the `OnSubscriptionApplied` callback. When this event occurs for the first time, it signifies that our local client cache is fully populated. At this point, we can verify if a player entity already exists for the corresponding user. If we do not have a player entity, we need to show the `UserNameChooser` dialog so the user can enter a username. We also put the message of the day into the chat window. Finally we unsubscribe from the callback since we only need to do this once.
 

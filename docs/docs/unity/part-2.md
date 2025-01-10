@@ -1,4 +1,4 @@
-# Unity Tutorial - Blackholio - Part 2a - Server Module (Rust)
+# Unity Tutorial - Blackholio - Part 2 - Connecting to SpacetimeDB
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
@@ -25,8 +25,7 @@ First we need to add some imports at the top of the file.
 **Copy and paste into lib.rs:**
 
 ```rust
-use spacetimedb::{Identity, SpacetimeType, ReducerContext};
-use log;
+use spacetimedb::{Identity, SpacetimeType, ReducerContext, Timestamp};
 ```
 
 We are going to start by defining a SpacetimeDB *table*. A *table* in SpacetimeDB is a relational database table which stores rows, similar to something you might find in SQL. SpacetimeDB tables differ from normal relational database tables in that they are stored fully in memory, are blazing fast to access, and are defined in your module code, rather than in SQL.
@@ -66,7 +65,7 @@ Next, we're going to define a new `SpacetimeType` called `DbVector3` which we're
 
 ```rust
 // This allows us to store 2D points in tables.
-#[derive(SpacetimeType, Clone)]
+#[derive(SpacetimeType, Clone, Debug)]
 pub struct DbVector2 {
     pub x: f32,
     pub y: f32,
@@ -114,216 +113,282 @@ We've created two types of entities in our game world: `Food`s and `Circle`s. `F
 
 The `Circle` table, however, represents an entity that is controlled by a player. We've added a few additional fields to a `Circle` like `player_id` so that we know which player that circle belongs to.
 
-### Writing a Reducer
+### Representing Players
 
-Next, we write our very first reducer, `create_player`. From the client we will call this reducer when we create a new player:
-
-**Append to the bottom of lib.rs:**
+Next, let's create a table to store our player data.
 
 ```rust
-// This reducer is called when the user logs in for the first time and
-// enters a username
-#[spacetimedb(reducer)]
-pub fn create_player(ctx: ReducerContext, username: String) -> Result<(), String> {
-    // Get the Identity of the client who called this reducer
-    let owner_id = ctx.sender;
+#[spacetimedb::table(name = player, public)]
+#[derive(Debug, Clone)]
+pub struct Player {
+    #[primary_key]
+    identity: Identity,
+    #[unique]
+    #[auto_inc]
+    player_id: u32,
+    name: String,
+}
+```
 
-    // Make sure we don't already have a player with this identity
-    if PlayerComponent::find_by_owner_id(&owner_id).is_some() {
-        log::info!("Player already exists");
-        return Err("Player already exists".to_string());
-    }
+There's a few new concepts we should touch on. First of all, we are using the `#[unique]` attribute on the `player_id` field. This attribute adds a constraint to the table that ensures that only one row in the player table has a particular `player_id`.
 
-    // Create a new entity for this player and get a unique `entity_id`.
-    let entity_id = EntityComponent::insert(EntityComponent
-    {
-        entity_id: 0,
-        position: StdbVector3 { x: 0.0, y: 0.0, z: 0.0 },
-        direction: 0.0,
-        moving: false,
-    }).expect("Failed to create a unique PlayerComponent.").entity_id;
+We also have an `identity` field which uses the `Identity` type. The `Identity` type is a identifier that SpacetimeDB uses to uniquely assign and authenticate SpacetimeDB users.
 
-    // The PlayerComponent uses the same entity_id and stores the identity of
-    // the owner, username, and whether or not they are logged in.
-    PlayerComponent::insert(PlayerComponent {
-        entity_id,
-        owner_id,
-        username: username.clone(),
-        logged_in: true,
-    }).expect("Failed to insert player component.");
+### Writing a Reducer
 
-    log::info!("Player created: {}({})", username, entity_id);
+Next, we write our very first reducer. A reducer is a module function which can be called by clients. Let's write a simple debug reducer to see how they work.
 
+```rust
+#[spacetimedb::reducer]
+pub fn debug(ctx: &ReducerContext) -> Result<(), String> {
+    log::debug!("This reducer was called by {}.", ctx.sender);
     Ok(())
 }
 ```
+
+This reducer doesn't update any tables, it just prints out the `Identity` of the client that called it.
 
 ---
 
 **SpacetimeDB Reducers**
 
-"Reducer" is a term coined by Clockwork Labs that refers to a function which when executed "reduces" into a list of inserts and deletes, which is then packed into a single database transaction. Reducers can be called remotely using the CLI, client SDK or can be scheduled to be called at some future time from another reducer call.
+"Reducer" is a term coined by Clockwork Labs that refers to a function which when executed "reduces" a set of inserts and deletes into the database state. The term derives from functional programming and is closely related to [similarly named concepts](https://redux.js.org/tutorials/fundamentals/part-2-concepts-data-flow#reducers) in other frameworks like React Redux. Reducers can be called remotely using the CLI, client SDK or can be scheduled to be called at some future time from another reducer call.
+
+All reducers execute *transactionally* and *atomically*, meaning that from within the reducer it will appear as though all changes are being applied to the database immediately, however from the outside changes made in a reducer will only be applied to the database once the reducer completes successfully. If you return an error from a reducer or panic within a reducer, all changes made to the database will be rolled back, as if the function had never been called. If you're unfamiliar with atomic transactions, it may not be obvious yet just how useful and important this feature is, but once you build a somewhat complex application it will become clear just how invaluable this feature is.
 
 ---
 
-SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
+### Publishing the Module
 
-- `init` - Called the first time you publish your module and anytime you clear the database. We'll learn about publishing later.
-- `connect` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `sender` value of the `ReducerContext`.
-- `disconnect` - Called when a user disconnects from the SpacetimeDB module.
+Now that we have some basic functionality, let's publish the module to SpacetimeDB and call our debug reducer.
 
-Next, we are going to write a custom `Init` reducer that inserts the default message of the day into our `Config` table.
+In a new terminal window, run a local version of SpacetimeDB with the command:
 
-**Append to the bottom of lib.rs:**
+```sh
+spacetime start
+```
+
+This following log output indicates that SpacetimeDB is successfully running on your machine.
+
+```
+Starting SpacetimeDB listening on 127.0.0.1:3000
+```
+
+Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/server-rust` directory and run `spacetime publish --server local blackholio`. This will publish our Blackholio server logic to SpacetimeDB.
+
+If the publish completed successfully, you will see something like the following in the logs:
+
+```
+Build finished successfully.
+Uploading to local => http://127.0.0.1:3000
+Publishing module...
+Created new database with name: blackholio, identity: c200d2c69b4524292b91822afac8ab016c15968ac993c28711f68c6bc40b89d5
+```
+
+Next, use the `spacetime` command to call our newly defined `debug` reducer:
+
+```sh
+spacetime call blackholio debug
+```
+
+If the call completed successfully, that command will have no output, but we can see the debug logs by running:
+
+```sh
+spacetime logs blackholio
+```
+
+You should see something like the following output:
+
+```sh
+2025-01-09T16:08:38.144299Z  INFO: spacetimedb: Creating table `circle`
+2025-01-09T16:08:38.144438Z  INFO: spacetimedb: Creating table `config`
+2025-01-09T16:08:38.144451Z  INFO: spacetimedb: Creating table `entity`
+2025-01-09T16:08:38.144470Z  INFO: spacetimedb: Creating table `food`
+2025-01-09T16:08:38.144479Z  INFO: spacetimedb: Creating table `player`
+2025-01-09T16:08:38.144841Z  INFO: spacetimedb: Database initialized
+2025-01-09T16:08:47.306823Z  INFO: src/lib.rs:68: This reducer was called by c200e1a6494dbeeb0bbf49590b8778abf94fae4ea26faf9769c9a8d69a3ec348.
+```
+
+### Connecting our Client
+
+Next let's connect our client to our module. Let's start by modifying our `debug` reducer. Rename the reducer to be called `connect` and add `client_connected` in parentheses after `spacetimedb::reducer`. The end result should look like this:
 
 ```rust
-// Called when the module is initially published
-#[spacetimedb(init)]
-pub fn init() {
-    Config::insert(Config {
-        version: 0,
-        message_of_the_day: "Hello, World!".to_string(),
-    }).expect("Failed to insert config.");
+#[spacetimedb::reducer(client_connected)]
+pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
+    log::debug!("{} just connected.", ctx.sender);
+    Ok(())
 }
 ```
 
-We use the `connect` and `disconnect` reducers to update the logged in state of the player. The `update_player_login_state` helper function looks up the `PlayerComponent` row using the user's identity and if it exists, it updates the `logged_in` variable and calls the auto-generated `update` function on `PlayerComponent` to update the row.
+The `client_connected` argument to the `spacetimedb::reducer` macro indicates to SpacetimeDB that this is a special reducer. This reducer is only every called by SpacetimeDB itself when a client connects to your module.
 
-**Append to the bottom of lib.rs:**
+> SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
+> 
+> - `init` - Called the first time you publish your module and anytime you clear the database with `spacetime publish <name> --delete-data`.
+> - `client_connected` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `sender` value of the `ReducerContext`.
+> - `client_disconnected` - Called when a user disconnects from the SpacetimeDB module.
 
-```rust
-// Called when the client connects, we update the logged_in state to true
-#[spacetimedb(connect)]
-pub fn client_connected(ctx: ReducerContext) {
-    update_player_login_state(ctx, true);
-}
+
+Publish your module again by running:
+
+```sh
+spacetime publish --server local blackholio
 ```
 
-```rust
-// Called when the client disconnects, we update the logged_in state to false
-#[spacetimedb(disconnect)]
-pub fn client_disconnected(ctx: ReducerContext) {
-    update_player_login_state(ctx, false);
-}
+### Generating the Client
+
+The `spacetime` CLI has built in functionality to let us generate C# types that correspond to our tables, types, and reducers that we can use from our Unity client.
+
+Let's generate our types for our module. In the `blackholio/server-rust` directory run the following command:
+
+```sh
+spacetime generate --lang csharp --out-dir ../client/Assets/autogen # you can call this anything, I have chosen `autogen`
 ```
 
-```rust
-// This helper function gets the PlayerComponent, sets the logged
-// in variable and updates the PlayerComponent table row.
-pub fn update_player_login_state(ctx: ReducerContext, logged_in: bool) {
-    if let Some(player) = PlayerComponent::find_by_owner_id(&ctx.sender) {
-        // We clone the PlayerComponent so we can edit it and pass it back.
-        let mut player = player.clone();
-        player.logged_in = logged_in;
-        PlayerComponent::update_by_entity_id(&player.entity_id.clone(), player);
+This will generate a set of files in the `client/Assets/autogen` directory which contain the code generated types and reducer functions that are defined in your module, but usable on the client.
+
+```sh
+ls ../client/Assets/autogen/*.cs
+../client/Assets/autogen/Circle.cs	../client/Assets/autogen/DbVector2.cs	../client/Assets/autogen/Food.cs
+../client/Assets/autogen/Config.cs	../client/Assets/autogen/Entity.cs	../client/Assets/autogen/Player.cs
+```
+
+This will also generate a file in the `client/Assets/autogen/_Globals` directory with a type aware `DbConnection` class. We will use this class to connect to your module from Unity.
+
+> IMPORTANT! At this point there will be an error in your Unity project. Due to a [known issue](https://docs.unity3d.com/6000.0/Documentation/Manual/csharp-compiler.html) with Unity and C# 9 you need to insert the following code into your Unity project.
+>
+> ```csharp
+> namespace System.Runtime.CompilerServices
+> {
+>     internal static class IsExternalInit { }
+> }
+> ```
+>
+> Add this snippet to the top of your `GameManager.cs` file in your Unity project. This will hopefully be resolved in Unity soon.
+
+### Connecting to the Module
+
+At this point we can set up Unity to connect your Unity client to the server. Replace your imports at the top of the `GameManager.cs` file with:
+
+```cs
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using SpacetimeDB;
+using SpacetimeDB.Types;
+using UnityEngine;
+```
+
+Replace the implementation of the `GameManager` class with the following.
+
+```cs
+public class GameManager : MonoBehaviour
+{
+    const string SERVER_URL = "http://127.0.0.1:3000";
+    const string MODULE_NAME = "blackholio";
+
+    public static event Action OnConnected;
+    public static event Action OnSubscriptionApplied;
+
+	public static GameManager Instance { get; private set; }
+    public static Identity LocalIdentity { get; private set; }
+    public static DbConnection Conn { get; private set; }
+
+    private void Start()
+    {
+        Instance = this;
+        Application.targetFrameRate = 60;
+
+        // In order to build a connection to SpacetimeDB we need to register
+        // our callbacks and specify a SpacetimeDB server URI and module name.
+        var builder = DbConnection.Builder()
+            .OnConnect(HandleConnect)
+            .OnConnectError(HandleConnectError)
+            .OnDisconnect(HandleDisconnect)
+            .WithUri(SERVER_URL)
+            .WithModuleName(MODULE_NAME);
+
+        // If the user has a SpacetimeDB auth token stored in the Unity PlayerPrefs,
+        // we can use it to authenticate the connection.
+		if (PlayerPrefs.HasKey(AuthToken.GetTokenKey()))
+        {
+			builder = builder.WithCredentials((default, AuthToken.Token));
+        }
+
+        // Building the connection will establish a connection to the SpacetimeDB
+        // server.
+        Conn = builder.Build();
     }
-}
-```
 
-Our final reducer handles player movement. In `update_player_position` we look up the `PlayerComponent` using the user's Identity. If we don't find one, we return an error because the client should not be sending moves without calling `create_player` first.
+    // Called when we connect to SpacetimeDB and receive our client identity
+    void HandleConnect(DbConnection _conn, Identity identity, string token)
+    {
+        Debug.Log("Connected.");
+        AuthToken.SaveToken(token);
+        LocalIdentity = identity;
 
-Using the `entity_id` in the `PlayerComponent` we retrieved, we can lookup the `EntityComponent` that stores the entity's locations in the world. We update the values passed in from the client and call the auto-generated `update` function.
+        OnConnected?.Invoke();
 
-**Append to the bottom of lib.rs:**
+        // Request all tables
+        Conn.SubscriptionBuilder().OnApplied(ctx =>
+        {
+            Debug.Log("Subscription applied!");
+            OnSubscriptionApplied?.Invoke();
+        }).Subscribe("SELECT * FROM *");
+    }
 
-```rust
-// Updates the position of a player. This is also called when the player stops moving.
-#[spacetimedb(reducer)]
-pub fn update_player_position(
-    ctx: ReducerContext,
-    position: StdbVector3,
-    direction: f32,
-    moving: bool,
-) -> Result<(), String> {
-    // First, look up the player using the sender identity, then use that
-    // entity_id to retrieve and update the EntityComponent
-    if let Some(player) = PlayerComponent::find_by_owner_id(&ctx.sender) {
-        if let Some(mut entity) = EntityComponent::find_by_entity_id(&player.entity_id) {
-            entity.position = position;
-            entity.direction = direction;
-            entity.moving = moving;
-            EntityComponent::update_by_entity_id(&player.entity_id, entity);
-            return Ok(());
+    void HandleConnectError(Exception ex)
+    {
+        Debug.LogError($"Connection error: {ex}");
+    }
+
+    void HandleDisconnect(DbConnection _conn, Exception ex)
+    {
+        Debug.Log("Disconnected.");
+        if (ex != null)
+        {
+            Debug.LogException(ex);
         }
     }
-
-    // If we can not find the PlayerComponent or EntityComponent for
-    // this player then something went wrong.
-    return Err("Player not found".to_string());
 }
 ```
+
+Here we configure the connection to the database, by passing it some callbacks in addition to providing the `SERVER_URI` and `MODULE_NAME` to the connection. When the client connects, the SpacetimeDB SDK will call the `HandleConnect` method, allowing us to start up the game.
+
+In our `HandleConnect` callback we building a subscription and are calling `Subscribe` and subscribing to all data in the database. This will cause SpacetimeDB to synchronize the state of all your tables with your Unity client's SpacetimeDB SDK's "client cache". You can also subscribe to specific tables using SQL syntax, e.g. `SELECT * FROM my_table`. Our [SQL documentation](/docs/sql) enumerates the operations that are accepted in our SQL syntax.
 
 ---
 
-**Server Validation**
+**SDK Client Cache**
 
-In a fully developed game, the server would typically perform server-side validation on player movements to ensure they comply with game boundaries, rules, and mechanics. This validation, which we omit for simplicity in this tutorial, is essential for maintaining game integrity, preventing cheating, and ensuring a fair gaming experience. Remember to incorporate appropriate server-side validation in your game's development to ensure a secure and fair gameplay environment.
+The "SDK client cache" is a client-side view of the database defined by the supplied queries to the `Subscribe` function. SpacetimeDB ensures that the results of subscription queries are automatically updated and pushed to the client cache as they change which allows efficient access without unnecessary server queries.
 
 ---
 
-### Publishing a Module to SpacetimeDB
+Now we're ready to connect the client and server. Press the play button in Unity.
 
-Now that we've written the code for our server module and reached a clean checkpoint, we need to publish it to SpacetimeDB. This will create the database and call the init reducer. In your terminal or command window, run the following commands.
+If all went well you should see the below output in your Unity logs.
 
-```bash
-cd server
-spacetime publish -c unity-tutorial
+```
+SpacetimeDBClient: Connecting to ws://127.0.0.1:3000 blackholio
+Connected.
+Subscription applied!
 ```
 
-### Finally, Add Chat Support
+Subscription applied indicates that the SpacetimeDB SDK has evaluated your subscription queries and synchronized your local cache with your database's tables.
 
-The client project has a chat window, but so far, all it's used for is the message of the day. We are going to add the ability for players to send chat messages to each other.
+We can also see that the server has logged the connection as well.
 
-First lets add a new `ChatMessage` table to the SpacetimeDB module. Add the following code to `lib.rs`.
-
-**Append to the bottom of server/src/lib.rs:**
-
-```rust
-#[spacetimedb(table(public))]
-pub struct ChatMessage {
-    // The primary key for this table will be auto-incremented
-    #[primarykey]
-    #[autoinc]
-    pub message_id: u64,
-
-    // The entity id of the player that sent the message
-    pub sender_id: u64,
-    // Message contents
-    pub text: String,
-}
+```sh
+spacetime logs blackholio
+...
+2025-01-10T03:51:02.078700Z DEBUG: src/lib.rs:63: c200fb5be9524bfb8289c351516a1d9ea800f70a17a9a6937f11c0ed3854087d just connected.
 ```
 
-Now we need to add a reducer to handle inserting new chat messages.
+### Next Steps
 
-**Append to the bottom of server/src/lib.rs:**
+You've learned how to setup a Unity project with the SpacetimeDB SDK, write a basic SpacetimeDB server module, and how to connect your Unity client to SpacetimeDB. That's pretty much all there is to the setup. You're now ready to start building the game.
 
-```rust
-// Adds a chat entry to the ChatMessage table
-#[spacetimedb(reducer)]
-pub fn send_chat_message(ctx: ReducerContext, text: String) -> Result<(), String> {
-    if let Some(player) = PlayerComponent::find_by_owner_id(&ctx.sender) {
-        // Now that we have the player we can insert the chat message using the player entity id.
-        ChatMessage::insert(ChatMessage {
-            // this column auto-increments so we can set it to 0
-            message_id: 0,
-            sender_id: player.entity_id,
-            text,
-        })
-        .unwrap();
+In the [next part](/docs/unity/part-3), we'll build out the functionality of the game and you'll learn how to access your table data and call reducers in Unity.
 
-        return Ok(());
-    }
-
-    Err("Player not found".into())
-}
-```
-
-## Wrapping Up
-
-Now that we added chat support, let's publish the latest module version to SpacetimeDB, assuming we're still in the `server` dir:
-
-```bash
-spacetime publish -c unity-tutorial
-```
-
-From here, the [next tutorial](/docs/unity/part-3) continues with a Client (Unity) focus.
