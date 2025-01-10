@@ -51,6 +51,7 @@ pub struct Person {
 
 #[reducer]
 fn add_person(ctx: &ReducerContext, id: u32, name: String) {
+    log::debug("Inserting {name} with id {id}");
     ctx.db.people().insert(Person { id, name });
 }
 ```
@@ -339,6 +340,8 @@ SpacetimeDB Rust modules have built-in support for the [log crate](log). All mod
 ```text
 spacetime logs <DATABASE_IDENTITY>
 ```
+
+<!-- TODO: we seem to have removed `println`, is that still hidden somewhere? -->
 
 #### Lifecycle Reducers
 
