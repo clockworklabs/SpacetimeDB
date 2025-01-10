@@ -676,10 +676,7 @@ impl<'a> Iterator for IxJoinRhs<'a> {
                         self.rhs_table
                             .get_row_ref(self.blob_store, ptr)
                             .map(Row::Ptr)
-                            .map(|ptr| {
-                                self.rhs_index_cursor = Some(cursor);
-                                ptr
-                            })
+                            .inspect(|_| self.rhs_index_cursor = Some(cursor))
                     })
                 })
             })
