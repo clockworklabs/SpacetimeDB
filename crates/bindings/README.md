@@ -36,7 +36,24 @@ SpacetimeDB modules have two ways to interact with the outside world: tables and
 
 - [Tables](#tables) store data and optionally make it readable by [clients]. 
 
-- [Reducers](#reducers) modify data and can be invoked by [clients] over the network. They can read and write data in tables, and write to a private debug log.
+- [Reducers](#reducers) are functions that can modify data and be invoked by [clients] over the network. They can read and write data in tables, and write to a private debug log.
+
+Both of these can be declared in Rust code:
+
+```no_run
+use spacetimedb::{table, reducer, ReducerContext, Table};
+
+#[table(name = person)]
+pub struct Person {
+    id: u32,
+    name: String
+}
+
+#[reducer]
+fn add_person(ctx: &ReducerContext, 
+
+
+```
 
 These are the only ways for a SpacetimeDB module to interact with the outside world. Calling functions from `std::net` or `std::fs` inside a module will result in runtime errors.
 
@@ -55,7 +72,7 @@ SpacetimeDB is a SQL database, and builds on the long tradition of reliability o
 
 - Tables are SQL database tables with easy-to-use Rust interfaces. They are declared in Rust code using the `#[spacetime::table]` macro. Clients can open read-only subscriptions to [`public`](#public-and-private-tables) tables, and SpacetimeDB will automatically stream updates to them as those tables change. Tables are automatically logged to disk and are durable across system restarts and crashes. Tables can be queried with SQL; SpacetimeDB supports a subset of ANSI:SQL 2011. (TODO: document precisely which subset this is.)
 
-- Reducers are Rust functions decorated with the `#[spacetime::reducer]` macro. Reducers run in [transactions](#transactions) with read-write access to the entire database; if a reducer returns an error or [panic](`panic`), its modifications to the database will be rolled back. Reducers run on the server, not on the client; they can see information about the [Identity](#identity) and [Address](#address) of their callers, and use this to determine what clients should be allowed to do. (TODO: what SQL transaction level do we implement?)
+- Reducers are Rust functions decorated with the `#[spacetime::reducer]` macro. Reducers run in [transactions](#transactions) with read-write access to the entire database; if a reducer returns an error or [panic](std::panic!), its modifications to the database will be rolled back. Reducers run on the server, not on the client; they can see information about the [Identity](#identity) and [Address](#address) of their callers, and use this to determine what clients should be allowed to do. (TODO: what SQL transaction level do we implement?)
 
 Tables can store any any Rust type implementing the [`SpacetimeType`, `Serialize`, and `Deserialize`](#spacetimetype) traits; all of these can be be derived at once using `#[derive(SpacetimeType)]`. Similarly, Rust types implementing these traits can be used for reducer arguments.
 
@@ -175,7 +192,7 @@ You can also generate code for clients of your module using the `spacetime gener
 
 Under the hood, SpacetimeDB modules are WebAssembly modules that import a [specific WebAssembly ABI](https://spacetimedb.com/docs/webassembly-abi) and export a small number of special functions. This is automatically configured when you add the `spacetime` crate as a dependency of your application.
 
-The SpacetimeDB host is an application that hosts SpacetimeDB databases. It is [source available](https://github.com/clockworklabs/SpacetimeDB). You can run your own host, or you can upload your module to the public SpacetimeDB network. <!-- TODO: want a link to some dashboard for the public network. --> The SpacetimeDB host knows how to load SpacetimeDB modules and install them into databases.
+The SpacetimeDB host is an application that hosts SpacetimeDB databases. It is [source available](https://github.com/clockworklabs/SpacetimeDB). You can run your own host, or you can upload your module to the public SpacetimeDB network. <!-- TODO: want a link to some dashboard for the public network. --> The network will create a database for you and install your module in it to serve client requests.
 
 #### In More Detail: Publishing a Module
 
@@ -231,7 +248,7 @@ fn do_nothing() {
 #[reducer]
 fn do_something(ctx: &ReducerContext) {
     // `ctx.db.{table_name}()` gets a handle to a database table.
-    let people = ctx.db.people();
+    let people: people__TableHandle = ctx.db.people();
 
     // The following inserts a row into the table:
     let mut person = people.insert(Person { id: 0, name: "Joe Average".to_string() });
@@ -249,8 +266,8 @@ fn do_something(ctx: &ReducerContext) {
 }
 ```
 
-See the [reducers](#reducers) section for more information on the `#[reducer]` macro.
-See the [table macro documentation](`table`) for more information on declaring and using tables.
+See [reducers](#reducers) for more information on declaring reducers.
+
 
 #### Public and Private tables
 
@@ -278,9 +295,11 @@ pub struct LootItem {
 
 To learn how to subscribe to a public table, see the [client SDK documentation](https://spacetimedb.com/docs/sdks).
 
+See the [`#[table]` macro](macro@crate::table) for more information on declaring and using tables.
+
 ## Reducers
 
-Reducers are declared using the [`#[reducer]` macro](`reducer`).
+Reducers are declared using the [`#[reducer]` macro](macro@crate::reducer).
 
 `#[reducer]` is always applied to top level Rust functions. Arguments of reducers must implement [`SpacetimeType`]. Reducers can either return nothing, or return a `Result<(), E>`, where `E` implements `Debug`.
 
@@ -294,22 +313,27 @@ enum GiveItemError {
 }
 
 #[reducer]
-fn give_player_item(ctx: &ReducerContext, player_id: u64, item_id: u64) -> Result<(), GiveItemError> {
+fn give_player_item(ctx: &ReducerContext, player_id: u64, item_id: u64) {
     /* ... */
 }
 ```
 
-Every reducer runs inside a [database transaction](https://en.wikipedia.org/wiki/Database_transaction). <!-- TODO: specific transaction level guarantees. --> This means that reducers will not observe the effects of other reducers modifying the database while they run. Also, if a reducer fails, all of its changes to the database will automatically be rolled back. Reducers can fail by [panicking](`std::panic`) or by returning an `Err`.
+Every reducer runs inside a [database transaction](https://en.wikipedia.org/wiki/Database_transaction). <!-- TODO: specific transaction level guarantees. --> This means that reducers will not observe the effects of other reducers modifying the database while they run. Also, if a reducer fails, all of its changes to the database will automatically be rolled back. Reducers can fail by [panicking](::std::panic!) or by returning an `Err`.
 
 #### The `ReducerContext` Type
 
 Reducers have access to a special [`ReducerContext`] argument. This argument allows reading and writing the database attached to a module. It also provides some additional functionality, like generating random numbers and scheduling future operations.
 
-The most important field of [`ReducerContext`] is `.db`. This field provides a [local view](`Local`) of the module's database. The `#[table]` macro generates traits that add accessor methods to this field.
+The most important field of [`ReducerContext`] is [`.db`](ReducerContext#structfield.db). This field provides a view of the module's database. The [`#[table]`](macro@crate::table) macro generates traits that add accessor methods to this field.
+
+For example, if we declare a table named `bananas`, we will find a method `bananas`
+
+<!-- TODO: this seems to work sometimes, but not always... Sometimes the links to downstream trait implementations aren't generated for some reason. Maybe it only works in the same cargo workspace?
 
 To see all of the available methods on `ctx.db`, run `cargo doc` in your module's directory, and navigate to the `spacetimedb::Local` struct in the generated documentation. This will be at the path:
 - `[your_project_directory]/target/doc/spacetimedb/struct.Local.html` (non-Windows)
 - `[your_project_directory]\target\doc\spacetimedb\struct.Local.html` (Windows)
+-->
 
 #### The `log` crate
 
@@ -318,7 +342,6 @@ SpacetimeDB Rust modules have built-in support for the [log crate](https://docs.
 ```text
 spacetime logs <DATABASE_IDENTITY>
 ```
-
 
 #### Lifecycle annotations
 
@@ -334,7 +357,7 @@ This table has two mandatory fields:
 - A [`ScheduleAt`] field that says when to call the reducer.
 Managing timers with a scheduled table is as simple as inserting or deleting rows from the table.
 
-A [`ScheduleAt`] can be created from a [`Timestamp`], in which case the reducer will be scheduled once,
+A [`ScheduleAt`] can be created from a [`spacetimedb::Timestamp`](crate::Timestamp), in which case the reducer will be scheduled once,
 or from a [`std::time::Duration`], in which case the reducer will be scheduled in a loop. In either case the conversion can be performed using [`Into::into`].
 
 ```rust
@@ -344,7 +367,7 @@ use log::debug;
 
 // First, we declare the table with scheduling information.
 
-#[table(name = send_message_timer, scheduled(send_message))]
+#[table(name = send_message_schedule, scheduled(send_message))]
 struct SendMessageSchedule {
     // Mandatory fields:
     // ============================
@@ -403,113 +426,6 @@ fn init(ctx: &ReducerContext) {
 ```
 
 ## Automatic migrations
-
-
-<!-- TODO: consume or destroy the following
-
-Now we'll get into details on all the macro APIs SpacetimeDB provides, starting with all the variants of the `spacetimedb` attribute.
-
-### Defining tables
-
-```rust
-#[table(name = my_table, public)]
-struct MyTable {
-    field1: String,
-    field2: u32,
-}
-```
-
-This attribute is applied to Rust structs in order to create corresponding tables in SpacetimeDB. Fields of the Rust struct correspond to columns of the database table.
-
-```rust
-#[table(name = another_table, public)]
-struct AnotherTable {
-    // Fine, some builtin types.
-    id: u64,
-    name: Option<String>,
-
-    // Fine, another table type.
-    table: Table,
-
-    // Fine, another type we explicitly make serializable.
-    serial: Serial,
-}
-```
-
-If you want to have a field that is not one of the above primitive types, and not a table of its own, you can derive the `SpacetimeType` attribute on it.
-
-We can derive `SpacetimeType` on `struct`s and `enum`s with members that are themselves `SpacetimeType`s.
-
-```rust
-#[derive(SpacetimeType)]
-enum Serial {
-    Builtin(f64),
-    Compound {
-        s: String,
-        bs: Vec<bool>,
-    }
-}
-```
-
-Once the table is created via the macro, other attributes described below can control more aspects of the table. For instance, a particular column can be indexed, or take on values of an automatically incremented counter. These are described in detail below.
-
-```rust
-#[table(name = person, public)]
-struct Person {
-    #[unique]
-    id: u64,
-
-    name: String,
-    address: String,
-}
-```
-
-### Defining reducers
-
-
-Note that reducers can call non-reducer functions, including standard library functions.
-
-
-## Client API
-
-Besides the macros for creating tables and reducers, there's two other parts of the Rust SpacetimeDB library. One is a collection of macros for logging, and the other is all the automatically generated functions for operating on those tables.
-
-### `println!` and friends
-
-Because reducers run in a WASM sandbox, they don't have access to general purpose I/O from the Rust standard library. There's no filesystem or network access, and no input or output. This means no access to things like `std::println!`, which prints to standard output.
-
-SpacetimeDB modules have access to logging output. These are exposed as macros, just like their `std` equivalents. The names, and all the Rust formatting machinery, work the same; just the location of the output is different.
-
-Logs for a module can be viewed with the `spacetime logs` command from the CLI.
-
-```rust
-use spacetimedb::{
-    println,
-    print,
-    eprintln,
-    eprint,
-    dbg,
-};
-
-#[reducer]
-fn output(ctx: &ReducerContext, i: i32) {
-    // These will be logged at log::Level::Info.
-    println!("an int with a trailing newline: {i}");
-    print!("some more text...\n");
-
-    // These log at log::Level::Error.
-    eprint!("Oops...");
-    eprintln!(", we hit an error");
-
-    // Just like std::dbg!, this prints its argument and returns the value,
-    // as a drop-in way to print expressions. So this will print out |i|
-    // before passing the value of |i| along to the calling function.
-    //
-    // The output is logged log::Level::Debug.
-    ctx.db.outputted_number().insert(dbg!(i));
-}
-```
--->
 
 [macro library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/bindings-macro
 [module library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/lib
