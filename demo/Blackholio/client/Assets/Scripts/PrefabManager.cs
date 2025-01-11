@@ -18,19 +18,19 @@ public class PrefabManager : MonoBehaviour
 
 	public static CircleController SpawnCircle(Circle circle, PlayerController owner)
 	{
-		var actor = Instantiate(Instance.CirclePrefab);
-		actor.name = $"Circle - {circle.EntityId}";
-		actor.Spawn(circle, owner);
-		owner.OnCircleSpawned(actor);
-		return actor;
+		var entityController = Instantiate(Instance.CirclePrefab);
+		entityController.name = $"Circle - {circle.EntityId}";
+		entityController.Spawn(circle, owner);
+		owner.OnCircleSpawned(entityController);
+		return entityController;
 	}
 
 	public static FoodController SpawnFood(Food food)
 	{
-		var actor = Instantiate(Instance.FoodPrefab);
-		actor.name = $"Food - {food.EntityId}";
-		actor.Spawn(food);
-		return actor;
+		var entityController = Instantiate(Instance.FoodPrefab);
+		entityController.name = $"Food - {food.EntityId}";
+		entityController.Spawn(food);
+		return entityController;
 	}
 
 	public static PlayerController SpawnPlayer(Player player)

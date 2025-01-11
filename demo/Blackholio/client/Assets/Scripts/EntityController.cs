@@ -48,7 +48,7 @@ public abstract class EntityController : MonoBehaviour
 			reducer.ReducerEvent.Reducer is Reducer.ConsumeEntity consume)
 		{
 			var consumerId = consume.Request.ConsumerEntityId;
-			if (EntityManager.Actors.TryGetValue(consumerId, out var consumerEntity))
+			if (GameManager.Entities.TryGetValue(consumerId, out var consumerEntity))
 			{
 				StartCoroutine(DespawnCoroutine(consumerEntity.transform));
 				return;

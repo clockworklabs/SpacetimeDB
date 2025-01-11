@@ -17,7 +17,7 @@ public class GameManager : MonoBehaviour
     public static Identity LocalIdentity { get; private set; }
     public static DbConnection Conn { get; private set; }
 
-    public static Dictionary<uint, EntityController> Actors = new Dictionary<uint, EntityController>();
+    public static Dictionary<uint, EntityController> Entities = new Dictionary<uint, EntityController>();
 	public static Dictionary<uint, PlayerController> Players = new Dictionary<uint, PlayerController>();
 
     private void Start()
@@ -92,31 +92,31 @@ public class GameManager : MonoBehaviour
     private static void CircleOnInsert(EventContext context, Circle insertedValue)
 	{
 		var player = GetOrCreatePlayer(insertedValue.PlayerId);
-		var actor = PrefabManager.SpawnCircle(insertedValue, player);
-		Actors.Add(insertedValue.EntityId, actor);
+		var entityController = PrefabManager.SpawnCircle(insertedValue, player);
+		Entities.Add(insertedValue.EntityId, entityController);
 	}
 
 	private static void EntityOnUpdate(EventContext context, Entity oldEntity, Entity newEntity)
 	{
-		if (!Actors.TryGetValue(newEntity.EntityId, out var actor))
+		if (!Entities.TryGetValue(newEntity.EntityId, out var entityController))
 		{
 			return;
 		}
-		actor.OnEntityUpdated(newEntity);
+		entityController.OnEntityUpdated(newEntity);
 	}
 
 	private static void EntityOnDelete(EventContext context, Entity oldEntity)
 	{
-		if (Actors.Remove(oldEntity.EntityId, out var actor))
+		if (Entities.Remove(oldEntity.EntityId, out var entityController))
 		{
-			actor.OnDelete(context);
+			entityController.OnDelete(context);
 		}
 	}
 
 	private static void FoodOnInsert(EventContext context, Food insertedValue)
 	{
-		var actor = PrefabManager.SpawnFood(insertedValue);
-		Actors.Add(insertedValue.EntityId, actor);
+		var entityController = PrefabManager.SpawnFood(insertedValue);
+		Entities.Add(insertedValue.EntityId, entityController);
 	}
 
 	private static void PlayerOnInsert(EventContext context, Player insertedPlayer)
