@@ -19,8 +19,6 @@ public abstract class EntityActor : MonoBehaviour
 	protected Vector3 LerpTargetPositio;
 	protected Vector3 TargetScale;
 
-
-
 	protected virtual void Spawn(uint entityId)
 	{
 		EntityId = entityId;
@@ -83,8 +81,6 @@ public abstract class EntityActor : MonoBehaviour
 		transform.position = Vector3.Lerp(LerpStartPosition, LerpTargetPositio, LerpTime / LERP_DURATION_SEC);
 		transform.localScale = Vector3.Lerp(transform.localScale, TargetScale, Time.deltaTime * 8);
 	}
-
-
 
 	public static Vector3 MassToScale(uint mass)
 	{

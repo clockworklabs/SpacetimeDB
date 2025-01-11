@@ -20,8 +20,6 @@ public class PlayerController : MonoBehaviour
 	public int NumberOfOwnedCircles => OwnedCircles.Count;
 	public bool IsLocalPlayer => this == Local;
 
-
-
 	public void Initialize(Player player)
     {
         PlayerId = player.PlayerId;
@@ -58,8 +56,6 @@ public class PlayerController : MonoBehaviour
 		}
 	}
 
-
-
 	public uint TotalMass()
     {
         return (uint)OwnedCircles
@@ -86,8 +82,6 @@ public class PlayerController : MonoBehaviour
 
         return totalPos / totalMass;
 	}
-
-
 
 	public void Update()
     {
@@ -141,8 +135,6 @@ public class PlayerController : MonoBehaviour
 
 		GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
 	}
-
-
 
 	//Automated testing members
 	private bool testInputEnabled;

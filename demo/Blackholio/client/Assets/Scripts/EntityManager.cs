@@ -9,8 +9,6 @@ public static class EntityManager
 	public static Dictionary<uint, EntityActor> Actors = new Dictionary<uint, EntityActor>();
 	public static Dictionary<uint, PlayerController> Players = new Dictionary<uint, PlayerController>();
 
-
-
 	public static void Initialize(DbConnection conn)
 	{
 		conn.Db.Circle.OnInsert += CircleOnInsert;
@@ -20,8 +18,6 @@ public static class EntityManager
 		conn.Db.Player.OnInsert += PlayerOnInsert;
 		conn.Db.Player.OnDelete += PlayerOnDelete;
 	}
-
-
 
 	private static void EntityOnUpdate(EventContext context, Entity oldEntity, Entity newEntity)
 	{
@@ -40,8 +36,6 @@ public static class EntityManager
 		}
 	}
 
-
-
 	private static void CircleOnInsert(EventContext context, Circle insertedValue)
 	{
 		var player = GetOrCreatePlayer(insertedValue.PlayerId);
@@ -54,8 +48,6 @@ public static class EntityManager
 		var actor = PrefabManager.SpawnFood(insertedValue);
 		Actors.Add(insertedValue.EntityId, actor);
 	}
-
-
 
 	private static void PlayerOnInsert(EventContext context, Player insertedPlayer)
 	{

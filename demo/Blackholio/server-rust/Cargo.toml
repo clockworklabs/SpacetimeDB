@@ -9,6 +9,6 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb = { version = "1.0.0-rc1" }
+spacetimedb = { git = "https://github.com/ClockworkLabs/SpacetimeDB.git", rev = "595639db49d199eee136d350cb858dfc4c22c4f5" }
 log = "0.4"
 rand = "0.8.5"

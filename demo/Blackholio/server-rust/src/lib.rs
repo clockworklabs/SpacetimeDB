@@ -85,7 +85,6 @@ pub struct MoveAllPlayersTimer {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
 }
 
@@ -94,7 +93,6 @@ pub struct SpawnFoodTimer {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
 }
 
@@ -103,7 +101,6 @@ pub struct CircleDecayTimer {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
 }
 
@@ -112,7 +109,6 @@ pub struct CircleRecombineTimer {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
     player_id: u32,
 }
@@ -175,21 +171,18 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
         .identity()
         .find(&ctx.sender)
         .ok_or("Player not found")?;
-    for circle in ctx.db.circle().player_id().filter(&player.player_id) {
-        let entity = ctx
-            .db
-            .entity()
-            .entity_id()
-            .find(&circle.entity_id)
-            .ok_or("Could not find circle")?;
-        ctx.db.entity().entity_id().delete(&entity.entity_id);
-        ctx.db.circle().entity_id().delete(&entity.entity_id);
-    }
+    let player_id = player.player_id;
     ctx.db.logged_out_player().insert(LoggedOutPlayer {
         identity: player.identity,
         player,
     });
     ctx.db.player().identity().delete(&ctx.sender);
+
+    // Remove any circles from the arena
+    for circle in ctx.db.circle().player_id().filter(&player_id) {
+        ctx.db.entity().entity_id().delete(&circle.entity_id);
+        ctx.db.circle().entity_id().delete(&circle.entity_id);
+    }
 
     Ok(())
 }
@@ -222,7 +215,7 @@ pub fn respawn(ctx: &ReducerContext) -> Result<(), String> {
         .count()
         > 0
     {
-        return Err(format!("Player {} already has a circle", player.player_id).into());
+        return Err(format!("Player {} already has a circle", player.player_id));
     }
 
     spawn_player_initial_circle(ctx, player.player_id)?;
@@ -245,7 +238,7 @@ fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: u32) -> Result<E
         ctx,
         player_id,
         START_PLAYER_MASS,
-        DbVector2::new(x, y),
+        DbVector2 { x, y },
         ctx.timestamp,
     )
 }
@@ -434,7 +427,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
                 continue;
             }
 
-            if is_overlapping(&circle_entity, &other_entity) {
+            if is_overlapping(&circle_entity, other_entity) {
                 let other_circle = ctx.db.circle().entity_id().find(&other_entity.entity_id);
                 if let Some(other_circle) = other_circle {
                     if other_circle.player_id != circle.player_id {
@@ -624,7 +617,7 @@ pub fn circle_decay(ctx: &ReducerContext, _timer: CircleDecayTimer) -> Result<()
     Ok(())
 }
 
-pub fn calculate_center_of_mass(entities: &Vec<Entity>) -> DbVector2 {
+pub fn calculate_center_of_mass(entities: &[Entity]) -> DbVector2 {
     let total_mass: u32 = entities.iter().map(|e| e.mass).sum();
     let center_of_mass: DbVector2 = entities.iter().map(|e| e.position * e.mass as f32).sum();
     center_of_mass / total_mass as f32

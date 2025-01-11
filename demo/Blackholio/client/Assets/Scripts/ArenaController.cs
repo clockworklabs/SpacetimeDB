@@ -13,6 +13,8 @@ public class ArenaController : MonoBehaviour
 
     private void Start()
     {
+        // Once we receive the world size from the server, we can set up the borders
+        // of the arena.
         ConnectionManager.Conn.Db.Config.OnInsert += (ctx, value) =>
         {
             var worldSize = value.WorldSize;
