@@ -6,7 +6,7 @@ public class CameraController : MonoBehaviour
 {
 	private void LateUpdate()
     {
-        if (PlayerController.Local == null || !ConnectionManager.IsConnected())
+        if (PlayerController.Local == null || !GameManager.IsConnected())
         {
             return;
         }

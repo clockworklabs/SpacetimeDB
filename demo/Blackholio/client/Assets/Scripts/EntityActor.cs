@@ -23,7 +23,7 @@ public abstract class EntityActor : MonoBehaviour
 	{
 		EntityId = entityId;
 
-		var entity = ConnectionManager.Conn.Db.Entity.EntityId.Find(entityId);
+		var entity = GameManager.Conn.Db.Entity.EntityId.Find(entityId);
 		LerpStartPosition = LerpTargetPositio = transform.position = (Vector2)entity.Position;
 		transform.localScale = Vector3.one;
 		TargetScale = MassToScale(entity.Mass);

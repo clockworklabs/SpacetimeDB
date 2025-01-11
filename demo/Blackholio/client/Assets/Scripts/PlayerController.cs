@@ -16,14 +16,14 @@ public class PlayerController : MonoBehaviour
     private Vector2? LockInputPosition;
 	private List<CircleActor> OwnedCircles = new List<CircleActor>();
 
-	public string Username => ConnectionManager.Conn.Db.Player.PlayerId.Find(PlayerId).Name;
+	public string Username => GameManager.Conn.Db.Player.PlayerId.Find(PlayerId).Name;
 	public int NumberOfOwnedCircles => OwnedCircles.Count;
 	public bool IsLocalPlayer => this == Local;
 
 	public void Initialize(Player player)
     {
         PlayerId = player.PlayerId;
-        if (player.Identity == ConnectionManager.LocalIdentity)
+        if (player.Identity == GameManager.LocalIdentity)
         {
             Local = this;
         }
@@ -59,7 +59,7 @@ public class PlayerController : MonoBehaviour
 	public uint TotalMass()
     {
         return (uint)OwnedCircles
-            .Select(circle => ConnectionManager.Conn.Db.Entity.EntityId.Find(circle.EntityId))
+            .Select(circle => GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId))
 			.Sum(e => e?.Mass ?? 0); //If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
 	}
 
@@ -74,7 +74,7 @@ public class PlayerController : MonoBehaviour
         float totalMass = 0;
         foreach (var circle in OwnedCircles)
         {
-            var entity = ConnectionManager.Conn.Db.Entity.EntityId.Find(circle.EntityId);
+            var entity = GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId);
             var position = circle.transform.position;
             totalPos += (Vector2)position * entity.Mass;
             totalMass += entity.Mass;
@@ -92,7 +92,7 @@ public class PlayerController : MonoBehaviour
 
         if (Input.GetKeyDown(KeyCode.Space))
         {
-            ConnectionManager.Conn.Reducers.PlayerSplit();
+            GameManager.Conn.Reducers.PlayerSplit();
         }
 
         if (Input.GetKeyDown(KeyCode.Q))
@@ -122,13 +122,13 @@ public class PlayerController : MonoBehaviour
 
 			var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
             if (testInputEnabled) { direction = testInput; }
-            ConnectionManager.Conn.Reducers.UpdatePlayerInput(direction);
+            GameManager.Conn.Reducers.UpdatePlayerInput(direction);
         }
 	}
 
 	private void OnGUI()
 	{
-		if (!IsLocalPlayer || !ConnectionManager.IsConnected())
+		if (!IsLocalPlayer || !GameManager.IsConnected())
 		{
 			return;
 		}
