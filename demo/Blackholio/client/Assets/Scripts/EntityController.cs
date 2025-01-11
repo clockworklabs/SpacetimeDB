@@ -6,7 +6,7 @@ using System.Linq;
 using Unity.VisualScripting;
 using UnityEngine;
 
-public abstract class EntityActor : MonoBehaviour
+public abstract class EntityController : MonoBehaviour
 {
 	const float LERP_DURATION_SEC = 0.1f;
 

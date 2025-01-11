@@ -4,7 +4,7 @@ using SpacetimeDB;
 using SpacetimeDB.Types;
 using UnityEngine;
 
-public class CircleActor : EntityActor
+public class CircleController : EntityController
 {
 	public static Color[] ColorPalette = new[]
 	{

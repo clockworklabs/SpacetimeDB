@@ -17,7 +17,7 @@ public class GameManager : MonoBehaviour
     public static Identity LocalIdentity { get; private set; }
     public static DbConnection Conn { get; private set; }
 
-    public static Dictionary<uint, EntityActor> Actors = new Dictionary<uint, EntityActor>();
+    public static Dictionary<uint, EntityController> Actors = new Dictionary<uint, EntityController>();
 	public static Dictionary<uint, PlayerController> Players = new Dictionary<uint, PlayerController>();
 
     private void Start()

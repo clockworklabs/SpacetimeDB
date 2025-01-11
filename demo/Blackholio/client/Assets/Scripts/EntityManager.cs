@@ -6,7 +6,7 @@ using UnityEngine;
 
 public static class EntityManager
 {
-	public static Dictionary<uint, EntityActor> Actors = new Dictionary<uint, EntityActor>();
+	public static Dictionary<uint, EntityController> Actors = new Dictionary<uint, EntityController>();
 	public static Dictionary<uint, PlayerController> Players = new Dictionary<uint, PlayerController>();
 
 	public static void Initialize(DbConnection conn)

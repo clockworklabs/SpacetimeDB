@@ -14,7 +14,7 @@ public class PlayerController : MonoBehaviour
 	private uint PlayerId;
     private float LastMovementSendTimestamp;
     private Vector2? LockInputPosition;
-	private List<CircleActor> OwnedCircles = new List<CircleActor>();
+	private List<CircleController> OwnedCircles = new List<CircleController>();
 
 	public string Username => GameManager.Conn.Db.Player.PlayerId.Find(PlayerId).Name;
 	public int NumberOfOwnedCircles => OwnedCircles.Count;
@@ -42,12 +42,12 @@ public class PlayerController : MonoBehaviour
         OwnedCircles.Clear();
     }
 
-    public void OnCircleSpawned(CircleActor circle)
+    public void OnCircleSpawned(CircleController circle)
     {
         OwnedCircles.Add(circle);
     }
 
-    public void OnCircleDeleted(CircleActor deletedCircle)
+    public void OnCircleDeleted(CircleController deletedCircle)
 	{
 		// This means we got eaten
 		if (OwnedCircles.Remove(deletedCircle) && IsLocalPlayer && OwnedCircles.Count == 0)

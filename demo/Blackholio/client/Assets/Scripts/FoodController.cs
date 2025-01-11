@@ -2,7 +2,7 @@ using SpacetimeDB.Types;
 using Unity.VisualScripting;
 using UnityEngine;
 
-public class FoodActor : EntityActor
+public class FoodController : EntityController
 {
 	public static Color[] ColorPalette = new[]
 	{

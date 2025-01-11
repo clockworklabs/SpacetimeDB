@@ -7,8 +7,8 @@ public class PrefabManager : MonoBehaviour
 {
 	private static PrefabManager Instance;
 
-	public CircleActor CirclePrefab;
-	public FoodActor FoodPrefab;
+	public CircleController CirclePrefab;
+	public FoodController FoodPrefab;
 	public PlayerController PlayerPrefab;
 
 	private void Awake()
@@ -16,7 +16,7 @@ public class PrefabManager : MonoBehaviour
 		Instance = this;
 	}
 
-	public static CircleActor SpawnCircle(Circle circle, PlayerController owner)
+	public static CircleController SpawnCircle(Circle circle, PlayerController owner)
 	{
 		var actor = Instantiate(Instance.CirclePrefab);
 		actor.name = $"Circle - {circle.EntityId}";
@@ -25,7 +25,7 @@ public class PrefabManager : MonoBehaviour
 		return actor;
 	}
 
-	public static FoodActor SpawnFood(Food food)
+	public static FoodController SpawnFood(Food food)
 	{
 		var actor = Instantiate(Instance.FoodPrefab);
 		actor.name = $"Food - {food.EntityId}";
