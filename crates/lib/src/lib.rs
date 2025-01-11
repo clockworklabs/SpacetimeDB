@@ -11,6 +11,7 @@ pub mod db;
 pub mod error;
 pub mod identity;
 pub mod operator;
+pub mod query;
 pub mod relation;
 pub mod scheduler;
 pub mod version;

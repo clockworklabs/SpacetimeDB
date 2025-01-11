@@ -710,6 +710,16 @@ impl BTreeIndex {
         self.seek(value).next().is_some()
     }
 
+    /// Returns the number of rows associated with this `value`.
+    /// Returns `None` if 0.
+    /// Returns `Some(1)` if the index is unique.
+    pub fn count(&self, value: &AlgebraicValue) -> Option<usize> {
+        match self.seek(value).count() {
+            0 => None,
+            n => Some(n),
+        }
+    }
+
     /// Returns an iterator over the [BTreeIndex] that yields all the `RowPointer`s
     /// that fall within the specified `range`.
     pub fn seek(&self, range: &impl RangeBounds<AlgebraicValue>) -> BTreeIndexRangeIter<'_> {

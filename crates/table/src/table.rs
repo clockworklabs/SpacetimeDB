@@ -1007,6 +1007,35 @@ impl Table {
         })
     }
 
+    /// For a given [IndexId],
+    /// returns an iterator over the [`BTreeIndex`] that yields all the [`RowRef`]s
+    /// matching the specified `range` in the indexed column.
+    ///
+    /// Matching is defined by `Ord for AlgebraicValue`.
+    pub fn index_seek_by_id<'a>(
+        &'a self,
+        blob_store: &'a dyn BlobStore,
+        index_id: IndexId,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> Option<IndexScanIter<'a>> {
+        self.indexes
+            .iter()
+            .find(|(_, ix)| ix.index_id == index_id)
+            .map(|(_, index)| IndexScanIter {
+                table: self,
+                blob_store,
+                btree_index_iter: index.seek(range),
+            })
+    }
+
+    /// Returns the [BTreeIndex] for this [IndexId]
+    pub fn get_index(&self, index_id: IndexId) -> Option<&BTreeIndex> {
+        self.indexes
+            .iter()
+            .find(|(_, BTreeIndex { index_id: id, .. })| *id == index_id)
+            .map(|(_, index)| index)
+    }
+
     /// Clones the structure of this table into a new one with
     /// the same schema, visitor program, and indices.
     /// The new table will be completely empty

@@ -19,6 +19,7 @@ members = [
   "crates/paths",
   "crates/physical-plan",
   "crates/primitives",
+  "crates/query",
   "crates/sats",
   "crates/schema",
   "crates/sdk",
@@ -106,6 +107,7 @@ spacetimedb-metrics = { path = "crates/metrics", version = "1.0.0-rc3" }
 spacetimedb-paths = { path = "crates/paths", version = "1.0.0-rc3" }
 spacetimedb-physical-plan = { path = "crates/physical-plan", version = "1.0.0-rc3" }
 spacetimedb-primitives = { path = "crates/primitives", version = "1.0.0-rc3" }
+spacetimedb-query = { path = "crates/query", version = "1.0.0-rc3" }
 spacetimedb-sats = { path = "crates/sats", version = "1.0.0-rc3" }
 spacetimedb-schema = { path = "crates/schema", version = "1.0.0-rc3" }
 spacetimedb-standalone = { path = "crates/standalone", version = "1.0.0-rc3" }

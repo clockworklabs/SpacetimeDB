@@ -282,7 +282,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     self.system_logger()
                         .info(&format!("Creating row level security `{}`", rls.sql));
 
-                    let rls = RowLevelExpr::build_row_level_expr(stdb, tx, &auth_ctx, rls)
+                    let rls = RowLevelExpr::build_row_level_expr(tx, &auth_ctx, rls)
                         .with_context(|| format!("failed to create row-level security: `{}`", rls.sql))?;
                     let table_id = rls.def.table_id;
                     let sql = rls.def.sql.clone();

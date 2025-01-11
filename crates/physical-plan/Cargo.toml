@@ -7,9 +7,14 @@ license-file = "LICENSE"
 description = "The physical query plan for the SpacetimeDB query engine"
 
 [dependencies]
+anyhow.workspace = true
 derive_more.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-schema.workspace = true
 spacetimedb-expr.workspace = true
 spacetimedb-sql-parser.workspace = true
+spacetimedb-table.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
