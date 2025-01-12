@@ -13,6 +13,11 @@ public class GameManager : MonoBehaviour
     public static event Action OnConnected;
     public static event Action OnSubscriptionApplied;
 
+    public SpriteRenderer backgroundInstance;
+    public float borderThickness = 2;
+    public Material borderMaterial;
+    public ParallaxBackground starBackgroundPrefab;
+
 	public static GameManager Instance { get; private set; }
     public static Identity LocalIdentity { get; private set; }
     public static DbConnection Conn { get; private set; }
@@ -65,14 +70,13 @@ public class GameManager : MonoBehaviour
 		conn.Db.Food.OnInsert += FoodOnInsert;
 		conn.Db.Player.OnInsert += PlayerOnInsert;
 		conn.Db.Player.OnDelete += PlayerOnDelete;
+
         OnConnected?.Invoke();
 
         // Request all tables
-        Conn.SubscriptionBuilder().OnApplied(ctx =>
-        {
-            Debug.Log("Subscription applied!");
-            OnSubscriptionApplied?.Invoke();
-        }).Subscribe("SELECT * FROM *");
+        Conn.SubscriptionBuilder()
+            .OnApplied(HandleSubscriptionApplied)
+            .Subscribe("SELECT * FROM *");
     }
 
     void HandleConnectError(Exception ex)
@@ -88,6 +92,46 @@ public class GameManager : MonoBehaviour
             Debug.LogException(ex);
         }
     }
+
+    private void HandleSubscriptionApplied(EventContext ctx)
+    {
+        Debug.Log("Subscription applied!");
+        OnSubscriptionApplied?.Invoke();
+
+        // Once we have the initial subscription sync'd to the client cache
+        // Get the world size from the config table and set up the arena
+        var worldSize = Conn.Db.Config.Id.Find(0).WorldSize;
+        SetupArena(worldSize);
+    }
+
+    private void SetupArena(float worldSize)
+    {
+        CreateBorderCube(new Vector2(worldSize / 2.0f, worldSize + borderThickness / 2),
+            new Vector2(worldSize + borderThickness * 2.0f, borderThickness)); //North
+        CreateBorderCube(new Vector2(worldSize / 2.0f, -borderThickness / 2),
+            new Vector2(worldSize + borderThickness * 2.0f, borderThickness)); //South
+        CreateBorderCube(new Vector2(worldSize + borderThickness / 2, worldSize / 2.0f),
+            new Vector2(borderThickness, worldSize + borderThickness * 2.0f)); //East
+        CreateBorderCube(new Vector2(-borderThickness / 2, worldSize / 2.0f),
+            new Vector2(borderThickness, worldSize + borderThickness * 2.0f)); //West
+
+        backgroundInstance.gameObject.SetActive(true); ;
+        var size = worldSize / backgroundInstance.transform.localScale.x;
+        backgroundInstance.size = new Vector2(size, size);
+        backgroundInstance.transform.position = new Vector3((float)worldSize / 2, (float)worldSize / 2);
+
+        // Set the world size for the camera controller
+        CameraController.WorldSize = worldSize;
+    }
+
+    private void CreateBorderCube(Vector2 position, Vector2 scale)
+	{
+		var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        cube.name = "Border";
+		cube.transform.localScale = new Vector3(scale.x, scale.y, 1);
+		cube.transform.position = new Vector3(position.x, position.y, 1);
+		cube.GetComponent<MeshRenderer>().material = borderMaterial;
+	}
 
     private static void CircleOnInsert(EventContext context, Circle insertedValue)
 	{
@@ -144,10 +188,9 @@ public class GameManager : MonoBehaviour
 		return playerController;
 	}
 
-    /* BEGIN: not in tutorial */
-    private void InstanceOnUnhandledReducerError(ReducerEvent<Reducer> reducerEvent)
+    public static bool IsConnected()
     {
-        Debug.LogError($"There was an error!\r\n{(reducerEvent.Status as Status.Failed)?.Failed_}");
+        return Conn != null && Conn.IsActive;
     }
 
     public void Disconnect()
@@ -156,9 +199,10 @@ public class GameManager : MonoBehaviour
         Conn = null;
     }
 
-    public static bool IsConnected()
+    /* BEGIN: not in tutorial */
+    private void InstanceOnUnhandledReducerError(ReducerEvent<Reducer> reducerEvent)
     {
-        return Conn != null && Conn.IsActive;
+        Debug.LogError($"There was an error!\r\n{(reducerEvent.Status as Status.Failed)?.Failed_}");
     }
     /* END: not in tutorial */
 }
