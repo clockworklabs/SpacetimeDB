@@ -1,4 +1,5 @@
 use chrono::{NaiveDate, Utc};
+use clap::error::ErrorKind;
 use parking_lot::Mutex;
 use std::fs::File;
 use std::io::{self, Read, Seek, Write};
@@ -176,9 +177,11 @@ impl DatabaseLogger {
             }
             // if there's none for today, read the directory and
             let logs_dir = path.popped();
-            return tokio::task::spawn_blocking(move || match logs_dir.most_recent()? {
-                Some(newest_log_file) => std::fs::read_to_string(newest_log_file),
-                None => Ok(String::new()),
+            return tokio::task::spawn_blocking(move || match logs_dir.most_recent() {
+                Ok(Some(newest_log_file)) => std::fs::read_to_string(newest_log_file),
+                Ok(None) => Ok(String::new()),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(String::new()),
+                Err(e) => Err(e),
             })
             .await
             .unwrap()
@@ -204,14 +207,15 @@ impl DatabaseLogger {
 fn read_latest_lines(logs_dir: ModuleLogsDir, num_lines: u32) -> io::Result<String> {
     use std::fs::File;
     let path = logs_dir.today();
+
     let mut file = match File::open(&path) {
         Ok(f) => f,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            let Some(path) = path.popped().most_recent()? else {
-                return Ok(String::new());
-            };
-            File::open(path)?
-        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => match path.popped().most_recent() {
+            Ok(Some(newest_log_file)) => File::open(newest_log_file)?,
+            Ok(None) => return Ok(String::new()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(String::new()),
+            Err(e) => return Err(e),
+        },
         Err(e) => return Err(e),
     };
     let mut lines_read: u32 = 0;
