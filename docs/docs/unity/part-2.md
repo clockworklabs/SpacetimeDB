@@ -20,12 +20,13 @@ In this section we'll be making some edits to the file `server/src/lib.rs`. We r
 
 **Important: Open the `server/src/lib.rs` file and delete its contents. We will be writing it from scratch here.**
 
-First we need to add some imports at the top of the file.
+First we need to add some imports at the top of the file. Some will remain unused for now.
 
 **Copy and paste into lib.rs:**
 
 ```rust
-use spacetimedb::{Identity, SpacetimeType, ReducerContext, Timestamp};
+use std::time::Duration;
+use spacetimedb::{rand::Rng, Identity, SpacetimeType, ReducerContext, ScheduleAt, Table, Timestamp};
 ```
 
 We are going to start by defining a SpacetimeDB *table*. A *table* in SpacetimeDB is a relational database table which stores rows, similar to something you might find in SQL. SpacetimeDB tables differ from normal relational database tables in that they are stored fully in memory, are blazing fast to access, and are defined in your module code, rather than in SQL.
@@ -291,6 +292,9 @@ public class GameManager : MonoBehaviour
     public static event Action OnConnected;
     public static event Action OnSubscriptionApplied;
 
+    public float borderThickness = 2;
+    public Material borderMaterial;
+
 	public static GameManager Instance { get; private set; }
     public static Identity LocalIdentity { get; private set; }
     public static DbConnection Conn { get; private set; }
@@ -331,11 +335,9 @@ public class GameManager : MonoBehaviour
         OnConnected?.Invoke();
 
         // Request all tables
-        Conn.SubscriptionBuilder().OnApplied(ctx =>
-        {
-            Debug.Log("Subscription applied!");
-            OnSubscriptionApplied?.Invoke();
-        }).Subscribe("SELECT * FROM *");
+        Conn.SubscriptionBuilder()
+            .OnApplied(HandleSubscriptionApplied)
+            .Subscribe("SELECT * FROM *");
     }
 
     void HandleConnectError(Exception ex)
@@ -350,6 +352,24 @@ public class GameManager : MonoBehaviour
         {
             Debug.LogException(ex);
         }
+    }
+
+    private void HandleSubscriptionApplied(EventContext ctx)
+    {
+        Debug.Log("Subscription applied!");
+        OnSubscriptionApplied?.Invoke();
+    }
+
+
+    public static bool IsConnected()
+    {
+        return Conn != null && Conn.IsActive;
+    }
+
+    public void Disconnect()
+    {
+        Conn.Disconnect();
+        Conn = null;
     }
 }
 ```

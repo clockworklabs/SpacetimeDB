@@ -6,9 +6,134 @@ This progressive tutorial is continued from part 2:
 
 - [Connecting to SpacetimeDB](/docs/unity/part-2)
 
+### Spawning Food
+
+Let's start by spawning food into the map. The first thing we need to do is create a new, special reducer called the `init` reducer. SpacetimeDB calls the `init` reducer automatically when first publish your module, and also after any time you run with `publish --delete-data`. It gives you an opportunity to initialize the state of your module before any clients connect.
+
+Add this new reducer above our `connect` reducer.
+
+```rust
+// Note the `init` parameter passed to the reducer macro.
+// That indicates to SpacetimeDB that it should be called
+// once upon database creation.
+#[spacetimedb::reducer(init)]
+pub fn init(ctx: &ReducerContext) -> Result<(), String> {
+    log::info!("Initializing...");
+    ctx.db.config().try_insert(Config {
+        id: 0,
+        world_size: 1000,
+    })?;
+    Ok(())
+}
+```
+
+This reducer also demonstrates how to insert new rows into a table. Here we are adding a single `Config` row to the `config` table with the `try_insert` function. `try_insert` returns an error if inserting the row into the table would violate any constraints, like unique constraints, on the table. You can also use `insert` which panics on constraint violations if you know for sure that you will not violate any constraints.
+
+Now that we've ensured that our database always has a valid `world_size` let's spawn some food into the map. Add the following code to the end of the file.
+
+```rust
+const FOOD_MASS_MIN: u32 = 2;
+const FOOD_MASS_MAX: u32 = 4;
+const TARGET_FOOD_COUNT: usize = 600;
+
+fn mass_to_radius(mass: u32) -> f32 {
+    (mass as f32).sqrt()
+}
+
+#[spacetimedb::reducer]
+pub fn spawn_food(ctx: &ReducerContext) -> Result<(), String> {
+    if ctx.db.player().count() == 0 {
+        // Are there no logged in players? Skip food spawn.
+        return Ok(());
+    }
+
+    let world_size = ctx
+        .db
+        .config()
+        .id()
+        .find(0)
+        .ok_or("Config not found")?
+        .world_size;
+
+    let mut rng = ctx.rng();
+    let mut food_count = ctx.db.food().count();
+    while food_count < TARGET_FOOD_COUNT as u64 {
+        let food_mass = rng.gen_range(FOOD_MASS_MIN..FOOD_MASS_MAX);
+        let food_radius = mass_to_radius(food_mass);
+        let x = rng.gen_range(food_radius..world_size as f32 - food_radius);
+        let y = rng.gen_range(food_radius..world_size as f32 - food_radius);
+        let entity = ctx.db.entity().try_insert(Entity {
+            entity_id: 0,
+            position: DbVector2 { x, y },
+            mass: food_mass,
+        })?;
+        ctx.db.food().try_insert(Food {
+            entity_id: entity.entity_id,
+        })?;
+        food_count += 1;
+        log::info!("Spawned food! {}", entity.entity_id);
+    }
+
+    Ok(())
+}
+```
+
+In this reducer, we are using the `world_size` we configured along with the `ReducerContext`'s random number generator `.rng()` function to place 600 food uniformly randomly throughout the map. We've also chosen the `mass` of the food to be a random number between 2 and 4 inclusive.
+
+Although, we've written the reducer to spawn food, no food will actually be spawned until we call the function while players are logged in. This raises the question, who should call this function and when?
+
+We would like for this function to be called periodically to "top up" the amount of food on the map so that it never falls very far below our target amount of food. SpacetimeDB has built in functionality for exactly this. With SpacetimeDB you can schedule your module to call itself in the future or repeatedly with reducers.
+
+In order to schedule a reducer to be called we have to create a new table which specifies when an how a reducer should be called. Add this new table to the top of the file.
+
+```rust
+#[spacetimedb::table(name = spawn_food_timer, scheduled(spawn_food))]
+pub struct SpawnFoodTimer {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: spacetimedb::ScheduleAt,
+}
+```
+
+Note the `scheduled(spawn_food)` parameter in the table macro. This tells SpacetimeDB that the rows in this table specify a schedule for when the `spawn_food` reducer should be called. Each scheduled table requires a `scheduled_id` and a `scheduled_at` field so that SpacetimeDB can call your reducer, however you can also add your own fields to these rows as well.
+
+You can create, delete, or change a schedule by inserting, deleting, or updating rows in this table. 
+
+You will see an error telling you that the `spawn_food` reducer needs to take two arguments, but currently only takes one. This is because the schedule row must be passed in to all scheduled reducers. Modify your `spawn_food` reducer to take the scheduled row as an argument.
+
+```rust
+#[spacetimedb::reducer]
+pub fn spawn_food(ctx: &ReducerContext, _timer: SpawnFoodTimer) -> Result<(), String> {
+    // ...
+}
+```
+
+In our case we aren't interested in the data on the row, so we name the argument `_timer`.
+
+Let's modify our `init` reducer to schedule our `spawn_food` reducer to be called every 500 milliseconds.
+
+```rust
+#[spacetimedb::reducer(init)]
+pub fn init(ctx: &ReducerContext) -> Result<(), String> {
+    log::info!("Initializing...");
+    ctx.db.config().try_insert(Config {
+        id: 0,
+        world_size: 1000,
+    })?;
+    ctx.db.spawn_food_timer().try_insert(SpawnFoodTimer {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Interval(Duration::from_millis(500).as_micros() as u64),
+    })?;
+    Ok(())
+}
+```
+
+> You can use `ScheduleAt::Interval` to schedule a reducer call at an interval like we're doing here. SpacetimeDB will continue to call the reducer at this interval until you remove the row. You can also use `ScheduleAt::Time()` to specify a specific at which to call a reducer once. SpacetimeDB will remove that row automatically after the reducer has been called.
+
 ### Logging Players In
 
-Let's start by adding more functionality to our server module. We're going to modify our module to log in a player when they connect to the database, or to create a new player if they've never connected before.
+Let's continue building out our server module by modifying it to log in a player when they connect to the database, or to create a new player if they've never connected before.
 
 Let's add a second table to our `Player` struct. Modify the `Player` struct by adding this above the struct:
 
@@ -81,389 +206,720 @@ When a player disconnects, we will transfer their player row from the `player` t
 >
 > This approach is more generally referred to as [existence based processing](https://www.dataorienteddesign.com/dodmain/node4.html) and it is a common technique in data-oriented design.
 
+### Spawning Player Circles
 
+Now that we've got our food spawning and our players set up, let's create a match and spawn player circle entities into it. The first thing we should do before spawning a player into a match is give them a name. 
 
+Add the following to the bottom of your file.
 
+```rust
+const START_PLAYER_MASS: u32 = 15;
 
+#[spacetimedb::reducer]
+pub fn enter_game(ctx: &ReducerContext, name: String) -> Result<(), String> {
+    log::info!("Creating player with name {}", name);
+    let mut player: Player = ctx.db.player().identity().find(ctx.sender).ok_or("")?;
+    let player_id = player.player_id;
+    player.name = name;
+    ctx.db.player().identity().update(player);
+    spawn_player_initial_circle(ctx, player_id)?;
 
+    Ok(())
+}
 
+fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: u32) -> Result<Entity, String> {
+    let mut rng = ctx.rng();
+    let world_size = ctx
+        .db
+        .config()
+        .id()
+        .find(&0)
+        .ok_or("Config not found")?
+        .world_size;
+    let player_start_radius = mass_to_radius(START_PLAYER_MASS);
+    let x = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
+    let y = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
+    spawn_circle_at(
+        ctx,
+        player_id,
+        START_PLAYER_MASS,
+        DbVector2::new(x, y),
+        ctx.timestamp,
+    )
+}
 
+fn spawn_circle_at(
+    ctx: &ReducerContext,
+    player_id: u32,
+    mass: u32,
+    position: DbVector2,
+    timestamp: Timestamp,
+) -> Result<Entity, String> {
+    let entity = ctx.db.entity().try_insert(Entity {
+        entity_id: 0,
+        position,
+        mass,
+    })?;
 
+    ctx.db.circle().try_insert(Circle {
+        entity_id: entity.entity_id,
+        player_id,
+        direction: DbVector2 { x: 0.0, y: 1.0 },
+        speed: 0.0,
+        last_split_time: timestamp,
+    })?;
+    Ok(entity)
+}
+```
 
+The `enter_game` reducer takes one argument, the player's `name`. We can use this name to display as a label for the player in the match, by storing the name on the player's row. We are also spawning some circles for the player to control now that they are entering the game. To do this, we choose a random position within the bounds of the arena and create a new entity and corresponding circle row.
 
+Let's also modify our `disconnect` reducer to remove the circles from the arena when the player disconnects from the server.
 
+```rust
+#[spacetimedb::reducer(client_disconnected)]
+pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
+    let player = ctx
+        .db
+        .player()
+        .identity()
+        .find(&ctx.sender)
+        .ok_or("Player not found")?;
+    let player_id = player.player_id;
+    ctx.db.logged_out_player().insert(player);
+    ctx.db.player().identity().delete(&ctx.sender);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-### Connect to Your SpacetimeDB Module
-
-The Unity SpacetimeDB SDK relies on there being a `NetworkManager` somewhere in the scene. Click on the GameManager object in the scene, and in the inspector, add the `NetworkManager` component.
-
-![Unity-AddNetworkManager](/images/unity-tutorial/Unity-AddNetworkManager.JPG)
-
-Next we are going to connect to our SpacetimeDB module. Open `Assets/_Project/Game/BitcraftMiniGameManager.cs` in your editor of choice and add the following code at the top of the file:
-
-Subscribing to tables tells SpacetimeDB what rows we want in our local client cache. We will also not get row update callbacks or event callbacks for any reducer that does not modify a row that matches at least one of our queries. This means that events can happen on the server and the client won't be notified unless they are subscribed to at least 1 row in the change.
-
-Next we write the `OnSubscriptionApplied` callback. When this event occurs for the first time, it signifies that our local client cache is fully populated. At this point, we can verify if a player entity already exists for the corresponding user. If we do not have a player entity, we need to show the `UserNameChooser` dialog so the user can enter a username. We also put the message of the day into the chat window. Finally we unsubscribe from the callback since we only need to do this once.
-
-**Append after the Start() function in BitcraftMiniGameManager.cs**
-
-```csharp
-void OnSubscriptionApplied()
-{
-    // If we don't have any data for our player, then we are creating a
-    // new one. Let's show the username dialog, which will then call the
-    // create player reducer
-    var player = PlayerComponent.FindByOwnerId(local_identity);
-    if (player == null)
-    {
-       // Show username selection
-       UIUsernameChooser.instance.Show();
+    // Remove any circles from the arena
+    for circle in ctx.db.circle().player_id().filter(&player_id) {
+        ctx.db.entity().entity_id().delete(&circle.entity_id);
+        ctx.db.circle().entity_id().delete(&circle.entity_id);
     }
 
-    // Show the Message of the Day in our Config table of the Client Cache
-    UIChatController.instance.OnChatMessageReceived("Message of the Day: " + Config.FindByVersion(0).MessageOfTheDay);
-
-    // Now that we've done this work we can unregister this callback
-    SpacetimeDBClient.instance.onSubscriptionApplied -= OnSubscriptionApplied;
+    Ok(())
 }
 ```
 
-### Adding the Multiplayer Functionality
+Finally publish the new module to SpacetimeDB with this command:
 
-Now we have to change what happens when you press the "Continue" button in the name dialog window. Instead of calling start game like we did in the single player version, we call the `create_player` reducer on the SpacetimeDB module using the auto-generated code. Open `Assets/_Project/Username/UIUsernameChooser.cs`.
+```sh
+spacetime publish --server local blackholio --delete-data
+```
 
-**Append to the top of UIUsernameChooser.cs**
+Deleting the data is optional in this case, but in case you've been messing around with the module we can just start fresh.
 
-```csharp
+### Creating the Arena
+
+Now that we've set up our server logic to spawn food and players, let's continue developing our Unity client to display what we have so far.
+
+Start by adding `SetupArena` and `CreateBorderCube` methods to your `GameManager` class: 
+
+```cs
+    private void SetupArena(float worldSize)
+    {
+        CreateBorderCube(new Vector2(worldSize / 2.0f, worldSize + borderThickness / 2),
+            new Vector2(worldSize + borderThickness * 2.0f, borderThickness)); //North
+        CreateBorderCube(new Vector2(worldSize / 2.0f, -borderThickness / 2),
+            new Vector2(worldSize + borderThickness * 2.0f, borderThickness)); //South
+        CreateBorderCube(new Vector2(worldSize + borderThickness / 2, worldSize / 2.0f),
+            new Vector2(borderThickness, worldSize + borderThickness * 2.0f)); //East
+        CreateBorderCube(new Vector2(-borderThickness / 2, worldSize / 2.0f),
+            new Vector2(borderThickness, worldSize + borderThickness * 2.0f)); //West
+    }
+
+    private void CreateBorderCube(Vector2 position, Vector2 scale)
+    {
+        var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        cube.name = "Border";
+        cube.transform.localScale = new Vector3(scale.x, scale.y, 1);
+        cube.transform.position = new Vector3(position.x, position.y, 1);
+        cube.GetComponent<MeshRenderer>().material = borderMaterial;
+    }
+```
+
+In your `HandleSubscriptionApplied` let's now call `SetupArea` method. Modify your `HandleSubscriptionApplied` method as in the below.
+
+```cs
+    private void HandleSubscriptionApplied(EventContext ctx)
+    {
+        Debug.Log("Subscription applied!");
+        OnSubscriptionApplied?.Invoke();
+
+        // Once we have the initial subscription sync'd to the client cache
+        // Get the world size from the config table and set up the arena
+        var worldSize = Conn.Db.Config.Id.Find(0).WorldSize;
+        SetupArena(worldSize);
+    }
+```
+
+The `OnApplied` callback will be called after the server synchronizes the initial state of your tables with your client. Once the sync has happened, we can look up the world size from the `config` table and use it to set up our arena.
+
+In the scene view, select the `GameManager` object. Click on the `Border Material` property and choose `Sprites-Default`.
+
+### Creating GameObjects 
+
+Now that we have our arena all set up, we need to take the row data that SpacetimeDB syncs with our client and use it to create and draw `GameObject`s on the screen.
+
+Let's start by making some controller scripts for each of the game objects we'd like to have in our scene. In the project window, right-click and select `Create > C# Script`. Name the new script `PlayerController.cs`. Repeat that process for `CircleController.cs` and `FoodController.cs`. We'll modify the contents of these files later.
+
+Now let's make some prefabs for our game objects. In the scene hierarchy window, create a new `GameObject` by right-clicking and selecting:
+
+```
+2D Object > Sprites > Circle
+```
+
+Rename the new game object in the scene to `CirclePrefab`. Next in the `Inspector` window click the `Add Component` button and add the `Circle Controller` script component that we just created. Next drag the object into the `Project` folder. Once the prefab file is created, delete the `CirclePrefab` object from the scene. We'll use this prefab to draw the circles that a player controllers.
+
+Next repeat that same process for the `FoodPrefab` and `Food Controller` component. 
+
+Finally we need to make the `PlayerPrefab`. In the hierarchy window, create a new `GameObject` by right-clicking and selecting:
+
+```
+Create Empty
+```
+
+Rename the game object to `PlayerPrefab`. Next in the `Inspector` window click the `Add Component` button and add the `Circle Controller` script component that we just created. Next drag the object into the `Project` folder. Once the prefab file is created, delete the `PlayerPrefab` object from the scene.
+
+#### EntityController
+
+Let's also create an `EntityController` script which will serve as a base class for both our `CircleController` and `FoodController` classes since both `Circle`s and `Food` are entities.
+
+Create a new file called `EntityController.cs` and replace its contents with:
+
+```cs
 using SpacetimeDB.Types;
-```
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using Unity.VisualScripting;
+using UnityEngine;
 
-Then we're doing a modification to the `ButtonPressed()` function:
-
-**Modify the ButtonPressed function in UIUsernameChooser.cs**
-
-```csharp
-public void ButtonPressed()
+public abstract class EntityController : MonoBehaviour
 {
-    CameraController.RemoveDisabler(GetHashCode());
-    _panel.SetActive(false);
+	const float LERP_DURATION_SEC = 0.1f;
 
-    // Call the SpacetimeDB CreatePlayer reducer
-    Reducer.CreatePlayer(_usernameField.text);
+	private static readonly int ShaderColorProperty = Shader.PropertyToID("_Color");
+
+	[DoNotSerialize] public uint EntityId;
+
+	protected float LerpTime;
+	protected Vector3 LerpStartPosition;
+	protected Vector3 LerpTargetPositio;
+	protected Vector3 TargetScale;
+
+	protected virtual void Spawn(uint entityId)
+	{
+		EntityId = entityId;
+
+		var entity = GameManager.Conn.Db.Entity.EntityId.Find(entityId);
+		LerpStartPosition = LerpTargetPositio = transform.position = (Vector2)entity.Position;
+		transform.localScale = Vector3.one;
+		TargetScale = MassToScale(entity.Mass);
+	}
+
+	public void SetColor(Color color)
+	{
+		GetComponent<SpriteRenderer>().material.SetColor(ShaderColorProperty, color);
+	}
+
+	public virtual void OnEntityUpdated(Entity newVal)
+	{
+		LerpTime = 0.0f;
+		LerpStartPosition = transform.position;
+		LerpTargetPositio = (Vector2)newVal.Position;
+		TargetScale = MassToScale(newVal.Mass);
+	}
+
+	public virtual void OnDelete(EventContext context)
+	{
+		Destroy(gameObject);
+	}
+
+	public virtual void Update()
+	{
+		// Interpolate position and scale
+		LerpTime = Mathf.Min(LerpTime + Time.deltaTime, LERP_DURATION_SEC);
+		transform.position = Vector3.Lerp(LerpStartPosition, LerpTargetPositio, LerpTime / LERP_DURATION_SEC);
+		transform.localScale = Vector3.Lerp(transform.localScale, TargetScale, Time.deltaTime * 8);
+	}
+
+	public static Vector3 MassToScale(uint mass)
+	{
+		var diameter = MassToDiameter(mass);
+		return new Vector3(diameter, diameter, 1);
+	}
+
+	public static float MassToRadius(uint mass) => Mathf.Sqrt(mass);
+	public static float MassToDiameter(uint mass) => MassToRadius(mass) * 2;
 }
 ```
 
-We need to create a `RemotePlayer` script that we attach to remote player objects. In the same folder as `Assets/_Project/Player/LocalPlayer.cs`, create a new C# script called `RemotePlayer`. In the start function, we will register an OnUpdate callback for the `EntityComponent` and query the local cache to get the player’s initial position. **Make sure you include a `using SpacetimeDB.Types;`** at the top of the file.
+The `EntityController` script just provides some helper functions and basic functionality to manage our game objects based on entity updates.
 
-First append this using to the top of `RemotePlayer.cs`
+> One notable feature is that we linearly interpolate (lerp) between the position where the server says the entity is, and where we actually draw it. This is a common technique which provides for smoother movement.
+>
+> If you're interested in learning more checkout [this demo](https://gabrielgambetta.com/client-side-prediction-live-demo.html) from Gabriel Gambetta.
 
-**Create file RemotePlayer.cs, then replace its contents:**
+Let's also create a new `Extensions.cs` script and replace the contents with:
 
-```csharp
+```cs
+using SpacetimeDB.Types;
+using UnityEngine;
+
+namespace SpacetimeDB.Types
+{
+	public partial class DbVector2
+	{
+		public static implicit operator Vector2(DbVector2 vec)
+		{
+			return new Vector2(vec.X, vec.Y);
+		}
+
+		public static implicit operator DbVector2(Vector2 vec)
+		{
+			return new DbVector2(vec.x, vec.y);
+		}
+	}
+}
+```
+
+This just allows us to implicitly convert between our `DbVector2` type and the Unity `Vector2` type.
+
+#### CircleController  
+
+Now open the `CircleController` script and modify the contents of the `CircleController` script to be:
+
+```cs
+using System;
+using System.Collections.Generic;
+using SpacetimeDB;
+using SpacetimeDB.Types;
+using UnityEngine;
+
+public class CircleController : EntityController
+{
+	public static Color[] ColorPalette = new[]
+	{
+        //Yellow
+		(Color)new Color32(175, 159, 49, 255),
+		(Color)new Color32(175, 116, 49, 255),
+        
+        //Purple
+        (Color)new Color32(112, 47, 252, 255),
+		(Color)new Color32(51, 91, 252, 255),
+        
+        //Red
+        (Color)new Color32(176, 54, 54, 255),
+		(Color)new Color32(176, 109, 54, 255),
+		(Color)new Color32(141, 43, 99, 255),
+        
+        //Blue
+        (Color)new Color32(2, 188, 250, 255),
+		(Color)new Color32(7, 50, 251, 255),
+		(Color)new Color32(2, 28, 146, 255),
+	};
+
+    private PlayerController Owner;
+
+    public void Spawn(Circle circle, PlayerController owner)
+    {
+        base.Spawn(circle.EntityId);
+		SetColor(ColorPalette[circle.PlayerId % ColorPalette.Length]);
+
+        this.Owner = owner;
+        GetComponentInChildren<TMPro.TextMeshProUGUI>().text = owner.Username;
+    }
+
+	public override void OnDelete(EventContext context)
+	{
+		base.OnDelete(context);
+        Owner.OnCircleDeleted(this);
+	}
+}
+```
+
+At the top, we're just defining some possible colors for our circle. We've also created a spawn function which takes a `Circle` (same type that's in our `circle` table) and a `PlayerController` which sets the color based on the circle's player ID, as well as setting the text of the Cricle to be the player's username.
+
+Note that the `CircleController` inherits from the `EntityController`, not `MonoBehavior`.
+
+#### FoodController
+
+Next open the `FoodController.cs` file and replace the contents with:
+
+```cs
+using SpacetimeDB.Types;
+using Unity.VisualScripting;
+using UnityEngine;
+
+public class FoodController : EntityController
+{
+	public static Color[] ColorPalette = new[]
+	{
+		(Color)new Color32(119, 252, 173, 255),
+		(Color)new Color32(76, 250, 146, 255),
+		(Color)new Color32(35, 246, 120, 255),
+
+		(Color)new Color32(119, 251, 201, 255),
+		(Color)new Color32(76, 249, 184, 255),
+		(Color)new Color32(35, 245, 165, 255),
+	};
+
+    public void Spawn(Food food)
+    {
+        base.Spawn(food.EntityId);
+		SetColor(ColorPalette[EntityId % ColorPalette.Length]);
+    }
+}
+```
+
+#### PlayerController
+
+Open the `PlayerController` script and modify the contents of the `PlayerController` script to be:
+
+```cs
+using System.Collections.Generic;
+using System.Linq;
+using SpacetimeDB;
+using SpacetimeDB.Types;
+using UnityEngine;
+
+public class PlayerController : MonoBehaviour
+{
+	const int SEND_UPDATES_PER_SEC = 20;
+	const float SEND_UPDATES_FREQUENCY = 1f / SEND_UPDATES_PER_SEC;
+
+    public static PlayerController Local { get; private set; }
+
+	private uint PlayerId;
+    private float LastMovementSendTimestamp;
+    private Vector2? LockInputPosition;
+	private List<CircleController> OwnedCircles = new List<CircleController>();
+
+	public string Username => GameManager.Conn.Db.Player.PlayerId.Find(PlayerId).Name;
+	public int NumberOfOwnedCircles => OwnedCircles.Count;
+	public bool IsLocalPlayer => this == Local;
+
+	public void Initialize(Player player)
+    {
+        PlayerId = player.PlayerId;
+        if (player.Identity == GameManager.LocalIdentity)
+        {
+            Local = this;
+        }
+	}
+
+    private void OnDestroy()
+    {
+        // If we have any circles, destroy them
+        foreach (var circle in OwnedCircles)
+        {
+            if (circle != null)
+            {
+                Destroy(circle.gameObject);
+            }
+        }
+        OwnedCircles.Clear();
+    }
+
+    public void OnCircleSpawned(CircleController circle)
+    {
+        OwnedCircles.Add(circle);
+    }
+
+    public void OnCircleDeleted(CircleController deletedCircle)
+	{
+		// This means we got eaten
+		if (OwnedCircles.Remove(deletedCircle) && IsLocalPlayer && OwnedCircles.Count == 0)
+		{
+			// DeathScreen.Instance.SetVisible(true);
+		}
+	}
+
+	public uint TotalMass()
+    {
+        return (uint)OwnedCircles
+            .Select(circle => GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId))
+			.Sum(e => e?.Mass ?? 0); //If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
+	}
+
+    public Vector2? CenterOfMass()
+    {
+        if (OwnedCircles.Count == 0)
+        {
+            return null;
+        }
+        
+        Vector2 totalPos = Vector2.zero;
+        float totalMass = 0;
+        foreach (var circle in OwnedCircles)
+        {
+            var entity = GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId);
+            var position = circle.transform.position;
+            totalPos += (Vector2)position * entity.Mass;
+            totalMass += entity.Mass;
+        }
+
+        return totalPos / totalMass;
+	}
+
+	private void OnGUI()
+	{
+		if (!IsLocalPlayer || !GameManager.IsConnected())
+		{
+			return;
+		}
+
+		GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
+	}
+
+	//Automated testing members
+	private bool testInputEnabled;
+	private Vector2 testInput;
+
+	public void SetTestInput(Vector2 input) => testInput = input;
+	public void EnableTestInput() => testInputEnabled = true;
+}
+```
+
+Let's also add a new `PrefabManager.cs` script which we can use as a factory for creating prefabs. Replace the contents of the file with:
+
+```cs
+using SpacetimeDB.Types;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using SpacetimeDB.Types;
-using TMPro;
 
-public class RemotePlayer : MonoBehaviour
+public class PrefabManager : MonoBehaviour
 {
-    public ulong EntityId;
+	private static PrefabManager Instance;
 
-    public TMP_Text UsernameElement;
+	public CircleController CirclePrefab;
+	public FoodController FoodPrefab;
+	public PlayerController PlayerPrefab;
 
-    public string Username { set { UsernameElement.text = value; } }
+	private void Awake()
+	{
+		Instance = this;
+	}
 
-    void Start()
+	public static CircleController SpawnCircle(Circle circle, PlayerController owner)
+	{
+		var entityController = Instantiate(Instance.CirclePrefab);
+		entityController.name = $"Circle - {circle.EntityId}";
+		entityController.Spawn(circle, owner);
+		owner.OnCircleSpawned(entityController);
+		return entityController;
+	}
+
+	public static FoodController SpawnFood(Food food)
+	{
+		var entityController = Instantiate(Instance.FoodPrefab);
+		entityController.name = $"Food - {food.EntityId}";
+		entityController.Spawn(food);
+		return entityController;
+	}
+
+	public static PlayerController SpawnPlayer(Player player)
+	{
+		var playerController = Instantiate(Instance.PlayerPrefab);
+		playerController.name = $"PlayerController - {player.Name}";
+		playerController.Initialize(player);
+		return playerController;
+	}
+}
+```
+
+In the scene hierarchy, select the `GameManager` object and add the `Prefab Manager` script as a component to the `GameManager` object. Drag the corresponding `CirclePrefab`, `FoodPrefab`, and `PlayerPrefab` prefabs we created earlier from the project view into their respective slots in the `Prefab Manager`. Save the scene.
+
+### Hooking up the Data
+
+We've now prepared our Unity project so that we can hook up the data from our tables to the Unity game objects and have them drawn on the screen.
+
+Add a couple dictionaries at the top of your `GameManager` class which we'll use to hold onto the game objects we create for our scene. Add these two lines just below your `DbConnection` like so:
+
+```cs
+    public static DbConnection Conn { get; private set; }
+
+    public static Dictionary<uint, EntityController> Entities = new Dictionary<uint, EntityController>();
+	public static Dictionary<uint, PlayerController> Players = new Dictionary<uint, PlayerController>();
+```
+
+Next lets add some callbacks when rows change in the database. Modify the `HandleConnect` method as below.
+
+```cs
+    // Called when we connect to SpacetimeDB and receive our client identity
+    void HandleConnect(DbConnection conn, Identity identity, string token)
     {
-        // Initialize overhead name
-        UsernameElement = GetComponentInChildren<TMP_Text>();
-        var canvas = GetComponentInChildren<Canvas>();
-        canvas.worldCamera = Camera.main;
+        Debug.Log("Connected.");
+        AuthToken.SaveToken(token);
+        LocalIdentity = identity;
 
-        // Get the username from the PlayerComponent for this object and set it in the UI
-        PlayerComponent? playerComp = PlayerComponent.FindByEntityId(EntityId);
-        if (playerComp is null)
+        conn.Db.Circle.OnInsert += CircleOnInsert;
+        conn.Db.Entity.OnUpdate += EntityOnUpdate;
+        conn.Db.Entity.OnDelete += EntityOnDelete;
+        conn.Db.Food.OnInsert += FoodOnInsert;
+        conn.Db.Player.OnInsert += PlayerOnInsert;
+        conn.Db.Player.OnDelete += PlayerOnDelete;
+
+        OnConnected?.Invoke();
+
+        // Request all tables
+        Conn.SubscriptionBuilder()
+            .OnApplied(HandleSubscriptionApplied)
+            .Subscribe("SELECT * FROM *");
+    }
+```
+
+Next add the following implementations for those callbacks to the `GameManager` class.
+
+```cs
+    private static void CircleOnInsert(EventContext context, Circle insertedValue)
+    {
+        var player = GetOrCreatePlayer(insertedValue.PlayerId);
+        var entityController = PrefabManager.SpawnCircle(insertedValue, player);
+        Entities.Add(insertedValue.EntityId, entityController);
+    }
+
+    private static void EntityOnUpdate(EventContext context, Entity oldEntity, Entity newEntity)
+    {
+        if (!Entities.TryGetValue(newEntity.EntityId, out var entityController))
         {
-            string inputUsername = UsernameElement.text;
-            Debug.Log($"PlayerComponent not found - Creating a new player ({inputUsername})");
-            Reducer.CreatePlayer(inputUsername);
+            return;
+        }
+        entityController.OnEntityUpdated(newEntity);
+    }
 
-            // Try again, optimistically assuming success for simplicity
-            PlayerComponent? playerComp = PlayerComponent.FindByEntityId(EntityId);
+    private static void EntityOnDelete(EventContext context, Entity oldEntity)
+    {
+        if (Entities.Remove(oldEntity.EntityId, out var entityController))
+        {
+            entityController.OnDelete(context);
+        }
+    }
+
+    private static void FoodOnInsert(EventContext context, Food insertedValue)
+    {
+        var entityController = PrefabManager.SpawnFood(insertedValue);
+        Entities.Add(insertedValue.EntityId, entityController);
+    }
+
+    private static void PlayerOnInsert(EventContext context, Player insertedPlayer)
+    {
+        GetOrCreatePlayer(insertedPlayer.PlayerId);
+    }
+
+    private static void PlayerOnDelete(EventContext context, Player deletedvalue)
+    {
+        if (Players.Remove(deletedvalue.PlayerId, out var playerController))
+        {
+            GameObject.Destroy(playerController.gameObject);
+        }
+    }
+
+    private static PlayerController GetOrCreatePlayer(uint playerId)
+    {
+        if (!Players.TryGetValue(playerId, out var playerController))
+        {
+            var player = Conn.Db.Player.PlayerId.Find(playerId);
+            playerController = PrefabManager.SpawnPlayer(player);
+            Players.Add(playerId, playerController);
         }
 
-        Username = playerComp.Username;
-
-        // Get the last location for this player and set the initial position
-        EntityComponent entity = EntityComponent.FindByEntityId(EntityId);
-        transform.position = new Vector3(entity.Position.X, entity.Position.Y, entity.Position.Z);
-
-        // Register for a callback that is called when the client gets an
-        // update for a row in the EntityComponent table
-        EntityComponent.OnUpdate += EntityComponent_OnUpdate;
+        return playerController;
     }
-}
 ```
 
-We now write the `EntityComponent_OnUpdate` callback which sets the movement direction in the `MovementController` for this player. We also set the target position to the current location in the latest update.
+### Camera Controller
 
-**Append to bottom of RemotePlayer class in RemotePlayer.cs:**
+One of the last steps is to create a camera controller to make sure the camera moves around with the player. Create a script called `CameraController.cs` and add it to your project. Replace the contents of the file with this:
 
-```csharp
-private void EntityComponent_OnUpdate(EntityComponent oldObj, EntityComponent obj, ReducerEvent callInfo)
+```cs
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class CameraController : MonoBehaviour
 {
-    // If the update was made to this object
-    if(obj.EntityId == EntityId)
+    public static float WorldSize = 0.0f;
+
+	private void LateUpdate()
     {
-        var movementController = GetComponent<PlayerMovementController>();
-
-        // Update target position, rotation, etc.
-        movementController.RemoteTargetPosition = new Vector3(obj.Position.X, obj.Position.Y, obj.Position.Z);
-        movementController.RemoteTargetRotation = obj.Direction;
-        movementController.SetMoving(obj.Moving);
-    }
-}
-```
-
-Next we need to handle what happens when a `PlayerComponent` is added to our local cache. We will handle it differently based on if it’s our local player entity or a remote player. We are going to register for the `OnInsert` event for our `PlayerComponent` table. Add the following code to the `Start` function in `TutorialGameManager`.
-
-**Append to bottom of Start() function in BitcraftMiniGameManager.cs:**
-
-```csharp
-PlayerComponent.OnInsert += PlayerComponent_OnInsert;
-```
-
-Create the `PlayerComponent_OnInsert` function which does something different depending on if it's the component for the local player or a remote player. If it's the local player, we set the local player object's initial position and call `StartGame`. If it's a remote player, we instantiate a `PlayerPrefab` with the `RemotePlayer` component. The start function of `RemotePlayer` handles initializing the player position.
-
-**Append to bottom of TutorialGameManager class in BitcraftMiniGameManager.cs:**
-
-```csharp
-private void PlayerComponent_OnInsert(PlayerComponent obj, ReducerEvent callInfo)
-{
-    // If the identity of the PlayerComponent matches our user identity then this is the local player
-    if(obj.Identity == local_identity)
-    {
-        // Now that we have our initial position we can start the game
-        StartGame();
-    }
-    else
-    {
-        // Spawn the player object and attach the RemotePlayer component
-        var remotePlayer = Instantiate(PlayerPrefab);
-
-        // Lookup and apply the position for this new player
-        var entity = EntityComponent.FindByEntityId(obj.EntityId);
-        var position = new Vector3(entity.Position.X, entity.Position.Y, entity.Position.Z);
-        remotePlayer.transform.position = position;
-
-        var movementController = remotePlayer.GetComponent<PlayerMovementController>();
-        movementController.RemoteTargetPosition = position;
-        movementController.RemoteTargetRotation = entity.Direction;
-
-        remotePlayer.AddComponent<RemotePlayer>().EntityId = obj.EntityId;
-    }
-}
-```
-
-Next, we will add a `FixedUpdate()` function to the `LocalPlayer` class so that we can send the local player's position to SpacetimeDB. We will do this by calling the auto-generated reducer function `Reducer.UpdatePlayerPosition(...)`. When we invoke this reducer from the client, a request is sent to SpacetimeDB and the reducer `update_player_position(...)` (Rust) or `UpdatePlayerPosition(...)` (C#) is executed on the server and a transaction is produced. All clients connected to SpacetimeDB will start receiving the results of these transactions.
-
-**Append to the top of LocalPlayer.cs**
-
-```csharp
-using SpacetimeDB.Types;
-using SpacetimeDB;
-```
-
-**Append to the bottom of LocalPlayer class in LocalPlayer.cs**
-
-```csharp
-private float? lastUpdateTime;
-private void FixedUpdate()
-{
-   float? deltaTime = Time.time - lastUpdateTime;
-   bool hasUpdatedRecently = deltaTime.HasValue && deltaTime.Value < 1.0f / movementUpdateSpeed;
-   bool isConnected = SpacetimeDBClient.instance.IsConnected();
-
-   if (hasUpdatedRecently || !isConnected)
-   {
-      return;
-   }
-
-   lastUpdateTime = Time.time;
-   var p = PlayerMovementController.Local.GetModelPosition();
-
-   Reducer.UpdatePlayerPosition(new StdbVector3
-      {
-         X = p.x,
-         Y = p.y,
-         Z = p.z,
-      },
-      PlayerMovementController.Local.GetModelRotation(),
-      PlayerMovementController.Local.IsMoving());
-}
-```
-
-Finally, we need to update our connection settings in the inspector for our GameManager object in the scene. Click on the GameManager in the Hierarchy tab. The the inspector tab you should now see fields for `Module Address` and `Host Name`. Set the `Module Address` to the name you used when you ran `spacetime publish`. This is likely `unity-tutorial`. If you don't remember, you can go back to your terminal and run `spacetime publish` again from the `server` folder.
-
-![GameManager-Inspector2](/images/unity-tutorial/GameManager-Inspector2.JPG)
-
-### Play the Game!
-
-Go to File -> Build Settings... Replace the SampleScene with the Main scene we have been working in.
-
-![Unity-AddOpenScenes](/images/unity-tutorial/Unity-AddOpenScenes.JPG)
-
-When you hit the `Build` button, it will kick off a build of the game which will use a different identity than the Unity Editor. Create your character in the build and in the Unity Editor by entering a name and clicking `Continue`. Now you can see each other in game running around the map.
-
-### Implement Player Logout
-
-So far we have not handled the `logged_in` variable of the `PlayerComponent`. This means that remote players will not despawn on your screen when they disconnect. To fix this we need to handle the `OnUpdate` event for the `PlayerComponent` table in addition to `OnInsert`. We are going to use a common function that handles any time the `PlayerComponent` changes.
-
-**Append to the bottom of Start() function in TutorialGameManager.cs**
-
-```csharp
-PlayerComponent.OnUpdate += PlayerComponent_OnUpdate;
-```
-
-We are going to add a check to determine if the player is logged for remote players. If the player is not logged in, we search for the `RemotePlayer` object with the corresponding `EntityId` and destroy it.
-
-Next we'll be updating some of the code in `PlayerComponent_OnInsert`. For simplicity, just replace the entire function.
-
-**REPLACE PlayerComponent_OnInsert in TutorialGameManager.cs**
-
-```csharp
-private void PlayerComponent_OnUpdate(PlayerComponent oldValue, PlayerComponent newValue, ReducerEvent dbEvent)
-{
-    OnPlayerComponentChanged(newValue);
-}
-
-private void PlayerComponent_OnInsert(PlayerComponent obj, ReducerEvent dbEvent)
-{
-    OnPlayerComponentChanged(obj);
-}
-
-private void OnPlayerComponentChanged(PlayerComponent obj)
-{
-    // If the identity of the PlayerComponent matches our user identity then this is the local player
-    if(obj.OwnerId == local_identity)
-    {
-        // Now that we have our initial position we can start the game
-        StartGame();
-    }
-    else
-    {
-        // otherwise we need to look for the remote player object in the scene (if it exists) and destroy it
-        var existingPlayer = FindObjectsOfType<RemotePlayer>().FirstOrDefault(item => item.EntityId == obj.EntityId);
-        if (obj.LoggedIn)
+        var arenaCenterTransform = new Vector3(WorldSize / 2, WorldSize / 2, -10.0f);
+        if (PlayerController.Local == null || !GameManager.IsConnected())
         {
-            // Only spawn remote players who aren't already spawned
-            if (existingPlayer == null)
+            // Set the camera to be in middle of the arena if we are not connected or 
+            // there is no local player
+            transform.position = arenaCenterTransform;
+            return;
+        }
+
+        var centerOfMass = PlayerController.Local.CenterOfMass();
+        if (centerOfMass.HasValue)
+        {
+            // Set the camera to be the center of mass of the local player
+            // if the local player has one
+            transform.position = new Vector3
             {
-                // Spawn the player object and attach the RemotePlayer component
-                var remotePlayer = Instantiate(PlayerPrefab);
-
-                // Lookup and apply the position for this new player
-                var entity = EntityComponent.FindByEntityId(obj.EntityId);
-                var position = new Vector3(entity.Position.X, entity.Position.Y, entity.Position.Z);
-                remotePlayer.transform.position = position;
-
-                var movementController = remotePlayer.GetComponent<PlayerMovementController>();
-                movementController.RemoteTargetPosition = position;
-                movementController.RemoteTargetRotation = entity.Direction;
-
-                remotePlayer.AddComponent<RemotePlayer>().EntityId = obj.EntityId;
-            }
+                x = centerOfMass.Value.x,
+                y = centerOfMass.Value.y,
+                z = transform.position.z
+            };
+        } else {
+            transform.position = arenaCenterTransform;
         }
-        else
-        {
-            if (existingPlayer != null)
-            {
-                Destroy(existingPlayer.gameObject);
-            }
-        }
-    }
+
+		float targetCameraSize = CalculateCameraSize(PlayerController.Local);
+		Camera.main.orthographicSize = Mathf.Lerp(Camera.main.orthographicSize, targetCameraSize, Time.deltaTime * 2);
+	}
+
+	private float CalculateCameraSize(PlayerController player)
+	{
+		return 50f + //Base size
+            Mathf.Min(50, player.TotalMass() / 5) + //Increase camera size with mass
+            Mathf.Min(player.NumberOfOwnedCircles - 1, 1) * 30; //Zoom out when player splits
+	}
 }
 ```
 
-Now you when you play the game you should see remote players disappear when they log out.
+Add the `CameraController` as a component to the `Main Camera` object in the scene.
 
-Before updating the client, let's generate the client files and update publish our module.
+Lastly modify the `GameManager.SetupArea` method to set the `WorldSize` on the `CameraController`.
 
-**Execute commands in the server/ directory**
-
-```bash
-spacetime generate --out-dir ../client/Assets/module_bindings --lang=csharp
-spacetime publish -c unity-tutorial
-```
-
-On the client, let's add code to send the message when the chat button or enter is pressed. Update the `OnChatButtonPress` function in `UIChatController.cs`.
-
-**Append to the top of UIChatController.cs:**
-
-```csharp
-using SpacetimeDB.Types;
-```
-
-**REPLACE the OnChatButtonPress function in UIChatController.cs:**
-
-```csharp
-public void OnChatButtonPress()
-{
-    Reducer.SendChatMessage(_chatInput.text);
-    _chatInput.text = "";
-}
-```
-
-Now we need to add a reducer to handle inserting new chat messages. First register for the ChatMessage reducer in the `Start()` function using the auto-generated function:
-
-**Append to the bottom of the Start() function in TutorialGameManager.cs:**
-
-```csharp
-Reducer.OnSendChatMessageEvent += OnSendChatMessageEvent;
-```
-
-Now we write the `OnSendChatMessageEvent` function. We can find the `PlayerComponent` for the player who sent the message using the `Identity` of the sender. Then we get the `Username` and prepend it to the message before sending it to the chat window.
-
-**Append after the Start() function in TutorialGameManager.cs**
-
-```csharp
-private void OnSendChatMessageEvent(ReducerEvent dbEvent, string message)
-{
-    var player = PlayerComponent.FindByOwnerId(dbEvent.Identity);
-    if (player != null)
+```cs
+    private void SetupArena(float worldSize)
     {
-        UIChatController.instance.OnChatMessageReceived(player.Username + ": " + message);
+        CreateBorderCube(new Vector2(worldSize / 2.0f, worldSize + borderThickness / 2),
+            new Vector2(worldSize + borderThickness * 2.0f, borderThickness)); //North
+        CreateBorderCube(new Vector2(worldSize / 2.0f, -borderThickness / 2),
+            new Vector2(worldSize + borderThickness * 2.0f, borderThickness)); //South
+        CreateBorderCube(new Vector2(worldSize + borderThickness / 2, worldSize / 2.0f),
+            new Vector2(borderThickness, worldSize + borderThickness * 2.0f)); //East
+        CreateBorderCube(new Vector2(-borderThickness / 2, worldSize / 2.0f),
+            new Vector2(borderThickness, worldSize + borderThickness * 2.0f)); //West
+
+        // Set the world size for the camera controller
+        CameraController.WorldSize = worldSize;
     }
-}
 ```
 
-Now when you run the game you should be able to send chat messages to other players. Be sure to make a new Unity client build and run it in a separate window so you can test chat between two clients.
+### Entering the Game
+
+The last step is to call the `enter_game` reducer on the server, passing in a username for our player, which will spawn a circle for our player. For the sake of simplicity, let's call the `enter_game` reducer from the `HandleSubscriptionApplied` callback with the name "3Blave":
+
+```cs
+    private void HandleSubscriptionApplied(EventContext ctx)
+    {
+        Debug.Log("Subscription applied!");
+        OnSubscriptionApplied?.Invoke();
+
+        // Once we have the initial subscription sync'd to the client cache
+        // Get the world size from the config table and set up the arena
+        var worldSize = Conn.Db.Config.Id.Find(0).WorldSize;
+        SetupArena(worldSize);
+
+
+    }
+```
 
 ## Conclusion
 
