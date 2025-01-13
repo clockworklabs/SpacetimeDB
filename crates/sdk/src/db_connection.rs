@@ -35,7 +35,6 @@ use spacetimedb_client_api_messages::websocket as ws;
 use spacetimedb_client_api_messages::websocket::{BsatnFormat, CallReducerFlags, Compression};
 use spacetimedb_lib::{bsatn, ser::Serialize, Address, Identity};
 use std::{
-    borrow::Borrow,
     collections::HashMap,
     sync::{Arc, Mutex as StdMutex, OnceLock},
     time::{Duration, SystemTime},
@@ -686,7 +685,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
         Self {
             uri: None,
             module_name: None,
-            credentials: None,
+            token: None,
             on_connect: None,
             on_connect_error: None,
             on_disconnect: None,

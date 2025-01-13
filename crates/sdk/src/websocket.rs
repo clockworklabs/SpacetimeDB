@@ -12,7 +12,7 @@ use spacetimedb_client_api_messages::websocket::{
     SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
 };
 use spacetimedb_client_api_messages::websocket::{ClientMessage, ServerMessage};
-use spacetimedb_lib::{bsatn, Address, Identity};
+use spacetimedb_lib::{bsatn, Address};
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};
 use tokio_tungstenite::{
