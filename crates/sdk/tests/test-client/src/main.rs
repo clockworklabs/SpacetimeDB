@@ -1431,8 +1431,8 @@ fn exec_reauth_part_1() {
     let save_result = test_counter.add_test("save-credentials");
 
     DbConnection::builder()
-        .on_connect(|_, identity, token| {
-            save_result(creds_store().save(identity, token));
+        .on_connect(|_, _identity, token| {
+            save_result(creds_store().save(token));
         })
         .on_connect_error(|e| panic!("Connect failed: {e:?}"))
         .with_module_name(name)
@@ -1455,14 +1455,13 @@ fn exec_reauth_part_2() {
 
     let creds_match_result = test_counter.add_test("creds-match");
 
-    let (identity, token) = creds_store().load().unwrap().unwrap();
+    let token = creds_store().load().unwrap().unwrap();
 
     DbConnection::builder()
         .on_connect({
             let token = token.clone();
-            move |_, recv_identity, recv_token| {
+            move |_, _recv_identity, recv_token| {
                 let run_checks = || {
-                    assert_eq_or_bail!(identity, recv_identity);
                     assert_eq_or_bail!(token, recv_token);
                     Ok(())
                 };
