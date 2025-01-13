@@ -1471,7 +1471,7 @@ fn exec_reauth_part_2() {
         })
         .on_connect_error(|e| panic!("Connect failed: {e:?}"))
         .with_module_name(name)
-        .with_credentials(Some((identity, token)))
+        .with_token(Some(token))
         .with_uri(LOCALHOST)
         .build()
         .unwrap()
