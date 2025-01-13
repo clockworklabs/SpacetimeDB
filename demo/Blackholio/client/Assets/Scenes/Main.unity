@@ -2897,8 +2897,8 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 207278859}
-        m_TargetAssemblyTypeName: GameManager, Assembly-CSharp
+      - m_Target: {fileID: 369182684}
+        m_TargetAssemblyTypeName: DeathScreen, SpacetimeDBCircleGame
         m_MethodName: Respawn
         m_Mode: 1
         m_Arguments:
