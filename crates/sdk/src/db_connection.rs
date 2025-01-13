@@ -138,18 +138,17 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             // Subscription applied:
             // set the received state to store all the rows,
             // then invoke the on-applied and row callbacks.
+            // We only use this for `subscribe_from_all_tables`
             ParsedMessage::InitialSubscription { db_update, sub_id } => {
                 // Lock the client cache in a restricted scope,
                 // so that it will be unlocked when callbacks run.
                 {
                     let mut cache = self.cache.lock().unwrap();
-                    // FIXME: delete no-longer-subscribed rows.
                     db_update.apply_to_client_cache(&mut *cache);
                 }
                 let event_ctx = self.make_event_ctx(Event::SubscribeApplied);
                 let mut inner = self.inner.lock().unwrap();
                 inner.subscriptions.legacy_subscription_applied(&event_ctx, sub_id);
-                // FIXME: invoke delete callbacks for no-longer-subscribed rows.
                 db_update.invoke_row_callbacks(&event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
@@ -200,7 +199,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 let event_ctx = self.make_event_ctx(Event::SubscribeApplied);
                 let mut inner = self.inner.lock().unwrap();
                 inner.subscriptions.subscription_applied(&event_ctx, query_id);
-                // FIXME: invoke delete callbacks for no-longer-subscribed rows.
+                // FIXME: implement ref counting of rows to handle queries with overlapping results.
                 initial_update.invoke_row_callbacks(&event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
@@ -217,7 +216,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 let event_ctx = self.make_event_ctx(Event::UnsubscribeApplied);
                 let mut inner = self.inner.lock().unwrap();
                 inner.subscriptions.unsubscribe_applied(&event_ctx, query_id);
-                // FIXME: invoke delete callbacks for no-longer-subscribed rows.
+                // FIXME: implement ref counting of rows to handle queries with overlapping results.
                 initial_update.invoke_row_callbacks(&event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
@@ -304,6 +303,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             // and send the `Subscribe` WS message.
             PendingMutation::SubscribeSingle { query_id, handle } => {
                 let mut inner = self.inner.lock().unwrap();
+                // Register the subscription, so we can handle related messages from the server.
                 inner.subscriptions.register_subscription(query_id, handle.clone());
                 if let Some(msg) = handle.start() {
                     inner
@@ -1100,20 +1100,18 @@ async fn parse_loop<M: SpacetimeModule>(
                 let db_update = ws::DatabaseUpdate::from_iter(std::iter::once(table_rows));
                 let query_id = unsubscribe_applied.query_id.id;
                 match M::DbUpdate::parse_update(db_update) {
-                    Err(e) => ParsedMessage::Error(e.context("Failed to parse update from SubscribeApplied")),
+                    Err(e) => ParsedMessage::Error(e.context("Failed to parse update from UnsubscribeApplied")),
                     Ok(initial_update) => ParsedMessage::UnsubscribeApplied {
                         query_id,
                         initial_update,
                     },
                 }
             }
-            ws::ServerMessage::SubscriptionError(e) => {
-                ParsedMessage::SubscriptionError {
-                    query_id: e.query_id,
-                    request_id: e.request_id,
-                    error: e.error.to_string(),
-                }
-            }
+            ws::ServerMessage::SubscriptionError(e) => ParsedMessage::SubscriptionError {
+                query_id: e.query_id,
+                request_id: e.request_id,
+                error: e.error.to_string(),
+            },
         })
         .expect("Failed to send ParsedMessage to main thread");
     }
@@ -1132,7 +1130,6 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
         query_id: u32,
     },
     SubscribeSingle {
-        // query: Box<str>,
         query_id: u32,
         handle: SubscriptionHandleImpl<M>,
     },

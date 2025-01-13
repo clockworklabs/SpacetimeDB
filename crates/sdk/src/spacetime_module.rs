@@ -116,24 +116,13 @@ pub trait SubscriptionHandle: InModule + Clone + Send + 'static
 where
     Self::Module: SpacetimeModule<SubscriptionHandle = Self>,
 {
-    // type EC = <<Self as InModule>::Module as SpacetimeModule>::EventContext;
-    // type EventContext = Self::Module::EventContext;
-    // type EventContext = <<Self as InModule>::Module as SpacetimeModule>::EventContext;
-
     fn new(imp: SubscriptionHandleImpl<Self::Module>) -> Self;
     fn is_ended(&self) -> bool;
 
     fn is_active(&self) -> bool;
 
     /// Called by the `SubscriptionHandle` method of the same name.
-    // TODO: requires the new subscription interface and WS protocol.
-    fn unsubscribe_then(
-        self,
-        // on_end: OnEndedCallback<Self::Module>,
-        // on_end: impl FnOnce(&<Self::Module as SpacetimeModule>::EventContext) + Send + 'static,
-        on_end: OnEndedCallback<Self::Module>, // on_end: impl OnEndedCallback2<Self::Module>,
-                                               // on_end: impl FnOnce(&<Self as InModule>::Module::EventContext) + Send + 'static,
-    ) -> anyhow::Result<()>;
+    fn unsubscribe_then(self, on_end: OnEndedCallback<Self::Module>) -> anyhow::Result<()>;
 }
 
 pub struct WithBsatn<Row> {

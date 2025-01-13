@@ -451,9 +451,7 @@ fn exec_subscription_error_smoke_test() {
                 .on_applied(move |_ctx: &EventContext| {
                     panic!("Subscription should never be applied");
                 })
-                .on_error(|_| {
-                    cb(Ok(()))
-                })
+                .on_error(|_| cb(Ok(())))
                 .subscribe("SELEcCT * FROM one_u8;"); // intentional typo
             assert!(!handle.is_active());
             assert!(!handle.is_ended());
@@ -1747,30 +1745,6 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
                 (one_u16_inserted.take().unwrap())(run_checks());
             });
         });
-        // conn.subscription_builder()
-        //     .on_applied(move |ctx| {
-        //         sub_applied(Ok(()));
-
-        //         // Test that we are notified when a row is inserted.
-        //         let db = ctx.db();
-        //         let mut one_u8_inserted = Some(counter2.add_test(format!("one_u8_inserted_{who}")));
-        //         db.one_u_8().on_insert(move |_, row| {
-        //             (one_u8_inserted.take().unwrap())(check_val(row.n, 42));
-        //         });
-        //         let mut one_u16_inserted = Some(counter2.add_test(format!("one_u16_inserted_{who}")));
-        //         db.one_u_16().on_insert(move |event, row| {
-        //             let run_checks = || {
-        //                 anyhow::ensure!(
-        //                     matches!(event.event, Event::UnknownTransaction),
-        //                     "reducer should be unknown",
-        //                 );
-        //                 check_val(row.n, 24)
-        //             };
-        //             (one_u16_inserted.take().unwrap())(run_checks());
-        //         });
-        //     })
-        //     .on_error(|_| panic!("Subscription error"))
-        //     .subscribe(["SELECT * FROM one_u8", "SELECT * FROM one_u16"]);
         conn
     });
 

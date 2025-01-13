@@ -138,8 +138,7 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
         let Some(mut sub) = self.new_subscriptions.remove(&sub_id) else {
             // TODO: double check error handling.
             log::warn!("Unsubscribe applied called for missing query {:?}", sub_id);
-            panic!("dummy");
-            // return;
+            return;
         };
         if let Some(callback) = sub.on_error() {
             callback(ctx)
@@ -194,11 +193,11 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
         self
     }
 
-    pub fn subscribe(self, _query_sql: &str) -> M::SubscriptionHandle {
+    pub fn subscribe(self, query_sql: &str) -> M::SubscriptionHandle {
         let qid = next_subscription_id();
         let handle = SubscriptionHandleImpl::new(SubscriptionState::new(
             qid,
-            _query_sql.into(),
+            query_sql.into(),
             self.conn.pending_mutations_send.clone(),
             self.on_applied,
             self.on_error,
@@ -233,28 +232,6 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
                 sub_id,
             })
             .unwrap();
-    }
-
-    pub fn legacy_subscribe(self, queries: impl IntoQueries) -> M::SubscriptionHandle {
-        static NEXT_SUB_ID: AtomicU32 = AtomicU32::new(0);
-
-        let sub_id = NEXT_SUB_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        let Self {
-            on_applied,
-            on_error,
-            conn,
-        } = self;
-        conn.pending_mutations_send
-            .unbounded_send(PendingMutation::Subscribe {
-                on_applied,
-                on_error,
-                queries: queries.into_queries(),
-                sub_id,
-            })
-            .unwrap();
-        todo!("remove this")
-        // M::SubscriptionHandle::new(SubscriptionHandleImpl { conn, sub_id })
     }
 }
 
@@ -455,7 +432,6 @@ impl<M: SpacetimeModule> SubscriptionHandleImpl<M> {
     }
 
     /// Called by the `SubscriptionHandle` method of the same name.
-    // TODO: requires the new subscription interface and WS protocol.
     pub fn unsubscribe_then(self, on_end: impl FnOnce(&M::EventContext) + Send + 'static) -> anyhow::Result<()> {
         let mut inner = self.inner.lock().unwrap();
         inner.unsubscribe_then(on_end)
