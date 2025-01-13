@@ -153,6 +153,7 @@ pub enum AbiCall {
     RowIterBsatnAdvance,
     RowIterBsatnClose,
     DatastoreInsertBsatn,
+    DatastoreUpdateBsatn,
     DatastoreDeleteByBtreeScanBsatn,
     DatastoreDeleteAllByEqBsatn,
     BytesSourceRead,
@@ -160,6 +161,7 @@ pub enum AbiCall {
     ConsoleLog,
     ConsoleTimerStart,
     ConsoleTimerEnd,
+    Identity,
 
     VolatileNonatomicScheduleImmediate,
 }

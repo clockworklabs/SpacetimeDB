@@ -350,6 +350,7 @@ pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
         NodesError::DecodeRow(_) => Some(errno::BSATN_DECODE_ERROR),
         NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
         NodesError::IndexNotFound => Some(errno::NO_SUCH_INDEX),
+        NodesError::IndexNotUnique => Some(errno::INDEX_NOT_UNIQUE),
         NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => Some(errno::SCHEDULE_AT_DELAY_TOO_LONG),
         NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {
@@ -382,6 +383,7 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::row_iter_bsatn_advance,
             "spacetime_10.0"::row_iter_bsatn_close,
             "spacetime_10.0"::datastore_insert_bsatn,
+            "spacetime_10.0"::datastore_update_bsatn,
             "spacetime_10.0"::datastore_delete_all_by_eq_bsatn,
             "spacetime_10.0"::bytes_source_read,
             "spacetime_10.0"::bytes_sink_write,
@@ -391,6 +393,7 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::index_id_from_name,
             "spacetime_10.0"::datastore_btree_scan_bsatn,
             "spacetime_10.0"::datastore_delete_by_btree_scan_bsatn,
+            "spacetime_10.0"::identity,
 
             // unstable:
             "spacetime_10.0"::volatile_nonatomic_schedule_immediate,

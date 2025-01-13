@@ -337,6 +337,8 @@ pub enum NodesError {
     TableNotFound,
     #[error("index with provided name or id doesn't exist")]
     IndexNotFound,
+    #[error("index was not unique")]
+    IndexNotUnique,
     #[error("column is out of bounds")]
     BadColumn,
     #[error("can't perform operation; not inside transaction")]

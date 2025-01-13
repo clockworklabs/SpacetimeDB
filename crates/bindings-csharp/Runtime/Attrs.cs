@@ -61,14 +61,20 @@
         public string ScheduledAt { get; init; } = "ScheduledAt";
     }
 
-    [AttributeUsage(AttributeTargets.Struct | AttributeTargets.Class, AllowMultiple = true)]
-    public sealed class IndexAttribute : Attribute
+    [AttributeUsage(
+        AttributeTargets.Struct | AttributeTargets.Class | AttributeTargets.Field,
+        AllowMultiple = true
+    )]
+    public abstract class Index : Attribute
     {
         public string? Table { get; init; }
 
         public string? Name { get; init; }
 
-        public string[] BTree { get; init; } = [];
+        public sealed class BTreeAttribute : Index
+        {
+            public string[] Columns { get; init; } = [];
+        }
     }
 
     public sealed class AutoIncAttribute : Internal.ColumnAttribute

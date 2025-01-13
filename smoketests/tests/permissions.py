@@ -62,11 +62,12 @@ class Permissions(Smoketest):
         self.reset_config()
 
         with self.assertRaises(Exception):
+            # TODO: This raises for the wrong reason - `--clear-database` doesn't exist anymore!
             self.spacetime("publish", self.database_identity, "--project-path", self.project_path, "--clear-database", "--yes")
 
         # Check that this holds without `--clear-database`, too.
         with self.assertRaises(Exception):
-            self.spacetime("publish", self.database_identity, "--project-path", self.project_path)
+            self.spacetime("publish", self.database_identity, "--project-path", self.project_path, "--yes")
 
 
 class PrivateTablePermissions(Smoketest):

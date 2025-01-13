@@ -1662,8 +1662,8 @@ fn exec_caller_always_notified() {
     test_counter.wait_for_all();
 }
 
-/// Duplicates the test `insert_primitive`, but using the `SELECT * FROM *` sugar
-/// rather than an explicit query set.
+/// Duplicates the test `insert_primitive`,
+/// but using `SubscriptionBuilder::subscribe_to_all_tables` rather than an explicit query set.
 fn exec_subscribe_all_select_star() {
     let test_counter = TestCounter::new();
 

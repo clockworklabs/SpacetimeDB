@@ -334,7 +334,7 @@ impl CommittedState {
         row: &ProductValue,
     ) -> Result<()> {
         let (table, blob_store) = self.get_table_and_blob_store_or_create(table_id, schema);
-        table.insert_internal(blob_store, row).map_err(TableError::Insert)?;
+        table.insert_for_replay(blob_store, row).map_err(TableError::Insert)?;
         Ok(())
     }
 

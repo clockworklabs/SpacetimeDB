@@ -658,8 +658,9 @@ fn send_scheduled_message(_ctx: &ReducerContext, arg: ScheduledTable) {
     let _ = arg.scheduled_id;
 }
 
-#[spacetimedb::table(name = indexed_table, index(name=player_id_index, btree(columns = [player_id])))]
+#[spacetimedb::table(name = indexed_table)]
 struct IndexedTable {
+    #[index(btree)]
     player_id: u32,
 }
 

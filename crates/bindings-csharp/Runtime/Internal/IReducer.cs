@@ -3,7 +3,14 @@ namespace SpacetimeDB.Internal;
 using System.Text;
 using SpacetimeDB.BSATN;
 
-public interface IReducerContext { }
+public interface IReducerContext
+{
+    public static Identity GetIdentity()
+    {
+        FFI.identity(out var identity);
+        return identity;
+    }
+}
 
 public interface IReducer
 {

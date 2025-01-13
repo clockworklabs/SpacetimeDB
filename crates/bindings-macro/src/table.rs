@@ -1,4 +1,4 @@
-use crate::sats::{self, derive_deserialize, derive_satstype, derive_serialize};
+use crate::sats;
 use crate::sym;
 use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
 use heck::ToSnakeCase;
@@ -543,10 +543,6 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     let tablehandle_ident = format_ident!("{}__TableHandle", table_ident);
 
-    let deserialize_impl = derive_deserialize(&sats_ty);
-    let serialize_impl = derive_serialize(&sats_ty);
-    let schema_impl = derive_satstype(&sats_ty);
-
     // Generate `integrate_generated_columns`
     // which will integrate all generated auto-inc col values into `_row`.
     let integrate_gen_col = sequenced_columns.iter().map(|col| {
@@ -666,18 +662,14 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
-    let row_type_to_table = quote!(<#row_type as spacetimedb::table::__MapRowTypeToTable>::Table);
-
     // Output all macro data
     let trait_def = quote_spanned! {table_ident.span()=>
         #[allow(non_camel_case_types, dead_code)]
         #vis trait #table_ident {
-            fn #table_ident(&self) -> &#row_type_to_table;
+            fn #table_ident(&self) -> &#tablehandle_ident;
         }
         impl #table_ident for spacetimedb::Local {
-            fn #table_ident(&self) -> &#row_type_to_table {
-                #[allow(non_camel_case_types)]
-                type #tablehandle_ident = #row_type_to_table;
+            fn #table_ident(&self) -> &#tablehandle_ident {
                 &#tablehandle_ident {}
             }
         }
@@ -697,17 +689,9 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
         #trait_def
 
-        #[cfg(doc)]
         #tablehandle_def
 
         const _: () = {
-            #[cfg(not(doc))]
-            #tablehandle_def
-
-            impl spacetimedb::table::__MapRowTypeToTable for #row_type {
-                type Table = #tablehandle_ident;
-            }
-
             impl #tablehandle_ident {
                 #(#index_accessors)*
             }
@@ -723,10 +707,6 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
             #describe_table_func
         };
-
-        #schema_impl
-        #deserialize_impl
-        #serialize_impl
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {

@@ -134,7 +134,7 @@ impl Iterator for BTreeIndexRangeIter<'_> {
 /// An index from a key type determined at runtime to `RowPointer`(s).
 ///
 /// See module docs for info about specialization.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum TypedIndex {
     // All the non-unique index types.
     Bool(Index<bool>),
@@ -627,7 +627,7 @@ impl TypedIndex {
 }
 
 /// A B-Tree based index on a set of [`ColId`]s of a table.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct BTreeIndex {
     /// The ID of this index.
     pub index_id: IndexId,
@@ -708,6 +708,16 @@ impl BTreeIndex {
     /// Returns whether `value` is in this index.
     pub fn contains_any(&self, value: &AlgebraicValue) -> bool {
         self.seek(value).next().is_some()
+    }
+
+    /// Returns the number of rows associated with this `value`.
+    /// Returns `None` if 0.
+    /// Returns `Some(1)` if the index is unique.
+    pub fn count(&self, value: &AlgebraicValue) -> Option<usize> {
+        match self.seek(value).count() {
+            0 => None,
+            n => Some(n),
+        }
     }
 
     /// Returns an iterator over the [BTreeIndex] that yields all the `RowPointer`s

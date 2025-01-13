@@ -6,9 +6,13 @@ use crate::replica_context::ReplicaContext;
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
-use spacetimedb_primitives::{ColId, IndexId, TableId};
-use spacetimedb_sats::{bsatn::ToBsatn, AlgebraicValue, ProductValue};
-use spacetimedb_table::table::UniqueConstraintViolation;
+use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
+use spacetimedb_sats::{
+    bsatn::{self, ToBsatn},
+    buffer::{CountWriter, TeeWriter},
+    AlgebraicValue, ProductValue,
+};
+use spacetimedb_table::table::{RowRef, UniqueConstraintViolation};
 use std::ops::DerefMut;
 use std::sync::Arc;
 
@@ -113,13 +117,35 @@ impl InstanceEnv {
         );
     }
 
-    pub fn insert(&self, table_id: TableId, buffer: &[u8]) -> Result<AlgebraicValue, NodesError> {
+    /// Project `cols` in `row_ref` encoded in BSATN to `buffer`
+    /// and return the full length of the BSATN.
+    ///
+    /// Assumes that the full encoding of `cols` will fit in `buffer`.
+    fn project_cols_bsatn(buffer: &mut [u8], cols: ColList, row_ref: RowRef<'_>) -> usize {
+        // We get back a col-list with the columns with generated values.
+        // Write those back to `buffer` and then the encoded length to `row_len`.
+        let counter = CountWriter::default();
+        let mut writer = TeeWriter::new(counter, buffer);
+        for col in cols.iter() {
+            // Read the column value to AV and then serialize.
+            let val = row_ref
+                .read_col::<AlgebraicValue>(col)
+                .expect("reading col as AV never panics");
+            bsatn::to_writer(&mut writer, &val).unwrap();
+        }
+        writer.w1.finish()
+    }
+
+    pub fn insert(&self, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
 
-        let (gen_cols, row_ptr) = stdb
-            .insert_bytes_as_row(tx, table_id, buffer)
-            .map(|(gc, rr)| (gc, rr.pointer()))
+        let (row_len, row_ptr) = stdb
+            .insert(tx, table_id, buffer)
+            .map(|(gen_cols, row_ref)| {
+                let row_len = Self::project_cols_bsatn(buffer, gen_cols, row_ref);
+                (row_len, row_ref.pointer())
+            })
             .inspect_err(|e| match e {
                 crate::error::DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                     constraint_name: _,
@@ -148,7 +174,16 @@ impl InstanceEnv {
                 .map_err(NodesError::ScheduleError)?;
         }
 
-        Ok(gen_cols)
+        Ok(row_len)
+    }
+
+    pub fn update(&self, table_id: TableId, index_id: IndexId, buffer: &mut [u8]) -> Result<usize, NodesError> {
+        #![allow(unused)]
+
+        let stdb = &*self.replica_ctx.relational_db;
+        let tx = &mut *self.get_tx()?;
+
+        Ok(todo!())
     }
 
     #[tracing::instrument(skip_all)]

@@ -1,0 +1,20 @@
+[package]
+name = "spacetimedb-query"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+description = "Top level crate for invoking the query engine and optimizer"
+
+[dependencies]
+anyhow.workspace = true
+itertools.workspace = true
+rayon.workspace = true
+spacetimedb-client-api-messages.workspace = true
+spacetimedb-execution.workspace = true
+spacetimedb-expr.workspace = true
+spacetimedb-lib.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-physical-plan.workspace = true
+spacetimedb-sql-parser.workspace = true
+spacetimedb-table.workspace = true

@@ -128,7 +128,12 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
         } else {
             build::exec_with_argstring(config.clone(), project_path, build_options).await?
         };
-        extract_descriptions(&wasm_path)?
+        let spinner = indicatif::ProgressBar::new_spinner();
+        spinner.enable_steady_tick(60);
+        spinner.set_message("Compiling wasm...");
+        let module = compile_wasm(&wasm_path)?;
+        spinner.set_message("Extracting schema from wasm...");
+        extract_descriptions_from_module(module)?
     };
 
     fs::create_dir_all(out_dir)?;
@@ -368,16 +373,22 @@ impl GenItem {
 }
 
 pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDef> {
-    let engine = wasmtime::Engine::default();
-    let t = std::time::Instant::now();
-    let module = wasmtime::Module::from_file(&engine, wasm_file)?;
-    println!("compilation took {:?}", t.elapsed());
+    let module = compile_wasm(wasm_file)?;
+    extract_descriptions_from_module(module)
+}
+
+fn compile_wasm(wasm_file: &Path) -> anyhow::Result<wasmtime::Module> {
+    wasmtime::Module::from_file(&wasmtime::Engine::default(), wasm_file)
+}
+
+fn extract_descriptions_from_module(module: wasmtime::Module) -> anyhow::Result<RawModuleDef> {
+    let engine = module.engine();
     let ctx = WasmCtx {
         mem: None,
         sink: Vec::new(),
     };
-    let mut store = wasmtime::Store::new(&engine, ctx);
-    let mut linker = wasmtime::Linker::new(&engine);
+    let mut store = wasmtime::Store::new(engine, ctx);
+    let mut linker = wasmtime::Linker::new(engine);
     linker.allow_shadowing(true).define_unknown_imports_as_traps(&module)?;
     let module_name = &*format!("spacetime_{MODULE_ABI_MAJOR_VERSION}.0");
     linker.func_wrap(

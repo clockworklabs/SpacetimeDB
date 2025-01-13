@@ -56,7 +56,7 @@ mod tests {
     use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::ProductValue;
 
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::db::relational_db::RelationalDB;
     use crate::execution_context::Workload;
     use spacetimedb_sats::{product, AlgebraicType};
@@ -86,7 +86,7 @@ mod tests {
 
         db.with_auto_commit(Workload::ForTests, |tx| -> ResultTest<_> {
             for i in 0..100_000 {
-                db.insert(tx, table_id, product![i, i * 2])?;
+                insert(&db, tx, table_id, &product![i, i * 2])?;
             }
             Ok(())
         })?;

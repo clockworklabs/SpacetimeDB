@@ -34,22 +34,18 @@ internal static class ErrorDescriptor
             field => field
         );
 
-    public static readonly ErrorDescriptor<(
-        ViewIndex index,
-        AttributeData attr
-    )> EmptyIndexColumns =
+    public static readonly ErrorDescriptor<AttributeData> EmptyIndexColumns =
         new(
             group,
-            "Index attribute must specify columns.",
-            ctx =>
-                $"{(ctx.index.AccessorName != "" ? ctx.index.AccessorName : "Index")} has an Index.BTree attribute, but no columns.",
-            ctx => ctx.attr
+            "Index attribute must specify Columns",
+            _ => $"Index attribute doesn't specify columns.",
+            attr => attr
         );
 
     public static readonly ErrorDescriptor<TypeDeclarationSyntax> InvalidTableVisibility =
         new(
             group,
-            "Table row visibility must be public or internal, including container types.",
+            "Table row visibility must be public or internal",
             table => $"Table {table.Identifier} and its parent types must be public or internal.",
             table => table.Identifier
         );
@@ -115,4 +111,25 @@ internal static class ErrorDescriptor
         string message
     )> InvalidScheduledDeclaration =
         new(group, "Invalid scheduled table declaration", ctx => $"{ctx.message}", ctx => ctx.attr);
+
+    public static readonly ErrorDescriptor<AttributeData> UnexpectedIndexColumns =
+        new(
+            group,
+            "Index attribute on a field must not specify Columns",
+            _ =>
+                $"Index attribute on a field applies directly to that field, so it doesn't accept the Columns parameter.",
+            attr => attr
+        );
+
+    public static readonly ErrorDescriptor<(
+        AttributeData attr,
+        string columnName,
+        string typeName
+    )> UnknownColumn =
+        new(
+            group,
+            "Unknown column",
+            ctx => $"Could not find the specified column {ctx.columnName} in {ctx.typeName}.",
+            ctx => ctx.attr
+        );
 }

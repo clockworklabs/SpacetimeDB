@@ -27,6 +27,16 @@ public class NoSuchIndexException : StdbException
     public override string Message => "No such index";
 }
 
+public class IndexNotUniqueException : StdbException
+{
+    public override string Message => "The index was not unique";
+}
+
+public class NoSuchRowException : StdbException
+{
+    public override string Message => "The row was not found, e.g., in an update call";
+}
+
 public class UniqueConstraintViolationException : StdbException
 {
     public override string Message => "Value with given unique identifier already exists";
