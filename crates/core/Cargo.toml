@@ -3,6 +3,7 @@ name = "spacetimedb-core"
 version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
+repository.workspace = true
 description = "The core library for SpacetimeDB"
 rust-version.workspace = true
 

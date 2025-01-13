@@ -3,6 +3,7 @@ name = "spacetimedb-metrics"
 version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
+repository.workspace = true
 description = "Prometheus utilities for SpacetimeDB"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

@@ -86,6 +86,7 @@ debug = true
 [workspace.package]
 version = "1.0.0-rc3"
 edition = "2021"
+repository = "https://github.com/clockworklabs/SpacetimeDB"
 # update rust-toolchain.toml too!
 rust-version = "1.78.0"
 

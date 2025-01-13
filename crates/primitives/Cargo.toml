@@ -3,6 +3,7 @@ name = "spacetimedb-primitives"
 version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
+repository.workspace = true
 description = "Primitives such as TableId and ColumnIndexAttribute"
 
 [dependencies]
