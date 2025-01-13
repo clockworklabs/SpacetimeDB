@@ -4,6 +4,10 @@
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
+> A completed version of the game we'll create in this tutorial is available at:
+>
+> https://github.com/ClockworkLabs/Blackholio
+
 ## Prepare Project Structure
 
 This project is separated into two subdirectories;

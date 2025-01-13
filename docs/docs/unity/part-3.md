@@ -2,9 +2,7 @@
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
-This progressive tutorial is continued from part 2:
-
-- [Connecting to SpacetimeDB](/docs/unity/part-2)
+This progressive tutorial is continued from [part 2](/docs/unity/part-2).
 
 ### Spawning Food
 
@@ -367,9 +365,17 @@ Now let's make some prefabs for our game objects. In the scene hierarchy window,
 2D Object > Sprites > Circle
 ```
 
-Rename the new game object in the scene to `CirclePrefab`. Next in the `Inspector` window click the `Add Component` button and add the `Circle Controller` script component that we just created. Next drag the object into the `Project` folder. Once the prefab file is created, delete the `CirclePrefab` object from the scene. We'll use this prefab to draw the circles that a player controllers.
+Rename the new game object in the scene to `CirclePrefab`. Next in the `Inspector` window click the `Add Component` button and add the `Circle Controller` script component that we just created. Finally drag the object into the `Project` folder. Once the prefab file is created, delete the `CirclePrefab` object from the scene. We'll use this prefab to draw the circles that a player controllers.
 
 Next repeat that same process for the `FoodPrefab` and `Food Controller` component. 
+
+In the `Project` view, double click the `CirclePrefab` to bring it up in the scene view. Right-click anywhere in the hierarchy and navigate to
+
+```
+UI > Text - Text Mesh Pro
+```
+
+This will add a label to the circle prefab. You may need to import "TextMeshPro Essential Resources" into Unity in order to add the TextMeshPro element. Your logs will say "[TMP Essential Resources] have been imported." if it has worked correctly. Don't forget to set the transform position of the label to `Pos X: 0, Pos Y: 0, Pos Z: 0`.
 
 Finally we need to make the `PlayerPrefab`. In the hierarchy window, create a new `GameObject` by right-clicking and selecting:
 
@@ -904,7 +910,15 @@ Lastly modify the `GameManager.SetupArea` method to set the `WorldSize` on the `
 
 ### Entering the Game
 
-The last step is to call the `enter_game` reducer on the server, passing in a username for our player, which will spawn a circle for our player. For the sake of simplicity, let's call the `enter_game` reducer from the `HandleSubscriptionApplied` callback with the name "3Blave":
+The last step is to call the `enter_game` reducer on the server, passing in a username for our player, which will spawn a circle for our player. For the sake of simplicity, let's call the `enter_game` reducer from the `HandleSubscriptionApplied` callback with the name "3Blave".
+
+> You may need to regenerate your bindings the following command from the `server-rust` directory.
+> 
+> ```sh
+> spacetime generate --lang csharp --out-dir ../client/Assets/autogen
+> ```
+>
+> **BUG WORKAROUND NOTE**: There is currently a bug in the C# code generation that requires you to delete `autogen/LoggedOutPlayer.cs` after running this command.
 
 ```cs
     private void HandleSubscriptionApplied(EventContext ctx)
@@ -917,33 +931,23 @@ The last step is to call the `enter_game` reducer on the server, passing in a us
         var worldSize = Conn.Db.Config.Id.Find(0).WorldSize;
         SetupArena(worldSize);
 
-
+        // Call enter game with the player name 3Blave
+        ctx.Reducers.EnterGame("3Blave");
     }
 ```
 
-## Conclusion
+### Trying it out
 
-This concludes the SpacetimeDB basic multiplayer tutorial, where we learned how to create a multiplayer game. In the next Unity tutorial, we will add resource nodes to the game and learn about _scheduled_ reducers:
+At this point, after publishing our module we can press the play button to see the fruits of our labor! You should be able to see your player's circle, with its username label, surrounded by food.
 
-From here, the tutorial continues with more-advanced topics: The [next tutorial](/docs/unity/part-4) introduces Resources & Scheduling.
-
----
+![Player on screen](part-3-player-on-screen.png)
 
 ### Troubleshooting
 
-- If you get an error when running the generate command, make sure you have an empty subfolder in your Unity project Assets folder called `module_bindings`
+- If you get an error when running the generate command, make sure you have an empty subfolder in your Unity project Assets folder called `autogen`
 
-- If you get this exception when running the project:
+- If you get an error in your Unity console when starting the game, double check that you have published your module and you have the correct module name specified in your `GameManager`.
 
-```
-NullReferenceException: Object reference not set to an instance of an object
-TutorialGameManager.Start () (at Assets/_Project/Game/TutorialGameManager.cs:26)
-```
+### Next Steps
 
-Check to see if your GameManager object in the Scene has the NetworkManager component attached.
-
-- If you get an error in your Unity console when starting the game, double check your connection settings in the Inspector for the `GameManager` object in the scene.
-
-```
-Connection error: Unable to connect to the remote server
-```
+It's pretty cool to see our player in game surrounded by food, but there's a problem! We can't move yet. In the next part, we'll explore how to get your player moving and interacting with food and other objects.

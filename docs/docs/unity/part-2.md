@@ -2,7 +2,7 @@
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
-This progressive tutorial is continued from the [Part 1 Tutorial](/docs/unity/part-1)
+This progressive tutorial is continued from [part 1](/docs/unity/part-1).
 
 ## Create a Server Module
 
@@ -25,7 +25,7 @@ First we need to add some imports at the top of the file. Some will remain unuse
 **Copy and paste into lib.rs:**
 
 ```rust
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 use spacetimedb::{rand::Rng, Identity, SpacetimeType, ReducerContext, ScheduleAt, Table, Timestamp};
 ```
 
