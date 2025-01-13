@@ -1,6 +1,6 @@
-pub mod dbvector2;
+pub mod math;
 
-use dbvector2::DbVector2;
+use math::DbVector2;
 use rand::Rng;
 use spacetimedb::{spacetimedb_lib::ScheduleAt, Identity, ReducerContext, Table, Timestamp};
 use std::{collections::HashMap, time::Duration};
@@ -198,29 +198,6 @@ pub fn enter_game(ctx: &ReducerContext, name: String) -> Result<(), String> {
     Ok(())
 }
 
-#[spacetimedb::reducer]
-pub fn respawn(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx
-        .db
-        .player()
-        .identity()
-        .find(&ctx.sender)
-        .ok_or("No such player found")?;
-    if ctx
-        .db
-        .circle()
-        .player_id()
-        .filter(&player.player_id)
-        .count()
-        > 0
-    {
-        return Err(format!("Player {} already has a circle", player.player_id));
-    }
-
-    spawn_player_initial_circle(ctx, player.player_id)?;
-    Ok(())
-}
-
 fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: u32) -> Result<Entity, String> {
     let mut rng = ctx.rng();
     let world_size = ctx
@@ -303,8 +280,8 @@ fn mass_to_max_move_speed(mass: u32) -> f32 {
 
 #[spacetimedb::reducer]
 pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Result<(), String> {
-    //TODO identity check
-    //let span = spacetimedb::log_stopwatch::LogStopwatch::new("tick");
+    // TODO identity check
+    // let span = spacetimedb::log_stopwatch::LogStopwatch::new("tick");
     let world_size = ctx
         .db
         .config()
@@ -320,7 +297,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         .map(|c| (c.entity_id, c.direction * c.speed))
         .collect();
 
-    //Split circle movement
+    // Split circle movement
     for player in ctx.db.player().iter() {
         let circles: Vec<Circle> = ctx
             .db
@@ -337,7 +314,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         }
         let count = player_entities.len();
 
-        //Gravitate circles towards other circles before they recombine
+        // Gravitate circles towards other circles before they recombine
         for i in 0..player_entities.len() {
             let circle_i = &circles[i];
             let time_since_split = ctx
@@ -375,7 +352,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
             }
         }
 
-        //Force circles apart
+        // Force circles apart
         for i in 0..player_entities.len() {
             let (slice1, slice2) = player_entities.split_at_mut(i + 1);
             let entity_i = &mut slice1[i];
@@ -400,7 +377,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         }
     }
 
-    //Handle player input
+    // Handle player input
     for circle in ctx.db.circle().iter() {
         let mut circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id).unwrap();
         let circle_radius = mass_to_radius(circle_entity.mass);
@@ -447,7 +424,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         // span.end();
     }
 
-    //span.end();
+    // span.end();
     Ok(())
 }
 

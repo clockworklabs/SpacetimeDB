@@ -107,7 +107,7 @@ public class PlayerController : MonoBehaviour
             }
         }
 
-        //Throttled input requests
+        // Throttled input requests
         if (Time.time - LastMovementSendTimestamp >= SEND_UPDATES_FREQUENCY)
         {
             LastMovementSendTimestamp = Time.time;
