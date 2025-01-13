@@ -182,7 +182,7 @@ impl WsConnection {
         )
         .await?;
         Ok(WsConnection { sock })
-    }n
+    }
 
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage<BsatnFormat>> {
         let (compression, bytes) = bytes
