@@ -3271,7 +3271,6 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {
     }
 
     /// Called by the `SubscriptionHandle` method of the same name.
-    // TODO: requires the new subscription interface and WS protocol.
     fn unsubscribe_then(self, on_end: __sdk::OnEndedCallback<RemoteModule>) -> anyhow::Result<()> {
         self.imp.unsubscribe_then(on_end)
     }
