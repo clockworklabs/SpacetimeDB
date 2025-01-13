@@ -346,7 +346,7 @@ pub mod raw {
         ///
         /// The row to update is found by projecting `row`
         /// to the type of the *unique* index identified by `index_id`.
-        /// If no row is found, `row` is inserted.
+        /// If no row is found, the error `NO_SUCH_ROW` is returned.
         ///
         /// To handle auto-incrementing columns,
         /// when the call is successful,
@@ -372,6 +372,7 @@ pub mod raw {
         /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
         /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
         /// - `INDEX_NOT_UNIQUE`, when the index was not unique.
+        /// - `NO_SUCH_ROW`, when the row was not found in the unique index.
         /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`
         ///    typed at the `ProductType` the table's schema specifies
         ///    or when it cannot be projected to the index identified by `index_id`.

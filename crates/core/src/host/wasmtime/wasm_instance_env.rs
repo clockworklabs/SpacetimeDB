@@ -691,7 +691,7 @@ impl WasmInstanceEnv {
     ///
     /// The row to update is found by projecting `row`
     /// to the type of the *unique* index identified by `index_id`.
-    /// If no row is found, `row` is inserted.
+    /// If no row is found, the error `NO_SUCH_ROW` is returned.
     ///
     /// To handle auto-incrementing columns,
     /// when the call is successful,
@@ -720,6 +720,7 @@ impl WasmInstanceEnv {
     /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`
     ///    typed at the `ProductType` the table's schema specifies
     ///    or when it cannot be projected to the index identified by `index_id`.
+    /// - `NO_SUCH_ROW`, when the row was not found in the unique index.
     /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
     /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
     #[tracing::instrument(skip_all)]

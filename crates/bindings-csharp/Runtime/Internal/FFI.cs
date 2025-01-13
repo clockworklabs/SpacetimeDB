@@ -35,6 +35,7 @@ public enum Errno : short
     UNIQUE_ALREADY_EXISTS = 12,
     SCHEDULE_AT_DELAY_TOO_LONG = 13,
     INDEX_NOT_UNIQUE = 14,
+    NO_SUCH_ROW = 15,
 }
 
 #pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
@@ -86,6 +87,7 @@ internal static partial class FFI
                     Errno.UNIQUE_ALREADY_EXISTS => new UniqueConstraintViolationException(),
                     Errno.SCHEDULE_AT_DELAY_TOO_LONG => new ScheduleAtDelayTooLongException(),
                     Errno.INDEX_NOT_UNIQUE => new IndexNotUniqueException(),
+                    Errno.NO_SUCH_ROW => new NoSuchRowException(),
                     _ => new UnknownException(status),
                 };
             }
