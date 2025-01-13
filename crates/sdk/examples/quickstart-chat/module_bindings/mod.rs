@@ -396,6 +396,7 @@ impl __sdk::EventContext for EventContext {
 
 /// A handle on a subscribed query.
 // TODO: Document this better after implementing the new subscription API.
+#[derive(Clone)]
 pub struct SubscriptionHandle {
     imp: __sdk::SubscriptionHandleImpl<RemoteModule>,
 }
@@ -407,6 +408,19 @@ impl __sdk::InModule for SubscriptionHandle {
 impl __sdk::SubscriptionHandle for SubscriptionHandle {
     fn new(imp: __sdk::SubscriptionHandleImpl<RemoteModule>) -> Self {
         Self { imp }
+    }
+    fn is_ended(&self) -> bool {
+        self.imp.is_ended()
+    }
+
+    fn is_active(&self) -> bool {
+        self.imp.is_active()
+    }
+
+    /// Called by the `SubscriptionHandle` method of the same name.
+    // TODO: requires the new subscription interface and WS protocol.
+    fn unsubscribe_then(self, on_end: __sdk::OnEndedCallback<RemoteModule>) -> anyhow::Result<()> {
+        self.imp.unsubscribe_then(on_end)
     }
 }
 

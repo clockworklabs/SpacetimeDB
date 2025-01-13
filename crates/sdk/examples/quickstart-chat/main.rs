@@ -1,5 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 mod module_bindings;
+use std::sync::{atomic::AtomicU8, Arc};
+
 use module_bindings::*;
 
 use spacetimedb_client_api_messages::websocket::Compression;
@@ -8,6 +10,7 @@ use spacetimedb_sdk::{credentials, DbContext, Event, Identity, ReducerEvent, Sta
 // # Our main function
 
 fn main() {
+    env_logger::init();
     let ctx = connect_to_db();
     register_callbacks(&ctx);
     subscribe_to_tables(&ctx);
@@ -44,6 +47,7 @@ fn creds_store() -> credentials::File {
 
 /// Our `on_connect` callback: save our credentials to a file.
 fn on_connected(_ctx: &DbConnection, identity: Identity, token: &str) {
+    log::info!("Connected as {}", identity.to_abbreviated_hex());
     if let Err(e) = creds_store().save(identity, token) {
         log::error!("Failed to save credentials: {:?}", e);
     }
@@ -116,7 +120,6 @@ fn on_sub_applied(ctx: &EventContext) {
         print_message(ctx, &message);
     }
 }
-
 // ## Warn if set_name failed
 
 /// Our `on_set_name` callback: print a warning if the reducer failed.
@@ -165,6 +168,7 @@ const DB_NAME: &str = "quickstart-chat";
 
 /// Load credentials from a file and connect to the database.
 fn connect_to_db() -> DbConnection {
+    log::info!("Connecting to {}", HOST);
     DbConnection::builder()
         .on_connect(on_connected)
         .on_connect_error(|err| panic!("Error while connecting: {err}"))
@@ -181,9 +185,19 @@ fn connect_to_db() -> DbConnection {
 
 /// Register subscriptions for all rows of both tables.
 fn subscribe_to_tables(ctx: &DbConnection) {
-    ctx.subscription_builder()
-        .on_applied(on_sub_applied)
-        .subscribe(["SELECT * FROM user;", "SELECT * FROM message;"]);
+    let remaining_queries = Arc::new(AtomicU8::new(2));
+    // We want to hear about all users and messages.
+    for query in &["SELECT * FROM user", "SELECT * FROM message"] {
+        let remaining_queries = remaining_queries.clone();
+        ctx.subscription_builder()
+            .on_applied(move |ctx| {
+                // We only want to print the backlog once we've received all the data.
+                if remaining_queries.fetch_sub(1, std::sync::atomic::Ordering::Relaxed) == 1 {
+                    on_sub_applied(ctx);
+                }
+            })
+            .subscribe(query);
+    }
 }
 
 // # Handle user input

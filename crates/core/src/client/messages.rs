@@ -388,7 +388,8 @@ impl ToProtocol for SubscriptionMessage {
             SubscriptionResult::Error(error) => {
                 let msg = ws::SubscriptionError {
                     total_host_execution_duration_micros,
-                    request_id: self.request_id, // Pass Option through
+                    request_id: self.request_id,           // Pass Option through
+                    query_id: self.query_id.map(|x| x.id), // Pass Option through
                     table_id: error.table_id,
                     error: error.message,
                 };

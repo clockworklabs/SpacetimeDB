@@ -3,8 +3,11 @@
 //! This module is internal, and may incompatibly change without warning.
 
 use crate::{
-    callbacks::DbCallbacks, client_cache::ClientCache, db_connection::DbContextImpl,
-    subscription::SubscriptionHandleImpl, Event,
+    callbacks::DbCallbacks,
+    client_cache::ClientCache,
+    db_connection::DbContextImpl,
+    subscription::{OnEndedCallback, SubscriptionHandleImpl},
+    Event,
 };
 use anyhow::Context;
 use bytes::Bytes;
@@ -109,11 +112,28 @@ where
     fn reducer_name(&self) -> &'static str;
 }
 
-pub trait SubscriptionHandle: InModule + Send + 'static
+pub trait SubscriptionHandle: InModule + Clone + Send + 'static
 where
     Self::Module: SpacetimeModule<SubscriptionHandle = Self>,
 {
+    // type EC = <<Self as InModule>::Module as SpacetimeModule>::EventContext;
+    // type EventContext = Self::Module::EventContext;
+    // type EventContext = <<Self as InModule>::Module as SpacetimeModule>::EventContext;
+
     fn new(imp: SubscriptionHandleImpl<Self::Module>) -> Self;
+    fn is_ended(&self) -> bool;
+
+    fn is_active(&self) -> bool;
+
+    /// Called by the `SubscriptionHandle` method of the same name.
+    // TODO: requires the new subscription interface and WS protocol.
+    fn unsubscribe_then(
+        self,
+        // on_end: OnEndedCallback<Self::Module>,
+        // on_end: impl FnOnce(&<Self::Module as SpacetimeModule>::EventContext) + Send + 'static,
+        on_end: OnEndedCallback<Self::Module>, // on_end: impl OnEndedCallback2<Self::Module>,
+                                               // on_end: impl FnOnce(&<Self as InModule>::Module::EventContext) + Send + 'static,
+    ) -> anyhow::Result<()>;
 }
 
 pub struct WithBsatn<Row> {

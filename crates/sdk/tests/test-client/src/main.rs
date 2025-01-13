@@ -3,12 +3,13 @@
 mod module_bindings;
 
 use core::fmt::Display;
+use std::sync::{atomic::AtomicUsize, Arc, Mutex};
 
 use module_bindings::*;
 
 use spacetimedb_sdk::{
     credentials, i256, u256, unstable::CallReducerFlags, Address, DbConnectionBuilder, DbContext, Event, Identity,
-    ReducerEvent, Status, Table,
+    ReducerEvent, Status, SubscriptionHandle, Table,
 };
 use test_counter::TestCounter;
 
@@ -53,6 +54,9 @@ fn main() {
 
     match &*test {
         "insert_primitive" => exec_insert_primitive(),
+        "subscribe_and_cancel" => exec_subscribe_and_cancel(),
+        "subscribe_and_unsubscribe" => exec_subscribe_and_unsubscribe(),
+        "subscription_error_smoke_test" => exec_subscription_error_smoke_test(),
         "delete_primitive" => exec_delete_primitive(),
         "update_primitive" => exec_update_primitive(),
 
@@ -355,10 +359,107 @@ fn connect(test_counter: &std::sync::Arc<TestCounter>) -> DbConnection {
 }
 
 fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&EventContext) + Send + 'static) {
-    ctx.subscription_builder()
-        .on_applied(callback)
-        .on_error(|ctx| panic!("Subscription errored: {:?}", ctx.event))
-        .subscribe(SUBSCRIBE_ALL);
+    let remaining_queries = Arc::new(AtomicUsize::new(SUBSCRIBE_ALL.len()));
+    let callback = Arc::new(Mutex::new(Some(callback)));
+    for query in SUBSCRIBE_ALL {
+        let atomic = remaining_queries.clone();
+        let callback = callback.clone();
+
+        let on_applied = move |ctx: &EventContext| {
+            let count = atomic.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            if count == 1 {
+                // Only execute callback when the last subscription completes
+                if let Some(cb) = callback.lock().unwrap().take() {
+                    cb(ctx);
+                }
+            }
+        };
+
+        ctx.subscription_builder()
+            .on_applied(on_applied)
+            .on_error(|ctx| panic!("Subscription errored: {:?}", ctx.event))
+            .subscribe(query);
+    }
+}
+
+fn exec_subscribe_and_cancel() {
+    let test_counter = TestCounter::new();
+    let cb = test_counter.add_test("unsubscribe_then_called");
+    connect_then(&test_counter, {
+        move |ctx| {
+            let handle = ctx
+                .subscription_builder()
+                .on_applied(move |_ctx: &EventContext| {
+                    panic!("Subscription should never be applied");
+                })
+                .on_error(|ctx| panic!("Subscription errored: {:?}", ctx.event))
+                .subscribe("SELECT * FROM one_u8;");
+            assert!(!handle.is_active());
+            assert!(!handle.is_ended());
+            let handle_clone = handle.clone();
+            handle
+                .unsubscribe_then(Box::new(move |_| {
+                    assert!(!handle_clone.is_active());
+                    assert!(handle_clone.is_ended());
+                    cb(Ok(()));
+                }))
+                .unwrap();
+        }
+    });
+    test_counter.wait_for_all();
+}
+
+fn exec_subscribe_and_unsubscribe() {
+    let test_counter = TestCounter::new();
+    let cb = test_counter.add_test("unsubscribe_then_called");
+    connect_then(&test_counter, {
+        move |ctx| {
+            let handle_cell: Arc<Mutex<Option<module_bindings::SubscriptionHandle>>> = Arc::new(Mutex::new(None));
+            let hc_clone = handle_cell.clone();
+            let handle = ctx
+                .subscription_builder()
+                .on_applied(move |_ctx: &EventContext| {
+                    let handle = { hc_clone.lock().unwrap().as_ref().unwrap().clone() };
+                    assert!(handle.is_active());
+                    assert!(!handle.is_ended());
+                    let handle_clone = handle.clone();
+                    handle
+                        .unsubscribe_then(Box::new(move |_| {
+                            assert!(!handle_clone.is_active());
+                            assert!(handle_clone.is_ended());
+                            cb(Ok(()));
+                        }))
+                        .unwrap();
+                })
+                .on_error(|ctx| panic!("Subscription errored: {:?}", ctx.event))
+                .subscribe("SELECT * FROM one_u8;");
+            handle_cell.lock().unwrap().replace(handle.clone());
+            assert!(!handle.is_active());
+            assert!(!handle.is_ended());
+        }
+    });
+    test_counter.wait_for_all();
+}
+
+fn exec_subscription_error_smoke_test() {
+    let test_counter = TestCounter::new();
+    let cb = test_counter.add_test("error_callback_is_called");
+    connect_then(&test_counter, {
+        move |ctx| {
+            let handle = ctx
+                .subscription_builder()
+                .on_applied(move |_ctx: &EventContext| {
+                    panic!("Subscription should never be applied");
+                })
+                .on_error(|_| {
+                    cb(Ok(()))
+                })
+                .subscribe("SELEcCT * FROM one_u8;"); // intentional typo
+            assert!(!handle.is_active());
+            assert!(!handle.is_ended());
+        }
+    });
+    test_counter.wait_for_all();
 }
 
 /// This tests that we can:
@@ -1602,7 +1703,7 @@ fn exec_subscribe_all_select_star() {
             }
         })
         .on_error(|_| panic!("Subscription error"))
-        .subscribe(["SELECT * FROM *"]);
+        .subscribe_to_all_tables();
 
     test_counter.wait_for_all();
 }
@@ -1625,30 +1726,51 @@ fn exec_caller_alice_receives_reducer_callback_but_not_bob() {
         let sub_applied = pre_ins_counter.add_test(format!("sub_applied_{who}"));
 
         let counter2 = counter.clone();
-        conn.subscription_builder()
-            .on_applied(move |ctx| {
-                sub_applied(Ok(()));
+        subscribe_all_then(&conn, move |ctx| {
+            sub_applied(Ok(()));
 
-                // Test that we are notified when a row is inserted.
-                let db = ctx.db();
-                let mut one_u8_inserted = Some(counter2.add_test(format!("one_u8_inserted_{who}")));
-                db.one_u_8().on_insert(move |_, row| {
-                    (one_u8_inserted.take().unwrap())(check_val(row.n, 42));
-                });
-                let mut one_u16_inserted = Some(counter2.add_test(format!("one_u16_inserted_{who}")));
-                db.one_u_16().on_insert(move |event, row| {
-                    let run_checks = || {
-                        anyhow::ensure!(
-                            matches!(event.event, Event::UnknownTransaction),
-                            "reducer should be unknown",
-                        );
-                        check_val(row.n, 24)
-                    };
-                    (one_u16_inserted.take().unwrap())(run_checks());
-                });
-            })
-            .on_error(|_| panic!("Subscription error"))
-            .subscribe(["SELECT * FROM one_u8", "SELECT * FROM one_u16"]);
+            // Test that we are notified when a row is inserted.
+            let db = ctx.db();
+            let mut one_u8_inserted = Some(counter2.add_test(format!("one_u8_inserted_{who}")));
+            db.one_u_8().on_insert(move |_, row| {
+                (one_u8_inserted.take().unwrap())(check_val(row.n, 42));
+            });
+            let mut one_u16_inserted = Some(counter2.add_test(format!("one_u16_inserted_{who}")));
+            db.one_u_16().on_insert(move |event, row| {
+                let run_checks = || {
+                    anyhow::ensure!(
+                        matches!(event.event, Event::UnknownTransaction),
+                        "reducer should be unknown",
+                    );
+                    check_val(row.n, 24)
+                };
+                (one_u16_inserted.take().unwrap())(run_checks());
+            });
+        });
+        // conn.subscription_builder()
+        //     .on_applied(move |ctx| {
+        //         sub_applied(Ok(()));
+
+        //         // Test that we are notified when a row is inserted.
+        //         let db = ctx.db();
+        //         let mut one_u8_inserted = Some(counter2.add_test(format!("one_u8_inserted_{who}")));
+        //         db.one_u_8().on_insert(move |_, row| {
+        //             (one_u8_inserted.take().unwrap())(check_val(row.n, 42));
+        //         });
+        //         let mut one_u16_inserted = Some(counter2.add_test(format!("one_u16_inserted_{who}")));
+        //         db.one_u_16().on_insert(move |event, row| {
+        //             let run_checks = || {
+        //                 anyhow::ensure!(
+        //                     matches!(event.event, Event::UnknownTransaction),
+        //                     "reducer should be unknown",
+        //                 );
+        //                 check_val(row.n, 24)
+        //             };
+        //             (one_u16_inserted.take().unwrap())(run_checks());
+        //         });
+        //     })
+        //     .on_error(|_| panic!("Subscription error"))
+        //     .subscribe(["SELECT * FROM one_u8", "SELECT * FROM one_u16"]);
         conn
     });
 
