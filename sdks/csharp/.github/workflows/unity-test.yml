@@ -15,6 +15,13 @@ jobs:
         with:
           submodules: true
 
+      - name: Check Unity meta files
+        uses: DeNA/unity-meta-check@v3
+        with:
+          enable_pr_comment: true
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
       # Grab the branch name from the PR description. If it's not found, master will be used instead.
       - name: Extract SpacetimeDB branch name or PR link from PR description
         id: extract-branch
