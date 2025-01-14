@@ -25,7 +25,7 @@ First we need to add some imports at the top of the file. Some will remain unuse
 **Copy and paste into lib.rs:**
 
 ```rust
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 use spacetimedb::{rand::Rng, Identity, SpacetimeType, ReducerContext, ScheduleAt, Table, Timestamp};
 ```
 
