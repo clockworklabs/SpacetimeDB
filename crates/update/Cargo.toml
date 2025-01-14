@@ -8,9 +8,20 @@ rust-version.workspace = true
 spacetimedb-paths.workspace = true
 
 anyhow.workspace = true
+bytes.workspace = true
 clap.workspace = true
-semver.workspace = true
+dialoguer = { workspace = true, default-features = false }
+flate2.workspace = true
+http-body-util = "0.1.2"
+indicatif.workspace = true
+reqwest.workspace = true
+semver = { workspace = true, features = ["serde"] }
+serde.workspace = true
+tar.workspace = true
+tokio.workspace = true
+toml.workspace = true
 tracing = { workspace = true, features = ["release_max_level_off"] }
+zip = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }

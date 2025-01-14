@@ -3,9 +3,10 @@ mod energy_monitor;
 pub mod routes;
 pub mod subcommands;
 pub mod util;
+pub mod version;
 
 use crate::control_db::ControlDb;
-use crate::subcommands::{start, version};
+use crate::subcommands::start;
 use anyhow::{ensure, Context};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
@@ -440,13 +441,12 @@ fn withdraw_energy(control_db: &ControlDb, identity: &Identity, amount: EnergyQu
 pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
         "start" => start::exec(args).await,
-        "version" => version::exec(args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
 
 pub fn get_subcommands() -> Vec<Command> {
-    vec![start::cli(), version::cli()]
+    vec![start::cli()]
 }
 
 pub async fn start_server(data_dir: &ServerDataDir, cert_dir: Option<&std::path::Path>) -> anyhow::Result<()> {

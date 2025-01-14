@@ -17,6 +17,7 @@ thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 dirs.workspace = true
+junction.workspace = true
 
 [target.'cfg(not(windows))'.dependencies]
 xdg.workspace = true

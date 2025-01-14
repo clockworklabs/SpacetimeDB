@@ -17,6 +17,8 @@ fn get_command() -> Command {
     Command::new("spacetimedb")
         .args_conflicts_with_subcommands(true)
         .arg_required_else_help(true)
+        .version(version::CLI_VERSION)
+        .long_version(version::long_version())
         .subcommand_required(true)
         .subcommands(get_subcommands())
         .help_expected(true)
