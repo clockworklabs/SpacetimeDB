@@ -2885,7 +2885,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 369182684}
-        m_TargetAssemblyTypeName: DeathScreen, SpacetimeDBCircleGame
+        m_TargetAssemblyTypeName: DeathScreen, Blackholio
         m_MethodName: Respawn
         m_Mode: 1
         m_Arguments:

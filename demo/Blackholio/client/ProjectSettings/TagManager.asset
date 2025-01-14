@@ -41,3 +41,6 @@ TagManager:
   - name: Default
     uniqueID: 0
     locked: 0
+  - name: Circles
+    uniqueID: 2004554327
+    locked: 0

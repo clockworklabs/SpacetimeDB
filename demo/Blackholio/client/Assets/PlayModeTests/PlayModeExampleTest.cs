@@ -27,7 +27,7 @@ public class PlayModeExampleTest
         {
             Debug.Assert(false, "Connection failed!");
         }).WithUri("http://127.0.0.1:3000")
-            .WithModuleName("untitled-circle-game").Build();
+            .WithModuleName("blackholio").Build();
 
         while (!connected)
         {
