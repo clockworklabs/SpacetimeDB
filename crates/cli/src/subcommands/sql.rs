@@ -191,9 +191,9 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::StmtStatsJson;
     use itertools::Itertools;
     use serde_json::value::RawValue;
-    use spacetimedb::json::client_api::StmtStatsJson;
     use spacetimedb_lib::sats::ProductType;
     use spacetimedb_lib::{AlgebraicType, AlgebraicValue};
 
