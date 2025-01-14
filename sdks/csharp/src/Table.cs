@@ -94,10 +94,13 @@ namespace SpacetimeDB
         // The function to use for decoding a type value.
         IDatabaseRow IRemoteTableHandle.DecodeValue(byte[] bytes) => BSATNHelpers.Decode<Row>(bytes);
 
-        public event Action<EventContext, Row>? OnInsert;
-        public event Action<EventContext, Row>? OnDelete;
-        public event Action<EventContext, Row>? OnBeforeDelete;
-        public event Action<EventContext, Row, Row>? OnUpdate;
+        public delegate void RowEventHandler(EventContext context, Row row);
+        public event RowEventHandler? OnInsert;
+        public event RowEventHandler? OnDelete;
+        public event RowEventHandler? OnBeforeDelete;
+
+        public delegate void UpdateEventHandler(EventContext context, Row oldRow, Row newRow);
+        public event UpdateEventHandler? OnUpdate;
 
         public int Count => Entries.Count;
 
