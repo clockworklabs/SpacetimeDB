@@ -75,19 +75,25 @@ namespace SpacetimeDB
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnConnect(Action<DbConnection, Identity, string> cb)
+        public delegate void ConnectCallback(DbConnection conn, Identity identity, string token);
+
+        public DbConnectionBuilder<DbConnection, Reducer> OnConnect(ConnectCallback cb)
         {
             conn.onConnect += (identity, token) => cb.Invoke(conn, identity, token);
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnConnectError(Action<Exception> cb)
+        public delegate void ConnectErrorCallback(Exception e);
+
+        public DbConnectionBuilder<DbConnection, Reducer> OnConnectError(ConnectErrorCallback cb)
         {
             conn.webSocket.OnConnectError += (e) => cb.Invoke(e);
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> OnDisconnect(Action<DbConnection, Exception?> cb)
+        public delegate void DisconnectCallback(DbConnection conn, Exception? e);
+
+        public DbConnectionBuilder<DbConnection, Reducer> OnDisconnect(DisconnectCallback cb)
         {
             conn.webSocket.OnClose += (e) => cb.Invoke(conn, e);
             return this;

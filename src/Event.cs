@@ -41,21 +41,22 @@ namespace SpacetimeDB
         where EventContext : IEventContext
     {
         private readonly IDbConnection conn;
-        private event Action<EventContext>? Applied;
-        private event Action<EventContext>? Error;
+        public delegate void Callback(EventContext ctx);
+        private event Callback? Applied;
+        private event Callback? Error;
 
         public SubscriptionBuilder(IDbConnection conn)
         {
             this.conn = conn;
         }
 
-        public SubscriptionBuilder<EventContext> OnApplied(Action<EventContext> callback)
+        public SubscriptionBuilder<EventContext> OnApplied(Callback callback)
         {
             Applied += callback;
             return this;
         }
 
-        public SubscriptionBuilder<EventContext> OnError(Action<EventContext> callback)
+        public SubscriptionBuilder<EventContext> OnError(Callback callback)
         {
             Error += callback;
             return this;
@@ -72,7 +73,7 @@ namespace SpacetimeDB
     public class SubscriptionHandle<EventContext> : ISubscriptionHandle
         where EventContext : IEventContext
     {
-        private readonly Action<EventContext>? onApplied;
+        private readonly SubscriptionBuilder<EventContext>.Callback? onApplied;
 
         void ISubscriptionHandle.OnApplied(IEventContext ctx)
         {
@@ -80,7 +81,7 @@ namespace SpacetimeDB
             onApplied?.Invoke((EventContext)ctx);
         }
 
-        internal SubscriptionHandle(IDbConnection conn, Action<EventContext>? onApplied, Action<EventContext>? onError, string[] querySqls)
+        internal SubscriptionHandle(IDbConnection conn, SubscriptionBuilder<EventContext>.Callback? onApplied, SubscriptionBuilder<EventContext>.Callback? onError, string[] querySqls)
         {
             this.onApplied = onApplied;
             conn.Subscribe(this, querySqls);
@@ -88,7 +89,7 @@ namespace SpacetimeDB
 
         public void Unsubscribe() => throw new NotImplementedException();
 
-        public void UnsuscribeThen(Action<EventContext> onEnd) => throw new NotImplementedException();
+        public void UnsuscribeThen(SubscriptionBuilder<EventContext>.Callback onEnd) => throw new NotImplementedException();
 
         public bool IsEnded => false;
         public bool IsActive { get; private set; }
