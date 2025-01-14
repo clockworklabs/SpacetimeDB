@@ -1,7 +1,3 @@
-Here's a suitable **README** file for the **Blackholio** GitHub repository, based on the provided tutorial:
-
----
-
 # **Blackholio**
 
 **Blackholio** is a small-scoped MMORPG built using Unity and [SpacetimeDB](https://spacetimedb.com), designed to showcase scalable multiplayer game development. Inspired by [agar.io](https://agar.io), **Blackholio** reimagines the mechanics with a space theme where players become planets, stars, and black holes in a competitive cosmic arena.
@@ -93,7 +89,3 @@ Feel free to fork, modify, and use **Blackholio** as a starting point for your o
 We'd love to hear your thoughts on the tutorial or game! Open an issue in the repository or chat with us on [Discord](https://discord.gg/spacetimedb).  
 
 Happy developing, and enjoy creating the cosmos with **Blackholio**! 🚀
-
----
-
-If you'd like any additional sections or adjustments, let me know!
