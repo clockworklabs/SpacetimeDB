@@ -19,7 +19,6 @@ const FOOD_MASS_MIN: u32 = 2;
 const FOOD_MASS_MAX: u32 = 4;
 const TARGET_FOOD_COUNT: usize = 600;
 const MINIMUM_SAFE_MASS_RATIO: f32 = 0.85;
-const MIN_OVERLAP_PCT_TO_CONSUME: f32 = 0.1;
 
 const MIN_MASS_TO_SPLIT: u32 = START_PLAYER_MASS * 2;
 const MAX_CIRCLES_PER_PLAYER: u32 = 16;
@@ -265,9 +264,13 @@ fn is_overlapping(a: &Entity, b: &Entity) -> bool {
 
     let radius_a = mass_to_radius(a.mass);
     let radius_b = mass_to_radius(b.mass);
-    let radius_sum = (radius_a + radius_b) * (1.0 - MIN_OVERLAP_PCT_TO_CONSUME);
 
-    distance_sq <= radius_sum * radius_sum
+    // If the distance between the two circle centers is less than the 
+    // maximum radius, then the center of the smaller circle is inside
+    // the larger circle. This gives some leeway for the circles to overlap
+    // before being eaten.
+    let max_radius = f32::max(radius_a, radius_b);
+    distance_sq <= max_radius * max_radius
 }
 
 fn mass_to_radius(mass: u32) -> f32 {
@@ -384,12 +387,14 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         let direction = *circle_directions.get(&circle.entity_id).unwrap();
         let new_pos =
             circle_entity.position + direction * mass_to_max_move_speed(circle_entity.mass);
+        let min = circle_radius;
+        let max = world_size as f32 - circle_radius;
         circle_entity.position.x = new_pos
             .x
-            .clamp(circle_radius, world_size as f32 - circle_radius);
+            .clamp(min, max);
         circle_entity.position.y = new_pos
             .y
-            .clamp(circle_radius, world_size as f32 - circle_radius);
+            .clamp(min, max);
         ctx.db.entity().entity_id().update(circle_entity);
     }
 
