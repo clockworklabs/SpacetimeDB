@@ -85,7 +85,4 @@ Our Unity project is all set up! If you press play, it will show a blank screen,
 
 ### Create the Server Module
 
-From here, the tutorial continues with your favorite server module language of choice:
-
-- [Rust](part-2a-rust)
-- [C#](part-2b-c-sharp)
+We've now got the very basics set up. In [part 2](part-2) you'll learn the basics of how how to create a SpacetimeDB server module and how to connect to it from your client.

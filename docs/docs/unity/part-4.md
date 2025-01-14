@@ -1,4 +1,4 @@
-# Unity Tutorial - Blackholio - Part 3 - Moving and Colliding
+# Unity Tutorial - Blackholio - Part 4 - Moving and Colliding
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
@@ -191,26 +191,17 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         .ok_or("Config not found")?
         .world_size;
 
-    let circle_directions: HashMap<u32, DbVector2> = ctx
-        .db
-        .circle()
-        .iter()
-        .map(|c| (c.entity_id, c.direction * c.speed))
-        .collect();
-
     // Handle player input
     for circle in ctx.db.circle().iter() {
         let mut circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id).unwrap();
         let circle_radius = mass_to_radius(circle_entity.mass);
-        let direction = *circle_directions.get(&circle.entity_id).unwrap();
+        let direction = circle.direction * circle.speed;
         let new_pos =
             circle_entity.position + direction * mass_to_max_move_speed(circle_entity.mass);
-        circle_entity.position.x = new_pos
-            .x
-            .clamp(circle_radius, world_size as f32 - circle_radius);
-        circle_entity.position.y = new_pos
-            .y
-            .clamp(circle_radius, world_size as f32 - circle_radius);
+        let min = circle_radius;
+        let max = world_size as f32 - circle_radius;
+        circle_entity.position.x = new_pos.x.clamp(min, max);
+        circle_entity.position.y = new_pos.y.clamp(min, max);
         ctx.db.entity().entity_id().update(circle_entity);
     }
 
@@ -291,8 +282,128 @@ All that's left is to modify our `PlayerController` on the client to call the `u
 	}
 ```
 
-Let's try it out! Press play and roam freely around the arena!
+Let's try it out! Press play and roam freely around the arena! Now we're cooking with gas.
 
-### Step 4: Play the Game!
+### Collisions and Eating Food
 
-6. Hit Play in the Unity Editor and you should now see your resource nodes spawning in the world!
+Well this is pretty fun, but wouldn't it be better if we could eat food and grow our circle? Surely, that's going to be a pain, right?
+
+Wrong. With SpacetimeDB it's extremely easy. All we have to do is add an `is_overlapping` helper function which does some basic math based on mass radii, and modify our `move_all_player` reducer to loop through every entity in the arena for every circle, checking each for overlaps. This may not be the most efficient way to do collision checking (building a quad tree or doing [spatial hashing](https://conkerjo.wordpress.com/2009/06/13/spatial-hashing-implementation-for-fast-2d-collisions/) might be better), but SpacetimeDB is very fast so for this number of entities it'll be a breeze for SpacetimeDB.
+
+Sometimes simple is best!
+
+```rust
+const MINIMUM_SAFE_MASS_RATIO: f32 = 0.85;
+
+fn is_overlapping(a: &Entity, b: &Entity) -> bool {
+    let dx = a.position.x - b.position.x;
+    let dy = a.position.y - b.position.y;
+    let distance_sq = dx * dx + dy * dy;
+
+    let radius_a = mass_to_radius(a.mass);
+    let radius_b = mass_to_radius(b.mass);
+
+    // If the distance between the two circle centers is less than the 
+    // maximum radius, then the center of the smaller circle is inside
+    // the larger circle. This gives some leeway for the circles to overlap
+    // before being eaten.
+    let max_radius = f32::max(radius_a, radius_b);
+    distance_sq <= max_radius * max_radius
+}
+
+#[spacetimedb::reducer]
+pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Result<(), String> {
+    let world_size = ctx
+        .db
+        .config()
+        .id()
+        .find(0)
+        .ok_or("Config not found")?
+        .world_size;
+
+    // Handle player input
+    for circle in ctx.db.circle().iter() {
+        let mut circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id).unwrap();
+        let circle_radius = mass_to_radius(circle_entity.mass);
+        let direction = circle.direction * circle.speed;
+        let new_pos =
+            circle_entity.position + direction * mass_to_max_move_speed(circle_entity.mass);
+        let min = circle_radius;
+        let max = world_size as f32 - circle_radius;
+        circle_entity.position.x = new_pos.x.clamp(min, max);
+        circle_entity.position.y = new_pos.y.clamp(min, max);
+
+        // Check collisions
+        for entity in ctx.db.entity().iter() {
+            if entity.entity_id == circle_entity.entity_id {
+                continue;
+            }
+            if is_overlapping(&circle_entity, &entity) {
+                // Check to see if we're overlapping with food
+                if ctx.db.food().entity_id().find(&entity.entity_id).is_some() {
+                    ctx.db.entity().entity_id().delete(&entity.entity_id);
+                    ctx.db.food().entity_id().delete(&entity.entity_id);
+                    circle_entity.mass += entity.mass;
+                }
+
+                // Check to see if we're overlapping with another circle owned by another player
+                let other_circle = ctx.db.circle().entity_id().find(&entity.entity_id);
+                if let Some(other_circle) = other_circle {
+                    if other_circle.player_id != circle.player_id {
+                        let mass_ratio = entity.mass as f32 / circle_entity.mass as f32;
+                        if mass_ratio < MINIMUM_SAFE_MASS_RATIO {
+                            ctx.db.entity().entity_id().delete(&entity.entity_id);
+                            ctx.db.circle().entity_id().delete(&entity.entity_id);
+                            circle_entity.mass += entity.mass;
+                        }
+                    }
+                }
+            }
+        }
+        ctx.db.entity().entity_id().update(circle_entity);
+    }
+
+    Ok(())
+}
+```
+
+For every circle, we look at all other entities. If they are overlapping then for food, we add the mass of the food to the circle and delete the food, otherwise if it's a circle we delete the smaller circle and add the mass to the bigger circle.
+
+That's it. We don't even have to do anything on the client. 
+
+```sh
+spacetime publish --server local blackholio
+```
+
+Just update your module by publishing and you're on your way eating food! Try to see how big you can get!
+
+We didn't even have to update the client, because our client's `OnDelete` callbacks already handled deleting entities from the scene when they're deleted on the server. SpacetimeDB just synchronizes the state with your client automatically.
+
+Notice that the food automatically respawns as you vaccuum them up. This is because our scheduled reducer is automatically replacing the food 2 times per second, to ensure that there is always 600 food on the map.
+
+# Conclusion
+
+So far you've learned how to configure a new Unity project to work with SpacetimeDB, how to develop, build, and publish a SpacetimeDB server module. Within the module, you've learned how to create tables, update tables, and write reducers. You've learned about special reducers like `client_connected` and `init` and how to created scheduled reducers. You learned how we can used scheduled reducers to implement a physics simulation right within your module.
+
+You've also learned how view module logs and connect your client to your server module, call reducers from the client and synchronize the data with client. Finally you learned how to use that synchronized data to draw game objects on the screen, so that we can interact with them and play a game!
+
+And all of that completely from scratch!
+
+Our game is still pretty limited in some important ways. The biggest limitation is that the client assumes your username is "3Blave" and doesn't give you a menu or a window to set your username before joining the game. Notably, we do not have a unique constraint on the `name` column, so that does not prevent us from connecting multiple clients to the same server.
+
+In fact, if you build what we have and run multiple clients you already have a (very simple) MMO! You can connect hundreds of players to this arena with SpacetimeDB.
+
+There's still plenty more we can do to build this into a proper game though. For example, you might want to also add
+
+- Username chooser
+- Chat
+- Leaderboards
+- Nice animations
+- Nice shaders
+- Space theme!
+
+Fortunately, we've done that for you! If you'd like to check out the completed tutorial game you can download it on GitHub:
+
+https://github.com/ClockworkLabs/Blackholio
+
+If you have any suggestions or comments on the tutorial, either open an issue in our [docs repo](https://github.com/ClockworkLabs/spacetime-docs), or join our Discord (https://discord.gg/SpacetimeDB) and chat with us! 
