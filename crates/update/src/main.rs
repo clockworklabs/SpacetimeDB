@@ -19,7 +19,7 @@ fn main() -> anyhow::Result<ExitCode> {
     if cmd == "spacetimedb-update" {
         spacetimedb_update_main()
     } else if cmd == "spacetime" {
-        proxy::spacetimedb_cli_proxy(Some(argv0.as_os_str()), args.collect())
+        proxy::run_cli(None, Some(argv0.as_os_str()), args.collect())
     } else {
         anyhow::bail!(
             "unknown command name for spacetimedb-update multicall binary: {}",

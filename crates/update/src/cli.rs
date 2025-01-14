@@ -33,7 +33,7 @@ impl Args {
                 if let Some(root_dir) = &self.root_dir {
                     cli_args.insert(0, OsString::from_iter(["--root-dir=".as_ref(), root_dir.as_ref()]));
                 }
-                crate::proxy::run_cli(&paths, None, cli_args)
+                crate::proxy::run_cli(Some(&paths), None, cli_args)
             }
             Subcommand::Version(version) => version.exec(&paths).map(|()| ExitCode::SUCCESS),
         }
