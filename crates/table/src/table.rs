@@ -74,8 +74,7 @@ pub struct Table {
     /// duplicate rows are impossible regardless, so this will be `None`.
     pointer_map: Option<PointerMap>,
     /// The indices associated with a set of columns of the table.
-    /// The order is used here to keep the smallest indices first.
-    pub indexes: BTreeMap<ColList, BTreeIndex>,
+    pub indexes: BTreeMap<IndexId, BTreeIndex>,
     /// The schema of the table, from which the type, and other details are derived.
     pub schema: Arc<TableSchema>,
     /// `SquashedOffset::TX_STATE` or `SquashedOffset::COMMITTED_STATE`
@@ -237,10 +236,10 @@ impl Table {
         row: RowRef<'_>,
         mut is_deleted: impl FnMut(RowPointer) -> bool,
     ) -> Result<(), UniqueConstraintViolation> {
-        for (cols, index) in self.indexes.iter().filter(|(_, index)| index.is_unique()) {
-            let value = row.project(cols).unwrap();
+        for (&index_id, index) in self.indexes.iter().filter(|(_, index)| index.is_unique()) {
+            let value = row.project(&index.indexed_columns).unwrap();
             if index.seek(&value).next().is_some_and(|ptr| !is_deleted(ptr)) {
-                return Err(self.build_error_unique(index, cols, value));
+                return Err(self.build_error_unique(index, index_id, value));
             }
         }
         Ok(())
@@ -522,12 +521,14 @@ impl Table {
         ptr: RowPointer,
     ) -> Result<(), InsertError> {
         let mut index_error = None;
-        for (cols, index) in self.indexes.iter_mut() {
+        for (&index_id, index) in self.indexes.iter_mut() {
             // SAFETY: We just inserted `ptr`, so it must be present.
             let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
-            if index.check_and_insert(cols, row_ref).unwrap().is_some() {
+            if index.check_and_insert(row_ref).unwrap().is_some() {
+                let cols = &index.indexed_columns;
                 let value = row_ref.project(cols).unwrap();
-                let error = InsertError::IndexError(UniqueConstraintViolation::build(&self.schema, index, cols, value));
+                let error =
+                    InsertError::IndexError(UniqueConstraintViolation::build(&self.schema, index, index_id, value));
                 index_error = Some(error);
                 break;
             }
@@ -557,16 +558,21 @@ impl Table {
         needle_bs: &dyn BlobStore,
         needle_ptr: RowPointer,
     ) -> Option<RowPointer> {
-        // Find the smallest unique index.
-        let (cols, idx) = target_table
+        // Use some index (the one with the lowest `IndexId` currently).
+        // TODO(centril): this isn't what we actually want.
+        // Rather, we'd prefer the index with the simplest type,
+        // but this is left as future work as we don't have to optimize this method now.
+        let idx = target_table
             .indexes
-            .iter()
-            .find(|(_, idx)| idx.is_unique())
+            .values()
+            .find(|idx| idx.is_unique())
             .expect("there should be at least one unique index");
         // Project the needle row to the columns of the index, and then seek.
         // As this is a unique index, there are 0-1 rows for this key.
         let needle_row = unsafe { needle_table.get_row_ref_unchecked(needle_bs, needle_ptr) };
-        let key = needle_row.project(cols).expect("needle row should be valid");
+        let key = needle_row
+            .project(&idx.indexed_columns)
+            .expect("needle row should be valid");
         idx.seek(&key).next()
     }
 
@@ -818,8 +824,8 @@ impl Table {
         // Delete row from indices.
         // Do this before the actual deletion, as `index.delete` needs a `RowRef`
         // so it can extract the appropriate value.
-        for (cols, index) in self.indexes.iter_mut() {
-            index.delete(cols, row_ref).unwrap();
+        for index in self.indexes.values_mut() {
+            index.delete(row_ref).unwrap();
         }
 
         // SAFETY: We've checked above that `self.is_row_present(ptr)`.
@@ -882,10 +888,7 @@ impl Table {
         // Find the row equal to the passed-in `row`.
         // This uses one of two approaches.
         // Either there is a pointer map, so we use that,
-        // or, here is at least one unique index, so we use the one with the smallest `ColList`.
-        // TODO(centril): this isn't what we actually want.
-        //    The `Ord for ColList` impl will say that `[0, 1] < [1]`.
-        //    However, we'd prefer the index with the simplest type.
+        // or, here is at least one unique index, so we use one of them.
         //
         // SAFETY:
         // - `self` trivially has the same `row_layout` as `self`.
@@ -935,8 +938,8 @@ impl Table {
     }
 
     /// Returns a new [`BTreeIndex`] for `table`.
-    pub fn new_index(&self, id: IndexId, cols: ColList, is_unique: bool) -> Result<BTreeIndex, InvalidFieldError> {
-        BTreeIndex::new(id, self.get_schema().get_row_type(), cols, is_unique)
+    pub fn new_index(&self, cols: ColList, is_unique: bool) -> Result<BTreeIndex, InvalidFieldError> {
+        BTreeIndex::new(self.get_schema().get_row_type(), cols, is_unique)
     }
 
     /// Inserts a new `index` into the table.
@@ -945,20 +948,20 @@ impl Table {
     ///
     /// # Panics
     ///
-    /// Panics if `cols` has some column that is out of bounds of the table's row layout.
+    /// Panics if `index.indexed_columns` has some column that is out of bounds of the table's row layout.
     /// Also panics if any row would violate `index`'s unique constraint, if it has one.
-    pub fn insert_index(&mut self, blob_store: &dyn BlobStore, cols: ColList, mut index: BTreeIndex) {
+    pub fn insert_index(&mut self, blob_store: &dyn BlobStore, index_id: IndexId, mut index: BTreeIndex) {
         index
-            .build_from_rows(&cols, self.scan_rows(blob_store))
+            .build_from_rows(self.scan_rows(blob_store))
             .expect("`cols` should consist of valid columns for this table")
             .inspect(|ptr| panic!("adding `index` should cause no unique constraint violations, but {ptr:?} would"));
-        self.add_index(cols, index);
+        self.add_index(index_id, index);
     }
 
     /// Adds an index to the table without populating.
-    pub fn add_index(&mut self, cols: ColList, index: BTreeIndex) {
+    pub fn add_index(&mut self, index_id: IndexId, index: BTreeIndex) {
         let is_unique = index.is_unique();
-        self.indexes.insert(cols, index);
+        self.indexes.insert(index_id, index);
 
         // Remove the pointer map, if any.
         if is_unique {
@@ -967,13 +970,18 @@ impl Table {
     }
 
     /// Removes an index from the table.
-    pub fn delete_index(&mut self, blob_store: &dyn BlobStore, cols: &ColList) {
-        self.indexes.remove(cols);
+    ///
+    /// Returns whether an index existed with `index_id`.
+    pub fn delete_index(&mut self, blob_store: &dyn BlobStore, index_id: IndexId) -> bool {
+        let index = self.indexes.remove(&index_id);
+        let ret = index.is_some();
 
-        // We removed the last unique index, so add a pointer map.
-        if !self.indexes.values().any(|idx| idx.is_unique()) {
+        // If we removed the last unique index, add a pointer map.
+        if index.is_some_and(|i| i.is_unique()) && !self.indexes.values().any(|idx| idx.is_unique()) {
             self.rebuild_pointer_map(blob_store);
         }
+
+        ret
     }
 
     /// Returns an iterator over all the rows of `self`, yielded as [`RefRef`]s.
@@ -986,54 +994,44 @@ impl Table {
         }
     }
 
-    /// When there's an index for `cols`,
-    /// returns an iterator over the [`BTreeIndex`] that yields all the [`RowRef`]s
-    /// matching the specified `range` in the indexed column.
-    ///
-    /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn index_seek<'a>(
-        &'a self,
-        blob_store: &'a dyn BlobStore,
-        cols: &ColList,
-        range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Option<IndexScanIter<'a>> {
-        self.indexes.get(cols).map(|index| {
-            let btree_index_iter = index.seek(range);
-            IndexScanIter {
-                table: self,
-                blob_store,
-                btree_index_iter,
-            }
-        })
-    }
-
-    /// For a given [IndexId],
-    /// returns an iterator over the [`BTreeIndex`] that yields all the [`RowRef`]s
-    /// matching the specified `range` in the indexed column.
-    ///
-    /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn index_seek_by_id<'a>(
+    /// Returns this table combined with the index for [`IndexId`], if any.
+    pub fn get_index_by_id_with_table<'a>(
         &'a self,
         blob_store: &'a dyn BlobStore,
         index_id: IndexId,
-        range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Option<IndexScanIter<'a>> {
-        self.indexes
-            .iter()
-            .find(|(_, ix)| ix.index_id == index_id)
-            .map(|(_, index)| IndexScanIter {
-                table: self,
-                blob_store,
-                btree_index_iter: index.seek(range),
-            })
+    ) -> Option<TableAndIndex<'a>> {
+        Some(TableAndIndex {
+            table: self,
+            blob_store,
+            index: self.get_index_by_id(index_id)?,
+        })
     }
 
-    /// Returns the [BTreeIndex] for this [IndexId]
-    pub fn get_index(&self, index_id: IndexId) -> Option<&BTreeIndex> {
+    /// Returns the [`BTreeIndex`] for this [`IndexId`].
+    pub fn get_index_by_id(&self, index_id: IndexId) -> Option<&BTreeIndex> {
+        self.indexes.get(&index_id)
+    }
+
+    /// Returns this table combined with the first index with `cols`, if any.
+    pub fn get_index_by_cols_with_table<'a>(
+        &'a self,
+        blob_store: &'a dyn BlobStore,
+        cols: &ColList,
+    ) -> Option<TableAndIndex<'a>> {
+        let (_, index) = self.get_index_by_cols(cols)?;
+        Some(TableAndIndex {
+            table: self,
+            blob_store,
+            index,
+        })
+    }
+
+    /// Returns the first [`BTreeIndex`] with the given [`ColList`].
+    pub fn get_index_by_cols(&self, cols: &ColList) -> Option<(IndexId, &BTreeIndex)> {
         self.indexes
             .iter()
-            .find(|(_, BTreeIndex { index_id: id, .. })| *id == index_id)
-            .map(|(_, index)| index)
+            .find(|(_, index)| &index.indexed_columns == cols)
+            .map(|(id, idx)| (*id, idx))
     }
 
     /// Clones the structure of this table into a new one with
@@ -1050,8 +1048,8 @@ impl Table {
         let mut new = Table::new_with_indexes_capacity(schema, layout, sbl, visitor, squashed_offset, pm);
 
         // Clone the index structure. The table is empty, so no need to `build_from_rows`.
-        for (cols, index) in self.indexes.iter() {
-            new.indexes.insert(cols.clone(), index.clone_structure());
+        for (&index_id, index) in self.indexes.iter() {
+            new.indexes.insert(index_id, index.clone_structure());
         }
         new
     }
@@ -1408,6 +1406,32 @@ impl<'a> Iterator for TableScanIter<'a> {
     }
 }
 
+/// A combined table and index,
+/// allowing direct extraction of a [`IndexScanIter`].
+#[derive(Copy, Clone)]
+pub struct TableAndIndex<'a> {
+    table: &'a Table,
+    blob_store: &'a dyn BlobStore,
+    index: &'a BTreeIndex,
+}
+
+impl<'a> TableAndIndex<'a> {
+    pub fn index(&self) -> &'a BTreeIndex {
+        self.index
+    }
+
+    /// Returns an iterator yielding all rows in this index that fall within `range`.
+    ///
+    /// Matching is defined by `Ord for AlgebraicValue`.
+    pub fn seek(&self, range: &impl RangeBounds<AlgebraicValue>) -> IndexScanIter<'a> {
+        IndexScanIter {
+            table: self.table,
+            blob_store: self.blob_store,
+            btree_index_iter: self.index.seek(range),
+        }
+    }
+}
+
 /// An iterator using a [`BTreeIndex`] to scan a `table`
 /// for all the [`RowRef`]s matching the specified `range` in the indexed column(s).
 ///
@@ -1450,12 +1474,13 @@ pub struct UniqueConstraintViolation {
 impl UniqueConstraintViolation {
     /// Returns a unique constraint violation error for the given `index`
     /// and the `value` that would have been duplicated.
-    fn build(schema: &TableSchema, index: &BTreeIndex, cols: &ColList, value: AlgebraicValue) -> Self {
+    fn build(schema: &TableSchema, index: &BTreeIndex, index_id: IndexId, value: AlgebraicValue) -> Self {
         // Fetch the table name.
         let table_name = schema.table_name.clone();
 
         // Fetch the names of the columns used in the index.
-        let cols = cols
+        let cols = index
+            .indexed_columns
             .iter()
             .map(|x| schema.columns()[x.idx()].col_name.clone())
             .collect();
@@ -1464,7 +1489,7 @@ impl UniqueConstraintViolation {
         let constraint_name = schema
             .indexes
             .iter()
-            .find(|i| i.index_id == index.index_id)
+            .find(|i| i.index_id == index_id)
             .unwrap()
             .index_name
             .clone();
@@ -1485,11 +1510,11 @@ impl Table {
     pub fn build_error_unique(
         &self,
         index: &BTreeIndex,
-        cols: &ColList,
+        index_id: IndexId,
         value: AlgebraicValue,
     ) -> UniqueConstraintViolation {
         let schema = self.get_schema();
-        UniqueConstraintViolation::build(schema, index, cols, value)
+        UniqueConstraintViolation::build(schema, index, index_id, value)
     }
 
     /// Returns a new empty table using the particulars passed.
@@ -1663,8 +1688,8 @@ pub(crate) mod test {
         let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
         let cols = ColList::new(0.into());
 
-        let index = table.new_index(index_schema.index_id, cols.clone(), true).unwrap();
-        table.insert_index(&NullBlobStore, cols, index);
+        let index = table.new_index(cols.clone(), true).unwrap();
+        table.insert_index(&NullBlobStore, index_schema.index_id, index);
 
         // Reserve a page so that we can check the hash.
         let pi = table.inner.pages.reserve_empty_page(table.row_size()).unwrap();

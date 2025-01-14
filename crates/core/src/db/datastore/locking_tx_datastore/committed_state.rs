@@ -32,13 +32,13 @@ use spacetimedb_lib::{
     db::auth::{StAccess, StTableType},
     Identity,
 };
-use spacetimedb_primitives::{ColList, ColSet, TableId};
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_primitives::{ColList, ColSet, IndexId, TableId};
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
-    table::{IndexScanIter, InsertError, RowRef, Table},
+    table::{IndexScanIter, InsertError, RowRef, Table, TableAndIndex},
     MemoryUsage,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -375,19 +375,19 @@ impl CommittedState {
             .collect();
 
         for index_row in rows {
-            let Some((table, blob_store)) = self.get_table_and_blob_store(index_row.table_id) else {
+            let index_id = index_row.index_id;
+            let table_id = index_row.table_id;
+            let Some((table, blob_store)) = self.get_table_and_blob_store(table_id) else {
                 panic!("Cannot create index for table which doesn't exist in committed state");
             };
             let columns = match index_row.index_algorithm {
                 StIndexAlgorithm::BTree { columns } => columns,
                 _ => unimplemented!("Only BTree indexes are supported"),
             };
-            let is_unique = unique_constraints.contains(&(index_row.table_id, (&columns).into()));
-
-            let index = table.new_index(index_row.index_id, columns.clone(), is_unique)?;
-            table.insert_index(blob_store, columns.clone(), index);
-            self.index_id_map
-                .insert(index_row.index_id, (index_row.table_id, columns));
+            let is_unique = unique_constraints.contains(&(table_id, (&columns).into()));
+            let index = table.new_index(columns.clone(), is_unique)?;
+            table.insert_index(blob_store, index_id, index);
+            self.index_id_map.insert(index_id, table_id);
         }
         Ok(())
     }
@@ -429,13 +429,36 @@ impl CommittedState {
         Ok(())
     }
 
+    /// When there's an index on `cols`,
+    /// returns an iterator over the [BTreeIndex] that yields all the [`RowRef`]s
+    /// that match the specified `range` in the indexed column.
+    ///
+    /// Matching is defined by `Ord for AlgebraicValue`.
+    ///
+    /// For a unique index this will always yield at most one `RowRef`.
+    /// When there is no index this returns `None`.
     pub(super) fn index_seek<'a>(
         &'a self,
         table_id: TableId,
         cols: &ColList,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> Option<IndexScanIter<'a>> {
-        self.tables.get(&table_id)?.index_seek(&self.blob_store, cols, range)
+        self.tables
+            .get(&table_id)?
+            .get_index_by_cols_with_table(&self.blob_store, cols)
+            .map(|i| i.seek(range))
+    }
+
+    /// Returns the table associated with the given `index_id`, if any.
+    pub(super) fn get_table_for_index(&self, index_id: IndexId) -> Option<TableId> {
+        self.index_id_map.get(&index_id).copied()
+    }
+
+    /// Returns the table for `table_id` combined with the index for `index_id`, if both exist.
+    pub(super) fn get_index_by_id_with_table(&self, table_id: TableId, index_id: IndexId) -> Option<TableAndIndex<'_>> {
+        self.tables
+            .get(&table_id)?
+            .get_index_by_id_with_table(&self.blob_store, index_id)
     }
 
     // TODO(perf, deep-integration): Make this method `unsafe`. Add the following to the docs:
@@ -636,13 +659,6 @@ impl CommittedState {
             .or_insert_with(|| Self::make_table(schema.clone()));
         let blob_store = &mut self.blob_store;
         (table, blob_store)
-    }
-
-    /// Returns the table and index associated with the given `table_id` and `col_list`, if any.
-    pub(super) fn get_table_and_index_type(&self, table_id: TableId, col_list: &ColList) -> Option<&AlgebraicType> {
-        let table = self.tables.get(&table_id)?;
-        let index = table.indexes.get(col_list)?;
-        Some(&index.key_type)
     }
 }
 

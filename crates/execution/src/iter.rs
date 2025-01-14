@@ -380,7 +380,7 @@ impl<'a> UniqueIxJoin<'a> {
         let lhs = Iter::build(&join.lhs, tx)?;
         let rhs_table = tx.table_or_err(join.rhs.table_id)?;
         let rhs_index = rhs_table
-            .get_index(join.rhs_index)
+            .get_index_by_id(join.rhs_index)
             .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
         Ok(Self {
             lhs: Box::new(lhs),
@@ -425,7 +425,7 @@ impl<'a> UniqueIxJoinLhs<'a> {
         let lhs = Iter::build(&join.lhs, tx)?;
         let rhs_table = tx.table_or_err(join.rhs.table_id)?;
         let rhs_index = rhs_table
-            .get_index(join.rhs_index)
+            .get_index_by_id(join.rhs_index)
             .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
         Ok(Self {
             lhs: Box::new(lhs),
@@ -465,7 +465,7 @@ impl<'a> UniqueIxJoinRhs<'a> {
         let lhs = Iter::build(&join.lhs, tx)?;
         let rhs_table = tx.table_or_err(join.rhs.table_id)?;
         let rhs_index = rhs_table
-            .get_index(join.rhs_index)
+            .get_index_by_id(join.rhs_index)
             .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
         Ok(Self {
             lhs: Box::new(lhs),
@@ -517,7 +517,7 @@ impl<'a> IxJoinIter<'a> {
         let lhs = Iter::build(&join.lhs, tx)?;
         let rhs_table = tx.table_or_err(join.rhs.table_id)?;
         let rhs_index = rhs_table
-            .get_index(join.rhs_index)
+            .get_index_by_id(join.rhs_index)
             .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
         Ok(Self {
             lhs: Box::new(lhs),
@@ -587,7 +587,7 @@ impl<'a> IxJoinLhs<'a> {
         let lhs = Iter::build(&join.lhs, tx)?;
         let rhs_table = tx.table_or_err(join.rhs.table_id)?;
         let rhs_index = rhs_table
-            .get_index(join.rhs_index)
+            .get_index_by_id(join.rhs_index)
             .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
         Ok(Self {
             lhs: Box::new(lhs),
@@ -644,7 +644,7 @@ impl<'a> IxJoinRhs<'a> {
         let lhs = Iter::build(&join.lhs, tx)?;
         let rhs_table = tx.table_or_err(join.rhs.table_id)?;
         let rhs_index = rhs_table
-            .get_index(join.rhs_index)
+            .get_index_by_id(join.rhs_index)
             .ok_or_else(|| anyhow!("IndexId `{}` does not exist", join.rhs_index))?;
         Ok(Self {
             lhs: Box::new(lhs),
