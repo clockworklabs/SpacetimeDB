@@ -6,3 +6,6 @@
 
 !/*/*/lib
 !/*/*/lib.meta
+
+# Ignore XML documentation metadata from packages too.
+*.xml
