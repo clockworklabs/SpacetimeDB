@@ -359,7 +359,7 @@ pub fn schema_type(input: StdTokenStream) -> StdTokenStream {
     })
 }
 
-/// Generates code for registering a row-level security visibility.
+/// Generates code for registering a row-level security rule.
 ///
 /// This attribute must be applied to a `const` binding of type [`Filter`].
 /// The filter will be installed as if an additional SQL `WHERE` predicate
