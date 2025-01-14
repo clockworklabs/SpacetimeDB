@@ -342,7 +342,8 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
         })
     }
 
-    pub fn unsubscribe_then(&mut self, on_end: impl FnOnce(&M::EventContext) + Send + 'static) -> anyhow::Result<()> {
+    pub fn unsubscribe_then(&mut self, on_end: Option<OnEndedCallback<M>>) -> anyhow::Result<()> {
+        // pub fn unsubscribe_then(&mut self, on_end: impl FnOnce(&M::EventContext) + Send + 'static) -> anyhow::Result<()> {
         if self.is_ended() {
             bail!("Subscription has already ended");
         }
@@ -350,8 +351,11 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
         if self.unsubscribe_called {
             bail!("Unsubscribe already called");
         }
+
         self.unsubscribe_called = true;
-        self.on_ended = Some(Box::new(on_end));
+        self.on_ended = on_end;
+        // self.on_ended = Some(Box::new(on_end));
+
         // We send this even if the status is still Pending, so we can remove it from the manager.
         self.pending_mutation_sender
             .unbounded_send(PendingMutation::Unsubscribe {
@@ -446,7 +450,7 @@ impl<M: SpacetimeModule> SubscriptionHandleImpl<M> {
     }
 
     /// Called by the `SubscriptionHandle` method of the same name.
-    pub fn unsubscribe_then(self, on_end: impl FnOnce(&M::EventContext) + Send + 'static) -> anyhow::Result<()> {
+    pub fn unsubscribe_then(self, on_end: Option<OnEndedCallback<M>>) -> anyhow::Result<()> {
         let mut inner = self.inner.lock().unwrap();
         inner.unsubscribe_then(on_end)
     }

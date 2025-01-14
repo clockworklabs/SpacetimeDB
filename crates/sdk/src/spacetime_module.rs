@@ -121,8 +121,16 @@ where
 
     fn is_active(&self) -> bool;
 
-    /// Called by the `SubscriptionHandle` method of the same name.
+    /// Unsubscribe from the query controlled by this `SubscriptionHandle`,
+    /// then run `on_end` when its rows are removed from the client cache.
+    /// Returns an error if the subscription is already ended,
+    /// or if unsubscribe has already been called.
     fn unsubscribe_then(self, on_end: OnEndedCallback<Self::Module>) -> anyhow::Result<()>;
+
+    /// Unsubscribe from the query controlled by this `SubscriptionHandle`.
+    /// Returns an error if the subscription is already ended,
+    /// or if unsubscribe has already been called.
+    fn unsubscribe(self) -> anyhow::Result<()>;
 }
 
 pub struct WithBsatn<Row> {

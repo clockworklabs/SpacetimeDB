@@ -410,17 +410,24 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {
         Self { imp }
     }
 
+    /// Returns true if this subscription has been terminated due to an unsubscribe call or an error.
     fn is_ended(&self) -> bool {
         self.imp.is_ended()
     }
 
+    /// Returns true if this subscription has been applied and has not yet been unsubscribed.
     fn is_active(&self) -> bool {
         self.imp.is_active()
     }
 
-    /// Called by the `SubscriptionHandle` method of the same name.
+    /// Unsubscribe from the query controlled by this `SubscriptionHandle`,
+    /// then run `on_end` when its rows are removed from the client cache.
     fn unsubscribe_then(self, on_end: __sdk::OnEndedCallback<RemoteModule>) -> anyhow::Result<()> {
-        self.imp.unsubscribe_then(on_end)
+        self.imp.unsubscribe_then(Some(on_end))
+    }
+
+    fn unsubscribe(self) -> anyhow::Result<()> {
+        self.imp.unsubscribe_then(None)
     }
 }
 
