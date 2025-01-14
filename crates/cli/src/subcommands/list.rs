@@ -4,7 +4,7 @@ use crate::Config;
 use clap::{ArgMatches, Command};
 use reqwest::StatusCode;
 use serde::Deserialize;
-use spacetimedb::Identity;
+use spacetimedb_lib::Identity;
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
     Table, Tabled,
