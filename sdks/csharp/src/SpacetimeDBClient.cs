@@ -57,9 +57,9 @@ namespace SpacetimeDB
             return this;
         }
 
-        public DbConnectionBuilder<DbConnection, Reducer> WithCredentials(in (Identity identity, string token)? creds)
+        public DbConnectionBuilder<DbConnection, Reducer> WithToken(string? token)
         {
-            token = creds?.token;
+            this.token = token;
             return this;
         }
 
