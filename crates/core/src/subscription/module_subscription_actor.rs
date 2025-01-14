@@ -1,4 +1,4 @@
-use super::execution_unit::{QueryHash};
+use super::execution_unit::QueryHash;
 use super::module_subscription_manager::{Plan, SubscriptionManager};
 use super::query::compile_read_only_query;
 use super::tx::DeltaTx;
