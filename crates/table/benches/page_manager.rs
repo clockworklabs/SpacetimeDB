@@ -726,7 +726,7 @@ fn make_table_with_indexes<R: IndexedRow>(unique: bool) -> Table {
     let mut tbl = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
 
     let cols = R::indexed_columns();
-    let idx = tbl.new_index(IndexId::SENTINEL, &cols, unique).unwrap();
+    let idx = tbl.new_index(IndexId::SENTINEL, cols.clone(), unique).unwrap();
     tbl.insert_index(&NullBlobStore, cols, idx);
 
     tbl

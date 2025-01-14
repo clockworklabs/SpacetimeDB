@@ -636,6 +636,10 @@ pub struct BTreeIndex {
     /// The key type of this index.
     /// This is the projection of the row type to the types of the columns indexed.
     pub key_type: AlgebraicType,
+    /// Given a full row, typed at some `ty: ProductType`,
+    /// these columns are the ones that this index indexes.
+    /// Projecting the `ty` to `self.indexed_columns` yields the index's type `self.key_type`.
+    pub indexed_columns: ColList,
 }
 
 impl MemoryUsage for BTreeIndex {
@@ -644,27 +648,29 @@ impl MemoryUsage for BTreeIndex {
             index_id,
             idx,
             key_type,
+            indexed_columns,
         } = self;
-        index_id.heap_usage() + idx.heap_usage() + key_type.heap_usage()
+        index_id.heap_usage() + idx.heap_usage() + key_type.heap_usage() + indexed_columns.heap_usage()
     }
 }
 
-static_assert_size!(BTreeIndex, 64);
+static_assert_size!(BTreeIndex, 72);
 
 impl BTreeIndex {
     /// Returns a new possibly unique index, with `index_id` for a set of columns.
     pub fn new(
         index_id: IndexId,
         row_type: &ProductType,
-        indexed_columns: &ColList,
+        indexed_columns: ColList,
         is_unique: bool,
     ) -> Result<Self, InvalidFieldError> {
-        let key_type = row_type.project(indexed_columns)?;
+        let key_type = row_type.project(&indexed_columns)?;
         let typed_index = TypedIndex::new(&key_type, is_unique);
         Ok(Self {
             index_id,
             idx: typed_index,
             key_type,
+            indexed_columns,
         })
     }
 
@@ -674,10 +680,12 @@ impl BTreeIndex {
         let key_type = self.key_type.clone();
         let index_id = self.index_id;
         let idx = self.idx.clone_structure();
+        let indexed_columns = self.indexed_columns.clone();
         Self {
             index_id,
             idx,
             key_type,
+            indexed_columns,
         }
     }
 
@@ -790,7 +798,7 @@ mod test {
     }
 
     fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool) -> BTreeIndex {
-        BTreeIndex::new(0.into(), row_type, cols, is_unique).unwrap()
+        BTreeIndex::new(0.into(), row_type, cols.clone(), is_unique).unwrap()
     }
 
     /// Extracts from `row` the relevant column values according to what columns are indexed.

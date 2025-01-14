@@ -935,7 +935,7 @@ impl Table {
     }
 
     /// Returns a new [`BTreeIndex`] for `table`.
-    pub fn new_index(&self, id: IndexId, cols: &ColList, is_unique: bool) -> Result<BTreeIndex, InvalidFieldError> {
+    pub fn new_index(&self, id: IndexId, cols: ColList, is_unique: bool) -> Result<BTreeIndex, InvalidFieldError> {
         BTreeIndex::new(id, self.get_schema().get_row_type(), cols, is_unique)
     }
 
@@ -1663,7 +1663,7 @@ pub(crate) mod test {
         let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
         let cols = ColList::new(0.into());
 
-        let index = table.new_index(index_schema.index_id, &cols, true).unwrap();
+        let index = table.new_index(index_schema.index_id, cols.clone(), true).unwrap();
         table.insert_index(&NullBlobStore, cols, index);
 
         // Reserve a page so that we can check the hash.

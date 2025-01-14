@@ -384,7 +384,7 @@ impl CommittedState {
             };
             let is_unique = unique_constraints.contains(&(index_row.table_id, (&columns).into()));
 
-            let index = table.new_index(index_row.index_id, &columns, is_unique)?;
+            let index = table.new_index(index_row.index_id, columns.clone(), is_unique)?;
             table.insert_index(blob_store, columns.clone(), index);
             self.index_id_map
                 .insert(index_row.index_id, (index_row.table_id, columns));

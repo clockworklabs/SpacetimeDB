@@ -395,7 +395,7 @@ impl MutTxId {
         //
         // Ensure adding the index does not cause a unique constraint violation due to
         // the existing rows having the same value for some column(s).
-        let mut insert_index = table.new_index(index.index_id, &columns, is_unique)?;
+        let mut insert_index = table.new_index(index.index_id, columns.clone(), is_unique)?;
         let mut build_from_rows = |table: &Table, bs: &dyn BlobStore| -> Result<()> {
             if let Some(violation) = insert_index.build_from_rows(&columns, table.scan_rows(bs))? {
                 let violation = table
