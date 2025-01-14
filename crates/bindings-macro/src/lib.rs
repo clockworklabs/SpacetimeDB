@@ -362,8 +362,7 @@ pub fn schema_type(input: StdTokenStream) -> StdTokenStream {
 /// Generates code for registering a row-level security rule.
 ///
 /// This attribute must be applied to a `const` binding of type [`Filter`].
-/// The filter will be installed as if an additional SQL `WHERE` predicate
-/// in all client queries against the table to which the filter applies.
+/// It will be interpreted as a filter on the table to which it applies, for all client queries.
 /// If a module contains multiple `client_visibility_filter`s for the same table,
 /// they will be unioned together as if by SQL `OR`,
 /// so that any row permitted by at least one filter is visible.
