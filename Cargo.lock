@@ -4684,7 +4684,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "spacetimedb-primitives",
- "spacetimedb-sql-parser",
  "syn 2.0.87",
 ]
 

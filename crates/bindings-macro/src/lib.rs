@@ -1,7 +1,6 @@
 //! Defines procedural macros like `#[spacetimedb::table]`,
 //! simplifying writing SpacetimeDB modules in Rust.
 
-mod filter;
 mod reducer;
 mod sats;
 mod table;
@@ -11,8 +10,8 @@ use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::time::Duration;
-use syn::ItemFn;
 use syn::{parse::ParseStream, Attribute};
+use syn::{ItemConst, ItemFn};
 use util::{cvt_attr, ok_or_compile_error};
 
 mod sym {
@@ -360,17 +359,24 @@ pub fn schema_type(input: StdTokenStream) -> StdTokenStream {
     })
 }
 
-/// Generates code for registering a row-level security `SQL` function.
+/// Generates code for registering a row-level security rule.
 ///
-/// A row-level security function takes a `SQL` query expression that is used to filter rows.
+/// This attribute must be applied to a `const` binding of type [`Filter`].
+/// It will be interpreted as a filter on the table to which it applies, for all client queries.
+/// If a module contains multiple `client_visibility_filter`s for the same table,
+/// they will be unioned together as if by SQL `OR`,
+/// so that any row permitted by at least one filter is visible.
+///
+/// The `const` binding's identifier must be unique within the module.
 ///
 /// The query follows the same syntax as a subscription query.
 ///
-/// **Example:**
+/// ## Example:
 ///
 /// ```rust,ignore
 /// /// Players can only see what's in their chunk
-/// spacetimedb::filter!("
+/// #[spacetimedb::client_visibility_filter]
+/// const PLAYERS_SEE_ENTITIES_IN_SAME_CHUNK: Filter = Filter::Sql("
 ///     SELECT * FROM LocationState WHERE chunk_index IN (
 ///         SELECT chunk_index FROM LocationState WHERE entity_id IN (
 ///             SELECT entity_id FROM UserState WHERE identity = @sender
@@ -379,14 +385,34 @@ pub fn schema_type(input: StdTokenStream) -> StdTokenStream {
 /// ");
 /// ```
 ///
-/// **NOTE:** The `SQL` query expression is pre-parsed at compile time, but only check is a valid
-/// subscription query *syntactically*, not that the query is valid when executed.
-///
-/// For example, it could refer to a non-existent table.
-#[proc_macro]
-pub fn filter(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let arg = syn::parse_macro_input!(input);
-    filter::filter_impl(arg)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+/// Queries are not checked for syntactic or semantic validity
+/// until they are processed by the SpacetimeDB host.
+/// This means that errors in queries, such as syntax errors, type errors or unknown tables,
+/// will be reported during `spacetime publish`, not at compile time.
+#[doc(hidden)] // TODO: RLS filters are currently unimplemented, and are not enforced.
+#[proc_macro_attribute]
+pub fn client_visibility_filter(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| {
+        if !args.is_empty() {
+            return Err(syn::Error::new_spanned(
+                TokenStream::from(args),
+                "The `client_visibility_filter` attribute does not accept arguments",
+            ));
+        }
+
+        let item: ItemConst = syn::parse(item)?;
+        let rls_ident = item.ident.clone();
+        let register_rls_symbol = format!("__preinit__20_register_row_level_security_{rls_ident}");
+
+        Ok(quote! {
+            #item
+
+            const _: () = {
+                #[export_name = #register_rls_symbol]
+                extern "C" fn __register_client_visibility_filter() {
+                    spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())
+                }
+            };
+        })
+    })
 }
