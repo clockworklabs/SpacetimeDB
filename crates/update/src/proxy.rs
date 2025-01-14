@@ -23,32 +23,28 @@ pub(crate) fn run_cli(paths: &SpacetimePaths, argv0: Option<&OsStr>, args: Vec<O
         );
         cli_path
     } else {
-        let version = get_current_version();
-        paths.cli_bin_dir.version_dir(version).spacetimedb_cli()
+        paths.cli_bin_dir.current_version_dir().spacetimedb_cli()
     };
     let mut cmd = Command::new(&cli_path);
     cmd.args(args);
     #[cfg(unix)]
-    {
+    let result = {
         use std::os::unix::process::CommandExt;
         if let Some(argv0) = argv0 {
             cmd.arg0(argv0);
         }
         let err = cmd.exec();
-        Err(err).context(format!("exec failed for {}", cli_path.display()))
-    }
+        Err::<std::process::ExitStatus, _>(err)
+    };
     #[cfg(windows)]
-    {
-        let status = cmd
-            .status()
-            .with_context(|| format!("failed to run {}", cli_path.display()))?;
-        Ok(ExitCode::from(status.code().unwrap_or(1) as u8))
-    }
+    let result = cmd.status();
+    let status = result.context(format!("exec failed for {}", bin_path.display()))?;
+    Ok(ExitCode::from(status.code().unwrap_or(1).try_into().unwrap_or(1)))
 }
 
 /// Checks to see if we're running from a subdirectory of a `target` dir that has a `Cargo.toml`
 /// as a sibling, and returns the containing directory of the current executable if so.
-fn running_from_target_dir() -> Option<PathBuf> {
+pub(crate) fn running_from_target_dir() -> Option<PathBuf> {
     let mut exe_path = std::env::current_exe().ok()?;
     exe_path.pop();
     let artifact_dir = exe_path;
@@ -64,11 +60,6 @@ fn running_from_target_dir() -> Option<PathBuf> {
         .try_exists()
         .ok()
         .map(|_| artifact_dir)
-}
-
-fn get_current_version() -> semver::Version {
-    // TODO:
-    "1.0.0".parse().unwrap()
 }
 
 fn extract_root_dir_arg(args: &[OsString]) -> anyhow::Result<Option<RootDir>> {

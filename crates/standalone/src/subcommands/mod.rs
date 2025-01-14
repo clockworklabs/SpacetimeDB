@@ -2,4 +2,3 @@
 #![allow(clippy::disallowed_macros)]
 
 pub mod start;
-pub mod version;
