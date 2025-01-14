@@ -6,7 +6,7 @@ using System.Linq;
 using Unity.VisualScripting;
 using UnityEngine;
 
-public abstract class EntityActor : MonoBehaviour
+public abstract class EntityController : MonoBehaviour
 {
 	const float LERP_DURATION_SEC = 0.1f;
 
@@ -19,13 +19,11 @@ public abstract class EntityActor : MonoBehaviour
 	protected Vector3 LerpTargetPositio;
 	protected Vector3 TargetScale;
 
-
-
 	protected virtual void Spawn(uint entityId)
 	{
 		EntityId = entityId;
 
-		var entity = ConnectionManager.Conn.Db.Entity.EntityId.Find(entityId);
+		var entity = GameManager.Conn.Db.Entity.EntityId.Find(entityId);
 		LerpStartPosition = LerpTargetPositio = transform.position = (Vector2)entity.Position;
 		transform.localScale = Vector3.one;
 		TargetScale = MassToScale(entity.Mass);
@@ -50,7 +48,7 @@ public abstract class EntityActor : MonoBehaviour
 			reducer.ReducerEvent.Reducer is Reducer.ConsumeEntity consume)
 		{
 			var consumerId = consume.Request.ConsumerEntityId;
-			if (EntityManager.Actors.TryGetValue(consumerId, out var consumerEntity))
+			if (GameManager.Entities.TryGetValue(consumerId, out var consumerEntity))
 			{
 				StartCoroutine(DespawnCoroutine(consumerEntity.transform));
 				return;
@@ -83,8 +81,6 @@ public abstract class EntityActor : MonoBehaviour
 		transform.position = Vector3.Lerp(LerpStartPosition, LerpTargetPositio, LerpTime / LERP_DURATION_SEC);
 		transform.localScale = Vector3.Lerp(transform.localScale, TargetScale, Time.deltaTime * 8);
 	}
-
-
 
 	public static Vector3 MassToScale(uint mass)
 	{

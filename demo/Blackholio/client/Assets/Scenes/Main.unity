@@ -477,7 +477,6 @@ GameObject:
   - component: {fileID: 207278860}
   - component: {fileID: 207278863}
   - component: {fileID: 207278859}
-  - component: {fileID: 207278862}
   - component: {fileID: 207278864}
   m_Layer: 0
   m_Name: GameManager
@@ -498,6 +497,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: aaf311e6a809fdf4d874741c6fd6db10, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  backgroundInstance: {fileID: 1774890158}
+  borderThickness: 2
+  borderMaterial: {fileID: 2100000, guid: eb000c9de35d73e4d81c6a0831a9e7bc, type: 2}
+  starBackgroundPrefab: {fileID: 0}
 --- !u!4 &207278860
 Transform:
   m_ObjectHideFlags: 0
@@ -517,22 +520,6 @@ Transform:
   - {fileID: 1854949949}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &207278862
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 207278858}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: dab6414c7b228714bb7700728f85482c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  backgroundInstance: {fileID: 1774890158}
-  borderThickness: 2
-  borderMaterial: {fileID: 2100000, guid: eb000c9de35d73e4d81c6a0831a9e7bc, type: 2}
-  starBackgroundPrefab: {fileID: 0}
 --- !u!114 &207278863
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -23,7 +23,7 @@ public class LeaderboardController : MonoBehaviour
     
     private void Update()
     {
-        var players = EntityManager.Players.Values
+        var players = GameManager.Players.Values
             .Select(a => (player: a, mass: a.TotalMass()))
             .Where(a => a.mass > 0)
             .OrderByDescending(a => a.mass)

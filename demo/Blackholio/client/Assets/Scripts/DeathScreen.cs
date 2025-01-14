@@ -21,7 +21,7 @@ public class DeathScreen : MonoBehaviour
 
 	public void Respawn()
 	{
-		ConnectionManager.Conn.Reducers.Respawn();
+		GameManager.Conn.Reducers.Respawn();
 		SetVisible(false);
 	}
 }

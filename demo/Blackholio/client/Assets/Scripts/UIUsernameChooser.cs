@@ -14,9 +14,9 @@ public class UIUsernameChooser : MonoBehaviour
     private void Start()
     {
         Instance = this;
-        ConnectionManager.Conn.Db.Player.OnInsert += (ctx, newPlayer) =>
+        GameManager.Conn.Db.Player.OnInsert += (ctx, newPlayer) =>
         {
-            if (newPlayer.Identity == ConnectionManager.LocalIdentity)
+            if (newPlayer.Identity == GameManager.LocalIdentity)
             {
                 // We have a player
                 UsernameInputField.text = newPlayer.Name;
@@ -33,7 +33,7 @@ public class UIUsernameChooser : MonoBehaviour
         {
             name = "<No Name>";
         }
-		ConnectionManager.Conn.Reducers.EnterGame(name);
+		GameManager.Conn.Reducers.EnterGame(name);
 		gameObject.SetActive(false);
 	}
 }

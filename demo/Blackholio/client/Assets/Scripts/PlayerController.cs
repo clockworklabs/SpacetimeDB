@@ -14,18 +14,16 @@ public class PlayerController : MonoBehaviour
 	private uint PlayerId;
     private float LastMovementSendTimestamp;
     private Vector2? LockInputPosition;
-	private List<CircleActor> OwnedCircles = new List<CircleActor>();
+	private List<CircleController> OwnedCircles = new List<CircleController>();
 
-	public string Username => ConnectionManager.Conn.Db.Player.PlayerId.Find(PlayerId).Name;
+	public string Username => GameManager.Conn.Db.Player.PlayerId.Find(PlayerId).Name;
 	public int NumberOfOwnedCircles => OwnedCircles.Count;
 	public bool IsLocalPlayer => this == Local;
-
-
 
 	public void Initialize(Player player)
     {
         PlayerId = player.PlayerId;
-        if (player.Identity == ConnectionManager.LocalIdentity)
+        if (player.Identity == GameManager.LocalIdentity)
         {
             Local = this;
         }
@@ -44,12 +42,12 @@ public class PlayerController : MonoBehaviour
         OwnedCircles.Clear();
     }
 
-    public void OnCircleSpawned(CircleActor circle)
+    public void OnCircleSpawned(CircleController circle)
     {
         OwnedCircles.Add(circle);
     }
 
-    public void OnCircleDeleted(CircleActor deletedCircle)
+    public void OnCircleDeleted(CircleController deletedCircle)
 	{
 		// This means we got eaten
 		if (OwnedCircles.Remove(deletedCircle) && IsLocalPlayer && OwnedCircles.Count == 0)
@@ -58,12 +56,10 @@ public class PlayerController : MonoBehaviour
 		}
 	}
 
-
-
 	public uint TotalMass()
     {
         return (uint)OwnedCircles
-            .Select(circle => ConnectionManager.Conn.Db.Entity.EntityId.Find(circle.EntityId))
+            .Select(circle => GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId))
 			.Sum(e => e?.Mass ?? 0); //If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
 	}
 
@@ -78,7 +74,7 @@ public class PlayerController : MonoBehaviour
         float totalMass = 0;
         foreach (var circle in OwnedCircles)
         {
-            var entity = ConnectionManager.Conn.Db.Entity.EntityId.Find(circle.EntityId);
+            var entity = GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId);
             var position = circle.transform.position;
             totalPos += (Vector2)position * entity.Mass;
             totalMass += entity.Mass;
@@ -86,8 +82,6 @@ public class PlayerController : MonoBehaviour
 
         return totalPos / totalMass;
 	}
-
-
 
 	public void Update()
     {
@@ -98,7 +92,7 @@ public class PlayerController : MonoBehaviour
 
         if (Input.GetKeyDown(KeyCode.Space))
         {
-            ConnectionManager.Conn.Reducers.PlayerSplit();
+            GameManager.Conn.Reducers.PlayerSplit();
         }
 
         if (Input.GetKeyDown(KeyCode.Q))
@@ -113,7 +107,7 @@ public class PlayerController : MonoBehaviour
             }
         }
 
-        //Throttled input requests
+        // Throttled input requests
         if (Time.time - LastMovementSendTimestamp >= SEND_UPDATES_FREQUENCY)
         {
             LastMovementSendTimestamp = Time.time;
@@ -128,21 +122,19 @@ public class PlayerController : MonoBehaviour
 
 			var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
             if (testInputEnabled) { direction = testInput; }
-            ConnectionManager.Conn.Reducers.UpdatePlayerInput(direction);
+            GameManager.Conn.Reducers.UpdatePlayerInput(direction);
         }
 	}
 
 	private void OnGUI()
 	{
-		if (!IsLocalPlayer || !ConnectionManager.IsConnected())
+		if (!IsLocalPlayer || !GameManager.IsConnected())
 		{
 			return;
 		}
 
 		GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
 	}
-
-
 
 	//Automated testing members
 	private bool testInputEnabled;

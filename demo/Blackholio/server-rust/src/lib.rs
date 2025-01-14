@@ -1,6 +1,6 @@
-pub mod dbvector2;
+pub mod math;
 
-use dbvector2::DbVector2;
+use math::DbVector2;
 use rand::Rng;
 use spacetimedb::{spacetimedb_lib::ScheduleAt, Identity, ReducerContext, Table, Timestamp};
 use std::{collections::HashMap, time::Duration};
@@ -19,7 +19,6 @@ const FOOD_MASS_MIN: u32 = 2;
 const FOOD_MASS_MAX: u32 = 4;
 const TARGET_FOOD_COUNT: usize = 600;
 const MINIMUM_SAFE_MASS_RATIO: f32 = 0.85;
-const MIN_OVERLAP_PCT_TO_CONSUME: f32 = 0.1;
 
 const MIN_MASS_TO_SPLIT: u32 = START_PLAYER_MASS * 2;
 const MAX_CIRCLES_PER_PLAYER: u32 = 16;
@@ -109,7 +108,6 @@ pub struct CircleRecombineTimer {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
     player_id: u32,
 }
@@ -119,7 +117,6 @@ pub struct ConsumeEntityTimer {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
     consumed_entity_id: u32,
     consumer_entity_id: u32,
@@ -172,21 +169,18 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
         .identity()
         .find(&ctx.sender)
         .ok_or("Player not found")?;
-    for circle in ctx.db.circle().player_id().filter(&player.player_id) {
-        let entity = ctx
-            .db
-            .entity()
-            .entity_id()
-            .find(&circle.entity_id)
-            .ok_or("Could not find circle")?;
-        ctx.db.entity().entity_id().delete(&entity.entity_id);
-        ctx.db.circle().entity_id().delete(&entity.entity_id);
-    }
+    let player_id = player.player_id;
     ctx.db.logged_out_player().insert(LoggedOutPlayer {
         identity: player.identity,
         player,
     });
     ctx.db.player().identity().delete(&ctx.sender);
+
+    // Remove any circles from the arena
+    for circle in ctx.db.circle().player_id().filter(&player_id) {
+        ctx.db.entity().entity_id().delete(&circle.entity_id);
+        ctx.db.circle().entity_id().delete(&circle.entity_id);
+    }
 
     Ok(())
 }
@@ -200,29 +194,6 @@ pub fn enter_game(ctx: &ReducerContext, name: String) -> Result<(), String> {
     ctx.db.player().identity().update(player);
     spawn_player_initial_circle(ctx, player_id)?;
 
-    Ok(())
-}
-
-#[spacetimedb::reducer]
-pub fn respawn(ctx: &ReducerContext) -> Result<(), String> {
-    let player = ctx
-        .db
-        .player()
-        .identity()
-        .find(&ctx.sender)
-        .ok_or("No such player found")?;
-    if ctx
-        .db
-        .circle()
-        .player_id()
-        .filter(&player.player_id)
-        .count()
-        > 0
-    {
-        return Err(format!("Player {} already has a circle", player.player_id).into());
-    }
-
-    spawn_player_initial_circle(ctx, player.player_id)?;
     Ok(())
 }
 
@@ -242,7 +213,7 @@ fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: u32) -> Result<E
         ctx,
         player_id,
         START_PLAYER_MASS,
-        DbVector2::new(x, y),
+        DbVector2 { x, y },
         ctx.timestamp,
     )
 }
@@ -293,9 +264,13 @@ fn is_overlapping(a: &Entity, b: &Entity) -> bool {
 
     let radius_a = mass_to_radius(a.mass);
     let radius_b = mass_to_radius(b.mass);
-    let radius_sum = (radius_a + radius_b) * (1.0 - MIN_OVERLAP_PCT_TO_CONSUME);
 
-    distance_sq <= radius_sum * radius_sum
+    // If the distance between the two circle centers is less than the 
+    // maximum radius, then the center of the smaller circle is inside
+    // the larger circle. This gives some leeway for the circles to overlap
+    // before being eaten.
+    let max_radius = f32::max(radius_a, radius_b);
+    distance_sq <= max_radius * max_radius
 }
 
 fn mass_to_radius(mass: u32) -> f32 {
@@ -308,8 +283,8 @@ fn mass_to_max_move_speed(mass: u32) -> f32 {
 
 #[spacetimedb::reducer]
 pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Result<(), String> {
-    //TODO identity check
-    //let span = spacetimedb::log_stopwatch::LogStopwatch::new("tick");
+    // TODO identity check
+    // let span = spacetimedb::log_stopwatch::LogStopwatch::new("tick");
     let world_size = ctx
         .db
         .config()
@@ -325,7 +300,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         .map(|c| (c.entity_id, c.direction * c.speed))
         .collect();
 
-    //Split circle movement
+    // Split circle movement
     for player in ctx.db.player().iter() {
         let circles: Vec<Circle> = ctx
             .db
@@ -342,7 +317,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         }
         let count = player_entities.len();
 
-        //Gravitate circles towards other circles before they recombine
+        // Gravitate circles towards other circles before they recombine
         for i in 0..player_entities.len() {
             let circle_i = &circles[i];
             let time_since_split = ctx
@@ -380,7 +355,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
             }
         }
 
-        //Force circles apart
+        // Force circles apart
         for i in 0..player_entities.len() {
             let (slice1, slice2) = player_entities.split_at_mut(i + 1);
             let entity_i = &mut slice1[i];
@@ -405,19 +380,21 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         }
     }
 
-    //Handle player input
+    // Handle player input
     for circle in ctx.db.circle().iter() {
         let mut circle_entity = ctx.db.entity().entity_id().find(&circle.entity_id).unwrap();
         let circle_radius = mass_to_radius(circle_entity.mass);
         let direction = *circle_directions.get(&circle.entity_id).unwrap();
         let new_pos =
             circle_entity.position + direction * mass_to_max_move_speed(circle_entity.mass);
+        let min = circle_radius;
+        let max = world_size as f32 - circle_radius;
         circle_entity.position.x = new_pos
             .x
-            .clamp(circle_radius, world_size as f32 - circle_radius);
+            .clamp(min, max);
         circle_entity.position.y = new_pos
             .y
-            .clamp(circle_radius, world_size as f32 - circle_radius);
+            .clamp(min, max);
         ctx.db.entity().entity_id().update(circle_entity);
     }
 
@@ -431,7 +408,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
                 continue;
             }
 
-            if is_overlapping(&circle_entity, &other_entity) {
+            if is_overlapping(&circle_entity, other_entity) {
                 let other_circle = ctx.db.circle().entity_id().find(&other_entity.entity_id);
                 if let Some(other_circle) = other_circle {
                     if other_circle.player_id != circle.player_id {
@@ -452,7 +429,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
         // span.end();
     }
 
-    //span.end();
+    // span.end();
     Ok(())
 }
 
@@ -621,7 +598,7 @@ pub fn circle_decay(ctx: &ReducerContext, _timer: CircleDecayTimer) -> Result<()
     Ok(())
 }
 
-pub fn calculate_center_of_mass(entities: &Vec<Entity>) -> DbVector2 {
+pub fn calculate_center_of_mass(entities: &[Entity]) -> DbVector2 {
     let total_mass: u32 = entities.iter().map(|e| e.mass).sum();
     let center_of_mass: DbVector2 = entities.iter().map(|e| e.position * e.mass as f32).sum();
     center_of_mass / total_mass as f32
