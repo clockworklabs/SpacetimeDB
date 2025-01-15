@@ -67,7 +67,7 @@ Tables and reducers in Rust modules can use any type that implements the [`Space
 
 ## Setup
 
-To create a Rust module, install [`spacetime` CLI tool](https://spacetimedb.com/install) in your preferred shell. Navigate to your work directory and run the following command:
+To create a Rust module, install the [`spacetime` CLI tool](https://spacetimedb.com/install) in your preferred shell. Navigate to your work directory and run the following command:
 
 ```text
 spacetime init --lang rust my-project-directory
