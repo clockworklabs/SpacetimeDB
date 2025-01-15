@@ -10,7 +10,6 @@ use spacetimedb_sdk::{credentials, DbContext, Event, Identity, ReducerEvent, Sta
 // # Our main function
 
 fn main() {
-    env_logger::init();
     let ctx = connect_to_db();
     register_callbacks(&ctx);
     subscribe_to_tables(&ctx);
@@ -47,7 +46,6 @@ fn creds_store() -> credentials::File {
 
 /// Our `on_connect` callback: save our credentials to a file.
 fn on_connected(_ctx: &DbConnection, identity: Identity, token: &str) {
-    log::info!("Connected as {}", identity.to_abbreviated_hex());
     if let Err(e) = creds_store().save(identity, token) {
         eprintln!("Failed to save credentials: {:?}", e);
     }
@@ -168,7 +166,6 @@ const DB_NAME: &str = "quickstart-chat";
 
 /// Load credentials from a file and connect to the database.
 fn connect_to_db() -> DbConnection {
-    log::info!("Connecting to {}", HOST);
     DbConnection::builder()
         .on_connect(on_connected)
         .on_connect_error(|err| panic!("Error while connecting: {err}"))

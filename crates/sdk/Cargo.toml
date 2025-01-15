@@ -33,7 +33,6 @@ hex.workspace = true
 # for cursive-chat example
 cursive.workspace = true
 futures-channel.workspace = true
-env_logger = "0.11.6"
 
 # for tests
 spacetimedb-testing = { path = "../testing" }
