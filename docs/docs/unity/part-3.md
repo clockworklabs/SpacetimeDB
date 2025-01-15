@@ -1,4 +1,4 @@
-# Unity Tutorial - Blackholio - Part 3 - Gameplay
+# Unity Tutorial - Part 3 - Gameplay
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 

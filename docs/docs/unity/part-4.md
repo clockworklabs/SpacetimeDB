@@ -1,4 +1,4 @@
-# Unity Tutorial - Blackholio - Part 4 - Moving and Colliding
+# Unity Tutorial - Part 4 - Moving and Colliding
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 

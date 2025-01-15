@@ -1,4 +1,4 @@
-# Unity Tutorial - Blackholio - Part 2 - Connecting to SpacetimeDB
+# Unity Tutorial - Part 2 - Connecting to SpacetimeDB
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
