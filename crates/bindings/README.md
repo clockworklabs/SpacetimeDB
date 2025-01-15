@@ -301,7 +301,7 @@ Columns of a table (that is, fields of a [`#[table]`](macro@crate::table) struct
 ```no_run
 # type SSN = ();
 # type Email = ();
-
+#
 #[table]
 pub struct Person {
     #[primary_key]
