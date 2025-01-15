@@ -353,9 +353,8 @@ struct Example {
 fn insert_autoinc_example(ctx: &ReducerContext) {
     for i in 1..=10 {
         // These will have values of 1, 2, ..., 10
-        // at rest in the database, regardless of
-        // what value is actually present in the
-        // insert call.
+        // at rest in the database, since they
+        // are inserted with the sentinel value 0.
         let actual = ctx.db.example().insert(Example { field: 0 })
         assert_eq!(actual.field, i);
     }
