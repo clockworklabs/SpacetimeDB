@@ -36,7 +36,7 @@ SpacetimeDB modules have two ways to interact with the outside world: tables and
 
 - [Tables](#tables) store data and optionally make it readable by [clients]. 
 
-- [Reducers](#reducers) are functions that modify data and be invoked by [clients] over the network. They can read and write data in tables, and write to a private debug log.
+- [Reducers](#reducers) are functions that modify data and can be invoked by [clients] over the network. They can read and write data in tables, and write to a private debug log.
 
 These are the only ways for a SpacetimeDB module to interact with the outside world. Calling functions from `std::net` or `std::fs` inside a reducer will result in runtime errors.
 
