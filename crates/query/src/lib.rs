@@ -6,7 +6,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
     Compression, DatabaseUpdate, QueryUpdate, TableUpdate, WebsocketFormat,
 };
-use spacetimedb_execution::{execute_plan, iter::PlanIter, Datastore, DeltaStore};
+use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_expr::check::{type_subscription, SchemaView};
 use spacetimedb_physical_plan::{compile::compile_project_plan, plan::ProjectPlan};
 use spacetimedb_primitives::TableId;
@@ -95,13 +95,13 @@ impl SubscribePlan {
         Tx: Datastore + DeltaStore,
         F: WebsocketFormat,
     {
-        execute_plan(&self.plan, tx, |iter| match iter {
-            PlanIter::Index(iter) => F::encode_list(iter),
-            PlanIter::Table(iter) => F::encode_list(iter),
-            PlanIter::Delta(iter) => F::encode_list(iter),
-            PlanIter::RowId(iter) => F::encode_list(iter),
-            PlanIter::Tuple(iter) => F::encode_list(iter),
-        })
+        let plan = PipelinedProject::from(self.plan.clone());
+        let mut rows = vec![];
+        plan.execute(tx, &mut |row| {
+            rows.push(row);
+            Ok(())
+        })?;
+        Ok(F::encode_list(rows.into_iter()))
     }
 
     /// Execute a subscription query and collect the results in a [TableUpdate]
