@@ -447,6 +447,7 @@ maintenance tasks. See [Scheduled Reducers](macro@crate::reducer#scheduled-reduc
 [macro library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/bindings-macro
 [module library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/lib
 [demo]: /#demo
+[client]: https://spacetimedb.com/docs/#client
 [clients]: https://spacetimedb.com/docs/#client
 [client SDK documentation]: https://spacetimedb.com/docs/#client
 [host]: https://spacetimedb.com/docs/#host

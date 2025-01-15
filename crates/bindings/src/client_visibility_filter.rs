@@ -1,5 +1,5 @@
 /// A row-level security filter,
-/// which can be registered using the [`crate::client_visibility_filter`] attribute.
+/// which can be registered using the [`macro@crate::client_visibility_filter`] attribute.
 #[non_exhaustive]
 pub enum Filter {
     /// A SQL query. Rows that match this query will be made visible to clients.
@@ -11,7 +11,7 @@ pub enum Filter {
     ///
     /// SQL queries are not checked for syntactic or semantic validity
     /// until they are processed by the SpacetimeDB host.
-    /// This means that errors in queries used as [`crate::client_visibility_filter`] rules
+    /// This means that errors in queries used as [`macro@crate::client_visibility_filter`] rules
     /// will be reported during `spacetime publish`, not at compile time.
     Sql(&'static str),
 }
