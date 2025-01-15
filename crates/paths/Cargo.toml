@@ -11,6 +11,7 @@ anyhow.workspace = true
 chrono = { workspace = true, features = ["now"] }
 fs2.workspace = true
 itoa.workspace = true
+semver.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
