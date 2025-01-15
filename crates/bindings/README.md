@@ -65,17 +65,6 @@ Tables and reducers in Rust modules can use any type that implements the [`Space
 
 <!-- TODO: link to client subscriptions / client one-off queries respectively. -->
 
-
-
-<!-- 
-SpacetimeDB modules are compiled to WebAssembly by `cargo` and administered using the `spacetime` CLI command. Modules run on a server called a [host]. A host can run many modules at a time. You can run your own host, or use a public host administered by [Clockwork Labs](https://clockworklabs.io/). (TODO: remark about SLAs and SKUs once those are finalized?)
-
-Tables can store any any Rust type implementing the [`SpacetimeType`, `Serialize`, and `Deserialize`](#spacetimetype) traits; all of these can be be derived at once using `#[derive(SpacetimeType)]`. Similarly, Rust types implementing these traits can be used for reducer arguments.
-
-`Serialize` and `Deserialize` allow types to automatically serialize and deserialize themselves, in a manner similar to [`serde`](https://serde.rs/). `SpacetimeType` allows types to register their internal structure with `SpacetimeDB`. This allows SpacetimeDB to correctly format tables storing these types.
-
--->
-
 ## Setup
 
 To create a Rust module, install [`spacetime` CLI tool](https://spacetimedb.com/install) in your preferred shell. Navigate to your work directory and run the following command:
