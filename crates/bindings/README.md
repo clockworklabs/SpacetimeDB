@@ -254,8 +254,17 @@ fn do_something(ctx: &ReducerContext) {
 
 This library generates a custom API for each table, depending on the table's name and structure.
 
-All tables support getting a handle implementing the [`Table`] trait, using:
-[`ctx`](crate::ReducerContext)`.db.{table_name}()`. For example, `ctx.db.people()`.
+All tables support getting a handle implementing the [`Table`] trait from a [`ReducerContext`], using:
+
+```text
+ctx.db.{table_name}()
+```
+
+For example,
+
+```no_run
+ctx.db.people()
+```
 
 The [`Table`] trait provides:
 - [`Table::insert`]
@@ -272,7 +281,7 @@ Tables [constraints](#unique-and-primary-key-columns) and [indices](#indices) ge
 
 By default, tables are considered **private**. This means that they are only readable by the table owner and by reducers. Reducers run inside the database, so clients cannot see private tables at all.
 
-Using [`#[table(name = table_name, public)]`](macro@crate::table) macro makes a table public. **Public** tables are readable by all clients. They can still only be modified by reducers. 
+Using the [`#[table(name = table_name, public)]`](macro@crate::table) flag makes a table public. **Public** tables are readable by all clients. They can still only be modified by reducers. 
 
 ```no_run
 use spacetimedb::table;
@@ -302,7 +311,7 @@ Columns of a table (that is, fields of a [`#[table]`](macro@crate::table) struct
 # type SSN = ();
 # type Email = ();
 #
-#[table]
+#[table(name = people)]
 pub struct Person {
     #[primary_key]
     id: u64,
@@ -316,7 +325,17 @@ pub struct Person {
 
 Every row in the table `Person` must have unique entries in the `id`, `ssn`, and `email` columns. Attempting to insert multiple `Person`s with the same `id`, `ssn`, or `email` will fail. (Either via panic, with [`Table::insert`], or via a `Result::Err`, with [`Table::try_insert`].)
 
-Any `#[unique]` or `#[primary_key]` column supports getting a [`UniqueColumn`] using [`ctx`](crate::ReducerContext)`.db.{table}().{unique_column}()`. For example, `ctx.db.people().ssn()`.
+Any `#[unique]` or `#[primary_key]` column supports getting a [`UniqueColumn`] from a [`ReducerContext`] using:
+
+```text
+ctx.db.{table}().{unique_column}()
+```
+
+For example, 
+
+```no_run
+ctx.db.people().ssn()
+```
     
 [`UniqueColumn`] provides:
 - [`UniqueColumn::find`]
@@ -366,7 +385,17 @@ fn insert_autoinc_example(ctx: &ReducerContext) {
 
 SpacetimeDB supports both single- and multi-column indexes. Currently, only [B-Tree](https://en.wikipedia.org/wiki/B-tree) indexes are supported.
 
-Indexes are declared using the syntax: [`#[table(index(name = my_index, btree(columns = [a, b, c]))]`](macro@crate::table#index). Multiple indexes can be declared, separated by commas. Single-column indices can also be declared using the [`#[index(btree)]`](macro@crate::table#indexbtree) column attribute.
+Indexes are declared using the syntax:
+
+[`#[table(index(name = my_index, btree(columns = [a, b, c]))]`](macro@crate::table#index).
+
+Multiple indexes can be declared, separated by commas.
+
+Single-column indices can also be declared using the
+
+[`#[index(btree)]`](macro@crate::table#indexbtree)
+
+column attribute.
 
 Any index supports getting a [`BTreeIndex`] using [`ctx`](crate::ReducerContext)`.db.{table}().{index}()`. For example,
     `ctx.db.people().name()`.
@@ -439,7 +468,7 @@ maintenance tasks. See [Scheduled Reducers](macro@crate::reducer#scheduled-reduc
 
 When you `spacetime publish` a module that has already been published using `spacetime publish <DATABASE_IDENTITY>`,
 SpacetimeDB attempts to automatically migrate your existing database to the new schema. (The "schema" is just the collection
-of tables you've declared in your code.) This form of migration is very limited and only supports a few kinds of changes.
+of tables and reducers you've declared in your code, together with the types they depend on.) This form of migration is very limited and only supports a few kinds of changes.
 On the plus side, automatic migrations usually don't break clients. The situations that may break clients are documented below.
 
 The following changes are always allowed and never breaking:
