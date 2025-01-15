@@ -8,9 +8,9 @@ use crate::plan::{
 };
 use spacetimedb_expr::StatementSource;
 use spacetimedb_lib::AlgebraicValue;
-use spacetimedb_primitives::{ColId, IndexId};
+use spacetimedb_primitives::{ColId, ConstraintId, IndexId};
 use spacetimedb_schema::def::ConstraintData;
-use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, TableSchema};
+use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::BinOp;
 
 fn range_to_op(lower: &Bound<AlgebraicValue>, upper: &Bound<AlgebraicValue>) -> BinOp {
@@ -149,10 +149,34 @@ struct PrintSarg<'a> {
     prefix: &'a [(ColId, AlgebraicValue)],
 }
 
+/// A pretty printer for objects that could have a empty name
+pub enum PrintName<'a> {
+    Named { object: &'a str, name: &'a str },
+    Id { object: &'a str, id: usize },
+}
+
+impl<'a> PrintName<'a> {
+    fn new(object: &'a str, id: usize, name: &'a str) -> Self {
+        if name.is_empty() {
+            Self::Id { object, id }
+        } else {
+            Self::Named { object, name }
+        }
+    }
+
+    fn index(index_id: IndexId, index_name: &'a str) -> Self {
+        Self::new("Index", index_id.idx(), index_name)
+    }
+
+    fn constraint(constraint_id: ConstraintId, constraint_name: &'a str) -> Self {
+        Self::new("Constraint", constraint_id.idx(), constraint_name)
+    }
+}
+
 /// A pretty printer for indexes
-pub enum PrintIndex<'a> {
-    Named(&'a str, Vec<&'a ColumnSchema>),
-    Id(IndexId, Vec<&'a ColumnSchema>),
+pub struct PrintIndex<'a> {
+    name: PrintName<'a>,
+    cols: Vec<Field<'a>>,
 }
 
 impl<'a> PrintIndex<'a> {
@@ -161,13 +185,15 @@ impl<'a> PrintIndex<'a> {
             .index_algorithm
             .columns()
             .iter()
-            .map(|x| table.get_column(x.idx()).unwrap())
+            .map(|x| Field {
+                table: table.table_name.as_ref(),
+                field: table.get_column(x.idx()).unwrap().col_name.as_ref(),
+            })
             .collect_vec();
 
-        if idx.index_name.is_empty() {
-            Self::Id(idx.index_id, cols)
-        } else {
-            Self::Named(&idx.index_name, cols)
+        Self {
+            name: PrintName::index(idx.index_id, &idx.index_name),
+            cols,
         }
     }
 }
@@ -196,12 +222,13 @@ pub enum Line<'a> {
     },
     IxScan {
         table_name: &'a str,
-        index: PrintIndex<'a>,
-        label: Label,
+        index: PrintName<'a>,
         ident: u16,
     },
     IxJoin {
         semi: &'a Semi,
+
+        rhs: String,
         ident: u16,
     },
     HashJoin {
@@ -351,8 +378,7 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
 
             lines.add(Line::IxScan {
                 table_name: &idx.schema.table_name,
-                index: PrintIndex::new(index, &idx.schema),
-                label: *label,
+                index: PrintName::index(idx.index_id, &index.index_name),
                 ident,
             });
 
@@ -364,8 +390,13 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
         }
         PhysicalPlan::IxJoin(idx, semi) => {
             lines.add_table(idx.rhs_label, &idx.rhs);
-
-            lines.add(Line::IxJoin { semi, ident });
+            //let lhs = lines.labels.table_by_label(&idx.lhs_field.label).unwrap();
+            let rhs = lines.labels.table_by_label(&idx.rhs_label).unwrap();
+            lines.add(Line::IxJoin {
+                semi,
+                ident,
+                rhs: rhs.name.to_string(),
+            });
 
             eval_plan(lines, &idx.lhs, ident + 4);
 
@@ -548,19 +579,20 @@ impl<'a> fmt::Display for Field<'a> {
         write!(f, "{}.{}", self.table, self.field)
     }
 }
+
+impl<'a> fmt::Display for PrintName<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PrintName::Named { object, name } => write!(f, "{} {}", object, name),
+            PrintName::Id { object, id } => write!(f, "{} id {}", object, id),
+        }
+    }
+}
+
 impl<'a> fmt::Display for PrintIndex<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let cols = match self {
-            PrintIndex::Named(name, cols) => {
-                write!(f, "Index {name}: ")?;
-                cols
-            }
-            PrintIndex::Id(id, cols) => {
-                write!(f, "Index id {id}: ")?;
-                cols
-            }
-        };
-        write!(f, "({})", cols.iter().map(|x| &x.col_name).join(", "))
+        write!(f, "{}: ", self.name)?;
+        write!(f, "({})", self.cols.iter().join(", "))
     }
 }
 
@@ -592,14 +624,9 @@ impl<'a> fmt::Display for Explain<'a> {
                 Line::IxScan {
                     table_name,
                     index,
-                    label,
                     ident: _,
                 } => {
-                    if self.options.show_schema {
-                        write!(f, "Index Scan using {index} on {table_name}:{}", label.0)?;
-                    } else {
-                        write!(f, "Index Scan using {index} on {table_name}")?;
-                    }
+                    write!(f, "Index Scan using {index} on {table_name}")?;
                 }
                 Line::Filter { expr, ident: _ } => {
                     write!(
@@ -624,12 +651,17 @@ impl<'a> fmt::Display for Explain<'a> {
                     )?;
                 }
 
-                Line::IxJoin { semi, ident: _ } => {
-                    write!(f, "Index Join: {semi:?}")?;
+                Line::IxJoin { semi, rhs, ident: _ } => {
+                    write!(f, "Index Join: {semi:?} on {rhs}")?;
                 }
-                Line::HashJoin { semi, ident: _ } => {
-                    write!(f, "Hash Join: {semi:?}")?;
-                }
+                Line::HashJoin { semi, ident: _ } => match semi {
+                    Semi::All => {
+                        write!(f, "Hash Join")?;
+                    }
+                    semi => {
+                        write!(f, "Hash Join: {semi:?}")?;
+                    }
+                },
                 Line::NlJoin { ident: _ } => {
                     write!(f, "Nested Loop")?;
                 }
@@ -683,14 +715,25 @@ impl<'a> fmt::Display for Explain<'a> {
             writeln!(f, "-------")?;
             writeln!(f, "Schema:")?;
             writeln!(f)?;
-            for (pos, (label, schema)) in self.labels.labels.iter().enumerate() {
-                writeln!(f, "Label {}: {}", schema.name, label)?;
+            for (pos, (_label, schema)) in self.labels.labels.iter().enumerate() {
+                writeln!(f, "Label: {}, TableId:{}", schema.name, schema.table.table_id)?;
                 let columns = schema.table.columns().iter().map(|x| &x.col_name).join(", ");
                 writeln!(f, "  Columns: {columns}")?;
 
-                write!(
+                writeln!(
                     f,
                     "  Indexes: {}",
+                    schema
+                        .table
+                        .indexes
+                        .iter()
+                        .map(|x| PrintIndex::new(x, schema.table))
+                        .join(", ")
+                )?;
+
+                write!(
+                    f,
+                    "  Constraints: {}",
                     schema
                         .table
                         .constraints
@@ -698,7 +741,8 @@ impl<'a> fmt::Display for Explain<'a> {
                         .map(|x| {
                             match &x.data {
                                 ConstraintData::Unique(idx) => format!(
-                                    "Unique({})",
+                                    "{}: Unique({})",
+                                    PrintName::constraint(x.constraint_id, &x.constraint_name),
                                     idx.columns
                                         .iter()
                                         .map(|x| {
