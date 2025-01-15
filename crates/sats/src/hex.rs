@@ -36,6 +36,18 @@ impl<const N: usize> ops::Deref for HexString<N> {
     }
 }
 
+impl<const N: usize> From<&'_ HexString<N>> for String {
+    fn from(hex: &HexString<N>) -> Self {
+        hex.as_str().into()
+    }
+}
+
+impl<const N: usize> From<HexString<N>> for String {
+    fn from(hex: HexString<N>) -> Self {
+        hex.as_str().into()
+    }
+}
+
 impl<const N: usize> AsRef<str> for HexString<N> {
     fn as_ref(&self) -> &str {
         self
