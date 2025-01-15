@@ -51,18 +51,14 @@ pub async fn exec(paths: &SpacetimePaths, args: &ArgMatches) -> anyhow::Result<E
         .arg("--jwt-key-dir")
         .arg(&paths.cli_config_dir)
         .args(args);
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        let err = cmd.exec();
-        Err(err).context(format!("exec failed for {}", bin_path.display()))
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::ExitCodeExt;
-        let status = cmd
-            .status()
-            .with_context(|| format!("failed to run {}", bin_path.display()))?;
-        Ok(ExitCode::from_raw(status.code().unwrap_or(1) as u32))
-    }
+
+    // TODO(noa): use std::os::unix::process::CommandExt::exec() here once we have windows CI
+    // use std::os::unix::process::CommandExt;
+    // let err = cmd.exec();
+    // Err(err).context(format!("exec failed for {}", bin_path.display()))
+
+    let status = cmd
+        .status()
+        .with_context(|| format!("exec failed for {}", bin_path.display()))?;
+    Ok(ExitCode::from(status.code().unwrap_or(1).try_into().unwrap_or(1)))
 }
