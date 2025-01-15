@@ -322,6 +322,7 @@ Any `#[unique]` or `#[primary_key]` column supports getting a [`UniqueColumn`] u
 - [`UniqueColumn::find`]
 - [`UniqueColumn::delete`]
 - [`UniqueColumn::update`]
+<!-- TODO: "current limitations" try_update -->
 
 Notice that updating a row is only possible if a row has a unique column -- there is no `update` method in the base [`Table`] trait. SpacetimeDB has no notion of rows having an "identity" aside from their unique / primary keys.
 
@@ -390,7 +391,11 @@ enum GiveItemError {
 }
 
 #[reducer]
-fn give_player_item(ctx: &ReducerContext, player_id: u64, item_id: u64) -> Result<(), GiveItemError> {
+fn give_player_item(
+    ctx: &ReducerContext,
+    player_id: u64,
+    item_id: u64
+) -> Result<(), GiveItemError> {
     /* ... */
 }
 ```
@@ -431,6 +436,47 @@ Reducers can be scheduled to run repeatedly. This can be used to implement timer
 maintenance tasks. See [Scheduled Reducers](macro@crate::reducer#scheduled-reducers).
 
 ## Automatic migrations
+
+When you `spacetime publish` a module that has already been published using `spacetime publish <DATABASE_IDENTITY>`,
+SpacetimeDB attempts to automatically migrate your existing database to the new schema. (The "schema" is just the collection
+of tables you've declared in your code.) This form of migration is very limited and only supports a few kinds of changes.
+On the plus side, automatic migrations don't require clients to recompile their code. Often, they don't require clients to reconnect to the server! The situations that require re-connection are documented below.
+
+The following changes are always allowed and do not require re-connections:
+
+<!-- TODO: everything here should be smoke-tested. -->
+
+- ✅ **Adding tables**. Non-updated clients will not be able to see the new tables until they are reconnected.
+- ✅ **Adding indexes**.
+- ✅ **Removing `#[unique]` and `#[primary_key]` annotations.**
+- ✅ **Adding or removing `#[autoinc]` annotations.**
+- ✅ **Changing tables from private to public**.
+- ✅ **Adding reducers**.
+
+The following changes are allowed, but may require re-connection:
+
+- ⚠️ **Changing or removing reducers**. Clients that attempt to call the old version of a changed reducer will receive runtime errors.
+- ⚠️ **Changing tables from public to private**. Clients that are subscribed to a newly-private table will receive runtime errors.
+- ⚠️ **Removing indexes**. This only requires re-connection in some situtations.
+  The specific problem is subscription queries <!-- TODO: clientside link --> involving semijoins, such as:
+    ```text
+    SELECT *
+    FROM Employee
+    WHERE DeptName IN (
+    SELECT DeptName
+    FROM Dept
+    )
+    ```
+    For performance reasons, SpacetimeDB will only allow this kind of subscription query if there are indexes on `DeptName.Dept` and `Employee.Dept`. <!-- TODO: I think. --> Removing either of these indexes will result in this subscription query being invalidated, resulting in client-side runtime errors.
+
+The following changes are forbidden without a manual migration:
+
+- ❌ **Removing tables**.
+- ❌ **Changing the columns of a table**. This includes changing the order of columns of a table.
+- ❌ **Changing whether a table is used for [scheduling](#scheduled-reducers).** <!-- TODO: update this if we ever actually implement it... -->
+- ❌ **Adding `#[unique]` or `#[primary_key]` constraints.** This could result in existing tables being in an invalid state.
+
+Currently, manual migration support is limited. The `spacetime publish --clear-database <DATABASE_IDENTITY>` command can be used to **COMPLETELY DELETE** and reinitialize your database, but naturally it should be used with EXTREME CAUTION.
 
 [macro library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/bindings-macro
 [module library]: https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/lib
