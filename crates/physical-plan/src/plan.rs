@@ -1255,18 +1255,18 @@ Seq Scan on t
             &db,
             sql,
             expect![[r#"
-                Index Join: Rhs
-                  -> Index Join: Rhs
-                      -> Index Join: Rhs
-                          -> Index Scan using Index id 0: (identity) on u
-                            -> Index Cond: (u.identity = U64(5))
-                        -> Inner Unique: true
-                        -> Index Cond: (u.entity_id = p.entity_id)
-                    -> Inner Unique: false
-                    -> Index Cond: (p.chunk = q.chunk)
-                  Inner Unique: true
-                  Index Cond: (q.entity_id = b.entity_id)
-                  Output: b.entity_id, b.misc"#]],
+Index Join: Rhs on b
+  -> Index Join: Rhs on q
+      -> Index Join: Rhs on p
+          -> Index Scan using Index id 0 on u
+            -> Index Cond: (u.identity = U64(5))
+        -> Inner Unique: true
+        -> Index Cond: (u.entity_id = p.entity_id)
+    -> Inner Unique: false
+    -> Index Cond: (p.chunk = q.chunk)
+  Inner Unique: true
+  Index Cond: (q.entity_id = b.entity_id)
+  Output: b.entity_id, b.misc"#]],
         );
 
         let lp = parse_and_type_sub(sql, &db).unwrap();
@@ -1464,10 +1464,10 @@ Seq Scan on t
             &db,
             sql,
             expect![[r#"
-Hash Join: All
-  -> Hash Join: All
-      -> Hash Join: All
-          -> Hash Join: All
+Hash Join
+  -> Hash Join
+      -> Hash Join
+          -> Hash Join
               -> Seq Scan on m
               -> Seq Scan on n
             -> Inner Unique: false
@@ -1661,7 +1661,7 @@ Hash Join: All
             sql,
             expect![
                 r#"
-Index Scan using Index id 2: (x, y, z) on t
+Index Scan using Index id 2 on t
   Index Cond: (t.z = U8(5), t.x = U8(3), t.y = U8(4))
   Output: t.w, t.x, t.y, t.z"#
             ],
@@ -1810,21 +1810,23 @@ Index Scan using Index id 2: (x, y, z) on t
             "SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1",
             expect![
                 r#"
-                Query: SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1
-                Nested Loop
-                  -> Index Scan using Index id 0: (employee) on m:1
-                    -> Index Cond: (m.employee = U64(1))
-                  -> Seq Scan on p:2
-                  Output: m.employee, m.manager
-                -------
-                Schema:
+Query: SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1
+Nested Loop
+  -> Index Scan using Index id 0 on m
+    -> Index Cond: (m.employee = U64(1))
+  -> Seq Scan on p:2
+  Output: m.employee, m.manager
+-------
+Schema:
 
-                Label m: 1
-                  Columns: employee, manager
-                  Indexes: Unique(m.employee)
-                Label p: 2
-                  Columns: id, name
-                  Indexes: Unique(p.id)"#
+Label: m, TableId:1
+  Columns: employee, manager
+  Indexes: Index id 0: (m.employee), Index id 1: (m.manager)
+  Constraints: Constraint id 0: Unique(m.employee)
+Label: p, TableId:3
+  Columns: id, name
+  Indexes: Index id 0: (p.id)
+  Constraints: Constraint id 0: Unique(p.id)"#
             ],
         );
     }
@@ -1918,9 +1920,9 @@ Index Scan using Index id 2: (x, y, z) on t
             &db,
             "SELECT m.* FROM m WHERE employee = 1",
             expect![[r#"
-                Index Scan using Index id 0: (employee) on m
-                  Index Cond: (m.employee = U64(1))
-                  Output: m.employee, m.manager"#]],
+Index Scan using Index id 0 on m
+  Index Cond: (m.employee = U64(1))
+  Output: m.employee, m.manager"#]],
         );
     }
 
@@ -1947,7 +1949,7 @@ Index Scan using Index id 2: (x, y, z) on t
             &db,
             "SELECT p.* FROM m JOIN p ON m.employee = p.id where m.employee = 1",
             expect![[r#"
-                Hash Join: All
+                Hash Join
                   -> Seq Scan on m
                   -> Seq Scan on p
                   Inner Unique: false
@@ -1965,11 +1967,11 @@ Index Scan using Index id 2: (x, y, z) on t
             &db,
             "SELECT p.* FROM m JOIN p ON m.employee = p.id",
             expect![[r#"
-                Index Join: Rhs
-                  -> Seq Scan on m
-                  Inner Unique: true
-                  Index Cond: (m.employee = p.id)
-                  Output: p.id, p.name"#]],
+Index Join: Rhs on p
+  -> Seq Scan on m
+  Inner Unique: true
+  Index Cond: (m.employee = p.id)
+  Output: p.id, p.name"#]],
         );
     }
 }
