@@ -31,23 +31,36 @@ function validatePathsExist(slugToPath: Map<string, string>): void {
   });
 }
 
-// Function to extract links from markdown files with line numbers
-function extractLinksFromMarkdown(filePath: string): { link: string; line: number }[] {
+// Function to extract links and images from markdown files with line numbers
+function extractLinksAndImagesFromMarkdown(filePath: string): { link: string; type: 'image' | 'link'; line: number }[] {
   const fileContent = fs.readFileSync(filePath, 'utf-8');
   const lines = fileContent.split('\n');
-  const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g; // Matches standard Markdown links
+  const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g; // Matches image links in Markdown
 
-  const links: { link: string; line: number }[] = [];
+  const linksAndImages: { link: string; type: 'image' | 'link'; line: number }[] = [];
+  const imageSet = new Set<string>(); // To store links that are classified as images
+
   lines.forEach((lineContent, index) => {
     let match: RegExpExecArray | null;
+
+    // Extract image links and add them to the imageSet
+    while ((match = imageRegex.exec(lineContent)) !== null) {
+      const link = match[2];
+      linksAndImages.push({ link, type: 'image', line: index + 1 });
+      imageSet.add(link);
+    }
+
+    // Extract standard links
     while ((match = linkRegex.exec(lineContent)) !== null) {
-      links.push({ link: match[2], line: index + 1 }); // Add 1 to make line numbers 1-based
+      const link = match[2];
+      linksAndImages.push({ link, type: 'link', line: index + 1 });
     }
   });
 
-  return links;
+  // Filter out links that exist as images
+  return linksAndImages.filter(item => !(item.type === 'link' && imageSet.has(item.link)));
 }
-
 // Function to resolve relative links using slugs
 function resolveLink(link: string, currentSlug: string): string {
   if (link.startsWith('#')) {
@@ -66,30 +79,9 @@ function resolveLink(link: string, currentSlug: string): string {
   return resolvedSlug.startsWith('/docs') ? resolvedSlug : `/docs${resolvedSlug}`;
 }
 
-// Function to extract headings from a markdown file
-function extractHeadingsFromMarkdown(filePath: string): string[] {
-  if (!fs.existsSync(filePath) || !fs.lstatSync(filePath).isFile()) {
-    return []; // Return an empty list if the file does not exist or is not a file
-  }
-
-  const fileContent = fs.readFileSync(filePath, 'utf-8');
-  const headingRegex = /^(#{1,6})\s+(.*)$/gm; // Match markdown headings like # Heading
-  const headings: string[] = [];
-  let match: RegExpExecArray | null;
-
-  const slugger = new GitHubSlugger();
-  while ((match = headingRegex.exec(fileContent)) !== null) {
-    const heading = match[2].trim(); // Extract the heading text
-    const slug = slugger.slug(heading); // Slugify the heading text
-    headings.push(slug);
-  }
-
-  return headings;
-}
-
-// Function to check if the links in .md files match the slugs in nav.ts and validate fragments
+// Function to check if the links in .md files match the slugs in nav.ts and validate fragments/images
 function checkLinks(): void {
-  const brokenLinks: { file: string; link: string; line: number }[] = [];
+  const brokenLinks: { file: string; link: string; type: 'image' | 'link'; line: number }[] = [];
   let totalFiles = 0;
   let totalLinks = 0;
   let validLinks = 0;
@@ -97,7 +89,6 @@ function checkLinks(): void {
   let totalFragments = 0;
   let validFragments = 0;
   let invalidFragments = 0;
-  let currentFileFragments = 0;
 
   // Extract the slug-to-path mapping from nav.ts
   const slugToPath = extractSlugToPathMap(nav);
@@ -122,12 +113,12 @@ function checkLinks(): void {
   totalFiles = mdFiles.length;
 
   mdFiles.forEach((file) => {
-    const links = extractLinksFromMarkdown(file);
-    totalLinks += links.length;
+    const linksAndImages = extractLinksAndImagesFromMarkdown(file);
+    totalLinks += linksAndImages.length;
 
     const currentSlug = pathToSlug.get(file) || '';
 
-    links.forEach(({ link, line }) => {
+    linksAndImages.forEach(({ link, type, line }) => {
       // Exclude external links (starting with http://, https://, mailto:, etc.)
       if (/^([a-z][a-z0-9+.-]*):/.test(link)) {
         return; // Skip external links
@@ -140,10 +131,23 @@ function checkLinks(): void {
         }
       }
 
-
       // Resolve the link
       const resolvedLink = resolveLink(link, currentSlug);
-      
+
+      if (type === 'image') {
+        // Validate image paths
+        const normalizedLink = resolvedLink.startsWith('/') ? resolvedLink.slice(1) : resolvedLink;
+        const imagePath = path.resolve(__dirname, '../', normalizedLink);
+
+        if (!fs.existsSync(imagePath)) {
+          brokenLinks.push({ file, link: resolvedLink, type: 'image', line });
+          invalidLinks += 1;
+        } else {
+          validLinks += 1;
+        }
+        return;
+      }
+
       // Split the resolved link into base and fragment
       const [baseLink, fragmentRaw] = resolvedLink.split('#');
       const fragment: string | null = fragmentRaw || null;
@@ -154,7 +158,7 @@ function checkLinks(): void {
 
       // Check if the base link matches a valid slug
       if (!validSlugs.includes(baseLink)) {
-        brokenLinks.push({ file, link: resolvedLink, line });
+        brokenLinks.push({ file, link: resolvedLink, type: 'link', line });
         invalidLinks += 1;
         return;
       } else {
@@ -168,14 +172,11 @@ function checkLinks(): void {
           const targetHeadings = extractHeadingsFromMarkdown(targetFile);
 
           if (!targetHeadings.includes(fragment)) {
-            brokenLinks.push({ file, link: resolvedLink, line });
+            brokenLinks.push({ file, link: resolvedLink, type: 'link', line });
             invalidFragments += 1;
             invalidLinks += 1;
           } else {
             validFragments += 1;
-            if (baseLink === currentSlug) {
-              currentFileFragments += 1;
-            }
           }
         }
       }
@@ -183,29 +184,50 @@ function checkLinks(): void {
   });
 
   if (brokenLinks.length > 0) {
-    console.error(`\nFound ${brokenLinks.length} broken links:`);
-    brokenLinks.forEach(({ file, link, line }) => {
-      console.error(`File: ${file}:${line}, Link: ${link}`);
+    console.error(`\nFound ${brokenLinks.length} broken links/images:`);
+    brokenLinks.forEach(({ file, link, type, line }) => {
+      const typeLabel = type === 'image' ? 'Image' : 'Link';
+      console.error(`${typeLabel}: ${file}:${line}, Path: ${link}`);
     });
   } else {
-    console.log('All links are valid!');
+    console.log('All links and images are valid!');
   }
 
   // Print statistics
-  console.log('\n=== Link Validation Statistics ===');
+  console.log('\n=== Validation Statistics ===');
   console.log(`Total markdown files processed: ${totalFiles}`);
-  console.log(`Total links processed: ${totalLinks}`);
-  console.log(`  Valid links: ${validLinks}`);
-  console.log(`  Invalid links: ${invalidLinks}`);
+  console.log(`Total links/images processed: ${totalLinks}`);
+  console.log(`  Valid: ${validLinks}`);
+  console.log(`  Invalid: ${invalidLinks}`);
   console.log(`Total links with fragments processed: ${totalFragments}`);
   console.log(`  Valid links with fragments: ${validFragments}`);
   console.log(`  Invalid links with fragments: ${invalidFragments}`);
-  console.log(`Fragments referring to the current file: ${currentFileFragments}`);
-  console.log('=================================');
+  console.log('===============================');
 
   if (brokenLinks.length > 0) {
     process.exit(1); // Exit with an error code if there are broken links
   }
+}
+
+// Function to extract headings from a markdown file
+function extractHeadingsFromMarkdown(filePath: string): string[] {
+  if (!fs.existsSync(filePath) || !fs.lstatSync(filePath).isFile()) {
+    return []; // Return an empty list if the file does not exist or is not a file
+  }
+
+  const fileContent = fs.readFileSync(filePath, 'utf-8');
+  const headingRegex = /^(#{1,6})\s+(.*)$/gm; // Match markdown headings like # Heading
+  const headings: string[] = [];
+  let match: RegExpExecArray | null;
+
+  const slugger = new GitHubSlugger();
+  while ((match = headingRegex.exec(fileContent)) !== null) {
+    const heading = match[2].trim(); // Extract the heading text
+    const slug = slugger.slug(heading); // Slugify the heading text
+    headings.push(slug);
+  }
+
+  return headings;
 }
 
 // Function to get all markdown files recursively
