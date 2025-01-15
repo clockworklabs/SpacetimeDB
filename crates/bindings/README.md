@@ -203,7 +203,7 @@ This macro is applied to a Rust struct with named fields. All of the fields of t
 The resulting type is used to store rows of the table. It is normal struct type. Row values are not special -- operations on row types do not, by themselves, modify the table. Instead, a [`ReducerContext`](#reducercontext) is needed to get a handle to the table.
 
 ```no_run
-use spacetimedb::{table, reducer, ReducerContext, Table};
+use spacetimedb::{table, reducer, ReducerContext, Table, UniqueColumn};
 
 /// A `Person` is a row of the table `people`.
 #[table(name = people, public)]
@@ -241,12 +241,12 @@ fn do_something(ctx: &ReducerContext) {
     // If we update it:
     person.name = "Joanna Average".to_string();
     // Our copy is now updated, but the database's copy is UNCHANGED.
-    // To push our change through, we can call an `update_by_...` function:
+    // To push our change through, we can call `UniqueColumn::update()`:
     person = people.id().update(person);
     // Now the database and our copy are in sync again.
     
-    // We can also delete the row in the database using a `delete_by_...`.
-    people.delete_by_id(person.id);
+    // We can also delete the row in the database using `UniqueColumn::delete()`.
+    people.id().delete(&person.id);
 }
 ```
 
