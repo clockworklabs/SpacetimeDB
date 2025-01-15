@@ -60,7 +60,7 @@ You can learn more the `table` macro in our [Rust module reference](/docs/module
 
 ### Creating Entities
 
-Next, we're going to define a new `SpacetimeType` called `DbVector3` which we're going to use to store positions. The difference between a `#[derive(SpacetimeType)]` and a `#[spacetimedb(table)]` is that tables actually store data, whereas the deriving `SpacetimeType` just allows you to create a new column of that type in a SpacetimeDB table. Therefore, `DbVector3` is only a type, and does not define a table.
+Next, we're going to define a new `SpacetimeType` called `DbVector2` which we're going to use to store positions. The difference between a `#[derive(SpacetimeType)]` and a `#[spacetimedb(table)]` is that tables actually store data, whereas the deriving `SpacetimeType` just allows you to create a new column of that type in a SpacetimeDB table. Therefore, `DbVector2` is only a type, and does not define a table.
 
 **Append to the bottom of lib.rs:**
 
@@ -266,7 +266,7 @@ This will also generate a file in the `client/Assets/autogen/_Globals` directory
 > }
 > ```
 >
-> Add this snippet to the top of your `GameManager.cs` file in your Unity project. This will hopefully be resolved in Unity soon.
+> Add this snippet to the bottom of your `GameManager.cs` file in your Unity project. This will hopefully be resolved in Unity soon.
 
 ### Connecting to the Module
 

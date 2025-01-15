@@ -55,7 +55,7 @@ The SpacetimeDB Unity SDK provides helpful tools for integrating SpacetimeDB int
 ### Create the GameManager Script
 
 1. In the Unity **Project** window, go to the folder where you want to keep your scripts (e.g., `Scripts` folder).
-2. **Right-click** in the folder, then select **Create > C# Script**.
+2. **Right-click** in the folder, then select `Create > C# Script` or in Unity 6 `MonoBehavior Script`.
 3. Name the script `GameManager`.
 
 The `GameManager` script will be where we will put the high level initialization and coordination logic for our game.

@@ -241,7 +241,7 @@ fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: u32) -> Result<E
         ctx,
         player_id,
         START_PLAYER_MASS,
-        DbVector2::new(x, y),
+        DbVector2 { x, y },
         ctx.timestamp,
     )
 }
@@ -369,7 +369,7 @@ Rename the new game object in the scene to `CirclePrefab`. Next in the `Inspecto
 
 Next repeat that same process for the `FoodPrefab` and `Food Controller` component. 
 
-In the `Project` view, double click the `CirclePrefab` to bring it up in the scene view. Right-click anywhere in the hierarchy and navigate to
+In the `Project` view, double click the `CirclePrefab` to bring it up in the scene view. Right-click anywhere in the hierarchy and navigate to:
 
 ```
 UI > Text - Text Mesh Pro
@@ -383,7 +383,7 @@ Finally we need to make the `PlayerPrefab`. In the hierarchy window, create a ne
 Create Empty
 ```
 
-Rename the game object to `PlayerPrefab`. Next in the `Inspector` window click the `Add Component` button and add the `Circle Controller` script component that we just created. Next drag the object into the `Project` folder. Once the prefab file is created, delete the `PlayerPrefab` object from the scene.
+Rename the game object to `PlayerPrefab`. Next in the `Inspector` window click the `Add Component` button and add the `Player Controller` script component that we just created. Next drag the object into the `Project` folder. Once the prefab file is created, delete the `PlayerPrefab` object from the scene.
 
 #### EntityController
 
