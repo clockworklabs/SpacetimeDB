@@ -440,24 +440,25 @@ maintenance tasks. See [Scheduled Reducers](macro@crate::reducer#scheduled-reduc
 When you `spacetime publish` a module that has already been published using `spacetime publish <DATABASE_IDENTITY>`,
 SpacetimeDB attempts to automatically migrate your existing database to the new schema. (The "schema" is just the collection
 of tables you've declared in your code.) This form of migration is very limited and only supports a few kinds of changes.
-On the plus side, automatic migrations don't require clients to recompile their code. Often, they don't require clients to reconnect to the server! The situations that require re-connection are documented below.
+On the plus side, automatic migrations usually don't break clients. The situations that may break clients are documented below.
 
-The following changes are always allowed and do not require re-connections:
+The following changes are always allowed and never breaking:
 
 <!-- TODO: everything here should be smoke-tested. -->
 
-- ✅ **Adding tables**. Non-updated clients will not be able to see the new tables until they are reconnected.
+- ✅ **Adding tables**. Non-updated clients will not be able to see the new tables.
 - ✅ **Adding indexes**.
-- ✅ **Removing `#[unique]` and `#[primary_key]` annotations.**
 - ✅ **Adding or removing `#[autoinc]` annotations.**
 - ✅ **Changing tables from private to public**.
 - ✅ **Adding reducers**.
+- ✅ **Removing `#[unique]`  annotations.**
 
-The following changes are allowed, but may require re-connection:
+The following changes are allowed, but may break clients:
 
 - ⚠️ **Changing or removing reducers**. Clients that attempt to call the old version of a changed reducer will receive runtime errors.
 - ⚠️ **Changing tables from public to private**. Clients that are subscribed to a newly-private table will receive runtime errors.
-- ⚠️ **Removing indexes**. This only requires re-connection in some situtations.
+- ⚠️ **Removing `#[primary_key]` annotations**. Non-updated clients will still use the old `#[primary_key]` as a unique key in their local cache, which can result in non-deterministic behavior when updates are received.
+- ⚠️ **Removing indexes**. This is only breaking in some situtations.
   The specific problem is subscription queries <!-- TODO: clientside link --> involving semijoins, such as:
     ```text
     SELECT *
