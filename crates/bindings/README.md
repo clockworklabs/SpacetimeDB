@@ -497,7 +497,7 @@ The following changes are allowed, but may break clients:
     FROM Dept
     )
     ```
-    For performance reasons, SpacetimeDB will only allow this kind of subscription query if there are indexes on `DeptName.Dept` and `Employee.Dept`. <!-- TODO: I think. --> Removing either of these indexes will result in this subscription query being invalidated, resulting in client-side runtime errors.
+    For performance reasons, SpacetimeDB will only allow this kind of subscription query if there are indexes on `DeptName.Dept` and `Employee.Dept`. <!-- TODO: I think. --> Removing either of these indexes will invalidate this subscription query, resulting in client-side runtime errors.
 
 The following changes are forbidden without a manual migration:
 
