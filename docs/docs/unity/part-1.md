@@ -1,4 +1,5 @@
-# Unity Tutorial - Part 1 - Setup
+# Unity Tutorial
+## Part 1 - Setup
 
 ![Unity Tutorial Hero Image](./part-1-hero-image.png)
 
