@@ -77,207 +77,6 @@ pub use spacetimedb_bindings_macro::duration;
 #[doc(inline, hidden)] // TODO: RLS filters are currently unimplemented, and are not enforced.
 pub use spacetimedb_bindings_macro::client_visibility_filter;
 
-/*
-### Generated table functions
-
-<!-- TODO: rewrite this section. -->
-
-We'll work off these structs to see what functions SpacetimeDB generates:
-
-This table has a plain old column.
-
-```rust
-#[table(name = ordinary, public)]
-struct Ordinary {
-    ordinary_field: u64,
-}
-```
-
-This table has a unique column. Every row in the `Unique` table must have distinct values of the `unique_field` column. Attempting to insert a row with a duplicate value will fail.
-
-```rust
-#[table(name = unique, public)]
-struct Unique {
-    // A unique column:
-    #[unique]
-    unique_field: u64,
-}
-```
-
-This table has an automatically incrementing column. SpacetimeDB automatically provides an incrementing sequence of values for this field, and sets the field to that value when you insert the row.
-
-```rust
-#[table(name = autoinc, public)]
-struct Autoinc {
-    #[autoinc]
-    autoinc_field: u64,
-}
-```
-
-These attributes can be combined, to create an automatically assigned ID usable for filtering.
-
-```rust
-#[table(name = identity, public)]
-struct Identity {
-    #[autoinc]
-    #[unique]
-    id_field: u64,
-}
-```
-
-#### Insertion
-
-We'll talk about insertion first, as there a couple of special semantics to know about.
-
-When we define |Ordinary| as a SpacetimeDB table, we get the ability to insert into it with the generated `ctx.db.ordinary().insert(..)` method.
-
-Inserting takes a single argument, the row to insert. When there are no unique fields in the row, the return value is the inserted row.
-
-```rust
-#[reducer]
-fn insert_ordinary(ctx: &ReducerContext, value: u64) {
-    let ordinary = Ordinary { ordinary_field: value };
-    let result = ctx.db.ordinary().insert(ordinary);
-    assert_eq!(ordinary.ordinary_field, result.ordinary_field);
-}
-```
-
-When there is a unique column constraint on the table, insertion can fail if a uniqueness constraint is violated.
-
-If we insert two rows which have the same value of a unique column, the second will fail.
-
-```rust
-#[reducer]
-fn insert_unique(ctx: &ReducerContext, value: u64) {
-    let result = ctx.db.unique().insert(Unique { unique_field: value });
-    assert!(result.is_ok());
-
-    let result = ctx.db.unique().insert(Unique { unique_field: value });
-    assert!(result.is_err());
-}
-```
-
-When inserting a table with an `#[autoinc]` column, the database will automatically overwrite whatever we give it with an atomically increasing value.
-
-The returned row has the `autoinc` column set to the value that was actually written into the database.
-
-```rust
-#[reducer]
-fn insert_autoinc(ctx: &ReducerContext) {
-    for i in 1..=10 {
-        // These will have values of 1, 2, ..., 10
-        // at rest in the database, regardless of
-        // what value is actually present in the
-        // insert call.
-        let actual = ctx.db.autoinc().insert(Autoinc { autoinc_field: 23 })
-        assert_eq!(actual.autoinc_field, i);
-    }
-}
-
-#[reducer]
-fn insert_id(ctx: &ReducerContext) {
-    for _ in 0..10 {
-        // These also will have values of 1, 2, ..., 10.
-        // There's no collision and silent failure to insert,
-        // because the value of the field is ignored and overwritten
-        // with the automatically incremented value.
-        ctx.db.identity().insert(Identity { id_field: 23 })
-    }
-}
-```
-
-#### Iterating
-
-Given a table, we can iterate over all the rows in it.
-
-```rust
-#[table(name = person, public)]
-struct Person {
-    #[unique]
-    id: u64,
-
-    #[index(btree)]
-    age: u32,
-    name: String,
-    address: String,
-}
-```
-
-// Every table structure has a generated iter function, like:
-
-```rust
-ctx.db.my_table().iter()
-```
-
-`iter()` returns a regular old Rust iterator, giving us a sequence of `Person`. The database sends us over rows, one at a time, for each time through the loop. This means we get them by value, and own the contents of `String` fields and so on.
-
-```rust
-# #[table(name = person, public)]
-# struct Person {
-#     #[unique]
-#     id: u64,
-#
-#     #[index(btree)]
-#     age: u32,
-#     name: String,
-#     address: String,
-# }
-#[reducer]
-fn iteration(ctx: &ReducerContext) {
-    let mut addresses = HashSet::new();
-
-    for person in ctx.db.person().iter() {
-        addresses.insert(person.address);
-    }
-
-    for address in addresses.iter() {
-        println!("{address}");
-    }
-}
-```
-
-#### Filtering
-
-Often, we don't need to look at the entire table, and instead are looking for rows with specific values in certain columns.
-
-Our `Person` table has a unique id column, so we can filter for a row matching that ID. Since it is unique, we will find either 0 or 1 matching rows in the database. This gets represented naturally as an `Option<Person>` in Rust. SpacetimeDB automatically creates and uses indexes for filtering on unique columns, so it is very efficient.
-
-The name of the filter method just corresponds to the column name.
-
-```rust
-#[reducer]
-fn filtering(ctx: &ReducerContext, id: u64) {
-    match ctx.db.person().id().find(id) {
-        Some(person) => println!("Found {person}"),
-        None => println!("No person with id {id}"),
-    }
-}
-```
-
-Our `Person` table also has an index on its `age` column. Unlike IDs, ages aren't unique. Filtering for every person who is 21, then, gives us an `Iterator<Item = Person>` rather than an `Option<Person>`.
-
-```rust
-#[reducer]
-fn filtering_non_unique(ctx: &ReducerContext) {
-    for person in ctx.db.person().age().filter(21u32) {
-        println!("{} has turned 21", person.name);
-    }
-}
-```
-
-#### Deleting
-
-Like filtering, we can delete by an indexed or unique column instead of the entire row.
-
-```rust
-#[reducer]
-fn delete_id(ctx: &ReducerContext, id: u64) {
-    ctx.db.person().id().delete(id)
-}
-```
-
- */
-
 /// Declares a table with a particular row type.
 ///
 /// This attribute is applied to a struct type with named fields.
@@ -300,7 +99,7 @@ fn delete_id(ctx: &ReducerContext, id: u64) {
 ///         index(name = popularity_and_username, btree(columns = [popularity, username])),
 /// )]
 /// pub struct User {
-///     #[auto_inc]
+///     #[autoinc]
 ///     #[primary_key]
 ///     pub id: u32,
 ///     #[unique]
@@ -362,116 +161,187 @@ fn delete_id(ctx: &ReducerContext, id: u64) {
 /// Multiple `table` annotations can be present on the same type. This will generate
 /// multiple tables of the same row type, but with different names.
 ///
-/// * `name = my_table`
+/// ### `name`
 ///
-///    Specify the name of the table in the database, if you want it to be different from
-///    the name of the struct. The name can be any valid Rust identifier.
+/// Specify the name of the table in the database, if you want it to be different from
+/// the name of the struct. The name can be any valid Rust identifier.
 ///
-///    The table name is used to get a handle to the table from a [`ReducerContext`].
-///    For a table *table*, use `ctx.db.{table}()` to do this.
-///    For example:
-///    ```ignore
-///    let users: users__TableHandle = ctx.db.users();
-///    ```
+/// The table name is used to get a handle to the table from a [`ReducerContext`].
+/// For a table *table*, use `ctx.db.{table}()` to do this.
+/// For example:
+/// ```ignore
+///  #[table(name = users)]
+///  pub struct User {
+///      #[autoinc]
+///      #[primary_key]
+///      pub id: u32,
+///      #[unique]
+///      pub username: String,
+///      #[index(btree)]
+///      pub popularity: u32,
+///  }
+///  #[reducer]
+///  fn demo(ctx: &ReducerContext) {
+///      let users: users__TableHandle = ctx.db.users();
+///  }
+///  ```
 ///
-/// * `public` and `private`
+/// ### `public` and `private`
 ///
-///    Tables are private by default. This means that clients cannot read their contents
-///    or see that they exist.
+/// Tables are private by default. This means that clients cannot read their contents
+/// or see that they exist.
 ///
-///    If you'd like to make your table publically accessible by clients,
-///    put `public` in the macro arguments (e.g.
-///    `#[spacetimedb::table(public)]`). You can also specify `private` if
-///    you'd like to be specific.
+/// If you'd like to make your table publically accessible by clients,
+/// put `public` in the macro arguments (e.g.
+/// `#[spacetimedb::table(public)]`). You can also specify `private` if
+/// you'd like to be specific.
 ///
-///    This is fully separate from Rust's module visibility
-///    system; `pub struct` or `pub(crate) struct` do not affect the table visibility, only
-///    the visibility of the items in your own source code.
+/// This is fully separate from Rust's module visibility
+/// system; `pub struct` or `pub(crate) struct` do not affect the table visibility, only
+/// the visibility of the items in your own source code.
 ///
-/// * `index(name = my_index, btree(columns = [a, b, c]))`
+/// ### `index(...)`
 ///
-///    You can specify an index on one or more of the table's columns with the above syntax.
-///    You can also just put `#[index(btree)]` on the field itself if you only need
-///    a single-column attribute; see column attributes below.
+/// You can specify an index on one or more of the table's columns with the syntax:
+/// `index(name = my_index, btree(columns = [a, b, c]))`
 ///
-///    Multiple indexes are permitted.
+/// You can also just put `#[index(btree)]` on the field itself if you only need
+/// a single-column attribute; see column attributes below.
 ///
-///    You can use indexes to efficiently [`filter`](crate::BTreeIndex::filter) and
-///    [`delete`](crate::BTreeIndex::delete) rows. This is encapsulated in the struct [`BTreeIndex`].
+/// Multiple indexes are permitted.
 ///
-///    For a table *table* and an index *index*, use:
-///    ```text
-///    ctx.db.{table}().{index}()
-///    ```
-///    to get a [`BTreeIndex`] for a [`ReducerContext`].
+/// You can use indexes to efficiently [`filter`](crate::BTreeIndex::filter) and
+/// [`delete`](crate::BTreeIndex::delete) rows. This is encapsulated in the struct [`BTreeIndex`].
 ///
-///    For example:
-///    ```ignore
+/// For a table *table* and an index *index*, use:
+/// ```text
+/// ctx.db.{table}().{index}()
+/// ```
+/// to get a [`BTreeIndex`] for a [`ReducerContext`].
 ///
-///    let by_id_and_username: spacetimedb::BTreeIndex<_, (u32, String), _> =
-///        ctx.db.users().by_id_and_username();
-///    ```
+/// For example:
+/// ```ignore
 ///
-/// * `scheduled(reducer_name)`
+/// let by_id_and_username: spacetimedb::BTreeIndex<_, (u32, String), _> =
+///     ctx.db.users().by_id_and_username();
+/// ```
 ///
-///    Used to declare a [scheduled reducer](macro@crate::reducer#scheduled-reducers).
-///    
-///    The annotated struct type must have at least the following fields:
-///    - `scheduled_id: u64`
-///    - [`scheduled_at: ScheduleAt`](crate::ScheduleAt)
+/// ### `scheduled(reducer_name)`
+///
+/// Used to declare a [scheduled reducer](macro@crate::reducer#scheduled-reducers).
+///
+/// The annotated struct type must have at least the following fields:
+/// - `scheduled_id: u64`
+/// - [`scheduled_at: ScheduleAt`](crate::ScheduleAt)
 ///
 /// # Column (field) attributes
 ///
-/// * `#[auto_inc]`
+/// ### `#[autoinc]`
 ///
-///    Creates an auto-increment constraint.
+/// Creates an auto-increment constraint.
 ///
-///    When a row is inserted with the annotated field set to `0` (zero),
-///    the sequence is incremented, and this value is used instead.
+/// When a row is inserted with the annotated field set to `0` (zero),
+/// the sequence is incremented, and this value is used instead.
 ///
-///    Can only be used on numeric types.
+/// Can only be used on numeric types.
 ///
-///    May be combined with indexes or unique constraints.
+/// May be combined with indexes or unique constraints.
 ///
-///    Note that using `#[auto_inc]` on a field does not also imply `#[primary_key]` or `#[unique]`.
-///    If those semantics are desired, those attributes should also be used.
+/// Note that using `#[autoinc]` on a field does not also imply `#[primary_key]` or `#[unique]`.
+/// If those semantics are desired, those attributes should also be used.
 ///
-///    <!-- TODO: What happens if a reducer tries to insert a row that has an already-existing unique
-///               auto-inc column? Like, if the user inserts a row ahead of the auto-inc, then
-///               the auto-inc catches up? -->
+/// <!-- TODO: What happens if a reducer tries to insert a row that has an already-existing unique
+///            auto-inc column? Like, if the user inserts a row ahead of the auto-inc, then
+///            the auto-inc catches up? -->
 ///
-/// * `#[unique]`
+/// ### `#[unique]`
 ///
-///    Creates an unique constraint and index for the annotated field.
+/// Creates an unique constraint and index for the annotated field.
 ///
-///    You can [`find`](crate::UniqueColumn::find), [`update`](crate::UniqueColumn::update),
-///    and [`delete`](crate::UniqueColumn::delete) rows by their unique columns.
-///    This is encapsulated in the struct [`UniqueColumn`].
+/// You can [`find`](crate::UniqueColumn::find), [`update`](crate::UniqueColumn::update),
+/// and [`delete`](crate::UniqueColumn::delete) rows by their unique columns.
+/// This is encapsulated in the struct [`UniqueColumn`].
 ///
-///    For a table *table* and a column *column*, use:
-///    ```text
-///    ctx.db.{table}().{column}()`
-///    ```
-///    to get a [`UniqueColumn`] from a [`ReducerContext`].
+/// For a table *table* and a column *column*, use:
+/// ```text
+/// ctx.db.{table}().{column}()`
+/// ```
+/// to get a [`UniqueColumn`] from a [`ReducerContext`].
 ///
-///    For example:
-///    ```ignore
-///    let by_username: spacetimedb::UniqueColumn<_, String, _> = ctx.db.users().username();
-///    ```
+/// For example:
+/// ```ignore
+/// let by_username: spacetimedb::UniqueColumn<_, String, _> = ctx.db.users().username();
+/// ```
 ///
-/// * `#[primary_key]`
+/// When there is a unique column constraint on the table, insertion can fail if a uniqueness constraint is violated.
+/// If we insert two rows which have the same value of a unique column, the second will fail.
+/// This will be via a panic with [`Table::insert`] or via a `Result::Err` with [`Table::try_insert`].
 ///
-///    Implies `#[unique]`. Also generates additional methods client-side for handling updates to the table.
-///    <!-- TODO: link to client-side documentation. -->
+/// For example:
+/// ```rust
+/// type CountryCode = String;
+/// type NationalBird = String;
 ///
-/// * `#[index(btree)]`
+/// #[table(name = countries)]
+/// struct Country {
+///     #[unique]
+///     code: CountryCode,
+///     national_bird: NationalBird
+/// }
 ///
-///    Creates a single-column index with the specified algorithm.
+/// #[reducer]
+/// fn insert_unique_demo(ctx: &ReducerContext, value: u64) {
+///     let result = ctx.db.countries().try_insert(Country {
+///         code: "AU".into(), national_bird: "Emu".into()
+///     });
+///     assert!(result.is_ok());
 ///
-///    It is an error, and also redundant, to specify this attribute together with `#[unique]`.
-///    Unique constraints implicitly create an index, so you don't need to specify both.
+///     let result = ctx.db.countries().try_insert(Country {
+///         code: "AU".into(), national_bird: "Great Egret".into()
+///         // Whoops, this was Austria's national bird, not Australia's.
+///         // We should have used the country code "AT", not "AU".
+///     });
+///     // since there's already a country in the database with the code "AU",
+///     // SpacetimeDB gives us an error.
+///     assert!(result.is_err());
 ///
-///    The created index has the same name as the column. <!-- TODO(1.0): this may change if we do the unify-index-names PR. -->
+///     // The following line would panic, since we use `insert` rather than `try_insert`.
+///     // let result = ctx.db.countries().insert(Country { code: "CN".into(), national_bird: "Blue Magpie".into() });
+///
+///     // If we wanted to *update* the row for Australia, we can use the `update` method of `UniqueIndex`.
+///     // The following line will succeed:
+///     ctx.db.countries().country_code().update(Country {
+///         code: "AU".into(), national_bird: "Australian Emu".into()
+///     });
+/// }
+/// ```
+///
+/// ### `#[primary_key]`
+///
+/// Implies `#[unique]`. Also generates additional methods client-side for handling updates to the table.
+/// <!-- TODO: link to client-side documentation. -->
+///
+/// ### `#[index(btree)]`
+///
+/// Creates a single-column index with the specified algorithm.
+///
+/// It is an error to specify this attribute together with `#[unique]`.
+/// Unique constraints implicitly create a unique index, which is accessed using the [`UniqueColumn`] struct instead of the
+/// [`BTreeIndex`] struct.
+///
+/// The created index has the same name as the column. <!-- TODO: this may change if we do the unify-index-names PR. -->
+///
+/// For a table *table* and an indexed *column*, use:
+/// ```text
+/// ctx.db.{table}().{column}()
+/// ```
+/// to get a [`BTreeIndex`] from a [`ReducerContext`].
+///
+/// For example:
+///
+/// ```ignore
+/// ctx.db.cities().latitude()
+/// ```
 ///    
 /// # Generated code
 ///
@@ -479,7 +349,7 @@ fn delete_id(ctx: &ReducerContext, id: u64) {
 /// `{name}__TableHandle` implementing [`Table<Row={T}>`](crate::Table), and a trait that allows looking up such a
 /// `{name}Handle` in a [`ReducerContext`].
 ///
-/// The struct `{name}__TableHandle` is public and lives next t
+/// The struct `{name}__TableHandle` is public and lives next to the row struct.
 ///
 /// For each named index declaration, add a method to `{name}__TableHandle` for getting a corresponding
 /// [`BTreeIndex`].
@@ -607,21 +477,21 @@ pub use spacetimedb_bindings_macro::table;
 /// These reducers cannot be called manually
 /// and may not have any parameters except for `ReducerContext`.
 ///
-/// #### `#[spacetimedb::reducer(init)]`
+/// ### `#[spacetimedb::reducer(init)]`
 ///
 /// This reducer is run the first time a module is published
 /// and any time the database is cleared.
 ///
 /// If an error occurs when initializing, the module will not be published.
 ///
-/// #### `#[spacetimedb::reducer(client_connected)]`
+/// ### `#[spacetimedb::reducer(client_connected)]`
 ///
 /// This reducer is run when a client connects to the SpacetimeDB module.
 /// Their identity can be found in the sender value of the `ReducerContext`.
 ///
 /// If an error occurs in the reducer, the client will be disconnected.
 ///
-/// #### `#[spacetimedb::reducer(client_disconnected)]`
+/// ### `#[spacetimedb::reducer(client_disconnected)]`
 ///
 /// This reducer is run when a client disconnects from the SpacetimeDB module.
 /// Their identity can be found in the sender value of the `ReducerContext`.
@@ -629,7 +499,7 @@ pub use spacetimedb_bindings_macro::table;
 /// If an error occurs in the disconnect reducer,
 /// the client is still recorded as disconnected.
 ///
-/// #### `#[spacetimedb::reducer(update)]`
+/// ### `#[spacetimedb::reducer(update)]`
 ///
 /// This reducer is run when the module is updated,
 /// i.e., when publishing a module for a database that has already been initialized.
@@ -743,7 +613,7 @@ pub use spacetimedb_bindings_macro::reducer;
 /// #[spacetimedb::table(name = people)]
 /// struct Person {
 ///    #[unique]
-///    #[auto_inc]
+///    #[autoinc]
 ///    id: u64,
 ///    name: String,
 /// }

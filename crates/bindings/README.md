@@ -1,8 +1,8 @@
 # SpacetimeDB Rust Module Library
 
 <!-- n.b. This file is used as the top-level library documentation in `src/lib.rs`.
-          Some of the links in this file are not resolved when previewing on GitHub,
-          but *are* resolved when compiled by Rustdoc.
+            Some of the links in this file are not resolved when previewing on GitHub,
+            but *are* resolved when compiled by Rustdoc.
 -->
 
 [SpacetimeDB](https://spacetimedb.com/) allows using the Rust language to write server-side applications called **modules**. Modules run **inside** a SQL database. They have direct access to database tables, and expose public functions called **reducers** that can be invoked over the network. Clients connect directly to the database to read data.
@@ -36,9 +36,11 @@ SpacetimeDB modules have two ways to interact with the outside world: tables and
 
 - [Tables](#tables) store data and optionally make it readable by [clients]. 
 
-- [Reducers](#reducers) are functions that can modify data and be invoked by [clients] over the network. They can read and write data in tables, and write to a private debug log.
+- [Reducers](#reducers) are functions that modify data and be invoked by [clients] over the network. They can read and write data in tables, and write to a private debug log.
 
-Both of these can be declared in Rust code:
+These are the only ways for a SpacetimeDB module to interact with the outside world. Calling functions from `std::net` or `std::fs` inside a reducer will result in runtime errors.
+
+Declaring tables and reducers is straightforward:
 
 ```no_run
 use spacetimedb::{table, reducer, ReducerContext, Table};
@@ -56,9 +58,8 @@ fn add_person(ctx: &ReducerContext, id: u32, name: String) {
 }
 ```
 
-Reducers and tables are the only ways for a SpacetimeDB module to interact with the outside world. Calling functions from `std::net` or `std::fs` inside a reducer will result in runtime errors.
 
-Reducers don't return data directly; they can only modify the database. Clients connect directly to the database and use SQL to query [public](#public-and-private-tables) tables. Clients can also open subscriptions to receive streaming updates as the results of a SQL query change.
+Note that reducers don't return data directly; they can only modify the database. Clients connect directly to the database and use SQL to query [public](#public-and-private-tables) tables. Clients can also open subscriptions to receive streaming updates as the results of a SQL query change.
 
 Tables and reducers in Rust modules can use any type that implements the [`SpacetimeType`] trait.
 
@@ -69,17 +70,10 @@ Tables and reducers in Rust modules can use any type that implements the [`Space
 <!-- 
 SpacetimeDB modules are compiled to WebAssembly by `cargo` and administered using the `spacetime` CLI command. Modules run on a server called a [host]. A host can run many modules at a time. You can run your own host, or use a public host administered by [Clockwork Labs](https://clockworklabs.io/). (TODO: remark about SLAs and SKUs once those are finalized?)
 
-SpacetimeDB is a SQL database, and builds on the long tradition of reliability offered by SQL databases. Tables and reducers are built on SQL concepts:
-
-- Tables are SQL database tables with easy-to-use Rust interfaces. They are declared in Rust code using the `#[spacetime::table]` macro. Clients can open read-only subscriptions to [`public`](#public-and-private-tables) tables, and SpacetimeDB will automatically stream updates to them as those tables change. Tables are automatically logged to disk and are durable across system restarts and crashes. Tables can be queried with SQL; SpacetimeDB supports a subset of ANSI:SQL 2011. (TODO: document precisely which subset this is.)
-
-- Reducers are Rust functions decorated with the `#[spacetime::reducer]` macro. Reducers run in [transactions](#transactions) with read-write access to the entire database; if a reducer returns an error or [panic](std::panic!), its modifications to the database will be rolled back. Reducers run on the server, not on the client; they can see information about the [Identity](#identity) and [Address](#address) of their callers, and use this to determine what clients should be allowed to do. (TODO: what SQL transaction level do we implement?)
-
 Tables can store any any Rust type implementing the [`SpacetimeType`, `Serialize`, and `Deserialize`](#spacetimetype) traits; all of these can be be derived at once using `#[derive(SpacetimeType)]`. Similarly, Rust types implementing these traits can be used for reducer arguments.
 
 `Serialize` and `Deserialize` allow types to automatically serialize and deserialize themselves, in a manner similar to [`serde`](https://serde.rs/). `SpacetimeType` allows types to register their internal structure with `SpacetimeDB`. This allows SpacetimeDB to correctly format tables storing these types.
 
-Importantly, the data provided by `SpacetimeType` also enables the `spacetime generate` CLI command. This command can be used to generate bindings to a module in any supported client language. See the documentation on [client SDKs](https://spacetimedb.com/docs/#client) for more information.
 -->
 
 ## Setup
@@ -219,14 +213,14 @@ This macro is applied to a Rust struct with named fields. All of the fields of t
 
 The resulting type is used to store rows of the table. It is normal struct type. Row values are not special -- operations on row types do not, by themselves, modify the table. Instead, a [`ReducerContext`](#reducercontext) is needed to get a handle to the table.
 
-```rust
+```no_run
 use spacetimedb::{table, reducer, ReducerContext, Table};
 
 /// A `Person` is a row of the table `people`.
 #[table(name = people, public)]
 pub struct Person {
     #[primary_key]
-    #[auto_inc]
+    #[autoinc]
     id: u64,
     #[index(btree)]
     name: String,
@@ -259,7 +253,7 @@ fn do_something(ctx: &ReducerContext) {
     person.name = "Joanna Average".to_string();
     // Our copy is now updated, but the database's copy is UNCHANGED.
     // To push our change through, we can call an `update_by_...` function:
-    person = people.update_by_id(person);
+    person = people.id().update(person);
     // Now the database and our copy are in sync again.
     
     // We can also delete the row in the database using a `delete_by_...`.
@@ -267,18 +261,31 @@ fn do_something(ctx: &ReducerContext) {
 }
 ```
 
-See [reducers](#reducers) for more information on declaring reducers.
-See the [`#[table]` macro](macro@crate::table) for more information on declaring and using tables.
+(See [reducers](#reducers) for more information on declaring reducers.)
+
+This library generates a custom API for each table, depending on the table's name and structure.
+
+All tables support getting a handle implementing the [`Table`] trait, using:
+[`ctx`](crate::ReducerContext)`.db.{table_name}()`. For example, `ctx.db.people()`.
+
+The [`Table`] trait provides:
+- [`Table::insert`]
+- [`Table::try_insert`]
+- [`Table::delete`]
+- [`Table::iter`]
+- [`Table::count`]
+
+Tables [constraints](#unique-and-primary-key-columns) and [indices](#indices) generate additional accessors.
 
 <!-- TODO: outline generated methods here, split up by annotations required. -->
 
-#### Public and Private tables
+#### Public and Private Tables
 
 By default, tables are considered **private**. This means that they are only readable by the table owner and by reducers. Reducers run inside the database, so clients cannot see private tables at all.
 
-The `#[table(name = table_name, public)]` macro makes a table public. **Public** tables are readable by all clients. They can still only be modified by reducers. 
+Using [`#[table(name = table_name, public)]`](macro@crate::table) macro makes a table public. **Public** tables are readable by all clients. They can still only be modified by reducers. 
 
-```rust
+```no_run
 use spacetimedb::table;
 
 // The `players` table can be read by all connected clients.
@@ -296,8 +303,88 @@ pub struct LootItem {
 
 <!-- TODO: can module owner `spacetime sql` write/read private tables? -->
 
-To learn how to subscribe to a public table, see the [client SDK documentation](https://spacetimedb.com/docs/sdks).
-<!-- TODO: more specific link. -->
+To learn how to subscribe to a public table, see the [client SDK documentation](https://spacetimedb.com/docs/sdks). <!-- TODO: more specific link. -->
+
+#### Unique and Primary Key Columns
+
+Columns of a table (that is, fields of a [`#[table]`](macro@crate::table) struct) can be annotated with [`#[unique]`](macro@crate::table#unique) or [`#[primary_key]`](macro@crate::table#primary_key). Multiple columns can be `#[unique]`, but only one can be `#[primary_key]`. For example:
+
+```no_run
+# type SSN = ();
+# type Email = ();
+
+#[table]
+pub struct Person {
+    #[primary_key]
+    id: u64,
+    #[unique]
+    ssn: SSN,
+    #[unique]
+    email: Email,
+    name: String,
+}
+```
+
+Every row in the table `Person` must have unique entries in the `id`, `ssn`, and `email` columns. Attempting to insert multiple `Person`s with the same `id`, `ssn`, or `email` will fail. (Either via panic, with [`Table::insert`], or via a `Result::Err`, with [`Table::try_insert`].)
+
+Any `#[unique]` or `#[primary_key]` column supports getting a [`UniqueColumn`] using [`ctx`](crate::ReducerContext)`.db.{table}().{unique_column}()`. For example, `ctx.db.people().ssn()`.
+    
+[`UniqueColumn`] provides:
+- [`UniqueColumn::find`]
+- [`UniqueColumn::delete`]
+- [`UniqueColumn::update`]
+
+Notice that updating a row is only possible if a row has a unique column -- there is no `update` method in the base [`Table`] trait. SpacetimeDB has no notion of rows having an "identity" aside from their unique / primary keys.
+
+The `#[primary_key]` annotation is similar to the `#[unique]` annotation, except that it leads to additional methods being made available in the [client]-side SDKs. <!-- TODO: better link. -->
+
+<!-- TODO: does this actually work? Are there still limitations on what we can mark unique?
+
+It is not currently possible to mark a group of fields as collectively unique. You can, however, derive `#[SpacetimeType]` on a sub-struct and mark that unique. For example:
+
+...
+-->
+
+#### Auto-inc columns
+
+Columns can be marked [`#[autoinc]`](macro@crate::table#autoinc). This can only be used on numeric types.
+
+When inserting into a table with an `#[autoinc]` column: if the annotated column is set to `0` (zero), the database will automatically overwrite whatever we give it with an atomically increasing value, starting from 1.
+
+The returned row has the `autoinc` column set to the value that was actually written into the database.
+
+```no_run
+#[table(name = example)]
+struct Example {
+    #[autoinc]
+    field: u32
+}
+
+#[reducer]
+fn insert_autoinc_example(ctx: &ReducerContext) {
+    for i in 1..=10 {
+        // These will have values of 1, 2, ..., 10
+        // at rest in the database, regardless of
+        // what value is actually present in the
+        // insert call.
+        let actual = ctx.db.example().insert(Example { field: 0 })
+        assert_eq!(actual.field, i);
+    }
+}
+```
+
+#### Indices
+
+SpacetimeDB supports both single- and multi-column indexes. Currently, only [B-Tree](https://en.wikipedia.org/wiki/B-tree) indexes are supported.
+
+Indexes are declared using the syntax: [`#[table(index(name = my_index, btree(columns = [a, b, c]))]`](macro@crate::table#index). Multiple indexes can be declared, separated by commas. Single-column indices can also be declared using the [`#[index(btree)]`](macro@crate::table#indexbtree) column attribute.
+
+Any index supports getting a [`BTreeIndex`] using [`ctx`](crate::ReducerContext)`.db.{table}().{index}()`. For example,
+    `ctx.db.people().name()`.
+    
+[`BTreeIndex`] provides:
+ - [`BTreeIndex::filter`]
+ - [`BTreeIndex::delete`]
 
 ## Reducers
 
