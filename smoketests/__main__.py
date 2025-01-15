@@ -7,8 +7,9 @@ import os
 import re
 import fnmatch
 import json
-from . import TEST_DIR, SPACETIME_BIN, build_template_target
+from . import TEST_DIR, SPACETIME_BIN, exe_suffix, build_template_target
 import smoketests
+import sys
 import logging
 
 def check_docker():
@@ -65,13 +66,15 @@ def main():
                         action='append', type=_convert_select_pattern,
                         help='Only run tests which match the given substring')
     parser.add_argument("-x", dest="exclude", nargs="*", default=[])
+    parser.add_argument("--no-build-cli", action="store_true", help="don't cargo build the cli")
     args = parser.parse_args()
 
-    logging.info("Compiling spacetime cli...")
-    smoketests.run_cmd("cargo", "build", "-pspacetimedb-cli", "-pspacetimedb-update", cwd=TEST_DIR.parent, capture_stderr=False)
+    if not args.no_build_cli:
+        logging.info("Compiling spacetime cli...")
+        smoketests.run_cmd("cargo", "build", "-pspacetimedb-cli", "-pspacetimedb-update", cwd=TEST_DIR.parent, capture_stderr=False)
 
     try:
-        bin_is_symlink = SPACETIME_BIN.readlink() == "spacetimedb-update"
+        bin_is_symlink = SPACETIME_BIN.readlink() == "spacetimedb-update" + exe_suffix
     except OSError:
         bin_is_symlink = False
     if not bin_is_symlink:
@@ -80,10 +83,10 @@ def main():
         except FileNotFoundError:
             pass
         try:
-            os.symlink("spacetimedb-update", SPACETIME_BIN)
+            os.symlink("spacetimedb-update" + exe_suffix, SPACETIME_BIN)
         except OSError:
             import shutil
-            shutil.copyfile(SPACETIME_BIN.with_name("spacetimedb-update"), SPACETIME_BIN)
+            shutil.copyfile(SPACETIME_BIN.with_name("spacetimedb-update" + exe_suffix), SPACETIME_BIN)
 
     os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
 
