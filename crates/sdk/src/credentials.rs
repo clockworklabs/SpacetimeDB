@@ -43,10 +43,8 @@ impl File {
     /// to a particular SpacetimeDB instance or cluster.
     /// Users who intend to connect to multiple instances or clusters
     /// should use a distinct `key` per cluster.
-    pub fn new(key: impl ToString) -> Self {
-        Self {
-            filename: key.to_string(),
-        }
+    pub fn new(key: impl Into<String>) -> Self {
+        Self { filename: key.into() }
     }
 
     fn ensure_credentials_dir() -> Result<()> {
@@ -75,13 +73,11 @@ impl File {
     ///       credentials::File::new("my_app").save(token).unwrap();
     /// })
     /// ```
-    pub fn save(self, token: impl ToString) -> Result<()> {
+    pub fn save(self, token: impl Into<String>) -> Result<()> {
         Self::ensure_credentials_dir()?;
 
-        let creds = bsatn::to_vec(&Credentials {
-            token: token.to_string(),
-        })
-        .context("Error serializing credentials for storage in file")?;
+        let creds = bsatn::to_vec(&Credentials { token: token.into() })
+            .context("Error serializing credentials for storage in file")?;
         let path = self.path()?;
         std::fs::write(&path, creds)
             .with_context(|| format!("Error writing BSATN-serialized credentials to file {path:?}"))?;
