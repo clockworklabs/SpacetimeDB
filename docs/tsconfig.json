@@ -1,10 +1,11 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "module": "commonjs",
+    "module": "ESNext",
     "outDir": "./docs",
-    "esModuleInterop": true,
+    "esModuleInterop": false,
     "strict": true,
     "skipLibCheck": true
-  }
+  },
+  "include": ["nav.ts"]
 }

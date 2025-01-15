@@ -12,7 +12,7 @@
     "typescript": "^5.3.2"
   },
   "scripts": {
-    "build": "tsc nav.ts --outDir docs",
+    "build": "tsc --project ./tsconfig.json",
     "check-links": "tsx scripts/checkLinks.ts"
   },
   "author": "Clockwork Labs",
