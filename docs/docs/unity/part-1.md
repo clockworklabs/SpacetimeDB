@@ -1,6 +1,6 @@
 # Unity Tutorial - Part 1 - Setup
 
-![Unity Tutorial Hero Image](./part-1-hero-image.png)
+<!-- ![Unity Tutorial Hero Image](./part-1-hero-image.png) -->
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
