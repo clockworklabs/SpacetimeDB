@@ -32,13 +32,13 @@ In this section, we will guide you through the process of setting up a Unity Pro
 
 Open Unity and create a new project by selecting "New" from the Unity Hub or going to **File -> New Project**.
 
-![Unity Hub New Project](./part-1-unity-hub-new-project.jpg)
+<!-- ![Unity Hub New Project](./part-1-unity-hub-new-project.jpg) -->
 
 **⚠️ Important: Choose the `Universal 2D`** template to select a template which uses the Unity Universal Render Pipeline.
 
 For `Project Name` use `client`. For Project Location make sure that you use your `blackholio` directory. This is the directory that we created in a previous step.
 
-![Universal 2D Template](./part-1-universal-2d-template.png)
+<!-- ![Universal 2D Template](./part-1-universal-2d-template.png) -->
 
 Click "Create" to generate the blank project.
 

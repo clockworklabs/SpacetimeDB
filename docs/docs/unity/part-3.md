@@ -940,7 +940,7 @@ The last step is to call the `enter_game` reducer on the server, passing in a us
 
 At this point, after publishing our module we can press the play button to see the fruits of our labor! You should be able to see your player's circle, with its username label, surrounded by food.
 
-![Player on screen](part-3-player-on-screen.png)
+<!-- ![Player on screen](part-3-player-on-screen.png) -->
 
 ### Troubleshooting
 
