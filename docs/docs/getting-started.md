@@ -11,6 +11,16 @@ spacetime start
 
 The server listens on port `3000` by default, customized via `--listen-addr`.
 
+<div data-lang="rust" class="language-block">
+    ## Rust
+    This is a test
+</div>
+
+<div data-lang="csharp" class="language-block">
+  ## C#
+  This is a different test
+</div>
+
 💡 Standalone mode will run in the foreground.
 ⚠️ SSL is not supported in standalone mode.
 
