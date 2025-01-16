@@ -12,13 +12,13 @@ spacetime start
 The server listens on port `3000` by default, customized via `--listen-addr`.
 
 :::rust
-    ## Rust
-    This is a test
+## Rust
+This is a test
 :::
 
 :::csharp
-  ## C#
-  This is a different test
+## C#
+This is a different test
 :::
 
 💡 Standalone mode will run in the foreground.
