@@ -2,7 +2,7 @@ mod module_bindings;
 
 use module_bindings::*;
 
-use spacetimedb_sdk::{DbContext, Table};
+use spacetimedb_sdk::{DbContext, Event, Table};
 
 use test_counter::TestCounter;
 
@@ -15,6 +15,7 @@ fn db_name_or_panic() -> String {
 fn main() {
     let disconnect_test_counter = TestCounter::new();
     let disconnect_result = disconnect_test_counter.add_test("disconnect");
+    let on_error_result = disconnect_test_counter.add_test("on_error");
 
     let connect_test_counter = TestCounter::new();
     let connected_result = connect_test_counter.add_test("on_connect");
@@ -27,7 +28,12 @@ fn main() {
         .on_connect(move |ctx, _, _| {
             connected_result(Ok(()));
             ctx.subscription_builder()
-                .on_error(|ctx| panic!("Subscription failed: {:?}", ctx.event))
+                .on_error(|ctx| {
+                    if !matches!(ctx.event, Event::Disconnected) {
+                        panic!("Subscription failed: {:?}", ctx.event)
+                    }
+                    on_error_result(Ok(()));
+                })
                 .on_applied(move |ctx| {
                     let check = || {
                         anyhow::ensure!(ctx.db.connected().count() == 1);

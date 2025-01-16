@@ -246,26 +246,24 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     /// Invoke the on-disconnect callback, and mark [`Self::is_active`] false.
     fn invoke_disconnected(&self, err: Option<&anyhow::Error>) {
-        let disconnected_callback = {
-            let mut inner = self.inner.lock().unwrap();
-            // When we disconnect, we first call the on_disconnect method,
-            // then we call the `on_error` method for all subscriptions.
-            // We don't change the client cache at all.
+        let mut inner = self.inner.lock().unwrap();
+        // When we disconnect, we first call the on_disconnect method,
+        // then we call the `on_error` method for all subscriptions.
+        // We don't change the client cache at all.
 
-            // Set `send_chan` to `None`, since `Self::is_active` checks that.
-            *self.send_chan.lock().unwrap() = None;
+        // Set `send_chan` to `None`, since `Self::is_active` checks that.
+        *self.send_chan.lock().unwrap() = None;
 
-            inner
-                .subscriptions
-                .on_disconnect(&self.make_event_ctx(Event::Disconnected));
-
-            // Grap the `on_disconnect` callback and invoke it.
-            inner.on_disconnect.take()
-        };
-        if let Some(disconnect_callback) = disconnected_callback {
+        // Grap the `on_disconnect` callback and invoke it.
+        if let Some(disconnect_callback) = inner.on_disconnect.take() {
             let ctx = <M::DbConnection as DbConnection>::new(self.clone());
             disconnect_callback(&ctx, err);
         }
+
+        // Call the `on_disconnect` method for all subscriptions.
+        inner
+            .subscriptions
+            .on_disconnect(&self.make_event_ctx(Event::Disconnected));
     }
 
     fn make_event_ctx(&self, event: Event<M::Reducer>) -> M::EventContext {
