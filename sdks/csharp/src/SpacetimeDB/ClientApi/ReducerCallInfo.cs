@@ -20,14 +20,14 @@ namespace SpacetimeDB.ClientApi
 		[DataMember(Name = "reducer_id")]
 		public uint ReducerId;
 		[DataMember(Name = "args")]
-		public byte[] Args;
+		public System.Collections.Generic.List<byte> Args;
 		[DataMember(Name = "request_id")]
 		public uint RequestId;
 
 		public ReducerCallInfo(
 			string ReducerName,
 			uint ReducerId,
-			byte[] Args,
+			System.Collections.Generic.List<byte> Args,
 			uint RequestId
 		)
 		{
@@ -40,7 +40,7 @@ namespace SpacetimeDB.ClientApi
 		public ReducerCallInfo()
 		{
 			this.ReducerName = "";
-			this.Args = Array.Empty<byte>();
+			this.Args = new();
 		}
 
 	}

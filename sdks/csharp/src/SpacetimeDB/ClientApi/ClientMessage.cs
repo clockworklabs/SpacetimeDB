@@ -13,6 +13,8 @@ namespace SpacetimeDB.ClientApi
 	public partial record ClientMessage : SpacetimeDB.TaggedEnum<(
 		SpacetimeDB.ClientApi.CallReducer CallReducer,
 		SpacetimeDB.ClientApi.Subscribe Subscribe,
-		SpacetimeDB.ClientApi.OneOffQuery OneOffQuery
+		SpacetimeDB.ClientApi.OneOffQuery OneOffQuery,
+		SpacetimeDB.ClientApi.SubscribeSingle SubscribeSingle,
+		SpacetimeDB.ClientApi.Unsubscribe Unsubscribe
 	)>;
 }

@@ -18,9 +18,7 @@ namespace SpacetimeDB.ClientApi
 		[DataMember(Name = "tables")]
 		public System.Collections.Generic.List<SpacetimeDB.ClientApi.TableUpdate> Tables;
 
-		public DatabaseUpdate(
-			System.Collections.Generic.List<SpacetimeDB.ClientApi.TableUpdate> Tables
-		)
+		public DatabaseUpdate(System.Collections.Generic.List<SpacetimeDB.ClientApi.TableUpdate> Tables)
 		{
 			this.Tables = Tables;
 		}

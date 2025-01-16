@@ -18,11 +18,11 @@ namespace SpacetimeDB.ClientApi
 		[DataMember(Name = "size_hint")]
 		public SpacetimeDB.ClientApi.RowSizeHint SizeHint;
 		[DataMember(Name = "rows_data")]
-		public byte[] RowsData;
+		public System.Collections.Generic.List<byte> RowsData;
 
 		public BsatnRowList(
 			SpacetimeDB.ClientApi.RowSizeHint SizeHint,
-			byte[] RowsData
+			System.Collections.Generic.List<byte> RowsData
 		)
 		{
 			this.SizeHint = SizeHint;
@@ -32,7 +32,7 @@ namespace SpacetimeDB.ClientApi
 		public BsatnRowList()
 		{
 			this.SizeHint = null!;
-			this.RowsData = Array.Empty<byte>();
+			this.RowsData = new();
 		}
 
 	}

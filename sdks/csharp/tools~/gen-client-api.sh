@@ -1,15 +1,11 @@
-#!/bin/sh -eu
-: $CL_HOME
+set -ueo pipefail
 
-cd $CL_HOME/SpacetimeDB/crates/client-api-messages
-cargo run --example get_ws_schema > $CL_HOME/schema.json
+STDB_PATH="$1"
+SDK_PATH="$(dirname "$0")/.."
 
-cd $CL_HOME/SpacetimeDB/crates/cli
-cargo run -- generate -l csharp --namespace SpacetimeDB.ClientApi \
-  --module-def $CL_HOME/schema.json \
-  -o $CL_HOME/spacetimedb-csharp-sdk/src/SpacetimeDB/ClientApi
+cargo run --manifest-path $STDB_PATH/crates/client-api-messages/Cargo.toml --example get_ws_schema |
+cargo run --manifest-path $STDB_PATH/crates/cli/Cargo.toml -- generate -l csharp --namespace SpacetimeDB.ClientApi \
+  --module-def \
+  -o $SDK_PATH/src/SpacetimeDB/ClientApi
 
-cd $CL_HOME/spacetimedb-csharp-sdk/src/SpacetimeDB/ClientApi
-rm -rf _Globals
-
-rm -f $CL_HOME/schema.json
+rm -rf $SDK_PATH/src/SpacetimeDB/ClientApi/_Globals

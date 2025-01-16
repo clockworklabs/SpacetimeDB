@@ -241,100 +241,75 @@ namespace SpacetimeDB
             Gzip = 2,
         }
 
-        private static BinaryReader BrotliReader(Stream stream)
+        private static BrotliStream BrotliReader(Stream stream)
         {
-            return new BinaryReader(new BrotliStream(stream, CompressionMode.Decompress));
+            return new BrotliStream(stream, CompressionMode.Decompress);
         }
 
-        private static BinaryReader GzipReader(Stream stream)
+        private static GZipStream GzipReader(Stream stream)
         {
-            return new BinaryReader(new GZipStream(stream, CompressionMode.Decompress));
+            return new GZipStream(stream, CompressionMode.Decompress);
         }
 
         private static ServerMessage DecompressDecodeMessage(byte[] bytes)
         {
-            using var stream = new MemoryStream(bytes, 1, bytes.Length - 1);
+            using var stream = new MemoryStream(bytes);
 
             // The stream will never be empty. It will at least contain the compression algo.
-            var compression = (CompressionAlgos)bytes[0];
+            var compression = (CompressionAlgos)stream.ReadByte();
             // Conditionally decompress and decode.
-            switch (compression)
+            Stream decompressedStream = compression switch
             {
-                case CompressionAlgos.None:
-                    return new ServerMessage.BSATN().Read(new BinaryReader(stream));
-                case CompressionAlgos.Brotli:
-                    return new ServerMessage.BSATN().Read(BrotliReader(stream));
-                case CompressionAlgos.Gzip:
-                    return new ServerMessage.BSATN().Read(GzipReader(stream));
-                default:
-                    throw new InvalidOperationException("Unknown compression type");
-            }
+                CompressionAlgos.None => stream,
+                CompressionAlgos.Brotli => BrotliReader(stream),
+                CompressionAlgos.Gzip => GzipReader(stream),
+                _ => throw new InvalidOperationException("Unknown compression type"),
+            };
+
+            return new ServerMessage.BSATN().Read(new BinaryReader(decompressedStream));
         }
 
         private static QueryUpdate DecompressDecodeQueryUpdate(CompressableQueryUpdate update)
         {
+            Stream decompressedStream;
+
             switch (update)
             {
                 case CompressableQueryUpdate.Uncompressed(var qu):
                     return qu;
 
                 case CompressableQueryUpdate.Brotli(var bytes):
-                    return new QueryUpdate.BSATN().Read(BrotliReader(new MemoryStream(bytes)));
+                    decompressedStream = BrotliReader(new MemoryStream(bytes.ToArray()));
+                    break;
 
                 case CompressableQueryUpdate.Gzip(var bytes):
-                    return new QueryUpdate.BSATN().Read(GzipReader(new MemoryStream(bytes)));
+                    decompressedStream = GzipReader(new MemoryStream(bytes.ToArray()));
+                    break;
 
                 default:
                     throw new InvalidOperationException();
             }
-        }
 
-        private static int BsatnRowListCount(BsatnRowList list)
-        {
-            switch (list.SizeHint)
-            {
-                case RowSizeHint.FixedSize(var size):
-                    return list.RowsData.Length / size;
-                case RowSizeHint.RowOffsets(var offsets):
-                    return offsets.Count;
-                default:
-                    throw new InvalidOperationException("Unknown RowSizeHint variant");
-            }
+            return new QueryUpdate.BSATN().Read(new BinaryReader(decompressedStream));
         }
 
         private static IEnumerable<byte[]> BsatnRowListIter(BsatnRowList list)
         {
-            var count = BsatnRowListCount(list);
-            for (int index = 0; index < count; index += 1)
+            var rowsData = list.RowsData;
+
+            return list.SizeHint switch
             {
-                switch (list.SizeHint)
-                {
-                    case RowSizeHint.FixedSize(var size):
-                        {
-                            int start = index * size;
-                            int elemLen = size;
-                            yield return new ReadOnlySpan<byte>(list.RowsData, start, elemLen).ToArray();
-                            break;
-                        }
-                    case RowSizeHint.RowOffsets(var offsets):
-                        {
-                            int start = (int)offsets[index];
-                            // The end is either the start of the next element or the end.
-                            int end;
-                            if (index + 1 == count)
-                            {
-                                end = list.RowsData.Length;
-                            }
-                            else
-                            {
-                                end = (int)offsets[index + 1];
-                            }
-                            int elemLen = end - start;
-                            yield return new ReadOnlyMemory<byte>(list.RowsData, start, elemLen).ToArray();
-                            break;
-                        }
-                }
-            }
+                RowSizeHint.FixedSize(var size) => Enumerable
+                    .Range(0, rowsData.Count / size)
+                    .Select(index => rowsData.Skip(index * size).Take(size).ToArray()),
+
+                RowSizeHint.RowOffsets(var offsets) => offsets.Zip(
+                    offsets.Skip(1).Append((ulong)rowsData.Count),
+                    (start, end) => rowsData.Take((int)end).Skip((int)start).ToArray()
+                ),
+
+                _ => throw new InvalidOperationException("Unknown RowSizeHint variant"),
+            };
         }
 
         void PreProcessMessages()
@@ -398,7 +373,7 @@ namespace SpacetimeDB
                     foreach (var cqu in update.Updates)
                     {
                         var qu = DecompressDecodeQueryUpdate(cqu);
-                        if (BsatnRowListCount(qu.Deletes) != 0)
+                        if (qu.Deletes.RowsData.Count > 0)
                         {
                             Log.Warn("Non-insert during a subscription update!");
                         }
@@ -520,7 +495,7 @@ namespace SpacetimeDB
             void PreProcessOneOffQuery(OneOffQueryResponse resp)
             {
                 /// This case does NOT produce a list of DBOps, because it should not modify the client cache state!
-                var messageId = new Guid(resp.MessageId);
+                var messageId = new Guid(resp.MessageId.ToArray());
 
                 if (!waitingOneOffQueries.Remove(messageId, out var resultSource))
                 {
@@ -883,7 +858,7 @@ namespace SpacetimeDB
 
             webSocket.Send(new ClientMessage.CallReducer(new CallReducer(
                 args.ReducerName,
-                IStructuralReadWrite.ToBytes(args),
+                IStructuralReadWrite.ToBytes(args).ToList(),
                 stats.ReducerRequestTracker.StartTrackingRequest(args.ReducerName),
                 (byte)flags
             )));
@@ -925,7 +900,7 @@ namespace SpacetimeDB
             var requestId = stats.OneOffRequestTracker.StartTrackingRequest();
             webSocket.Send(new ClientMessage.OneOffQuery(new OneOffQuery
             {
-                MessageId = messageId.ToByteArray(),
+                MessageId = messageId.ToByteArray().ToList(),
                 QueryString = query,
             }));
 
@@ -964,7 +939,7 @@ namespace SpacetimeDB
             }
 
             return BsatnRowListIter(resultTable.Rows)
-                .Select(row => BSATNHelpers.Decode<T>(row))
+                .Select(BSATNHelpers.Decode<T>)
                 .ToArray();
         }
 

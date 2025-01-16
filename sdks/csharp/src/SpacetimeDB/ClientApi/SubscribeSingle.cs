@@ -13,34 +13,30 @@ namespace SpacetimeDB.ClientApi
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class CallReducer
+	public partial class SubscribeSingle
 	{
-		[DataMember(Name = "reducer")]
-		public string Reducer;
-		[DataMember(Name = "args")]
-		public System.Collections.Generic.List<byte> Args;
+		[DataMember(Name = "query")]
+		public string Query;
 		[DataMember(Name = "request_id")]
 		public uint RequestId;
-		[DataMember(Name = "flags")]
-		public byte Flags;
+		[DataMember(Name = "query_id")]
+		public SpacetimeDB.ClientApi.QueryId QueryId;
 
-		public CallReducer(
-			string Reducer,
-			System.Collections.Generic.List<byte> Args,
+		public SubscribeSingle(
+			string Query,
 			uint RequestId,
-			byte Flags
+			SpacetimeDB.ClientApi.QueryId QueryId
 		)
 		{
-			this.Reducer = Reducer;
-			this.Args = Args;
+			this.Query = Query;
 			this.RequestId = RequestId;
-			this.Flags = Flags;
+			this.QueryId = QueryId;
 		}
 
-		public CallReducer()
+		public SubscribeSingle()
 		{
-			this.Reducer = "";
-			this.Args = new();
+			this.Query = "";
+			this.QueryId = new();
 		}
 
 	}

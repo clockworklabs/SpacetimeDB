@@ -16,7 +16,7 @@ namespace SpacetimeDB.ClientApi
 	public partial class OneOffQueryResponse
 	{
 		[DataMember(Name = "message_id")]
-		public byte[] MessageId;
+		public System.Collections.Generic.List<byte> MessageId;
 		[DataMember(Name = "error")]
 		public string? Error;
 		[DataMember(Name = "tables")]
@@ -25,7 +25,7 @@ namespace SpacetimeDB.ClientApi
 		public ulong TotalHostExecutionDurationMicros;
 
 		public OneOffQueryResponse(
-			byte[] MessageId,
+			System.Collections.Generic.List<byte> MessageId,
 			string? Error,
 			System.Collections.Generic.List<SpacetimeDB.ClientApi.OneOffTable> Tables,
 			ulong TotalHostExecutionDurationMicros
@@ -39,7 +39,7 @@ namespace SpacetimeDB.ClientApi
 
 		public OneOffQueryResponse()
 		{
-			this.MessageId = Array.Empty<byte>();
+			this.MessageId = new();
 			this.Tables = new();
 		}
 
