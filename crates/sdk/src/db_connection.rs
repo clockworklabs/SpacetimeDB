@@ -1122,7 +1122,6 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
         query_id: u32,
         handle: SubscriptionHandleImpl<M>,
     },
-    // TODO: Unsubscribe { ??? },
     CallReducer {
         reducer: &'static str,
         args_bsatn: Vec<u8>,
