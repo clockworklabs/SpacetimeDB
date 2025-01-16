@@ -317,7 +317,7 @@ public class GameManager : MonoBehaviour
         // we can use it to authenticate the connection.
 		if (PlayerPrefs.HasKey(AuthToken.GetTokenKey()))
         {
-			builder = builder.WithCredentials((default, AuthToken.Token));
+            builder = builder.WithToken(AuthToken.Token);
         }
 
         // Building the connection will establish a connection to the SpacetimeDB
@@ -337,7 +337,7 @@ public class GameManager : MonoBehaviour
         // Request all tables
         Conn.SubscriptionBuilder()
             .OnApplied(HandleSubscriptionApplied)
-            .Subscribe("SELECT * FROM *");
+            .SubscribeToAllTables();
     }
 
     void HandleConnectError(Exception ex)
