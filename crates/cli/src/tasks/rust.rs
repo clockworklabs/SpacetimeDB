@@ -21,7 +21,7 @@ fn cargo_cmd(subcommand: &str, build_debug: bool, args: &[&str]) -> duct::Expres
     )
 }
 
-pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
+pub(crate) fn build_rust(project_path: &Path, lint_dir: Option<&Path>, build_debug: bool) -> anyhow::Result<PathBuf> {
     // Make sure that we have the wasm target installed
     if !has_wasm32_target() {
         if has_rust_up() {
@@ -33,15 +33,10 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
         }
     }
 
-    if skip_clippy {
-        println!(
-            "Warning: Skipping checks for nonfunctional print statements.\n\
-            If you have used builtin macros for printing, such as println!,\n\
-            your logs will not show up."
-        );
-    } else {
+    if let Some(lint_dir) = lint_dir {
         let mut err_count: u32 = 0;
-        for file in walkdir::WalkDir::new(project_path).into_iter() {
+        let lint_dir = project_path.join(lint_dir);
+        for file in walkdir::WalkDir::new(lint_dir).into_iter() {
             let file = file?;
             let printable_path = file.path().to_str().ok_or(anyhow::anyhow!("path not utf-8"))?;
             if file.file_type().is_file() && file.path().extension().map_or(false, |ext| ext == "rs") {
@@ -52,9 +47,9 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
                     for disallowed in &["println!", "print!", "eprintln!", "eprint!", "dbg!"] {
                         if line.contains(disallowed) {
                             if err_count == 0 {
-                                eprintln!("\nDetected nonfunctional print statements:");
+                                eprintln!("\nDetected nonfunctional print statements:\n");
                             }
-                            eprintln!("\n{printable_path}:{line_number}: {line}\n");
+                            eprintln!("{printable_path}:{line_number}: {line}");
                             err_count += 1;
                         }
                     }
@@ -62,6 +57,7 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
             }
         }
         if err_count > 0 {
+            eprintln!("");
             anyhow::bail!(
                 "Found {err_count} disallowed print statement(s).\n\
                 These will not be printed from SpacetimeDB modules.\n\
@@ -69,6 +65,12 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
                 and the `log::info!` macro instead."
             );
         }
+    } else {
+        println!(
+            "Warning: Skipping checks for nonfunctional print statements.\n\
+            If you have used builtin macros for printing, such as println!,\n\
+            your logs will not show up."
+        );
     }
 
     let reader = cargo_cmd("build", build_debug, &["--message-format=json-render-diagnostics"])
