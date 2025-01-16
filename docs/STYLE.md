@@ -33,6 +33,9 @@ For meta-variables in code blocks, enclose the meta-variable name in `{}` curly 
 
 Do not use single-backtick code highlighting for words which are not variable, function, method or type names. (Or other sorts of defined symbols that appear in actual code.) Similarly, do not use italics for words which are not meta-variables that the reader is expected to substitute. In particular, do not use code highlighting for emphasis or to introduce vocabulary.
 
+Because this meta-syntax is not valid syntax, it should be followed by an example that shows what the result would look like in a
+concrete situation.
+
 For example:
 
 > To find rows in a table *table* with a given value in a `#[unique]` or `#[primary_key]` column, do:
@@ -41,7 +44,14 @@ For example:
 > ctx.db.{table}().{column}().find({value})
 > ```
 >
-> where *column* is the name of the unique column and *value* is the value you're looking for in that column. This is equivalent to:
+> where *column* is the name of the unique column and *value* is the value you're looking for in that column.
+> For example:
+>
+> ```rust
+> ctx.db.people().name().find("Billy")
+> ```
+>
+> This is equivalent to:
 >
 > ```sql
 > SELECT * FROM {table} WHERE {column} = {value}
