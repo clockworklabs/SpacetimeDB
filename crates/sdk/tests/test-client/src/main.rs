@@ -420,6 +420,7 @@ fn exec_subscribe_and_unsubscribe() {
                 .subscription_builder()
                 .on_applied(move |_ctx: &EventContext| {
                     let handle = { hc_clone.lock().unwrap().as_ref().unwrap().clone() };
+                    println!("Is active: {}", _ctx.is_active());
                     assert!(handle.is_active());
                     assert!(!handle.is_ended());
                     let handle_clone = handle.clone();

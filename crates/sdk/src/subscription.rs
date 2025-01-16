@@ -45,6 +45,22 @@ pub(crate) enum PendingUnsubscribeResult<M: SpacetimeModule> {
 }
 
 impl<M: SpacetimeModule> SubscriptionManager<M> {
+    
+    pub(crate) fn on_disconnect(&mut self, ctx: &M::EventContext) {
+        // We need to clear all the subscriptions.
+        // We should run the on_ended callbacks for all of them.
+        for (_, mut sub) in self.new_subscriptions.drain() {
+            if let Some(callback) = sub.on_error() {
+                callback(ctx);
+            }
+        }
+        for (_, mut s) in self.legacy_subscriptions.drain() {
+            if let Some(callback) = s.on_error.take() {
+                callback(ctx);
+            }
+        }
+    }
+
     /// Register a new subscription. This does not send the subscription to the server.
     /// Rather, it makes the subscription available for the next `apply_subscriptions` call.
     pub(crate) fn register_legacy_subscription(
@@ -401,12 +417,18 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
 
     pub fn on_ended(&mut self) -> Option<OnAppliedCallback<M>> {
         // TODO: Consider logging a warning if the state is wrong (like being in the Error state).
+        if self.is_ended() {
+            return None;
+        }
         self.status = SubscriptionServerState::Ended;
         self.on_ended.take()
     }
 
     pub fn on_error(&mut self) -> Option<OnErrorCallback<M>> {
         // TODO: Consider logging a warning if the state is wrong.
+        if self.is_ended() {
+            return None;
+        }
         self.status = SubscriptionServerState::Error;
         self.on_error.take()
     }

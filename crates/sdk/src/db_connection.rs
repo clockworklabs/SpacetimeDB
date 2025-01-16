@@ -37,9 +37,7 @@ use spacetimedb_client_api_messages::websocket as ws;
 use spacetimedb_client_api_messages::websocket::{BsatnFormat, CallReducerFlags, Compression};
 use spacetimedb_lib::{bsatn, ser::Serialize, Address, Identity};
 use std::{
-    collections::HashMap,
-    sync::{atomic::AtomicU32, Arc, Mutex as StdMutex, OnceLock},
-    time::{Duration, SystemTime},
+    collections::HashMap, f32::consts::E, sync::{atomic::AtomicU32, Arc, Mutex as StdMutex, OnceLock}, time::{Duration, SystemTime}
 };
 use tokio::{
     runtime::{self, Runtime},
@@ -58,7 +56,7 @@ pub struct DbContextImpl<M: SpacetimeModule> {
 
     /// All the state which is safe to hold a lock on while running callbacks.
     pub(crate) inner: SharedCell<DbContextImplInner<M>>,
-
+    
     /// The client cache, which stores subscribed rows.
     cache: SharedCell<ClientCache<M>>,
 
@@ -244,13 +242,14 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     fn invoke_disconnected(&self, err: Option<&anyhow::Error>) {
         let disconnected_callback = {
             let mut inner = self.inner.lock().unwrap();
-            // TODO: Determine correct behavior here.
-            // - Delete all rows from client cache?
-            // - Invoke `on_disconnect` methods?
-            // - End all subscriptions and invoke their `on_error` methods?
+            // When we disconnect, we first call the on_disconnect method,
+            // then we call the `on_error` method for all subscriptions.
+            // We don't change the client cache at all.
 
             // Set `send_chan` to `None`, since `Self::is_active` checks that.
             inner.send_chan = None;
+
+            inner.subscriptions.on_disconnect(&self.make_event_ctx(Event::Disconnected));
 
             // Grap the `on_disconnect` callback and invoke it.
             inner.on_disconnect.take()
