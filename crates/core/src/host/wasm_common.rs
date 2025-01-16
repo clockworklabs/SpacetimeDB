@@ -20,12 +20,6 @@ pub const DESCRIBE_MODULE_DUNDER: &str = "__describe_module__";
 pub const PREINIT_DUNDER: &str = "__preinit__";
 /// initializes the user code in the module. fallible
 pub const SETUP_DUNDER: &str = "__setup__";
-/// the reducer with this name initializes the database
-pub const INIT_DUNDER: &str = "__init__";
-/// The reducer with this name is invoked when a client connects.
-pub const CLIENT_CONNECTED_DUNDER: &str = "__identity_connected__";
-/// The reducer with this name is invoked when a client disconnects.
-pub const CLIENT_DISCONNECTED_DUNDER: &str = "__identity_disconnected__";
 
 #[derive(Debug, Clone)]
 #[allow(unused)]

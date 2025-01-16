@@ -24,6 +24,7 @@ use crate::identifier::Identifier;
 use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
 use deserialize::ReducerArgsDeserializeSeed;
+use enum_map::EnumMap;
 use hashbrown::Equivalent;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -36,7 +37,7 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawSql, RawTableDefV9, RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
-use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColSet, ReducerId, TableId};
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
 use validate::v9::generate_index_name;
@@ -100,6 +101,9 @@ pub struct ModuleDef {
     /// Note: this is using IndexMap because reducer order is important
     /// and must be preserved for future calls to `__call_reducer__`.
     reducers: IndexMap<Identifier, ReducerDef>,
+
+    /// A map from lifecycle reducer kind to reducer id.
+    lifecycle_reducers: EnumMap<Lifecycle, MaybeReducerId>,
 
     /// The type definitions of the module definition.
     types: HashMap<ScopedTypeName, TypeDef>,
@@ -219,14 +223,40 @@ impl ModuleDef {
         self.reducers.get(name)
     }
 
+    /// Convenience method to look up a reducer, possibly by a string, returning its id as well.
+    pub fn reducer_full<K: ?Sized + Hash + Equivalent<Identifier>>(
+        &self,
+        name: &K,
+    ) -> Option<(ReducerId, &ReducerDef)> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.reducers.get_full(name).map(|(idx, _, def)| (idx.into(), def))
+    }
+
+    /// Look up a reducer by its id.
+    pub fn reducer_by_id(&self, id: ReducerId) -> &ReducerDef {
+        &self.reducers[id.idx()]
+    }
+
+    /// Look up a reducer by its id.
+    pub fn get_reducer_by_id(&self, id: ReducerId) -> Option<&ReducerDef> {
+        self.reducers.get_index(id.idx()).map(|(_, def)| def)
+    }
+
+    /// Looks up a lifecycle reducer defined in the module.
+    pub fn lifecycle_reducer(&self, lifecycle: Lifecycle) -> Option<(ReducerId, &ReducerDef)> {
+        self.lifecycle_reducers[lifecycle]
+            .get()
+            .map(|i| (i, &self.reducers[i.idx()]))
+    }
+
     /// Get a `DeserializeSeed` that can pull data from a `Deserializer` and format it into a `ProductType`
     /// at the parameter type of the reducer named `name`.
     pub fn reducer_arg_deserialize_seed<K: ?Sized + Hash + Equivalent<Identifier>>(
         &self,
         name: &K,
-    ) -> Option<ReducerArgsDeserializeSeed> {
-        let reducer = self.reducer(name)?;
-        Some(ReducerArgsDeserializeSeed(self.typespace.with_type(reducer)))
+    ) -> Option<(ReducerId, ReducerArgsDeserializeSeed)> {
+        let (id, reducer) = self.reducer_full(name)?;
+        Some((id, ReducerArgsDeserializeSeed(self.typespace.with_type(reducer))))
     }
 
     /// Look up the name corresponding to an `AlgebraicTypeRef`.
@@ -361,6 +391,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
         let ModuleDef {
             tables,
             reducers,
+            lifecycle_reducers: _,
             types,
             typespace,
             stored_in_table_def: _,
@@ -910,6 +941,33 @@ impl From<ReducerDef> for RawReducerDefV9 {
             params: val.params,
             lifecycle: val.lifecycle,
         }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub(crate) struct MaybeReducerId(ReducerId);
+impl MaybeReducerId {
+    fn get(self) -> Option<ReducerId> {
+        (self.0 .0 != u32::MAX).then_some(self.0)
+    }
+    fn try_insert(&mut self, id: ReducerId) -> bool {
+        let insert = self.0 .0 == u32::MAX;
+        if insert {
+            // it's safe to "cast" this because bsatn sequence length is a u32,
+            // so an index into such a list can never be u32::MAX
+            self.0 = id;
+        }
+        insert
+    }
+}
+impl Default for MaybeReducerId {
+    fn default() -> Self {
+        Self(ReducerId(u32::MAX))
+    }
+}
+impl fmt::Debug for MaybeReducerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.get().fmt(f)
     }
 }
 
