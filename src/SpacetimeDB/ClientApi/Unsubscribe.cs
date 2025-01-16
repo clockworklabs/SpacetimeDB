@@ -13,18 +13,25 @@ namespace SpacetimeDB.ClientApi
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class Timestamp
+	public partial class Unsubscribe
 	{
-		[DataMember(Name = "microseconds")]
-		public ulong Microseconds;
+		[DataMember(Name = "request_id")]
+		public uint RequestId;
+		[DataMember(Name = "query_id")]
+		public SpacetimeDB.ClientApi.QueryId QueryId;
 
-		public Timestamp(ulong Microseconds)
+		public Unsubscribe(
+			uint RequestId,
+			SpacetimeDB.ClientApi.QueryId QueryId
+		)
 		{
-			this.Microseconds = Microseconds;
+			this.RequestId = RequestId;
+			this.QueryId = QueryId;
 		}
 
-		public Timestamp()
+		public Unsubscribe()
 		{
+			this.QueryId = new();
 		}
 
 	}

@@ -6,13 +6,26 @@
 
 using System;
 using SpacetimeDB;
+using System.Collections.Generic;
+using System.Runtime.Serialization;
 
 namespace SpacetimeDB.ClientApi
 {
 	[SpacetimeDB.Type]
-	public partial record CompressableQueryUpdate : SpacetimeDB.TaggedEnum<(
-		SpacetimeDB.ClientApi.QueryUpdate Uncompressed,
-		System.Collections.Generic.List<byte> Brotli,
-		System.Collections.Generic.List<byte> Gzip
-	)>;
+	[DataContract]
+	public partial class QueryId
+	{
+		[DataMember(Name = "id")]
+		public uint Id;
+
+		public QueryId(uint Id)
+		{
+			this.Id = Id;
+		}
+
+		public QueryId()
+		{
+		}
+
+	}
 }

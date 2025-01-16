@@ -142,7 +142,7 @@ public class SnapshotTests
         {
             RequestId = requestId,
             ReducerName = reducerName,
-            Args = args ?? []
+            Args = [.. (args ?? [])]
         },
         Status = new UpdateStatus.Committed(new()
         {
@@ -176,7 +176,7 @@ public class SnapshotTests
         }
         return new BsatnRowList
         {
-            RowsData = stream.ToArray(),
+            RowsData = stream.ToArray().ToList(),
             SizeHint = new RowSizeHint.RowOffsets(offsets)
         };
     }

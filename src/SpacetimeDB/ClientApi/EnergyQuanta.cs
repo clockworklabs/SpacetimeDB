@@ -18,9 +18,7 @@ namespace SpacetimeDB.ClientApi
 		[DataMember(Name = "quanta")]
 		public U128 Quanta;
 
-		public EnergyQuanta(
-			U128 Quanta
-		)
+		public EnergyQuanta(U128 Quanta)
 		{
 			this.Quanta = Quanta;
 		}
