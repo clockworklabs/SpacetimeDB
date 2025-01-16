@@ -45,7 +45,6 @@ pub(crate) enum PendingUnsubscribeResult<M: SpacetimeModule> {
 }
 
 impl<M: SpacetimeModule> SubscriptionManager<M> {
-    
     pub(crate) fn on_disconnect(&mut self, ctx: &M::EventContext) {
         // We need to clear all the subscriptions.
         // We should run the on_ended callbacks for all of them.

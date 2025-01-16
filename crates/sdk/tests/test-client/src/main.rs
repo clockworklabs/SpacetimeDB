@@ -418,9 +418,9 @@ fn exec_subscribe_and_unsubscribe() {
             let hc_clone = handle_cell.clone();
             let handle = ctx
                 .subscription_builder()
-                .on_applied(move |_ctx: &EventContext| {
+                .on_applied(move |ctx: &EventContext| {
                     let handle = { hc_clone.lock().unwrap().as_ref().unwrap().clone() };
-                    println!("Is active: {}", _ctx.is_active());
+                    assert!(ctx.is_active());
                     assert!(handle.is_active());
                     assert!(!handle.is_ended());
                     let handle_clone = handle.clone();
