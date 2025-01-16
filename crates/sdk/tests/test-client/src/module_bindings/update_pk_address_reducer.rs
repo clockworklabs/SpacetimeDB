@@ -2,24 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdatePkAddress {
+pub(super) struct UpdatePkAddressArgs {
     pub a: __sdk::Address,
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for UpdatePkAddress {
+impl From<UpdatePkAddressArgs> for super::Reducer {
+    fn from(args: UpdatePkAddressArgs) -> Self {
+        Self::UpdatePkAddress {
+            a: args.a,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdatePkAddressArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct UpdatePkAddressCallbackId(__sdk::callbacks::CallbackId);
+pub struct UpdatePkAddressCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `update_pk_address`.
@@ -53,20 +61,33 @@ pub trait update_pk_address {
 
 impl update_pk_address for super::RemoteReducers {
     fn update_pk_address(&self, a: __sdk::Address, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_pk_address", UpdatePkAddress { a, data })
+        self.imp
+            .call_reducer("update_pk_address", UpdatePkAddressArgs { a, data })
     }
     fn on_update_pk_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Address, &i32) + Send + 'static,
     ) -> UpdatePkAddressCallbackId {
-        UpdatePkAddressCallbackId(self.imp.on_reducer::<UpdatePkAddress>(
+        UpdatePkAddressCallbackId(self.imp.on_reducer(
             "update_pk_address",
-            Box::new(move |ctx: &super::EventContext, args: &UpdatePkAddress| callback(ctx, &args.a, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdatePkAddress { a, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, a, data)
+            }),
         ))
     }
     fn remove_on_update_pk_address(&self, callback: UpdatePkAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdatePkAddress>("update_pk_address", callback.0)
+        self.imp.remove_on_reducer("update_pk_address", callback.0)
     }
 }
 

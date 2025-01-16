@@ -45,7 +45,7 @@ class DockerRestartModule(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
 pub struct Person {
@@ -63,9 +63,9 @@ pub fn add(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn say_hello(ctx: &ReducerContext) {
     for person in ctx.db.person().iter() {
-        println!("Hello, {}!", person.name);
+        log::info!("Hello, {}!", person.name);
     }
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """
 
@@ -91,7 +91,7 @@ class DockerRestartSql(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
 pub struct Person {
@@ -109,9 +109,9 @@ pub fn add(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn say_hello(ctx: &ReducerContext) {
     for person in ctx.db.person().iter() {
-        println!("Hello, {}!", person.name);
+        log::info!("Hello, {}!", person.name);
     }
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """
 

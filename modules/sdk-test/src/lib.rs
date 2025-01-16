@@ -640,4 +640,33 @@ define_tables! {
 #[spacetimedb::reducer]
 fn no_op_succeeds(_ctx: &ReducerContext) {}
 
-spacetimedb::filter!("SELECT * FROM one_u8");
+#[spacetimedb::client_visibility_filter]
+const ONE_U8_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM one_u8");
+
+#[spacetimedb::table(name = scheduled_table, scheduled(send_scheduled_message), public)]
+pub struct ScheduledTable {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: spacetimedb::ScheduleAt,
+    text: String,
+}
+
+#[spacetimedb::reducer]
+fn send_scheduled_message(_ctx: &ReducerContext, arg: ScheduledTable) {
+    let _ = arg.text;
+    let _ = arg.scheduled_at;
+    let _ = arg.scheduled_id;
+}
+
+#[spacetimedb::table(name = indexed_table)]
+struct IndexedTable {
+    #[index(btree)]
+    player_id: u32,
+}
+
+#[spacetimedb::table(name = indexed_table_2, index(name=player_id_snazz_index, btree(columns = [player_id, player_snazz])))]
+struct IndexedTable2 {
+    player_id: u32,
+    player_snazz: f32,
+}

@@ -2,25 +2,30 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::unit_struct_type::UnitStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneUnitStruct {
+pub(super) struct InsertOneUnitStructArgs {
     pub s: UnitStruct,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOneUnitStruct {
+impl From<InsertOneUnitStructArgs> for super::Reducer {
+    fn from(args: InsertOneUnitStructArgs) -> Self {
+        Self::InsertOneUnitStruct { s: args.s }
+    }
+}
+
+impl __sdk::InModule for InsertOneUnitStructArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOneUnitStructCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOneUnitStructCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_one_unit_struct`.
@@ -55,20 +60,32 @@ pub trait insert_one_unit_struct {
 impl insert_one_unit_struct for super::RemoteReducers {
     fn insert_one_unit_struct(&self, s: UnitStruct) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_one_unit_struct", InsertOneUnitStruct { s })
+            .call_reducer("insert_one_unit_struct", InsertOneUnitStructArgs { s })
     }
     fn on_insert_one_unit_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &UnitStruct) + Send + 'static,
     ) -> InsertOneUnitStructCallbackId {
-        InsertOneUnitStructCallbackId(self.imp.on_reducer::<InsertOneUnitStruct>(
+        InsertOneUnitStructCallbackId(self.imp.on_reducer(
             "insert_one_unit_struct",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneUnitStruct| callback(ctx, &args.s)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneUnitStruct { s },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
+            }),
         ))
     }
     fn remove_on_insert_one_unit_struct(&self, callback: InsertOneUnitStructCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneUnitStruct>("insert_one_unit_struct", callback.0)
+        self.imp.remove_on_reducer("insert_one_unit_struct", callback.0)
     }
 }
 

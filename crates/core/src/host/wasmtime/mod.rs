@@ -141,6 +141,19 @@ macro_rules! impl_pointee {
 }
 impl_pointee!(u8, u16, u32, u64);
 impl_pointee!(super::wasm_common::RowIterIdx);
+
+impl WasmPointee for spacetimedb_lib::Identity {
+    type Pointer = u32;
+    fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), MemError> {
+        let bytes = self.to_byte_array();
+        mem.deref_slice_mut(ptr, bytes.len() as u32)?.copy_from_slice(&bytes);
+        Ok(())
+    }
+    fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, MemError> {
+        Ok(Self::from_byte_array(*mem.deref_array(ptr)?))
+    }
+}
+
 type WasmPtr<T> = <T as WasmPointee>::Pointer;
 
 /// Wraps access to WASM linear memory with some additional functionality.

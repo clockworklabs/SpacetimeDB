@@ -54,12 +54,12 @@
 //! ```
 
 use sqlparser::{
-    ast::{GroupByExpr, Query, Select, SetExpr, SetOperator, SetQuantifier, Statement},
+    ast::{GroupByExpr, Query, Select, SetExpr, Statement},
     dialect::PostgreSqlDialect,
     parser::Parser,
 };
 
-use crate::ast::sub::{SqlAst, SqlSelect};
+use crate::ast::sub::SqlSelect;
 
 use super::{
     errors::{SqlUnsupported, SubscriptionUnsupported},
@@ -67,16 +67,19 @@ use super::{
 };
 
 /// Parse a SQL string
-pub fn parse_subscription(sql: &str) -> SqlParseResult<SqlAst> {
+pub fn parse_subscription(sql: &str) -> SqlParseResult<SqlSelect> {
     let mut stmts = Parser::parse_sql(&PostgreSqlDialect {}, sql)?;
-    if stmts.len() > 1 {
-        return Err(SqlUnsupported::MultiStatement.into());
+    match stmts.len() {
+        0 => Err(SqlUnsupported::Empty.into()),
+        1 => parse_statement(stmts.swap_remove(0))
+            .map(|ast| ast.qualify_vars())
+            .and_then(|ast| ast.find_unqualified_vars()),
+        _ => Err(SqlUnsupported::MultiStatement.into()),
     }
-    parse_statement(stmts.swap_remove(0))
 }
 
 /// Parse a SQL query
-fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
+fn parse_statement(stmt: Statement) -> SqlParseResult<SqlSelect> {
     match stmt {
         Statement::Query(query) => SubParser::parse_query(*query),
         _ => Err(SubscriptionUnsupported::Dml.into()),
@@ -86,7 +89,7 @@ fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
 struct SubParser;
 
 impl RelParser for SubParser {
-    type Ast = SqlAst;
+    type Ast = SqlSelect;
 
     fn parse_query(query: Query) -> SqlParseResult<Self::Ast> {
         match query {
@@ -105,28 +108,9 @@ impl RelParser for SubParser {
 }
 
 /// Parse a set operation
-fn parse_set_op(expr: SetExpr) -> SqlParseResult<SqlAst> {
+fn parse_set_op(expr: SetExpr) -> SqlParseResult<SqlSelect> {
     match expr {
-        SetExpr::Query(query) => SubParser::parse_query(*query),
-        SetExpr::Select(select) => Ok(SqlAst::Select(parse_select(*select)?)),
-        SetExpr::SetOperation {
-            op: SetOperator::Union,
-            set_quantifier: SetQuantifier::All,
-            left,
-            right,
-        } => Ok(SqlAst::Union(
-            Box::new(parse_set_op(*left)?),
-            Box::new(parse_set_op(*right)?),
-        )),
-        SetExpr::SetOperation {
-            op: SetOperator::Except,
-            set_quantifier: SetQuantifier::All,
-            left,
-            right,
-        } => Ok(SqlAst::Minus(
-            Box::new(parse_set_op(*left)?),
-            Box::new(parse_set_op(*right)?),
-        )),
+        SetExpr::Select(select) => parse_select(*select).map(SqlSelect::qualify_vars),
         _ => Err(SqlUnsupported::SetOp(expr).into()),
     }
 }
@@ -174,6 +158,8 @@ mod tests {
     fn unsupported() {
         for sql in [
             "delete from t",
+            " ",
+            "",
             "select distinct a from t",
             "select * from (select * from t) join (select * from s) on a = b",
         ] {
@@ -188,12 +174,9 @@ mod tests {
             "select * from t where a = 1",
             "select * from t where a <> 1",
             "select * from t where a = 1 or a = 2",
-            "select * from t where a = 1 union all select * from t where a = 2",
-            "select * from (select * from t)",
-            "select * from (select t.* from t join s)",
-            "select * from (select t.* from t join s on t.c = s.d)",
-            "select * from (select a.* from t as a join s as b on a.c = b.d)",
-            "select * from (select t.* from (select * from t) t join (select * from s) s on s.id = t.id)",
+            "select t.* from t join s",
+            "select t.* from t join s on t.c = s.d",
+            "select a.* from t as a join s as b on a.c = b.d",
         ] {
             assert!(parse_subscription(sql).is_ok());
         }

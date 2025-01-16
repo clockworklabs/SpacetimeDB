@@ -86,6 +86,14 @@ impl Default for Options {
     }
 }
 
+impl Options {
+    /// Compute the length in bytes of an offset index based on the settings in
+    /// `self`.
+    pub fn offset_index_len(&self) -> u64 {
+        self.max_segment_size / self.offset_index_interval_bytes
+    }
+}
+
 /// The canonical commitlog, backed by on-disk log files.
 ///
 /// Records in the log are of type `T`, which canonically is instantiated to
@@ -106,7 +114,7 @@ impl<T> Commitlog<T> {
     /// free-standing functions in this module for how to traverse a read-only
     /// commitlog.
     pub fn open(root: CommitLogDir, opts: Options) -> io::Result<Self> {
-        let inner = commitlog::Generic::open(repo::Fs::new(root), opts)?;
+        let inner = commitlog::Generic::open(repo::Fs::new(root)?, opts)?;
 
         Ok(Self {
             inner: RwLock::new(inner),
@@ -444,7 +452,7 @@ pub fn commits_from(
     root: CommitLogDir,
     offset: u64,
 ) -> io::Result<impl Iterator<Item = Result<StoredCommit, error::Traversal>>> {
-    commitlog::commits_from(repo::Fs::new(root), DEFAULT_LOG_FORMAT_VERSION, offset)
+    commitlog::commits_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset)
 }
 
 /// Obtain an iterator which traverses the commitlog located at the `root`
@@ -479,7 +487,7 @@ where
     D::Error: From<error::Traversal>,
     T: 'a,
 {
-    commitlog::transactions_from(repo::Fs::new(root), DEFAULT_LOG_FORMAT_VERSION, offset, de)
+    commitlog::transactions_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
 }
 
 /// Traverse the commitlog located at the `root` directory from the start and
@@ -505,5 +513,5 @@ where
     D: Decoder,
     D::Error: From<error::Traversal> + From<io::Error>,
 {
-    commitlog::fold_transactions_from(repo::Fs::new(root), DEFAULT_LOG_FORMAT_VERSION, offset, de)
+    commitlog::fold_transactions_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
 }

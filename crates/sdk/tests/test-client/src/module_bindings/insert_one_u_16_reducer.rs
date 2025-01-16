@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneU16 {
+pub(super) struct InsertOneU16Args {
     pub n: u16,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOneU16 {
+impl From<InsertOneU16Args> for super::Reducer {
+    fn from(args: InsertOneU16Args) -> Self {
+        Self::InsertOneU16 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for InsertOneU16Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOneU16CallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOneU16CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_one_u16`.
@@ -52,19 +57,32 @@ pub trait insert_one_u_16 {
 
 impl insert_one_u_16 for super::RemoteReducers {
     fn insert_one_u_16(&self, n: u16) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_u16", InsertOneU16 { n })
+        self.imp.call_reducer("insert_one_u16", InsertOneU16Args { n })
     }
     fn on_insert_one_u_16(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u16) + Send + 'static,
     ) -> InsertOneU16CallbackId {
-        InsertOneU16CallbackId(self.imp.on_reducer::<InsertOneU16>(
+        InsertOneU16CallbackId(self.imp.on_reducer(
             "insert_one_u16",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneU16| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneU16 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_insert_one_u_16(&self, callback: InsertOneU16CallbackId) {
-        self.imp.remove_on_reducer::<InsertOneU16>("insert_one_u16", callback.0)
+        self.imp.remove_on_reducer("insert_one_u16", callback.0)
     }
 }
 

@@ -10,14 +10,14 @@ use spacetimedb::messages::control_db::HostType;
 use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
 use spacetimedb_client_api::routes::subscribe::generate_random_address;
-use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
-use spacetimedb::messages::websocket as ws;
+use spacetimedb::host::ReducerArgs;
+use spacetimedb::messages::websocket::CallReducerFlags;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_lib::{bsatn, sats};
 
@@ -52,26 +52,29 @@ pub struct ModuleHandle {
 }
 
 impl ModuleHandle {
-    fn call_reducer_msg<Args>(reducer: &str, args: Args) -> ws::ClientMessage<Args> {
-        ws::ClientMessage::CallReducer(ws::CallReducer {
-            reducer: reducer.into(),
-            args,
-            request_id: 0,
-            flags: ws::CallReducerFlags::FullUpdate,
-        })
+    async fn call_reducer(&self, reducer: &str, args: ReducerArgs) -> anyhow::Result<()> {
+        let result = self
+            .client
+            .call_reducer(reducer, args, 0, Instant::now(), CallReducerFlags::FullUpdate)
+            .await;
+        let result = match result {
+            Ok(result) => result.into(),
+            Err(err) => Err(err.into()),
+        };
+        match result {
+            Ok(()) => Ok(()),
+            Err(err) => Err(err.context(format!("Logs:\n{}", self.read_log(None).await))),
+        }
     }
 
     pub async fn call_reducer_json(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
         let args = serde_json::to_string(&args).unwrap();
-        let message = Self::call_reducer_msg(reducer, args);
-        self.send(serde_json::to_string(&SerializeWrapper::new(message)).unwrap())
-            .await
+        self.call_reducer(reducer, ReducerArgs::Json(args.into())).await
     }
 
     pub async fn call_reducer_binary(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
         let args = bsatn::to_vec(&args).unwrap();
-        let message = Self::call_reducer_msg(reducer, args);
-        self.send(bsatn::to_vec(&message).unwrap()).await
+        self.call_reducer(reducer, ReducerArgs::Bsatn(args.into())).await
     }
 
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {
@@ -189,12 +192,12 @@ impl CompiledModule {
             name: env.client_actor_index().next_client_name(),
         };
 
-        let module = env
-            .host_controller()
-            .get_module_host(instance.id)
+        let host = env
+            .leader(database.id)
             .await
+            .expect("host should be running")
             .expect("host should be running");
-        let (_, module_rx) = tokio::sync::watch::channel(module);
+        let module_rx = host.module_watcher().await.unwrap();
 
         // TODO: it might be neat to add some functionality to module handle to make
         // it easier to interact with the database. For example it could include
@@ -227,4 +230,44 @@ pub struct LoggerRecord {
     pub filename: Option<String>,
     pub line_number: Option<u32>,
     pub message: String,
+}
+
+const COMPILATION_MODE: CompilationMode = if cfg!(debug_assertions) {
+    CompilationMode::Debug
+} else {
+    CompilationMode::Release
+};
+
+pub trait ModuleLanguage {
+    const NAME: &'static str;
+
+    fn get_module() -> &'static CompiledModule;
+}
+
+pub struct Csharp;
+
+impl ModuleLanguage for Csharp {
+    const NAME: &'static str = "csharp";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-cs", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
+}
+
+pub struct Rust;
+
+impl ModuleLanguage for Rust {
+    const NAME: &'static str = "rust";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
 }

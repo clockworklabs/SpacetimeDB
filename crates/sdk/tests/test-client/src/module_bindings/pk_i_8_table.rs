@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::pk_i_8_type::PkI8;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `pk_i8`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.pk_i_8().on_insert(...)`.
 pub struct PkI8TableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<PkI8>,
+    imp: __sdk::TableHandle<PkI8>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl PkI8TableAccess for super::RemoteTables {
     }
 }
 
-pub struct PkI8InsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct PkI8DeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct PkI8InsertCallbackId(__sdk::CallbackId);
+pub struct PkI8DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for PkI8TableHandle<'ctx> {
+impl<'ctx> __sdk::Table for PkI8TableHandle<'ctx> {
     type Row = PkI8;
     type EventContext = super::EventContext;
 
@@ -82,9 +81,14 @@ impl<'ctx> __sdk::table::Table for PkI8TableHandle<'ctx> {
     }
 }
 
-pub struct PkI8UpdateCallbackId(__sdk::callbacks::CallbackId);
+#[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<PkI8>("pk_i8");
+    _table.add_unique_constraint::<i8>("n", |row| &row.n);
+}
+pub struct PkI8UpdateCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::TableWithPrimaryKey for PkI8TableHandle<'ctx> {
+impl<'ctx> __sdk::TableWithPrimaryKey for PkI8TableHandle<'ctx> {
     type UpdateCallbackId = PkI8UpdateCallbackId;
 
     fn on_update(
@@ -102,8 +106,8 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkI8TableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<PkI8>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_with_primary_key::<i8>(raw_updates, |row: &PkI8| &row.n)
+) -> __anyhow::Result<__sdk::TableUpdate<PkI8>> {
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<i8>(raw_updates, |row: &PkI8| &row.n)
         .context("Failed to parse table update for table \"pk_i8\"")
 }
 
@@ -115,7 +119,7 @@ pub(super) fn parse_table_update(
 /// but to directly chain method calls,
 /// like `ctx.db.pk_i_8().n().find(...)`.
 pub struct PkI8NUnique<'ctx> {
-    imp: __sdk::client_cache::UniqueConstraint<PkI8, i8>,
+    imp: __sdk::UniqueConstraintHandle<PkI8, i8>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -123,7 +127,7 @@ impl<'ctx> PkI8TableHandle<'ctx> {
     /// Get a handle on the `n` unique index on the table `pk_i8`.
     pub fn n(&self) -> PkI8NUnique<'ctx> {
         PkI8NUnique {
-            imp: self.imp.get_unique_constraint::<i8>("n", |row| &row.n),
+            imp: self.imp.get_unique_constraint::<i8>("n"),
             phantom: std::marker::PhantomData,
         }
     }

@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeleteUniqueU64 {
+pub(super) struct DeleteUniqueU64Args {
     pub n: u64,
 }
 
-impl __sdk::spacetime_module::InModule for DeleteUniqueU64 {
+impl From<DeleteUniqueU64Args> for super::Reducer {
+    fn from(args: DeleteUniqueU64Args) -> Self {
+        Self::DeleteUniqueU64 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for DeleteUniqueU64Args {
     type Module = super::RemoteModule;
 }
 
-pub struct DeleteUniqueU64CallbackId(__sdk::callbacks::CallbackId);
+pub struct DeleteUniqueU64CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `delete_unique_u64`.
@@ -52,20 +57,32 @@ pub trait delete_unique_u_64 {
 
 impl delete_unique_u_64 for super::RemoteReducers {
     fn delete_unique_u_64(&self, n: u64) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_unique_u64", DeleteUniqueU64 { n })
+        self.imp.call_reducer("delete_unique_u64", DeleteUniqueU64Args { n })
     }
     fn on_delete_unique_u_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &u64) + Send + 'static,
     ) -> DeleteUniqueU64CallbackId {
-        DeleteUniqueU64CallbackId(self.imp.on_reducer::<DeleteUniqueU64>(
+        DeleteUniqueU64CallbackId(self.imp.on_reducer(
             "delete_unique_u64",
-            Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueU64| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeleteUniqueU64 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_delete_unique_u_64(&self, callback: DeleteUniqueU64CallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueU64>("delete_unique_u64", callback.0)
+        self.imp.remove_on_reducer("delete_unique_u64", callback.0)
     }
 }
 

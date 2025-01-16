@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOptionI32 {
+pub(super) struct InsertOptionI32Args {
     pub n: Option<i32>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOptionI32 {
+impl From<InsertOptionI32Args> for super::Reducer {
+    fn from(args: InsertOptionI32Args) -> Self {
+        Self::InsertOptionI32 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for InsertOptionI32Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOptionI32CallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOptionI32CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_option_i32`.
@@ -52,20 +57,32 @@ pub trait insert_option_i_32 {
 
 impl insert_option_i_32 for super::RemoteReducers {
     fn insert_option_i_32(&self, n: Option<i32>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_option_i32", InsertOptionI32 { n })
+        self.imp.call_reducer("insert_option_i32", InsertOptionI32Args { n })
     }
     fn on_insert_option_i_32(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Option<i32>) + Send + 'static,
     ) -> InsertOptionI32CallbackId {
-        InsertOptionI32CallbackId(self.imp.on_reducer::<InsertOptionI32>(
+        InsertOptionI32CallbackId(self.imp.on_reducer(
             "insert_option_i32",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOptionI32| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOptionI32 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_insert_option_i_32(&self, callback: InsertOptionI32CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOptionI32>("insert_option_i32", callback.0)
+        self.imp.remove_on_reducer("insert_option_i32", callback.0)
     }
 }
 

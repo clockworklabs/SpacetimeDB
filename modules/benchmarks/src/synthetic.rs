@@ -23,7 +23,7 @@
 //! Obviously more could be added...
 #![allow(non_camel_case_types)]
 #![allow(clippy::too_many_arguments)]
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 use std::hint::black_box;
 
 // ---------- schemas ----------
@@ -372,32 +372,32 @@ pub fn clear_table_btree_each_column_u32_u64_u64(_ctx: &ReducerContext) {
 
 #[spacetimedb::reducer]
 pub fn count_unique_0_u32_u64_str(ctx: &ReducerContext) {
-    println!("COUNT: {}", ctx.db.unique_0_u32_u64_str().count());
+    log::info!("COUNT: {}", ctx.db.unique_0_u32_u64_str().count());
 }
 
 #[spacetimedb::reducer]
 pub fn count_no_index_u32_u64_str(ctx: &ReducerContext) {
-    println!("COUNT: {}", ctx.db.no_index_u32_u64_str().count());
+    log::info!("COUNT: {}", ctx.db.no_index_u32_u64_str().count());
 }
 
 #[spacetimedb::reducer]
 pub fn count_btree_each_column_u32_u64_str(ctx: &ReducerContext) {
-    println!("COUNT: {}", ctx.db.btree_each_column_u32_u64_str().count());
+    log::info!("COUNT: {}", ctx.db.btree_each_column_u32_u64_str().count());
 }
 
 #[spacetimedb::reducer]
 pub fn count_unique_0_u32_u64_u64(ctx: &ReducerContext) {
-    println!("COUNT: {}", ctx.db.unique_0_u32_u64_u64().count());
+    log::info!("COUNT: {}", ctx.db.unique_0_u32_u64_u64().count());
 }
 
 #[spacetimedb::reducer]
 pub fn count_no_index_u32_u64_u64(ctx: &ReducerContext) {
-    println!("COUNT: {}", ctx.db.no_index_u32_u64_u64().count());
+    log::info!("COUNT: {}", ctx.db.no_index_u32_u64_u64().count());
 }
 
 #[spacetimedb::reducer]
 pub fn count_btree_each_column_u32_u64_u64(ctx: &ReducerContext) {
-    println!("COUNT: {}", ctx.db.btree_each_column_u32_u64_u64().count());
+    log::info!("COUNT: {}", ctx.db.btree_each_column_u32_u64_u64().count());
 }
 // ---------- module-specific stuff ----------
 
@@ -445,6 +445,6 @@ pub fn fn_with_32_args(
 #[spacetimedb::reducer]
 pub fn print_many_things(_ctx: &ReducerContext, n: u32) {
     for _ in 0..n {
-        println!("hello again!");
+        log::info!("hello again!");
     }
 }

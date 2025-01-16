@@ -2,97 +2,91 @@ namespace SpacetimeDB.Internal;
 
 using SpacetimeDB.BSATN;
 
-public interface ITable<T> : IStructuralReadWrite
-    where T : ITable<T>, new()
+internal abstract class RawTableIterBase<T>
+    where T : IStructuralReadWrite, new()
 {
-    // These are the methods that codegen needs to implement.
-    static abstract IEnumerable<TableDesc> MakeTableDesc(ITypeRegistrar registrar);
-
-    internal abstract class RawTableIterBase
+    public sealed class Enumerator(FFI.RowIter handle) : IDisposable
     {
-        public sealed class Enumerator(FFI.RowIter handle) : IDisposable
+        byte[] buffer = new byte[0x20_000];
+        public byte[] Current { get; private set; } = [];
+
+        public bool MoveNext()
         {
-            byte[] buffer = new byte[0x20_000];
-            public byte[] Current { get; private set; } = [];
-
-            public bool MoveNext()
+            if (handle == FFI.RowIter.INVALID)
             {
-                if (handle == FFI.RowIter.INVALID)
-                {
-                    return false;
-                }
-
-                uint buffer_len;
-                while (true)
-                {
-                    buffer_len = (uint)buffer.Length;
-                    var ret = FFI.row_iter_bsatn_advance(handle, buffer, ref buffer_len);
-                    if (ret == Errno.EXHAUSTED)
-                    {
-                        handle = FFI.RowIter.INVALID;
-                    }
-                    // On success, the only way `buffer_len == 0` is for the iterator to be exhausted.
-                    // This happens when the host iterator was empty from the start.
-                    System.Diagnostics.Debug.Assert(!(ret == Errno.OK && buffer_len == 0));
-                    switch (ret)
-                    {
-                        // Iterator advanced and may also be `EXHAUSTED`.
-                        // When `OK`, we'll need to advance the iterator in the next call to `MoveNext`.
-                        // In both cases, copy over the row data to `Current` from the scratch `buffer`.
-                        case Errno.EXHAUSTED
-                        or Errno.OK:
-                            Current = new byte[buffer_len];
-                            Array.Copy(buffer, 0, Current, 0, buffer_len);
-                            return buffer_len != 0;
-                        // Couldn't find the iterator, error!
-                        case Errno.NO_SUCH_ITER:
-                            throw new NoSuchIterException();
-                        // The scratch `buffer` is too small to fit a row / chunk.
-                        // Grow `buffer` and try again.
-                        // The `buffer_len` will have been updated with the necessary size.
-                        case Errno.BUFFER_TOO_SMALL:
-                            buffer = new byte[buffer_len];
-                            continue;
-                        default:
-                            throw new UnknownException(ret);
-                    }
-                }
+                return false;
             }
 
-            public void Dispose()
+            uint buffer_len;
+            while (true)
             {
-                if (handle != FFI.RowIter.INVALID)
+                buffer_len = (uint)buffer.Length;
+                var ret = FFI.row_iter_bsatn_advance(handle, buffer, ref buffer_len);
+                if (ret == Errno.EXHAUSTED)
                 {
-                    FFI.row_iter_bsatn_close(handle);
                     handle = FFI.RowIter.INVALID;
                 }
-            }
-
-            public void Reset()
-            {
-                throw new NotImplementedException();
-            }
-        }
-
-        protected abstract void IterStart(out FFI.RowIter handle);
-
-        // Note: using the GetEnumerator() duck-typing protocol instead of IEnumerable to avoid extra boxing.
-        public Enumerator GetEnumerator()
-        {
-            IterStart(out var handle);
-            return new(handle);
-        }
-
-        public IEnumerable<T> Parse()
-        {
-            foreach (var chunk in this)
-            {
-                using var stream = new MemoryStream(chunk);
-                using var reader = new BinaryReader(stream);
-                while (stream.Position < stream.Length)
+                // On success, the only way `buffer_len == 0` is for the iterator to be exhausted.
+                // This happens when the host iterator was empty from the start.
+                System.Diagnostics.Debug.Assert(!(ret == Errno.OK && buffer_len == 0));
+                switch (ret)
                 {
-                    yield return Read<T>(reader);
+                    // Iterator advanced and may also be `EXHAUSTED`.
+                    // When `OK`, we'll need to advance the iterator in the next call to `MoveNext`.
+                    // In both cases, copy over the row data to `Current` from the scratch `buffer`.
+                    case Errno.EXHAUSTED
+                    or Errno.OK:
+                        Current = new byte[buffer_len];
+                        Array.Copy(buffer, 0, Current, 0, buffer_len);
+                        return buffer_len != 0;
+                    // Couldn't find the iterator, error!
+                    case Errno.NO_SUCH_ITER:
+                        throw new NoSuchIterException();
+                    // The scratch `buffer` is too small to fit a row / chunk.
+                    // Grow `buffer` and try again.
+                    // The `buffer_len` will have been updated with the necessary size.
+                    case Errno.BUFFER_TOO_SMALL:
+                        buffer = new byte[buffer_len];
+                        continue;
+                    default:
+                        throw new UnknownException(ret);
                 }
+            }
+        }
+
+        public void Dispose()
+        {
+            if (handle != FFI.RowIter.INVALID)
+            {
+                FFI.row_iter_bsatn_close(handle);
+                handle = FFI.RowIter.INVALID;
+            }
+        }
+
+        public void Reset()
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    protected abstract void IterStart(out FFI.RowIter handle);
+
+    // Note: using the GetEnumerator() duck-typing protocol instead of IEnumerable to avoid extra boxing.
+    public Enumerator GetEnumerator()
+    {
+        IterStart(out var handle);
+        return new(handle);
+    }
+
+    public IEnumerable<T> Parse()
+    {
+        foreach (var chunk in this)
+        {
+            using var stream = new MemoryStream(chunk);
+            using var reader = new BinaryReader(stream);
+            while (stream.Position < stream.Length)
+            {
+                yield return IStructuralReadWrite.Read<T>(reader);
             }
         }
     }
@@ -100,23 +94,28 @@ public interface ITable<T> : IStructuralReadWrite
 
 public interface ITableView<View, T>
     where View : ITableView<View, T>
-    where T : ITable<T>, new()
+    where T : IStructuralReadWrite, new()
 {
+    // These are the methods that codegen needs to implement.
+    static abstract RawTableDefV9 MakeTableDesc(ITypeRegistrar registrar);
+
     static abstract T ReadGenFields(BinaryReader reader, T row);
 
     // These are static helpers that codegen can use.
 
-    private class RawTableIter(FFI.TableId tableId) : ITable<T>.RawTableIterBase
+    private class RawTableIter(FFI.TableId tableId) : RawTableIterBase<T>
     {
         protected override void IterStart(out FFI.RowIter handle) =>
             FFI.datastore_table_scan_bsatn(tableId, out handle);
     }
 
+    private static readonly string tableName = typeof(View).Name;
+
     // Note: this must be Lazy to ensure that we don't try to get the tableId during startup, before the module is initialized.
     private static readonly Lazy<FFI.TableId> tableId_ =
         new(() =>
         {
-            var name_bytes = System.Text.Encoding.UTF8.GetBytes(typeof(View).Name);
+            var name_bytes = System.Text.Encoding.UTF8.GetBytes(tableName);
             FFI.table_id_from_name(name_bytes, (uint)name_bytes.Length, out var out_);
             return out_;
         });
@@ -158,4 +157,20 @@ public interface ITableView<View, T>
         FFI.datastore_delete_all_by_eq_bsatn(tableId, bytes, (uint)bytes.Length, out var out_);
         return out_ > 0;
     }
+
+    protected static RawScheduleDefV9 MakeSchedule(string reducerName, ushort colIndex) =>
+        new(Name: $"{tableName}_sched", ReducerName: reducerName, ScheduledAtColumn: colIndex);
+
+    protected static RawSequenceDefV9 MakeSequence(ushort colIndex) =>
+        new(
+            Name: null,
+            Column: colIndex,
+            Start: null,
+            MinValue: null,
+            MaxValue: null,
+            Increment: 1
+        );
+
+    protected static RawConstraintDefV9 MakeUniqueConstraint(ushort colIndex) =>
+        new(Name: null, Data: new RawConstraintDataV9.Unique(new([colIndex])));
 }

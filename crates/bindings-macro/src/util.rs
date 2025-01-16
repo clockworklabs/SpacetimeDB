@@ -10,46 +10,29 @@ pub(crate) fn cvt_attr<Item: Parse + quote::ToTokens>(
     args: StdTokenStream,
     item: StdTokenStream,
     extra_attr: TokenStream,
-    f: impl FnOnce(TokenStream, MutItem<'_, Item>) -> syn::Result<TokenStream>,
+    f: impl FnOnce(TokenStream, &Item) -> syn::Result<TokenStream>,
 ) -> StdTokenStream {
     let item: TokenStream = item.into();
-    let mut parsed_item = match syn::parse2::<Item>(item.clone()) {
+    let parsed_item = match syn::parse2::<Item>(item.clone()) {
         Ok(i) => i,
         Err(e) => return TokenStream::from_iter([item, e.into_compile_error()]).into(),
     };
-    let mut modified = false;
-    let mut_item = MutItem {
-        val: &mut parsed_item,
-        modified: &mut modified,
-    };
-    let generated = f(args.into(), mut_item).unwrap_or_else(syn::Error::into_compile_error);
-    let item = if modified {
-        parsed_item.into_token_stream()
-    } else {
-        item
-    };
+    let generated = f(args.into(), &parsed_item).unwrap_or_else(syn::Error::into_compile_error);
     TokenStream::from_iter([extra_attr, item, generated]).into()
+}
+
+/// Run `f`, converting `Err` returns into a compile error.
+///
+/// This helper allows code within the closure `f` to use `?` for early return.
+pub(crate) fn ok_or_compile_error<Res: Into<StdTokenStream>>(f: impl FnOnce() -> syn::Result<Res>) -> StdTokenStream {
+    match f() {
+        Ok(ok) => ok.into(),
+        Err(e) => e.into_compile_error().into(),
+    }
 }
 
 pub(crate) fn ident_to_litstr(ident: &Ident) -> syn::LitStr {
     syn::LitStr::new(&ident.to_string(), ident.span())
-}
-
-pub(crate) struct MutItem<'a, T> {
-    val: &'a mut T,
-    modified: &'a mut bool,
-}
-impl<T> std::ops::Deref for MutItem<'_, T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        self.val
-    }
-}
-impl<T> std::ops::DerefMut for MutItem<'_, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        *self.modified = true;
-        self.val
-    }
 }
 
 pub(crate) trait ErrorSource {

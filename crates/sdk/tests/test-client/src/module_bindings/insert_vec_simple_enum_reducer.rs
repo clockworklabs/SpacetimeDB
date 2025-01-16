@@ -2,25 +2,30 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::simple_enum_type::SimpleEnum;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecSimpleEnum {
+pub(super) struct InsertVecSimpleEnumArgs {
     pub e: Vec<SimpleEnum>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertVecSimpleEnum {
+impl From<InsertVecSimpleEnumArgs> for super::Reducer {
+    fn from(args: InsertVecSimpleEnumArgs) -> Self {
+        Self::InsertVecSimpleEnum { e: args.e }
+    }
+}
+
+impl __sdk::InModule for InsertVecSimpleEnumArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecSimpleEnumCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertVecSimpleEnumCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_simple_enum`.
@@ -55,20 +60,32 @@ pub trait insert_vec_simple_enum {
 impl insert_vec_simple_enum for super::RemoteReducers {
     fn insert_vec_simple_enum(&self, e: Vec<SimpleEnum>) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_vec_simple_enum", InsertVecSimpleEnum { e })
+            .call_reducer("insert_vec_simple_enum", InsertVecSimpleEnumArgs { e })
     }
     fn on_insert_vec_simple_enum(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<SimpleEnum>) + Send + 'static,
     ) -> InsertVecSimpleEnumCallbackId {
-        InsertVecSimpleEnumCallbackId(self.imp.on_reducer::<InsertVecSimpleEnum>(
+        InsertVecSimpleEnumCallbackId(self.imp.on_reducer(
             "insert_vec_simple_enum",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecSimpleEnum| callback(ctx, &args.e)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecSimpleEnum { e },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, e)
+            }),
         ))
     }
     fn remove_on_insert_vec_simple_enum(&self, callback: InsertVecSimpleEnumCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecSimpleEnum>("insert_vec_simple_enum", callback.0)
+        self.imp.remove_on_reducer("insert_vec_simple_enum", callback.0)
     }
 }
 

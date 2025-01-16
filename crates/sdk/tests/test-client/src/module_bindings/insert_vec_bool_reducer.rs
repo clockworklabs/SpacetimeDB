@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecBool {
+pub(super) struct InsertVecBoolArgs {
     pub b: Vec<bool>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertVecBool {
+impl From<InsertVecBoolArgs> for super::Reducer {
+    fn from(args: InsertVecBoolArgs) -> Self {
+        Self::InsertVecBool { b: args.b }
+    }
+}
+
+impl __sdk::InModule for InsertVecBoolArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecBoolCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertVecBoolCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_bool`.
@@ -52,20 +57,32 @@ pub trait insert_vec_bool {
 
 impl insert_vec_bool for super::RemoteReducers {
     fn insert_vec_bool(&self, b: Vec<bool>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_bool", InsertVecBool { b })
+        self.imp.call_reducer("insert_vec_bool", InsertVecBoolArgs { b })
     }
     fn on_insert_vec_bool(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<bool>) + Send + 'static,
     ) -> InsertVecBoolCallbackId {
-        InsertVecBoolCallbackId(self.imp.on_reducer::<InsertVecBool>(
+        InsertVecBoolCallbackId(self.imp.on_reducer(
             "insert_vec_bool",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecBool| callback(ctx, &args.b)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecBool { b },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, b)
+            }),
         ))
     }
     fn remove_on_insert_vec_bool(&self, callback: InsertVecBoolCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecBool>("insert_vec_bool", callback.0)
+        self.imp.remove_on_reducer("insert_vec_bool", callback.0)
     }
 }
 

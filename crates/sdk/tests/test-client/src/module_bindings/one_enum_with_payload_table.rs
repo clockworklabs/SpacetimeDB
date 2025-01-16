@@ -4,10 +4,9 @@
 #![allow(unused)]
 use super::enum_with_payload_type::EnumWithPayload;
 use super::one_enum_with_payload_type::OneEnumWithPayload;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `one_enum_with_payload`.
@@ -19,7 +18,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.one_enum_with_payload().on_insert(...)`.
 pub struct OneEnumWithPayloadTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<OneEnumWithPayload>,
+    imp: __sdk::TableHandle<OneEnumWithPayload>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -42,10 +41,10 @@ impl OneEnumWithPayloadTableAccess for super::RemoteTables {
     }
 }
 
-pub struct OneEnumWithPayloadInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct OneEnumWithPayloadDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct OneEnumWithPayloadInsertCallbackId(__sdk::CallbackId);
+pub struct OneEnumWithPayloadDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for OneEnumWithPayloadTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for OneEnumWithPayloadTableHandle<'ctx> {
     type Row = OneEnumWithPayload;
     type EventContext = super::EventContext;
 
@@ -84,9 +83,13 @@ impl<'ctx> __sdk::table::Table for OneEnumWithPayloadTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<OneEnumWithPayload>("one_enum_with_payload");
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneEnumWithPayload>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<OneEnumWithPayload>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"one_enum_with_payload\"")
 }

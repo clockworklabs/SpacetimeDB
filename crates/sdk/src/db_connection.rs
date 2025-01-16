@@ -20,21 +20,22 @@
 
 use crate::{
     callbacks::{CallbackId, DbCallbacks, ReducerCallback, ReducerCallbacks, RowCallback, UpdateCallback},
-    client_cache::{ClientCache, ClientCacheView, TableCache, UniqueConstraint},
+    client_cache::{ClientCache, TableHandle},
     spacetime_module::{DbConnection, DbUpdate, EventContext, InModule, SpacetimeModule},
     subscription::{OnAppliedCallback, OnErrorCallback, SubscriptionManager},
     websocket::{WsConnection, WsParams},
-    ws_messages as ws, Event, ReducerEvent, Status,
+    Event, ReducerEvent, Status,
 };
 use anyhow::{bail, Context, Result};
 use bytes::Bytes;
 use futures::StreamExt;
 use futures_channel::mpsc;
 use http::Uri;
+use spacetimedb_client_api_messages::websocket as ws;
 use spacetimedb_client_api_messages::websocket::{BsatnFormat, CallReducerFlags, Compression};
-use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address, Identity};
+use spacetimedb_lib::{bsatn, ser::Serialize, Address, Identity};
 use std::{
+    collections::HashMap,
     sync::{Arc, Mutex as StdMutex, OnceLock},
     time::{Duration, SystemTime},
 };
@@ -56,8 +57,8 @@ pub struct DbContextImpl<M: SpacetimeModule> {
     /// All the state which is safe to hold a lock on while running callbacks.
     pub(crate) inner: SharedCell<DbContextImplInner<M>>,
 
-    /// The most recent client cache state.
-    cache: SharedCell<ClientCacheView<M>>,
+    /// The client cache, which stores subscribed rows.
+    cache: SharedCell<ClientCache<M>>,
 
     /// Receiver channel for WebSocket messages,
     /// which are pre-parsed in the background by [`parse_loop`].
@@ -136,12 +137,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             // set the received state to store all the rows,
             // then invoke the on-applied and row callbacks.
             ParsedMessage::InitialSubscription { db_update, sub_id } => {
-                let prev_cache_view = Arc::clone(&*self.cache.lock().unwrap());
-                let mut new_cache = ClientCache::clone(&*prev_cache_view);
-                // FIXME: delete no-longer-subscribed rows.
-                db_update.apply_to_client_cache(&mut new_cache);
-                let new_cache_view = Arc::new(new_cache);
-                *self.cache.lock().unwrap() = new_cache_view;
+                // Lock the client cache in a restricted scope,
+                // so that it will be unlocked when callbacks run.
+                {
+                    let mut cache = self.cache.lock().unwrap();
+                    // FIXME: delete no-longer-subscribed rows.
+                    db_update.apply_to_client_cache(&mut *cache);
+                }
                 let event_ctx = self.make_event_ctx(Event::SubscribeApplied);
                 let mut inner = self.inner.lock().unwrap();
                 inner.subscriptions.subscription_applied(&event_ctx, sub_id);
@@ -154,11 +156,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             // apply the received diff to the client cache,
             // then invoke on-reducer and row callbacks.
             ParsedMessage::TransactionUpdate(event, Some(update)) => {
-                let prev_cache_view = Arc::clone(&*self.cache.lock().unwrap());
-                let mut new_cache = ClientCache::clone(&*prev_cache_view);
-                update.apply_to_client_cache(&mut new_cache);
-                let new_cache_view = Arc::new(new_cache);
-                *self.cache.lock().unwrap() = new_cache_view;
+                // Lock the client cache in a restricted scope,
+                // so that it will be unlocked when callbacks run.
+                {
+                    let mut cache = self.cache.lock().unwrap();
+                    update.apply_to_client_cache(&mut *cache);
+                }
                 let event_ctx = self.make_event_ctx(event);
                 let mut inner = self.inner.lock().unwrap();
                 if let Event::Reducer(reducer_event) = event_ctx.event() {
@@ -203,7 +206,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             inner.on_disconnect.take()
         };
         if let Some(disconnect_callback) = disconnected_callback {
-            let ctx = M::DbConnection::new(self.clone());
+            let ctx = <M::DbConnection as DbConnection>::new(self.clone());
             disconnect_callback(&ctx, err);
         }
     }
@@ -511,18 +514,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         &self,
         table_name: &'static str,
     ) -> TableHandle<Row> {
-        let table_view = self
-            .cache
-            .lock()
-            .unwrap()
-            .get_table::<Row>(table_name)
-            .cloned()
-            .unwrap_or_else(|| Arc::new(TableCache::default()));
+        let client_cache = Arc::clone(&self.cache);
         let pending_mutations = self.pending_mutations_send.clone();
         TableHandle {
-            table_view,
+            client_cache,
             pending_mutations,
-            table: table_name,
+            table_name,
         }
     }
 
@@ -549,25 +546,18 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     }
 
     /// Called by autogenerated reducer callback methods.
-    pub fn on_reducer<Args: Deserialize<'static> + InModule<Module = M> + 'static>(
-        &self,
-        reducer_name: &'static str,
-        mut callback: impl FnMut(&M::EventContext, &Args) + Send + 'static,
-    ) -> CallbackId {
+    pub fn on_reducer(&self, reducer_name: &'static str, callback: ReducerCallback<M>) -> CallbackId {
         let callback_id = CallbackId::get_next();
         self.queue_mutation(PendingMutation::AddReducerCallback {
             reducer: reducer_name,
             callback_id,
-            callback: Box::new(move |ctx, args| {
-                let args = args.downcast_ref::<Args>().unwrap();
-                callback(ctx, args);
-            }),
+            callback,
         });
         callback_id
     }
 
     /// Called by autogenerated reducer callback methods.
-    pub fn remove_on_reducer<Args: InModule<Module = M>>(&self, reducer_name: &'static str, callback: CallbackId) {
+    pub fn remove_on_reducer(&self, reducer_name: &'static str, callback: CallbackId) {
         self.queue_mutation(PendingMutation::RemoveReducerCallback {
             reducer: reducer_name,
             callback_id: callback,
@@ -639,124 +629,6 @@ impl CallReducerFlagsMap {
     }
 }
 
-/// Internal implementation of a generated `TableHandle` struct,
-/// which mediates access to a table in the client cache.
-pub struct TableHandle<Row: InModule> {
-    /// May be `None` if there are no rows in the table cache.
-    table_view: Arc<TableCache<Row>>,
-    /// Handle on the connection's `pending_mutations_send` channel,
-    /// so we can send callback-related [`PendingMutation`] messages.
-    pending_mutations: mpsc::UnboundedSender<PendingMutation<Row::Module>>,
-
-    /// The name of the table.
-    table: &'static str,
-}
-
-impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
-    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
-    pub fn count(&self) -> u64 {
-        self.table_view.entries.len() as u64
-    }
-
-    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
-    pub fn iter(&self) -> impl Iterator<Item = Row> + '_ {
-        self.table_view.entries.values().cloned()
-    }
-
-    /// See [`DbContextImpl::queue_mutation`].
-    fn queue_mutation(&self, mutation: PendingMutation<Row::Module>) {
-        self.pending_mutations.unbounded_send(mutation).unwrap();
-    }
-
-    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
-    pub fn on_insert(
-        &self,
-        mut callback: impl FnMut(&<Row::Module as SpacetimeModule>::EventContext, &Row) + Send + 'static,
-    ) -> CallbackId {
-        let callback_id = CallbackId::get_next();
-        self.queue_mutation(PendingMutation::AddInsertCallback {
-            table: self.table,
-            callback: Box::new(move |ctx, row| {
-                let row = row.downcast_ref::<Row>().unwrap();
-                callback(ctx, row);
-            }),
-            callback_id,
-        });
-        callback_id
-    }
-
-    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
-    pub fn remove_on_insert(&self, callback: CallbackId) {
-        self.queue_mutation(PendingMutation::RemoveInsertCallback {
-            table: self.table,
-            callback_id: callback,
-        });
-    }
-
-    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
-    pub fn on_delete(
-        &self,
-        mut callback: impl FnMut(&<Row::Module as SpacetimeModule>::EventContext, &Row) + Send + 'static,
-    ) -> CallbackId {
-        let callback_id = CallbackId::get_next();
-        self.queue_mutation(PendingMutation::AddDeleteCallback {
-            table: self.table,
-            callback: Box::new(move |ctx, row| {
-                let row = row.downcast_ref::<Row>().unwrap();
-                callback(ctx, row);
-            }),
-            callback_id,
-        });
-        callback_id
-    }
-
-    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
-    pub fn remove_on_delete(&self, callback: CallbackId) {
-        self.queue_mutation(PendingMutation::RemoveDeleteCallback {
-            table: self.table,
-            callback_id: callback,
-        });
-    }
-
-    /// Called by the autogenerated implementation of the [`crate::TableWithPrimaryKey`] method of the same name.
-    pub fn on_update(
-        &self,
-        mut callback: impl FnMut(&<Row::Module as SpacetimeModule>::EventContext, &Row, &Row) + Send + 'static,
-    ) -> CallbackId {
-        let callback_id = CallbackId::get_next();
-        self.queue_mutation(PendingMutation::AddUpdateCallback {
-            table: self.table,
-            callback: Box::new(move |ctx, old, new| {
-                let old = old.downcast_ref::<Row>().unwrap();
-                let new = new.downcast_ref::<Row>().unwrap();
-                callback(ctx, old, new);
-            }),
-            callback_id,
-        });
-        callback_id
-    }
-
-    /// Called by the autogenerated implementation of the [`crate::TableWithPrimaryKey`] method of the same name.
-    pub fn remove_on_update(&self, callback: CallbackId) {
-        self.queue_mutation(PendingMutation::RemoveUpdateCallback {
-            table: self.table,
-            callback_id: callback,
-        });
-    }
-
-    /// Called by autogenerated unique index access methods.
-    pub fn get_unique_constraint<Col>(
-        &self,
-        _constraint_name: &'static str,
-        get_unique_field: fn(&Row) -> &Col,
-    ) -> UniqueConstraint<Row, Col> {
-        UniqueConstraint {
-            table: Arc::clone(&self.table_view),
-            get_unique_field,
-        }
-    }
-}
-
 /// A builder-pattern constructor for a `DbConnection` connection to the module `M`.
 ///
 /// `M` will be the autogenerated opaque module type.
@@ -768,7 +640,7 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
 
     module_name: Option<String>,
 
-    credentials: Option<(Identity, String)>,
+    token: Option<String>,
 
     on_connect: Option<OnConnectCallback<M>>,
     on_connect_error: Option<OnConnectErrorCallback>,
@@ -813,7 +685,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
         Self {
             uri: None,
             module_name: None,
-            credentials: None,
+            token: None,
             on_connect: None,
             on_connect_error: None,
             on_disconnect: None,
@@ -862,7 +734,7 @@ but you must call one of them, or else the connection will never progress.
             handle.block_on(WsConnection::connect(
                 self.uri.unwrap(),
                 self.module_name.as_ref().unwrap(),
-                self.credentials.as_ref(),
+                self.token.as_deref(),
                 get_client_address(),
                 self.params,
             ))
@@ -884,15 +756,20 @@ but you must call one of them, or else the connection will never progress.
             on_disconnect: self.on_disconnect,
             call_reducer_flags: <_>::default(),
         }));
+
+        let mut cache = ClientCache::default();
+        M::register_tables(&mut cache);
+        let cache = Arc::new(StdMutex::new(cache));
+
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
         let ctx_imp = DbContextImpl {
             runtime: handle,
             inner,
-            cache: <_>::default(),
+            cache,
             recv: Arc::new(TokioMutex::new(parsed_recv_chan)),
             pending_mutations_send,
             pending_mutations_recv: Arc::new(TokioMutex::new(pending_mutations_recv)),
-            identity: Arc::new(StdMutex::new(self.credentials.as_ref().map(|creds| creds.0))),
+            identity: Arc::new(StdMutex::new(None)),
         };
 
         Ok(ctx_imp)
@@ -913,17 +790,18 @@ but you must call one of them, or else the connection will never progress.
         self
     }
 
-    /// Set the credentials with which to connect to the remote database.
+    /// Supply a token with which to authenticate with the remote database.
     ///
-    /// If `credentials` is `None` or this method is not invoked,
+    /// `token` should be an OpenID Connect compliant JSON Web Token.
+    ///
+    /// If this method is not invoked, or `None` is supplied,
     /// the SpacetimeDB host will generate a new anonymous `Identity`.
     ///
-    /// If the passed token is invalid, is not recognized by the host,
-    /// or does not authenticate as the passed `Identity`,
+    /// If the passed token is invalid or rejected by the host,
     /// the connection will fail asynchrnonously.
     // FIXME: currently this causes `disconnect` to be called rather than `on_connect_error`.
-    pub fn with_credentials(mut self, credentials: Option<(Identity, String)>) -> Self {
-        self.credentials = credentials;
+    pub fn with_token(mut self, token: Option<impl ToString>) -> Self {
+        self.token = token.map(|token| token.to_string());
         self
     }
 
@@ -954,10 +832,9 @@ but you must call one of them, or else the connection will never progress.
     /// The callback will receive three arguments:
     /// - The `DbConnection` which has successfully connected.
     /// - The `Identity` of the successful connection.
-    ///   If an identity and token were passed to [`Self::with_credentials`], this will be the same `Identity`.
     /// - The private access token which can be used to later re-authenticate as the same `Identity`.
-    ///   If an identity and token were passed to [`Self::with_credentials`],
-    ///   this may not be string-equal to the supplied token, but will authenticate as the same `Identity`.
+    ///   If a token was passed to [`Self::with_token`],
+    ///   this will be the same token.
     pub fn on_connect(mut self, callback: impl FnOnce(&M::DbConnection, Identity, &str) + Send + 'static) -> Self {
         if self.on_connect.is_some() {
             panic!(
@@ -1099,6 +976,9 @@ async fn parse_loop<M: SpacetimeModule>(
             ws::ServerMessage::OneOffQueryResponse(_) => {
                 unreachable!("The Rust SDK does not implement one-off queries")
             }
+            ws::ServerMessage::SubscribeApplied(_) => todo!(),
+            ws::ServerMessage::UnsubscribeApplied(_) => todo!(),
+            ws::ServerMessage::SubscriptionError(_) => todo!(),
         })
         .expect("Failed to send ParsedMessage to main thread");
     }

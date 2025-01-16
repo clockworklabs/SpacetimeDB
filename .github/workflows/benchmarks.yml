@@ -76,7 +76,7 @@ jobs:
           # summary PR" step). otherwise, we can use a fully shallow checkout
           fetch-depth: ${{ env.PR_NUMBER && 1 || 2 }}
 
-      - name: Install stable toolchain
+      - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -84,6 +84,13 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
           override: true
+
+      - name: Install .NET toolchain
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: modules/global.json
+        env:
+          DOTNET_INSTALL_DIR: ~/.dotnet
 
       - name: Build
         working-directory: crates/bench/
@@ -114,7 +121,7 @@ jobs:
           rm -rf .spacetime
           cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" "$BENCH_FILTER"
           # sticker price benchmark
-          cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" 'stdb_module/disk/update_bulk'
+          cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" 'stdb_module/.*/disk/update_bulk'
           cargo bench --bench special -- --save-baseline "$BASELINE_NAME"
           cargo run --bin summarize pack "$BASELINE_NAME"
           popd
@@ -192,7 +199,7 @@ jobs:
       - name: Install valgrind & iai-callgrind-runner
         run: |
           apt-get update
-          apt-get install -y valgrind protobuf-compiler bash sudo curl gh 
+          apt-get install -y valgrind protobuf-compiler bash sudo curl gh
           cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
           git config --global --add safe.directory /__w/SpacetimeDB/SpacetimeDB
 
@@ -343,4 +350,3 @@ jobs:
           echo "Letting anybody touch our git repo, in order to avoid breaking other jobs"
           echo "This is necessary because we are running as root inside a docker image"
           chmod -R a+rw .
-

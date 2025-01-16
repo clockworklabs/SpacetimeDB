@@ -28,6 +28,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "sdk-tests", "sdk-tests", "{
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "benchmarks-cs", "..\..\modules\benchmarks-cs\benchmarks-cs.csproj", "{50E1AAE1-C42C-4C2F-B708-5190B0362165}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BSATN.Runtime.Tests", "BSATN.Runtime.Tests\BSATN.Runtime.Tests.csproj", "{FCF18E21-FB59-4A4D-A9ED-B85D2874E536}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -62,6 +64,10 @@ Global
 		{FDACD960-168E-44F9-B036-2E29EA391BE7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{50E1AAE1-C42C-4C2F-B708-5190B0362165}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{50E1AAE1-C42C-4C2F-B708-5190B0362165}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FCF18E21-FB59-4A4D-A9ED-B85D2874E536}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FCF18E21-FB59-4A4D-A9ED-B85D2874E536}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FCF18E21-FB59-4A4D-A9ED-B85D2874E536}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FCF18E21-FB59-4A4D-A9ED-B85D2874E536}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

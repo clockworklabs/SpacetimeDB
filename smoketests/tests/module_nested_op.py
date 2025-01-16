@@ -2,7 +2,7 @@ from .. import Smoketest
 
 class ModuleNestedOp(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = account)]
 pub struct Account {
@@ -38,7 +38,7 @@ pub fn say_friends(ctx: &ReducerContext) {
     for friendship in ctx.db.friends().iter() {
         let friend1 = ctx.db.account().id().find(&friendship.friend_1).unwrap();
         let friend2 = ctx.db.account().id().find(&friendship.friend_2).unwrap();
-        println!("{} is friends with {}", friend1.name, friend2.name);
+        log::info!("{} is friends with {}", friend1.name, friend2.name);
     }
 }
 """

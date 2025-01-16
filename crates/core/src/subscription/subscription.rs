@@ -20,13 +20,15 @@
 //! materialized views are necessary. We find, however, that a particular kind
 //! of join query _can_ be evaluated incrementally without materialized views.
 
-use super::execution_unit::ExecutionUnit;
+use super::execution_unit::{ExecutionUnit, QueryHash};
+use super::module_subscription_manager::Plan;
 use super::query;
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, UpdatesRelValue};
 use crate::messages::websocket as ws;
+use crate::sql::ast::SchemaViewer;
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
 use itertools::Either;
@@ -39,6 +41,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::DbTable;
 use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
+use spacetimedb_query::delta::DeltaPlan;
 use spacetimedb_vm::expr::{self, AuthAccess, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
@@ -554,6 +557,11 @@ impl ExecutionSet {
             .map(|unit| unit.row_estimate(tx))
             .fold(0, |acc, est| acc.saturating_add(est))
     }
+
+    /// Return an iterator over the execution units
+    pub fn iter(&self) -> impl Iterator<Item = &ExecutionUnit> {
+        self.exec_units.iter().map(|arc| &**arc)
+    }
 }
 
 impl FromIterator<SupportedQuery> for ExecutionSet {
@@ -602,7 +610,31 @@ impl AuthAccess for ExecutionSet {
 /// Queries all the [`StTableType::User`] tables *right now*
 /// and turns them into [`QueryExpr`],
 /// the moral equivalent of `SELECT * FROM table`.
-pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<Vec<SupportedQuery>, DBError> {
+pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<Vec<Plan>, DBError> {
+    Ok(relational_db
+        .get_all_tables(tx)?
+        .iter()
+        .map(Deref::deref)
+        .filter(|t| {
+            t.table_type == StTableType::User && (auth.owner == auth.caller || t.table_access == StAccess::Public)
+        })
+        .map(|schema| {
+            let sql = format!("SELECT * FROM {}", schema.table_name);
+            let hash = QueryHash::from_string(&sql);
+            DeltaPlan::compile(&sql, &SchemaViewer::new(tx, auth)).map(|plan| Plan::new(plan, hash))
+        })
+        .collect::<Result<_, _>>()?)
+}
+
+/// Queries all the [`StTableType::User`] tables *right now*
+/// and turns them into [`QueryExpr`],
+/// the moral equivalent of `SELECT * FROM table`.
+#[cfg(test)]
+pub(crate) fn legacy_get_all(
+    relational_db: &RelationalDB,
+    tx: &Tx,
+    auth: &AuthCtx,
+) -> Result<Vec<SupportedQuery>, DBError> {
     Ok(relational_db
         .get_all_tables(tx)?
         .iter()
@@ -637,7 +669,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let _ = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
@@ -646,7 +678,7 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -717,7 +749,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
@@ -726,7 +758,7 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let _ = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx(Workload::ForTests);
@@ -797,7 +829,7 @@ mod tests {
 
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-        let indexes = &[(1.into(), "b")];
+        let indexes = &[1.into()];
         let _lhs_id = db
             .create_table_for_test("lhs", schema, indexes)
             .expect("Failed to create_table_for_test lhs");
@@ -808,7 +840,7 @@ mod tests {
             ("c", AlgebraicType::U64),
             ("d", AlgebraicType::U64),
         ];
-        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let indexes = &[0.into(), 1.into()];
         let _rhs_id = db
             .create_table_for_test("rhs", schema, indexes)
             .expect("Failed to create_table_for_test rhs");

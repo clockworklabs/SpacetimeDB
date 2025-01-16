@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecString {
+pub(super) struct InsertVecStringArgs {
     pub s: Vec<String>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertVecString {
+impl From<InsertVecStringArgs> for super::Reducer {
+    fn from(args: InsertVecStringArgs) -> Self {
+        Self::InsertVecString { s: args.s }
+    }
+}
+
+impl __sdk::InModule for InsertVecStringArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecStringCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertVecStringCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_string`.
@@ -52,20 +57,32 @@ pub trait insert_vec_string {
 
 impl insert_vec_string for super::RemoteReducers {
     fn insert_vec_string(&self, s: Vec<String>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_string", InsertVecString { s })
+        self.imp.call_reducer("insert_vec_string", InsertVecStringArgs { s })
     }
     fn on_insert_vec_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<String>) + Send + 'static,
     ) -> InsertVecStringCallbackId {
-        InsertVecStringCallbackId(self.imp.on_reducer::<InsertVecString>(
+        InsertVecStringCallbackId(self.imp.on_reducer(
             "insert_vec_string",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecString| callback(ctx, &args.s)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecString { s },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
+            }),
         ))
     }
     fn remove_on_insert_vec_string(&self, callback: InsertVecStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecString>("insert_vec_string", callback.0)
+        self.imp.remove_on_reducer("insert_vec_string", callback.0)
     }
 }
 

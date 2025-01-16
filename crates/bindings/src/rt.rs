@@ -310,9 +310,20 @@ pub trait RowLevelSecurityInfo {
     const SQL: &'static str;
 }
 
+/// A function which will be registered by [`register_describer`] into [`DESCRIBERS`],
+/// which will be called by [`__describe_module__`] to construct a module definition.
+///
+/// May be a closure over static data, so that e.g.
+/// [`register_row_level_security`] doesn't need to take a type parameter.
+/// Permitted by the type system to be a [`FnMut`] mutable closure,
+/// since [`DESCRIBERS`] is in a [`Mutex`] anyways,
+/// but will likely cause weird misbehaviors if a non-idempotent function is used.
+trait DescriberFn: FnMut(&mut ModuleBuilder) + Send + 'static {}
+impl<F: FnMut(&mut ModuleBuilder) + Send + 'static> DescriberFn for F {}
+
 /// Registers into `DESCRIBERS` a function `f` to modify the module builder.
-fn register_describer(f: fn(&mut ModuleBuilder)) {
-    DESCRIBERS.lock().unwrap().push(f)
+fn register_describer(f: impl DescriberFn) {
+    DESCRIBERS.lock().unwrap().push(Box::new(f))
 }
 
 /// Registers a describer for the `SpacetimeType` `T`.
@@ -334,19 +345,19 @@ pub fn register_table<T: Table>() {
             .with_access(T::TABLE_ACCESS);
 
         for &col in T::UNIQUE_COLUMNS {
-            table = table.with_unique_constraint(col, None);
+            table = table.with_unique_constraint(col);
         }
         for &index in T::INDEXES {
-            table = table.with_index(index.algo.into(), index.accessor_name, Some(index.name.into()));
+            table = table.with_index(index.algo.into(), index.accessor_name);
         }
         if let Some(primary_key) = T::PRIMARY_KEY {
             table = table.with_primary_key(primary_key);
         }
         for &col in T::SEQUENCES {
-            table = table.with_column_sequence(col, None);
+            table = table.with_column_sequence(col);
         }
         if let Some(schedule) = T::SCHEDULE {
-            table = table.with_schedule(schedule.reducer_name, schedule.scheduled_at_column, None);
+            table = table.with_schedule(schedule.reducer_name, schedule.scheduled_at_column);
         }
 
         table.finish();
@@ -373,9 +384,9 @@ pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>)
 }
 
 /// Registers a row-level security policy.
-pub fn register_row_level_security<R: RowLevelSecurityInfo>() {
+pub fn register_row_level_security(sql: &'static str) {
     register_describer(|module| {
-        module.inner.add_row_level_security(R::SQL);
+        module.inner.add_row_level_security(sql);
     })
 }
 
@@ -389,7 +400,7 @@ struct ModuleBuilder {
 }
 
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
-static DESCRIBERS: Mutex<Vec<fn(&mut ModuleBuilder)>> = Mutex::new(Vec::new());
+static DESCRIBERS: Mutex<Vec<Box<dyn DescriberFn>>> = Mutex::new(Vec::new());
 
 /// A reducer function takes in `(Sender, Timestamp, Args)`
 /// and returns a result with a possible error message.
@@ -415,7 +426,7 @@ static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 extern "C" fn __describe_module__(description: BytesSink) {
     // Collect the `module`.
     let mut module = ModuleBuilder::default();
-    for describer in &*DESCRIBERS.lock().unwrap() {
+    for describer in &mut *DESCRIBERS.lock().unwrap() {
         describer(&mut module)
     }
 

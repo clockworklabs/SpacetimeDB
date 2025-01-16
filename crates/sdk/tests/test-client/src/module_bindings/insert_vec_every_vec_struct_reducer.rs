@@ -2,25 +2,30 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 use super::every_vec_struct_type::EveryVecStruct;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecEveryVecStruct {
+pub(super) struct InsertVecEveryVecStructArgs {
     pub s: Vec<EveryVecStruct>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertVecEveryVecStruct {
+impl From<InsertVecEveryVecStructArgs> for super::Reducer {
+    fn from(args: InsertVecEveryVecStructArgs) -> Self {
+        Self::InsertVecEveryVecStruct { s: args.s }
+    }
+}
+
+impl __sdk::InModule for InsertVecEveryVecStructArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecEveryVecStructCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertVecEveryVecStructCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_every_vec_struct`.
@@ -55,20 +60,32 @@ pub trait insert_vec_every_vec_struct {
 impl insert_vec_every_vec_struct for super::RemoteReducers {
     fn insert_vec_every_vec_struct(&self, s: Vec<EveryVecStruct>) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_vec_every_vec_struct", InsertVecEveryVecStruct { s })
+            .call_reducer("insert_vec_every_vec_struct", InsertVecEveryVecStructArgs { s })
     }
     fn on_insert_vec_every_vec_struct(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<EveryVecStruct>) + Send + 'static,
     ) -> InsertVecEveryVecStructCallbackId {
-        InsertVecEveryVecStructCallbackId(self.imp.on_reducer::<InsertVecEveryVecStruct>(
+        InsertVecEveryVecStructCallbackId(self.imp.on_reducer(
             "insert_vec_every_vec_struct",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecEveryVecStruct| callback(ctx, &args.s)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecEveryVecStruct { s },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s)
+            }),
         ))
     }
     fn remove_on_insert_vec_every_vec_struct(&self, callback: InsertVecEveryVecStructCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecEveryVecStruct>("insert_vec_every_vec_struct", callback.0)
+        self.imp.remove_on_reducer("insert_vec_every_vec_struct", callback.0)
     }
 }
 

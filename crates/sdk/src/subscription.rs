@@ -126,6 +126,25 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
             .unwrap();
         M::SubscriptionHandle::new(SubscriptionHandleImpl { conn, sub_id })
     }
+
+    /// Subscribe to all rows from all tables.
+    ///
+    /// This method is intended as a convenience
+    /// for applications where client-side memory use and network bandwidth are not concerns.
+    /// Applications where these resources are a constraint
+    /// should register more precise queries via [`Self::subscribe`]
+    /// in order to replicate only the subset of data which the client needs to function.
+    ///
+    /// This method should not be combined with [`Self::subscribe`] on the same `DbConnection`.
+    /// A connection may either [`Self::subscribe`] to particular queries,
+    /// or [`Self::subscribe_to_all_tables`], but not both.
+    /// Attempting to call [`Self::subscribe`]
+    /// on a `DbConnection` that has previously used [`Self::subscribe_to_all_tables`],
+    /// or vice versa, may misbehave in any number of ways,
+    /// including dropping subscriptions, corrupting the client cache, or panicking.
+    pub fn subscribe_to_all_tables(self) {
+        self.subscribe(["SELECT * FROM *"]);
+    }
 }
 
 /// Types which specify a list of query strings.

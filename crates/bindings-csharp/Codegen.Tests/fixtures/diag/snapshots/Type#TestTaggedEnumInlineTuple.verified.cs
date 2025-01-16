@@ -39,7 +39,7 @@ partial record TestTaggedEnumInlineTuple
             }
         }
 
-        public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
+        public SpacetimeDB.BSATN.AlgebraicType.Ref GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             registrar.RegisterType<TestTaggedEnumInlineTuple>(
@@ -50,5 +50,9 @@ partial record TestTaggedEnumInlineTuple
                     }
                 )
             );
+
+        SpacetimeDB.BSATN.AlgebraicType SpacetimeDB.BSATN.IReadWrite<TestTaggedEnumInlineTuple>.GetAlgebraicType(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => GetAlgebraicType(registrar);
     }
 } // TestTaggedEnumInlineTuple

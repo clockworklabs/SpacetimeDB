@@ -52,13 +52,13 @@ pub struct AutoMigratePlan<'def> {
     /// There is also an implied check: that the schema in the database is compatible with the old ModuleDef.
     pub prechecks: Vec<AutoMigratePrecheck<'def>>,
     /// The migration steps to perform.
-    /// Order should not matter, as the steps are independent.
+    /// Order matters: `Remove`s of a particular `Def` must be ordered before `Add`s.
     pub steps: Vec<AutoMigrateStep<'def>>,
 }
 
 /// Checks that must be performed before performing an automatic migration.
 /// These checks can access table contents and other database state.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum AutoMigratePrecheck<'def> {
     /// Perform a check that adding a sequence is valid (the relevant column contains no values
     /// greater than the sequence's start value).
@@ -66,31 +66,51 @@ pub enum AutoMigratePrecheck<'def> {
 }
 
 /// A step in an automatic migration.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum AutoMigrateStep<'def> {
+    // It is important FOR CORRECTNESS that `Remove` variants are declared before `Add` variants in this enum!
+    //
+    // The ordering is used to sort the steps of an auto-migration.
+    // If adds go before removes, and the user tries to remove an index and then re-add it with new configuration,
+    // the following can occur:
+    //
+    // 1. `AddIndex("indexname")`
+    // 2. `RemoveIndex("indexname")`
+    //
+    // This results in the existing index being re-added -- which, at time of writing, does nothing -- and then removed,
+    // resulting in the intended index not being created.
+    //
+    // For now, we just ensure that we declare all `Remove` variants before `Add` variants
+    // and let `#[derive(PartialOrd)]` take care of the rest.
+    //
+    // TODO: when this enum is made serializable, a more durable fix will be needed here.
+    // Probably we will want to have separate arrays of add and remove steps.
+    //
+    /// Remove an index.
+    RemoveIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
+    /// Remove a constraint.
+    RemoveConstraint(<ConstraintDef as ModuleDefLookup>::Key<'def>),
+    /// Remove a sequence.
+    RemoveSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
+    /// Remove a schedule annotation from a table.
+    RemoveSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
+    /// Remove a row-level security query.
+    RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
+
     /// Add a table, including all indexes, constraints, and sequences.
     /// There will NOT be separate steps in the plan for adding indexes, constraints, and sequences.
     AddTable(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Add an index.
     AddIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
-    /// Remove an index.
-    RemoveIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
-    /// Remove a constraint.
-    RemoveConstraint(<ConstraintDef as ModuleDefLookup>::Key<'def>),
     /// Add a sequence.
     AddSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
-    /// Remove a sequence.
-    RemoveSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
-    /// Change the access of a table.
-    ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Add a schedule annotation to a table.
     AddSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
-    /// Remove a schedule annotation from a table.
-    RemoveSchedule(<ScheduleDef as ModuleDefLookup>::Key<'def>),
     /// Add a row-level security query.
     AddRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
-    /// Remove a row-level security query.
-    RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
+
+    /// Change the access of a table.
+    ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
 }
 
 /// Something that might prevent an automatic migration.
@@ -116,10 +136,10 @@ pub enum AutoMigrateError {
     },
 
     #[error("Adding a unique constraint {constraint} requires a manual migration")]
-    AddUniqueConstraint { constraint: Identifier },
+    AddUniqueConstraint { constraint: Box<str> },
 
     #[error("Changing a unique constraint {constraint} requires a manual migration")]
-    ChangeUniqueConstraint { constraint: Identifier },
+    ChangeUniqueConstraint { constraint: Box<str> },
 
     #[error("Removing the table {table} requires a manual migration")]
     RemoveTable { table: Identifier },
@@ -135,7 +155,7 @@ pub enum AutoMigrateError {
         "Changing the accessor name on index {index} from {old_accessor:?} to {new_accessor:?} requires a manual migration"
     )]
     ChangeIndexAccessor {
-        index: Identifier,
+        index: Box<str>,
         old_accessor: Option<Identifier>,
         new_accessor: Option<Identifier>,
     },
@@ -181,6 +201,9 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
 
     let ((), (), (), (), ()) = (tables_ok, indexes_ok, sequences_ok, constraints_ok, rls_ok).combine_errors()?;
 
+    plan.steps.sort();
+    plan.prechecks.sort();
+
     Ok(plan)
 }
 
@@ -188,6 +211,7 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
 /// `Add` means the item is present in the new `ModuleDef` but not the old.
 /// `Remove` means the item is present in the old `ModuleDef` but not the new.
 /// `MaybeChange` indicates the item is present in both.
+#[derive(Debug)]
 enum Diff<'def, T> {
     Add { new: &'def T },
     Remove { old: &'def T },
@@ -195,7 +219,7 @@ enum Diff<'def, T> {
 }
 
 /// Diff a collection of items, looking them up in both the old and new `ModuleDef` by their `ModuleDefLookup::Key`.
-/// Keys are required to be stable across migrations, which mak
+/// Keys are required to be stable across migrations, which makes this possible.
 fn diff<'def, T: ModuleDefLookup, I: Iterator<Item = &'def T>>(
     old: &'def ModuleDef,
     new: &'def ModuleDef,
@@ -434,7 +458,7 @@ fn auto_migrate_row_level_security(plan: &mut AutoMigratePlan) -> Result<()> {
 mod tests {
     use super::*;
     use spacetimedb_data_structures::expect_error_matching;
-    use spacetimedb_lib::{db::raw_def::*, AlgebraicType, ProductType, ScheduleAt};
+    use spacetimedb_lib::{db::raw_def::*, is_sorted, AlgebraicType, ProductType, ScheduleAt};
     use spacetimedb_primitives::{ColId, ColList};
     use v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess};
     use validate::tests::expect_identifier;
@@ -453,21 +477,19 @@ mod tests {
                 ]),
                 true,
             )
-            .with_column_sequence(0, Some("Apples_sequence".into()))
-            .with_unique_constraint(ColId(0), Some("Apples_unique_constraint".into()))
+            .with_column_sequence(0)
+            .with_unique_constraint(ColId(0))
             .with_index(
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from([0]),
                 },
                 "id_index",
-                Some("Apples_id_index".into()),
             )
             .with_index(
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from([0, 1]),
                 },
                 "id_name_index",
-                Some("Apples_id_name_index".into()),
             )
             .finish();
 
@@ -494,7 +516,7 @@ mod tests {
                 true,
             )
             .with_auto_inc_primary_key(0)
-            .with_schedule("check_deliveries", 1, None)
+            .with_schedule("check_deliveries", 1)
             .finish();
         old_builder.add_reducer(
             "check_deliveries",
@@ -541,7 +563,6 @@ mod tests {
                     columns: ColList::from([0]),
                 },
                 "id_index",
-                Some("Apples_id_index".into()),
             )
             // remove ["id", "name"] index
             // add ["id", "count"] index
@@ -550,7 +571,6 @@ mod tests {
                     columns: ColList::from([0, 2]),
                 },
                 "id_count_index",
-                Some("Apples_id_count_index".into()),
             )
             .finish();
 
@@ -565,7 +585,7 @@ mod tests {
                 true,
             )
             // add column sequence
-            .with_column_sequence(0, Some("Bananas_sequence".into()))
+            .with_column_sequence(0)
             // change access
             .with_access(TableAccess::Private)
             .finish();
@@ -600,7 +620,7 @@ mod tests {
             )
             .with_auto_inc_primary_key(0)
             // add schedule def
-            .with_schedule("perform_inspection", 1, None)
+            .with_schedule("perform_inspection", 1)
             .finish();
 
         // add reducer.
@@ -618,10 +638,9 @@ mod tests {
                     columns: ColList::from([0]),
                 },
                 "id_index",
-                None,
             )
-            .with_column_sequence(0, None)
-            .with_unique_constraint(0, None)
+            .with_column_sequence(0)
+            .with_unique_constraint(0)
             .with_primary_key(0)
             .finish();
 
@@ -637,18 +656,20 @@ mod tests {
         let bananas = expect_identifier("Bananas");
         let oranges = expect_identifier("Oranges");
 
-        let bananas_sequence = expect_identifier("Bananas_sequence");
-        let apples_unique_constraint = expect_identifier("Apples_unique_constraint");
-        let apples_sequence = expect_identifier("Apples_sequence");
-        let apples_id_name_index = expect_identifier("Apples_id_name_index");
-        let apples_id_count_index = expect_identifier("Apples_id_count_index");
-        let deliveries_schedule = expect_identifier("schedule_Deliveries");
-        let inspections_schedule = expect_identifier("schedule_Inspections");
+        let bananas_sequence = "Bananas_id_seq";
+        let apples_unique_constraint = "Apples_id_key";
+        let apples_sequence = "Apples_id_seq";
+        let apples_id_name_index = "Apples_id_name_idx_btree";
+        let apples_id_count_index = "Apples_id_count_idx_btree";
+        let deliveries_schedule = "Deliveries_sched";
+        let inspections_schedule = "Inspections_sched";
+
+        assert!(is_sorted(plan.prechecks.iter()));
 
         assert_eq!(plan.prechecks.len(), 1);
         assert_eq!(
             plan.prechecks[0],
-            AutoMigratePrecheck::CheckAddSequenceRangeValid(&bananas_sequence)
+            AutoMigratePrecheck::CheckAddSequenceRangeValid(bananas_sequence)
         );
         let sql_old = RawRowLevelSecurityDefV9 {
             sql: "SELECT * FROM Apples".into(),
@@ -658,31 +679,52 @@ mod tests {
             sql: "SELECT * FROM Bananas".into(),
         };
 
-        assert!(plan.steps.contains(&AutoMigrateStep::RemoveSequence(&apples_sequence)));
-        assert!(plan
-            .steps
-            .contains(&AutoMigrateStep::RemoveConstraint(&apples_unique_constraint)));
-        assert!(plan
-            .steps
-            .contains(&AutoMigrateStep::RemoveIndex(&apples_id_name_index)));
-        assert!(plan.steps.contains(&AutoMigrateStep::AddIndex(&apples_id_count_index)));
+        let steps = &plan.steps[..];
 
-        assert!(plan.steps.contains(&AutoMigrateStep::ChangeAccess(&bananas)));
-        assert!(plan.steps.contains(&AutoMigrateStep::AddSequence(&bananas_sequence)));
+        assert!(is_sorted(steps.iter()));
 
-        assert!(plan.steps.contains(&AutoMigrateStep::AddTable(&oranges)));
+        assert!(
+            steps.contains(&AutoMigrateStep::RemoveSequence(apples_sequence)),
+            "{steps:?}"
+        );
+        assert!(
+            steps.contains(&AutoMigrateStep::RemoveConstraint(apples_unique_constraint)),
+            "{steps:?}"
+        );
+        assert!(
+            steps.contains(&AutoMigrateStep::RemoveIndex(apples_id_name_index)),
+            "{steps:?}"
+        );
+        assert!(
+            steps.contains(&AutoMigrateStep::AddIndex(apples_id_count_index)),
+            "{steps:?}"
+        );
 
-        assert!(plan
-            .steps
-            .contains(&AutoMigrateStep::RemoveSchedule(&deliveries_schedule)));
-        assert!(plan
-            .steps
-            .contains(&AutoMigrateStep::AddSchedule(&inspections_schedule)));
+        assert!(steps.contains(&AutoMigrateStep::ChangeAccess(&bananas)), "{steps:?}");
+        assert!(
+            steps.contains(&AutoMigrateStep::AddSequence(bananas_sequence)),
+            "{steps:?}"
+        );
 
-        assert!(plan
-            .steps
-            .contains(&AutoMigrateStep::RemoveRowLevelSecurity(&sql_old.sql)));
-        assert!(plan.steps.contains(&AutoMigrateStep::AddRowLevelSecurity(&sql_new.sql)));
+        assert!(steps.contains(&AutoMigrateStep::AddTable(&oranges)), "{steps:?}");
+
+        assert!(
+            steps.contains(&AutoMigrateStep::RemoveSchedule(deliveries_schedule)),
+            "{steps:?}"
+        );
+        assert!(
+            steps.contains(&AutoMigrateStep::AddSchedule(inspections_schedule)),
+            "{steps:?}"
+        );
+
+        assert!(
+            steps.contains(&AutoMigrateStep::RemoveRowLevelSecurity(&sql_old.sql)),
+            "{steps:?}"
+        );
+        assert!(
+            steps.contains(&AutoMigrateStep::AddRowLevelSecurity(&sql_new.sql)),
+            "{steps:?}"
+        );
     }
 
     #[test]
@@ -704,9 +746,8 @@ mod tests {
                     columns: ColList::from([0]),
                 },
                 "id_index",
-                Some("Apples_id_index".into()),
             )
-            .with_unique_constraint(ColList::from_iter([1, 2]), Some("Apples_changing_constraint".into()))
+            .with_unique_constraint(ColList::from_iter([1, 2]))
             .with_type(TableType::User)
             .finish();
 
@@ -742,13 +783,12 @@ mod tests {
             )
             .with_index(
                 RawIndexAlgorithm::BTree {
-                    columns: ColList::from([0]),
+                    columns: ColList::from([1]),
                 },
                 "id_index_new_accessor", // change accessor name
-                Some("Apples_id_index".into()),
             )
-            .with_unique_constraint(ColList::from_iter([0, 1]), Some("Apples_changing_constraint".into()))
-            .with_unique_constraint(ColId(0), Some("Apples_name_unique_constraint".into())) // add unique constraint
+            .with_unique_constraint(ColList::from_iter([1, 0]))
+            .with_unique_constraint(ColId(0)) // add unique constraint
             .with_type(TableType::System) // change type
             .finish();
 
@@ -767,8 +807,7 @@ mod tests {
         let apples = expect_identifier("Apples");
         let bananas = expect_identifier("Bananas");
 
-        let apples_name_unique_constraint = expect_identifier("Apples_name_unique_constraint");
-        let apples_changing_constraint = expect_identifier("Apples_changing_constraint");
+        let apples_name_unique_constraint = "Apples_name_key";
 
         let weight = expect_identifier("weight");
         let count = expect_identifier("count");
@@ -807,7 +846,7 @@ mod tests {
 
         expect_error_matching!(
             result,
-            AutoMigrateError::AddUniqueConstraint { constraint } => constraint == &apples_name_unique_constraint
+            AutoMigrateError::AddUniqueConstraint { constraint } => &constraint[..] == apples_name_unique_constraint
         );
 
         expect_error_matching!(
@@ -820,7 +859,7 @@ mod tests {
             AutoMigrateError::RemoveTable { table } => table == &bananas
         );
 
-        let apples_id_index = expect_identifier("Apples_id_index");
+        let apples_id_index = "Apples_id_idx_btree";
         let accessor_old = expect_identifier("id_index");
         let accessor_new = expect_identifier("id_index_new_accessor");
         expect_error_matching!(
@@ -829,12 +868,12 @@ mod tests {
                 index,
                 old_accessor,
                 new_accessor
-            } => index == &apples_id_index && old_accessor.as_ref() == Some(&accessor_old) && new_accessor.as_ref() == Some(&accessor_new)
+            } => &index[..] == apples_id_index && old_accessor.as_ref() == Some(&accessor_old) && new_accessor.as_ref() == Some(&accessor_new)
         );
 
-        expect_error_matching!(
-            result,
-            AutoMigrateError::ChangeUniqueConstraint { constraint } => constraint == &apples_changing_constraint
-        );
+        // It is not currently possible to test for `ChangeUniqueConstraint`, because unique constraint names are now generated during validation,
+        // and are determined by their columns and table name. So it's impossible to create a unique constraint with the same name
+        // but different columns from an old one.
+        // We've left the check in, just in case this changes in the future.
     }
 }

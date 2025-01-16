@@ -23,12 +23,15 @@ spacetimedb-durability.workspace = true
 spacetimedb-metrics.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-paths.workspace = true
+spacetimedb-physical-plan.workspace = true
+spacetimedb-query.workspace = true
 spacetimedb-sats = { workspace = true, features = ["serde"] }
 spacetimedb-schema.workspace = true
 spacetimedb-table.workspace = true
 spacetimedb-vm.workspace = true
 spacetimedb-snapshot.workspace = true
 spacetimedb-expr.workspace = true
+spacetimedb-execution.workspace = true
 
 anyhow = { workspace = true, features = ["backtrace"] }
 arrayvec.workspace = true
@@ -92,6 +95,7 @@ tokio-util.workspace = true
 tokio.workspace = true
 tokio-stream = "0.1"
 toml.workspace = true
+toml_edit.workspace = true
 tracing-appender.workspace = true
 tracing-core.workspace = true
 tracing-flame.workspace = true
@@ -128,3 +132,4 @@ env_logger.workspace = true
 pretty_assertions.workspace = true
 jsonwebtoken.workspace = true
 axum.workspace = true
+reqwest.workspace = true

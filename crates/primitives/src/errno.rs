@@ -20,6 +20,8 @@ macro_rules! errnos {
             BUFFER_TOO_SMALL(11, "The provided buffer is not large enough to store the data"),
             UNIQUE_ALREADY_EXISTS(12, "Value with given unique identifier already exists"),
             SCHEDULE_AT_DELAY_TOO_LONG(13, "Specified delay in scheduling row was too long"),
+            INDEX_NOT_UNIQUE(14, "The index was not unique"),
+            NO_SUCH_ROW(15, "The row was not found, e.g., in an update call"),
         );
     };
 }

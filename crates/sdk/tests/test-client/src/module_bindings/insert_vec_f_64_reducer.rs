@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecF64 {
+pub(super) struct InsertVecF64Args {
     pub f: Vec<f64>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertVecF64 {
+impl From<InsertVecF64Args> for super::Reducer {
+    fn from(args: InsertVecF64Args) -> Self {
+        Self::InsertVecF64 { f: args.f }
+    }
+}
+
+impl __sdk::InModule for InsertVecF64Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecF64CallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertVecF64CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_f64`.
@@ -52,19 +57,32 @@ pub trait insert_vec_f_64 {
 
 impl insert_vec_f_64 for super::RemoteReducers {
     fn insert_vec_f_64(&self, f: Vec<f64>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_f64", InsertVecF64 { f })
+        self.imp.call_reducer("insert_vec_f64", InsertVecF64Args { f })
     }
     fn on_insert_vec_f_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<f64>) + Send + 'static,
     ) -> InsertVecF64CallbackId {
-        InsertVecF64CallbackId(self.imp.on_reducer::<InsertVecF64>(
+        InsertVecF64CallbackId(self.imp.on_reducer(
             "insert_vec_f64",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecF64| callback(ctx, &args.f)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecF64 { f },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, f)
+            }),
         ))
     }
     fn remove_on_insert_vec_f_64(&self, callback: InsertVecF64CallbackId) {
-        self.imp.remove_on_reducer::<InsertVecF64>("insert_vec_f64", callback.0)
+        self.imp.remove_on_reducer("insert_vec_f64", callback.0)
     }
 }
 

@@ -23,8 +23,8 @@ pub struct SQLite {
 }
 
 impl BenchDatabase for SQLite {
-    fn name() -> &'static str {
-        "sqlite"
+    fn name() -> String {
+        "sqlite".to_owned()
     }
 
     fn build(in_memory: bool) -> ResultBench<Self>

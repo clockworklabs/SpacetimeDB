@@ -86,6 +86,7 @@ IMPORT(Status, console_timer_end,
 IMPORT(void, volatile_nonatomic_schedule_immediate,
        (const uint8_t* name, size_t name_len, const uint8_t* args, size_t args_len),
        (name, name_len, args, args_len));
+IMPORT(void, identity, (void* id_ptr), (id_ptr));
 
 #ifndef EXPERIMENTAL_WASM_AOT
 static MonoClass* ffi_class;

@@ -213,7 +213,7 @@ pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
 pub(crate) mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{StTableFields, ST_TABLE_ID, ST_TABLE_NAME};
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{insert, TestDB};
     use crate::vm::tests::create_table_with_rows;
     use pretty_assertions::assert_eq;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -619,7 +619,7 @@ pub(crate) mod tests {
         ];
         let table_id = db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
         db.with_auto_commit(Workload::ForTests, |tx| {
-            db.insert(tx, table_id, product![1, 1, 1, 1]).map(drop)
+            insert(&db, tx, table_id, &product![1, 1, 1, 1]).map(drop)
         })?;
 
         let result = run_for_testing(&db, "select * from test where b = 1 and a = 1")?;
@@ -660,12 +660,12 @@ pub(crate) mod tests {
         let db = TestDB::durable()?;
 
         let table_id = db
-            .create_table_for_test("test", &[("x", AlgebraicType::I32)], &[(ColId(0), "test_x")])
+            .create_table_for_test("test", &[("x", AlgebraicType::I32)], &[ColId(0)])
             .unwrap();
 
         db.with_auto_commit(Workload::ForTests, |tx| {
             for i in 0..1000i32 {
-                db.insert(tx, table_id, product!(i)).unwrap();
+                insert(&db, tx, table_id, &product!(i)).unwrap();
             }
             Ok::<(), DBError>(())
         })
@@ -697,7 +697,9 @@ pub(crate) mod tests {
         let schema = &[("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
         let table_id = db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
         let row = product![4u8, 8u8];
-        db.with_auto_commit(Workload::ForTests, |tx| db.insert(tx, table_id, row.clone()).map(drop))?;
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            insert(&db, tx, table_id, &row.clone()).map(drop)
+        })?;
 
         let result = run_for_testing(&db, "select * from test where a >= 3 and a <= 5 and b >= 3 and b <= 5")?;
 
@@ -714,7 +716,7 @@ pub(crate) mod tests {
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
         db.with_auto_commit(Workload::ForTests, |tx| -> Result<_, DBError> {
             for i in 0..5u8 {
-                db.insert(tx, table_id, product!(i))?;
+                insert(&db, tx, table_id, &product!(i))?;
             }
             Ok(())
         })?;

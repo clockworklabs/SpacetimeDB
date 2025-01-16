@@ -6,7 +6,7 @@ use std::ops::Deref;
 
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, SumType};
-use spacetimedb_lib::ReducerDef;
+use spacetimedb_lib::{ProductTypeElement, ReducerDef};
 use spacetimedb_primitives::ColList;
 use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm};
 use spacetimedb_schema::schema::TableSchema;
@@ -265,26 +265,25 @@ pub fn autogen_csharp_sum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespac
 }
 
 pub fn autogen_csharp_tuple(ctx: &GenCtx, name: &str, tuple: &ProductType, namespace: &str) -> String {
-    autogen_csharp_product_table_common(ctx, name, tuple, None, namespace)
+    autogen_csharp_product_common_file(ctx, name, &tuple.elements, "", namespace)
 }
 
 #[allow(deprecated)]
 pub fn autogen_csharp_table(ctx: &GenCtx, table: &TableDescHack, namespace: &str) -> String {
-    let tuple = ctx.typespace[table.data].as_product().unwrap();
-    autogen_csharp_product_table_common(
+    autogen_csharp_product_common_file(
         ctx,
         csharp_typename(ctx, table.data),
-        tuple,
-        Some(table.schema.clone()),
+        &ctx.typespace[table.data].as_product().unwrap().elements,
+        "IDatabaseRow",
         namespace,
     )
 }
 
-fn autogen_csharp_product_table_common(
+fn autogen_csharp_product_common_file(
     ctx: &GenCtx,
     name: &str,
-    product_type: &ProductType,
-    schema: Option<TableSchema>,
+    product_type_elems: &[ProductTypeElement],
+    base: &str,
     namespace: &str,
 ) -> String {
     let mut output = CsharpAutogen::new(
@@ -292,16 +291,29 @@ fn autogen_csharp_product_table_common(
         &["System.Collections.Generic", "System.Runtime.Serialization"],
     );
 
+    autogen_csharp_product_common(ctx, &mut output, name, product_type_elems, base, namespace, |_| {});
+
+    output.into_inner()
+}
+
+fn autogen_csharp_product_common(
+    ctx: &GenCtx,
+    output: &mut CodeIndenter<String>,
+    name: &str,
+    product_type_elems: &[ProductTypeElement],
+    base: &str,
+    namespace: &str,
+    extra_body: impl FnOnce(&mut CodeIndenter<String>),
+) {
     writeln!(output, "[SpacetimeDB.Type]");
     writeln!(output, "[DataContract]");
     write!(output, "public partial class {name}");
-    if schema.is_some() {
-        write!(output, " : IDatabaseRow");
+    if !base.is_empty() {
+        write!(output, " : {base}");
     }
     writeln!(output);
-    indented_block(&mut output, |output| {
-        let fields = product_type
-            .elements
+    indented_block(output, |output| {
+        let fields = product_type_elems
             .iter()
             .map(|field| {
                 let orig_name = field
@@ -321,32 +333,38 @@ fn autogen_csharp_product_table_common(
             })
             .collect::<Vec<_>>();
 
-        // Generate fully-parameterized constructor.
-        writeln!(output);
-        writeln!(output, "public {name}(");
-        {
-            indent_scope!(output);
-            for (i, (field_name, ty)) in fields.iter().enumerate() {
-                if i != 0 {
-                    writeln!(output, ",");
-                }
-                write!(output, "{ty} {field_name}");
-            }
-        }
-        writeln!(output);
-        writeln!(output, ")");
-        indented_block(output, |output| {
-            for (field_name, _ty) in fields.iter() {
-                writeln!(output, "this.{field_name} = {field_name};");
-            }
-        });
-        writeln!(output);
-
-        // Generate default constructor (if the one above is not already parameterless).
+        // If we don't have any fields, the default constructor is fine, otherwise we need to generate our own.
         if !fields.is_empty() {
+            // Generate fully-parameterized constructor.
+            writeln!(output);
+            write!(output, "public {name}(");
+            if fields.len() > 1 {
+                writeln!(output);
+            }
+            {
+                indent_scope!(output);
+                for (i, (field_name, ty)) in fields.iter().enumerate() {
+                    if i != 0 {
+                        writeln!(output, ",");
+                    }
+                    write!(output, "{ty} {field_name}");
+                }
+            }
+            if fields.len() > 1 {
+                writeln!(output);
+            }
+            writeln!(output, ")");
+            indented_block(output, |output| {
+                for (field_name, _ty) in fields.iter() {
+                    writeln!(output, "this.{field_name} = {field_name};");
+                }
+            });
+            writeln!(output);
+
+            // Generate default constructor.
             writeln!(output, "public {name}()");
             indented_block(output, |output| {
-                for ((field_name, _ty), field) in fields.iter().zip(&*product_type.elements) {
+                for ((field_name, _ty), field) in fields.iter().zip(product_type_elems) {
                     if let Some(default) = default_init(ctx, &field.algebraic_type) {
                         writeln!(output, "this.{field_name} = {default};");
                     }
@@ -354,9 +372,9 @@ fn autogen_csharp_product_table_common(
             });
             writeln!(output);
         }
-    });
 
-    output.into_inner()
+        extra_body(output);
+    });
 }
 
 fn indented_block<R>(output: &mut CodeIndenter<String>, f: impl FnOnce(&mut CodeIndenter<String>) -> R) -> R {
@@ -445,8 +463,14 @@ fn autogen_csharp_access_funcs_for_struct(
                 let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
                 let field_type = &field.algebraic_type;
                 let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
-                // NOTE skipping the btree prefix and the table name from the index name
-                let csharp_index_name = (&idx.index_name[table_name.len() + 7..]).to_case(Case::Pascal);
+
+                // this is EXTREMELY JANKY.
+                // TODO(1.0): this code should be updated to not use `TableSchema` and rely on `accessor_name` instead!
+                let prefix_len = table_name.len() + "_".len();
+                let suffix_len = "_idx_btree".len();
+                let comma_separated_field_names = &idx.index_name[prefix_len..idx.index_name.len() - suffix_len];
+                let csharp_index_name = comma_separated_field_names.to_case(Case::Pascal);
+
                 let csharp_field_type = match csharp_field_type(field_type) {
                     None => continue,
                     Some(x) => x,
@@ -491,7 +515,13 @@ fn autogen_csharp_access_funcs_for_struct(
                 _ => continue,
             }
 
-            let csharp_index_name = (&idx.index_name[table_name.len() + 7..]).to_case(Case::Pascal);
+            // this is EXTREMELY JANKY.
+            // TODO(1.0): this code should be updated to not use `TableSchema` and rely on `accessor_name` instead!
+            let prefix_len = table_name.len() + "_".len();
+            let suffix_len = "_idx_btree".len();
+            let comma_separated_field_names = &idx.index_name[prefix_len..idx.index_name.len() - suffix_len];
+            let csharp_index_name = comma_separated_field_names.to_case(Case::Pascal);
+
             writeln!(output, "{csharp_index_name} = new(this);");
         }
     });
@@ -503,40 +533,6 @@ fn autogen_csharp_access_funcs_for_struct(
             col_name_pascal_case = primary_col_index.col_name.replace("r#", "").to_case(Case::Pascal)
         );
     }
-}
-
-pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &str) -> String {
-    let func_name = &*reducer.name;
-    let func_name_pascal_case = func_name.to_case(Case::Pascal);
-
-    let mut output = CsharpAutogen::new(namespace, &[]);
-
-    //Args struct
-    writeln!(output, "[SpacetimeDB.Type]");
-    writeln!(output, "public partial class {func_name_pascal_case} : IReducerArgs");
-    indented_block(&mut output, |output| {
-        writeln!(output, "string IReducerArgs.ReducerName => \"{func_name}\";");
-        if !reducer.args.is_empty() {
-            writeln!(output);
-        }
-        for arg in reducer.args.iter() {
-            let name = arg
-                .name
-                .as_deref()
-                .unwrap_or_else(|| panic!("reducer args should have names: {func_name}"));
-            let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
-            let field_name = name.to_case(Case::Pascal);
-
-            write!(output, "public {arg_type_str} {field_name}");
-            // Skip default initializer if it's the same as the implicit default.
-            if let Some(default) = default_init(ctx, &arg.algebraic_type) {
-                write!(output, " = {default}");
-            }
-            writeln!(output, ";");
-        }
-    });
-
-    output.into_inner()
 }
 
 pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) -> Vec<(String, String)> {
@@ -565,7 +561,14 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
         .map(|reducer| reducer.name.deref().to_case(Case::Pascal))
         .collect();
 
-    let mut output = CsharpAutogen::new(namespace, &["SpacetimeDB.ClientApi", "System.Collections.Generic"]);
+    let mut output = CsharpAutogen::new(
+        namespace,
+        &[
+            "SpacetimeDB.ClientApi",
+            "System.Collections.Generic",
+            "System.Runtime.Serialization",
+        ],
+    );
 
     writeln!(output, "public sealed class RemoteTables");
     indented_block(&mut output, |output| {
@@ -653,12 +656,12 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
             let delegate_separator = if !reducer.args.is_empty() { ", " } else { "" };
 
             let mut func_params: String = String::new();
-            let mut field_inits: String = String::new();
+            let mut func_args: String = String::new();
 
             for (arg_i, arg) in reducer.args.iter().enumerate() {
                 if arg_i != 0 {
                     func_params.push_str(", ");
-                    field_inits.push_str(", ");
+                    func_args.push_str(", ");
                 }
 
                 let name = arg
@@ -667,10 +670,9 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                     .unwrap_or_else(|| panic!("reducer args should have names: {func_name}"));
                 let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
                 let arg_name = name.to_case(Case::Camel);
-                let field_name = name.to_case(Case::Pascal);
 
                 write!(func_params, "{arg_type_str} {arg_name}").unwrap();
-                write!(field_inits, "{field_name} = {arg_name}").unwrap();
+                write!(func_args, "{arg_name}").unwrap();
             }
 
             writeln!(
@@ -687,14 +689,14 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
             indented_block(output, |output| {
                 writeln!(
                     output,
-                    "conn.InternalCallReducer(new {func_name_pascal_case} {{ {field_inits} }}, this.SetCallReducerFlags.{func_name_pascal_case}Flags);"
+                    "conn.InternalCallReducer(new Reducer.{func_name_pascal_case}({func_args}), this.SetCallReducerFlags.{func_name_pascal_case}Flags);"
                 );
             });
             writeln!(output);
 
             writeln!(
                 output,
-                "public bool Invoke{func_name_pascal_case}(EventContext ctx, {func_name_pascal_case} args)"
+                "public bool Invoke{func_name_pascal_case}(EventContext ctx, Reducer.{func_name_pascal_case} args)"
             );
             indented_block(output, |output| {
                 writeln!(output, "if (On{func_name_pascal_case} == null) return false;");
@@ -753,18 +755,31 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
     });
     writeln!(output);
 
-    writeln!(output, "[Type]");
-    writeln!(output, "public partial record Reducer : TaggedEnum<(");
-    {
-        indent_scope!(output);
-        for reducer_name in &reducer_names {
-            writeln!(output, "{reducer_name} {reducer_name},");
+    writeln!(output, "public abstract partial class Reducer");
+    indented_block(&mut output, |output| {
+        // Prevent instantiation of this class from outside.
+        writeln!(output, "private Reducer() {{ }}");
+        writeln!(output);
+        for (reducer, reducer_name) in std::iter::zip(&reducers, &reducer_names) {
+            let reducer_str_name = &reducer.name;
+            autogen_csharp_product_common(
+                ctx,
+                output,
+                reducer_name,
+                &reducer.args,
+                "Reducer, IReducerArgs",
+                namespace,
+                |output| {
+                    writeln!(output, "string IReducerArgs.ReducerName => \"{reducer_str_name}\";");
+                },
+            );
+            writeln!(output);
         }
-        writeln!(output, "Unit StdbNone,");
-        writeln!(output, "Unit StdbIdentityConnected,");
-        writeln!(output, "Unit StdbIdentityDisconnected");
-    }
-    writeln!(output, ")>;");
+        writeln!(output, "public class StdbNone : Reducer {{}}");
+        writeln!(output, "public class StdbIdentityConnected : Reducer {{}}");
+        writeln!(output, "public class StdbIdentityDisconnected : Reducer {{}}");
+    });
+    writeln!(output);
 
     writeln!(
         output,
@@ -806,19 +821,19 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                     let reducer_str_name = &reducer.name;
                     writeln!(
                         output,
-                        "\"{reducer_str_name}\" => new Reducer.{reducer_name}(BSATNHelpers.Decode<{reducer_name}>(encodedArgs)),"
+                        "\"{reducer_str_name}\" => BSATNHelpers.Decode<Reducer.{reducer_name}>(encodedArgs),"
                     );
                 }
-                writeln!(output, "\"<none>\" => new Reducer.StdbNone(default),");
+                writeln!(output, "\"<none>\" => new Reducer.StdbNone(),");
                 writeln!(
                     output,
-                    "\"__identity_connected__\" => new Reducer.StdbIdentityConnected(default),"
+                    "\"__identity_connected__\" => new Reducer.StdbIdentityConnected(),"
                 );
                 writeln!(
                     output,
-                    "\"__identity_disconnected__\" => new Reducer.StdbIdentityDisconnected(default),"
+                    "\"__identity_disconnected__\" => new Reducer.StdbIdentityDisconnected(),"
                 );
-                writeln!(output, "\"\" => new Reducer.StdbNone(default),"); //Transaction from CLI command
+                writeln!(output, "\"\" => new Reducer.StdbNone(),"); //Transaction from CLI command
                 writeln!(
                     output,
                     r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
@@ -847,7 +862,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                 for reducer_name in &reducer_names {
                     writeln!(
                         output,
-                        "Reducer.{reducer_name}(var args) => Reducers.Invoke{reducer_name}(eventContext, args),"
+                        "Reducer.{reducer_name} args => Reducers.Invoke{reducer_name}(eventContext, args),"
                     );
                 }
                 writeln!(output, "Reducer.StdbNone or");

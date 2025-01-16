@@ -2,10 +2,11 @@ use super::{
     committed_state::CommittedState,
     mut_tx::MutTxId,
     sequence::SequencesState,
-    state_view::{Iter, IterByColRange, StateView},
+    state_view::{IterByColRangeTx, StateView},
     tx::TxId,
     tx_state::TxState,
 };
+use crate::db::datastore::locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx};
 use crate::execution_context::Workload;
 use crate::{
     db::{
@@ -322,20 +323,20 @@ impl Tx for Locking {
 }
 
 impl TxDatastore for Locking {
-    type Iter<'a>
-        = Iter<'a>
+    type IterTx<'a>
+        = IterTx<'a>
     where
         Self: 'a;
-    type IterByColEq<'a, 'r>
-        = IterByColRange<'a, &'r AlgebraicValue>
+    type IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>>
+        = IterByColRangeTx<'a, R>
     where
         Self: 'a;
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>
-        = IterByColRange<'a, R>
+    type IterByColEqTx<'a, 'r>
+        = IterByColRangeTx<'a, &'r AlgebraicValue>
     where
         Self: 'a;
 
-    fn iter_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>> {
+    fn iter_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::IterTx<'a>> {
         tx.iter(table_id)
     }
 
@@ -345,7 +346,7 @@ impl TxDatastore for Locking {
         table_id: TableId,
         cols: impl Into<ColList>,
         range: R,
-    ) -> Result<Self::IterByColRange<'a, R>> {
+    ) -> Result<Self::IterByColRangeTx<'a, R>> {
         tx.iter_by_col_range(table_id, cols.into(), range)
     }
 
@@ -355,7 +356,7 @@ impl TxDatastore for Locking {
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a, 'r>> {
+    ) -> Result<Self::IterByColEqTx<'a, 'r>> {
         tx.iter_by_col_eq(table_id, cols, value)
     }
 
@@ -404,6 +405,15 @@ impl TxDatastore for Locking {
 }
 
 impl MutTxDatastore for Locking {
+    type IterMutTx<'a>= IterMutTx<'a>
+    where
+        Self: 'a;
+    type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeMutTx<'a, R>;
+    type IterByColEqMutTx<'a, 'r>
+    = IterByColRangeMutTx<'a, &'r AlgebraicValue>
+    where
+        Self: 'a;
+
     fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: TableSchema) -> Result<TableId> {
         tx.create_table(schema)
     }
@@ -492,7 +502,7 @@ impl MutTxDatastore for Locking {
         tx.constraint_id_from_name(constraint_name)
     }
 
-    fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTx, table_id: TableId) -> Result<Self::Iter<'a>> {
+    fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTx, table_id: TableId) -> Result<Self::IterMutTx<'a>> {
         tx.iter(table_id)
     }
 
@@ -502,7 +512,7 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         cols: impl Into<ColList>,
         range: R,
-    ) -> Result<Self::IterByColRange<'a, R>> {
+    ) -> Result<Self::IterByColRangeMutTx<'a, R>> {
         tx.iter_by_col_range(table_id, cols.into(), range)
     }
 
@@ -512,7 +522,7 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a, 'r>> {
+    ) -> Result<Self::IterByColEqMutTx<'a, 'r>> {
         tx.iter_by_col_eq(table_id, cols.into(), value)
     }
 
@@ -562,9 +572,9 @@ impl MutTxDatastore for Locking {
         &'a self,
         tx: &'a mut Self::MutTx,
         table_id: TableId,
-        mut row: ProductValue,
-    ) -> Result<(AlgebraicValue, RowRef<'a>)> {
-        let (gens, row_ref) = tx.insert(table_id, &mut row)?;
+        row: &[u8],
+    ) -> Result<(ColList, RowRef<'a>)> {
+        let (gens, row_ref) = tx.insert::<true>(table_id, row)?;
         Ok((gens, row_ref.collapse()))
     }
 
@@ -589,7 +599,7 @@ impl MutTxDatastore for Locking {
                 row.program_bytes = program.bytes;
 
                 tx.delete(ST_MODULE_ID, ptr)?;
-                tx.insert(ST_MODULE_ID, &mut row.into()).map(drop)
+                tx.insert_via_serialize_bsatn(ST_MODULE_ID, &row).map(drop)
             }
 
             None => Err(anyhow!(
@@ -878,7 +888,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
             .replay_insert(table_id, &schema, &row)
             .with_context(|| {
                 format!(
-                    "Error deleting row {:?} during transaction {:?} playback",
+                    "Error inserting row {:?} during transaction {:?} playback",
                     row, self.committed_state.next_tx_offset
                 )
             })?;
@@ -976,6 +986,7 @@ mod tests {
     use crate::db::datastore::traits::{IsolationLevel, MutTx};
     use crate::db::datastore::Result;
     use crate::error::{DBError, IndexError};
+    use bsatn::to_vec;
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -1248,13 +1259,13 @@ mod tests {
                 IndexSchema {
                     index_id: IndexId::SENTINEL,
                     table_id: TableId::SENTINEL,
-                    index_name: "id_idx".into(),
+                    index_name: "Foo_id_idx_btree".into(),
                     index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![0] }),
                 },
                 IndexSchema {
                     index_id: IndexId::SENTINEL,
                     table_id: TableId::SENTINEL,
-                    index_name: "name_idx".into(),
+                    index_name: "Foo_name_idx_btree".into(),
                     index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![1] }),
                 },
             ],
@@ -1262,7 +1273,7 @@ mod tests {
                 ConstraintSchema {
                     table_id: TableId::SENTINEL,
                     constraint_id: ConstraintId::SENTINEL,
-                    constraint_name: "id_constraint".into(),
+                    constraint_name: "Foo_id_key".into(),
                     data: ConstraintData::Unique(UniqueConstraintData {
                         columns: col_list![0].into(),
                     }),
@@ -1270,7 +1281,7 @@ mod tests {
                 ConstraintSchema {
                     table_id: TableId::SENTINEL,
                     constraint_id: ConstraintId::SENTINEL,
-                    constraint_name: "name_constraint".into(),
+                    constraint_name: "Foo_name_key".into(),
                     data: ConstraintData::Unique(UniqueConstraintData {
                         columns: col_list![1].into(),
                     }),
@@ -1280,7 +1291,7 @@ mod tests {
                 sequence_id: SequenceId::SENTINEL,
                 table_id: TableId::SENTINEL,
                 col_pos: 0.into(),
-                sequence_name: "id_sequence".into(),
+                sequence_name: "Foo_id_seq".into(),
                 start: 1,
                 increment: 1,
                 min_value: 1,
@@ -1304,15 +1315,15 @@ mod tests {
             "Foo".into(),
             map_array(basic_table_schema_cols()),
              map_array([
-                IndexRow { id: seq_start,     table, col: ColList::new(0.into()), name: "id_idx", },
-                IndexRow { id: seq_start + 1, table, col: ColList::new(1.into()), name: "name_idx", },
+                IndexRow { id: seq_start,     table, col: ColList::new(0.into()), name: "Foo_id_idx_btree", },
+                IndexRow { id: seq_start + 1, table, col: ColList::new(1.into()), name: "Foo_name_idx_btree", },
             ]),
             map_array([
-                ConstraintRow { constraint_id: seq_start,     table_id: table, unique_columns: col(0), constraint_name: "id_constraint" },
-                ConstraintRow { constraint_id: seq_start + 1, table_id: table, unique_columns: col(1), constraint_name: "name_constraint" }
+                ConstraintRow { constraint_id: seq_start,     table_id: table, unique_columns: col(0), constraint_name: "Foo_id_key" },
+                ConstraintRow { constraint_id: seq_start + 1, table_id: table, unique_columns: col(1), constraint_name: "Foo_name_key" }
             ]),
              map_array([
-                SequenceRow { id: seq_start, table, col_pos: 0, name: "id_sequence", start: 1 }
+                SequenceRow { id: seq_start, table, col_pos: 0, name: "Foo_id_seq", start: 1 }
             ]),
             StTableType::User,
             StAccess::Public,
@@ -1342,6 +1353,18 @@ mod tests {
             .unwrap()
             .map(|r| r.to_product_value().clone())
             .collect()
+    }
+
+    fn insert<'a>(
+        datastore: &'a Locking,
+        tx: &'a mut MutTxId,
+        table_id: TableId,
+        row: &ProductValue,
+    ) -> Result<(AlgebraicValue, RowRef<'a>)> {
+        let row = to_vec(&row).unwrap();
+        let (gen_cols, row_ref) = datastore.insert_mut_tx(tx, table_id, &row)?;
+        let gen_cols = row_ref.project(&gen_cols)?;
+        Ok((gen_cols, row_ref))
     }
 
     #[test]
@@ -1419,28 +1442,28 @@ mod tests {
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
-            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "idx_st_table_table_id_unique", },
-            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "idx_st_table_table_name_unique", },
-            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique", },
-            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "idx_st_sequence_sequence_id_unique", },
-            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "idx_st_index_index_id_unique", },
-            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "idx_st_constraint_constraint_id_unique", },
-            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "idx_st_client_identity_address_unique", },
-            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "idx_st_var_name_unique", },
-            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_schedule_id_unique", },
-            IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "idx_st_scheduled_table_id_unique", },
-            IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "idx_st_row_level_security_btree_table_id"},
-            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "idx_st_row_level_security_sql_unique"},
+            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "st_table_table_id_idx_btree", },
+            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "st_table_table_name_idx_btree", },
+            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "st_column_table_id_col_pos_idx_btree", },
+            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "st_sequence_sequence_id_idx_btree", },
+            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "st_index_index_id_idx_btree", },
+            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "st_constraint_constraint_id_idx_btree", },
+            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "st_client_identity_address_idx_btree", },
+            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "st_var_name_idx_btree", },
+            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "st_scheduled_schedule_id_idx_btree", },
+            IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "st_scheduled_table_id_idx_btree", },
+            IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
+            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
         ]));
         let start = FIRST_NON_SYSTEM_ID as i128;
         #[rustfmt::skip]
         assert_eq!(query.scan_st_sequences()?, map_array_fn(
             [
-                SequenceRow { id: 1, table: ST_TABLE_ID.into(), col_pos: 0, name: "seq_st_table_table_id", start },
-                SequenceRow { id: 5, table: ST_SEQUENCE_ID.into(), col_pos: 0, name: "seq_st_sequence_sequence_id", start },
-                SequenceRow { id: 2, table: ST_INDEX_ID.into(), col_pos: 0, name: "seq_st_index_index_id", start },
-                SequenceRow { id: 3, table: ST_CONSTRAINT_ID.into(), col_pos: 0, name: "seq_st_constraint_constraint_id", start },
-                SequenceRow { id: 4, table: ST_SCHEDULED_ID.into(), col_pos: 0, name: "seq_st_scheduled_schedule_id", start },
+                SequenceRow { id: 1, table: ST_TABLE_ID.into(), col_pos: 0, name: "st_table_table_id_seq", start },
+                SequenceRow { id: 5, table: ST_SEQUENCE_ID.into(), col_pos: 0, name: "st_sequence_sequence_id_seq", start },
+                SequenceRow { id: 2, table: ST_INDEX_ID.into(), col_pos: 0, name: "st_index_index_id_seq", start },
+                SequenceRow { id: 3, table: ST_CONSTRAINT_ID.into(), col_pos: 0, name: "st_constraint_constraint_id_seq", start },
+                SequenceRow { id: 4, table: ST_SCHEDULED_ID.into(), col_pos: 0, name: "st_scheduled_schedule_id_seq", start },
             ],
             |row| StSequenceRow {
                 allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
@@ -1449,17 +1472,17 @@ mod tests {
         ));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_constraints()?, map_array([
-            ConstraintRow { constraint_id: 1, table_id: ST_TABLE_ID.into(), unique_columns: col(0), constraint_name: "ct_st_table_table_id_unique" },
-            ConstraintRow { constraint_id: 2, table_id: ST_TABLE_ID.into(), unique_columns: col(1), constraint_name: "ct_st_table_table_name_unique" },
-            ConstraintRow { constraint_id: 3, table_id: ST_COLUMN_ID.into(), unique_columns: col_list![0, 1], constraint_name: "ct_st_column_table_id_col_pos_unique" },
-            ConstraintRow { constraint_id: 4, table_id: ST_SEQUENCE_ID.into(), unique_columns: col(0), constraint_name: "ct_st_sequence_sequence_id_unique" },
-            ConstraintRow { constraint_id: 5, table_id: ST_INDEX_ID.into(), unique_columns: col(0), constraint_name: "ct_st_index_index_id_unique" },
-            ConstraintRow { constraint_id: 6, table_id: ST_CONSTRAINT_ID.into(), unique_columns: col(0), constraint_name: "ct_st_constraint_constraint_id_unique" },
-            ConstraintRow { constraint_id: 7, table_id: ST_CLIENT_ID.into(), unique_columns: col_list![0, 1], constraint_name: "ct_st_client_identity_address_unique" },
-            ConstraintRow { constraint_id: 8, table_id: ST_VAR_ID.into(), unique_columns: col(0), constraint_name: "ct_st_var_name_unique" },
-            ConstraintRow { constraint_id: 9, table_id: ST_SCHEDULED_ID.into(), unique_columns: col(0), constraint_name: "ct_st_scheduled_schedule_id_unique" },
-            ConstraintRow { constraint_id: 10, table_id: ST_SCHEDULED_ID.into(), unique_columns: col(1), constraint_name: "ct_st_scheduled_table_id_unique" },
-            ConstraintRow { constraint_id: 11, table_id: ST_ROW_LEVEL_SECURITY_ID.into(), unique_columns: col(1), constraint_name: "ct_st_row_level_security_sql_unique" },
+            ConstraintRow { constraint_id: 1, table_id: ST_TABLE_ID.into(), unique_columns: col(0), constraint_name: "st_table_table_id_key", },
+            ConstraintRow { constraint_id: 2, table_id: ST_TABLE_ID.into(), unique_columns: col(1), constraint_name: "st_table_table_name_key", },
+            ConstraintRow { constraint_id: 3, table_id: ST_COLUMN_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_column_table_id_col_pos_key", },
+            ConstraintRow { constraint_id: 4, table_id: ST_SEQUENCE_ID.into(), unique_columns: col(0), constraint_name: "st_sequence_sequence_id_key", },
+            ConstraintRow { constraint_id: 5, table_id: ST_INDEX_ID.into(), unique_columns: col(0), constraint_name: "st_index_index_id_key", },
+            ConstraintRow { constraint_id: 6, table_id: ST_CONSTRAINT_ID.into(), unique_columns: col(0), constraint_name: "st_constraint_constraint_id_key", },
+            ConstraintRow { constraint_id: 7, table_id: ST_CLIENT_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_client_identity_address_key", },
+            ConstraintRow { constraint_id: 8, table_id: ST_VAR_ID.into(), unique_columns: col(0), constraint_name: "st_var_name_key", },
+            ConstraintRow { constraint_id: 9, table_id: ST_SCHEDULED_ID.into(), unique_columns: col(0), constraint_name: "st_scheduled_schedule_id_key", },
+            ConstraintRow { constraint_id: 10, table_id: ST_SCHEDULED_ID.into(), unique_columns: col(1), constraint_name: "st_scheduled_table_id_key", },
+            ConstraintRow { constraint_id: 11, table_id: ST_ROW_LEVEL_SECURITY_ID.into(), unique_columns: col(1), constraint_name: "st_row_level_security_sql_key", },
         ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -1634,7 +1657,7 @@ mod tests {
             IndexSchema {
                 index_id: IndexId::SENTINEL,
                 table_id,
-                index_name: "id_index".into(),
+                index_name: "Foo_id_idx_btree".into(),
                 index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![0] }),
             },
             true,
@@ -1646,7 +1669,7 @@ mod tests {
             id: ST_RESERVED_SEQUENCE_RANGE + dropped_indexes + 1,
             table: FIRST_NON_SYSTEM_ID,
             col: col_list![0],
-            name: "id_index",
+            name: "Foo_id_idx_btree",
         }]
         .map(Into::into);
         assert_eq!(
@@ -1683,7 +1706,7 @@ mod tests {
     fn test_insert_pre_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
@@ -1693,7 +1716,7 @@ mod tests {
     fn test_insert_wrong_schema_pre_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = product!(0, "Foo");
-        assert!(datastore.insert_mut_tx(&mut tx, table_id, row).is_err());
+        assert!(insert(&datastore, &mut tx, table_id, &row).is_err());
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![]);
         Ok(())
@@ -1703,7 +1726,7 @@ mod tests {
     fn test_insert_post_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, u32_str_u32(0, "Foo", 18))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(0, "Foo", 18))?;
         datastore.commit_mut_tx(tx)?;
         let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         #[rustfmt::skip]
@@ -1717,7 +1740,7 @@ mod tests {
         let row = u32_str_u32(15, "Foo", 18); // 15 is ignored.
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         datastore.rollback_mut_tx(tx);
         let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         #[rustfmt::skip]
@@ -1729,7 +1752,7 @@ mod tests {
     fn test_insert_commit_delete_insert() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let created_row = u32_str_u32(1, "Foo", 18);
@@ -1737,7 +1760,7 @@ mod tests {
         assert_eq!(num_deleted, 1);
         assert_eq!(all_rows(&datastore, &tx, table_id).len(), 0);
         let created_row = u32_str_u32(1, "Foo", 19);
-        datastore.insert_mut_tx(&mut tx, table_id, created_row)?;
+        insert(&datastore, &mut tx, table_id, &created_row)?;
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 19)]);
         Ok(())
@@ -1747,7 +1770,7 @@ mod tests {
     fn test_insert_delete_insert_delete_insert() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(1, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         for i in 0..2 {
             assert_eq!(
                 all_rows(&datastore, &tx, table_id),
@@ -1764,7 +1787,7 @@ mod tests {
                 &[],
                 "Found rows present after deleting",
             );
-            datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+            insert(&datastore, &mut tx, table_id, &row)?;
             assert_eq!(
                 all_rows(&datastore, &tx, table_id),
                 vec![row.clone()],
@@ -1778,8 +1801,8 @@ mod tests {
     fn test_unique_constraint_pre_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
-        let result = datastore.insert_mut_tx(&mut tx, table_id, row);
+        insert(&datastore, &mut tx, table_id, &row)?;
+        let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
@@ -1798,10 +1821,10 @@ mod tests {
     fn test_unique_constraint_post_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        let result = datastore.insert_mut_tx(&mut tx, table_id, row);
+        let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
@@ -1822,10 +1845,10 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         datastore.rollback_mut_tx(tx);
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(2, "Foo", 18)]);
         Ok(())
@@ -1838,14 +1861,14 @@ mod tests {
 
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         datastore.commit_mut_tx(tx)?;
 
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let index_def = IndexSchema {
             index_id: IndexId::SENTINEL,
             table_id,
-            index_name: "age_idx".into(),
+            index_name: "Foo_age_idx_btree".into(),
             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),
         };
         // TODO: it's slightly incorrect to create an index with `is_unique: true` without creating a corresponding constraint.
@@ -1856,24 +1879,24 @@ mod tests {
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
-            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "idx_st_table_table_id_unique", },
-            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "idx_st_table_table_name_unique", },
-            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique", },
-            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "idx_st_sequence_sequence_id_unique", },
-            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "idx_st_index_index_id_unique", },
-            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "idx_st_constraint_constraint_id_unique", },
-            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "idx_st_client_identity_address_unique", },
-            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "idx_st_var_name_unique", },
-            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_schedule_id_unique", },
-            IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "idx_st_scheduled_table_id_unique", },
-            IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "idx_st_row_level_security_btree_table_id"},
-            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "idx_st_row_level_security_sql_unique"},
-            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx",  },
-            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx",  },
-            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx",  },
+            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "st_table_table_id_idx_btree", },
+            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "st_table_table_name_idx_btree", },
+            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "st_column_table_id_col_pos_idx_btree", },
+            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "st_sequence_sequence_id_idx_btree", },
+            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "st_index_index_id_idx_btree", },
+            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "st_constraint_constraint_id_idx_btree", },
+            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "st_client_identity_address_idx_btree", },
+            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "st_var_name_idx_btree", },
+            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "st_scheduled_schedule_id_idx_btree", },
+            IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "st_scheduled_table_id_idx_btree", },
+            IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
+            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
+            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
+            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
-        let result = datastore.insert_mut_tx(&mut tx, table_id, row);
+        let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
@@ -1892,13 +1915,13 @@ mod tests {
     fn test_create_index_post_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let index_def = IndexSchema {
             index_id: IndexId::SENTINEL,
             table_id,
-            index_name: "age_idx".into(),
+            index_name: "Foo_age_idx_btree".into(),
             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),
         };
         datastore.create_index_mut_tx(&mut tx, index_def, true)?;
@@ -1910,24 +1933,24 @@ mod tests {
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
-            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "idx_st_table_table_id_unique", },
-            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "idx_st_table_table_name_unique", },
-            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique", },
-            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "idx_st_sequence_sequence_id_unique", },
-            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "idx_st_index_index_id_unique", },
-            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "idx_st_constraint_constraint_id_unique", },
-            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "idx_st_client_identity_address_unique", },
-            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "idx_st_var_name_unique", },
-            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_schedule_id_unique", },
-            IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "idx_st_scheduled_table_id_unique", },
-            IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "idx_st_row_level_security_btree_table_id"},
-            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "idx_st_row_level_security_sql_unique"},
-            IndexRow { id: seq_start    , table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx" },
-            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx" },
-            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx" },
+            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "st_table_table_id_idx_btree", },
+            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "st_table_table_name_idx_btree", },
+            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "st_column_table_id_col_pos_idx_btree", },
+            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "st_sequence_sequence_id_idx_btree", },
+            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "st_index_index_id_idx_btree", },
+            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "st_constraint_constraint_id_idx_btree", },
+            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "st_client_identity_address_idx_btree", },
+            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "st_var_name_idx_btree", },
+            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "st_scheduled_schedule_id_idx_btree", },
+            IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "st_scheduled_table_id_idx_btree", },
+            IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
+            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
+            IndexRow { id: seq_start    , table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree", },
+            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree", },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
-        let result = datastore.insert_mut_tx(&mut tx, table_id, row);
+        let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
@@ -1946,7 +1969,7 @@ mod tests {
     fn test_create_index_post_rollback() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let index_def = IndexSchema {
@@ -1965,23 +1988,23 @@ mod tests {
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
-            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "idx_st_table_table_id_unique", },
-            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "idx_st_table_table_name_unique", },
-            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique", },
-            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "idx_st_sequence_sequence_id_unique", },
-            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "idx_st_index_index_id_unique", },
-            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "idx_st_constraint_constraint_id_unique", },
-            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "idx_st_client_identity_address_unique", },
-            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "idx_st_var_name_unique", },
-            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_schedule_id_unique", },
-            IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "idx_st_scheduled_table_id_unique", },
-            IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "idx_st_row_level_security_btree_table_id"},
-            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "idx_st_row_level_security_sql_unique"},
-            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx" },
-            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx" },
+            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "st_table_table_id_idx_btree", },
+            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "st_table_table_name_idx_btree", },
+            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "st_column_table_id_col_pos_idx_btree", },
+            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "st_sequence_sequence_id_idx_btree", },
+            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "st_index_index_id_idx_btree", },
+            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "st_constraint_constraint_id_idx_btree", },
+            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "st_client_identity_address_idx_btree", },
+            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "st_var_name_idx_btree", },
+            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "st_scheduled_schedule_id_idx_btree", },
+            IndexRow { id: 10, table: ST_SCHEDULED_ID.into(), col: col(1), name: "st_scheduled_table_id_idx_btree", },
+            IndexRow { id: 11, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(0), name: "st_row_level_security_table_id_idx_btree", },
+            IndexRow { id: 12, table: ST_ROW_LEVEL_SECURITY_ID.into(), col: col(1), name: "st_row_level_security_sql_idx_btree", },
+            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree", },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree", },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![
             u32_str_u32(1, "Foo", 18),
@@ -1998,7 +2021,7 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
                                              // Because of auto_inc columns, we will get a slightly different
                                              // value than the one we inserted.
-        let row = datastore.insert_mut_tx(&mut tx, table_id, row)?.1.to_product_value();
+        let row = insert(&datastore, &mut tx, table_id, &row)?.1.to_product_value();
         datastore.commit_mut_tx(tx)?;
 
         let all_rows_col_0_eq_1 = |tx: &MutTxId| {
@@ -2023,10 +2046,7 @@ mod tests {
         assert_eq!(all_rows_col_0_eq_1(&tx).len(), 0);
 
         // Reinsert the row.
-        let reinserted_row = datastore
-            .insert_mut_tx(&mut tx, table_id, row.clone())?
-            .1
-            .to_product_value();
+        let reinserted_row = insert(&datastore, &mut tx, table_id, &row)?.1.to_product_value();
         assert_eq!(reinserted_row, row);
 
         // The actual test: we should be able to iterate again, while still in the
@@ -2044,9 +2064,9 @@ mod tests {
     fn test_read_only_tx_shared_lock() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row1 = u32_str_u32(1, "Foo", 18);
-        datastore.insert_mut_tx(&mut tx, table_id, row1.clone())?;
+        insert(&datastore, &mut tx, table_id, &row1)?;
         let row2 = u32_str_u32(2, "Bar", 20);
-        datastore.insert_mut_tx(&mut tx, table_id, row2.clone())?;
+        insert(&datastore, &mut tx, table_id, &row2)?;
         datastore.commit_mut_tx(tx)?;
 
         // create multiple read only tx, and use them together.

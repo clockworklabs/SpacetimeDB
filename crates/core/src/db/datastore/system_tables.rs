@@ -293,16 +293,16 @@ fn system_module_def() -> ModuleDef {
         .build_table(ST_TABLE_NAME, *st_table_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StTableFields::TableId)
-        .with_unique_constraint(StTableFields::TableName, None);
+        .with_unique_constraint(StTableFields::TableName);
 
     let st_raw_column_type = builder.add_type::<StColumnRow>();
     builder
         .build_table(ST_COLUMN_NAME, *st_raw_column_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(
-            col_list![StColumnFields::TableId.col_id(), StColumnFields::ColPos.col_id()],
-            None,
-        );
+        .with_unique_constraint(col_list![
+            StColumnFields::TableId.col_id(),
+            StColumnFields::ColPos.col_id()
+        ]);
 
     let st_index_type = builder.add_type::<StIndexRow>();
     builder
@@ -333,13 +333,12 @@ fn system_module_def() -> ModuleDef {
         )
         .with_type(TableType::System)
         .with_primary_key(StRowLevelSecurityFields::Sql)
-        .with_unique_constraint(StRowLevelSecurityFields::Sql, None)
+        .with_unique_constraint(StRowLevelSecurityFields::Sql)
         .with_index(
             RawIndexAlgorithm::BTree {
                 columns: StRowLevelSecurityFields::TableId.into(),
             },
             "accessor_name_doesnt_matter",
-            None,
         );
 
     let st_module_type = builder.add_type::<StModuleRow>();
@@ -352,13 +351,13 @@ fn system_module_def() -> ModuleDef {
     builder
         .build_table(ST_CLIENT_NAME, *st_client_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(col_list![StClientFields::Identity, StClientFields::Address], None); // FIXME: this is a noop?
+        .with_unique_constraint(col_list![StClientFields::Identity, StClientFields::Address]); // FIXME: this is a noop?
 
     let st_schedule_type = builder.add_type::<StScheduledRow>();
     builder
         .build_table(ST_SCHEDULED_NAME, *st_schedule_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(StScheduledFields::TableId, None)
+        .with_unique_constraint(StScheduledFields::TableId)
         .with_auto_inc_primary_key(StScheduledFields::ScheduleId);
     // TODO(1.0): unique constraint on name?
 
@@ -366,7 +365,7 @@ fn system_module_def() -> ModuleDef {
     builder
         .build_table(ST_VAR_NAME, *st_var_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_unique_constraint(StVarFields::Name, None)
+        .with_unique_constraint(StVarFields::Name)
         .with_primary_key(StVarFields::Name);
 
     let result = builder
@@ -990,8 +989,7 @@ impl StVarTable {
         {
             db.delete(tx, ST_VAR_ID, [row_ref.pointer()]);
         }
-        let row = value_serialize(&StVarRow { name, value });
-        db.insert(tx, ST_VAR_ID, row.into_product().expect("should be product"))?;
+        tx.insert_via_serialize_bsatn(ST_VAR_ID, &StVarRow { name, value })?;
         Ok(())
     }
 
@@ -1306,9 +1304,17 @@ thread_local! {
     static READ_BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Read a value from a system table via BSatn.
+/// Provides access to a buffer to which bytes can be written.
+pub(crate) fn with_sys_table_buf<R>(run: impl FnOnce(&mut Vec<u8>) -> R) -> R {
+    READ_BUF.with_borrow_mut(|buf| {
+        buf.clear();
+        run(buf)
+    })
+}
+
+/// Read a value from a system table via BSATN.
 fn read_via_bsatn<T: DeserializeOwned>(row: RowRef<'_>) -> Result<T, DBError> {
-    READ_BUF.with_borrow_mut(|buf| Ok(row.read_via_bsatn::<T>(buf)?))
+    with_sys_table_buf(|buf| Ok(row.read_via_bsatn::<T>(buf)?))
 }
 
 /// Convert a value to a product value.

@@ -60,7 +60,6 @@ public static partial class ia_loop
     }
 
     [SpacetimeDB.Table(Name = "game_targetable_state")]
-    [SpacetimeDB.Index(BTree = [nameof(quad)])]
     public partial struct GameTargetableState(ulong entity_id, long quad)
     {
         [PrimaryKey]
@@ -70,17 +69,16 @@ public static partial class ia_loop
     }
 
     [SpacetimeDB.Table(Name = "game_live_targetable_state")]
-    [SpacetimeDB.Index(BTree = [nameof(quad)])]
     public partial struct GameLiveTargetableState(ulong entity_id, long quad)
     {
         [Unique]
         public ulong entity_id = entity_id;
 
+        [SpacetimeDB.Index.BTree]
         public long quad = quad;
     }
 
     [SpacetimeDB.Table(Name = "game_mobile_entity_state")]
-    [SpacetimeDB.Index(BTree = [nameof(location_x)])]
     public partial struct GameMobileEntityState(
         ulong entity_id,
         int location_x,
@@ -91,6 +89,7 @@ public static partial class ia_loop
         [PrimaryKey]
         public ulong entity_id = entity_id;
 
+        [SpacetimeDB.Index.BTree]
         public int location_x = location_x;
         public int location_y = location_y;
         public ulong timestamp = timestamp;
@@ -134,7 +133,7 @@ public static partial class ia_loop
     }
 
     [SpacetimeDB.Reducer]
-    public static void InsertBulkPosition(ReducerContext ctx, uint count)
+    public static void insert_bulk_position(ReducerContext ctx, uint count)
     {
         for (uint id = 0; id < count; id++)
         {
@@ -144,7 +143,7 @@ public static partial class ia_loop
     }
 
     [SpacetimeDB.Reducer]
-    public static void InsertBulkVelocity(ReducerContext ctx, uint count)
+    public static void insert_bulk_velocity(ReducerContext ctx, uint count)
     {
         for (uint id = 0; id < count; id++)
         {
@@ -359,8 +358,8 @@ public static partial class ia_loop
     {
         Load load = new(initial_load);
 
-        InsertBulkPosition(ctx, load.biggest_table);
-        InsertBulkVelocity(ctx, load.big_table);
+        insert_bulk_position(ctx, load.biggest_table);
+        insert_bulk_velocity(ctx, load.big_table);
         update_position_all(ctx, load.biggest_table);
         update_position_with_velocity(ctx, load.big_table);
 

@@ -202,8 +202,10 @@ impl From<TableAccess> for StAccess {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawSequenceDefV9 {
-    /// The name of the sequence. Must be unique within the containing `RawModuleDefV9`.
-    pub name: RawIdentifier,
+    /// In the future, the user may FOR SOME REASON want to override this.
+    /// Even though there is ABSOLUTELY NO REASON TO.
+    /// If `None`, a nicely-formatted unique default will be chosen.
+    pub name: Option<Box<str>>,
 
     /// The position of the column associated with this sequence.
     /// This refers to a column in the same `RawTableDef` that contains this `RawSequenceDef`.
@@ -233,12 +235,9 @@ pub struct RawSequenceDefV9 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawIndexDefV9 {
-    /// The name of the index.
-    ///
-    /// Currently, this is always set automatically, but that may not be the case in the future.
-    ///
-    /// Unique within the containing `DatabaseDef`.
-    pub name: RawIdentifier,
+    /// In the future, the user may FOR SOME REASON want to override this.
+    /// Even though there is ABSOLUTELY NO REASON TO.
+    pub name: Option<Box<str>>,
 
     /// Accessor name for the index used in client codegen.
     ///
@@ -277,20 +276,6 @@ pub enum RawIndexAlgorithm {
     },
 }
 
-/// Requires that the projection of the table onto these `columns` is a bijection.
-///
-/// That is, there must be a one-to-one relationship between a row and the `columns` of that row.
-#[derive(Debug, Clone, SpacetimeType)]
-#[sats(crate = crate)]
-#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
-pub struct RawUniqueConstraintDefV9 {
-    /// The name of the unique constraint. Must be unique within the containing `RawModuleDefV9`.
-    pub name: RawIdentifier,
-
-    /// The columns that must be unique.
-    pub columns: ColList,
-}
-
 /// Marks a table as a timer table for a scheduled reducer.
 ///
 /// The table must have columns:
@@ -300,8 +285,9 @@ pub struct RawUniqueConstraintDefV9 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawScheduleDefV9 {
-    /// The name of the schedule. Must be unique within the containing `RawModuleDefV9`.
-    pub name: RawIdentifier,
+    /// In the future, the user may FOR SOME REASON want to override this.
+    /// Even though there is ABSOLUTELY NO REASON TO.
+    pub name: Option<Box<str>>,
 
     /// The name of the reducer to call.
     pub reducer_name: RawIdentifier,
@@ -315,8 +301,9 @@ pub struct RawScheduleDefV9 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawConstraintDefV9 {
-    /// The name of the constraint. Must be unique within the containing `RawModuleDefV9`.
-    pub name: RawIdentifier,
+    /// In the future, the user may FOR SOME REASON want to override this.
+    /// Even though there is ABSOLUTELY NO REASON TO.
+    pub name: Option<Box<str>>,
 
     /// The data for the constraint.
     pub data: RawConstraintDataV9,
@@ -492,9 +479,59 @@ impl RawModuleDefV9Builder {
         custom_ordering: bool,
     ) -> RawTableDefBuilder {
         let table_name = table_name.into();
+
         let product_type_ref = self.add_algebraic_type([], table_name.clone(), product_type.into(), custom_ordering);
 
         self.build_table(table_name, product_type_ref)
+    }
+
+    /// Build a new table with a product type, for testing.
+    /// Adds the type to the module.
+    pub fn build_table_with_new_type_for_tests(
+        &mut self,
+        table_name: impl Into<RawIdentifier>,
+        mut product_type: spacetimedb_sats::ProductType,
+        custom_ordering: bool,
+    ) -> RawTableDefBuilder {
+        self.add_expand_product_type_for_tests(&mut 0, &mut product_type);
+
+        self.build_table_with_new_type(table_name, product_type, custom_ordering)
+    }
+
+    fn add_expand_type_for_tests(&mut self, name_gen: &mut usize, ty: &mut AlgebraicType) {
+        if ty.is_valid_for_client_type_use() {
+            return;
+        }
+
+        match ty {
+            AlgebraicType::Product(prod_ty) => self.add_expand_product_type_for_tests(name_gen, prod_ty),
+            AlgebraicType::Sum(sum_type) => {
+                if let Some(wrapped) = sum_type.as_option_mut() {
+                    self.add_expand_type_for_tests(name_gen, wrapped);
+                } else {
+                    for elem in sum_type.variants.iter_mut() {
+                        self.add_expand_type_for_tests(name_gen, &mut elem.algebraic_type);
+                    }
+                }
+            }
+            AlgebraicType::Array(ty) => {
+                self.add_expand_type_for_tests(name_gen, &mut ty.elem_ty);
+                return;
+            }
+            _ => return,
+        }
+
+        // Make the type into a ref.
+        let name = *name_gen;
+        let add_ty = core::mem::replace(ty, AlgebraicType::U8);
+        *ty = AlgebraicType::Ref(self.add_algebraic_type([], format!("gen_{name}"), add_ty, true));
+        *name_gen += 1;
+    }
+
+    fn add_expand_product_type_for_tests(&mut self, name_gen: &mut usize, ty: &mut ProductType) {
+        for elem in ty.elements.iter_mut() {
+            self.add_expand_type_for_tests(name_gen, &mut elem.algebraic_type);
+        }
     }
 
     /// Add a type to the typespace, along with a type alias declaring its name.
@@ -654,11 +691,10 @@ impl<'a> RawTableDefBuilder<'a> {
     }
 
     /// Generates a [UniqueConstraintDef] using the supplied `columns`.
-    pub fn with_unique_constraint(mut self, columns: impl Into<ColList>, name: Option<RawIdentifier>) -> Self {
+    pub fn with_unique_constraint(mut self, columns: impl Into<ColList>) -> Self {
         let columns = columns.into();
-        let name = name.unwrap_or_else(|| self.generate_unique_constraint_name(&columns));
         self.table.constraints.push(RawConstraintDefV9 {
-            name,
+            name: None,
             data: RawConstraintDataV9::Unique(RawUniqueConstraintDataV9 { columns }),
         });
         self
@@ -676,22 +712,16 @@ impl<'a> RawTableDefBuilder<'a> {
     pub fn with_auto_inc_primary_key(self, column: impl Into<ColId>) -> Self {
         let column = column.into();
         self.with_primary_key(column)
-            .with_unique_constraint(column, None)
-            .with_column_sequence(column, None)
+            .with_unique_constraint(column)
+            .with_column_sequence(column)
     }
 
     /// Generates a [RawIndexDef] using the supplied `columns`.
-    pub fn with_index(
-        mut self,
-        algorithm: RawIndexAlgorithm,
-        accessor_name: impl Into<RawIdentifier>,
-        name: Option<RawIdentifier>,
-    ) -> Self {
-        let name = name.unwrap_or_else(|| self.generate_index_name(&algorithm));
+    pub fn with_index(mut self, algorithm: RawIndexAlgorithm, accessor_name: impl Into<RawIdentifier>) -> Self {
         let accessor_name = accessor_name.into();
 
         self.table.indexes.push(RawIndexDefV9 {
-            name,
+            name: None,
             accessor_name: Some(accessor_name),
             algorithm,
         });
@@ -699,11 +729,10 @@ impl<'a> RawTableDefBuilder<'a> {
     }
 
     /// Adds a [RawSequenceDef] on the supplied `column`.
-    pub fn with_column_sequence(mut self, column: impl Into<ColId>, name: Option<RawIdentifier>) -> Self {
+    pub fn with_column_sequence(mut self, column: impl Into<ColId>) -> Self {
         let column = column.into();
-        let name = name.unwrap_or_else(|| self.generate_sequence_name(column));
         self.table.sequences.push(RawSequenceDefV9 {
-            name,
+            name: None,
             column,
             start: None,
             min_value: None,
@@ -721,13 +750,11 @@ impl<'a> RawTableDefBuilder<'a> {
         mut self,
         reducer_name: impl Into<RawIdentifier>,
         scheduled_at_column: impl Into<ColId>,
-        name: Option<RawIdentifier>,
     ) -> Self {
         let reducer_name = reducer_name.into();
-        let name = name.unwrap_or_else(|| self.generate_schedule_name());
         let scheduled_at_column = scheduled_at_column.into();
         self.table.schedule = Some(RawScheduleDefV9 {
-            name,
+            name: None,
             reducer_name,
             scheduled_at_column,
         });
@@ -761,55 +788,6 @@ impl<'a> RawTableDefBuilder<'a> {
             .get(self.table.product_type_ref)
             .and_then(|ty| ty.as_product())
             .map(|p| &p.elements[..])
-    }
-
-    /// Get the name of a column in the typespace.
-    ///
-    /// Only used for generating names for indexes, sequences, and unique constraints.
-    ///
-    /// Generates `col_{column}` if the column has no name or if the `RawTableDef`'s `product_type_ref`
-    /// was initialized incorrectly.
-    fn column_name(&self, column: ColId) -> String {
-        self.columns()
-            .and_then(|columns| columns.get(column.idx()))
-            .and_then(|column| column.name().map(ToString::to_string))
-            .unwrap_or_else(|| format!("col_{}", column.0))
-    }
-
-    /// Concatenate a list of column names.
-    fn concat_column_names(&self, selected: &ColList) -> String {
-        selected.iter().map(|col| self.column_name(col)).join("_")
-    }
-
-    /// YOU CANNOT RELY ON INDEXES HAVING THIS NAME FORMAT.
-    fn generate_index_name(&self, algorithm: &RawIndexAlgorithm) -> RawIdentifier {
-        let (label, columns) = match algorithm {
-            RawIndexAlgorithm::BTree { columns } => ("btree", columns),
-            RawIndexAlgorithm::Hash { columns } => ("hash", columns),
-        };
-        let column_names = self.concat_column_names(columns);
-        let table_name = &self.table.name;
-        format!("idx_{table_name}_{label}_{column_names}").into()
-    }
-
-    /// YOU CANNOT RELY ON SEQUENCES HAVING THIS NAME FORMAT.
-    fn generate_sequence_name(&self, column: ColId) -> RawIdentifier {
-        let column_name = self.column_name(column);
-        let table_name = &self.table.name;
-        format!("seq_{table_name}_{column_name}").into()
-    }
-
-    /// YOU CANNOT RELY ON SCHEDULES HAVING THIS NAME FORMAT.
-    fn generate_schedule_name(&self) -> RawIdentifier {
-        let table_name = &self.table.name;
-        format!("schedule_{table_name}").into()
-    }
-
-    /// YOU CANNOT RELY ON UNIQUE CONSTRAINTS HAVING THIS NAME FORMAT.
-    fn generate_unique_constraint_name(&self, columns: &ColList) -> RawIdentifier {
-        let column_names = self.concat_column_names(columns);
-        let table_name = &self.table.name;
-        format!("ct_{table_name}_{column_names}_unique").into()
     }
 }
 

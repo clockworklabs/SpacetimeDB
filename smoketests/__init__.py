@@ -17,7 +17,8 @@ import logging
 # miscellaneous file paths
 TEST_DIR = Path(__file__).parent
 STDB_DIR = TEST_DIR.parent
-SPACETIME_BIN = STDB_DIR / "target/debug/spacetime"
+exe_suffix = ".exe" if sys.platform == "win32" else ""
+SPACETIME_BIN = STDB_DIR / ("target/debug/spacetime" + exe_suffix)
 TEMPLATE_TARGET_DIR = STDB_DIR / "target/_stdbsmoketests"
 STDB_CONFIG = TEST_DIR / "config.toml"
 
@@ -181,8 +182,12 @@ class Smoketest(unittest.TestCase):
         publish_output = self.spacetime(
             "publish",
             *[domain] if domain is not None else [],
-            *["-c", "--yes"] if clear and domain is not None else [],
+            *["-c"] if clear and domain is not None else [],
             "--project-path", self.project_path,
+            # This is required if -c is provided, but is also required for SpacetimeDBPrivate's tests,
+            # because the server address is `node` which doesn't look like `localhost` or `127.0.0.1`
+            # and so the publish step prompts for confirmation.
+            "--yes",
             capture_stderr=capture_stderr,
         )
         self.resolved_identity = re.search(r"identity: ([0-9a-fA-F]+)", publish_output)[1]

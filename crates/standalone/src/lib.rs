@@ -5,7 +5,6 @@ pub mod subcommands;
 pub mod util;
 
 use crate::control_db::ControlDb;
-use crate::subcommands::start::ProgramMode;
 use crate::subcommands::{start, version};
 use anyhow::{ensure, Context};
 use async_trait::async_trait;
@@ -13,15 +12,17 @@ use clap::{ArgMatches, Command};
 use energy_monitor::StandaloneEnergyMonitor;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
+use spacetimedb::db::relational_db::{self, Durability, Txdata};
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
+use spacetimedb::host::{DiskStorage, DurabilityProvider, ExternalDurability, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
+use spacetimedb_client_api::{Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
-use spacetimedb_paths::server::{PidFile, ServerDataDir};
+use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use std::sync::Arc;
 
@@ -63,7 +64,16 @@ impl StandaloneEnv {
         let energy_monitor = Arc::new(StandaloneEnergyMonitor::new(control_db.clone()));
         let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
-        let host_controller = HostController::new(data_dir, config, program_store.clone(), energy_monitor);
+        let durability_provider = Arc::new(StandaloneDurabilityProvider {
+            data_dir: data_dir.clone(),
+        });
+        let host_controller = HostController::new(
+            data_dir,
+            config,
+            program_store.clone(),
+            energy_monitor,
+            durability_provider,
+        );
         let client_actor_index = ClientActorIndex::new();
         let jwt_keys = certs.get_or_create_keys()?;
 
@@ -89,13 +99,25 @@ impl StandaloneEnv {
     }
 }
 
-impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
+struct StandaloneDurabilityProvider {
+    data_dir: Arc<ServerDataDir>,
+}
+
+#[async_trait]
+impl DurabilityProvider for StandaloneDurabilityProvider {
+    async fn durability(&self, replica_id: u64) -> anyhow::Result<ExternalDurability> {
+        let commitlog_dir = self.data_dir.replica(replica_id).commit_log();
+        relational_db::local_durability(commitlog_dir)
+            .await
+            .map(|(durability, disk_size)| (durability as Arc<dyn Durability<TxData = Txdata>>, disk_size))
+            .map_err(Into::into)
+    }
+}
+
+#[async_trait]
+impl NodeDelegate for StandaloneEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         self.metrics_registry.gather()
-    }
-
-    fn host_controller(&self) -> &HostController {
-        &self.host_controller
     }
 
     fn client_actor_index(&self) -> &ClientActorIndex {
@@ -106,6 +128,28 @@ impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
 
     fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT {
         &self.auth_provider
+    }
+
+    async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>> {
+        let leader = match self.control_db.get_leader_replica_by_database(database_id) {
+            Some(leader) => leader,
+            None => return Ok(None),
+        };
+
+        let database = self
+            .control_db
+            .get_database_by_id(database_id)?
+            .with_context(|| format!("Database {} not found", database_id))?;
+
+        self.host_controller
+            .get_or_launch_module_host(database, leader.id)
+            .await
+            .context("failed to get or launch module host")?;
+
+        Ok(Some(Host::new(leader.id, self.host_controller.clone())))
+    }
+    fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
+        self.data_dir().replica(replica_id).module_logs()
     }
 }
 
@@ -155,7 +199,6 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
         self.control_db.get_leader_replica_by_database(database_id)
     }
-
     // Energy
     fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
         Ok(self.control_db.get_energy_balance(identity)?)
@@ -211,18 +254,17 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 let database_id = database.id;
                 let database_identity = database.database_identity;
 
+                let num_replicas = spec.num_replicas;
                 let leader = self
-                    .control_db
-                    .get_leader_replica_by_database(database_id)
-                    .with_context(|| format!("Not found: leader instance for database `{}`", database_identity))?;
-                let update_result = self
-                    .host_controller
-                    .update_module_host(database, spec.host_type, leader.id, spec.program_bytes.into())
+                    .leader(database_id)
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
+                let update_result = leader
+                    .update(database, spec.host_type, spec.program_bytes.into())
                     .await?;
-
                 if update_result.was_successful() {
                     let replicas = self.control_db.get_replicas_by_database(database_id)?;
-                    let desired_replicas = spec.num_replicas as usize;
+                    let desired_replicas = num_replicas as usize;
                     if desired_replicas == 0 {
                         log::info!("Decommissioning all replicas of database {}", database_identity);
                         for instance in replicas {
@@ -366,10 +408,7 @@ impl StandaloneEnv {
                         instance.database_id, instance.id
                     )
                 })?;
-            self.host_controller
-                .get_or_launch_module_host(database, instance.id)
-                .await
-                .map(drop)?
+            self.leader(database.id).await?;
         }
 
         Ok(())
@@ -398,14 +437,23 @@ fn withdraw_energy(control_db: &ControlDb, identity: &Identity, amount: EnergyQu
 
 pub async fn exec_subcommand(cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
-        "start" => start::exec(None, args).await,
+        "start" => start::exec(args).await,
         "version" => version::exec(args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }
 
 pub fn get_subcommands() -> Vec<Command> {
-    vec![start::cli(ProgramMode::Standalone), version::cli()]
+    vec![start::cli(), version::cli()]
+}
+
+pub async fn start_server(data_dir: &ServerDataDir, cert_dir: Option<&std::path::Path>) -> anyhow::Result<()> {
+    let mut args: Vec<&std::ffi::OsStr> = vec!["start".as_ref(), "--data-dir".as_ref(), data_dir.0.as_os_str()];
+    if let Some(cert_dir) = &cert_dir {
+        args.extend(["--jwt-key-dir".as_ref(), cert_dir.as_os_str()])
+    }
+    let args = start::cli().try_get_matches_from(args)?;
+    start::exec(&args).await
 }
 
 #[cfg(test)]

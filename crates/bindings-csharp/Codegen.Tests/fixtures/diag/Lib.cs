@@ -361,24 +361,49 @@ public static partial class InAnotherNamespace
     public partial struct TestDuplicateTableName { }
 }
 
-[SpacetimeDB.Table(
-    Name = "TestIncompatibleSchedule1",
-    Scheduled = nameof(TestIncompatibleScheduleReducer)
-)]
-[SpacetimeDB.Table(Name = "TestIncompatibleSchedule2")]
-public partial struct TestIncompatibleSchedule
+[SpacetimeDB.Table]
+[SpacetimeDB.Index.BTree(Name = "TestIndexWithoutColumns")]
+[SpacetimeDB.Index.BTree(Name = "TestIndexWithEmptyColumns", Columns = [])]
+[SpacetimeDB.Index.BTree(Name = "TestUnknownColumns", Columns = ["UnknownColumn"])]
+public partial struct TestIndexIssues
 {
-    [SpacetimeDB.Reducer]
-    public static void TestIncompatibleScheduleReducer(
-        ReducerContext ctx,
-        TestIncompatibleSchedule table
-    ) { }
+    [SpacetimeDB.Index.BTree(Name = "TestUnexpectedColumns", Columns = ["UnexpectedColumn"])]
+    public int SelfIndexingColumn;
 }
 
-[SpacetimeDB.Table]
-[SpacetimeDB.Index]
-public partial struct TestIndexWithoutColumns { }
+[SpacetimeDB.Table(
+    Name = "TestScheduleWithoutPrimaryKey",
+    Scheduled = "DummyScheduledReducer",
+    ScheduledAt = nameof(ScheduleAtCorrectType)
+)]
+[SpacetimeDB.Table(
+    Name = "TestScheduleWithWrongPrimaryKeyType",
+    Scheduled = "DummyScheduledReducer",
+    ScheduledAt = nameof(ScheduleAtCorrectType)
+)]
+[SpacetimeDB.Table(Name = "TestScheduleWithoutScheduleAt", Scheduled = "DummyScheduledReducer")]
+[SpacetimeDB.Table(
+    Name = "TestScheduleWithWrongScheduleAtType",
+    Scheduled = "DummyScheduledReducer",
+    ScheduledAt = nameof(ScheduleAtWrongType)
+)]
+[SpacetimeDB.Table(
+    Name = "TestScheduleWithMissingScheduleAtField",
+    Scheduled = "DummyScheduledReducer",
+    ScheduledAt = "MissingField"
+)]
+public partial struct TestScheduleIssues
+{
+    [SpacetimeDB.PrimaryKey(Table = "TestScheduleWithWrongPrimaryKeyType")]
+    public string IdWrongType;
 
-[SpacetimeDB.Table]
-[SpacetimeDB.Index(BTree = [])]
-public partial struct TestIndexWithEmptyColumns { }
+    [SpacetimeDB.PrimaryKey(Table = "TestScheduleWithoutScheduleAt")]
+    [SpacetimeDB.PrimaryKey(Table = "TestScheduleWithWrongScheduleAtType")]
+    public int IdCorrectType;
+
+    public int ScheduleAtWrongType;
+    public ScheduleAt ScheduleAtCorrectType;
+
+    [SpacetimeDB.Reducer]
+    public static void DummyScheduledReducer(ReducerContext ctx, TestScheduleIssues table) { }
+}
