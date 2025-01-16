@@ -73,8 +73,9 @@ def main():
         logging.info("Compiling spacetime cli...")
         smoketests.run_cmd("cargo", "build", "-pspacetimedb-cli", "-pspacetimedb-update", cwd=TEST_DIR.parent, capture_stderr=False)
 
+    update_bin_name = "spacetimedb-update" + exe_suffix
     try:
-        bin_is_symlink = SPACETIME_BIN.readlink() == "spacetimedb-update" + exe_suffix
+        bin_is_symlink = SPACETIME_BIN.readlink() == update_bin_name
     except OSError:
         bin_is_symlink = False
     if not bin_is_symlink:
@@ -83,10 +84,10 @@ def main():
         except FileNotFoundError:
             pass
         try:
-            os.symlink("spacetimedb-update" + exe_suffix, SPACETIME_BIN)
+            os.symlink(update_bin_name, SPACETIME_BIN)
         except OSError:
             import shutil
-            shutil.copyfile(SPACETIME_BIN.with_name("spacetimedb-update" + exe_suffix), SPACETIME_BIN)
+            shutil.copyfile(SPACETIME_BIN.with_name(update_bin_name), SPACETIME_BIN)
 
     os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
 
