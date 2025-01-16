@@ -224,11 +224,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 initial_update.invoke_row_callbacks(&event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
-            ParsedMessage::SubscriptionError {
-                query_id,
-                request_id: _,
-                error,
-            } => {
+            ParsedMessage::SubscriptionError { query_id, error } => {
                 let Some(query_id) = query_id else {
                     // A subscription error that isn't specific to a query is a fatal error.
                     self.invoke_disconnected(Some(&anyhow::anyhow!(error)));
@@ -1001,25 +997,12 @@ fn enter_or_create_runtime() -> Result<(Option<Runtime>, runtime::Handle)> {
 }
 
 enum ParsedMessage<M: SpacetimeModule> {
-    InitialSubscription {
-        db_update: M::DbUpdate,
-        sub_id: u32,
-    },
+    InitialSubscription { db_update: M::DbUpdate, sub_id: u32 },
     TransactionUpdate(Event<M::Reducer>, Option<M::DbUpdate>),
     IdentityToken(Identity, Box<str>, Address),
-    SubscribeApplied {
-        query_id: u32,
-        initial_update: M::DbUpdate,
-    },
-    UnsubscribeApplied {
-        query_id: u32,
-        initial_update: M::DbUpdate,
-    },
-    SubscriptionError {
-        query_id: Option<u32>,
-        request_id: Option<u32>,
-        error: String,
-    },
+    SubscribeApplied { query_id: u32, initial_update: M::DbUpdate },
+    UnsubscribeApplied { query_id: u32, initial_update: M::DbUpdate },
+    SubscriptionError { query_id: Option<u32>, error: String },
     Error(anyhow::Error),
 }
 
@@ -1116,7 +1099,6 @@ async fn parse_loop<M: SpacetimeModule>(
             }
             ws::ServerMessage::SubscriptionError(e) => ParsedMessage::SubscriptionError {
                 query_id: e.query_id,
-                request_id: e.request_id,
                 error: e.error.to_string(),
             },
         })
