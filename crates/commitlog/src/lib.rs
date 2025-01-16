@@ -86,6 +86,14 @@ impl Default for Options {
     }
 }
 
+impl Options {
+    /// Compute the length in bytes of an offset index based on the settings in
+    /// `self`.
+    pub fn offset_index_len(&self) -> u64 {
+        self.max_segment_size / self.offset_index_interval_bytes
+    }
+}
+
 /// The canonical commitlog, backed by on-disk log files.
 ///
 /// Records in the log are of type `T`, which canonically is instantiated to

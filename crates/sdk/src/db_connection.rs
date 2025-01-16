@@ -733,7 +733,7 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
 
     module_name: Option<String>,
 
-    credentials: Option<(Identity, String)>,
+    token: Option<String>,
 
     on_connect: Option<OnConnectCallback<M>>,
     on_connect_error: Option<OnConnectErrorCallback>,
@@ -778,7 +778,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
         Self {
             uri: None,
             module_name: None,
-            credentials: None,
+            token: None,
             on_connect: None,
             on_connect_error: None,
             on_disconnect: None,
@@ -827,7 +827,7 @@ but you must call one of them, or else the connection will never progress.
             handle.block_on(WsConnection::connect(
                 self.uri.unwrap(),
                 self.module_name.as_ref().unwrap(),
-                self.credentials.as_ref(),
+                self.token.as_deref(),
                 get_client_address(),
                 self.params,
             ))
@@ -863,7 +863,7 @@ but you must call one of them, or else the connection will never progress.
             recv: Arc::new(TokioMutex::new(parsed_recv_chan)),
             pending_mutations_send,
             pending_mutations_recv: Arc::new(TokioMutex::new(pending_mutations_recv)),
-            identity: Arc::new(StdMutex::new(self.credentials.as_ref().map(|creds| creds.0))),
+            identity: Arc::new(StdMutex::new(None)),
         };
 
         Ok(ctx_imp)
@@ -884,17 +884,18 @@ but you must call one of them, or else the connection will never progress.
         self
     }
 
-    /// Set the credentials with which to connect to the remote database.
+    /// Supply a token with which to authenticate with the remote database.
     ///
-    /// If `credentials` is `None` or this method is not invoked,
+    /// `token` should be an OpenID Connect compliant JSON Web Token.
+    ///
+    /// If this method is not invoked, or `None` is supplied,
     /// the SpacetimeDB host will generate a new anonymous `Identity`.
     ///
-    /// If the passed token is invalid, is not recognized by the host,
-    /// or does not authenticate as the passed `Identity`,
+    /// If the passed token is invalid or rejected by the host,
     /// the connection will fail asynchrnonously.
     // FIXME: currently this causes `disconnect` to be called rather than `on_connect_error`.
-    pub fn with_credentials(mut self, credentials: Option<(Identity, String)>) -> Self {
-        self.credentials = credentials;
+    pub fn with_token(mut self, token: Option<impl ToString>) -> Self {
+        self.token = token.map(|token| token.to_string());
         self
     }
 
@@ -925,10 +926,9 @@ but you must call one of them, or else the connection will never progress.
     /// The callback will receive three arguments:
     /// - The `DbConnection` which has successfully connected.
     /// - The `Identity` of the successful connection.
-    ///   If an identity and token were passed to [`Self::with_credentials`], this will be the same `Identity`.
     /// - The private access token which can be used to later re-authenticate as the same `Identity`.
-    ///   If an identity and token were passed to [`Self::with_credentials`],
-    ///   this may not be string-equal to the supplied token, but will authenticate as the same `Identity`.
+    ///   If a token was passed to [`Self::with_token`],
+    ///   this will be the same token.
     pub fn on_connect(mut self, callback: impl FnOnce(&M::DbConnection, Identity, &str) + Send + 'static) -> Self {
         if self.on_connect.is_some() {
             panic!(

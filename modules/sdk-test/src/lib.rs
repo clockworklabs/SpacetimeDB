@@ -640,7 +640,8 @@ define_tables! {
 #[spacetimedb::reducer]
 fn no_op_succeeds(_ctx: &ReducerContext) {}
 
-spacetimedb::filter!("SELECT * FROM one_u8");
+#[spacetimedb::client_visibility_filter]
+const ONE_U8_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM one_u8");
 
 #[spacetimedb::table(name = scheduled_table, scheduled(send_scheduled_message), public)]
 pub struct ScheduledTable {

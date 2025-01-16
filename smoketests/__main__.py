@@ -7,7 +7,7 @@ import os
 import re
 import fnmatch
 import json
-from . import TEST_DIR, build_template_target
+from . import TEST_DIR, SPACETIME_BIN, build_template_target
 import smoketests
 import logging
 
@@ -68,7 +68,22 @@ def main():
     args = parser.parse_args()
 
     logging.info("Compiling spacetime cli...")
-    smoketests.run_cmd("cargo", "build", cwd=TEST_DIR.parent, capture_stderr=False)
+    smoketests.run_cmd("cargo", "build", "-pspacetimedb-cli", "-pspacetimedb-update", cwd=TEST_DIR.parent, capture_stderr=False)
+
+    try:
+        bin_is_symlink = SPACETIME_BIN.readlink() == "spacetimedb-update"
+    except OSError:
+        bin_is_symlink = False
+    if not bin_is_symlink:
+        try:
+            os.remove(SPACETIME_BIN)
+        except FileNotFoundError:
+            pass
+        try:
+            os.symlink("spacetimedb-update", SPACETIME_BIN)
+        except OSError:
+            import shutil
+            shutil.copyfile(SPACETIME_BIN.with_name("spacetimedb-update"), SPACETIME_BIN)
 
     os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
 

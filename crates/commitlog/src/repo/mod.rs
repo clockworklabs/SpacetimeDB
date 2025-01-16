@@ -91,12 +91,8 @@ pub trait Repo: Clone {
     }
 }
 
-fn offset_index_len(opts: Options) -> u64 {
-    opts.max_segment_size / opts.offset_index_interval_bytes
-}
-
 fn create_offset_index_writer<R: Repo>(repo: &R, offset: u64, opts: Options) -> Option<OffsetIndexWriter> {
-    repo.create_offset_index(offset, offset_index_len(opts))
+    repo.create_offset_index(offset, opts.offset_index_len())
         .map(|index| OffsetIndexWriter::new(index, opts))
         .map_err(|e| {
             warn!("failed to get offset index for segment {offset}: {e}");

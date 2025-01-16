@@ -5,7 +5,7 @@ use std::{
     ops::Range,
 };
 
-use log::debug;
+use log::{debug, warn};
 
 use crate::{
     commit::{self, Commit, StoredCommit},
@@ -269,7 +269,7 @@ impl OffsetIndexWriter {
     }
 
     /// Either append to index or save offsets to append at future fsync
-    fn append_after_commit(
+    pub fn append_after_commit(
         &mut self,
         min_tx_offset: TxOffset,
         byte_offset: u64,
@@ -312,8 +312,12 @@ impl FileLike for OffsetIndexWriter {
     /// Must be called via SegmentWriter::fsync
     fn fsync(&mut self) -> io::Result<()> {
         let _ = self.append_internal().map_err(|e| {
-            debug!("failed to append to offset index: {:?}", e);
+            warn!("failed to append to offset index: {e:?}");
         });
+        let _ = self
+            .head
+            .async_flush()
+            .map_err(|e| warn!("failed to flush offset index: {e:?}"));
         Ok(())
     }
 

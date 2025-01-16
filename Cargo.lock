@@ -4684,7 +4684,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "spacetimedb-primitives",
- "spacetimedb-sql-parser",
  "syn 2.0.87",
 ]
 
@@ -4735,7 +4734,6 @@ dependencies = [
  "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-schema",
- "spacetimedb-standalone",
  "spacetimedb-testing",
  "syntect",
  "tabled",
@@ -5089,6 +5087,7 @@ dependencies = [
  "dirs",
  "fs2",
  "itoa",
+ "semver",
  "serde",
  "tempfile",
  "thiserror",
@@ -5335,6 +5334,16 @@ dependencies = [
  "tempfile",
  "tokio",
  "wasmbin",
+]
+
+[[package]]
+name = "spacetimedb-update"
+version = "1.0.0-rc3"
+dependencies = [
+ "anyhow",
+ "clap 4.5.20",
+ "semver",
+ "spacetimedb-paths",
 ]
 
 [[package]]
