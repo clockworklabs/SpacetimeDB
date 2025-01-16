@@ -48,7 +48,7 @@ partial record TestTaggedEnumField
             }
         }
 
-        public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
+        public SpacetimeDB.BSATN.AlgebraicType.Ref GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             registrar.RegisterType<TestTaggedEnumField>(
@@ -60,5 +60,9 @@ partial record TestTaggedEnumField
                     }
                 )
             );
+
+        SpacetimeDB.BSATN.AlgebraicType SpacetimeDB.BSATN.IReadWrite<TestTaggedEnumField>.GetAlgebraicType(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => GetAlgebraicType(registrar);
     }
 } // TestTaggedEnumField

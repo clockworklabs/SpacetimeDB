@@ -9,9 +9,15 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertCallerVecIdentity {}
+pub(super) struct InsertCallerVecIdentityArgs {}
 
-impl __sdk::InModule for InsertCallerVecIdentity {
+impl From<InsertCallerVecIdentityArgs> for super::Reducer {
+    fn from(args: InsertCallerVecIdentityArgs) -> Self {
+        Self::InsertCallerVecIdentity
+    }
+}
+
+impl __sdk::InModule for InsertCallerVecIdentityArgs {
     type Module = super::RemoteModule;
 }
 
@@ -50,20 +56,32 @@ pub trait insert_caller_vec_identity {
 impl insert_caller_vec_identity for super::RemoteReducers {
     fn insert_caller_vec_identity(&self) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_caller_vec_identity", InsertCallerVecIdentity {})
+            .call_reducer("insert_caller_vec_identity", InsertCallerVecIdentityArgs {})
     }
     fn on_insert_caller_vec_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> InsertCallerVecIdentityCallbackId {
-        InsertCallerVecIdentityCallbackId(self.imp.on_reducer::<InsertCallerVecIdentity>(
+        InsertCallerVecIdentityCallbackId(self.imp.on_reducer(
             "insert_caller_vec_identity",
-            Box::new(move |ctx: &super::EventContext, args: &InsertCallerVecIdentity| callback(ctx)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertCallerVecIdentity {},
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx)
+            }),
         ))
     }
     fn remove_on_insert_caller_vec_identity(&self, callback: InsertCallerVecIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertCallerVecIdentity>("insert_caller_vec_identity", callback.0)
+        self.imp.remove_on_reducer("insert_caller_vec_identity", callback.0)
     }
 }
 

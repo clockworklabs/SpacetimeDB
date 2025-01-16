@@ -103,6 +103,8 @@ pub enum SubscriptionError {
     SideEffect(Crud),
     #[error("Unsupported query on subscription: {0:?}")]
     Unsupported(String),
+    #[error("Subscribing to queries in one call is not supported")]
+    Multiple,
 }
 
 #[derive(Error, Debug)]
@@ -335,6 +337,8 @@ pub enum NodesError {
     TableNotFound,
     #[error("index with provided name or id doesn't exist")]
     IndexNotFound,
+    #[error("index was not unique")]
+    IndexNotUnique,
     #[error("column is out of bounds")]
     BadColumn,
     #[error("can't perform operation; not inside transaction")]

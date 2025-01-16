@@ -145,6 +145,12 @@ impl TxState {
             .unwrap_or(false)
     }
 
+    /// Returns the [DeleteTable] for the given `table_id`, checking if it's empty.
+    pub(super) fn get_delete_table(&self, table_id: TableId) -> Option<&DeleteTable> {
+        self.delete_tables.get(&table_id).filter(|x| !x.is_empty())
+    }
+
+    /// Guarantees that the `table_id` returns a `DeleteTable`.
     pub(super) fn get_delete_table_mut(&mut self, table_id: TableId) -> &mut DeleteTable {
         self.delete_tables.entry(table_id).or_default()
     }
@@ -177,6 +183,25 @@ impl TxState {
             btree_map::Entry::Occupied(e) => e.into_mut(),
         };
         Some((tbl, blob_store, idx_map, delete_tables.entry(table_id).or_default()))
+    }
+
+    /// Assumes that the insert and delete tables exist for `table_id` and fetches them.
+    ///
+    /// # Safety
+    ///
+    /// The insert and delete tables must exist.
+    pub unsafe fn assume_present_get_mut_table(
+        &mut self,
+        table_id: TableId,
+    ) -> (&mut Table, &mut dyn BlobStore, &mut DeleteTable) {
+        let tx_blob_store: &mut dyn BlobStore = &mut self.blob_store;
+        let tx_table = self.insert_tables.get_mut(&table_id);
+        // SAFETY: we successfully got a `tx_table` before and haven't removed it since.
+        let tx_table = unsafe { tx_table.unwrap_unchecked() };
+        let delete_table = self.delete_tables.get_mut(&table_id);
+        // SAFETY: we successfully got a `delete_table` before and haven't removed it since.
+        let delete_table = unsafe { delete_table.unwrap_unchecked() };
+        (tx_table, tx_blob_store, delete_table)
     }
 
     /// Returns the table and index associated with the given `table_id` and `col_list`, if any.

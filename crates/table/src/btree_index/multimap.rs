@@ -6,15 +6,21 @@ use std::collections::btree_map::{BTreeMap, Range};
 use crate::MemoryUsage;
 
 /// A multi map that relates a `K` to a *set* of `V`s.
-#[derive(Default)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct MultiMap<K, V> {
     /// The map is backed by a `BTreeMap` for relating keys to values.
     ///
-    /// A value set is stored as a *sorted* `SmallVec`.
-    /// This is an optimization over a sorted `Vec<_>`
+    /// A value set is stored as a `SmallVec`.
+    /// This is an optimization over a `Vec<_>`
     /// as we allow a single element to be stored inline
     /// to improve performance for the common case of one element.
     map: BTreeMap<K, SmallVec<[V; 1]>>,
+}
+
+impl<K, V> Default for MultiMap<K, V> {
+    fn default() -> Self {
+        Self { map: BTreeMap::new() }
+    }
 }
 
 impl<K: MemoryUsage, V: MemoryUsage> MemoryUsage for MultiMap<K, V> {
@@ -25,11 +31,6 @@ impl<K: MemoryUsage, V: MemoryUsage> MemoryUsage for MultiMap<K, V> {
 }
 
 impl<K: Ord, V: Ord> MultiMap<K, V> {
-    /// Returns an empty multi map.
-    pub fn new() -> Self {
-        Self { map: BTreeMap::new() }
-    }
-
     /// Inserts the relation `key -> val` to this multimap.
     ///
     /// The map does not check whether `key -> val` was already in the map.

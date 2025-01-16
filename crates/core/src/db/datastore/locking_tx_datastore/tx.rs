@@ -1,14 +1,18 @@
 use super::datastore::record_metrics;
 use super::{
-    committed_state::{CommittedIndexIter, CommittedState},
+    committed_state::CommittedState,
     datastore::Result,
-    state_view::{Iter, IterByColRange, StateView},
-    SharedReadGuard,
+    state_view::{IterByColRangeTx, StateView},
+    IterByColEqTx, SharedReadGuard,
 };
+use crate::db::datastore::locking_tx_datastore::state_view::IterTx;
 use crate::execution_context::ExecutionContext;
+use spacetimedb_execution::Datastore;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_table::blob_store::BlobStore;
+use spacetimedb_table::table::Table;
 use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::{
@@ -23,7 +27,23 @@ pub struct TxId {
     pub(crate) ctx: ExecutionContext,
 }
 
+impl Datastore for TxId {
+    fn blob_store(&self) -> &dyn BlobStore {
+        &self.committed_state_shared_lock.blob_store
+    }
+
+    fn table(&self, table_id: TableId) -> Option<&Table> {
+        self.committed_state_shared_lock.get_table(table_id)
+    }
+}
+
 impl StateView for TxId {
+    type Iter<'a> = IterTx<'a>;
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeTx<'a, R>;
+    type IterByColEq<'a, 'r> = IterByColEqTx<'a, 'r>
+    where
+        Self: 'a;
+
     fn get_schema(&self, table_id: TableId) -> Option<&Arc<TableSchema>> {
         self.committed_state_shared_lock.get_schema(table_id)
     }
@@ -32,7 +52,7 @@ impl StateView for TxId {
         self.committed_state_shared_lock.table_row_count(table_id)
     }
 
-    fn iter(&self, table_id: TableId) -> Result<Iter<'_>> {
+    fn iter(&self, table_id: TableId) -> Result<Self::Iter<'_>> {
         self.committed_state_shared_lock.iter(table_id)
     }
 
@@ -44,18 +64,22 @@ impl StateView for TxId {
         table_id: TableId,
         cols: ColList,
         range: R,
-    ) -> Result<IterByColRange<'_, R>> {
+    ) -> Result<Self::IterByColRange<'_, R>> {
         match self.committed_state_shared_lock.index_seek(table_id, &cols, &range) {
-            Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter::new(
-                table_id,
-                None,
-                &self.committed_state_shared_lock,
-                committed_rows,
-            ))),
+            Some(committed_rows) => Ok(IterByColRangeTx::CommittedIndex(committed_rows)),
             None => self
                 .committed_state_shared_lock
                 .iter_by_col_range(table_id, cols, range),
         }
+    }
+
+    fn iter_by_col_eq<'a, 'r>(
+        &'a self,
+        table_id: TableId,
+        cols: impl Into<ColList>,
+        value: &'r AlgebraicValue,
+    ) -> Result<Self::IterByColEq<'a, 'r>> {
+        self.iter_by_col_range(table_id, cols.into(), value)
     }
 }
 

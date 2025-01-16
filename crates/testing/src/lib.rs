@@ -21,5 +21,5 @@ pub fn invoke_cli(paths: &SpacetimePaths, args: &[&str]) {
 
     RUNTIME
         .block_on(spacetimedb_cli::exec_subcommand(config, paths, cmd, args))
-        .unwrap()
+        .unwrap();
 }

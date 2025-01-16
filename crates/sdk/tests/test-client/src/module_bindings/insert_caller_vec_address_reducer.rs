@@ -9,9 +9,15 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertCallerVecAddress {}
+pub(super) struct InsertCallerVecAddressArgs {}
 
-impl __sdk::InModule for InsertCallerVecAddress {
+impl From<InsertCallerVecAddressArgs> for super::Reducer {
+    fn from(args: InsertCallerVecAddressArgs) -> Self {
+        Self::InsertCallerVecAddress
+    }
+}
+
+impl __sdk::InModule for InsertCallerVecAddressArgs {
     type Module = super::RemoteModule;
 }
 
@@ -50,20 +56,32 @@ pub trait insert_caller_vec_address {
 impl insert_caller_vec_address for super::RemoteReducers {
     fn insert_caller_vec_address(&self) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_caller_vec_address", InsertCallerVecAddress {})
+            .call_reducer("insert_caller_vec_address", InsertCallerVecAddressArgs {})
     }
     fn on_insert_caller_vec_address(
         &self,
         mut callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> InsertCallerVecAddressCallbackId {
-        InsertCallerVecAddressCallbackId(self.imp.on_reducer::<InsertCallerVecAddress>(
+        InsertCallerVecAddressCallbackId(self.imp.on_reducer(
             "insert_caller_vec_address",
-            Box::new(move |ctx: &super::EventContext, args: &InsertCallerVecAddress| callback(ctx)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertCallerVecAddress {},
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx)
+            }),
         ))
     }
     fn remove_on_insert_caller_vec_address(&self, callback: InsertCallerVecAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertCallerVecAddress>("insert_caller_vec_address", callback.0)
+        self.imp.remove_on_reducer("insert_caller_vec_address", callback.0)
     }
 }
 

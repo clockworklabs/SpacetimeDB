@@ -7,14 +7,17 @@ use crate::db::datastore::system_tables::{StClientFields, StClientRow, ST_CLIENT
 use crate::db::datastore::traits::{IsolationLevel, Program, TxData};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
+use crate::estimation::estimate_rows_scanned;
 use crate::execution_context::{ExecutionContext, ReducerContext, Workload};
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use crate::replica_context::ReplicaContext;
-use crate::sql;
+use crate::sql::ast::SchemaViewer;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use crate::subscription::tx::DeltaTx;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
+use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
@@ -24,17 +27,18 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_client_api_messages::timestamp::Timestamp;
-use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{Compression, OneOffTable, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::{col_list, TableId};
+use spacetimedb_query::SubscribePlan;
 use spacetimedb_sats::{algebraic_value, ProductValue};
 use spacetimedb_schema::auto_migrate::AutoMigrateError;
 use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef};
-use spacetimedb_vm::relation::{MemTable, RelValue};
+use spacetimedb_vm::relation::RelValue;
 use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -640,7 +644,7 @@ impl ModuleHost {
         };
 
         if connected {
-            db.insert(mut_tx, ST_CLIENT_ID, row.into()).map(|_| ())
+            mut_tx.insert_via_serialize_bsatn(ST_CLIENT_ID, &row).map(|_| ())
         } else {
             let row = db
                 .iter_by_col_eq_mut(
@@ -836,15 +840,25 @@ impl ModuleHost {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn one_off_query(&self, caller_identity: Identity, query: String) -> Result<Vec<MemTable>, anyhow::Error> {
+    pub fn one_off_query<F: WebsocketFormat>(
+        &self,
+        caller_identity: Identity,
+        query: String,
+    ) -> Result<OneOffTable<F>, anyhow::Error> {
         let replica_ctx = self.replica_ctx();
         let db = &replica_ctx.relational_db;
         let auth = AuthCtx::new(replica_ctx.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
 
         db.with_read_only(Workload::Sql, |tx| {
-            let ast = sql::compiler::compile_sql(db, &auth, tx, &query)?;
-            sql::execute::execute_sql_tx(db, tx, &query, ast, auth)?
+            let tx = SchemaViewer::new(tx, &auth);
+            let plan = SubscribePlan::compile(&query, &tx)?;
+            check_row_limit(&plan, db, &tx, |plan, tx| estimate_rows_scanned(tx, plan), &auth)?;
+            plan.execute::<_, F>(&DeltaTx::from(&*tx))
+                .map(|(rows, _)| OneOffTable {
+                    table_name: plan.table_name().to_owned().into_boxed_str(),
+                    rows,
+                })
                 .context("One-off queries are not allowed to modify the database")
         })
     }

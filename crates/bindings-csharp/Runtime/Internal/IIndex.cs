@@ -1,9 +1,10 @@
 ﻿namespace SpacetimeDB.Internal;
 
 using System;
+using SpacetimeDB.BSATN;
 
 public abstract class IndexBase<Row>
-    where Row : ITable<Row>, new()
+    where Row : IStructuralReadWrite, new()
 {
     private readonly FFI.IndexId indexId;
 
@@ -60,8 +61,7 @@ public abstract class IndexBase<Row>
         return out_;
     }
 
-    private class RawTableIter<Bounds>(FFI.IndexId indexId, Bounds bounds)
-        : ITable<Row>.RawTableIterBase
+    private class RawTableIter<Bounds>(FFI.IndexId indexId, Bounds bounds) : RawTableIterBase<Row>
         where Bounds : IBTreeIndexBounds
     {
         protected override void IterStart(out FFI.RowIter handle)
@@ -85,7 +85,7 @@ public abstract class IndexBase<Row>
 public abstract class UniqueIndex<Handle, Row, T, RW>(Handle table, string name)
     : IndexBase<Row>(name)
     where Handle : ITableView<Handle, Row>
-    where Row : ITable<Row>, new()
+    where Row : IStructuralReadWrite, new()
     where T : IEquatable<T>
     where RW : struct, BSATN.IReadWrite<T>
 {

@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdatePkIdentity {
+pub(super) struct UpdatePkIdentityArgs {
     pub i: __sdk::Identity,
     pub data: i32,
 }
 
-impl __sdk::InModule for UpdatePkIdentity {
+impl From<UpdatePkIdentityArgs> for super::Reducer {
+    fn from(args: UpdatePkIdentityArgs) -> Self {
+        Self::UpdatePkIdentity {
+            i: args.i,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdatePkIdentityArgs {
     type Module = super::RemoteModule;
 }
 
@@ -53,20 +62,32 @@ pub trait update_pk_identity {
 impl update_pk_identity for super::RemoteReducers {
     fn update_pk_identity(&self, i: __sdk::Identity, data: i32) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("update_pk_identity", UpdatePkIdentity { i, data })
+            .call_reducer("update_pk_identity", UpdatePkIdentityArgs { i, data })
     }
     fn on_update_pk_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Identity, &i32) + Send + 'static,
     ) -> UpdatePkIdentityCallbackId {
-        UpdatePkIdentityCallbackId(self.imp.on_reducer::<UpdatePkIdentity>(
+        UpdatePkIdentityCallbackId(self.imp.on_reducer(
             "update_pk_identity",
-            Box::new(move |ctx: &super::EventContext, args: &UpdatePkIdentity| callback(ctx, &args.i, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdatePkIdentity { i, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, i, data)
+            }),
         ))
     }
     fn remove_on_update_pk_identity(&self, callback: UpdatePkIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdatePkIdentity>("update_pk_identity", callback.0)
+        self.imp.remove_on_reducer("update_pk_identity", callback.0)
     }
 }
 

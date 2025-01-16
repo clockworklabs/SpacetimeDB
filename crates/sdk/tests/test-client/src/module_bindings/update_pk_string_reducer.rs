@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdatePkString {
+pub(super) struct UpdatePkStringArgs {
     pub s: String,
     pub data: i32,
 }
 
-impl __sdk::InModule for UpdatePkString {
+impl From<UpdatePkStringArgs> for super::Reducer {
+    fn from(args: UpdatePkStringArgs) -> Self {
+        Self::UpdatePkString {
+            s: args.s,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdatePkStringArgs {
     type Module = super::RemoteModule;
 }
 
@@ -52,20 +61,33 @@ pub trait update_pk_string {
 
 impl update_pk_string for super::RemoteReducers {
     fn update_pk_string(&self, s: String, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_pk_string", UpdatePkString { s, data })
+        self.imp
+            .call_reducer("update_pk_string", UpdatePkStringArgs { s, data })
     }
     fn on_update_pk_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String, &i32) + Send + 'static,
     ) -> UpdatePkStringCallbackId {
-        UpdatePkStringCallbackId(self.imp.on_reducer::<UpdatePkString>(
+        UpdatePkStringCallbackId(self.imp.on_reducer(
             "update_pk_string",
-            Box::new(move |ctx: &super::EventContext, args: &UpdatePkString| callback(ctx, &args.s, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdatePkString { s, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s, data)
+            }),
         ))
     }
     fn remove_on_update_pk_string(&self, callback: UpdatePkStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdatePkString>("update_pk_string", callback.0)
+        self.imp.remove_on_reducer("update_pk_string", callback.0)
     }
 }
 

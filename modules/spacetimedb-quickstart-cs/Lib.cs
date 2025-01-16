@@ -2,15 +2,16 @@ namespace SpacetimeDB.Examples.QuickStart.Server;
 
 using SpacetimeDB;
 
-[Table(Public = true)]
-[Index(Name = "Age", BTree = ["Age"])]
+[Table(Name = "person", Public = true)]
 public partial struct Person
 {
     [AutoInc]
     [PrimaryKey]
-    public uint Id;
-    public string Name;
-    public byte Age;
+    public uint id;
+    public string name;
+
+    [Index.BTree]
+    public byte age;
 }
 
 static partial class Module
@@ -18,15 +19,15 @@ static partial class Module
     [SpacetimeDB.Reducer]
     public static void add(ReducerContext ctx, string name, byte age)
     {
-        ctx.Db.Person.Insert(new Person { Name = name, Age = age });
+        ctx.Db.person.Insert(new Person { name = name, age = age });
     }
 
     [SpacetimeDB.Reducer]
     public static void say_hello(ReducerContext ctx)
     {
-        foreach (var person in ctx.Db.Person.Iter())
+        foreach (var person in ctx.Db.person.Iter())
         {
-            Log.Info($"Hello, {person.Name}!");
+            Log.Info($"Hello, {person.name}!");
         }
         Log.Info("Hello, World!");
     }
@@ -34,9 +35,17 @@ static partial class Module
     [SpacetimeDB.Reducer]
     public static void list_over_age(ReducerContext ctx, byte age)
     {
-        foreach (var person in ctx.Db.Person.Age.Filter((age, byte.MaxValue)))
+        foreach (var person in ctx.Db.person.age.Filter((age, byte.MaxValue)))
         {
-            Log.Info($"{person.Name} has age {person.Age} >= {age}");
+            Log.Info($"{person.name} has age {person.age} >= {age}");
         }
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void log_module_identity(ReducerContext ctx)
+    {
+        // Note: we use ToLower() because Rust side stringifies identities as lowercase hex.
+        // Is this something we need to align on in the future?
+        Log.Info($"Module identity: {ctx.Identity.ToString().ToLower()}");
     }
 }

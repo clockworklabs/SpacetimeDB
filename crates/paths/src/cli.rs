@@ -1,4 +1,4 @@
-use crate::utils::path_type;
+use crate::utils::{path_type, PathBufExt};
 
 path_type! {
     /// The configuration directory for the CLI & keyfiles.
@@ -21,6 +21,23 @@ path_type!(#[non_exhaustive(FALSE)] PrivKeyPath: file);
 path_type!(#[non_exhaustive(FALSE)] PubKeyPath: file);
 
 path_type!(BinFile: file);
+
 path_type!(BinDir: dir);
+
+impl BinDir {
+    pub fn version_dir(&self, version: semver::Version) -> VersionBinDir {
+        VersionBinDir(self.0.join(version.to_string()))
+    }
+}
+
+path_type!(VersionBinDir: dir);
+
+impl VersionBinDir {
+    pub fn spacetimedb_cli(self) -> SpacetimedbCliBin {
+        SpacetimedbCliBin(self.0.joined("spacetimedb-cli").with_exe_ext())
+    }
+}
+
+path_type!(SpacetimedbCliBin: file);
 
 path_type!(CliTomlPath: file);

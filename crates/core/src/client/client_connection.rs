@@ -12,7 +12,9 @@ use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
-use spacetimedb_client_api_messages::websocket::{CallReducerFlags, Compression, FormatSwitch};
+use spacetimedb_client_api_messages::websocket::{
+    BsatnFormat, CallReducerFlags, Compression, FormatSwitch, JsonFormat, SubscribeSingle, Unsubscribe, WebsocketFormat,
+};
 use spacetimedb_lib::identity::RequestId;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
@@ -283,37 +285,70 @@ impl ClientConnection {
             .await
     }
 
+    pub async fn subscribe_single(&self, subscription: SubscribeSingle, timer: Instant) -> Result<(), DBError> {
+        let me = self.clone();
+        tokio::task::spawn_blocking(move || {
+            me.module
+                .subscriptions()
+                .add_subscription(me.sender, subscription, timer, None)
+        })
+        .await
+        .unwrap() // TODO: is unwrapping right here?
+    }
+
+    pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<(), DBError> {
+        let me = self.clone();
+        tokio::task::spawn_blocking(move || me.module.subscriptions().remove_subscription(me.sender, request, timer))
+            .await
+            .unwrap() // TODO: is unwrapping right here?
+    }
+
     pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
         let me = self.clone();
         tokio::task::spawn_blocking(move || {
             me.module
                 .subscriptions()
-                .add_subscriber(me.sender, subscription, timer, None)
+                .add_legacy_subscriber(me.sender, subscription, timer, None)
         })
         .await
         .unwrap()
     }
 
-    pub fn one_off_query(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {
-        let result = self.module.one_off_query(self.id.identity, query.to_owned());
+    pub fn one_off_query_json(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {
+        let response = self.one_off_query::<JsonFormat>(query, message_id, timer);
+        self.send_message(response)?;
+        Ok(())
+    }
+
+    pub fn one_off_query_bsatn(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {
+        let response = self.one_off_query::<BsatnFormat>(query, message_id, timer);
+        self.send_message(response)?;
+        Ok(())
+    }
+
+    fn one_off_query<F: WebsocketFormat>(
+        &self,
+        query: &str,
+        message_id: &[u8],
+        timer: Instant,
+    ) -> OneOffQueryResponseMessage<F> {
+        let result = self.module.one_off_query::<F>(self.id.identity, query.to_owned());
         let message_id = message_id.to_owned();
         let total_host_execution_duration = timer.elapsed().as_micros() as u64;
-        let response = match result {
+        match result {
             Ok(results) => OneOffQueryResponseMessage {
                 message_id,
                 error: None,
-                results,
+                results: vec![results],
                 total_host_execution_duration,
             },
             Err(err) => OneOffQueryResponseMessage {
                 message_id,
                 error: Some(format!("{}", err)),
-                results: Vec::new(),
+                results: vec![],
                 total_host_execution_duration,
             },
-        };
-        self.send_message(response)?;
-        Ok(())
+        }
     }
 
     pub async fn disconnect(self) {

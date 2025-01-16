@@ -107,7 +107,6 @@ pub struct RepeatingTestArg {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
     prev_time: Timestamp,
 }
@@ -343,4 +342,33 @@ fn test_btree_index_args(ctx: &ReducerContext) {
     let _ = ctx.db.points().multi_column_index().filter((&0i64, &1i64..&3i64));
 
     // ctx.db.points().multi_column_index().filter((0i64..3i64, 1i64)); // SHOULD FAIL
+}
+
+#[spacetimedb::reducer]
+fn assert_caller_identity_is_module_identity(ctx: &ReducerContext) {
+    let caller = ctx.sender;
+    let owner = ctx.identity();
+    if caller != owner {
+        panic!("Caller {caller} is not the owner {owner}");
+    } else {
+        log::info!("Called by the owner {owner}");
+    }
+}
+
+/// These two tables defined with the same row type
+/// verify that we can define multiple tables with the same type.
+///
+/// In the past, we've had issues where each `#[table]` attribute
+/// would try to emit its own `impl` block for `SpacetimeType` (and some other traits),
+/// resulting in duplicate/conflicting trait definitions.
+/// See e.g. [SpacetimeDB issue #2097](https://github.com/clockworklabs/SpacetimeDB/issues/2097).
+#[spacetimedb::table(public, name = player)]
+#[spacetimedb::table(public, name = logged_out_player)]
+pub struct Player {
+    #[primary_key]
+    identity: Identity,
+    #[auto_inc]
+    #[unique]
+    player_id: u64,
+    name: String,
 }

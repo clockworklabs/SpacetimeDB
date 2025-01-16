@@ -34,20 +34,20 @@ internal static class ErrorDescriptor
             field => field
         );
 
-    public static readonly ErrorDescriptor<TypeDeclarationSyntax> EmptyIndexColumns =
+    public static readonly ErrorDescriptor<AttributeData> EmptyIndexColumns =
         new(
             group,
-            "Index attribute must specify index Columns.",
-            table => $"Table {table.Identifier} has an Index.BTree attribute, but no columns.",
-            table => table.BaseList!
+            "Index attribute must specify Columns",
+            _ => $"Index attribute doesn't specify columns.",
+            attr => attr
         );
 
     public static readonly ErrorDescriptor<TypeDeclarationSyntax> InvalidTableVisibility =
         new(
             group,
-            "Table row visibility must be public or internal, including container types.",
+            "Table row visibility must be public or internal",
             table => $"Table {table.Identifier} and its parent types must be public or internal.",
-            table => table.BaseList!
+            table => table.Identifier
         );
 
     public static readonly ErrorDescriptor<TypeDeclarationSyntax> TableTaggedEnum =
@@ -92,12 +92,44 @@ internal static class ErrorDescriptor
             ctx => ctx.method.Identifier
         );
 
-    public static readonly ErrorDescriptor<TypeDeclarationSyntax> IncompatibleTableSchedule =
+    public static readonly UnusedErrorDescriptor IncompatibleTableSchedule = new(group);
+
+    public static readonly ErrorDescriptor<(
+        ReducerKind kind,
+        IEnumerable<string> fullNames
+    )> DuplicateSpecialReducer =
         new(
             group,
-            "Incompatible `[Table(Schedule)]` attributes",
-            table =>
-                $"Schedule adds extra fields to the row type. Either all `[Table]` attributes should have a `Schedule`, or none of them.",
-            table => table.SyntaxTree.GetLocation(table.AttributeLists.Span)
+            "Multiple reducers of the same kind",
+            ctx =>
+                $"Several reducers are assigned to the same lifecycle kind {ctx.kind}: {string.Join(", ", ctx.fullNames)}",
+            ctx => Location.None
+        );
+
+    public static readonly ErrorDescriptor<(
+        AttributeData attr,
+        string message
+    )> InvalidScheduledDeclaration =
+        new(group, "Invalid scheduled table declaration", ctx => $"{ctx.message}", ctx => ctx.attr);
+
+    public static readonly ErrorDescriptor<AttributeData> UnexpectedIndexColumns =
+        new(
+            group,
+            "Index attribute on a field must not specify Columns",
+            _ =>
+                $"Index attribute on a field applies directly to that field, so it doesn't accept the Columns parameter.",
+            attr => attr
+        );
+
+    public static readonly ErrorDescriptor<(
+        AttributeData attr,
+        string columnName,
+        string typeName
+    )> UnknownColumn =
+        new(
+            group,
+            "Unknown column",
+            ctx => $"Could not find the specified column {ctx.columnName} in {ctx.typeName}.",
+            ctx => ctx.attr
         );
 }

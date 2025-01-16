@@ -10,12 +10,12 @@
 
 use anyhow::{Context, Result};
 use home::home_dir;
-use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Identity};
+use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize};
 use std::path::PathBuf;
 
 const CREDENTIALS_DIR: &str = ".spacetimedb_client_credentials";
 
-/// A file on disk which stores, or can store, a SpacetimeDB [`Identity`] and its private access token.
+/// A file on disk which stores, or can store, a JWT for authenticating with SpacetimeDB.
 ///
 /// The file does not necessarily exist or store credentials.
 /// If the credentials have been stored previously, they can be accessed with [`File::load`].
@@ -26,7 +26,6 @@ pub struct File {
 
 #[derive(Serialize, Deserialize)]
 struct Credentials {
-    identity: Identity,
     token: String,
 }
 
@@ -64,23 +63,22 @@ impl File {
         Ok(path)
     }
 
-    /// Store the provided `identity`/`token` pair to disk in the file referred to by `self`.
+    /// Store the provided `token` to disk in the file referred to by `self`.
     ///
-    /// Future calls to [`Self::load`] on a `File` with the same key can retrieve the credentials.
+    /// Future calls to [`Self::load`] on a `File` with the same key can retrieve the token.
     ///
     /// Expected usage is to call this from a [`super::DbConnectionBuilder::on_connect`] callback.
     ///
     /// ```ignore
     /// DbConnection::builder()
-    ///   .on_connect(|_ctx, identity, token| {
-    ///       credentials::File::new("my_app").save(identity, token).unwrap();
+    ///   .on_connect(|_ctx, _identity, token| {
+    ///       credentials::File::new("my_app").save(token).unwrap();
     /// })
     /// ```
-    pub fn save(self, identity: Identity, token: impl ToString) -> Result<()> {
+    pub fn save(self, token: impl ToString) -> Result<()> {
         Self::ensure_credentials_dir()?;
 
         let creds = bsatn::to_vec(&Credentials {
-            identity,
             token: token.to_string(),
         })
         .context("Error serializing credentials for storage in file")?;
@@ -90,20 +88,20 @@ impl File {
         Ok(())
     }
 
-    /// Load a saved identity/token pair from disk in the file referred to by `self`,
+    /// Load a saved token from disk in the file referred to by `self`,
     /// if they have previously been stored by [`Self::save`].
     ///
     /// Returns `Err` if I/O fails,
     /// `None` if credentials have not previously been stored,
     /// or `Some` if credentials are successfully loaded from disk.
     /// After unwrapping the `Result`, the returned `Option` can be passed to
-    /// [`super::DbConnectionBuilder::with_credentials`].
+    /// [`super::DbConnectionBuilder::with_token`].
     ///
     /// ```ignore
     /// DbConnection::builder()
-    ///   .with_credentials(credentials::File::new("my_app").load().unwrap())
+    ///   .with_token(credentials::File::new("my_app").load().unwrap())
     /// ```
-    pub fn load(self) -> Result<Option<(Identity, String)>> {
+    pub fn load(self) -> Result<Option<String>> {
         let path = self.path()?;
 
         let bytes = match std::fs::read(&path) {
@@ -117,6 +115,6 @@ impl File {
         let creds = bsatn::from_slice::<Credentials>(&bytes).context(format!(
             "Error deserializing credentials from bytes stored in file {path:?}",
         ))?;
-        Ok(Some((creds.identity, creds.token)))
+        Ok(Some(creds.token))
     }
 }

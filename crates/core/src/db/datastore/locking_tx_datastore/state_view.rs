@@ -1,8 +1,9 @@
 use super::{
-    committed_state::{CommittedIndexIter, CommittedState},
+    committed_state::CommittedState,
     datastore::Result,
     tx_state::{DeleteTable, TxState},
 };
+use crate::db::datastore::locking_tx_datastore::committed_state::CommittedIndexIterWithDeletedMutTx;
 use crate::{
     db::datastore::system_tables::{
         StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields,
@@ -24,6 +25,16 @@ use std::sync::Arc;
 // StateView trait, is designed to define the behavior of viewing internal datastore states.
 // Currently, it applies to: CommittedState, MutTxId, and TxId.
 pub trait StateView {
+    type Iter<'a>: Iterator<Item = RowRef<'a>>
+    where
+        Self: 'a;
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>: Iterator<Item = RowRef<'a>>
+    where
+        Self: 'a;
+    type IterByColEq<'a, 'r>: Iterator<Item = RowRef<'a>>
+    where
+        Self: 'a;
+
     fn get_schema(&self, table_id: TableId) -> Option<&Arc<TableSchema>>;
 
     fn table_id_from_name(&self, table_name: &str) -> Result<Option<TableId>> {
@@ -35,7 +46,7 @@ pub trait StateView {
     /// Returns the number of rows in the table identified by `table_id`.
     fn table_row_count(&self, table_id: TableId) -> Option<u64>;
 
-    fn iter(&self, table_id: TableId) -> Result<Iter<'_>>;
+    fn iter(&self, table_id: TableId) -> Result<Self::Iter<'_>>;
 
     fn table_name(&self, table_id: TableId) -> Option<&str> {
         self.get_schema(table_id).map(|s| &*s.table_name)
@@ -49,16 +60,14 @@ pub trait StateView {
         table_id: TableId,
         cols: ColList,
         range: R,
-    ) -> Result<IterByColRange<'_, R>>;
+    ) -> Result<Self::IterByColRange<'_, R>>;
 
     fn iter_by_col_eq<'a, 'r>(
         &'a self,
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<IterByColEq<'a, 'r>> {
-        self.iter_by_col_range(table_id, cols.into(), value)
-    }
+    ) -> Result<Self::IterByColEq<'a, 'r>>;
 
     /// Reads the schema information for the specified `table_id` directly from the database.
     fn schema_for_table_raw(&self, table_id: TableId) -> Result<TableSchema> {
@@ -149,35 +158,41 @@ pub trait StateView {
     }
 }
 
-pub struct Iter<'a> {
-    table_id: TableId,
-    tx_state_del: Option<&'a DeleteTable>,
+pub struct IterMutTx<'a> {
     tx_state_ins: Option<(&'a Table, &'a HashMapBlobStore)>,
-    committed_state: &'a CommittedState,
     stage: ScanStage<'a>,
 }
 
-impl<'a> Iter<'a> {
-    pub(super) fn new(table_id: TableId, tx_state: Option<&'a TxState>, committed_state: &'a CommittedState) -> Self {
-        let tx_state_ins = tx_state.and_then(|tx| {
-            let ins = tx.insert_tables.get(&table_id)?;
-            let bs = &tx.blob_store;
-            Some((ins, bs))
-        });
-        let tx_state_del = tx_state.and_then(|tx| tx.delete_tables.get(&table_id));
-        Self {
-            table_id,
-            tx_state_ins,
-            tx_state_del,
-            committed_state,
-            stage: ScanStage::Start,
-        }
+impl<'a> IterMutTx<'a> {
+    pub(super) fn new(table_id: TableId, tx_state: &'a TxState, committed_state: &'a CommittedState) -> Self {
+        let tx_state_ins = tx_state
+            .insert_tables
+            .get(&table_id)
+            .map(|table| (table, &tx_state.blob_store));
+
+        let stage = if let Some(table) = committed_state.tables.get(&table_id) {
+            // The committed state has changes for this table.
+            let iter = table.scan_rows(&committed_state.blob_store);
+            if let Some(del_tables) = tx_state.get_delete_table(table_id) {
+                // There are deletes in the tx state
+                // so we must exclude those (1b).
+                ScanStage::CommittedWithTxDeletes { iter, del_tables }
+            } else {
+                // There are no deletes in the tx state
+                // so we don't need to care about those (1a).
+                ScanStage::CommittedNoTxDeletes { iter }
+            }
+        } else {
+            ScanStage::Continue
+        };
+
+        Self { tx_state_ins, stage }
     }
 }
 
 enum ScanStage<'a> {
-    /// We haven't decided yet where to yield from.
-    Start,
+    /// Continue to the next stage.
+    Continue,
     /// Yielding rows from the current tx.
     CurrentTx { iter: TableScanIter<'a> },
     /// Yielding rows from the committed state
@@ -186,18 +201,20 @@ enum ScanStage<'a> {
     /// Yielding rows from the committed state
     /// but there are deleted rows in the tx state,
     /// so we must check against those.
-    CommittedWithTxDeletes { iter: TableScanIter<'a> },
+    CommittedWithTxDeletes {
+        iter: TableScanIter<'a>,
+        del_tables: &'a DeleteTable,
+    },
 }
 
-impl<'a> Iterator for Iter<'a> {
+impl<'a> Iterator for IterMutTx<'a> {
     type Item = RowRef<'a>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let table_id = self.table_id;
-
         // The finite state machine goes:
         //
-        //     Start
+        //     Continue
         //       |
         //       |--> CurrentTx -------------------------------\
         //       |        ^                                    |
@@ -209,22 +226,7 @@ impl<'a> Iterator for Iter<'a> {
 
         loop {
             match &mut self.stage {
-                ScanStage::Start => {
-                    if let Some(table) = self.committed_state.tables.get(&table_id) {
-                        // The committed state has changes for this table.
-                        let iter = table.scan_rows(&self.committed_state.blob_store);
-                        self.stage = if self.tx_state_del.is_some() {
-                            // There are no deletes in the tx state
-                            // so we don't need to care about those (1a).
-                            ScanStage::CommittedWithTxDeletes { iter }
-                        } else {
-                            // There are deletes in the tx state
-                            // so we must exclude those (1b).
-                            ScanStage::CommittedNoTxDeletes { iter }
-                        };
-                        continue;
-                    }
-                }
+                ScanStage::Continue => {}
                 ScanStage::CommittedNoTxDeletes { iter } => {
                     // (1a) Go through the committed state for this table
                     // but do not consider deleted rows.
@@ -232,7 +234,7 @@ impl<'a> Iterator for Iter<'a> {
                         return next;
                     }
                 }
-                ScanStage::CommittedWithTxDeletes { iter } => {
+                ScanStage::CommittedWithTxDeletes { iter, del_tables } => {
                     // (1b) Check the committed row's state in the current tx.
                     // If it's been deleted, skip it.
                     // If it's still present, yield it.
@@ -259,7 +261,6 @@ impl<'a> Iterator for Iter<'a> {
                     //
                     // As a result, in MVCC, this branch will need to check if the `row_ref`
                     // also exists in the `tx_state.insert_tables` and ensure it is yielded only once.
-                    let del_tables = unsafe { self.tx_state_del.unwrap_unchecked() };
                     if let next @ Some(_) = iter.find(|row_ref| !del_tables.contains(&row_ref.pointer())) {
                         return next;
                     }
@@ -279,15 +280,54 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
-pub struct IndexSeekIterMutTxId<'a> {
-    pub(super) table_id: TableId,
-    pub(super) tx_state: &'a TxState,
-    pub(super) inserted_rows: IndexScanIter<'a>,
-    pub(super) committed_rows: Option<IndexScanIter<'a>>,
-    pub(super) num_committed_rows_fetched: u64,
+pub struct IterTx<'a> {
+    iter: TableScanIter<'a>,
 }
 
-impl<'a> Iterator for IndexSeekIterMutTxId<'a> {
+impl<'a> IterTx<'a> {
+    pub(super) fn new(table_id: TableId, committed_state: &'a CommittedState) -> Self {
+        // The table_id was validated to exist in the committed state.
+        let table = committed_state
+            .tables
+            .get(&table_id)
+            .expect("table_id must exist in committed state");
+        let iter = table.scan_rows(&committed_state.blob_store);
+        Self { iter }
+    }
+}
+
+impl<'a> Iterator for IterTx<'a> {
+    type Item = RowRef<'a>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+pub struct IndexSeekIterIdMutTx<'a> {
+    pub(super) inserted_rows: IndexScanIter<'a>,
+    pub(super) committed_rows: Option<IndexScanIter<'a>>,
+}
+
+impl<'a> Iterator for IndexSeekIterIdMutTx<'a> {
+    type Item = RowRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(row_ref) = self.inserted_rows.next() {
+            return Some(row_ref);
+        }
+        self.committed_rows.as_mut().and_then(|i| i.next())
+    }
+}
+
+pub struct IndexSeekIterIdWithDeletedMutTx<'a> {
+    pub(super) inserted_rows: IndexScanIter<'a>,
+    pub(super) committed_rows: Option<IndexScanIter<'a>>,
+    pub(super) del_table: &'a DeleteTable,
+}
+
+impl<'a> Iterator for IndexSeekIterIdWithDeletedMutTx<'a> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -318,65 +358,129 @@ impl<'a> Iterator for IndexSeekIterMutTxId<'a> {
             //
             // As a result, in MVCC, this branch will need to check if the `row_ref`
             // also exists in the `tx_state.insert_tables` and ensure it is yielded only once.
-            .and_then(|i| i.find(|row_ref| !self.tx_state.is_deleted(self.table_id, row_ref.pointer())))
+            .and_then(|i| i.find(|row_ref| !self.del_table.contains(&row_ref.pointer())))
         {
             // TODO(metrics): This doesn't actually fetch a row.
             // Move this counter to `RowRef::read_row`.
-            self.num_committed_rows_fetched += 1;
+            // self.num_committed_rows_fetched += 1;
             return Some(row_ref);
         }
 
         None
     }
 }
-
-/// An [IterByColRange] for an individual column value.
-pub type IterByColEq<'a, 'r> = IterByColRange<'a, &'r AlgebraicValue>;
+/// An [IterByColRangeTx] for an individual column value.
+pub type IterByColEqTx<'a, 'r> = IterByColRangeTx<'a, &'r AlgebraicValue>;
+/// An [IterByColRangeMutTx] for an individual column value.
+pub type IterByColEqMutTx<'a, 'r> = IterByColRangeMutTx<'a, &'r AlgebraicValue>;
 
 /// An iterator for a range of values in a column.
-pub enum IterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
+pub enum IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>> {
     /// When the column in question does not have an index.
-    Scan(ScanIterByColRange<'a, R>),
+    Scan(ScanIterByColRangeTx<'a, R>),
 
     /// When the column has an index, and the table
     /// has been modified this transaction.
-    Index(IndexSeekIterMutTxId<'a>),
+    Index(IndexSeekIterIdMutTx<'a>),
 
     /// When the column has an index, and the table
     /// has not been modified in this transaction.
-    CommittedIndex(CommittedIndexIter<'a>),
+    CommittedIndex(IndexScanIter<'a>),
 }
 
-impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRange<'a, R> {
+impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRangeTx<'a, R> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            IterByColRange::Scan(range) => range.next(),
-            IterByColRange::Index(range) => range.next(),
-            IterByColRange::CommittedIndex(seek) => seek.next(),
+            IterByColRangeTx::Scan(range) => range.next(),
+            IterByColRangeTx::Index(range) => range.next(),
+            IterByColRangeTx::CommittedIndex(seek) => seek.next(),
         }
     }
 }
 
-pub struct ScanIterByColRange<'a, R: RangeBounds<AlgebraicValue>> {
-    scan_iter: Iter<'a>,
+/// An iterator for a range of values in a column.
+pub enum IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> {
+    /// When the column in question does not have an index.
+    Scan(ScanIterByColRangeMutTx<'a, R>),
+
+    /// When the column has an index, and the table
+    /// has been modified this transaction.
+    Index(IndexSeekIterIdMutTx<'a>),
+
+    /// When the column has an index, and the table
+    /// has been modified this transaction, and there are deleted rows.
+    IndexWithDeletes(IndexSeekIterIdWithDeletedMutTx<'a>),
+
+    /// When the column has an index, and the table
+    /// has not been modified in this transaction.
+    CommittedIndex(IndexScanIter<'a>),
+
+    /// When the column has an index, and the table
+    /// has not been modified in this transaction.
+    CommittedIndexWithDeletes(CommittedIndexIterWithDeletedMutTx<'a>),
+}
+
+impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRangeMutTx<'a, R> {
+    type Item = RowRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            IterByColRangeMutTx::Scan(range) => range.next(),
+            IterByColRangeMutTx::Index(range) => range.next(),
+            IterByColRangeMutTx::IndexWithDeletes(range) => range.next(),
+            IterByColRangeMutTx::CommittedIndex(seek) => seek.next(),
+            IterByColRangeMutTx::CommittedIndexWithDeletes(seek) => seek.next(),
+        }
+    }
+}
+
+pub struct ScanIterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>> {
+    scan_iter: IterTx<'a>,
     cols: ColList,
     range: R,
 }
 
-impl<'a, R: RangeBounds<AlgebraicValue>> ScanIterByColRange<'a, R> {
-    pub(super) fn new(scan_iter: Iter<'a>, cols: ColList, range: R) -> Self {
+impl<'a, R: RangeBounds<AlgebraicValue>> ScanIterByColRangeTx<'a, R> {
+    pub(super) fn new(scan_iter: IterTx<'a>, cols: ColList, range: R) -> Self {
         Self { scan_iter, cols, range }
     }
 }
 
-impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRange<'a, R> {
+impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRangeTx<'a, R> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         for row_ref in &mut self.scan_iter {
-            let value = row_ref.project_not_empty(&self.cols).unwrap();
+            let value = row_ref.project(&self.cols).unwrap();
+            if self.range.contains(&value) {
+                return Some(row_ref);
+            }
+        }
+
+        None
+    }
+}
+
+pub struct ScanIterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> {
+    scan_iter: IterMutTx<'a>,
+    cols: ColList,
+    range: R,
+}
+
+impl<'a, R: RangeBounds<AlgebraicValue>> ScanIterByColRangeMutTx<'a, R> {
+    pub(super) fn new(scan_iter: IterMutTx<'a>, cols: ColList, range: R) -> Self {
+        Self { scan_iter, cols, range }
+    }
+}
+
+impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRangeMutTx<'a, R> {
+    type Item = RowRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for row_ref in &mut self.scan_iter {
+            let value = row_ref.project(&self.cols).unwrap();
             if self.range.contains(&value) {
                 return Some(row_ref);
             }

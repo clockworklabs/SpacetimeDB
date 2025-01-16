@@ -2,10 +2,11 @@ use super::{
     committed_state::CommittedState,
     mut_tx::MutTxId,
     sequence::SequencesState,
-    state_view::{Iter, IterByColRange, StateView},
+    state_view::{IterByColRangeTx, StateView},
     tx::TxId,
     tx_state::TxState,
 };
+use crate::db::datastore::locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx};
 use crate::execution_context::Workload;
 use crate::{
     db::{
@@ -322,20 +323,20 @@ impl Tx for Locking {
 }
 
 impl TxDatastore for Locking {
-    type Iter<'a>
-        = Iter<'a>
+    type IterTx<'a>
+        = IterTx<'a>
     where
         Self: 'a;
-    type IterByColEq<'a, 'r>
-        = IterByColRange<'a, &'r AlgebraicValue>
+    type IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>>
+        = IterByColRangeTx<'a, R>
     where
         Self: 'a;
-    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>>
-        = IterByColRange<'a, R>
+    type IterByColEqTx<'a, 'r>
+        = IterByColRangeTx<'a, &'r AlgebraicValue>
     where
         Self: 'a;
 
-    fn iter_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>> {
+    fn iter_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::IterTx<'a>> {
         tx.iter(table_id)
     }
 
@@ -345,7 +346,7 @@ impl TxDatastore for Locking {
         table_id: TableId,
         cols: impl Into<ColList>,
         range: R,
-    ) -> Result<Self::IterByColRange<'a, R>> {
+    ) -> Result<Self::IterByColRangeTx<'a, R>> {
         tx.iter_by_col_range(table_id, cols.into(), range)
     }
 
@@ -355,7 +356,7 @@ impl TxDatastore for Locking {
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a, 'r>> {
+    ) -> Result<Self::IterByColEqTx<'a, 'r>> {
         tx.iter_by_col_eq(table_id, cols, value)
     }
 
@@ -404,6 +405,15 @@ impl TxDatastore for Locking {
 }
 
 impl MutTxDatastore for Locking {
+    type IterMutTx<'a>= IterMutTx<'a>
+    where
+        Self: 'a;
+    type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeMutTx<'a, R>;
+    type IterByColEqMutTx<'a, 'r>
+    = IterByColRangeMutTx<'a, &'r AlgebraicValue>
+    where
+        Self: 'a;
+
     fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: TableSchema) -> Result<TableId> {
         tx.create_table(schema)
     }
@@ -492,7 +502,7 @@ impl MutTxDatastore for Locking {
         tx.constraint_id_from_name(constraint_name)
     }
 
-    fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTx, table_id: TableId) -> Result<Self::Iter<'a>> {
+    fn iter_mut_tx<'a>(&'a self, tx: &'a Self::MutTx, table_id: TableId) -> Result<Self::IterMutTx<'a>> {
         tx.iter(table_id)
     }
 
@@ -502,7 +512,7 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         cols: impl Into<ColList>,
         range: R,
-    ) -> Result<Self::IterByColRange<'a, R>> {
+    ) -> Result<Self::IterByColRangeMutTx<'a, R>> {
         tx.iter_by_col_range(table_id, cols.into(), range)
     }
 
@@ -512,7 +522,7 @@ impl MutTxDatastore for Locking {
         table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a, 'r>> {
+    ) -> Result<Self::IterByColEqMutTx<'a, 'r>> {
         tx.iter_by_col_eq(table_id, cols.into(), value)
     }
 
@@ -562,9 +572,9 @@ impl MutTxDatastore for Locking {
         &'a self,
         tx: &'a mut Self::MutTx,
         table_id: TableId,
-        mut row: ProductValue,
-    ) -> Result<(AlgebraicValue, RowRef<'a>)> {
-        let (gens, row_ref) = tx.insert(table_id, &mut row)?;
+        row: &[u8],
+    ) -> Result<(ColList, RowRef<'a>)> {
+        let (gens, row_ref) = tx.insert::<true>(table_id, row)?;
         Ok((gens, row_ref.collapse()))
     }
 
@@ -589,7 +599,7 @@ impl MutTxDatastore for Locking {
                 row.program_bytes = program.bytes;
 
                 tx.delete(ST_MODULE_ID, ptr)?;
-                tx.insert(ST_MODULE_ID, &mut row.into()).map(drop)
+                tx.insert_via_serialize_bsatn(ST_MODULE_ID, &row).map(drop)
             }
 
             None => Err(anyhow!(
@@ -878,7 +888,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
             .replay_insert(table_id, &schema, &row)
             .with_context(|| {
                 format!(
-                    "Error deleting row {:?} during transaction {:?} playback",
+                    "Error inserting row {:?} during transaction {:?} playback",
                     row, self.committed_state.next_tx_offset
                 )
             })?;
@@ -976,6 +986,7 @@ mod tests {
     use crate::db::datastore::traits::{IsolationLevel, MutTx};
     use crate::db::datastore::Result;
     use crate::error::{DBError, IndexError};
+    use bsatn::to_vec;
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -1344,6 +1355,18 @@ mod tests {
             .collect()
     }
 
+    fn insert<'a>(
+        datastore: &'a Locking,
+        tx: &'a mut MutTxId,
+        table_id: TableId,
+        row: &ProductValue,
+    ) -> Result<(AlgebraicValue, RowRef<'a>)> {
+        let row = to_vec(&row).unwrap();
+        let (gen_cols, row_ref) = datastore.insert_mut_tx(tx, table_id, &row)?;
+        let gen_cols = row_ref.project(&gen_cols)?;
+        Ok((gen_cols, row_ref))
+    }
+
     #[test]
     fn test_bootstrapping_sets_up_tables() -> ResultTest<()> {
         let datastore = get_datastore()?;
@@ -1683,7 +1706,7 @@ mod tests {
     fn test_insert_pre_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
@@ -1693,7 +1716,7 @@ mod tests {
     fn test_insert_wrong_schema_pre_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = product!(0, "Foo");
-        assert!(datastore.insert_mut_tx(&mut tx, table_id, row).is_err());
+        assert!(insert(&datastore, &mut tx, table_id, &row).is_err());
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![]);
         Ok(())
@@ -1703,7 +1726,7 @@ mod tests {
     fn test_insert_post_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, u32_str_u32(0, "Foo", 18))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(0, "Foo", 18))?;
         datastore.commit_mut_tx(tx)?;
         let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         #[rustfmt::skip]
@@ -1717,7 +1740,7 @@ mod tests {
         let row = u32_str_u32(15, "Foo", 18); // 15 is ignored.
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         datastore.rollback_mut_tx(tx);
         let tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         #[rustfmt::skip]
@@ -1729,7 +1752,7 @@ mod tests {
     fn test_insert_commit_delete_insert() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let created_row = u32_str_u32(1, "Foo", 18);
@@ -1737,7 +1760,7 @@ mod tests {
         assert_eq!(num_deleted, 1);
         assert_eq!(all_rows(&datastore, &tx, table_id).len(), 0);
         let created_row = u32_str_u32(1, "Foo", 19);
-        datastore.insert_mut_tx(&mut tx, table_id, created_row)?;
+        insert(&datastore, &mut tx, table_id, &created_row)?;
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 19)]);
         Ok(())
@@ -1747,7 +1770,7 @@ mod tests {
     fn test_insert_delete_insert_delete_insert() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(1, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         for i in 0..2 {
             assert_eq!(
                 all_rows(&datastore, &tx, table_id),
@@ -1764,7 +1787,7 @@ mod tests {
                 &[],
                 "Found rows present after deleting",
             );
-            datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+            insert(&datastore, &mut tx, table_id, &row)?;
             assert_eq!(
                 all_rows(&datastore, &tx, table_id),
                 vec![row.clone()],
@@ -1778,8 +1801,8 @@ mod tests {
     fn test_unique_constraint_pre_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
-        let result = datastore.insert_mut_tx(&mut tx, table_id, row);
+        insert(&datastore, &mut tx, table_id, &row)?;
+        let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
@@ -1798,10 +1821,10 @@ mod tests {
     fn test_unique_constraint_post_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        let result = datastore.insert_mut_tx(&mut tx, table_id, row);
+        let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
@@ -1822,10 +1845,10 @@ mod tests {
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         datastore.rollback_mut_tx(tx);
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(2, "Foo", 18)]);
         Ok(())
@@ -1838,7 +1861,7 @@ mod tests {
 
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         datastore.commit_mut_tx(tx)?;
 
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
@@ -1873,7 +1896,7 @@ mod tests {
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
-        let result = datastore.insert_mut_tx(&mut tx, table_id, row);
+        let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
@@ -1892,7 +1915,7 @@ mod tests {
     fn test_create_index_post_commit() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let index_def = IndexSchema {
@@ -1927,7 +1950,7 @@ mod tests {
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree", },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
-        let result = datastore.insert_mut_tx(&mut tx, table_id, row);
+        let result = insert(&datastore, &mut tx, table_id, &row);
         match result {
             Err(DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
@@ -1946,7 +1969,7 @@ mod tests {
     fn test_create_index_post_rollback() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         datastore.commit_mut_tx(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
         let index_def = IndexSchema {
@@ -1981,7 +2004,7 @@ mod tests {
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree", },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
-        datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        insert(&datastore, &mut tx, table_id, &row)?;
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![
             u32_str_u32(1, "Foo", 18),
@@ -1998,7 +2021,7 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
                                              // Because of auto_inc columns, we will get a slightly different
                                              // value than the one we inserted.
-        let row = datastore.insert_mut_tx(&mut tx, table_id, row)?.1.to_product_value();
+        let row = insert(&datastore, &mut tx, table_id, &row)?.1.to_product_value();
         datastore.commit_mut_tx(tx)?;
 
         let all_rows_col_0_eq_1 = |tx: &MutTxId| {
@@ -2023,10 +2046,7 @@ mod tests {
         assert_eq!(all_rows_col_0_eq_1(&tx).len(), 0);
 
         // Reinsert the row.
-        let reinserted_row = datastore
-            .insert_mut_tx(&mut tx, table_id, row.clone())?
-            .1
-            .to_product_value();
+        let reinserted_row = insert(&datastore, &mut tx, table_id, &row)?.1.to_product_value();
         assert_eq!(reinserted_row, row);
 
         // The actual test: we should be able to iterate again, while still in the
@@ -2044,9 +2064,9 @@ mod tests {
     fn test_read_only_tx_shared_lock() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
         let row1 = u32_str_u32(1, "Foo", 18);
-        datastore.insert_mut_tx(&mut tx, table_id, row1.clone())?;
+        insert(&datastore, &mut tx, table_id, &row1)?;
         let row2 = u32_str_u32(2, "Bar", 20);
-        datastore.insert_mut_tx(&mut tx, table_id, row2.clone())?;
+        insert(&datastore, &mut tx, table_id, &row2)?;
         datastore.commit_mut_tx(tx)?;
 
         // create multiple read only tx, and use them together.

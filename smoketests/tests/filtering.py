@@ -10,6 +10,7 @@ pub struct Person {
     id: i32,
 
     name: String,
+
     #[unique]
     nick: String,
 }
@@ -21,11 +22,13 @@ pub fn insert_person(ctx: &ReducerContext, id: i32, name: String, nick: String) 
 
 #[spacetimedb::reducer]
 pub fn insert_person_twice(ctx: &ReducerContext, id: i32, name: String, nick: String) {
-    ctx.db.person().insert(Person { id, name: name.clone(), nick: nick.clone()} );
-    match ctx.db.person().try_insert(Person { id, name: name.clone(), nick: nick.clone()}) {
+    // We'd like to avoid an error due to a set-semantic error.
+    let name2 = format!("{name}2");
+    ctx.db.person().insert(Person { id, name, nick: nick.clone()} );
+    match ctx.db.person().try_insert(Person { id, name: name2, nick: nick.clone()}) {
         Ok(_) => {},
         Err(_) => {
-            log::info!("UNIQUE CONSTRAINT VIOLATION ERROR: id {}: {}", id, name)
+            log::info!("UNIQUE CONSTRAINT VIOLATION ERROR: id = {}, nick = {}", id, nick)
         }
     }
 }
@@ -245,6 +248,8 @@ fn find_indexed_people(ctx: &ReducerContext, surname: String) {
         self.call("find_identified_person", 23)
         self.assertIn('IDENTIFIED FOUND: Alice', self.logs(2))
 
-        # Insert row with unique columns twice should fail
+        # Inserting into a table with unique constraints fails
+        # when the second row has the same value in the constrained columns as the first row.
+        # In this case, the table has `#[unique] id` and `#[unique] nick` but not `#[unique] name`.
         self.call("insert_person_twice", 23, "Alice", "al")
-        self.assertIn('UNIQUE CONSTRAINT VIOLATION ERROR: id 23: Alice', self.logs(2))
+        self.assertIn('UNIQUE CONSTRAINT VIOLATION ERROR: id = 23, nick = al', self.logs(2))

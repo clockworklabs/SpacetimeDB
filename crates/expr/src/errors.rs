@@ -1,7 +1,6 @@
-use super::{
-    statement::InvalidVar,
-    ty::{InvalidTypeId, TypeWithCtx},
-};
+use super::statement::InvalidVar;
+use spacetimedb_lib::AlgebraicType;
+use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::parser::errors::SqlParseError;
 use thiserror::Error;
@@ -39,8 +38,6 @@ impl Unresolved {
 pub enum InvalidWildcard {
     #[error("SELECT * is not supported for joins")]
     Join,
-    #[error("SELECT * is not valid for scalar types")]
-    Scalar,
 }
 
 #[derive(Error, Debug)]
@@ -49,10 +46,6 @@ pub enum Unsupported {
     ReturnType,
     #[error("Unsupported expression in projection")]
     ProjectExpr,
-    #[error("ORDER BY is not supported")]
-    OrderBy,
-    #[error("LIMIT is not supported")]
-    Limit,
 }
 
 // TODO: It might be better to return the missing/extra fields
@@ -81,20 +74,11 @@ pub struct InvalidOp {
 }
 
 impl InvalidOp {
-    pub fn new(op: BinOp, ty: &TypeWithCtx) -> Self {
-        Self { op, ty: ty.to_string() }
-    }
-}
-
-#[derive(Debug, Error)]
-#[error("Expected a relation, but found a scalar type `{ty}` instead")]
-pub struct ExpectedRelation {
-    ty: String,
-}
-
-impl ExpectedRelation {
-    pub fn new(ty: &TypeWithCtx) -> Self {
-        Self { ty: ty.to_string() }
+    pub fn new(op: BinOp, ty: &AlgebraicType) -> Self {
+        Self {
+            op,
+            ty: fmt_algebraic_type(ty).to_string(),
+        }
     }
 }
 
@@ -106,10 +90,10 @@ pub struct InvalidLiteral {
 }
 
 impl InvalidLiteral {
-    pub fn new(literal: String, expected: &TypeWithCtx) -> Self {
+    pub fn new(literal: String, expected: &AlgebraicType) -> Self {
         Self {
             literal,
-            ty: expected.to_string(),
+            ty: fmt_algebraic_type(expected).to_string(),
         }
     }
 }
@@ -122,10 +106,10 @@ pub struct UnexpectedType {
 }
 
 impl UnexpectedType {
-    pub fn new(expected: &TypeWithCtx, inferred: &TypeWithCtx) -> Self {
+    pub fn new(expected: &AlgebraicType, inferred: &AlgebraicType) -> Self {
         Self {
-            expected: expected.to_string(),
-            inferred: inferred.to_string(),
+            expected: fmt_algebraic_type(expected).to_string(),
+            inferred: fmt_algebraic_type(inferred).to_string(),
         }
     }
 }
@@ -145,8 +129,6 @@ pub enum TypingError {
     #[error(transparent)]
     Unresolved(#[from] Unresolved),
     #[error(transparent)]
-    InvalidTyId(#[from] InvalidTypeId),
-    #[error(transparent)]
     InvalidVar(#[from] InvalidVar),
     #[error(transparent)]
     InsertValues(#[from] InsertValuesError),
@@ -159,8 +141,6 @@ pub enum TypingError {
     InvalidOp(#[from] InvalidOp),
     #[error(transparent)]
     Literal(#[from] InvalidLiteral),
-    #[error(transparent)]
-    Relation(#[from] ExpectedRelation),
     #[error(transparent)]
     Unexpected(#[from] UnexpectedType),
     #[error(transparent)]

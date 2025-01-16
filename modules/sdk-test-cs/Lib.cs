@@ -653,7 +653,10 @@ public static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_vec_every_primitive_struct(ReducerContext ctx, List<EveryPrimitiveStruct> s)
+    public static void insert_vec_every_primitive_struct(
+        ReducerContext ctx,
+        List<EveryPrimitiveStruct> s
+    )
     {
         ctx.Db.vec_every_primitive_struct.Insert(new VecEveryPrimitiveStruct { s = s });
     }
@@ -725,7 +728,10 @@ public static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_option_every_primitive_struct(ReducerContext ctx, EveryPrimitiveStruct? s)
+    public static void insert_option_every_primitive_struct(
+        ReducerContext ctx,
+        EveryPrimitiveStruct? s
+    )
     {
         ctx.Db.option_every_primitive_struct.Insert(new OptionEveryPrimitiveStruct { s = s });
     }
@@ -1615,7 +1621,9 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_caller_vec_identity(ReducerContext ctx)
     {
-        ctx.Db.vec_identity.Insert(new VecIdentity { i = new List<Identity> { ctx.CallerIdentity } });
+        ctx.Db.vec_identity.Insert(
+            new VecIdentity { i = new List<Identity> { ctx.CallerIdentity } }
+        );
     }
 
     [SpacetimeDB.Reducer]
@@ -1633,7 +1641,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_caller_one_address(ReducerContext ctx)
     {
-        ctx.Db.one_address.Insert(new OneAddress { a = (Address)ctx.CallerAddress!, });
+        ctx.Db.one_address.Insert(new OneAddress { a = (Address)ctx.CallerAddress! });
     }
 
     [SpacetimeDB.Reducer]
@@ -1650,7 +1658,9 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_caller_unique_address(ReducerContext ctx, int data)
     {
-        ctx.Db.unique_address.Insert(new UniqueAddress { a = (Address)ctx.CallerAddress!, data = data });
+        ctx.Db.unique_address.Insert(
+            new UniqueAddress { a = (Address)ctx.CallerAddress!, data = data }
+        );
     }
 
     [SpacetimeDB.Reducer]
@@ -1713,41 +1723,47 @@ public static partial class Module
         EveryVecStruct v
     )
     {
-        ctx.Db.large_table.Insert(new LargeTable {
-            a = a,
-            b = b,
-            c = c,
-            d = d,
-            e = e,
-            f = f,
-            g = g,
-            h = h,
-            i = i,
-            j = j,
-            k = k,
-            l = l,
-            m = m,
-            n = n,
-            o = o,
-            p = p,
-            q = q,
-            r = r,
-            s = s,
-            t = t,
-            u = u,
-            v = v,
-        });
+        ctx.Db.large_table.Insert(
+            new LargeTable
+            {
+                a = a,
+                b = b,
+                c = c,
+                d = d,
+                e = e,
+                f = f,
+                g = g,
+                h = h,
+                i = i,
+                j = j,
+                k = k,
+                l = l,
+                m = m,
+                n = n,
+                o = o,
+                p = p,
+                q = q,
+                r = r,
+                s = s,
+                t = t,
+                u = u,
+                v = v,
+            }
+        );
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_primitives_as_strings(ReducerContext ctx, EveryPrimitiveStruct s)
     {
-        ctx.Db.vec_string.Insert(new VecString {
-            s = typeof(EveryPrimitiveStruct)
-                .GetFields()
-                .Select(f => f.GetValue(s)!.ToString()!.ToLowerInvariant())
-                .ToList()
-        });
+        ctx.Db.vec_string.Insert(
+            new VecString
+            {
+                s = typeof(EveryPrimitiveStruct)
+                    .GetFields()
+                    .Select(f => f.GetValue(s)!.ToString()!.ToLowerInvariant())
+                    .ToList(),
+            }
+        );
     }
 
     [SpacetimeDB.Table(Name = "table_holds_table", Public = true)]
@@ -1765,4 +1781,45 @@ public static partial class Module
 
     [SpacetimeDB.Reducer]
     public static void no_op_succeeds(ReducerContext ctx) { }
+
+    [SpacetimeDB.Table(
+        Name = "scheduled_table",
+        Scheduled = nameof(send_scheduled_message),
+        ScheduledAt = nameof(scheduled_at),
+        Public = true
+    )]
+    public partial struct ScheduledTable
+    {
+        [PrimaryKey]
+        [AutoInc]
+        public ulong scheduled_id;
+        public ScheduleAt scheduled_at;
+        public string text;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void send_scheduled_message(ReducerContext ctx, ScheduledTable arg)
+    {
+        ulong id = arg.scheduled_id;
+        SpacetimeDB.ScheduleAt scheduleAt = arg.scheduled_at;
+        string text = arg.text;
+    }
+
+    [SpacetimeDB.Table(Name = "indexed_table")]
+    public partial struct IndexedTable
+    {
+        [SpacetimeDB.Index.BTree]
+        uint player_id;
+    }
+
+    [SpacetimeDB.Table(Name = "indexed_table_2")]
+    [SpacetimeDB.Index.BTree(
+        Name = "player_id_snazz_index",
+        Columns = [nameof(player_id), nameof(player_snazz)]
+    )]
+    public partial struct IndexedTable2
+    {
+        uint player_id;
+        float player_snazz;
+    }
 }

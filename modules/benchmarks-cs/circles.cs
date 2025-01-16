@@ -22,12 +22,12 @@ public static partial class circles
     }
 
     [SpacetimeDB.Table(Name = "circle")]
-    [SpacetimeDB.Index(BTree = [nameof(player_id)])]
     public partial struct Circle(uint entity_id, uint player_id, float x, float y, float magnitude)
     {
         [PrimaryKey]
         public uint entity_id = entity_id;
 
+        [SpacetimeDB.Index.BTree]
         public uint player_id = player_id;
         public Vector2 direction = new(x, y);
         public float magnitude = magnitude;

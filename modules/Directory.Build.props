@@ -2,8 +2,16 @@
   <!-- Only needed when referencing local dependencies as projects. For published packages, these are imported automatically. -->
   <Import Project="../crates/bindings-csharp/Runtime/build/SpacetimeDB.Runtime.props" />
 
-  <!-- Prevent test projects from being picked up by `dotnet pack`. -->
   <PropertyGroup>
+    <TargetName>StdbModule</TargetName>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- Prevent test projects from being picked up by `dotnet pack`. -->
     <IsPackable>false</IsPackable>
+    <!-- ignore naming conventions, we're trying to match Rust 1:1 -->
+    <NoWarn>$(NoWarn);CS8981;IDE1006</NoWarn>
   </PropertyGroup>
 </Project>

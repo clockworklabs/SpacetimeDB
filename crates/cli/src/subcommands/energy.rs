@@ -31,7 +31,7 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
 
 async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result<(), anyhow::Error> {
     match cmd {
-        "status" => exec_status(config, args).await,
+        "balance" => exec_status(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }

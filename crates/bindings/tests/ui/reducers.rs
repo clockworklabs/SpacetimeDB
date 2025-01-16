@@ -39,7 +39,6 @@ struct ScheduledTable {
     #[primary_key]
     #[auto_inc]
     scheduled_id: u64,
-    #[scheduled_at]
     scheduled_at: spacetimedb::ScheduleAt,
     x: u8,
     y: u8,

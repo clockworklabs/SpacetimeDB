@@ -1,17 +1,33 @@
-use super::{Project, SqlExpr, SqlFrom};
+use crate::parser::{errors::SqlUnsupported, SqlParseResult};
 
-/// The AST for the SQL subscription language
-pub enum SqlAst {
-    Select(SqlSelect),
-    /// UNION ALL
-    Union(Box<SqlAst>, Box<SqlAst>),
-    /// EXCEPT ALL
-    Minus(Box<SqlAst>, Box<SqlAst>),
-}
+use super::{Project, SqlExpr, SqlFrom};
 
 /// A SELECT statement in the SQL subscription language
 pub struct SqlSelect {
     pub project: Project,
-    pub from: SqlFrom<SqlAst>,
+    pub from: SqlFrom,
     pub filter: Option<SqlExpr>,
+}
+
+impl SqlSelect {
+    pub fn qualify_vars(self) -> Self {
+        match &self.from {
+            SqlFrom::Expr(_, alias) => Self {
+                project: self.project.qualify_vars(alias.clone()),
+                filter: self.filter.map(|expr| expr.qualify_vars(alias.clone())),
+                from: self.from,
+            },
+            SqlFrom::Join(..) => self,
+        }
+    }
+
+    pub fn find_unqualified_vars(self) -> SqlParseResult<Self> {
+        if self.from.has_unqualified_vars() {
+            return Err(SqlUnsupported::UnqualifiedNames.into());
+        }
+        if self.project.has_unqualified_vars() {
+            return Err(SqlUnsupported::UnqualifiedNames.into());
+        }
+        Ok(self)
+    }
 }

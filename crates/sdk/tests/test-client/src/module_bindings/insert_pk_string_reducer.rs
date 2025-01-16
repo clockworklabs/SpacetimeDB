@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertPkString {
+pub(super) struct InsertPkStringArgs {
     pub s: String,
     pub data: i32,
 }
 
-impl __sdk::InModule for InsertPkString {
+impl From<InsertPkStringArgs> for super::Reducer {
+    fn from(args: InsertPkStringArgs) -> Self {
+        Self::InsertPkString {
+            s: args.s,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertPkStringArgs {
     type Module = super::RemoteModule;
 }
 
@@ -52,20 +61,33 @@ pub trait insert_pk_string {
 
 impl insert_pk_string for super::RemoteReducers {
     fn insert_pk_string(&self, s: String, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_pk_string", InsertPkString { s, data })
+        self.imp
+            .call_reducer("insert_pk_string", InsertPkStringArgs { s, data })
     }
     fn on_insert_pk_string(
         &self,
         mut callback: impl FnMut(&super::EventContext, &String, &i32) + Send + 'static,
     ) -> InsertPkStringCallbackId {
-        InsertPkStringCallbackId(self.imp.on_reducer::<InsertPkString>(
+        InsertPkStringCallbackId(self.imp.on_reducer(
             "insert_pk_string",
-            Box::new(move |ctx: &super::EventContext, args: &InsertPkString| callback(ctx, &args.s, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertPkString { s, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, s, data)
+            }),
         ))
     }
     fn remove_on_insert_pk_string(&self, callback: InsertPkStringCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertPkString>("insert_pk_string", callback.0)
+        self.imp.remove_on_reducer("insert_pk_string", callback.0)
     }
 }
 

@@ -11,11 +11,17 @@ use super::enum_with_payload_type::EnumWithPayload;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneEnumWithPayload {
+pub(super) struct InsertOneEnumWithPayloadArgs {
     pub e: EnumWithPayload,
 }
 
-impl __sdk::InModule for InsertOneEnumWithPayload {
+impl From<InsertOneEnumWithPayloadArgs> for super::Reducer {
+    fn from(args: InsertOneEnumWithPayloadArgs) -> Self {
+        Self::InsertOneEnumWithPayload { e: args.e }
+    }
+}
+
+impl __sdk::InModule for InsertOneEnumWithPayloadArgs {
     type Module = super::RemoteModule;
 }
 
@@ -54,20 +60,32 @@ pub trait insert_one_enum_with_payload {
 impl insert_one_enum_with_payload for super::RemoteReducers {
     fn insert_one_enum_with_payload(&self, e: EnumWithPayload) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_one_enum_with_payload", InsertOneEnumWithPayload { e })
+            .call_reducer("insert_one_enum_with_payload", InsertOneEnumWithPayloadArgs { e })
     }
     fn on_insert_one_enum_with_payload(
         &self,
         mut callback: impl FnMut(&super::EventContext, &EnumWithPayload) + Send + 'static,
     ) -> InsertOneEnumWithPayloadCallbackId {
-        InsertOneEnumWithPayloadCallbackId(self.imp.on_reducer::<InsertOneEnumWithPayload>(
+        InsertOneEnumWithPayloadCallbackId(self.imp.on_reducer(
             "insert_one_enum_with_payload",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneEnumWithPayload| callback(ctx, &args.e)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneEnumWithPayload { e },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, e)
+            }),
         ))
     }
     fn remove_on_insert_one_enum_with_payload(&self, callback: InsertOneEnumWithPayloadCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneEnumWithPayload>("insert_one_enum_with_payload", callback.0)
+        self.imp.remove_on_reducer("insert_one_enum_with_payload", callback.0)
     }
 }
 

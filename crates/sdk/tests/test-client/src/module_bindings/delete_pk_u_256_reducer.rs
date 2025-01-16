@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeletePkU256 {
+pub(super) struct DeletePkU256Args {
     pub n: __sats::u256,
 }
 
-impl __sdk::InModule for DeletePkU256 {
+impl From<DeletePkU256Args> for super::Reducer {
+    fn from(args: DeletePkU256Args) -> Self {
+        Self::DeletePkU256 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for DeletePkU256Args {
     type Module = super::RemoteModule;
 }
 
@@ -51,19 +57,32 @@ pub trait delete_pk_u_256 {
 
 impl delete_pk_u_256 for super::RemoteReducers {
     fn delete_pk_u_256(&self, n: __sats::u256) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_u256", DeletePkU256 { n })
+        self.imp.call_reducer("delete_pk_u256", DeletePkU256Args { n })
     }
     fn on_delete_pk_u_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::u256) + Send + 'static,
     ) -> DeletePkU256CallbackId {
-        DeletePkU256CallbackId(self.imp.on_reducer::<DeletePkU256>(
+        DeletePkU256CallbackId(self.imp.on_reducer(
             "delete_pk_u256",
-            Box::new(move |ctx: &super::EventContext, args: &DeletePkU256| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeletePkU256 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_delete_pk_u_256(&self, callback: DeletePkU256CallbackId) {
-        self.imp.remove_on_reducer::<DeletePkU256>("delete_pk_u256", callback.0)
+        self.imp.remove_on_reducer("delete_pk_u256", callback.0)
     }
 }
 

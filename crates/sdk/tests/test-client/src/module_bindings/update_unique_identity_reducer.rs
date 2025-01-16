@@ -9,12 +9,21 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdateUniqueIdentity {
+pub(super) struct UpdateUniqueIdentityArgs {
     pub i: __sdk::Identity,
     pub data: i32,
 }
 
-impl __sdk::InModule for UpdateUniqueIdentity {
+impl From<UpdateUniqueIdentityArgs> for super::Reducer {
+    fn from(args: UpdateUniqueIdentityArgs) -> Self {
+        Self::UpdateUniqueIdentity {
+            i: args.i,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdateUniqueIdentityArgs {
     type Module = super::RemoteModule;
 }
 
@@ -53,20 +62,32 @@ pub trait update_unique_identity {
 impl update_unique_identity for super::RemoteReducers {
     fn update_unique_identity(&self, i: __sdk::Identity, data: i32) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("update_unique_identity", UpdateUniqueIdentity { i, data })
+            .call_reducer("update_unique_identity", UpdateUniqueIdentityArgs { i, data })
     }
     fn on_update_unique_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Identity, &i32) + Send + 'static,
     ) -> UpdateUniqueIdentityCallbackId {
-        UpdateUniqueIdentityCallbackId(self.imp.on_reducer::<UpdateUniqueIdentity>(
+        UpdateUniqueIdentityCallbackId(self.imp.on_reducer(
             "update_unique_identity",
-            Box::new(move |ctx: &super::EventContext, args: &UpdateUniqueIdentity| callback(ctx, &args.i, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdateUniqueIdentity { i, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, i, data)
+            }),
         ))
     }
     fn remove_on_update_unique_identity(&self, callback: UpdateUniqueIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdateUniqueIdentity>("update_unique_identity", callback.0)
+        self.imp.remove_on_reducer("update_unique_identity", callback.0)
     }
 }
 

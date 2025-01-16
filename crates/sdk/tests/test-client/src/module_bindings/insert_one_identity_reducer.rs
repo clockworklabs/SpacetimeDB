@@ -9,11 +9,17 @@ use spacetimedb_sdk::__codegen::{
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneIdentity {
+pub(super) struct InsertOneIdentityArgs {
     pub i: __sdk::Identity,
 }
 
-impl __sdk::InModule for InsertOneIdentity {
+impl From<InsertOneIdentityArgs> for super::Reducer {
+    fn from(args: InsertOneIdentityArgs) -> Self {
+        Self::InsertOneIdentity { i: args.i }
+    }
+}
+
+impl __sdk::InModule for InsertOneIdentityArgs {
     type Module = super::RemoteModule;
 }
 
@@ -51,20 +57,33 @@ pub trait insert_one_identity {
 
 impl insert_one_identity for super::RemoteReducers {
     fn insert_one_identity(&self, i: __sdk::Identity) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_identity", InsertOneIdentity { i })
+        self.imp
+            .call_reducer("insert_one_identity", InsertOneIdentityArgs { i })
     }
     fn on_insert_one_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Identity) + Send + 'static,
     ) -> InsertOneIdentityCallbackId {
-        InsertOneIdentityCallbackId(self.imp.on_reducer::<InsertOneIdentity>(
+        InsertOneIdentityCallbackId(self.imp.on_reducer(
             "insert_one_identity",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneIdentity| callback(ctx, &args.i)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneIdentity { i },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, i)
+            }),
         ))
     }
     fn remove_on_insert_one_identity(&self, callback: InsertOneIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneIdentity>("insert_one_identity", callback.0)
+        self.imp.remove_on_reducer("insert_one_identity", callback.0)
     }
 }
 
