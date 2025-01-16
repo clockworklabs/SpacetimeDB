@@ -1,23 +1,10 @@
-"use strict";
-var __assign = (this && this.__assign) || function () {
-    __assign = Object.assign || function(t) {
-        for (var s, i = 1, n = arguments.length; i < n; i++) {
-            s = arguments[i];
-            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
-                t[p] = s[p];
-        }
-        return t;
-    };
-    return __assign.apply(this, arguments);
-};
-Object.defineProperty(exports, "__esModule", { value: true });
 function page(title, slug, path, props) {
-    return __assign({ type: 'page', path: path, slug: slug, title: title }, props);
+    return { type: 'page', path, slug, title, ...props };
 }
 function section(title) {
-    return { type: 'section', title: title };
+    return { type: 'section', title };
 }
-var nav = {
+const nav = {
     items: [
         section('Intro'),
         page('Overview', 'index', 'index.md'), // TODO(BREAKING): For consistency & clarity, 'index' slug should be renamed 'intro'?
@@ -29,12 +16,9 @@ var nav = {
         section('Unity Tutorial - Basic Multiplayer'),
         page('Overview', 'unity-tutorial', 'unity/index.md'),
         page('1 - Setup', 'unity/part-1', 'unity/part-1.md'),
-        page('2a - Server (Rust)', 'unity/part-2a-rust', 'unity/part-2a-rust.md'),
-        page('2b - Server (C#)', 'unity/part-2b-c-sharp', 'unity/part-2b-c-sharp.md'),
-        page('3 - Client', 'unity/part-3', 'unity/part-3.md'),
-        section('Unity Tutorial - Advanced'),
-        page('4 - Resources And Scheduling', 'unity/part-4', 'unity/part-4.md'),
-        page('5 - BitCraft Mini', 'unity/part-5', 'unity/part-5.md'),
+        page('2 - Connecting to SpacetimeDB', 'unity/part-2', 'unity/part-2.md'),
+        page('3 - Gameplay', 'unity/part-3', 'unity/part-3.md'),
+        page('4 - Moving and Colliding', 'unity/part-4', 'unity/part-4.md'),
         section('Server Module Languages'),
         page('Overview', 'modules', 'modules/index.md'),
         page('Rust Quickstart', 'modules/rust/quickstart', 'modules/rust/quickstart.md'),
@@ -65,4 +49,4 @@ var nav = {
         page('SQL Reference', 'sql', 'sql/index.md'),
     ],
 };
-exports.default = nav;
+export default nav;
