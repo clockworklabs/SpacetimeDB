@@ -57,7 +57,7 @@ pub(crate) fn build_rust(project_path: &Path, lint_dir: Option<&Path>, build_deb
             }
         }
         if err_count > 0 {
-            eprint!("\n");
+            eprintln!();
             anyhow::bail!(
                 "Found {err_count} disallowed print statement(s).\n\
                 These will not be printed from SpacetimeDB modules.\n\

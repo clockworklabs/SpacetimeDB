@@ -56,7 +56,7 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<PathBuf, anyhow:
         ));
     }
 
-    let bin_path = crate::tasks::build(project_path, lint_dir.as_ref().map(|p| p.as_path()), build_debug)?;
+    let bin_path = crate::tasks::build(project_path, lint_dir.as_deref(), build_debug)?;
     println!("Build finished successfully.");
 
     Ok(bin_path)
