@@ -39,11 +39,10 @@ pub(crate) fn run_cli(paths: &SpacetimePaths, argv0: Option<&OsStr>, args: Vec<O
     }
     #[cfg(windows)]
     {
-        use std::os::windows::process::ExitCodeExt;
         let status = cmd
             .status()
             .with_context(|| format!("failed to run {}", cli_path.display()))?;
-        Ok(ExitCode::from_raw(status.code().unwrap_or(1) as u32))
+        Ok(ExitCode::from(status.code().unwrap_or(1) as u8))
     }
 }
 

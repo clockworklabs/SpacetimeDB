@@ -19,7 +19,7 @@ class CreateProject(unittest.TestCase):
         try:
 
             run_cmd("dotnet", "nuget", "locals", "all", "--clear", cwd=bindings, capture_stderr=True)
-            run_cmd("dotnet", "workload", "install", "wasi-experimental", "--skip-manifest-update")
+            run_cmd("dotnet", "workload", "install", "wasi-experimental", "--skip-manifest-update", cwd=STDB_DIR / "modules")
             run_cmd("dotnet", "pack", cwd=bindings, capture_stderr=True)
 
             with tempfile.TemporaryDirectory() as tmpdir:
