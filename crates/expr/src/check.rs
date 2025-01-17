@@ -166,10 +166,12 @@ pub fn type_subscription(ast: SqlSelect, tx: &impl SchemaView) -> TypingResult<P
 
 /// Parse and type check a *subscription* query into a `StatementCtx`
 pub fn compile_sql_sub<'a>(sql: &'a str, tx: &impl SchemaView) -> TypingResult<StatementCtx<'a>> {
+    let planning_time = std::time::Instant::now();
     Ok(StatementCtx {
         statement: Statement::Select(ProjectList::Name(parse_and_type_sub(sql, tx)?)),
         sql,
         source: StatementSource::Subscription,
+        planning_time: planning_time.elapsed(),
     })
 }
 
