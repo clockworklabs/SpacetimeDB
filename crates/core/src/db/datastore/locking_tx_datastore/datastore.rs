@@ -681,6 +681,10 @@ pub(super) fn record_metrics(
                 .inc_by(deletes.len() as u64);
         }
     }
+
+    if let Some(committed_state) = committed_state {
+        committed_state.report_data_size(*db);
+    }
 }
 
 impl MutTx for Locking {

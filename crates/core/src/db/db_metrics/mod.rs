@@ -5,6 +5,8 @@ use spacetimedb_lib::Identity;
 use spacetimedb_metrics::metrics_group;
 use spacetimedb_primitives::TableId;
 
+pub mod data_size;
+
 metrics_group!(
     #[non_exhaustive]
     pub struct DbMetrics {
