@@ -7,8 +7,9 @@ import os
 import re
 import fnmatch
 import json
-from . import TEST_DIR, build_template_target
+from . import TEST_DIR, SPACETIME_BIN, exe_suffix, build_template_target
 import smoketests
+import sys
 import logging
 
 def check_docker():
@@ -65,10 +66,28 @@ def main():
                         action='append', type=_convert_select_pattern,
                         help='Only run tests which match the given substring')
     parser.add_argument("-x", dest="exclude", nargs="*", default=[])
+    parser.add_argument("--no-build-cli", action="store_true", help="don't cargo build the cli")
     args = parser.parse_args()
 
-    logging.info("Compiling spacetime cli...")
-    smoketests.run_cmd("cargo", "build", cwd=TEST_DIR.parent, capture_stderr=False)
+    if not args.no_build_cli:
+        logging.info("Compiling spacetime cli...")
+        smoketests.run_cmd("cargo", "build", "-pspacetimedb-cli", "-pspacetimedb-update", cwd=TEST_DIR.parent, capture_stderr=False)
+
+    update_bin_name = "spacetimedb-update" + exe_suffix
+    try:
+        bin_is_symlink = SPACETIME_BIN.readlink() == update_bin_name
+    except OSError:
+        bin_is_symlink = False
+    if not bin_is_symlink:
+        try:
+            os.remove(SPACETIME_BIN)
+        except FileNotFoundError:
+            pass
+        try:
+            os.symlink(update_bin_name, SPACETIME_BIN)
+        except OSError:
+            import shutil
+            shutil.copyfile(SPACETIME_BIN.with_name(update_bin_name), SPACETIME_BIN)
 
     os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
 

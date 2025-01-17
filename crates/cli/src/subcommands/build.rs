@@ -1,6 +1,7 @@
 use crate::Config;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 pub fn cli() -> clap::Command {
@@ -15,11 +16,11 @@ pub fn cli() -> clap::Command {
                 .help("The system path (absolute or relative) to the project you would like to build")
         )
         .arg(
-            Arg::new("skip_clippy")
-                .long("skip-println-checks")
-                .action(SetTrue)
-                .value_parser(clap::builder::FalseyValueParser::new())
-                .help("Skips running clippy on the module before building (intended to speed up local iteration, not recommended for CI)"),
+            Arg::new("lint_dir")
+                .long("lint-dir")
+                .value_parser(clap::value_parser!(OsString))
+                .default_value("src")
+                .help("The directory to lint for nonfunctional print statements. If set to the empty string, skips linting.")
         )
         .arg(
             Arg::new("debug")
@@ -32,7 +33,12 @@ pub fn cli() -> clap::Command {
 
 pub async fn exec(_config: Config, args: &ArgMatches) -> Result<PathBuf, anyhow::Error> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
-    let skip_clippy = args.get_flag("skip_clippy");
+    let lint_dir = args.get_one::<OsString>("lint_dir").unwrap();
+    let lint_dir = if lint_dir.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(lint_dir))
+    };
     let build_debug = args.get_flag("debug");
 
     // Create the project path, or make sure the target project path is empty.
@@ -50,7 +56,7 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<PathBuf, anyhow:
         ));
     }
 
-    let bin_path = crate::tasks::build(project_path, skip_clippy, build_debug)?;
+    let bin_path = crate::tasks::build(project_path, lint_dir.as_deref(), build_debug)?;
     println!("Build finished successfully.");
 
     Ok(bin_path)

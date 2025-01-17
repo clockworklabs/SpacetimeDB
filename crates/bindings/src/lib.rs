@@ -1,6 +1,7 @@
 //! Provides safe abstractions around `bindings-sys`
 //! and re-exports `#[spacetimedb]` and `#[duration]`.
 
+mod client_visibility_filter;
 pub mod log_stopwatch;
 mod logger;
 #[cfg(feature = "rand")]
@@ -19,12 +20,15 @@ pub use log;
 #[cfg(feature = "rand")]
 pub use rand;
 
+#[doc(hidden)]
+pub use client_visibility_filter::Filter;
 #[cfg(feature = "rand")]
 pub use rng::StdbRng;
 pub use sats::SpacetimeType;
 #[doc(hidden)]
-pub use spacetimedb_bindings_macro::__TableHelper;
-pub use spacetimedb_bindings_macro::{duration, filter, reducer, table};
+// TODO: move `client_visibility_filter` out of `doc(hidden)` once RLS is implemented.
+pub use spacetimedb_bindings_macro::{__TableHelper, client_visibility_filter};
+pub use spacetimedb_bindings_macro::{duration, reducer, table};
 pub use spacetimedb_bindings_sys as sys;
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};

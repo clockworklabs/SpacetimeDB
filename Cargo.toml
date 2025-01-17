@@ -29,6 +29,7 @@ members = [
   "crates/standalone",
   "crates/table",
   "crates/testing",
+  "crates/update",
   "crates/vm",
   "modules/benchmarks",
   "modules/perf-test",
