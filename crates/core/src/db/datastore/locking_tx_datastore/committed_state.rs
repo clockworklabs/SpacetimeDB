@@ -644,6 +644,39 @@ impl CommittedState {
         let index = table.indexes.get(col_list)?;
         Some(&index.key_type)
     }
+
+    pub(super) fn report_data_size(&self, database_identity: Identity) {
+        use crate::db::db_metrics::data_size::DATA_SIZE_METRICS;
+
+        for (table_id, table) in &self.tables {
+            let table_name = &table.schema.table_name;
+            DATA_SIZE_METRICS
+                .data_size_table_num_rows
+                .with_label_values(&database_identity, &table_id.0, table_name)
+                .set(table.num_rows() as _);
+            DATA_SIZE_METRICS
+                .data_size_table_bytes_used_by_rows
+                .with_label_values(&database_identity, &table_id.0, table_name)
+                .set(table.bytes_used_by_rows() as _);
+            DATA_SIZE_METRICS
+                .data_size_table_num_rows_in_indexes
+                .with_label_values(&database_identity, &table_id.0, table_name)
+                .set(table.num_rows_in_indexes() as _);
+            DATA_SIZE_METRICS
+                .data_size_table_bytes_used_by_index_keys
+                .with_label_values(&database_identity, &table_id.0, table_name)
+                .set(table.bytes_used_by_index_keys() as _);
+        }
+
+        DATA_SIZE_METRICS
+            .data_size_blob_store_num_blobs
+            .with_label_values(&database_identity)
+            .set(self.blob_store.num_blobs() as _);
+        DATA_SIZE_METRICS
+            .data_size_blob_store_bytes_used_by_blobs
+            .with_label_values(&database_identity)
+            .set(self.blob_store.bytes_used_by_blobs() as _);
+    }
 }
 
 pub struct CommittedIndexIterWithDeletedMutTx<'a> {
