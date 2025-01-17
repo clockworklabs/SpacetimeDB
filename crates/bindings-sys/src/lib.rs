@@ -813,11 +813,12 @@ pub fn datastore_insert_bsatn(table_id: TableId, row: &mut [u8]) -> Result<&[u8]
 ///
 /// Returns an error if
 /// - a table with the provided `table_id` doesn't exist
-/// - an index with the provided `index_id` doesn't exist
+/// - an index with the provided `index_id` doesn't exist or if the index was not unique.
 /// - there were unique constraint violations
 /// - `row` doesn't decode from BSATN to a `ProductValue`
 ///   according to the `ProductType` that the table's schema specifies
 ///   or if `row` cannot project to the index's type.
+/// - the row was not found
 #[inline]
 pub fn datastore_update_bsatn(table_id: TableId, index_id: IndexId, row: &mut [u8]) -> Result<&[u8], Errno> {
     let row_ptr = row.as_mut_ptr();
