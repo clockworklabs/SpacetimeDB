@@ -1,13 +1,14 @@
 use crate::sym;
-use crate::util::{check_duplicate_msg, match_meta};
+use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::parse::Parser as _;
 use syn::spanned::Spanned;
-use syn::{FnArg, Ident, ItemFn};
+use syn::{FnArg, Ident, ItemFn, LitStr};
 
 #[derive(Default)]
 pub(crate) struct ReducerArgs {
+    name: Option<LitStr>,
     lifecycle: Option<LifecycleReducer>,
 }
 
@@ -18,14 +19,6 @@ enum LifecycleReducer {
     Update(Span),
 }
 impl LifecycleReducer {
-    fn reducer_name(&self) -> &'static str {
-        match self {
-            Self::Init(_) => "__init__",
-            Self::ClientConnected(_) => "__identity_connected__",
-            Self::ClientDisconnected(_) => "__identity_disconnected__",
-            Self::Update(_) => "__update__",
-        }
-    }
     fn to_lifecycle_value(&self) -> Option<TokenStream> {
         let (Self::Init(span) | Self::ClientConnected(span) | Self::ClientDisconnected(span) | Self::Update(span)) =
             *self;
@@ -54,6 +47,10 @@ impl ReducerArgs {
                 sym::client_connected => set_lifecycle(LifecycleReducer::ClientConnected)?,
                 sym::client_disconnected => set_lifecycle(LifecycleReducer::ClientDisconnected)?,
                 sym::update => set_lifecycle(LifecycleReducer::Update)?,
+                sym::name => {
+                    check_duplicate(&args.name, &meta)?;
+                    args.name = Some(meta.value()?.parse()?);
+                }
             });
             Ok(())
         })
@@ -66,21 +63,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
     let func_name = &original_function.sig.ident;
     let vis = &original_function.vis;
 
-    // Extract reducer name, making sure it's not `__XXX__` as that's the form we reserve for special reducers.
-    let reducer_name;
-    let reducer_name = match &args.lifecycle {
-        Some(lifecycle) => lifecycle.reducer_name(),
-        None => {
-            reducer_name = func_name.to_string();
-            if reducer_name.starts_with("__") && reducer_name.ends_with("__") {
-                return Err(syn::Error::new_spanned(
-                    &original_function.sig.ident,
-                    "reserved reducer name",
-                ));
-            }
-            &reducer_name
-        }
-    };
+    let reducer_name = args.name.unwrap_or_else(|| ident_to_litstr(func_name));
 
     for param in &original_function.sig.generics.params {
         let err = |msg| syn::Error::new_spanned(param, msg);
@@ -125,7 +108,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
     }
     .into_iter();
 
-    let register_describer_symbol = format!("__preinit__20_register_describer_{reducer_name}");
+    let register_describer_symbol = format!("__preinit__20_register_describer_{}", reducer_name.value());
 
     let lt_params = &original_function.sig.generics;
     let lt_where_clause = &lt_params.where_clause;

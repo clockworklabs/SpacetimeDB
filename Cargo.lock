@@ -5052,6 +5052,7 @@ dependencies = [
  "bytes",
  "derive_more",
  "enum-as-inner",
+ "enum-map",
  "hex",
  "insta",
  "itertools 0.12.1",
@@ -5182,6 +5183,7 @@ version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "enum-as-inner",
+ "enum-map",
  "hashbrown 0.15.1",
  "indexmap 2.6.0",
  "itertools 0.12.1",

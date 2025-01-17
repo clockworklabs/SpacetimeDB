@@ -1,6 +1,7 @@
 use anyhow::Context;
 use bytes::Bytes;
 use spacetimedb_client_api_messages::timestamp::Timestamp;
+use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_primitives::TableId;
 use spacetimedb_schema::auto_migrate::ponder_migrate;
 use spacetimedb_schema::def::ModuleDef;
@@ -297,13 +298,13 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             })
             .inspect_err(|e| log::error!("{e:?}"))?;
 
-        let rcr = match self.info.reducers_map.lookup_id(INIT_DUNDER) {
+        let rcr = match self.info.module_def.lifecycle_reducer(Lifecycle::Init) {
             None => {
                 stdb.commit_tx(tx)?;
                 None
             }
 
-            Some(reducer_id) => {
+            Some((reducer_id, _)) => {
                 self.system_logger().info("Invoking `init` reducer");
                 let caller_identity = self.replica_context().database.owner_identity;
                 Some(self.call_reducer_with_tx(
@@ -405,11 +406,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let replica_ctx = self.replica_context();
         let stdb = &*replica_ctx.relational_db.clone();
         let address = replica_ctx.database_identity;
-        let reducer_name = self
-            .info
-            .reducers_map
-            .lookup_name(reducer_id)
-            .expect("reducer not found");
+        let reducer_def = self.info.module_def.reducer_by_id(reducer_id);
+        let reducer_name = &*reducer_def.name;
 
         let _outer_span = tracing::trace_span!("call_reducer",
             reducer_name,
@@ -512,7 +510,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             Ok(Ok(())) => {
                 // Detecing a new client, and inserting it in `st_clients`
                 // Disconnect logic is written in module_host.rs, due to different transacationality requirements.
-                if reducer_name == CLIENT_CONNECTED_DUNDER {
+                if reducer_def.lifecycle == Some(Lifecycle::OnConnect) {
                     match self.insert_st_client(&mut tx, caller_identity, caller_address) {
                         Ok(_) => EventStatus::Committed(DatabaseUpdate::default()),
                         Err(err) => EventStatus::Failed(err.to_string()),
