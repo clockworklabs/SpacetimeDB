@@ -137,7 +137,7 @@ struct ModuleValidator<'a> {
     type_namespace: HashMap<ScopedTypeName, AlgebraicTypeRef>,
 
     /// Reducers that play special lifecycle roles.
-    lifecycle_reducers: EnumMap<Lifecycle, MaybeReducerId>,
+    lifecycle_reducers: EnumMap<Lifecycle, Option<ReducerId>>,
 }
 
 impl ModuleValidator<'_> {
@@ -282,12 +282,13 @@ impl ModuleValidator<'_> {
         let name = identifier(name);
 
         let lifecycle = lifecycle
-            .map(
-                |lifecycle| match self.lifecycle_reducers[lifecycle].try_insert(reducer_id) {
-                    true => Ok(lifecycle),
-                    false => Err(ValidationError::DuplicateLifecycle { lifecycle }.into()),
-                },
-            )
+            .map(|lifecycle| match &mut self.lifecycle_reducers[lifecycle] {
+                x @ None => {
+                    *x = Some(reducer_id);
+                    Ok(lifecycle)
+                }
+                Some(_) => Err(ValidationError::DuplicateLifecycle { lifecycle }.into()),
+            })
             .transpose();
 
         let (name, params_for_generate, lifecycle) = (name, params_for_generate, lifecycle).combine_errors()?;

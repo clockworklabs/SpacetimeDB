@@ -103,7 +103,7 @@ pub struct ModuleDef {
     reducers: IndexMap<Identifier, ReducerDef>,
 
     /// A map from lifecycle reducer kind to reducer id.
-    lifecycle_reducers: EnumMap<Lifecycle, MaybeReducerId>,
+    lifecycle_reducers: EnumMap<Lifecycle, Option<ReducerId>>,
 
     /// The type definitions of the module definition.
     types: HashMap<ScopedTypeName, TypeDef>,
@@ -244,9 +244,7 @@ impl ModuleDef {
 
     /// Looks up a lifecycle reducer defined in the module.
     pub fn lifecycle_reducer(&self, lifecycle: Lifecycle) -> Option<(ReducerId, &ReducerDef)> {
-        self.lifecycle_reducers[lifecycle]
-            .get()
-            .map(|i| (i, &self.reducers[i.idx()]))
+        self.lifecycle_reducers[lifecycle].map(|i| (i, &self.reducers[i.idx()]))
     }
 
     /// Get a `DeserializeSeed` that can pull data from a `Deserializer` and format it into a `ProductType`
@@ -941,33 +939,6 @@ impl From<ReducerDef> for RawReducerDefV9 {
             params: val.params,
             lifecycle: val.lifecycle,
         }
-    }
-}
-
-#[derive(Copy, Clone)]
-pub(crate) struct MaybeReducerId(ReducerId);
-impl MaybeReducerId {
-    fn get(self) -> Option<ReducerId> {
-        (self.0 .0 != u32::MAX).then_some(self.0)
-    }
-    fn try_insert(&mut self, id: ReducerId) -> bool {
-        let insert = self.0 .0 == u32::MAX;
-        if insert {
-            // it's safe to "cast" this because bsatn sequence length is a u32,
-            // so an index into such a list can never be u32::MAX
-            self.0 = id;
-        }
-        insert
-    }
-}
-impl Default for MaybeReducerId {
-    fn default() -> Self {
-        Self(ReducerId(u32::MAX))
-    }
-}
-impl fmt::Debug for MaybeReducerId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.get().fmt(f)
     }
 }
 
