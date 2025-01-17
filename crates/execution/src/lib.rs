@@ -44,7 +44,8 @@ pub trait Datastore {
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
             .and_then(|table| {
                 table
-                    .index_seek_by_id(self.blob_store(), index_id, range)
+                    .get_index_by_id_with_table(self.blob_store(), index_id)
+                    .map(|i| i.seek(range))
                     .ok_or_else(|| anyhow!("IndexId `{index_id}` does not exist"))
             })
     }
