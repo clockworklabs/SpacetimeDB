@@ -12,7 +12,7 @@ use spacetimedb_physical_plan::{
 use spacetimedb_primitives::TableId;
 use spacetimedb_sql_parser::parser::sub::parse_subscription;
 
-use crate::MAX_SQL_LENGTH;
+use crate::{metrics::QueryMetrics, MAX_SQL_LENGTH};
 
 /// A delta plan performs incremental view maintenance
 #[derive(Debug)]
@@ -140,11 +140,15 @@ pub struct DeltaPlanEvaluator {
 }
 
 impl DeltaPlanEvaluator {
-    pub fn eval_inserts<'a, Tx: Datastore + DeltaStore>(&'a self, tx: &'a Tx) -> Result<impl Iterator<Item = Row<'a>>> {
+    pub fn eval_inserts<'a, Tx: Datastore + DeltaStore>(
+        &'a self,
+        tx: &'a Tx,
+        metrics: &mut QueryMetrics,
+    ) -> Result<impl Iterator<Item = Row<'a>>> {
         let mut rows = vec![];
         for plan in &self.insert_plans {
             let plan = PipelinedProject::from(plan.clone());
-            plan.execute(tx, &mut |row| {
+            plan.execute(tx, metrics, &mut |row| {
                 rows.push(row);
                 Ok(())
             })?;
@@ -152,11 +156,15 @@ impl DeltaPlanEvaluator {
         Ok(rows.into_iter())
     }
 
-    pub fn eval_deletes<'a, Tx: Datastore + DeltaStore>(&'a self, tx: &'a Tx) -> Result<impl Iterator<Item = Row<'a>>> {
+    pub fn eval_deletes<'a, Tx: Datastore + DeltaStore>(
+        &'a self,
+        tx: &'a Tx,
+        metrics: &mut QueryMetrics,
+    ) -> Result<impl Iterator<Item = Row<'a>>> {
         let mut rows = vec![];
         for plan in &self.delete_plans {
             let plan = PipelinedProject::from(plan.clone());
-            plan.execute(tx, &mut |row| {
+            plan.execute(tx, metrics, &mut |row| {
                 rows.push(row);
                 Ok(())
             })?;
