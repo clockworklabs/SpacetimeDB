@@ -70,7 +70,7 @@ fn read_table<'a>(table: &'a toml_edit::Table, key: &'a str) -> Result<Option<&'
             Err(CliError::ConfigType {
                 key: key.to_string(),
                 kind: "table array",
-                found: value.clone(),
+                found: Box::new(value.clone()),
             })
         }
     } else {
@@ -86,7 +86,7 @@ fn read_opt_str(table: &toml_edit::Table, key: &str) -> Result<Option<String>, C
             Err(CliError::ConfigType {
                 key: key.to_string(),
                 kind: "string",
-                found: value.clone(),
+                found: Box::new(value.clone()),
             })
         }
     } else {
@@ -1000,7 +1000,7 @@ default_server = "local"
             CliError::ConfigType {
                 key: "default_server".to_string(),
                 kind: "string",
-                found: toml_edit::value(1),
+                found: Box::new(toml_edit::value(1)),
             },
         )?;
         check_invalid(
@@ -1008,7 +1008,7 @@ default_server = "local"
             CliError::ConfigType {
                 key: "web_session_token".to_string(),
                 kind: "string",
-                found: toml_edit::value(1),
+                found: Box::new(toml_edit::value(1)),
             },
         )?;
         check_invalid(
@@ -1016,7 +1016,7 @@ default_server = "local"
             CliError::ConfigType {
                 key: "spacetimedb_token".to_string(),
                 kind: "string",
-                found: toml_edit::value(1),
+                found: Box::new(toml_edit::value(1)),
             },
         )?;
         check_invalid(
@@ -1026,7 +1026,7 @@ default_server = "local"
             CliError::ConfigType {
                 key: "server_configs".to_string(),
                 kind: "table array",
-                found: toml_edit::table(),
+                found: Box::new(toml_edit::table()),
             },
         )?;
         check_invalid(
@@ -1037,7 +1037,7 @@ nickname =1
             CliError::ConfigType {
                 key: "nickname".to_string(),
                 kind: "string",
-                found: toml_edit::value(1),
+                found: Box::new(toml_edit::value(1)),
             },
         )?;
         check_invalid(
@@ -1048,7 +1048,7 @@ host =1
             CliError::ConfigType {
                 key: "host".to_string(),
                 kind: "string",
-                found: toml_edit::value(1),
+                found: Box::new(toml_edit::value(1)),
             },
         )?;
 
@@ -1061,7 +1061,7 @@ protocol =1
             CliError::ConfigType {
                 key: "protocol".to_string(),
                 kind: "string",
-                found: toml_edit::value(1),
+                found: Box::new(toml_edit::value(1)),
             },
         )?;
         Ok(())
