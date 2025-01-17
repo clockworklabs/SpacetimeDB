@@ -259,6 +259,7 @@ pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow
 
             let reducers = module
                 .reducers()
+                .filter(|r| r.lifecycle.is_none())
                 .map(|reducer| spacetimedb_lib::ReducerDef {
                     name: reducer.name.clone().into(),
                     args: reducer.params.elements.to_vec(),
@@ -268,9 +269,7 @@ pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow
             let items = itertools::chain!(
                 types,
                 tables.into_iter().map(GenItem::Table),
-                reducers
-                    .filter(|r| !(r.name.starts_with("__") && r.name.ends_with("__")))
-                    .map(GenItem::Reducer),
+                reducers.map(GenItem::Reducer),
             );
 
             let items: Vec<GenItem> = items.collect();

@@ -108,6 +108,10 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
                     log::debug!("Attempt to call non-existent reducer {}", reducer);
                     StatusCode::NOT_FOUND
                 }
+                ReducerCallError::LifecycleReducer(lifecycle) => {
+                    log::debug!("Attempt to call {lifecycle:?} lifeycle reducer {}", reducer);
+                    StatusCode::BAD_REQUEST
+                }
             };
 
             log::debug!("Error while invoking reducer {:#}", e);

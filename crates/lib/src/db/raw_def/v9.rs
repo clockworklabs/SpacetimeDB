@@ -411,7 +411,8 @@ pub struct RawReducerDefV9 {
 }
 
 /// Special roles a reducer can play in the module lifecycle.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, SpacetimeType)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SpacetimeType)]
+#[cfg_attr(feature = "enum-map", derive(enum_map::Enum))]
 #[sats(crate = crate)]
 #[non_exhaustive]
 pub enum Lifecycle {

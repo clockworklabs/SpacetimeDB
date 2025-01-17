@@ -41,9 +41,10 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
 
     let reducers = reducers
         .into_iter()
-        .map(|reducer| {
+        .enumerate()
+        .map(|(idx, reducer)| {
             validator
-                .validate_reducer_def(reducer)
+                .validate_reducer_def(reducer, ReducerId(idx as u32))
                 .map(|reducer_def| (reducer_def.name.clone(), reducer_def))
         })
         .collect_all_errors();
@@ -90,6 +91,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
     let ModuleValidator {
         stored_in_table_def,
         typespace_for_generate,
+        lifecycle_reducers,
         ..
     } = validator;
 
@@ -106,6 +108,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         stored_in_table_def,
         refmap,
         row_level_security_raw,
+        lifecycle_reducers,
     };
 
     result.generate_indexes();
@@ -134,7 +137,7 @@ struct ModuleValidator<'a> {
     type_namespace: HashMap<ScopedTypeName, AlgebraicTypeRef>,
 
     /// Reducers that play special lifecycle roles.
-    lifecycle_reducers: HashSet<Lifecycle>,
+    lifecycle_reducers: EnumMap<Lifecycle, Option<ReducerId>>,
 }
 
 impl ModuleValidator<'_> {
@@ -241,7 +244,7 @@ impl ModuleValidator<'_> {
     }
 
     /// Validate a reducer definition.
-    fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV9) -> Result<ReducerDef> {
+    fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV9, reducer_id: ReducerId) -> Result<ReducerDef> {
         let RawReducerDefV9 {
             name,
             params,
@@ -279,9 +282,12 @@ impl ModuleValidator<'_> {
         let name = identifier(name);
 
         let lifecycle = lifecycle
-            .map(|lifecycle| match self.lifecycle_reducers.insert(lifecycle.clone()) {
-                true => Ok(lifecycle),
-                false => Err(ValidationError::DuplicateLifecycle { lifecycle }.into()),
+            .map(|lifecycle| match &mut self.lifecycle_reducers[lifecycle] {
+                x @ None => {
+                    *x = Some(reducer_id);
+                    Ok(lifecycle)
+                }
+                Some(_) => Err(ValidationError::DuplicateLifecycle { lifecycle }.into()),
             })
             .transpose();
 

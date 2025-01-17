@@ -74,7 +74,12 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             res.map(drop).map_err(|e| {
                 (
                     Some(reducer),
-                    client.module.info().reducers_map.lookup_id(reducer),
+                    client
+                        .module
+                        .info()
+                        .module_def
+                        .reducer_full(&**reducer)
+                        .map(|(id, _)| id),
                     e.into(),
                 )
             })
