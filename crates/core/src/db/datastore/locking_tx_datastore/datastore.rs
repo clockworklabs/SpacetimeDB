@@ -6,7 +6,10 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::db::datastore::locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx};
+use crate::db::datastore::{
+    locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
+    traits::{InsertFlags, UpdateFlags},
+};
 use crate::execution_context::Workload;
 use crate::{
     db::{
@@ -573,9 +576,19 @@ impl MutTxDatastore for Locking {
         tx: &'a mut Self::MutTx,
         table_id: TableId,
         row: &[u8],
-    ) -> Result<(ColList, RowRef<'a>)> {
-        let (gens, row_ref) = tx.insert::<true>(table_id, row)?;
-        Ok((gens, row_ref.collapse()))
+    ) -> Result<(ColList, RowRef<'a>, InsertFlags)> {
+        let (gens, row_ref, insert_flags) = tx.insert::<true>(table_id, row)?;
+        Ok((gens, row_ref.collapse(), insert_flags))
+    }
+
+    fn update_mut_tx<'a>(
+        &'a self,
+        tx: &'a mut Self::MutTx,
+        table_id: TableId,
+        index_id: IndexId,
+        row: &[u8],
+    ) -> Result<(ColList, RowRef<'a>, UpdateFlags)> {
+        tx.update(table_id, index_id, row)
     }
 
     fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>> {
@@ -1362,7 +1375,7 @@ mod tests {
         row: &ProductValue,
     ) -> Result<(AlgebraicValue, RowRef<'a>)> {
         let row = to_vec(&row).unwrap();
-        let (gen_cols, row_ref) = datastore.insert_mut_tx(tx, table_id, &row)?;
+        let (gen_cols, row_ref, _) = datastore.insert_mut_tx(tx, table_id, &row)?;
         let gen_cols = row_ref.project(&gen_cols)?;
         Ok((gen_cols, row_ref))
     }
