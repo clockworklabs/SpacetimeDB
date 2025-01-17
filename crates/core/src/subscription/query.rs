@@ -135,6 +135,7 @@ mod tests {
     use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_query::metrics::QueryMetrics;
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_schema::schema::*;
     use spacetimedb_vm::eval::run_ast;
@@ -733,6 +734,7 @@ mod tests {
 
     fn eval_incr(
         db: &RelationalDB,
+        metrics: &mut QueryMetrics,
         plan: &DeltaPlan,
         ops: Vec<(TableId, ProductValue, bool)>,
     ) -> ResultTest<DatabaseUpdate> {
@@ -751,7 +753,7 @@ mod tests {
         let table_name = plan.table_name();
         let tx = DeltaTx::new(&tx, &data);
         let evaluator = plan.evaluator(&tx);
-        let updates = eval_delta(&tx, &evaluator).unwrap();
+        let updates = eval_delta(&tx, metrics, &evaluator).unwrap();
 
         let inserts = updates
             .inserts
@@ -788,10 +790,17 @@ mod tests {
         let r1 = product!(10, 0, 2);
         let r2 = product!(10, 0, 3);
 
-        let result = eval_incr(db, &query, vec![(rhs_id, r1, false), (rhs_id, r2, true)])?;
+        let mut metrics = QueryMetrics::default();
+
+        let result = eval_incr(db, &mut metrics, &query, vec![(rhs_id, r1, false), (rhs_id, r2, true)])?;
 
         // No updates to report
         assert!(result.is_empty());
+
+        // The lhs row must always probe the rhs index.
+        // The rhs row passes the rhs filter,
+        // resulting in a probe of the rhs index.
+        assert_eq!(metrics.index_seeks, 2);
         Ok(())
     }
 
@@ -806,10 +815,17 @@ mod tests {
         let r1 = product!(13, 3, 5);
         let r2 = product!(13, 3, 6);
 
-        let result = eval_incr(db, &query, vec![(rhs_id, r1, false), (rhs_id, r2, true)])?;
+        let mut metrics = QueryMetrics::default();
+
+        let result = eval_incr(db, &mut metrics, &query, vec![(rhs_id, r1, false), (rhs_id, r2, true)])?;
 
         // No updates to report
         assert!(result.is_empty());
+
+        // The lhs row must always probe the rhs index.
+        // The rhs row doesn't pass the rhs filter,
+        // hence it doesn't survive to probe the lhs index.
+        assert_eq!(metrics.index_seeks, 0);
         Ok(())
     }
 
@@ -824,11 +840,17 @@ mod tests {
         let r1 = product!(10, 0, 2);
         let r2 = product!(10, 0, 5);
 
-        let result = eval_incr(db, &query, vec![(rhs_id, r1, false), (rhs_id, r2, true)])?;
+        let mut metrics = QueryMetrics::default();
+
+        let result = eval_incr(db, &mut metrics, &query, vec![(rhs_id, r1, false), (rhs_id, r2, true)])?;
 
         // A single delete from lhs
         assert_eq!(result.tables.len(), 1);
         assert_eq!(result.tables[0], delete_op(lhs_id, "lhs", product!(0, 5)));
+
+        // One row passes the rhs filter, the other does not.
+        // This results in a single probe of the lhs index.
+        assert_eq!(metrics.index_seeks, 1);
         Ok(())
     }
 
@@ -843,11 +865,17 @@ mod tests {
         let r1 = product!(13, 3, 5);
         let r2 = product!(13, 3, 4);
 
-        let result = eval_incr(db, &query, vec![(rhs_id, r1, false), (rhs_id, r2, true)])?;
+        let mut metrics = QueryMetrics::default();
+
+        let result = eval_incr(db, &mut metrics, &query, vec![(rhs_id, r1, false), (rhs_id, r2, true)])?;
 
         // A single insert into lhs
         assert_eq!(result.tables.len(), 1);
         assert_eq!(result.tables[0], insert_op(lhs_id, "lhs", product!(3, 8)));
+
+        // One row passes the rhs filter, the other does not.
+        // This results in a single probe of the lhs index.
+        assert_eq!(metrics.index_seeks, 1);
         Ok(())
     }
 
@@ -862,11 +890,23 @@ mod tests {
         let lhs_row = product!(5, 10);
         let rhs_row = product!(20, 5, 3);
 
-        let result = eval_incr(db, &query, vec![(lhs_id, lhs_row, true), (rhs_id, rhs_row, true)])?;
+        let mut metrics = QueryMetrics::default();
+
+        let result = eval_incr(
+            db,
+            &mut metrics,
+            &query,
+            vec![(lhs_id, lhs_row, true), (rhs_id, rhs_row, true)],
+        )?;
 
         // A single insert into lhs
         assert_eq!(result.tables.len(), 1);
         assert_eq!(result.tables[0], insert_op(lhs_id, "lhs", product!(5, 10)));
+
+        // The lhs row must always probe the rhs index.
+        // The rhs row passes the rhs filter,
+        // resulting in a probe of the rhs index.
+        assert_eq!(metrics.index_seeks, 2);
         Ok(())
     }
 
@@ -881,10 +921,22 @@ mod tests {
         let lhs_row = product!(5, 10);
         let rhs_row = product!(20, 5, 5);
 
-        let result = eval_incr(db, &query, vec![(lhs_id, lhs_row, true), (rhs_id, rhs_row, true)])?;
+        let mut metrics = QueryMetrics::default();
+
+        let result = eval_incr(
+            db,
+            &mut metrics,
+            &query,
+            vec![(lhs_id, lhs_row, true), (rhs_id, rhs_row, true)],
+        )?;
 
         // No updates to report
         assert_eq!(result.tables.len(), 0);
+
+        // The lhs row must always probe the rhs index.
+        // The rhs row doesn't pass the rhs filter,
+        // hence it doesn't survive to probe the lhs index.
+        assert_eq!(metrics.index_seeks, 1);
         Ok(())
     }
 
@@ -899,11 +951,23 @@ mod tests {
         let lhs_row = product!(0, 5);
         let rhs_row = product!(10, 0, 2);
 
-        let result = eval_incr(db, &query, vec![(lhs_id, lhs_row, false), (rhs_id, rhs_row, false)])?;
+        let mut metrics = QueryMetrics::default();
+
+        let result = eval_incr(
+            db,
+            &mut metrics,
+            &query,
+            vec![(lhs_id, lhs_row, false), (rhs_id, rhs_row, false)],
+        )?;
 
         // A single delete from lhs
         assert_eq!(result.tables.len(), 1);
         assert_eq!(result.tables[0], delete_op(lhs_id, "lhs", product!(0, 5)));
+
+        // The lhs row must always probe the rhs index.
+        // The rhs row passes the rhs filter,
+        // resulting in a probe of the rhs index.
+        assert_eq!(metrics.index_seeks, 2);
         Ok(())
     }
 
@@ -918,10 +982,22 @@ mod tests {
         let lhs_row = product!(3, 8);
         let rhs_row = product!(13, 3, 5);
 
-        let result = eval_incr(db, &query, vec![(lhs_id, lhs_row, false), (rhs_id, rhs_row, false)])?;
+        let mut metrics = QueryMetrics::default();
+
+        let result = eval_incr(
+            db,
+            &mut metrics,
+            &query,
+            vec![(lhs_id, lhs_row, false), (rhs_id, rhs_row, false)],
+        )?;
 
         // No updates to report
         assert_eq!(result.tables.len(), 0);
+
+        // The lhs row must always probe the rhs index.
+        // The rhs row doesn't pass the rhs filter,
+        // hence it doesn't survive to probe the lhs index.
+        assert_eq!(metrics.index_seeks, 1);
         Ok(())
     }
 
@@ -938,8 +1014,11 @@ mod tests {
         let rhs_old = product!(11, 1, 3);
         let rhs_new = product!(11, 1, 4);
 
+        let mut metrics = QueryMetrics::default();
+
         let result = eval_incr(
             db,
+            &mut metrics,
             &query,
             vec![
                 (lhs_id, lhs_old, false),
@@ -963,6 +1042,11 @@ mod tests {
                 inserts: [lhs_new].into(),
             },
         );
+
+        // The lhs rows must always probe the rhs index.
+        // The rhs rows pass the rhs filter,
+        // resulting in probes of the rhs index.
+        assert_eq!(metrics.index_seeks, 4);
         Ok(())
     }
 }
