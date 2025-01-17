@@ -12,7 +12,7 @@ use spacetimedb_sql_parser::{
 };
 use thiserror::Error;
 
-use crate::{check::Relvars, expr::Project};
+use crate::{check::Relvars, expr::ProjectList};
 
 use super::{
     check::{SchemaView, TypeChecker, TypingResult},
@@ -22,7 +22,7 @@ use super::{
 };
 
 pub enum Statement {
-    Select(Project),
+    Select(ProjectList),
     Insert(TableInsert),
     Update(TableUpdate),
     Delete(TableDelete),
@@ -240,11 +240,11 @@ impl TypeChecker for SqlChecker {
     type Ast = SqlSelect;
     type Set = SqlSelect;
 
-    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<Project> {
+    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<ProjectList> {
         Self::type_set(ast, &mut Relvars::default(), tx)
     }
 
-    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<Project> {
+    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<ProjectList> {
         match ast {
             SqlSelect {
                 project,

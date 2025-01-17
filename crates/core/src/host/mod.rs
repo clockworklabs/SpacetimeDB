@@ -153,6 +153,7 @@ pub enum AbiCall {
     RowIterBsatnAdvance,
     RowIterBsatnClose,
     DatastoreInsertBsatn,
+    DatastoreUpdateBsatn,
     DatastoreDeleteByBtreeScanBsatn,
     DatastoreDeleteAllByEqBsatn,
     BytesSourceRead,

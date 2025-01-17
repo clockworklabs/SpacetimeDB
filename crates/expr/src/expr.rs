@@ -1,25 +1,66 @@
 use std::sync::Arc;
 
-use spacetimedb_lib::{AlgebraicType, AlgebraicValue};
+use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
 use spacetimedb_primitives::TableId;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
-/// A projection is the root of any relation expression
+/// A projection is the root of any relational expression.
+/// This type represents a projection that returns relvars.
+///
+/// For example:
+///
+/// ```sql
+/// select * from t
+/// ```
+///
+/// and
+///
+/// ```sql
+/// select t.* from t join s ...
+/// ```
 #[derive(Debug)]
-pub enum Project {
+pub enum ProjectName {
     None(RelExpr),
-    Relvar(RelExpr, Box<str>),
-    Fields(RelExpr, Vec<(Box<str>, FieldProject)>),
+    Some(RelExpr, Box<str>),
 }
 
-impl Project {
+impl ProjectName {
     /// What is the [TableId] for this projection?
     pub fn table_id(&self) -> Option<TableId> {
         match self {
-            Self::Fields(..) => None,
-            Self::Relvar(input, var) => input.table_id(Some(var.as_ref())),
             Self::None(input) => input.table_id(None),
+            Self::Some(input, var) => input.table_id(Some(var.as_ref())),
+        }
+    }
+}
+
+/// A projection is the root of any relational expression.
+/// This type represents a projection that returns fields.
+///
+/// For example:
+///
+/// ```sql
+/// select a, b from t
+/// ```
+///
+/// and
+///
+/// ```sql
+/// select t.a as x from t join s ...
+/// ```
+#[derive(Debug)]
+pub enum ProjectList {
+    Name(ProjectName),
+    List(RelExpr, Vec<(Box<str>, FieldProject)>),
+}
+
+impl ProjectList {
+    /// What is the [TableId] for this projection?
+    pub fn table_id(&self) -> Option<TableId> {
+        match self {
+            Self::List(..) => None,
+            Self::Name(proj) => proj.table_id(),
         }
     }
 }
@@ -28,13 +69,22 @@ impl Project {
 #[derive(Debug)]
 pub enum RelExpr {
     /// A relvar or table reference
-    RelVar(Arc<TableSchema>, Box<str>),
+    RelVar(Relvar),
     /// A logical select for filter
     Select(Box<RelExpr>, Expr),
     /// A left deep binary cross product
     LeftDeepJoin(LeftDeepJoin),
     /// A left deep binary equi-join
     EqJoin(LeftDeepJoin, FieldProject, FieldProject),
+}
+
+/// A table reference
+#[derive(Debug)]
+pub struct Relvar {
+    pub schema: Arc<TableSchema>,
+    pub alias: Box<str>,
+    /// Does this relvar represent a delta table?
+    pub delta: Option<Delta>,
 }
 
 impl RelExpr {
@@ -50,9 +100,9 @@ impl RelExpr {
     /// Does this expression return this field?
     pub fn has_field(&self, field: &str) -> bool {
         match self {
-            Self::RelVar(_, name) => name.as_ref() == field,
+            Self::RelVar(Relvar { alias, .. }) => alias.as_ref() == field,
             Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => {
-                join.var.as_ref() == field || join.lhs.has_field(field)
+                join.rhs.alias.as_ref() == field || join.lhs.has_field(field)
             }
             Self::Select(input, _) => input.has_field(field),
         }
@@ -61,14 +111,14 @@ impl RelExpr {
     /// What is the [TableId] for this expression or relvar?
     pub fn table_id(&self, var: Option<&str>) -> Option<TableId> {
         match (self, var) {
-            (Self::RelVar(schema, _), None) => Some(schema.table_id),
-            (Self::RelVar(schema, name), Some(var)) if name.as_ref() == var => Some(schema.table_id),
-            (Self::RelVar(schema, _), Some(_)) => Some(schema.table_id),
+            (Self::RelVar(Relvar { schema, .. }), None) => Some(schema.table_id),
+            (Self::RelVar(Relvar { schema, alias, .. }), Some(var)) if alias.as_ref() == var => Some(schema.table_id),
+            (Self::RelVar(Relvar { schema, .. }), Some(_)) => Some(schema.table_id),
             (Self::Select(input, _), _) => input.table_id(var),
             (Self::LeftDeepJoin(..) | Self::EqJoin(..), None) => None,
             (Self::LeftDeepJoin(join) | Self::EqJoin(join, ..), Some(name)) => {
-                if join.var.as_ref() == name {
-                    Some(join.rhs.table_id)
+                if join.rhs.alias.as_ref() == name {
+                    Some(join.rhs.schema.table_id)
                 } else {
                     join.lhs.table_id(var)
                 }
@@ -83,9 +133,7 @@ pub struct LeftDeepJoin {
     /// The lhs is recursive
     pub lhs: Box<RelExpr>,
     /// The rhs is a relvar
-    pub rhs: Arc<TableSchema>,
-    /// The rhs relvar name
-    pub var: Box<str>,
+    pub rhs: Relvar,
 }
 
 /// A typed scalar expression

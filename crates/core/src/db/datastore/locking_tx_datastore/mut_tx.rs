@@ -421,7 +421,7 @@ impl MutTxId {
             build_from_rows(commit_table, commit_blob_store)?;
         }
 
-        table.indexes.insert(columns.clone(), insert_index);
+        table.add_index(columns.clone(), insert_index);
         // Associate `index_id -> (table_id, col_list)` for fast lookup.
         idx_map.insert(index_id, (table_id, columns.clone()));
 
@@ -454,7 +454,7 @@ impl MutTxId {
 
         // Remove the index in the transaction's insert table.
         // By altering the insert table, this gets moved over to the committed state on merge.
-        let (table, _, idx_map, ..) = self.get_or_create_insert_table_mut(table_id)?;
+        let (table, blob_store, idx_map, ..) = self.get_or_create_insert_table_mut(table_id)?;
         if let Some(col) = table
             .indexes
             .iter()
@@ -464,7 +464,7 @@ impl MutTxId {
             // This likely will do a clone-write as over time?
             // The schema might have found other referents.
             table.with_mut_schema(|s| s.indexes.retain(|x| x.index_algorithm.columns() != &col));
-            table.indexes.remove(&col);
+            table.delete_index(blob_store, &col);
         }
         // Remove the `index_id -> (table_id, col_list)` association.
         idx_map.remove(&index_id);
@@ -1286,10 +1286,16 @@ impl MutTxId {
                     // SAFETY:
                     // - `commit_table` and `tx_table` use the same schema
                     //   because `tx_table` is derived from `commit_table`.
-                    // - `tx_row_ptr` and `tx_row_hash` are correct per (PC.INS.1).
-                    if let Some(commit_ptr) =
-                        unsafe { Table::find_same_row(commit_table, tx_table, tx_row_ptr, tx_row_hash) }
-                    {
+                    // - `tx_row_ptr` is correct per (PC.INS.1).
+                    if let (_, Some(commit_ptr)) = unsafe {
+                        Table::find_same_row_via_pointer_map(
+                            commit_table,
+                            tx_table,
+                            tx_blob_store,
+                            tx_row_ptr,
+                            tx_row_hash,
+                        )
+                    } {
                         // If `row` was already present in the committed state,
                         // either this is a set-semantic duplicate,
                         // or the row is marked as deleted, so we will undelete it
@@ -1426,8 +1432,8 @@ impl MutTxId {
             return Ok(false);
         };
 
-        // We need `insert_internal_allow_duplicate` rather than `insert` here
-        // to bypass unique constraint checks.
+        // We only want to physically insert the row here to get a row pointer.
+        // We'd like to avoid any set semantic and unique constraint checks.
         match tx_table.insert_physically_pv(tx_blob_store, rel) {
             Err(err @ InsertError::Bflatn(_)) => Err(TableError::Insert(err).into()),
             Err(e) => unreachable!(
@@ -1435,25 +1441,26 @@ impl MutTxId {
                 e
             ),
             Ok((row_ref, _)) => {
-                let hash = row_ref.row_hash();
                 let ptr = row_ref.pointer();
 
                 // First, check if a matching row exists in the `tx_table`.
                 // If it does, no need to check the `commit_table`.
                 //
-                // Safety:
+                // SAFETY:
                 // - `tx_table` trivially uses the same schema as itself.
                 // - `ptr` is valid because we just inserted it.
                 // - `hash` is correct because we just computed it.
-                let to_delete = unsafe { Table::find_same_row(tx_table, tx_table, ptr, hash) }
-                    // Not present in insert tables; check if present in the commit tables.
+                let (hash, to_delete) = unsafe { Table::find_same_row(tx_table, tx_table, tx_blob_store, ptr, None) };
+                let to_delete = to_delete
+                    // Not present in insert tables? Check if present in the commit tables.
                     .or_else(|| {
                         commit_table.and_then(|commit_table| {
-                            // Safety:
+                            // SAFETY:
                             // - `commit_table` and `tx_table` use the same schema
                             // - `ptr` is valid because we just inserted it.
-                            // - `hash` is correct because we just computed it.
-                            unsafe { Table::find_same_row(commit_table, tx_table, ptr, hash) }
+                            let (_, to_delete) =
+                                unsafe { Table::find_same_row(commit_table, tx_table, tx_blob_store, ptr, hash) };
+                            to_delete
                         })
                     });
 
@@ -1461,7 +1468,7 @@ impl MutTxId {
 
                 // Remove the temporary entry from the insert tables.
                 // Do this before actually deleting to drop the borrows on the tables.
-                // Safety: `ptr` is valid because we just inserted it and haven't deleted it since.
+                // SAFETY: `ptr` is valid because we just inserted it and haven't deleted it since.
                 unsafe {
                     tx_table.delete_internal_skip_pointer_map(tx_blob_store, ptr);
                 }

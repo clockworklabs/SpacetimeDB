@@ -21,6 +21,16 @@ pub(crate) fn cvt_attr<Item: Parse + quote::ToTokens>(
     TokenStream::from_iter([extra_attr, item, generated]).into()
 }
 
+/// Run `f`, converting `Err` returns into a compile error.
+///
+/// This helper allows code within the closure `f` to use `?` for early return.
+pub(crate) fn ok_or_compile_error<Res: Into<StdTokenStream>>(f: impl FnOnce() -> syn::Result<Res>) -> StdTokenStream {
+    match f() {
+        Ok(ok) => ok.into(),
+        Err(e) => e.into_compile_error().into(),
+    }
+}
+
 pub(crate) fn ident_to_litstr(ident: &Ident) -> syn::LitStr {
     syn::LitStr::new(&ident.to_string(), ident.span())
 }
