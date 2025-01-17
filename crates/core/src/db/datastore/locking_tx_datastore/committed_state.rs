@@ -132,8 +132,7 @@ fn ignore_duplicate_insert_error<T>(res: std::result::Result<T, InsertError>) ->
     match res {
         Ok(_) => Ok(()),
         Err(InsertError::Duplicate(_)) => Ok(()),
-        // TODO(error-handling): impl From<InsertError> for DBError.
-        Err(err) => Err(TableError::Insert(err).into()),
+        Err(err) => Err(err.into()),
     }
 }
 

@@ -9,7 +9,7 @@ use spacetimedb_sats::AlgebraicType;
 use spacetimedb_schema::error::ValidationErrors;
 use spacetimedb_snapshot::SnapshotError;
 use spacetimedb_table::read_column;
-use spacetimedb_table::table::{self, ReadViaBsatnError, UniqueConstraintViolation};
+use spacetimedb_table::table::{self, InsertError, ReadViaBsatnError, UniqueConstraintViolation};
 use thiserror::Error;
 
 use crate::client::ClientActorId;
@@ -20,11 +20,11 @@ use spacetimedb_lib::db::error::{LibError, RelationError, SchemaErrors};
 use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::raw_def::RawIndexDefV8;
 use spacetimedb_lib::relation::FieldName;
-use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::satn::Satn;
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use spacetimedb_vm::expr::Crud;
 
@@ -85,6 +85,10 @@ pub enum IndexError {
     OneAutoInc(TableId, Vec<String>),
     #[error("Could not decode arguments to index scan")]
     Decode(DecodeError),
+    #[error("Index was not unique: {0:?}")]
+    NotUnique(IndexId),
+    #[error("Key {1:?} was not found in index {0:?}")]
+    KeyNotFound(IndexId, AlgebraicValue),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -225,6 +229,12 @@ pub enum DBError {
     TypeError(#[from] TypingError),
 }
 
+impl From<InsertError> for DBError {
+    fn from(err: InsertError) -> Self {
+        Self::Table(err.into())
+    }
+}
+
 impl From<SnapshotError> for DBError {
     fn from(e: SnapshotError) -> Self {
         DBError::Snapshot(Box::new(e))
@@ -339,6 +349,8 @@ pub enum NodesError {
     IndexNotFound,
     #[error("index was not unique")]
     IndexNotUnique,
+    #[error("row was not found in index")]
+    IndexRowNotFound,
     #[error("column is out of bounds")]
     BadColumn,
     #[error("can't perform operation; not inside transaction")]
@@ -366,6 +378,8 @@ impl From<DBError> for NodesError {
             DBError::Table(TableError::ColumnNotFound(_)) => Self::BadColumn,
             DBError::Index(IndexError::NotFound(_)) => Self::IndexNotFound,
             DBError::Index(IndexError::Decode(e)) => Self::DecodeRow(e),
+            DBError::Index(IndexError::NotUnique(_)) => Self::IndexNotUnique,
+            DBError::Index(IndexError::KeyNotFound(..)) => Self::IndexRowNotFound,
             _ => Self::Internal(Box::new(e)),
         }
     }
