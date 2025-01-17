@@ -203,12 +203,16 @@ pub use spacetimedb_bindings_macro::Serialize;
 
 use crate::AlgebraicType;
 
-/// A **data structure** that can be serialized into any data format supported by SATS.
+/// A **data structure** that can be serialized into any data format supported by
+/// the SpacetimeDB Algebraic Type System.
 ///
 /// In most cases, implementations of `Serialize` may be `#[derive(Serialize)]`d.
 ///
 /// The `Serialize` trait in SATS performs the same function as [`serde::Serialize`] in [`serde`].
 /// See the documentation of [`serde::Serialize`] for more information of the data model.
+///
+/// Do not manually implement this trait unless you know what you are doing.
+/// Incorrect implementations are safe, but can result in data loss.
 ///
 /// [`serde::Serialize`]: ::serde::Serialize
 /// [`serde`]: https://crates.io/crates/serde
