@@ -183,8 +183,10 @@ impl<'a> EntityDef<'a> {
     }
 }
 
+#[serde_with::serde_as]
 #[derive(Serialize)]
 struct EntityDescription<'a> {
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     r#type: DescribedEntityType,
     arity: usize,
     schema: EntityDescriptionSchema<'a>,
