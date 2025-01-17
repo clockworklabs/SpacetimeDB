@@ -23,19 +23,14 @@ metrics_group!(
         #[labels(txn_type: WorkloadType, db: Identity, reducer_or_query: str, table_id: u32, table_name: str)]
         pub rdb_num_rows_deleted: IntCounterVec,
 
-        #[name = spacetime_num_rows_fetched_total]
-        #[help = "The cumulative number of rows fetched from a table"]
-        #[labels(txn_type: WorkloadType, db: Identity, reducer_or_query: str, table_id: u32, table_name: str)]
-        pub rdb_num_rows_fetched: IntCounterVec,
-
-        #[name = spacetime_num_index_keys_scanned_total]
-        #[help = "The cumulative number of keys scanned from an index"]
-        #[labels(txn_type: WorkloadType, db: Identity, reducer_or_query: str, table_id: u32, table_name: str)]
-        pub rdb_num_keys_scanned: IntCounterVec,
+        #[name = spacetime_num_rows_scanned_total]
+        #[help = "The cumulative number of rows scanned during by reducers and queries"]
+        #[labels(txn_type: WorkloadType, db: Identity)]
+        pub rdb_num_rows_scanned: IntCounterVec,
 
         #[name = spacetime_num_index_seeks_total]
         #[help = "The cumulative number of index seeks"]
-        #[labels(txn_type: WorkloadType, db: Identity, reducer_or_query: str, table_id: u32, table_name: str)]
+        #[labels(txn_type: WorkloadType, db: Identity)]
         pub rdb_num_index_seeks: IntCounterVec,
 
         #[name = spacetime_num_txns_total]

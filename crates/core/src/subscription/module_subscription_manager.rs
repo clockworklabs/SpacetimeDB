@@ -3,9 +3,11 @@ use super::tx::DeltaTx;
 use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
 use crate::error::DBError;
+use crate::execution_context::WorkloadType;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
+use crate::subscription::record_query_metrics;
 use hashbrown::hash_map::OccupiedError;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
@@ -15,6 +17,7 @@ use spacetimedb_data_structures::map::{Entry, HashCollectionExt, HashMap, HashSe
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_query::delta::DeltaPlan;
+use spacetimedb_query::metrics::QueryMetrics;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -315,7 +318,13 @@ impl SubscriptionManager {
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn eval_updates(&self, tx: &DeltaTx, event: Arc<ModuleEvent>, caller: Option<&ClientConnectionSender>) {
+    pub fn eval_updates(
+        &self,
+        tx: &DeltaTx,
+        event: Arc<ModuleEvent>,
+        caller: Option<&ClientConnectionSender>,
+        database_identity: &Identity,
+    ) {
         use FormatSwitch::{Bsatn, Json};
 
         let tables = &event.status.database_update().unwrap().tables;
@@ -323,7 +332,7 @@ impl SubscriptionManager {
         // Put the main work on a rayon compute thread.
         rayon::scope(|_| {
             let span = tracing::info_span!("eval_incr").entered();
-            let mut eval = tables
+            let (updates, metrics) = tables
                 .iter()
                 .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
                 .map(|DatabaseTableUpdate { table_id, .. }| table_id)
@@ -335,7 +344,7 @@ impl SubscriptionManager {
                 // If N clients are subscribed to a query,
                 // we copy the DatabaseTableUpdate N times,
                 // which involves cloning BSATN (binary) or product values (json).
-                .flat_map_iter(|(hash, plan)| {
+                .map(|(hash, plan)| {
                     let table_id = plan.table_id();
                     let table_name = plan.table_name();
                     // Store at most one copy of the serialization to BSATN
@@ -358,9 +367,10 @@ impl SubscriptionManager {
                     }
 
                     let evaluator = plan.evaluator(tx);
+                    let mut metrics = QueryMetrics::default();
 
                     // TODO: Handle errors instead of skipping them
-                    eval_delta(tx, &evaluator)
+                    let updates = eval_delta(tx, &mut metrics, &evaluator)
                         .ok()
                         .filter(|delta_updates| delta_updates.has_updates())
                         .map(|delta_updates| {
@@ -382,9 +392,22 @@ impl SubscriptionManager {
                                 })
                                 .collect::<Vec<_>>()
                         })
-                        .unwrap_or_default()
+                        .unwrap_or_default();
+
+                    (updates, metrics)
                 })
-                .collect::<Vec<_>>()
+                .reduce(
+                    || (vec![], QueryMetrics::default()),
+                    |(mut updates, mut aggregated_metrics), (table_upates, metrics)| {
+                        updates.extend(table_upates);
+                        aggregated_metrics.merge(metrics);
+                        (updates, aggregated_metrics)
+                    },
+                );
+
+            record_query_metrics(WorkloadType::Update, database_identity, metrics);
+
+            let mut eval = updates
                 .into_iter()
                 // For each subscriber, aggregate all the updates for the same table.
                 // That is, we build a map `(subscriber_id, table_id) -> updates`.
@@ -956,7 +979,7 @@ mod tests {
         });
 
         db.with_read_only(Workload::Update, |tx| {
-            subscriptions.eval_updates(&(&*tx).into(), event, Some(&client0))
+            subscriptions.eval_updates(&(&*tx).into(), event, Some(&client0), &db.database_identity())
         });
 
         tokio::runtime::Builder::new_current_thread()

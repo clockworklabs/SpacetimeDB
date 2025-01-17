@@ -7,13 +7,14 @@ use crate::db::datastore::traits::{IsolationLevel, Program, TxData};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
-use crate::execution_context::{ExecutionContext, ReducerContext, Workload};
+use crate::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use crate::subscription::record_query_metrics;
 use crate::subscription::tx::DeltaTx;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::vm::check_row_limit;
@@ -824,17 +825,26 @@ impl ModuleHost {
         let auth = AuthCtx::new(replica_ctx.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
 
-        db.with_read_only(Workload::Sql, |tx| {
+        let (rows, metrics) = db.with_read_only(Workload::Sql, |tx| {
             let tx = SchemaViewer::new(tx, &auth);
             let plan = SubscribePlan::compile(&query, &tx)?;
             check_row_limit(&plan, db, &tx, |plan, tx| estimate_rows_scanned(tx, plan), &auth)?;
             plan.execute::<_, F>(&DeltaTx::from(&*tx))
-                .map(|(rows, _)| OneOffTable {
-                    table_name: plan.table_name().to_owned().into_boxed_str(),
-                    rows,
+                .map(|(rows, _, metrics)| {
+                    (
+                        OneOffTable {
+                            table_name: plan.table_name().to_owned().into_boxed_str(),
+                            rows,
+                        },
+                        metrics,
+                    )
                 })
                 .context("One-off queries are not allowed to modify the database")
-        })
+        })?;
+
+        record_query_metrics(WorkloadType::Sql, &db.database_identity(), metrics);
+
+        Ok(rows)
     }
 
     /// FIXME(jgilles): this is a temporary workaround for deleting not currently being supported
