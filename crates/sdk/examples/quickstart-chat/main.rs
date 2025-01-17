@@ -179,22 +179,26 @@ fn connect_to_db() -> DbConnection {
 }
 
 // # Subscribe to queries
-
-/// Register subscriptions for all rows of both tables.
-fn subscribe_to_tables(ctx: &DbConnection) {
-    let remaining_queries = Arc::new(AtomicU8::new(2));
-    // We want to hear about all users and messages.
-    for query in &["SELECT * FROM user", "SELECT * FROM message"] {
+fn subscribe_to_queries(ctx: &DbConnection, queries: &[&str], callback: fn(&EventContext)) {
+    if queries.is_empty() {
+        panic!("No queries to subscribe to.");
+    }
+    let remaining_queries = Arc::new(AtomicU8::new(queries.len() as u8));
+    for query in queries {
         let remaining_queries = remaining_queries.clone();
         ctx.subscription_builder()
             .on_applied(move |ctx| {
-                // We only want to print the backlog once we've received all the data.
                 if remaining_queries.fetch_sub(1, std::sync::atomic::Ordering::Relaxed) == 1 {
-                    on_sub_applied(ctx);
+                    callback(ctx);
                 }
             })
             .subscribe(query);
     }
+}
+
+/// Register subscriptions for all rows of both tables.
+fn subscribe_to_tables(ctx: &DbConnection) {
+    subscribe_to_queries(ctx, &["SELECT * FROM user", "SELECT * FROM message"], on_sub_applied);
 }
 
 // # Handle user input
