@@ -965,7 +965,7 @@ impl Table {
     /// This is distinct from the BFLATN size measured by [`Self::bytes_used_by_rows`].
     /// See the trait [`crate::btree_index::KeySize`] for specifics on the metric measured.
     pub fn bytes_used_by_index_keys(&self) -> u64 {
-        self.indexes.iter().map(|(_, idx)| idx.num_key_bytes()).sum()
+        self.indexes.values().map(|idx| idx.num_key_bytes()).sum()
     }
 }
 
