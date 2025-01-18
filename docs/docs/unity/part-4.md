@@ -142,7 +142,7 @@ use math::DbVector2;
 // ...
 ```
 
-Next, add the following table to your `lib.rs` file.
+Next, add the following reducer to your `lib.rs` file.
 
 ```rust
 #[spacetimedb::reducer]
@@ -290,7 +290,7 @@ Well this is pretty fun, but wouldn't it be better if we could eat food and grow
 
 Wrong. With SpacetimeDB it's extremely easy. All we have to do is add an `is_overlapping` helper function which does some basic math based on mass radii, and modify our `move_all_player` reducer to loop through every entity in the arena for every circle, checking each for overlaps. This may not be the most efficient way to do collision checking (building a quad tree or doing [spatial hashing](https://conkerjo.wordpress.com/2009/06/13/spatial-hashing-implementation-for-fast-2d-collisions/) might be better), but SpacetimeDB is very fast so for this number of entities it'll be a breeze for SpacetimeDB.
 
-Sometimes simple is best!
+Sometimes simple is best! Add the following code to your `lib.rs` file.
 
 ```rust
 const MINIMUM_SAFE_MASS_RATIO: f32 = 0.85;

@@ -82,7 +82,7 @@ Although, we've written the reducer to spawn food, no food will actually be spaw
 
 We would like for this function to be called periodically to "top up" the amount of food on the map so that it never falls very far below our target amount of food. SpacetimeDB has built in functionality for exactly this. With SpacetimeDB you can schedule your module to call itself in the future or repeatedly with reducers.
 
-In order to schedule a reducer to be called we have to create a new table which specifies when an how a reducer should be called. Add this new table to the top of the file.
+In order to schedule a reducer to be called we have to create a new table which specifies when an how a reducer should be called. Add this new table to the top of the file, below your imports.
 
 ```rust
 #[spacetimedb::table(name = spawn_food_timer, scheduled(spawn_food))]
@@ -466,7 +466,7 @@ The `EntityController` script just provides some helper functions and basic func
 >
 > If you're interested in learning more checkout [this demo](https://gabrielgambetta.com/client-side-prediction-live-demo.html) from Gabriel Gambetta.
 
-Let's also create a new `Extensions.cs` script and replace the contents with:
+At this point you'll have a compilation error because we can't yet convert from `SpacetimeDB.Types.DbVector2` to `UnityEngine.Vector2`. To fix this, let's also create a new `Extensions.cs` script and replace the contents with:
 
 ```cs
 using SpacetimeDB.Types;
@@ -910,15 +910,15 @@ Lastly modify the `GameManager.SetupArea` method to set the `WorldSize` on the `
 
 ### Entering the Game
 
-The last step is to call the `enter_game` reducer on the server, passing in a username for our player, which will spawn a circle for our player. For the sake of simplicity, let's call the `enter_game` reducer from the `HandleSubscriptionApplied` callback with the name "3Blave".
+At this point, you may need to regenerate your bindings the following command from the `server-rust` directory.
 
-> You may need to regenerate your bindings the following command from the `server-rust` directory.
-> 
-> ```sh
-> spacetime generate --lang csharp --out-dir ../client/Assets/autogen
-> ```
->
-> **BUG WORKAROUND NOTE**: There is currently a bug in the C# code generation that requires you to delete `autogen/LoggedOutPlayer.cs` after running this command.
+```sh
+spacetime generate --lang csharp --out-dir ../client/Assets/autogen
+```
+
+> **BUG WORKAROUND NOTE**: As of `1.0.0-rc3` you will now have a compilation error in Unity. There is currently a bug in the C# code generation that requires you to delete `autogen/LoggedOutPlayer.cs` after running this command.
+
+The last step is to call the `enter_game` reducer on the server, passing in a username for our player, which will spawn a circle for our player. For the sake of simplicity, let's call the `enter_game` reducer from the `HandleSubscriptionApplied` callback with the name "3Blave".
 
 ```cs
     private void HandleSubscriptionApplied(EventContext ctx)
@@ -941,6 +941,8 @@ The last step is to call the `enter_game` reducer on the server, passing in a us
 At this point, after publishing our module we can press the play button to see the fruits of our labor! You should be able to see your player's circle, with its username label, surrounded by food.
 
 <!-- ![Player on screen](part-3-player-on-screen.png) -->
+
+> The label won't be centered at this point. Feel free to adjust it if you like. We just didn't want to complicate the tutorial.
 
 ### Troubleshooting
 

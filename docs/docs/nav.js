@@ -14,7 +14,7 @@ const nav = {
         section('Migration Guides'),
         page('v0.12', 'migration/v0.12', 'migration/v0.12.md'),
         section('Unity Tutorial - Basic Multiplayer'),
-        page('Overview', 'unity-tutorial', 'unity/index.md'),
+        page('Overview', 'unity', 'unity/index.md'),
         page('1 - Setup', 'unity/part-1', 'unity/part-1.md'),
         page('2 - Connecting to SpacetimeDB', 'unity/part-2', 'unity/part-2.md'),
         page('3 - Gameplay', 'unity/part-3', 'unity/part-3.md'),

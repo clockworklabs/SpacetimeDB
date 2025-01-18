@@ -189,4 +189,4 @@ A user has a single [`Identity`](#identity), but may open multiple connections t
    Follow our [Quick Start](/docs/getting-started) guide!
 
 5. How do I create a Unity game with SpacetimeDB?
-   Follow our [Unity Project](/docs/unity-tutorial) guide!
+   Follow our [Unity Tutorial](/docs/unity) guide!

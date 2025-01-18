@@ -6,19 +6,21 @@ This progressive tutorial is continued from [part 1](/docs/unity/part-1).
 
 ## Create a Server Module
 
-Run the following command to initialize the SpacetimeDB server module project with Rust as the language:
+If you have not already installed the `spacetime` CLI, check out our [Getting Started](/docs/getting-started) guide for instructions on how to install.
+
+In your `blackholio` directory, run the following command to initialize the SpacetimeDB server module project with Rust as the language:
 
 ```bash
-spacetime init --lang=rust rust-server
+spacetime init --lang=rust server-rust
 ```
 
-This command creates a new folder named "rust-server" within your Unity project directory and sets up the SpacetimeDB server project with Rust as the programming language.
+This command creates a new folder named `server-rust` alongside your Unity project `client` directory and sets up the SpacetimeDB server project with Rust as the programming language.
 
 ### SpacetimeDB Tables
 
-In this section we'll be making some edits to the file `server/src/lib.rs`. We recommend you open up this file in an IDE like VSCode or RustRover.
+In this section we'll be making some edits to the file `server-rust/src/lib.rs`. We recommend you open up this file in an IDE like VSCode or RustRover.
 
-**Important: Open the `server/src/lib.rs` file and delete its contents. We will be writing it from scratch here.**
+**Important: Open the `server-rust/src/lib.rs` file and delete its contents. We will be writing it from scratch here.**
 
 First we need to add some imports at the top of the file. Some will remain unused for now.
 
@@ -175,7 +177,9 @@ This following log output indicates that SpacetimeDB is successfully running on 
 Starting SpacetimeDB listening on 127.0.0.1:3000
 ```
 
-Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/server-rust` directory and run `spacetime publish --server local blackholio`. This will publish our Blackholio server logic to SpacetimeDB.
+Now that SpacetimeDB is running we can publish our module to the SpacetimeDB host. In a separate terminal window, navigate to the `blackholio/server-rust` directory.
+
+If you are not already logged in to the `spacetime` CLI, run the `spacetime login` command log in to your SpacetimeDB website account. Once you are logged in, run `spacetime publish --server local blackholio`. This will publish our Blackholio server logic to SpacetimeDB.
 
 If the publish completed successfully, you will see something like the following in the logs:
 
@@ -185,6 +189,8 @@ Uploading to local => http://127.0.0.1:3000
 Publishing module...
 Created new database with name: blackholio, identity: c200d2c69b4524292b91822afac8ab016c15968ac993c28711f68c6bc40b89d5
 ```
+
+> If you sign into `spacetime login` via GitHub, the token you get will be issued by `auth.spacetimedb.com`. This will also ensure that you can recover your identity in case you lose it. On the other hand, if you do `spacetime login --server-issued-login local`, you will get an identity which is issued directly by your local server. Do note, however, that `--server-issued-login` tokens are not recoverable if lost, and are only recognized by the server that issued them.
 
 Next, use the `spacetime` command to call our newly defined `debug` reducer:
 
