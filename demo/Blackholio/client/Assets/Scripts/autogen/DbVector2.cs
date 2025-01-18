@@ -13,14 +13,14 @@ namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class Vector2
+	public partial class DbVector2
 	{
 		[DataMember(Name = "x")]
 		public float X;
 		[DataMember(Name = "y")]
 		public float Y;
 
-		public Vector2(
+		public DbVector2(
 			float X,
 			float Y
 		)
@@ -29,7 +29,7 @@ namespace SpacetimeDB.Types
 			this.Y = Y;
 		}
 
-		public Vector2()
+		public DbVector2()
 		{
 		}
 

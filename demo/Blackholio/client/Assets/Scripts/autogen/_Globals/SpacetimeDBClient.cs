@@ -97,6 +97,42 @@ namespace SpacetimeDB.Types
 
 		public readonly CircleDecayTimerHandle CircleDecayTimer = new();
 
+		public class CircleRecombineTimerHandle : RemoteTableHandle<EventContext, CircleRecombineTimer>
+		{
+
+			public override void InternalInvokeValueInserted(IDatabaseRow row)
+			{
+				var value = (CircleRecombineTimer)row;
+				ScheduledId.Cache[value.ScheduledId] = value;
+			}
+
+			public override void InternalInvokeValueDeleted(IDatabaseRow row)
+			{
+				ScheduledId.Cache.Remove(((CircleRecombineTimer)row).ScheduledId);
+			}
+
+			public class ScheduledIdUniqueIndex
+			{
+				internal readonly Dictionary<ulong, CircleRecombineTimer> Cache = new(16);
+				public CircleRecombineTimer? Find(ulong value)
+				{
+					Cache.TryGetValue(value, out var r);
+					return r;
+				}
+
+			}
+
+			public ScheduledIdUniqueIndex ScheduledId = new();
+
+			internal CircleRecombineTimerHandle()
+			{
+			}
+			public override object GetPrimaryKey(IDatabaseRow row) => ((CircleRecombineTimer)row).ScheduledId;
+
+		}
+
+		public readonly CircleRecombineTimerHandle CircleRecombineTimer = new();
+
 		public class ConfigHandle : RemoteTableHandle<EventContext, Config>
 		{
 
@@ -133,21 +169,57 @@ namespace SpacetimeDB.Types
 
 		public readonly ConfigHandle Config = new();
 
+		public class ConsumeEntityTimerHandle : RemoteTableHandle<EventContext, ConsumeEntityTimer>
+		{
+
+			public override void InternalInvokeValueInserted(IDatabaseRow row)
+			{
+				var value = (ConsumeEntityTimer)row;
+				ScheduledId.Cache[value.ScheduledId] = value;
+			}
+
+			public override void InternalInvokeValueDeleted(IDatabaseRow row)
+			{
+				ScheduledId.Cache.Remove(((ConsumeEntityTimer)row).ScheduledId);
+			}
+
+			public class ScheduledIdUniqueIndex
+			{
+				internal readonly Dictionary<ulong, ConsumeEntityTimer> Cache = new(16);
+				public ConsumeEntityTimer? Find(ulong value)
+				{
+					Cache.TryGetValue(value, out var r);
+					return r;
+				}
+
+			}
+
+			public ScheduledIdUniqueIndex ScheduledId = new();
+
+			internal ConsumeEntityTimerHandle()
+			{
+			}
+			public override object GetPrimaryKey(IDatabaseRow row) => ((ConsumeEntityTimer)row).ScheduledId;
+
+		}
+
+		public readonly ConsumeEntityTimerHandle ConsumeEntityTimer = new();
+
 		public class EntityHandle : RemoteTableHandle<EventContext, Entity>
 		{
 
 			public override void InternalInvokeValueInserted(IDatabaseRow row)
 			{
 				var value = (Entity)row;
-				Id.Cache[value.Id] = value;
+				EntityId.Cache[value.EntityId] = value;
 			}
 
 			public override void InternalInvokeValueDeleted(IDatabaseRow row)
 			{
-				Id.Cache.Remove(((Entity)row).Id);
+				EntityId.Cache.Remove(((Entity)row).EntityId);
 			}
 
-			public class IdUniqueIndex
+			public class EntityIdUniqueIndex
 			{
 				internal readonly Dictionary<uint, Entity> Cache = new(16);
 				public Entity? Find(uint value)
@@ -158,12 +230,12 @@ namespace SpacetimeDB.Types
 
 			}
 
-			public IdUniqueIndex Id = new();
+			public EntityIdUniqueIndex EntityId = new();
 
 			internal EntityHandle()
 			{
 			}
-			public override object GetPrimaryKey(IDatabaseRow row) => ((Entity)row).Id;
+			public override object GetPrimaryKey(IDatabaseRow row) => ((Entity)row).EntityId;
 
 		}
 
@@ -204,53 +276,6 @@ namespace SpacetimeDB.Types
 		}
 
 		public readonly FoodHandle Food = new();
-
-		public class LoggedOutCircleHandle : RemoteTableHandle<EventContext, LoggedOutCircle>
-		{
-
-			public override void InternalInvokeValueInserted(IDatabaseRow row)
-			{
-				var value = (LoggedOutCircle)row;
-				LoggedOutId.Cache[value.LoggedOutId] = value;
-			}
-
-			public override void InternalInvokeValueDeleted(IDatabaseRow row)
-			{
-				LoggedOutId.Cache.Remove(((LoggedOutCircle)row).LoggedOutId);
-			}
-
-			public class LoggedOutIdUniqueIndex
-			{
-				internal readonly Dictionary<uint, LoggedOutCircle> Cache = new(16);
-				public LoggedOutCircle? Find(uint value)
-				{
-					Cache.TryGetValue(value, out var r);
-					return r;
-				}
-
-			}
-
-			public LoggedOutIdUniqueIndex LoggedOutId = new();
-
-			public class PlayerIdIndex
-			{
-				LoggedOutCircleHandle Handle;
-				internal PlayerIdIndex(LoggedOutCircleHandle handle) => Handle = handle;
-				public IEnumerable<LoggedOutCircle> Filter(uint value) =>
-					Handle.Query(x => x.PlayerId == value);
-			}
-
-			public PlayerIdIndex PlayerId { get; init; }
-
-			internal LoggedOutCircleHandle()
-			{
-				PlayerId = new(this);
-			}
-			public override object GetPrimaryKey(IDatabaseRow row) => ((LoggedOutCircle)row).LoggedOutId;
-
-		}
-
-		public readonly LoggedOutCircleHandle LoggedOutCircle = new();
 
 		public class LoggedOutPlayerHandle : RemoteTableHandle<EventContext, LoggedOutPlayer>
 		{
@@ -434,18 +459,52 @@ namespace SpacetimeDB.Types
 			);
 			return true;
 		}
-		public delegate void CreatePlayerHandler(EventContext ctx, string name);
-		public event CreatePlayerHandler? OnCreatePlayer;
+		public delegate void CircleRecombineHandler(EventContext ctx, SpacetimeDB.Types.CircleRecombineTimer timer);
+		public event CircleRecombineHandler? OnCircleRecombine;
 
-		public void CreatePlayer(string name)
+		public void CircleRecombine(SpacetimeDB.Types.CircleRecombineTimer timer)
 		{
-			conn.InternalCallReducer(new Reducer.CreatePlayer(name), this.SetCallReducerFlags.CreatePlayerFlags);
+			conn.InternalCallReducer(new Reducer.CircleRecombine(timer), this.SetCallReducerFlags.CircleRecombineFlags);
 		}
 
-		public bool InvokeCreatePlayer(EventContext ctx, Reducer.CreatePlayer args)
+		public bool InvokeCircleRecombine(EventContext ctx, Reducer.CircleRecombine args)
 		{
-			if (OnCreatePlayer == null) return false;
-			OnCreatePlayer(
+			if (OnCircleRecombine == null) return false;
+			OnCircleRecombine(
+				ctx,
+				args.Timer
+			);
+			return true;
+		}
+		public delegate void ConsumeEntityHandler(EventContext ctx, SpacetimeDB.Types.ConsumeEntityTimer request);
+		public event ConsumeEntityHandler? OnConsumeEntity;
+
+		public void ConsumeEntity(SpacetimeDB.Types.ConsumeEntityTimer request)
+		{
+			conn.InternalCallReducer(new Reducer.ConsumeEntity(request), this.SetCallReducerFlags.ConsumeEntityFlags);
+		}
+
+		public bool InvokeConsumeEntity(EventContext ctx, Reducer.ConsumeEntity args)
+		{
+			if (OnConsumeEntity == null) return false;
+			OnConsumeEntity(
+				ctx,
+				args.Request
+			);
+			return true;
+		}
+		public delegate void EnterGameHandler(EventContext ctx, string name);
+		public event EnterGameHandler? OnEnterGame;
+
+		public void EnterGame(string name)
+		{
+			conn.InternalCallReducer(new Reducer.EnterGame(name), this.SetCallReducerFlags.EnterGameFlags);
+		}
+
+		public bool InvokeEnterGame(EventContext ctx, Reducer.EnterGame args)
+		{
+			if (OnEnterGame == null) return false;
+			OnEnterGame(
 				ctx,
 				args.Name
 			);
@@ -517,12 +576,12 @@ namespace SpacetimeDB.Types
 			);
 			return true;
 		}
-		public delegate void UpdatePlayerInputHandler(EventContext ctx, SpacetimeDB.Types.Vector2 direction, float magnitude);
+		public delegate void UpdatePlayerInputHandler(EventContext ctx, SpacetimeDB.Types.DbVector2 direction);
 		public event UpdatePlayerInputHandler? OnUpdatePlayerInput;
 
-		public void UpdatePlayerInput(SpacetimeDB.Types.Vector2 direction, float magnitude)
+		public void UpdatePlayerInput(SpacetimeDB.Types.DbVector2 direction)
 		{
-			conn.InternalCallReducer(new Reducer.UpdatePlayerInput(direction, magnitude), this.SetCallReducerFlags.UpdatePlayerInputFlags);
+			conn.InternalCallReducer(new Reducer.UpdatePlayerInput(direction), this.SetCallReducerFlags.UpdatePlayerInputFlags);
 		}
 
 		public bool InvokeUpdatePlayerInput(EventContext ctx, Reducer.UpdatePlayerInput args)
@@ -530,8 +589,7 @@ namespace SpacetimeDB.Types
 			if (OnUpdatePlayerInput == null) return false;
 			OnUpdatePlayerInput(
 				ctx,
-				args.Direction,
-				args.Magnitude
+				args.Direction
 			);
 			return true;
 		}
@@ -542,8 +600,12 @@ namespace SpacetimeDB.Types
 		internal SetReducerFlags() { }
 		internal CallReducerFlags CircleDecayFlags;
 		public void CircleDecay(CallReducerFlags flags) { this.CircleDecayFlags = flags; }
-		internal CallReducerFlags CreatePlayerFlags;
-		public void CreatePlayer(CallReducerFlags flags) { this.CreatePlayerFlags = flags; }
+		internal CallReducerFlags CircleRecombineFlags;
+		public void CircleRecombine(CallReducerFlags flags) { this.CircleRecombineFlags = flags; }
+		internal CallReducerFlags ConsumeEntityFlags;
+		public void ConsumeEntity(CallReducerFlags flags) { this.ConsumeEntityFlags = flags; }
+		internal CallReducerFlags EnterGameFlags;
+		public void EnterGame(CallReducerFlags flags) { this.EnterGameFlags = flags; }
 		internal CallReducerFlags MoveAllPlayersFlags;
 		public void MoveAllPlayers(CallReducerFlags flags) { this.MoveAllPlayersFlags = flags; }
 		internal CallReducerFlags PlayerSplitFlags;
@@ -596,22 +658,62 @@ namespace SpacetimeDB.Types
 
 		[SpacetimeDB.Type]
 		[DataContract]
-		public partial class CreatePlayer : Reducer, IReducerArgs
+		public partial class CircleRecombine : Reducer, IReducerArgs
+		{
+			[DataMember(Name = "timer")]
+			public SpacetimeDB.Types.CircleRecombineTimer Timer;
+
+			public CircleRecombine(SpacetimeDB.Types.CircleRecombineTimer Timer)
+			{
+				this.Timer = Timer;
+			}
+
+			public CircleRecombine()
+			{
+				this.Timer = new();
+			}
+
+			string IReducerArgs.ReducerName => "circle_recombine";
+		}
+
+		[SpacetimeDB.Type]
+		[DataContract]
+		public partial class ConsumeEntity : Reducer, IReducerArgs
+		{
+			[DataMember(Name = "request")]
+			public SpacetimeDB.Types.ConsumeEntityTimer Request;
+
+			public ConsumeEntity(SpacetimeDB.Types.ConsumeEntityTimer Request)
+			{
+				this.Request = Request;
+			}
+
+			public ConsumeEntity()
+			{
+				this.Request = new();
+			}
+
+			string IReducerArgs.ReducerName => "consume_entity";
+		}
+
+		[SpacetimeDB.Type]
+		[DataContract]
+		public partial class EnterGame : Reducer, IReducerArgs
 		{
 			[DataMember(Name = "name")]
 			public string Name;
 
-			public CreatePlayer(string Name)
+			public EnterGame(string Name)
 			{
 				this.Name = Name;
 			}
 
-			public CreatePlayer()
+			public EnterGame()
 			{
 				this.Name = "";
 			}
 
-			string IReducerArgs.ReducerName => "create_player";
+			string IReducerArgs.ReducerName => "enter_game";
 		}
 
 		[SpacetimeDB.Type]
@@ -673,17 +775,11 @@ namespace SpacetimeDB.Types
 		public partial class UpdatePlayerInput : Reducer, IReducerArgs
 		{
 			[DataMember(Name = "direction")]
-			public SpacetimeDB.Types.Vector2 Direction;
-			[DataMember(Name = "magnitude")]
-			public float Magnitude;
+			public SpacetimeDB.Types.DbVector2 Direction;
 
-			public UpdatePlayerInput(
-				SpacetimeDB.Types.Vector2 Direction,
-				float Magnitude
-			)
+			public UpdatePlayerInput(SpacetimeDB.Types.DbVector2 Direction)
 			{
 				this.Direction = Direction;
-				this.Magnitude = Magnitude;
 			}
 
 			public UpdatePlayerInput()
@@ -712,10 +808,11 @@ namespace SpacetimeDB.Types
 
 			clientDB.AddTable<Circle>("circle", Db.Circle);
 			clientDB.AddTable<CircleDecayTimer>("circle_decay_timer", Db.CircleDecayTimer);
+			clientDB.AddTable<CircleRecombineTimer>("circle_recombine_timer", Db.CircleRecombineTimer);
 			clientDB.AddTable<Config>("config", Db.Config);
+			clientDB.AddTable<ConsumeEntityTimer>("consume_entity_timer", Db.ConsumeEntityTimer);
 			clientDB.AddTable<Entity>("entity", Db.Entity);
 			clientDB.AddTable<Food>("food", Db.Food);
-			clientDB.AddTable<LoggedOutCircle>("logged_out_circle", Db.LoggedOutCircle);
 			clientDB.AddTable<LoggedOutPlayer>("logged_out_player", Db.LoggedOutPlayer);
 			clientDB.AddTable<MoveAllPlayersTimer>("move_all_players_timer", Db.MoveAllPlayersTimer);
 			clientDB.AddTable<Player>("player", Db.Player);
@@ -727,7 +824,9 @@ namespace SpacetimeDB.Types
 			var encodedArgs = update.ReducerCall.Args;
 			return update.ReducerCall.ReducerName switch {
 				"circle_decay" => BSATNHelpers.Decode<Reducer.CircleDecay>(encodedArgs),
-				"create_player" => BSATNHelpers.Decode<Reducer.CreatePlayer>(encodedArgs),
+				"circle_recombine" => BSATNHelpers.Decode<Reducer.CircleRecombine>(encodedArgs),
+				"consume_entity" => BSATNHelpers.Decode<Reducer.ConsumeEntity>(encodedArgs),
+				"enter_game" => BSATNHelpers.Decode<Reducer.EnterGame>(encodedArgs),
 				"move_all_players" => BSATNHelpers.Decode<Reducer.MoveAllPlayers>(encodedArgs),
 				"player_split" => BSATNHelpers.Decode<Reducer.PlayerSplit>(encodedArgs),
 				"respawn" => BSATNHelpers.Decode<Reducer.Respawn>(encodedArgs),
@@ -749,7 +848,9 @@ namespace SpacetimeDB.Types
 			var eventContext = (EventContext)context;
 			return reducer switch {
 				Reducer.CircleDecay args => Reducers.InvokeCircleDecay(eventContext, args),
-				Reducer.CreatePlayer args => Reducers.InvokeCreatePlayer(eventContext, args),
+				Reducer.CircleRecombine args => Reducers.InvokeCircleRecombine(eventContext, args),
+				Reducer.ConsumeEntity args => Reducers.InvokeConsumeEntity(eventContext, args),
+				Reducer.EnterGame args => Reducers.InvokeEnterGame(eventContext, args),
 				Reducer.MoveAllPlayers args => Reducers.InvokeMoveAllPlayers(eventContext, args),
 				Reducer.PlayerSplit args => Reducers.InvokePlayerSplit(eventContext, args),
 				Reducer.Respawn args => Reducers.InvokeRespawn(eventContext, args),

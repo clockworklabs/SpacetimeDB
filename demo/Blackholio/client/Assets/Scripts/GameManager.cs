@@ -1,194 +1,208 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Security.Claims;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 using UnityEngine;
-using UnityEngine.Serialization;
-using Random = UnityEngine.Random;
 
 public class GameManager : MonoBehaviour
 {
-    public CircleController circlePrefab;
-    public FoodController foodPrefab;
-    public GameObject deathScreen;
-    public PlayerController playerPrefab;
+    const string SERVER_URL = "http://127.0.0.1:3000";
+    const string MODULE_NAME = "blackholio";
 
-    public delegate void CallbackDelegate();
+    public static event Action OnConnected;
+    public static event Action OnSubscriptionApplied;
 
-    public static event CallbackDelegate OnConnect;
-    public static event CallbackDelegate OnSubscriptionApplied;
+    public SpriteRenderer backgroundInstance;
+    public float borderThickness = 2;
+    public Material borderMaterial;
+    public ParallaxBackground starBackgroundPrefab;
 
-    public static Color[] colorPalette = new[]
-    {
-        (Color)new Color32(248, 72, 245, 255),
-        (Color)new Color32(248, 72, 245, 255),
-        (Color)new Color32(170, 67, 247, 255),
-        (Color)new Color32(62, 223, 56, 255),
-        (Color)new Color32(56, 250, 193, 255),
-        (Color)new Color32(56, 225, 68, 255),
-        (Color)new Color32(39, 229, 245, 255),
-        (Color)new Color32(231, 250, 65, 255),
-        (Color)new Color32(0, 140, 247, 255),
-        (Color)new Color32(48, 53, 244, 255),
-        (Color)new Color32(247, 26, 37, 255),
-        (Color)new Color32(253, 121, 43, 255),
-    };
+	public static GameManager Instance { get; private set; }
+    public static Identity LocalIdentity { get; private set; }
+    public static DbConnection Conn { get; private set; }
 
-    public static GameManager instance;
-    public static Camera localCamera;
-    public static Dictionary<uint, PlayerController> playerIdToPlayerController =
-        new Dictionary<uint, PlayerController>();
-
-    public static Identity localIdentity = default;
-    public static DbConnection conn;
+    public static Dictionary<uint, EntityController> Entities = new Dictionary<uint, EntityController>();
+	public static Dictionary<uint, PlayerController> Players = new Dictionary<uint, PlayerController>();
 
     private void Start()
     {
-        instance = this;
+        Instance = this;
         Application.targetFrameRate = 60;
 
-        // Now that we’ve registered all our callbacks, lets connect to spacetimedb
-        conn = DbConnection.Builder().OnConnect((_conn, identity, token) => {
-            // Called when we connect to SpacetimeDB and receive our client identity
-            Debug.Log("Connected.");
-            AuthToken.SaveToken(token);
-            localIdentity = identity;
-            
-            conn.Db.Circle.OnInsert += CircleOnInsert;
-            conn.Db.Circle.OnDelete += CircleOnDelete;
-            conn.Db.Entity.OnUpdate += EntityOnUpdate;
-            conn.Db.Food.OnInsert += FoodOnInsert;
-            conn.Db.Player.OnInsert += PlayerOnInsert;
-            conn.Db.Player.OnDelete += PlayerOnDelete;
+        // In order to build a connection to SpacetimeDB we need to register
+        // our callbacks and specify a SpacetimeDB server URI and module name.
+        var builder = DbConnection.Builder()
+            .OnConnect(HandleConnect)
+            .OnConnectError(HandleConnectError)
+            .OnDisconnect(HandleDisconnect)
+            .WithUri(SERVER_URL)
+            .WithModuleName(MODULE_NAME);
 
-            // Request all tables
-            conn.SubscriptionBuilder().OnApplied(ctx =>
-            {
-                Debug.Log("Subscription applied!");
-                OnSubscriptionApplied?.Invoke();
-            }).Subscribe("SELECT * FROM *");
-
-            OnConnect?.Invoke();
-        }).OnConnectError((ex) =>
+        // If the user has a SpacetimeDB auth token stored in the Unity PlayerPrefs,
+        // we can use it to authenticate the connection.
+		if (PlayerPrefs.HasKey(AuthToken.GetTokenKey()))
         {
-            // Called when we have an error connecting to SpacetimeDB
-            Debug.LogError($"Connection error: {ex}");
-        }).OnDisconnect((_conn, ex) =>
-        {
-            // Called when we are disconnected from SpacetimeDB
-            Debug.Log("Disconnected.");
-            if (ex != null)
-            {
-                Debug.LogException(ex);
-            }
-        }).WithUri("http://127.0.0.1:3000")
-            .WithModuleName("untitled-circle-game")
-            // .WithCredentials((localIdentity.Value, PlayerPrefs.GetString(AuthToken.GetTokenKey())))
-            .Build();
+			builder = builder.WithCredentials((default, AuthToken.Token));
+        }
 
+        // Building the connection will establish a connection to the SpacetimeDB
+        // server.
+        Conn = builder.Build();
+
+    /* BEGIN: not in tutorial */
 #pragma warning disable CS0612 // Type or member is obsolete
-        conn.onUnhandledReducerError += InstanceOnUnhandledReducerError;
+		Conn.onUnhandledReducerError += InstanceOnUnhandledReducerError;
 #pragma warning restore CS0612 // Type or member is obsolete
-
-        localCamera = Camera.main;
+    /* END: not in tutorial */
     }
 
-    private void InstanceOnUnhandledReducerError(ReducerEvent<Reducer> reducerEvent)
+    // Called when we connect to SpacetimeDB and receive our client identity
+    void HandleConnect(DbConnection conn, Identity identity, string token)
     {
-        Debug.LogError("There was an error!");
+        Debug.Log("Connected.");
+        AuthToken.SaveToken(token);
+        LocalIdentity = identity;
+
+		conn.Db.Circle.OnInsert += CircleOnInsert;
+		conn.Db.Entity.OnUpdate += EntityOnUpdate;
+		conn.Db.Entity.OnDelete += EntityOnDelete;
+		conn.Db.Food.OnInsert += FoodOnInsert;
+		conn.Db.Player.OnInsert += PlayerOnInsert;
+		conn.Db.Player.OnDelete += PlayerOnDelete;
+
+        OnConnected?.Invoke();
+
+        // Request all tables
+        Conn.SubscriptionBuilder()
+            .OnApplied(HandleSubscriptionApplied)
+            .Subscribe("SELECT * FROM *");
     }
 
-    private void PlayerOnDelete(EventContext context, Player deletedvalue)
+    void HandleConnectError(Exception ex)
     {
-        if (playerIdToPlayerController.TryGetValue(deletedvalue.PlayerId, out var playerController))
+        Debug.LogError($"Connection error: {ex}");
+    }
+
+    void HandleDisconnect(DbConnection _conn, Exception ex)
+    {
+        Debug.Log("Disconnected.");
+        if (ex != null)
         {
-            Destroy(playerController.gameObject);
+            Debug.LogException(ex);
         }
     }
 
-    private void PlayerOnInsert(EventContext context, Player insertedPlayer)
+    private void HandleSubscriptionApplied(EventContext ctx)
     {
-        if (insertedPlayer.Identity == localIdentity && !conn.Db.Circle.PlayerId.Filter(insertedPlayer.PlayerId).Any())
-        {
-            // We have a player, but no circle, let's respawn
-            Respawn();
-        }
+        Debug.Log("Subscription applied!");
+        OnSubscriptionApplied?.Invoke();
+
+        // Once we have the initial subscription sync'd to the client cache
+        // Get the world size from the config table and set up the arena
+        var worldSize = Conn.Db.Config.Id.Find(0).WorldSize;
+        SetupArena(worldSize);
     }
 
-    private void EntityOnUpdate(EventContext context, Entity oldEntity, Entity newEntity)
+    private void SetupArena(float worldSize)
     {
-        var circle = conn.Db.Circle.EntityId.Find(newEntity.Id);
-        if (circle == null)
-        {
-            return;
-        }
+        CreateBorderCube(new Vector2(worldSize / 2.0f, worldSize + borderThickness / 2),
+            new Vector2(worldSize + borderThickness * 2.0f, borderThickness)); //North
+        CreateBorderCube(new Vector2(worldSize / 2.0f, -borderThickness / 2),
+            new Vector2(worldSize + borderThickness * 2.0f, borderThickness)); //South
+        CreateBorderCube(new Vector2(worldSize + borderThickness / 2, worldSize / 2.0f),
+            new Vector2(borderThickness, worldSize + borderThickness * 2.0f)); //East
+        CreateBorderCube(new Vector2(-borderThickness / 2, worldSize / 2.0f),
+            new Vector2(borderThickness, worldSize + borderThickness * 2.0f)); //West
 
-        var player = GetOrCreatePlayer(circle.PlayerId);
-        player.CircleUpdate(oldEntity, newEntity);
+        backgroundInstance.gameObject.SetActive(true); ;
+        var size = worldSize / backgroundInstance.transform.localScale.x;
+        backgroundInstance.size = new Vector2(size, size);
+        backgroundInstance.transform.position = new Vector3((float)worldSize / 2, (float)worldSize / 2);
+
+        // Set the world size for the camera controller
+        CameraController.WorldSize = worldSize;
     }
 
-    private void CircleOnDelete(EventContext context, Circle deletedCircle)
-    {
-        var player = GetOrCreatePlayer(deletedCircle.PlayerId);
-        player.DespawnCircle(deletedCircle);
-    }
+    private void CreateBorderCube(Vector2 position, Vector2 scale)
+	{
+		var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        cube.name = "Border";
+		cube.transform.localScale = new Vector3(scale.x, scale.y, 1);
+		cube.transform.position = new Vector3(position.x, position.y, 1);
+		cube.GetComponent<MeshRenderer>().material = borderMaterial;
+	}
 
-    private void CircleOnInsert(EventContext context, Circle insertedValue)
-    {
-        var player = GetOrCreatePlayer(insertedValue.PlayerId);
-        // Spawn the new circle
-        player.SpawnCircle(insertedValue, circlePrefab);
-    }
+    private static void CircleOnInsert(EventContext context, Circle insertedValue)
+	{
+		var player = GetOrCreatePlayer(insertedValue.PlayerId);
+		var entityController = PrefabManager.SpawnCircle(insertedValue, player);
+		Entities.Add(insertedValue.EntityId, entityController);
+	}
 
-    PlayerController GetOrCreatePlayer(uint playerId)
-    {
-        var player = conn.Db.Player.PlayerId.Find(playerId);
-        // Get the PlayerController for this circle
-        if (!playerIdToPlayerController.TryGetValue(playerId, out var playerController))
-        {
-            playerController = Instantiate(playerPrefab);
-            playerController.name = "PlayerController - " + player.Name;
-            playerIdToPlayerController[playerId] = playerController;
-            playerController.Spawn(player.Identity);
-        }
+	private static void EntityOnUpdate(EventContext context, Entity oldEntity, Entity newEntity)
+	{
+		if (!Entities.TryGetValue(newEntity.EntityId, out var entityController))
+		{
+			return;
+		}
+		entityController.OnEntityUpdated(newEntity);
+	}
 
-        return playerController;
-    }
+	private static void EntityOnDelete(EventContext context, Entity oldEntity)
+	{
+		if (Entities.Remove(oldEntity.EntityId, out var entityController))
+		{
+			entityController.OnDelete(context);
+		}
+	}
 
-    private void FoodOnInsert(EventContext context, Food insertedValue)
-    {
-        // Spawn the new food
-        var food = Instantiate(foodPrefab);
-        food.Spawn(insertedValue.EntityId);
-    }
+	private static void FoodOnInsert(EventContext context, Food insertedValue)
+	{
+		var entityController = PrefabManager.SpawnFood(insertedValue);
+		Entities.Add(insertedValue.EntityId, entityController);
+	}
 
-    public static Color GetRandomColor(uint entityId)
-    {
-        return colorPalette[entityId % colorPalette.Length];
-    }
+	private static void PlayerOnInsert(EventContext context, Player insertedPlayer)
+	{
+		GetOrCreatePlayer(insertedPlayer.PlayerId);
+	}
 
-    public static float MassToRadius(uint mass)
-    {
-        return Mathf.Sqrt(mass);
-    }
+	private static void PlayerOnDelete(EventContext context, Player deletedvalue)
+	{
+		if (Players.Remove(deletedvalue.PlayerId, out var playerController))
+		{
+			GameObject.Destroy(playerController.gameObject);
+		}
+	}
 
-    public void Respawn()
+	private static PlayerController GetOrCreatePlayer(uint playerId)
+	{
+		if (!Players.TryGetValue(playerId, out var playerController))
+		{
+			var player = Conn.Db.Player.PlayerId.Find(playerId);
+			playerController = PrefabManager.SpawnPlayer(player);
+			Players.Add(playerId, playerController);
+		}
+
+		return playerController;
+	}
+
+    public static bool IsConnected()
     {
-        deathScreen.SetActive(false);
-        conn.Reducers.Respawn();
+        return Conn != null && Conn.IsActive;
     }
 
     public void Disconnect()
     {
-        conn.Disconnect();
-        conn = null;
+        Conn.Disconnect();
+        Conn = null;
     }
 
-    public static bool IsConnected()
+    /* BEGIN: not in tutorial */
+    private void InstanceOnUnhandledReducerError(ReducerEvent<Reducer> reducerEvent)
     {
-        return conn != null && conn.IsActive;
+        Debug.LogError($"There was an error!\r\n{(reducerEvent.Status as Status.Failed)?.Failed_}");
     }
+    /* END: not in tutorial */
 }

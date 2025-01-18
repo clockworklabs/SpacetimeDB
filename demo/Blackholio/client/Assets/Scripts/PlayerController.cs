@@ -1,187 +1,145 @@
-using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 using UnityEngine;
-using Vector2 = SpacetimeDB.Types.Vector2;
 
 public class PlayerController : MonoBehaviour
 {
-    private Dictionary<uint, CircleController> circlesByEntityId = new Dictionary<uint, CircleController>();
+	const int SEND_UPDATES_PER_SEC = 20;
+	const float SEND_UPDATES_FREQUENCY = 1f / SEND_UPDATES_PER_SEC;
 
-    public float targetCameraSize = 50;
-    public int updatesPerSecond = 20;
+    public static PlayerController Local { get; private set; }
 
-    private Identity identity;
-    private uint playerId;
-    private float? previousCameraSize;
-    private float? lastMovementSendUpdate;
-    public static PlayerController Local;
-    private bool testInputEnabled;
-    private UnityEngine.Vector2 testInput;
+	private uint PlayerId;
+    private float LastMovementSendTimestamp;
+    private Vector2? LockInputPosition;
+	private List<CircleController> OwnedCircles = new List<CircleController>();
 
-    public void SetTestInput(UnityEngine.Vector2 input) => testInput = input;
-    public void EnableTestInput() => testInputEnabled = true;
-    
-    public void Spawn(Identity identity)
+	public string Username => GameManager.Conn.Db.Player.PlayerId.Find(PlayerId).Name;
+	public int NumberOfOwnedCircles => OwnedCircles.Count;
+	public bool IsLocalPlayer => this == Local;
+
+	public void Initialize(Player player)
     {
-        this.identity = identity;
-        playerId = GameManager.conn.Db.Player.Identity.Find(identity)!.PlayerId;
-        if (IsLocalPlayer())
+        PlayerId = player.PlayerId;
+        if (player.Identity == GameManager.LocalIdentity)
         {
             Local = this;
         }
-    }
+	}
 
     private void OnDestroy()
     {
         // If we have any circles, destroy them
-        var circles = circlesByEntityId.Values.ToList();
-        foreach (var circle in circles)
+        foreach (var circle in OwnedCircles)
         {
             if (circle != null)
             {
                 Destroy(circle.gameObject);
             }
         }
-        circlesByEntityId.Clear();
+        OwnedCircles.Clear();
     }
 
-    public void SpawnCircle(Circle insertedCircle, CircleController circlePrefab)
+    public void OnCircleSpawned(CircleController circle)
     {
-        var circle = Instantiate(circlePrefab);
-        circle.Spawn(insertedCircle);
-        circlesByEntityId[insertedCircle.EntityId] = circle;
+        OwnedCircles.Add(circle);
     }
 
-    public void DespawnCircle(Circle deletedCircle)
+    public void OnCircleDeleted(CircleController deletedCircle)
+	{
+		// This means we got eaten
+		if (OwnedCircles.Remove(deletedCircle) && IsLocalPlayer && OwnedCircles.Count == 0)
+		{
+			DeathScreen.Instance.SetVisible(true);
+		}
+	}
+
+	public uint TotalMass()
     {
-        // This means we got eaten
-        if (circlesByEntityId.TryGetValue(deletedCircle.EntityId, out var circle))
-        {
-            circlesByEntityId.Remove(deletedCircle.EntityId);
-            // If the local player died, show the death screen
-            circle.Despawn();
-        }
+        return (uint)OwnedCircles
+            .Select(circle => GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId))
+			.Sum(e => e?.Mass ?? 0); //If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
+	}
 
-        // If the player has no more circles remaining, show the death screen
-        if (IsLocalPlayer() && GameManager.conn.Db.Circle.EntityId.Find(playerId) == null)
-        {
-            GameManager.instance.deathScreen.SetActive(true);
-        }
-    }
-
-    public void CircleUpdate(Entity oldCircle, Entity newCircle)
+    public Vector2? CenterOfMass()
     {
-        if (!circlesByEntityId.TryGetValue(newCircle.Id, out var circle))
-        {
-            return;
-        }
-
-        circle.UpdatePosition(newCircle);
-        var playerRadius = GameManager.MassToRadius(TotalMass());
-        previousCameraSize = targetCameraSize = playerRadius * 2 + 50.0f;
-    }
-
-    public uint TotalMass()
-    {
-        uint mass = 0;
-        foreach (var circle in circlesByEntityId.Values)
-        {
-            var entity = GameManager.conn.Db.Entity.Id.Find(circle.GetEntityId());
-            // If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
-            if (entity == null)
-            {
-                continue;
-            }
-
-            mass += entity.Mass;
-        }
-
-        return mass;
-    }
-
-    public string GetUsername() => GameManager.conn.Db.Player.Identity.Find(identity)!.Name;
-
-    private void OnGUI()
-    {
-        if (!IsLocalPlayer() || !GameManager.IsConnected())
-        {
-            return;
-        }
-
-        GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
-    }
-
-    public bool IsLocalPlayer() => GameManager.localIdentity != null && identity == GameManager.localIdentity;
-
-    public UnityEngine.Vector2? CenterOfMass()
-    {
-        if (circlesByEntityId.Count == 0)
+        if (OwnedCircles.Count == 0)
         {
             return null;
         }
         
-        var circles = circlesByEntityId.Values;        
-        float totalX = 0, totalY = 0;
+        Vector2 totalPos = Vector2.zero;
         float totalMass = 0;
-        foreach (var circle in circles)
+        foreach (var circle in OwnedCircles)
         {
-            var entity = circle.GetEntity();
+            var entity = GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId);
             var position = circle.transform.position;
-            totalX += position.x * entity.Mass;
-            totalY += position.y * entity.Mass;
+            totalPos += (Vector2)position * entity.Mass;
             totalMass += entity.Mass;
         }
 
-        return new UnityEngine.Vector2(totalX / totalMass, totalY / totalMass);
-    }
-    
-    public void Update()
-    {
-        if (IsLocalPlayer() && Input.GetKeyDown(KeyCode.Space))
-        {
-            GameManager.conn.Reducers.PlayerSplit();
-        }
-        
-        if (IsLocalPlayer() && previousCameraSize.HasValue)
-        {
-            GameManager.localCamera.orthographicSize =
-                Mathf.Lerp(previousCameraSize.Value, targetCameraSize, Time.time / 10);
-        }
+        return totalPos / totalMass;
+	}
 
-        if (!IsLocalPlayer() ||
-            (lastMovementSendUpdate.HasValue && Time.time - lastMovementSendUpdate.Value < 1.0f / updatesPerSecond))
+	public void Update()
+    {
+        if (!IsLocalPlayer || NumberOfOwnedCircles == 0)
         {
             return;
         }
 
-        lastMovementSendUpdate = Time.time;
+        if (Input.GetKeyDown(KeyCode.Space))
+        {
+            GameManager.Conn.Reducers.PlayerSplit();
+        }
 
-        var mousePosition = new UnityEngine.Vector2
+        if (Input.GetKeyDown(KeyCode.Q))
         {
-            x = Input.mousePosition.x,
-            y = Input.mousePosition.y,
-        };
-        var screenSize = new UnityEngine.Vector2
+            if (LockInputPosition.HasValue)
+            {
+                LockInputPosition = null;
+			}
+            else
+            {
+				LockInputPosition = (Vector2)Input.mousePosition;
+            }
+        }
+
+        // Throttled input requests
+        if (Time.time - LastMovementSendTimestamp >= SEND_UPDATES_FREQUENCY)
         {
-            x = Screen.width,
-            y = Screen.height,
-        };
-        var centerOfScreen = new UnityEngine.Vector2
-        {
-            x = Screen.width / 2.0f,
-            y = Screen.height / 2.0f,
-        };
-        var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
-        if (testInputEnabled) direction = testInput;
-        var magnitude = Mathf.Clamp01(direction.magnitude);
-        GameManager.conn.Reducers.UpdatePlayerInput(new Vector2
-        {
-            X = direction.x,
-            Y = direction.y,
-        }, magnitude);
-    }
+            LastMovementSendTimestamp = Time.time;
+
+            var mousePosition = LockInputPosition ?? (Vector2)Input.mousePosition;
+            var screenSize = new Vector2
+            {
+                x = Screen.width,
+                y = Screen.height,
+            };
+            var centerOfScreen = screenSize / 2;
+
+			var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
+            if (testInputEnabled) { direction = testInput; }
+            GameManager.Conn.Reducers.UpdatePlayerInput(direction);
+        }
+	}
+
+	private void OnGUI()
+	{
+		if (!IsLocalPlayer || !GameManager.IsConnected())
+		{
+			return;
+		}
+
+		GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
+	}
+
+	//Automated testing members
+	private bool testInputEnabled;
+	private Vector2 testInput;
+
+	public void SetTestInput(Vector2 input) => testInput = input;
+	public void EnableTestInput() => testInputEnabled = true;
 }

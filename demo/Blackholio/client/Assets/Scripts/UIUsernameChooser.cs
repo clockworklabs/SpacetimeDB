@@ -1,44 +1,39 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using SpacetimeDB;
 using SpacetimeDB.Types;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class UIUsernameChooser : MonoBehaviour
 {
-    public TMPro.TMP_InputField usernameInputField;
-    public Button playButton;
+    public static UIUsernameChooser Instance { get; private set; }
 
-    private bool sentCreatePlayer;
-
-    public static UIUsernameChooser instance;
+    public TMPro.TMP_InputField UsernameInputField;
+    public Button PlayButton;
     
     private void Start()
     {
-        instance = this;
-        GameManager.conn.Db.Player.OnInsert += (ctx, newPlayer) =>
+        Instance = this;
+        GameManager.Conn.Db.Player.OnInsert += (ctx, newPlayer) =>
         {
-            if (newPlayer.Identity == GameManager.localIdentity)
+            if (newPlayer.Identity == GameManager.LocalIdentity)
             {
                 // We have a player
-               gameObject.SetActive(false); 
-            }
+                UsernameInputField.text = newPlayer.Name;
+			}
         };
     }
 
     public void PlayPressed()
     {
-        Debug.Log("Play pressed");
-        if (sentCreatePlayer)
-        {
-            return;
-        }
-        Debug.Log("Creating player");
+		Debug.Log("Creating player");
 
-        sentCreatePlayer = true;
-        GameManager.conn.Reducers.CreatePlayer(usernameInputField.text);
-        playButton.interactable = false;
-    }
+        string name = UsernameInputField.text.Trim();
+        if (string.IsNullOrEmpty(name))
+        {
+            name = "<No Name>";
+        }
+		GameManager.Conn.Reducers.EnterGame(name);
+		gameObject.SetActive(false);
+	}
 }
