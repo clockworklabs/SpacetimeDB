@@ -8,7 +8,6 @@ use convert_case::{Case, Casing};
 use core::mem;
 use duct::cmd;
 use itertools::Itertools;
-use spacetimedb::host::wasmtime::{Mem, MemView, WasmPointee as _};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, Typespace};
@@ -129,7 +128,7 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
             build::exec_with_argstring(config.clone(), project_path, build_options).await?
         };
         let spinner = indicatif::ProgressBar::new_spinner();
-        spinner.enable_steady_tick(60);
+        spinner.enable_steady_tick(std::time::Duration::from_millis(60));
         spinner.set_message("Compiling wasm...");
         let module = compile_wasm(&wasm_path)?;
         spinner.set_message("Extracting schema from wasm...");
@@ -403,13 +402,13 @@ fn extract_descriptions_from_module(module: wasmtime::Module) -> anyhow::Result<
          message_ptr: u32,
          message_len: u32| {
             let (mem, _) = WasmCtx::mem_env(&mut caller);
-            let slice = mem.deref_slice(message_ptr, message_len).unwrap();
+            let slice = deref_slice(mem, message_ptr, message_len).unwrap();
             println!("from wasm: {}", String::from_utf8_lossy(slice));
         },
     )?;
     linker.func_wrap(module_name, "bytes_sink_write", WasmCtx::bytes_sink_write)?;
     let instance = linker.instantiate(&mut store, &module)?;
-    let memory = Mem::extract(&instance, &mut store)?;
+    let memory = instance.get_memory(&mut store, "memory").context("no memory export")?;
     store.data_mut().mem = Some(memory);
 
     let mut preinits = instance
@@ -434,19 +433,26 @@ fn extract_descriptions_from_module(module: wasmtime::Module) -> anyhow::Result<
 }
 
 struct WasmCtx {
-    mem: Option<Mem>,
+    mem: Option<wasmtime::Memory>,
     sink: Vec<u8>,
 }
 
+fn deref_slice(mem: &[u8], offset: u32, len: u32) -> anyhow::Result<&[u8]> {
+    anyhow::ensure!(offset != 0, "ptr is null");
+    mem.get(offset as usize..)
+        .and_then(|s| s.get(..len as usize))
+        .context("pointer out of bounds")
+}
+
 impl WasmCtx {
-    pub fn get_mem(&self) -> Mem {
+    pub fn get_mem(&self) -> wasmtime::Memory {
         self.mem.expect("Initialized memory")
     }
 
-    fn mem_env<'a>(ctx: impl Into<StoreContextMut<'a, Self>>) -> (&'a mut MemView, &'a mut Self) {
+    fn mem_env<'a>(ctx: impl Into<StoreContextMut<'a, Self>>) -> (&'a mut [u8], &'a mut Self) {
         let ctx = ctx.into();
         let mem = ctx.data().get_mem();
-        mem.view_and_store_mut(ctx)
+        mem.data_and_store_mut(ctx)
     }
 
     pub fn bytes_sink_write(
@@ -462,9 +468,9 @@ impl WasmCtx {
         let (mem, env) = Self::mem_env(&mut caller);
 
         // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.
-        let buffer_len = u32::read_from(mem, buffer_len_ptr)?;
+        let buffer_len = u32::from_le_bytes(deref_slice(mem, buffer_len_ptr, 4)?.try_into().unwrap());
         // Write `buffer` to `sink`.
-        let buffer = mem.deref_slice(buffer_ptr, buffer_len)?;
+        let buffer = deref_slice(mem, buffer_ptr, buffer_len)?;
         env.sink.extend(buffer);
 
         Ok(0)

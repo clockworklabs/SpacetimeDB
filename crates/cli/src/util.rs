@@ -5,7 +5,7 @@ use base64::{
 };
 use reqwest::RequestBuilder;
 use serde::Deserialize;
-use spacetimedb::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
+use spacetimedb_auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::{AlgebraicType, Identity};
