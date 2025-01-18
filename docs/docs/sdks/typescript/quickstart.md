@@ -1,6 +1,6 @@
-# Typescript Client SDK Quick Start
+# Typescript Client SDK Quickstart
 
-In this guide we'll show you how to get up and running with a simple SpacetimDB app with a client written in Typescript.
+In this guide we'll show you how to get up and running with a simple SpacetimeDB app with a client written in Typescript.
 
 We'll implement a basic single page web app for the module created in our Rust or C# Module Quickstart guides. **Make sure you follow one of these guides before you start on this one.**
 
