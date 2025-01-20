@@ -207,7 +207,7 @@ impl ExecutionUnit {
     }
 
     /// Evaluate this execution unit against the database using the specified format.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn eval<F: WebsocketFormat>(
         &self,
         db: &RelationalDB,

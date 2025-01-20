@@ -816,7 +816,7 @@ impl ModuleHost {
         )
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn one_off_query<F: WebsocketFormat>(
         &self,
         caller_identity: Identity,

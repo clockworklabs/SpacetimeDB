@@ -4745,6 +4745,7 @@ dependencies = [
  "tokio-tungstenite",
  "toml 0.8.19",
  "toml_edit",
+ "tracing",
  "walkdir",
  "wasmbin",
  "wasmtime",
@@ -5287,6 +5288,7 @@ dependencies = [
  "tokio",
  "toml 0.8.19",
  "tower-http",
+ "tracing",
 ]
 
 [[package]]
@@ -5347,6 +5349,7 @@ dependencies = [
  "clap 4.5.20",
  "semver",
  "spacetimedb-paths",
+ "tracing",
 ]
 
 [[package]]

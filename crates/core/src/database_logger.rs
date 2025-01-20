@@ -132,7 +132,7 @@ impl DatabaseLogger {
         Self { inner, tx }
     }
 
-    #[tracing::instrument(name = "DatabaseLogger::size", skip(self), err)]
+    #[tracing::instrument(level = "trace", name = "DatabaseLogger::size", skip(self), err)]
     pub fn size(&self) -> io::Result<u64> {
         Ok(self.inner.lock().file.metadata()?.len())
     }

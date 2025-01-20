@@ -107,7 +107,7 @@ impl InstanceEnv {
         self.tx.get()
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn console_log(&self, level: LogLevel, record: &Record, bt: &dyn BacktraceProvider) {
         self.replica_ctx.logger.write(level, record, bt);
         log::trace!(
@@ -186,7 +186,7 @@ impl InstanceEnv {
         Ok(todo!())
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_delete_by_btree_scan_bsatn(
         &self,
         index_id: IndexId,
@@ -215,7 +215,7 @@ impl InstanceEnv {
     /// - not in a transaction.
     /// - the table didn't exist.
     /// - a row couldn't be decoded to the table schema type.
-    #[tracing::instrument(skip(self, relation))]
+    #[tracing::instrument(level = "trace", skip(self, relation))]
     pub fn datastore_delete_all_by_eq_bsatn(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
@@ -234,7 +234,7 @@ impl InstanceEnv {
     ///
     /// Errors with `GetTxError` if not in a transaction
     /// and `TableNotFound` if the table does not exist.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn table_id_from_name(&self, table_name: &str) -> Result<TableId, NodesError> {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
@@ -248,7 +248,7 @@ impl InstanceEnv {
     ///
     /// Errors with `GetTxError` if not in a transaction
     /// and `IndexNotFound` if the index does not exist.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn index_id_from_name(&self, index_name: &str) -> Result<IndexId, NodesError> {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
@@ -262,7 +262,7 @@ impl InstanceEnv {
     ///
     /// Errors with `GetTxError` if not in a transaction
     /// and `TableNotFound` if the table does not exist.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_row_count(&self, table_id: TableId) -> Result<u64, NodesError> {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
@@ -271,7 +271,7 @@ impl InstanceEnv {
         stdb.table_row_count_mut(tx, table_id).ok_or(NodesError::TableNotFound)
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_scan_bsatn_chunks(
         &self,
         pool: &mut ChunkPool,
@@ -284,7 +284,7 @@ impl InstanceEnv {
         Ok(chunks)
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_btree_scan_bsatn_chunks(
         &self,
         pool: &mut ChunkPool,
