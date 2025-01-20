@@ -168,12 +168,12 @@ public static class Log
         FFI.console_log(
             level,
             target_bytes,
-            (uint)target_bytes.Length,
+            target_bytes.Length,
             filename_bytes,
-            (uint)filename_bytes.Length,
+            filename_bytes.Length,
             lineNumber,
             text_bytes,
-            (uint)text_bytes.Length
+            text_bytes.Length
         );
     }
 }

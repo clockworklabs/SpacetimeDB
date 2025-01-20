@@ -876,7 +876,7 @@ public class Module : IIncrementalGenerator
 
                         [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
                         public static SpacetimeDB.Internal.Errno __call_reducer__(
-                            uint id,
+                            int id,
                             ulong sender_0,
                             ulong sender_1,
                             ulong sender_2,

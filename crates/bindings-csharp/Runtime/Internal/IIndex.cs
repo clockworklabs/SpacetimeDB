@@ -11,7 +11,7 @@ public abstract class IndexBase<Row>
     public IndexBase(string name)
     {
         var name_bytes = System.Text.Encoding.UTF8.GetBytes(name);
-        FFI.index_id_from_name(name_bytes, (uint)name_bytes.Length, out indexId);
+        FFI.index_id_from_name(name_bytes, name_bytes.Length, out indexId);
     }
 
     private static void ToParams<Bounds>(
@@ -50,12 +50,12 @@ public abstract class IndexBase<Row>
         FFI.datastore_delete_by_btree_scan_bsatn(
             indexId,
             prefix,
-            (uint)prefix.Length,
+            prefix.Length,
             prefixElems,
             rstart,
-            (uint)rstart.Length,
+            rstart.Length,
             rend,
-            (uint)rend.Length,
+            rend.Length,
             out var out_
         );
         return out_;
@@ -70,12 +70,12 @@ public abstract class IndexBase<Row>
             FFI.datastore_btree_scan_bsatn(
                 indexId,
                 prefix,
-                (uint)prefix.Length,
+                prefix.Length,
                 prefixElems,
                 rstart,
-                (uint)rstart.Length,
+                rstart.Length,
                 rend,
-                (uint)rend.Length,
+                rend.Length,
                 out handle
             );
         }
