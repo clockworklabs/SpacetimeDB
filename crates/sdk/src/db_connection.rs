@@ -22,7 +22,9 @@ use crate::{
     callbacks::{CallbackId, DbCallbacks, ReducerCallback, ReducerCallbacks, RowCallback, UpdateCallback},
     client_cache::{ClientCache, TableHandle},
     spacetime_module::{DbConnection, DbUpdate, EventContext, InModule, SpacetimeModule},
-    subscription::{OnAppliedCallback, OnErrorCallback, SubscriptionManager},
+    subscription::{
+        OnAppliedCallback, OnErrorCallback, PendingUnsubscribeResult, SubscriptionHandleImpl, SubscriptionManager,
+    },
     websocket::{WsConnection, WsParams},
     Event, ReducerEvent, Status,
 };
@@ -36,7 +38,7 @@ use spacetimedb_client_api_messages::websocket::{BsatnFormat, CallReducerFlags, 
 use spacetimedb_lib::{bsatn, ser::Serialize, Address, Identity};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex as StdMutex, OnceLock},
+    sync::{atomic::AtomicU32, Arc, Mutex as StdMutex, OnceLock},
     time::{Duration, SystemTime},
 };
 use tokio::{
@@ -56,6 +58,9 @@ pub struct DbContextImpl<M: SpacetimeModule> {
 
     /// All the state which is safe to hold a lock on while running callbacks.
     pub(crate) inner: SharedCell<DbContextImplInner<M>>,
+
+    /// None if we have disconnected.
+    pub(crate) send_chan: SharedCell<Option<mpsc::UnboundedSender<ws::ClientMessage<Bytes>>>>,
 
     /// The client cache, which stores subscribed rows.
     cache: SharedCell<ClientCache<M>>,
@@ -89,6 +94,7 @@ impl<M: SpacetimeModule> Clone for DbContextImpl<M> {
             // since we'll be doing `DbContextImpl::clone` very frequently,
             // and we need it to be fast.
             inner: Arc::clone(&self.inner),
+            send_chan: Arc::clone(&self.send_chan),
             cache: Arc::clone(&self.cache),
             recv: Arc::clone(&self.recv),
             pending_mutations_send: self.pending_mutations_send.clone(),
@@ -136,18 +142,17 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             // Subscription applied:
             // set the received state to store all the rows,
             // then invoke the on-applied and row callbacks.
+            // We only use this for `subscribe_from_all_tables`
             ParsedMessage::InitialSubscription { db_update, sub_id } => {
                 // Lock the client cache in a restricted scope,
                 // so that it will be unlocked when callbacks run.
                 {
                     let mut cache = self.cache.lock().unwrap();
-                    // FIXME: delete no-longer-subscribed rows.
                     db_update.apply_to_client_cache(&mut *cache);
                 }
                 let event_ctx = self.make_event_ctx(Event::SubscribeApplied);
                 let mut inner = self.inner.lock().unwrap();
-                inner.subscriptions.subscription_applied(&event_ctx, sub_id);
-                // FIXME: invoke delete callbacks for no-longer-subscribed rows.
+                inner.subscriptions.legacy_subscription_applied(&event_ctx, sub_id);
                 db_update.invoke_row_callbacks(&event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
@@ -185,6 +190,51 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 }
                 Ok(())
             }
+            ParsedMessage::SubscribeApplied {
+                query_id,
+                initial_update,
+            } => {
+                // Lock the client cache in a restricted scope,
+                // so that it will be unlocked when callbacks run.
+                {
+                    let mut cache = self.cache.lock().unwrap();
+                    initial_update.apply_to_client_cache(&mut *cache);
+                }
+                let event_ctx = self.make_event_ctx(Event::SubscribeApplied);
+                let mut inner = self.inner.lock().unwrap();
+                inner.subscriptions.subscription_applied(&event_ctx, query_id);
+                // FIXME: implement ref counting of rows to handle queries with overlapping results.
+                initial_update.invoke_row_callbacks(&event_ctx, &mut inner.db_callbacks);
+                Ok(())
+            }
+            ParsedMessage::UnsubscribeApplied {
+                query_id,
+                initial_update,
+            } => {
+                // Lock the client cache in a restricted scope,
+                // so that it will be unlocked when callbacks run.
+                {
+                    let mut cache = self.cache.lock().unwrap();
+                    initial_update.apply_to_client_cache(&mut *cache);
+                }
+                let event_ctx = self.make_event_ctx(Event::UnsubscribeApplied);
+                let mut inner = self.inner.lock().unwrap();
+                inner.subscriptions.unsubscribe_applied(&event_ctx, query_id);
+                // FIXME: implement ref counting of rows to handle queries with overlapping results.
+                initial_update.invoke_row_callbacks(&event_ctx, &mut inner.db_callbacks);
+                Ok(())
+            }
+            ParsedMessage::SubscriptionError { query_id, error } => {
+                let Some(query_id) = query_id else {
+                    // A subscription error that isn't specific to a query is a fatal error.
+                    self.invoke_disconnected(Some(&anyhow::anyhow!(error)));
+                    return Ok(());
+                };
+                let mut inner = self.inner.lock().unwrap();
+                let event_ctx = self.make_event_ctx(Event::SubscribeError(anyhow::anyhow!(error)));
+                inner.subscriptions.subscription_error(&event_ctx, query_id);
+                Ok(())
+            }
         };
 
         res
@@ -192,23 +242,24 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     /// Invoke the on-disconnect callback, and mark [`Self::is_active`] false.
     fn invoke_disconnected(&self, err: Option<&anyhow::Error>) {
-        let disconnected_callback = {
-            let mut inner = self.inner.lock().unwrap();
-            // TODO: Determine correct behavior here.
-            // - Delete all rows from client cache?
-            // - Invoke `on_disconnect` methods?
-            // - End all subscriptions and invoke their `on_error` methods?
+        let mut inner = self.inner.lock().unwrap();
+        // When we disconnect, we first call the on_disconnect method,
+        // then we call the `on_error` method for all subscriptions.
+        // We don't change the client cache at all.
 
-            // Set `send_chan` to `None`, since `Self::is_active` checks that.
-            inner.send_chan = None;
+        // Set `send_chan` to `None`, since `Self::is_active` checks that.
+        *self.send_chan.lock().unwrap() = None;
 
-            // Grap the `on_disconnect` callback and invoke it.
-            inner.on_disconnect.take()
-        };
-        if let Some(disconnect_callback) = disconnected_callback {
+        // Grap the `on_disconnect` callback and invoke it.
+        if let Some(disconnect_callback) = inner.on_disconnect.take() {
             let ctx = <M::DbConnection as DbConnection>::new(self.clone());
             disconnect_callback(&ctx, err);
         }
+
+        // Call the `on_disconnect` method for all subscriptions.
+        inner
+            .subscriptions
+            .on_disconnect(&self.make_event_ctx(Event::Disconnected));
     }
 
     fn make_event_ctx(&self, event: Event<M::Reducer>) -> M::EventContext {
@@ -236,9 +287,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 on_error,
             } => {
                 let mut inner = self.inner.lock().unwrap();
-                inner.subscriptions.register_subscription(sub_id, on_applied, on_error);
                 inner
-                    .send_chan
+                    .subscriptions
+                    .register_legacy_subscription(sub_id, on_applied, on_error);
+                self.send_chan
+                    .lock()
+                    .unwrap()
                     .as_mut()
                     .ok_or(DisconnectedError {})?
                     .unbounded_send(ws::ClientMessage::Subscribe(ws::Subscribe {
@@ -246,6 +300,47 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                         request_id: sub_id,
                     }))
                     .expect("Unable to send subscribe message: WS sender loop has dropped its recv channel");
+            }
+            // Subscribe: register the subscription in the [`SubscriptionManager`]
+            // and send the `Subscribe` WS message.
+            PendingMutation::SubscribeSingle { query_id, handle } => {
+                let mut inner = self.inner.lock().unwrap();
+                // Register the subscription, so we can handle related messages from the server.
+                inner.subscriptions.register_subscription(query_id, handle.clone());
+                if let Some(msg) = handle.start() {
+                    self.send_chan
+                        .lock()
+                        .unwrap()
+                        .as_mut()
+                        .ok_or(DisconnectedError {})?
+                        .unbounded_send(ws::ClientMessage::SubscribeSingle(msg))
+                        .expect("Unable to send subscribe message: WS sender loop has dropped its recv channel");
+                }
+                // else, the handle was already cancelled.
+            }
+
+            PendingMutation::Unsubscribe { query_id } => {
+                let mut inner = self.inner.lock().unwrap();
+                match inner.subscriptions.handle_pending_unsubscribe(query_id) {
+                    PendingUnsubscribeResult::DoNothing =>
+                    // The subscription was already unsubscribed, so we don't need to send an unsubscribe message.
+                    {
+                        return Ok(())
+                    }
+
+                    PendingUnsubscribeResult::RunCallback(callback) => {
+                        callback(&self.make_event_ctx(Event::UnsubscribeApplied));
+                    }
+                    PendingUnsubscribeResult::SendUnsubscribe(m) => {
+                        self.send_chan
+                            .lock()
+                            .unwrap()
+                            .as_mut()
+                            .ok_or(DisconnectedError {})?
+                            .unbounded_send(ws::ClientMessage::Unsubscribe(m))
+                            .expect("Unable to send unsubscribe message: WS sender loop has dropped its recv channel");
+                    }
+                }
             }
 
             // CallReducer: send the `CallReducer` WS message.
@@ -259,8 +354,9 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     request_id: 0,
                     flags,
                 });
-                inner
-                    .send_chan
+                self.send_chan
+                    .lock()
+                    .unwrap()
                     .as_mut()
                     .ok_or(DisconnectedError {})?
                     .unbounded_send(msg)
@@ -273,7 +369,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 // This will close the WebSocket loop in websocket.rs,
                 // sending a close frame to the server,
                 // eventually resulting in disconnect callbacks being called.
-                self.inner.lock().unwrap().send_chan = None;
+                *self.send_chan.lock().unwrap() = None;
             }
 
             // Callback stuff: these all do what you expect.
@@ -486,7 +582,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     /// Called by the autogenerated `DbConnection` method of the same name.
     pub fn is_active(&self) -> bool {
-        self.inner.lock().unwrap().send_chan.is_some()
+        self.send_chan.lock().unwrap().is_some()
     }
 
     /// Called by the autogenerated `DbConnection` method of the same name.
@@ -588,9 +684,6 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     /// then live as long as `Self`.
     #[allow(unused)]
     runtime: Option<Runtime>,
-
-    /// None if we have disconnected.
-    send_chan: Option<mpsc::UnboundedSender<ws::ClientMessage<Bytes>>>,
 
     db_callbacks: DbCallbacks<M>,
     reducer_callbacks: ReducerCallbacks<M>,
@@ -746,7 +839,6 @@ but you must call one of them, or else the connection will never progress.
         let inner = Arc::new(StdMutex::new(DbContextImplInner {
             runtime,
 
-            send_chan: Some(raw_msg_send),
             db_callbacks,
             reducer_callbacks,
             subscriptions: SubscriptionManager::default(),
@@ -760,11 +852,13 @@ but you must call one of them, or else the connection will never progress.
         let mut cache = ClientCache::default();
         M::register_tables(&mut cache);
         let cache = Arc::new(StdMutex::new(cache));
+        let send_chan = Arc::new(StdMutex::new(Some(raw_msg_send)));
 
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
         let ctx_imp = DbContextImpl {
             runtime: handle,
             inner,
+            send_chan,
             cache,
             recv: Arc::new(TokioMutex::new(parsed_recv_chan)),
             pending_mutations_send,
@@ -906,6 +1000,9 @@ enum ParsedMessage<M: SpacetimeModule> {
     InitialSubscription { db_update: M::DbUpdate, sub_id: u32 },
     TransactionUpdate(Event<M::Reducer>, Option<M::DbUpdate>),
     IdentityToken(Identity, Box<str>, Address),
+    SubscribeApplied { query_id: u32, initial_update: M::DbUpdate },
+    UnsubscribeApplied { query_id: u32, initial_update: M::DbUpdate },
+    SubscriptionError { query_id: Option<u32>, error: String },
     Error(anyhow::Error),
 }
 
@@ -976,9 +1073,34 @@ async fn parse_loop<M: SpacetimeModule>(
             ws::ServerMessage::OneOffQueryResponse(_) => {
                 unreachable!("The Rust SDK does not implement one-off queries")
             }
-            ws::ServerMessage::SubscribeApplied(_) => todo!(),
-            ws::ServerMessage::UnsubscribeApplied(_) => todo!(),
-            ws::ServerMessage::SubscriptionError(_) => todo!(),
+            ws::ServerMessage::SubscribeApplied(subscribe_applied) => {
+                let table_rows = subscribe_applied.rows.table_rows;
+                let db_update = ws::DatabaseUpdate::from_iter(std::iter::once(table_rows));
+                let query_id = subscribe_applied.query_id.id;
+                match M::DbUpdate::parse_update(db_update) {
+                    Err(e) => ParsedMessage::Error(e.context("Failed to parse update from SubscribeApplied")),
+                    Ok(initial_update) => ParsedMessage::SubscribeApplied {
+                        query_id,
+                        initial_update,
+                    },
+                }
+            }
+            ws::ServerMessage::UnsubscribeApplied(unsubscribe_applied) => {
+                let table_rows = unsubscribe_applied.rows.table_rows;
+                let db_update = ws::DatabaseUpdate::from_iter(std::iter::once(table_rows));
+                let query_id = unsubscribe_applied.query_id.id;
+                match M::DbUpdate::parse_update(db_update) {
+                    Err(e) => ParsedMessage::Error(e.context("Failed to parse update from UnsubscribeApplied")),
+                    Ok(initial_update) => ParsedMessage::UnsubscribeApplied {
+                        query_id,
+                        initial_update,
+                    },
+                }
+            }
+            ws::ServerMessage::SubscriptionError(e) => ParsedMessage::SubscriptionError {
+                query_id: e.query_id,
+                error: e.error.to_string(),
+            },
         })
         .expect("Failed to send ParsedMessage to main thread");
     }
@@ -993,7 +1115,13 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
         // TODO: replace `queries` with query_sql: String,
         sub_id: u32,
     },
-    // TODO: Unsubscribe { ??? },
+    Unsubscribe {
+        query_id: u32,
+    },
+    SubscribeSingle {
+        query_id: u32,
+        handle: SubscriptionHandleImpl<M>,
+    },
     CallReducer {
         reducer: &'static str,
         args_bsatn: Vec<u8>,
@@ -1060,4 +1188,26 @@ impl std::error::Error for DisconnectedError {}
 
 fn error_is_normal_disconnect(e: &anyhow::Error) -> bool {
     e.is::<DisconnectedError>()
+}
+
+static NEXT_REQUEST_ID: AtomicU32 = AtomicU32::new(1);
+
+// Get the next request ID to use for a WebSocket message.
+pub(crate) fn next_request_id() -> u32 {
+    NEXT_REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+static NEXT_SUBSCRIPTION_ID: AtomicU32 = AtomicU32::new(1);
+
+// Get the next request ID to use for a WebSocket message.
+pub(crate) fn next_subscription_id() -> u32 {
+    NEXT_SUBSCRIPTION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn dummy() {
+        assert_eq!(1, 1);
+    }
 }

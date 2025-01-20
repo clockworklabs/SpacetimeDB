@@ -36,6 +36,9 @@ pub enum Event<R> {
     /// and to row delete callbacks resulting from the ended subscription.
     UnsubscribeApplied,
 
+    /// Event when a subscription was ended by a disconnection.
+    Disconnected,
+
     /// Event when an error causes one or more of our subscriptions to end prematurely,
     /// or to never be started.
     ///

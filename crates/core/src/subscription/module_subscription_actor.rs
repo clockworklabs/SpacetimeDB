@@ -85,18 +85,34 @@ impl ModuleSubscriptions {
             self.relational_db.release_tx(tx);
         });
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let guard = self.subscriptions.read();
         let query = super::query::WHITESPACE.replace_all(&request.query, " ");
         let sql = query.trim();
         let hash = QueryHash::from_string(sql);
-        let query = if let Some(unit) = guard.query(&hash) {
-            unit
-        } else {
-            let compiled = compile_read_only_query(&auth, &tx, sql)?;
-            Arc::new(compiled)
+        let existing_query = {
+            let guard = self.subscriptions.read();
+            guard.query(&hash)
         };
-
-        drop(guard);
+        let query: Result<Arc<Plan>, DBError> = existing_query.map(Ok).unwrap_or_else(|| {
+            // NOTE: The following ensures compliance with the 1.0 sql api.
+            // Come 1.0, it will have replaced the current compilation stack.
+            let compiled = compile_read_only_query(&auth, &tx, sql)?;
+            Ok(Arc::new(compiled))
+        });
+        let query = match query {
+            Ok(query) => query,
+            Err(e) => {
+                let _ = sender.send_message(SubscriptionMessage {
+                    request_id: Some(request.request_id),
+                    query_id: Some(request.query_id),
+                    timer: Some(timer),
+                    result: SubscriptionResult::Error(SubscriptionError {
+                        table_id: None,
+                        message: e.to_string().into(),
+                    }),
+                });
+                return Ok(());
+            }
+        };
 
         let table_rows = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth)?;
 
