@@ -25,16 +25,17 @@ public abstract class IndexBase<Row>
     {
         prefixElems = new FFI.ColId(bounds.PrefixElems);
 
-        using var s = new MemoryStream();
-        using var w = new BinaryWriter(s);
-        bounds.Prefix(w);
-        var prefix_idx = (int)s.Length;
-        bounds.RStart(w);
-        var rstart_idx = (int)s.Length;
-        bounds.REnd(w);
-        var rend_idx = (int)s.Length;
+        using var buffer = new SerializationBuffer();
 
-        var bytes = s.GetBuffer().AsSpan();
+        var w = buffer.Writer;
+        bounds.Prefix(w);
+        var prefix_idx = buffer.Written.Length;
+        bounds.RStart(w);
+        var rstart_idx = buffer.Written.Length;
+        bounds.REnd(w);
+        var bytes = buffer.Written;
+        var rend_idx = bytes.Length;
+
         prefix = bytes[..prefix_idx];
         rstart = bytes[prefix_idx..rstart_idx];
         rend = bytes[rstart_idx..rend_idx];
@@ -95,7 +96,7 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(Handle table, string name)
 
     public bool Delete(T key) => DoDelete(ToBounds(key)) > 0;
 
-    protected bool DoUpdate(T key, Row row)
+    protected bool DoUpdate(T key, ref Row row)
     {
         if (!Delete(key))
         {

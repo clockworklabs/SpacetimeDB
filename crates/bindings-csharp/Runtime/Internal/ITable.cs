@@ -2,6 +2,38 @@ namespace SpacetimeDB.Internal;
 
 using SpacetimeDB.BSATN;
 
+// SpacetimeDB modules are guaranteed to be single-threaded, and, unlike in iterators, we don't have any potential for single-threaded concurrency.
+// This means we can use a single static buffer for all serialization operations, as long as we don't use it concurrently (e.g. in iterators).
+public readonly struct SerializationBuffer : IDisposable
+{
+    private static readonly MemoryStream stream = new();
+
+    private static readonly BinaryReader reader = new(stream);
+    private static readonly BinaryWriter writer = new(stream);
+    private static bool isUsed = false;
+
+#pragma warning disable CA1822 // Mark members as static
+    public BinaryReader Reader => reader;
+    public BinaryWriter Writer => writer;
+    public Span<byte> Written => stream.GetBuffer().AsSpan(0, (int)stream.Position);
+#pragma warning restore CA1822 // Mark members as static
+
+    public SerializationBuffer()
+    {
+        if (isUsed)
+        {
+            throw new InvalidOperationException("Buffer is already in use");
+        }
+        isUsed = true;
+        stream.Position = 0;
+    }
+
+    public void Dispose()
+    {
+        isUsed = false;
+    }
+}
+
 internal abstract class RawTableIterBase<T>
     where T : IStructuralReadWrite, new()
 {
@@ -99,7 +131,7 @@ public interface ITableView<View, T>
     // These are the methods that codegen needs to implement.
     static abstract RawTableDefV9 MakeTableDesc(ITypeRegistrar registrar);
 
-    static abstract T ReadGenFields(BinaryReader reader, T row);
+    static abstract void ReadGenFields(BinaryReader reader, ref T row);
 
     // These are static helpers that codegen can use.
 
@@ -138,12 +170,16 @@ public interface ITableView<View, T>
 
     protected static IEnumerable<T> DoIter() => new RawTableIter(tableId).Parse();
 
-    protected static T DoInsert(T row)
+    protected static void DoInsert(ref T row)
     {
         // Insert the row.
-        var bytes = IStructuralReadWrite.ToBytes(row);
-        var bytes_len = (uint)bytes.Length;
-        FFI.datastore_insert_bsatn(tableId, bytes, ref bytes_len);
+        using (var buffer = new SerializationBuffer())
+        {
+            row.WriteFields(buffer.Writer);
+            var bytes = buffer.Written;
+            var bytes_len = (uint)bytes.Length;
+            FFI.datastore_insert_bsatn(tableId, bytes, ref bytes_len);
+        }
 
         // Write back any generated column values.
         using var stream = new MemoryStream(bytes, 0, (int)bytes_len);
@@ -151,9 +187,11 @@ public interface ITableView<View, T>
         return View.ReadGenFields(reader, row);
     }
 
-    protected static bool DoDelete(T row)
+    protected static bool DoDelete(in T row)
     {
-        var bytes = IStructuralReadWrite.ToBytes(row);
+        using var buffer = new SerializationBuffer();
+        row.WriteFields(buffer.Writer);
+        var bytes = buffer.Written;
         FFI.datastore_delete_all_by_eq_bsatn(tableId, bytes, (uint)bytes.Length, out var out_);
         return out_ > 0;
     }
