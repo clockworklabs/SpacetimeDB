@@ -581,6 +581,16 @@ impl MutTxDatastore for Locking {
         Ok((gens, row_ref.collapse()))
     }
 
+    fn update_mut_tx<'a>(
+        &'a self,
+        tx: &'a mut Self::MutTx,
+        table_id: TableId,
+        index_id: IndexId,
+        row: &[u8],
+    ) -> Result<(ColList, RowRef<'a>)> {
+        tx.update(table_id, index_id, row)
+    }
+
     fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>> {
         tx.iter(ST_MODULE_ID)?.next().map(metadata_from_row).transpose()
     }

@@ -1141,7 +1141,7 @@ impl RelationalDB {
         index_id: IndexId,
         row: &[u8],
     ) -> Result<(ColList, RowRef<'a>), DBError> {
-        tx.update(table_id, index_id, row)
+        self.inner.update_mut_tx(tx, table_id, index_id, row)
     }
 
     pub fn delete(&self, tx: &mut MutTx, table_id: TableId, row_ids: impl IntoIterator<Item = RowPointer>) -> u32 {
