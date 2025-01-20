@@ -102,12 +102,12 @@ public static class Module
             return [];
         }
         var buffer = new byte[0x20_000];
-        var written = 0U;
+        var written = 0;
         while (true)
         {
             // Write into the spare capacity of the buffer.
-            var spare = buffer.AsSpan((int)written);
-            var buf_len = (uint)spare.Length;
+            var spare = buffer.AsSpan(written);
+            var buf_len = spare.Length;
             var ret = FFI.bytes_source_read(source, spare, ref buf_len);
             written += buf_len;
             switch (ret)
@@ -135,15 +135,13 @@ public static class Module
         }
     }
 
-    private static void Write(this BytesSink sink, byte[] bytes)
+    private static void Write(this BytesSink sink, Span<byte> bytes)
     {
-        var start = 0U;
-        while (start != bytes.Length)
+        while (!bytes.IsEmpty)
         {
-            var written = (uint)bytes.Length;
-            var buffer = bytes.AsSpan((int)start);
-            FFI.bytes_sink_write(sink, buffer, ref written);
-            start += written;
+            var written = bytes.Length;
+            FFI.bytes_sink_write(sink, bytes, ref written);
+            bytes = bytes[written..];
         }
     }
 
@@ -165,7 +163,7 @@ public static class Module
     }
 
     public static Errno __call_reducer__(
-        uint id,
+        int id,
         ulong sender_0,
         ulong sender_1,
         ulong sender_2,
@@ -190,7 +188,7 @@ public static class Module
 
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            reducers[(int)id].Invoke(reader, ctx);
+            reducers[id].Invoke(reader, ctx);
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");

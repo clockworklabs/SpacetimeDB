@@ -129,14 +129,14 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus table_id_from_name(
         ReadOnlySpan<byte> name,
-        uint name_len,
+        int name_len,
         out TableId out_
     );
 
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus index_id_from_name(
         ReadOnlySpan<byte> name,
-        uint name_len,
+        int name_len,
         out IndexId out_
     );
 
@@ -153,12 +153,12 @@ internal static partial class FFI
     public static partial CheckedStatus datastore_btree_scan_bsatn(
         IndexId index_id,
         ReadOnlySpan<byte> prefix,
-        uint prefix_len,
+        int prefix_len,
         ColId prefix_elems,
         ReadOnlySpan<byte> rstart,
-        uint rstart_len,
+        int rstart_len,
         ReadOnlySpan<byte> rend,
-        uint rend_len,
+        int rend_len,
         out RowIter out_
     );
 
@@ -166,7 +166,7 @@ internal static partial class FFI
     public static partial Errno row_iter_bsatn_advance(
         RowIter iter_handle,
         Span<byte> buffer,
-        ref uint buffer_len
+        ref int buffer_len
     );
 
     [LibraryImport(StdbNamespace)]
@@ -176,19 +176,19 @@ internal static partial class FFI
     public static partial CheckedStatus datastore_insert_bsatn(
         TableId table_id,
         Span<byte> row,
-        ref uint row_len
+        ref int row_len
     );
 
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus datastore_delete_by_btree_scan_bsatn(
         IndexId index_id,
         ReadOnlySpan<byte> prefix,
-        uint prefix_len,
+        int prefix_len,
         ColId prefix_elems,
         ReadOnlySpan<byte> rstart,
-        uint rstart_len,
+        int rstart_len,
         ReadOnlySpan<byte> rend,
-        uint rend_len,
+        int rend_len,
         out uint out_
     );
 
@@ -196,7 +196,7 @@ internal static partial class FFI
     public static partial CheckedStatus datastore_delete_all_by_eq_bsatn(
         TableId table_id,
         ReadOnlySpan<byte> relation,
-        uint relation_len,
+        int relation_len,
         out uint out_
     );
 
@@ -204,14 +204,14 @@ internal static partial class FFI
     public static partial Errno bytes_source_read(
         BytesSource source,
         Span<byte> buffer,
-        ref uint buffer_len
+        ref int buffer_len
     );
 
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus bytes_sink_write(
         BytesSink sink,
         ReadOnlySpan<byte> buffer,
-        ref uint buffer_len
+        ref int buffer_len
     );
 
     public enum LogLevel : byte
@@ -228,12 +228,12 @@ internal static partial class FFI
     public static partial void console_log(
         LogLevel level,
         ReadOnlySpan<byte> target,
-        uint target_len,
+        int target_len,
         ReadOnlySpan<byte> filename,
-        uint filename_len,
+        int filename_len,
         uint line_number,
         ReadOnlySpan<byte> message,
-        uint message_len
+        int message_len
     );
 
     [NativeMarshalling(typeof(ConsoleTimerIdMarshaller))]
@@ -262,10 +262,7 @@ internal static partial class FFI
     }
 
     [LibraryImport(StdbNamespace)]
-    public static partial ConsoleTimerId console_timer_start(
-        ReadOnlySpan<byte> name,
-        uint name_len
-    );
+    public static partial ConsoleTimerId console_timer_start(ReadOnlySpan<byte> name, int name_len);
 
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus console_timer_end(ConsoleTimerId stopwatch_id);
@@ -273,9 +270,9 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace)]
     public static partial void volatile_nonatomic_schedule_immediate(
         ReadOnlySpan<byte> name,
-        uint name_len,
+        int name_len,
         ReadOnlySpan<byte> args,
-        uint args_len
+        int args_len
     );
 
     // Note #1: our Identity type has the same layout as a fixed-size 32-byte little-endian buffer,
