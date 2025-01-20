@@ -3,6 +3,7 @@ use std::num::ParseIntError;
 use std::path::PathBuf;
 use std::sync::{MutexGuard, PoisonError};
 
+use enum_as_inner::EnumAsInner;
 use hex::FromHexError;
 use spacetimedb_expr::errors::TypingError;
 use spacetimedb_sats::AlgebraicType;
@@ -171,7 +172,7 @@ pub enum SequenceError {
     MultiColumnAutoInc(TableId, ColList),
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, EnumAsInner)]
 pub enum DBError {
     #[error("LibError: {0}")]
     Lib(#[from] LibError),

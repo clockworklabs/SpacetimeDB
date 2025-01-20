@@ -1273,10 +1273,7 @@ mod tests {
     }
 
     fn basic_table_schema() -> TableSchema {
-        TableSchema::new(
-            TableId::SENTINEL,
-            "Foo".into(),
-            map_array(basic_table_schema_cols()),
+        basic_table_schema_with_indices(
             vec![
                 IndexSchema {
                     index_id: IndexId::SENTINEL,
@@ -1309,6 +1306,16 @@ mod tests {
                     }),
                 },
             ],
+        )
+    }
+
+    fn basic_table_schema_with_indices(indices: Vec<IndexSchema>, constraints: Vec<ConstraintSchema>) -> TableSchema {
+        TableSchema::new(
+            TableId::SENTINEL,
+            "Foo".into(),
+            map_array(basic_table_schema_cols()),
+            indices,
+            constraints,
             vec![SequenceSchema {
                 sequence_id: SequenceId::SENTINEL,
                 table_id: TableId::SENTINEL,
@@ -2157,6 +2164,25 @@ mod tests {
         assert_eq!(deleted_2, true);
         assert_eq!(tx_data_2.deletes().count(), 0);
         assert_eq!(tx_data_2.inserts().collect_vec(), []);
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_no_such_index() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+        let schema = basic_table_schema_with_indices([].into(), [].into());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+
+        // There are no indices attached to `table_id`.
+        let index_id = 0.into();
+        let row = to_vec(&u32_str_u32(42, "foo", 24)).unwrap();
+        let err = datastore
+            .update_mut_tx(&mut tx, table_id, index_id, &row)
+            .expect_err("update using a non-existent index should error")
+            .into_index()
+            .expect("the error should be an index error");
+        assert_eq!(err, IndexError::NotFound(index_id));
 
         Ok(())
     }
