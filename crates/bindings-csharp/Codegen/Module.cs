@@ -371,7 +371,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                     // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
                     public {{globalName}}? Find({{f.Type}} key) => DoFilter(key).Cast<{{globalName}}?>().SingleOrDefault();
-                    public bool Update({{globalName}} row) => DoUpdate(row.{{f.Name}}, row);
+                    public bool Update({{globalName}} row) => DoUpdate(row.{{f.Name}}, ref row);
                 }
                 {{vis}} {{f.Name}}UniqueIndex {{f.Name}} => new(this);
                 """;
@@ -461,7 +461,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 globalName,
                 $$"""
             {{SyntaxFacts.GetText(Visibility)}} readonly struct {{v.Name}} : {{iTable}} {
-                static {{globalName}} {{iTable}}.ReadGenFields(System.IO.BinaryReader reader, {{globalName}} row) {
+                static void {{iTable}}.ReadGenFields(System.IO.BinaryReader reader, ref {{globalName}} row) {
                     {{string.Join(
                         "\n",
                         autoIncFields.Select(name =>
@@ -473,7 +473,6 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                             """
                         )
                     )}}
-                    return row;
                 }
 
                 static SpacetimeDB.Internal.RawTableDefV9 {{iTable}}.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
@@ -502,8 +501,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
                 public ulong Count => {{iTable}}.DoCount();
                 public IEnumerable<{{globalName}}> Iter() => {{iTable}}.DoIter();
-                public {{globalName}} Insert({{globalName}} row) => {{iTable}}.DoInsert(row);
-                public bool Delete({{globalName}} row) => {{iTable}}.DoDelete(row);
+                public {{globalName}} Insert({{globalName}} row) {
+                    {{iTable}}.DoInsert(ref row);
+                    return row;
+                }
+                public bool Delete({{globalName}} row) => {{iTable}}.DoDelete(in row);
 
                 {{string.Join("\n", GenerateViewFilters(v))}}
             }
