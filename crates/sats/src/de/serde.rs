@@ -1,4 +1,5 @@
 use super::Deserializer;
+use crate::serde::{SerdeError, SerdeWrapper};
 use crate::{i256, u256};
 use core::fmt;
 use core::marker::PhantomData;
@@ -21,9 +22,6 @@ impl<D> SerdeDeserializer<D> {
     }
 }
 
-/// An error that occured when deserializing SATS to a Serde data format.
-#[repr(transparent)]
-pub struct SerdeError<E>(pub E);
 #[inline]
 fn unwrap_error<E>(err: SerdeError<E>) -> E {
     let SerdeError(err) = err;
@@ -126,19 +124,9 @@ impl<'de, D: serde::Deserializer<'de>> Deserializer<'de> for SerdeDeserializer<D
     }
 }
 
-/// Converts `DeserializeSeed<'de>` in SATS to the one in Serde.
-#[repr(transparent)]
-pub struct SeedWrapper<T: ?Sized>(pub T);
+pub use crate::serde::SerdeWrapper as SeedWrapper;
 
-impl<T: ?Sized> SeedWrapper<T> {
-    /// Convert `&T` to `&SeedWrapper<T>`.
-    pub fn from_ref(t: &T) -> &Self {
-        // SAFETY: `repr(transparent)` allows this.
-        unsafe { &*(t as *const T as *const SeedWrapper<T>) }
-    }
-}
-
-impl<'de, T: super::DeserializeSeed<'de>> serde::DeserializeSeed<'de> for SeedWrapper<T> {
+impl<'de, T: super::DeserializeSeed<'de>> serde::DeserializeSeed<'de> for SerdeWrapper<T> {
     type Value = T::Output;
 
     fn deserialize<D>(self, de: D) -> Result<Self::Value, D::Error>
@@ -581,11 +569,9 @@ pub fn deserialize_from<'de, T: super::Deserialize<'de>, D: serde::Deserializer<
     T::deserialize(SerdeDeserializer::new(deserializer)).map_err(unwrap_error)
 }
 
-/// Turns a type deserializable in SATS into one deserializiable in Serde.
-///
-/// That is, `T: sats::Deserialize<'de> => DeserializeWrapper<T>: serde::Deserialize`.
-pub struct DeserializeWrapper<T>(pub T);
-impl<'de, T: super::Deserialize<'de>> serde::Deserialize<'de> for DeserializeWrapper<T> {
+pub use crate::serde::SerdeWrapper as DeserializeWrapper;
+
+impl<'de, T: super::Deserialize<'de>> serde::Deserialize<'de> for SerdeWrapper<T> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserialize_from(deserializer).map(Self)
     }
