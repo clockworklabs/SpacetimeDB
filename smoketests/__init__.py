@@ -35,6 +35,9 @@ HAVE_DOCKER = False
 # and a dotnet installation is detected
 HAVE_DOTNET = False
 
+# default value can be overriden by `--compose-file` flag
+COMPOSE_FILE = "./docker-compose.yml"
+
 # we need to late-bind the output stream to allow unittests to capture stdout/stderr.
 class CapturableHandler(logging.StreamHandler):
 

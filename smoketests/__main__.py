@@ -15,7 +15,7 @@ def check_docker():
     docker_ps = smoketests.run_cmd("docker", "ps", "--format=json")
     docker_ps = (json.loads(line) for line in docker_ps.splitlines())
     for docker_container in docker_ps:
-        if "node" in docker_container["Image"]:
+        if "node" in docker_container["Image"] or "spacetime" in docker_container["Image"]:
             return docker_container["Names"]
     else:
         print("Docker container not found, is SpacetimeDB running?")
@@ -79,6 +79,7 @@ def main():
         # have docker logs print concurrently with the test output
         if args.compose_file:
             subprocess.Popen(["docker", "compose", "-f", args.compose_file, "logs", "-f"])
+            smoketests.COMPOSE_FILE = args.compose_file
         else:
             docker_container = check_docker()
             subprocess.Popen(["docker", "logs", "-f", docker_container])

@@ -1,21 +1,22 @@
 import time
-from .. import Smoketest, run_cmd, requires_docker
+from .. import Smoketest, run_cmd, requires_docker, COMPOSE_FILE
 from urllib.request import urlopen
 from .add_remove_index import AddRemoveIndex
 
 
 def restart_docker():
+
     # Behold!
     #
     # You thought stop/start restarts? How wrong. Restart restarts.
-    run_cmd("docker", "compose", "restart")
+    run_cmd("docker", "compose", "-f", COMPOSE_FILE, "restart")
     # The suspense!
     #
     # Wait until compose believes the health probe succeeds.
     #
     # The container may decide to recompile, or grab a coffee at crates.io, or
     # whatever. In any case, restart doesn't mean the server is up yet.
-    run_cmd("docker", "compose", "up", "--no-recreate", "--detach", "--wait-timeout", "60")
+    run_cmd("docker", "compose","-f", COMPOSE_FILE,  "up", "--no-recreate", "--detach", "--wait-timeout", "60")
     # Belts and suspenders!
     #
     # The health probe runs inside the container, but that doesn't mean we can
