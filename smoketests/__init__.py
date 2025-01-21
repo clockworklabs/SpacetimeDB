@@ -164,6 +164,46 @@ class Smoketest(unittest.TestCase):
     def spacetime(cls, *args, **kwargs):
         return spacetime("--config-path", str(cls.config_path), *args, **kwargs)
 
+    def read_controldb(self, sql):
+        return self.spacetime("sql", "spacetime-control", sql)
+
+
+    def leader_node(self):
+        """
+        returns `network_addr` field of node which hosts leader replica of database
+        """
+        self._check_published()
+        def get_int(text):
+                return int(re.search(r'\d+', text).group())
+
+        sql = f"select id from database where database_identity=0x{self.database_identity}"
+        db_id_tb = self.read_controldb(sql)
+        database_id = get_int(db_id_tb);
+
+
+        sql = f"select leader from replication_state where database_id={database_id}"
+        leader_tb = self.read_controldb(sql)
+        leader_id = get_int(leader_tb)
+
+
+        sql = f"select node_id from replica where id={leader_id}"
+        leader_node_tb = self.read_controldb(sql)
+        leader_node_id = get_int(leader_node_tb)
+
+        sql = f"select network_addr from node where id={leader_node_id}"
+        leader_host_tb = self.read_controldb(sql)
+        lines = leader_host_tb.splitlines()
+        print("lines", lines)
+        if len(lines) != 3:
+            return  None
+        leader_row = lines[2]
+        # Check if the line contains the network address
+        if "(some =" in leader_row:
+            address = leader_row.split('"')[1]
+            hostname = address.split(':')[0]
+            return hostname
+        return None
+
     def _check_published(self):
         if not hasattr(self, "database_identity"):
             raise Exception("Cannot use this function without publishing a module")
