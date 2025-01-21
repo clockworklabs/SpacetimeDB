@@ -190,7 +190,7 @@ paste = "1.0"
 petgraph = { version = "0.6.5", default-features = false }
 pin-project-lite = "0.2.9"
 postgres-types = "0.2.5"
-pretty_assertions = "1.4"
+pretty_assertions = { version = "1.4", features = ["unstable"] }
 proc-macro2 = "1.0"
 prometheus = "0.13.0"
 proptest = "1.4"

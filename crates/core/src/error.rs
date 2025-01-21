@@ -9,8 +9,8 @@ use spacetimedb_expr::errors::TypingError;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_schema::error::ValidationErrors;
 use spacetimedb_snapshot::SnapshotError;
-use spacetimedb_table::read_column;
-use spacetimedb_table::table::{self, InsertError, ReadViaBsatnError, UniqueConstraintViolation};
+use spacetimedb_table::table::{self, ReadViaBsatnError, UniqueConstraintViolation};
+use spacetimedb_table::{bflatn_to, read_column};
 use thiserror::Error;
 
 use crate::client::ClientActorId;
@@ -29,7 +29,7 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use spacetimedb_vm::expr::Crud;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, EnumAsInner)]
 pub enum TableError {
     #[error("Table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
     System(Box<str>),
@@ -69,7 +69,9 @@ pub enum TableError {
         found: String,
     },
     #[error(transparent)]
-    Insert(#[from] table::InsertError),
+    Bflatn(#[from] bflatn_to::Error),
+    #[error(transparent)]
+    Duplicate(#[from] table::DuplicateError),
     #[error(transparent)]
     ReadColTypeError(#[from] read_column::TypeError),
 }
@@ -230,9 +232,19 @@ pub enum DBError {
     TypeError(#[from] TypingError),
 }
 
-impl From<InsertError> for DBError {
-    fn from(err: InsertError) -> Self {
+impl From<bflatn_to::Error> for DBError {
+    fn from(err: bflatn_to::Error) -> Self {
         Self::Table(err.into())
+    }
+}
+
+impl From<table::InsertError> for DBError {
+    fn from(err: table::InsertError) -> Self {
+        match err {
+            table::InsertError::Duplicate(e) => TableError::from(e).into(),
+            table::InsertError::Bflatn(e) => TableError::from(e).into(),
+            table::InsertError::IndexError(e) => IndexError::from(e).into(),
+        }
     }
 }
 

@@ -31,6 +31,7 @@ use core::{
     hint::unreachable_unchecked,
 };
 use derive_more::{Add, AddAssign, From, Sub, SubAssign};
+use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
 use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId};
@@ -188,12 +189,17 @@ impl MemoryUsage for TableInner {
     }
 }
 
-/// Various error that can happen on table insertion.
+/// There was already a row with the same value.
 #[derive(Error, Debug, PartialEq, Eq)]
+#[error("Duplicate insertion of row {0:?} violates set semantics")]
+pub struct DuplicateError(pub RowPointer);
+
+/// Various error that can happen on table insertion.
+#[derive(Error, Debug, PartialEq, Eq, EnumAsInner)]
 pub enum InsertError {
     /// There was already a row with the same value.
-    #[error("Duplicate insertion of row {0:?} violates set semantics")]
-    Duplicate(RowPointer),
+    #[error(transparent)]
+    Duplicate(#[from] DuplicateError),
 
     /// Couldn't write the row to the page manager.
     #[error(transparent)]
@@ -493,7 +499,7 @@ impl Table {
         new_ptr: RowPointer,
         old_ptr: RowPointer,
         blob_bytes_added: BlobNumBytes,
-    ) -> Result<RowPointer, InsertError> {
+    ) -> Result<RowPointer, UniqueConstraintViolation> {
         // (1) Remove old row from indices.
         // SAFETY: Caller promised that `self.is_row_present(old_ptr)` holds.
         unsafe { self.delete_from_indices(blob_store, old_ptr) };
@@ -542,7 +548,7 @@ impl Table {
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         ptr: RowPointer,
-    ) -> Result<(), InsertError> {
+    ) -> Result<(), UniqueConstraintViolation> {
         let mut index_error = None;
         for (&index_id, index) in self.indexes.iter_mut() {
             // SAFETY: We just inserted `ptr`, so it must be present.
@@ -550,8 +556,7 @@ impl Table {
             if index.check_and_insert(row_ref).unwrap().is_some() {
                 let cols = &index.indexed_columns;
                 let value = row_ref.project(cols).unwrap();
-                let error =
-                    InsertError::IndexError(UniqueConstraintViolation::build(&self.schema, index, index_id, value));
+                let error = UniqueConstraintViolation::build(&self.schema, index, index_id, value);
                 index_error = Some(error);
                 break;
             }
@@ -624,7 +629,7 @@ impl Table {
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         ptr: RowPointer,
-    ) -> Result<Option<RowHash>, InsertError> {
+    ) -> Result<Option<RowHash>, DuplicateError> {
         if self.pointer_map.is_none() {
             // No pointer map? Set semantic constraint is checked by a unique index instead.
             return Ok(None);
@@ -645,7 +650,7 @@ impl Table {
                     .pages
                     .delete_row(&self.inner.visitor_prog, self.row_size(), ptr, blob_store)
             };
-            return Err(InsertError::Duplicate(existing_row));
+            return Err(DuplicateError(existing_row));
         }
 
         // If the optimistic insertion was correct,
@@ -932,7 +937,7 @@ impl Table {
         &mut self,
         blob_store: &mut dyn BlobStore,
         row: &ProductValue,
-    ) -> Result<Option<RowPointer>, InsertError> {
+    ) -> Result<Option<RowPointer>, Error> {
         // Insert `row` temporarily so `temp_ptr` and `hash` can be used to find the row.
         // This must avoid consulting and inserting to the pointer map,
         // as the row is already present, set-semantically.
@@ -1031,6 +1036,12 @@ impl Table {
         if index.is_some_and(|i| i.is_unique()) && !self.indexes.values().any(|idx| idx.is_unique()) {
             self.rebuild_pointer_map(blob_store);
         }
+
+        // Remove index from schema.
+        //
+        // This likely will do a clone-write as over time?
+        // The schema might have found other referents.
+        self.with_mut_schema(|s| s.indexes.retain(|x| x.index_id != index_id));
 
         ret
     }

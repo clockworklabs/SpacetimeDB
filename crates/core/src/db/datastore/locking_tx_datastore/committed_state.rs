@@ -5,7 +5,10 @@ use super::{
     tx_state::{DeleteTable, IndexIdMap, RemovedIndexIdSet, TxState},
     IterByColEqTx,
 };
-use crate::db::datastore::locking_tx_datastore::state_view::{IterTx, ScanIterByColRangeTx};
+use crate::{
+    db::datastore::locking_tx_datastore::state_view::{IterTx, ScanIterByColRangeTx},
+    error::IndexError,
+};
 use crate::{
     db::{
         datastore::{
@@ -132,7 +135,8 @@ fn ignore_duplicate_insert_error<T>(res: std::result::Result<T, InsertError>) ->
     match res {
         Ok(_) => Ok(()),
         Err(InsertError::Duplicate(_)) => Ok(()),
-        Err(err) => Err(err.into()),
+        Err(InsertError::Bflatn(e)) => Err(e.into()),
+        Err(InsertError::IndexError(e)) => Err(IndexError::from(e).into()),
     }
 }
 
@@ -320,7 +324,7 @@ impl CommittedState {
         let blob_store = &mut self.blob_store;
         table
             .delete_equal_row(blob_store, rel)
-            .map_err(TableError::Insert)?
+            .map_err(TableError::Bflatn)?
             .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
         Ok(())
     }
@@ -332,8 +336,11 @@ impl CommittedState {
         row: &ProductValue,
     ) -> Result<()> {
         let (table, blob_store) = self.get_table_and_blob_store_or_create(table_id, schema);
-        table.insert(blob_store, row).map_err(TableError::Insert)?;
-        Ok(())
+        table.insert(blob_store, row).map(drop).map_err(|e| match e {
+            InsertError::Bflatn(e) => TableError::Bflatn(e).into(),
+            InsertError::Duplicate(e) => TableError::Duplicate(e).into(),
+            InsertError::IndexError(e) => IndexError::UniqueConstraintViolation(e).into(),
+        })
     }
 
     pub(super) fn build_sequence_state(&mut self, sequence_state: &mut SequencesState) -> Result<()> {
@@ -510,15 +517,15 @@ impl CommittedState {
     pub(super) fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
 
+        // First, merge index id fast-lookup map changes and delete indices.
+        self.merge_index_map(tx_state.index_id_map, tx_state.index_id_map_removals.as_deref());
+
         // First, apply deletes. This will free up space in the committed tables.
         self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables);
 
         // Then, apply inserts. This will re-fill the holes freed by deletions
         // before allocating new pages.
         self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store);
-
-        // Merge index id fast-lookup map changes.
-        self.merge_index_map(tx_state.index_id_map, tx_state.index_id_map_removals.as_deref());
 
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
@@ -612,9 +619,21 @@ impl CommittedState {
     }
 
     fn merge_index_map(&mut self, index_id_map: IndexIdMap, index_id_map_removals: Option<&RemovedIndexIdSet>) {
-        for index_id in index_id_map_removals.into_iter().flatten() {
-            self.index_id_map.remove(index_id);
+        // Remove indices that tx-state removed.
+        // It's not necessarily the case that the index already existed in the committed state.
+        for (index_id, table_id) in index_id_map_removals
+            .into_iter()
+            .flatten()
+            .filter_map(|index_id| self.index_id_map.remove(index_id).map(|x| (*index_id, x)))
+        {
+            assert!(self
+                .tables
+                .get_mut(&table_id)
+                .expect("table to delete index from should exist")
+                .delete_index(&self.blob_store, index_id));
         }
+
+        // Add the ones tx-state added.
         self.index_id_map.extend(index_id_map);
     }
 
