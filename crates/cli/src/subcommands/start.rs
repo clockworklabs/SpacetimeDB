@@ -8,6 +8,12 @@ use spacetimedb_paths::SpacetimePaths;
 pub fn cli() -> clap::Command {
     clap::Command::new("start")
         .about("Start a local SpacetimeDB instance")
+        .long_about(
+            "\
+Start a local SpacetimeDB instance
+
+Run `spacetime start --help` to see all options.",
+        )
         .disable_help_flag(true)
         .arg(
             Arg::new("edition")
@@ -52,13 +58,16 @@ pub async fn exec(paths: &SpacetimePaths, args: &ArgMatches) -> anyhow::Result<E
         .arg(&paths.cli_config_dir)
         .args(args);
 
-    // TODO(noa): use std::os::unix::process::CommandExt::exec() here once we have windows CI
-    // use std::os::unix::process::CommandExt;
-    // let err = cmd.exec();
-    // Err(err).context(format!("exec failed for {}", bin_path.display()))
+    #[cfg(unix)]
+    let result = {
+        use std::os::unix::process::CommandExt;
+        // if exec() succeeds, it diverges, so the function just returns an io::Error
+        let err = cmd.exec();
+        Err::<std::process::ExitStatus, _>(err)
+    };
+    #[cfg(not(unix))]
+    let result = cmd.status();
 
-    let status = cmd
-        .status()
-        .with_context(|| format!("exec failed for {}", bin_path.display()))?;
+    let status = result.with_context(|| format!("exec failed for {}", bin_path.display()))?;
     Ok(ExitCode::from(status.code().unwrap_or(1).try_into().unwrap_or(1)))
 }

@@ -4,23 +4,22 @@ mod config;
 pub(crate) mod detect;
 mod edit_distance;
 mod errors;
-mod start;
 mod subcommands;
 mod tasks;
 pub mod util;
+pub mod version;
 
 use std::process::ExitCode;
 
 use clap::{ArgMatches, Command};
 
 pub use config::Config;
-use spacetimedb_paths::SpacetimePaths;
+use spacetimedb_paths::{RootDir, SpacetimePaths};
 pub use subcommands::*;
 pub use tasks::build;
 
 pub fn get_subcommands() -> Vec<Command> {
     vec![
-        version::cli(),
         publish::cli(),
         delete::cli(),
         logs::cli(),
@@ -36,20 +35,20 @@ pub fn get_subcommands() -> Vec<Command> {
         init::cli(),
         build::cli(),
         server::cli(),
-        upgrade::cli(),
         subscribe::cli(),
         start::cli(),
+        subcommands::version::cli(),
     ]
 }
 
 pub async fn exec_subcommand(
     config: Config,
     paths: &SpacetimePaths,
+    root_dir: Option<&RootDir>,
     cmd: &str,
     args: &ArgMatches,
 ) -> anyhow::Result<ExitCode> {
     match cmd {
-        "version" => version::exec(config, args).await,
         "call" => call::exec(config, args).await,
         "describe" => describe::exec(config, args).await,
         "energy" => energy::exec(config, args).await,
@@ -67,7 +66,7 @@ pub async fn exec_subcommand(
         "start" => return start::exec(paths, args).await,
         "login" => login::exec(config, args).await,
         "logout" => logout::exec(config, args).await,
-        "upgrade" => upgrade::exec(config, args).await,
+        "version" => return subcommands::version::exec(paths, root_dir, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
     .map(|()| ExitCode::SUCCESS)
