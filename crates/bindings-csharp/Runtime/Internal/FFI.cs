@@ -195,7 +195,7 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus datastore_delete_all_by_eq_bsatn(
         TableId table_id,
-        [In] byte[] relation,
+        ReadOnlySpan<byte> relation,
         uint relation_len,
         out uint out_
     );

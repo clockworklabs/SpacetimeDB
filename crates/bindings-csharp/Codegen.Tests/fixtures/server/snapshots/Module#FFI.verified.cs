@@ -37,13 +37,10 @@ namespace SpacetimeDB
         internal readonly struct BTreeMultiColumn
             : SpacetimeDB.Internal.ITableView<BTreeMultiColumn, global::BTreeMultiColumn>
         {
-            static global::BTreeMultiColumn SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 BTreeMultiColumn,
                 global::BTreeMultiColumn
-            >.ReadGenFields(System.IO.BinaryReader reader, global::BTreeMultiColumn row)
-            {
-                return row;
-            }
+            >.ReadGenFields(System.IO.BinaryReader reader, ref global::BTreeMultiColumn row) { }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
                 BTreeMultiColumn,
@@ -81,17 +78,20 @@ namespace SpacetimeDB
                     global::BTreeMultiColumn
                 >.DoIter();
 
-            public global::BTreeMultiColumn Insert(global::BTreeMultiColumn row) =>
+            public global::BTreeMultiColumn Insert(global::BTreeMultiColumn row)
+            {
                 SpacetimeDB.Internal.ITableView<
                     BTreeMultiColumn,
                     global::BTreeMultiColumn
-                >.DoInsert(row);
+                >.DoInsert(ref row);
+                return row;
+            }
 
             public bool Delete(global::BTreeMultiColumn row) =>
                 SpacetimeDB.Internal.ITableView<
                     BTreeMultiColumn,
                     global::BTreeMultiColumn
-                >.DoDelete(row);
+                >.DoDelete(in row);
 
             internal sealed class LocationIndex()
                 : SpacetimeDB.Internal.IndexBase<global::BTreeMultiColumn>(
@@ -215,13 +215,10 @@ namespace SpacetimeDB
         internal readonly struct BTreeViews
             : SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>
         {
-            static global::BTreeViews SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 BTreeViews,
                 global::BTreeViews
-            >.ReadGenFields(System.IO.BinaryReader reader, global::BTreeViews row)
-            {
-                return row;
-            }
+            >.ReadGenFields(System.IO.BinaryReader reader, ref global::BTreeViews row) { }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
                 BTreeViews,
@@ -269,11 +266,14 @@ namespace SpacetimeDB
             public IEnumerable<global::BTreeViews> Iter() =>
                 SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoIter();
 
-            public global::BTreeViews Insert(global::BTreeViews row) =>
-                SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoInsert(row);
+            public global::BTreeViews Insert(global::BTreeViews row)
+            {
+                SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoInsert(ref row);
+                return row;
+            }
 
             public bool Delete(global::BTreeViews row) =>
-                SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoDelete(row);
+                SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoDelete(in row);
 
             internal sealed class IdUniqueIndex
                 : UniqueIndex<
@@ -292,7 +292,7 @@ namespace SpacetimeDB
                 public global::BTreeViews? Find(SpacetimeDB.Identity key) =>
                     DoFilter(key).Cast<global::BTreeViews?>().SingleOrDefault();
 
-                public bool Update(global::BTreeViews row) => DoUpdate(row.Id, row);
+                public bool Update(global::BTreeViews row) => DoUpdate(row.Id, ref row);
             }
 
             internal IdUniqueIndex Id => new(this);
@@ -401,16 +401,15 @@ namespace SpacetimeDB
         public readonly struct MultiTable1
             : SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>
         {
-            static global::MultiTableRow SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 MultiTable1,
                 global::MultiTableRow
-            >.ReadGenFields(System.IO.BinaryReader reader, global::MultiTableRow row)
+            >.ReadGenFields(System.IO.BinaryReader reader, ref global::MultiTableRow row)
             {
                 if (row.Foo == default)
                 {
                     row.Foo = global::MultiTableRow.BSATN.Foo.Read(reader);
                 }
-                return row;
             }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
@@ -460,11 +459,18 @@ namespace SpacetimeDB
             public IEnumerable<global::MultiTableRow> Iter() =>
                 SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoIter();
 
-            public global::MultiTableRow Insert(global::MultiTableRow row) =>
-                SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoInsert(row);
+            public global::MultiTableRow Insert(global::MultiTableRow row)
+            {
+                SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoInsert(
+                    ref row
+                );
+                return row;
+            }
 
             public bool Delete(global::MultiTableRow row) =>
-                SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoDelete(row);
+                SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoDelete(
+                    in row
+                );
 
             public sealed class FooUniqueIndex
                 : UniqueIndex<MultiTable1, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
@@ -478,7 +484,7 @@ namespace SpacetimeDB
                 public global::MultiTableRow? Find(uint key) =>
                     DoFilter(key).Cast<global::MultiTableRow?>().SingleOrDefault();
 
-                public bool Update(global::MultiTableRow row) => DoUpdate(row.Foo, row);
+                public bool Update(global::MultiTableRow row) => DoUpdate(row.Foo, ref row);
             }
 
             public FooUniqueIndex Foo => new(this);
@@ -523,16 +529,15 @@ namespace SpacetimeDB
         public readonly struct MultiTable2
             : SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>
         {
-            static global::MultiTableRow SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 MultiTable2,
                 global::MultiTableRow
-            >.ReadGenFields(System.IO.BinaryReader reader, global::MultiTableRow row)
+            >.ReadGenFields(System.IO.BinaryReader reader, ref global::MultiTableRow row)
             {
                 if (row.Foo == default)
                 {
                     row.Foo = global::MultiTableRow.BSATN.Foo.Read(reader);
                 }
-                return row;
             }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
@@ -577,11 +582,18 @@ namespace SpacetimeDB
             public IEnumerable<global::MultiTableRow> Iter() =>
                 SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoIter();
 
-            public global::MultiTableRow Insert(global::MultiTableRow row) =>
-                SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoInsert(row);
+            public global::MultiTableRow Insert(global::MultiTableRow row)
+            {
+                SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoInsert(
+                    ref row
+                );
+                return row;
+            }
 
             public bool Delete(global::MultiTableRow row) =>
-                SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoDelete(row);
+                SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoDelete(
+                    in row
+                );
 
             public sealed class BarUniqueIndex
                 : UniqueIndex<MultiTable2, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
@@ -595,7 +607,7 @@ namespace SpacetimeDB
                 public global::MultiTableRow? Find(uint key) =>
                     DoFilter(key).Cast<global::MultiTableRow?>().SingleOrDefault();
 
-                public bool Update(global::MultiTableRow row) => DoUpdate(row.Bar, row);
+                public bool Update(global::MultiTableRow row) => DoUpdate(row.Bar, ref row);
             }
 
             public BarUniqueIndex Bar => new(this);
@@ -604,13 +616,10 @@ namespace SpacetimeDB
         public readonly struct PrivateTable
             : SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>
         {
-            static global::PrivateTable SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 PrivateTable,
                 global::PrivateTable
-            >.ReadGenFields(System.IO.BinaryReader reader, global::PrivateTable row)
-            {
-                return row;
-            }
+            >.ReadGenFields(System.IO.BinaryReader reader, ref global::PrivateTable row) { }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
                 PrivateTable,
@@ -635,26 +644,32 @@ namespace SpacetimeDB
             public IEnumerable<global::PrivateTable> Iter() =>
                 SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoIter();
 
-            public global::PrivateTable Insert(global::PrivateTable row) =>
-                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoInsert(row);
+            public global::PrivateTable Insert(global::PrivateTable row)
+            {
+                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoInsert(
+                    ref row
+                );
+                return row;
+            }
 
             public bool Delete(global::PrivateTable row) =>
-                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoDelete(row);
+                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoDelete(
+                    in row
+                );
         }
 
         public readonly struct PublicTable
             : SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>
         {
-            static global::PublicTable SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 PublicTable,
                 global::PublicTable
-            >.ReadGenFields(System.IO.BinaryReader reader, global::PublicTable row)
+            >.ReadGenFields(System.IO.BinaryReader reader, ref global::PublicTable row)
             {
                 if (row.Id == default)
                 {
                     row.Id = global::PublicTable.BSATN.Id.Read(reader);
                 }
-                return row;
             }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
@@ -699,11 +714,14 @@ namespace SpacetimeDB
             public IEnumerable<global::PublicTable> Iter() =>
                 SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoIter();
 
-            public global::PublicTable Insert(global::PublicTable row) =>
-                SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoInsert(row);
+            public global::PublicTable Insert(global::PublicTable row)
+            {
+                SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoInsert(ref row);
+                return row;
+            }
 
             public bool Delete(global::PublicTable row) =>
-                SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoDelete(row);
+                SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoDelete(in row);
 
             public sealed class IdUniqueIndex
                 : UniqueIndex<PublicTable, global::PublicTable, int, SpacetimeDB.BSATN.I32>
@@ -717,7 +735,7 @@ namespace SpacetimeDB
                 public global::PublicTable? Find(int key) =>
                     DoFilter(key).Cast<global::PublicTable?>().SingleOrDefault();
 
-                public bool Update(global::PublicTable row) => DoUpdate(row.Id, row);
+                public bool Update(global::PublicTable row) => DoUpdate(row.Id, ref row);
             }
 
             public IdUniqueIndex Id => new(this);
@@ -729,16 +747,13 @@ namespace SpacetimeDB
                 global::RegressionMultipleUniqueIndexesHadSameName
             >
         {
-            static global::RegressionMultipleUniqueIndexesHadSameName SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 RegressionMultipleUniqueIndexesHadSameName,
                 global::RegressionMultipleUniqueIndexesHadSameName
             >.ReadGenFields(
                 System.IO.BinaryReader reader,
-                global::RegressionMultipleUniqueIndexesHadSameName row
-            )
-            {
-                return row;
-            }
+                ref global::RegressionMultipleUniqueIndexesHadSameName row
+            ) { }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
                 RegressionMultipleUniqueIndexesHadSameName,
@@ -795,17 +810,20 @@ namespace SpacetimeDB
 
             public global::RegressionMultipleUniqueIndexesHadSameName Insert(
                 global::RegressionMultipleUniqueIndexesHadSameName row
-            ) =>
+            )
+            {
                 SpacetimeDB.Internal.ITableView<
                     RegressionMultipleUniqueIndexesHadSameName,
                     global::RegressionMultipleUniqueIndexesHadSameName
-                >.DoInsert(row);
+                >.DoInsert(ref row);
+                return row;
+            }
 
             public bool Delete(global::RegressionMultipleUniqueIndexesHadSameName row) =>
                 SpacetimeDB.Internal.ITableView<
                     RegressionMultipleUniqueIndexesHadSameName,
                     global::RegressionMultipleUniqueIndexesHadSameName
-                >.DoDelete(row);
+                >.DoDelete(in row);
 
             internal sealed class Unique1UniqueIndex
                 : UniqueIndex<
@@ -828,7 +846,7 @@ namespace SpacetimeDB
                         .SingleOrDefault();
 
                 public bool Update(global::RegressionMultipleUniqueIndexesHadSameName row) =>
-                    DoUpdate(row.Unique1, row);
+                    DoUpdate(row.Unique1, ref row);
             }
 
             internal Unique1UniqueIndex Unique1 => new(this);
@@ -854,7 +872,7 @@ namespace SpacetimeDB
                         .SingleOrDefault();
 
                 public bool Update(global::RegressionMultipleUniqueIndexesHadSameName row) =>
-                    DoUpdate(row.Unique2, row);
+                    DoUpdate(row.Unique2, ref row);
             }
 
             internal Unique2UniqueIndex Unique2 => new(this);
@@ -863,10 +881,10 @@ namespace SpacetimeDB
         public readonly struct SendMessageTimer
             : SpacetimeDB.Internal.ITableView<SendMessageTimer, global::Timers.SendMessageTimer>
         {
-            static global::Timers.SendMessageTimer SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 SendMessageTimer,
                 global::Timers.SendMessageTimer
-            >.ReadGenFields(System.IO.BinaryReader reader, global::Timers.SendMessageTimer row)
+            >.ReadGenFields(System.IO.BinaryReader reader, ref global::Timers.SendMessageTimer row)
             {
                 if (row.ScheduledId == default)
                 {
@@ -874,7 +892,6 @@ namespace SpacetimeDB
                         reader
                     );
                 }
-                return row;
             }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
@@ -930,17 +947,20 @@ namespace SpacetimeDB
                     global::Timers.SendMessageTimer
                 >.DoIter();
 
-            public global::Timers.SendMessageTimer Insert(global::Timers.SendMessageTimer row) =>
+            public global::Timers.SendMessageTimer Insert(global::Timers.SendMessageTimer row)
+            {
                 SpacetimeDB.Internal.ITableView<
                     SendMessageTimer,
                     global::Timers.SendMessageTimer
-                >.DoInsert(row);
+                >.DoInsert(ref row);
+                return row;
+            }
 
             public bool Delete(global::Timers.SendMessageTimer row) =>
                 SpacetimeDB.Internal.ITableView<
                     SendMessageTimer,
                     global::Timers.SendMessageTimer
-                >.DoDelete(row);
+                >.DoDelete(in row);
 
             public sealed class ScheduledIdUniqueIndex
                 : UniqueIndex<
@@ -960,7 +980,7 @@ namespace SpacetimeDB
                     DoFilter(key).Cast<global::Timers.SendMessageTimer?>().SingleOrDefault();
 
                 public bool Update(global::Timers.SendMessageTimer row) =>
-                    DoUpdate(row.ScheduledId, row);
+                    DoUpdate(row.ScheduledId, ref row);
             }
 
             public ScheduledIdUniqueIndex ScheduledId => new(this);

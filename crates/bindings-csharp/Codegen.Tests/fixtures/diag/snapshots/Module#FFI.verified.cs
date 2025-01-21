@@ -37,10 +37,10 @@ namespace SpacetimeDB
         public readonly struct TestAutoIncNotInteger
             : SpacetimeDB.Internal.ITableView<TestAutoIncNotInteger, global::TestAutoIncNotInteger>
         {
-            static global::TestAutoIncNotInteger SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 TestAutoIncNotInteger,
                 global::TestAutoIncNotInteger
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestAutoIncNotInteger row)
+            >.ReadGenFields(System.IO.BinaryReader reader, ref global::TestAutoIncNotInteger row)
             {
                 if (row.AutoIncField == default)
                 {
@@ -54,7 +54,6 @@ namespace SpacetimeDB
                         reader
                     );
                 }
-                return row;
             }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
@@ -109,17 +108,20 @@ namespace SpacetimeDB
                     global::TestAutoIncNotInteger
                 >.DoIter();
 
-            public global::TestAutoIncNotInteger Insert(global::TestAutoIncNotInteger row) =>
+            public global::TestAutoIncNotInteger Insert(global::TestAutoIncNotInteger row)
+            {
                 SpacetimeDB.Internal.ITableView<
                     TestAutoIncNotInteger,
                     global::TestAutoIncNotInteger
-                >.DoInsert(row);
+                >.DoInsert(ref row);
+                return row;
+            }
 
             public bool Delete(global::TestAutoIncNotInteger row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestAutoIncNotInteger,
                     global::TestAutoIncNotInteger
-                >.DoDelete(row);
+                >.DoDelete(in row);
 
             public sealed class IdentityFieldUniqueIndex
                 : UniqueIndex<
@@ -139,7 +141,7 @@ namespace SpacetimeDB
                     DoFilter(key).Cast<global::TestAutoIncNotInteger?>().SingleOrDefault();
 
                 public bool Update(global::TestAutoIncNotInteger row) =>
-                    DoUpdate(row.IdentityField, row);
+                    DoUpdate(row.IdentityField, ref row);
             }
 
             public IdentityFieldUniqueIndex IdentityField => new(this);
@@ -151,13 +153,13 @@ namespace SpacetimeDB
                 global::TestDuplicateTableName
             >
         {
-            static global::TestDuplicateTableName SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 TestDuplicateTableName,
                 global::TestDuplicateTableName
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestDuplicateTableName row)
-            {
-                return row;
-            }
+            >.ReadGenFields(
+                System.IO.BinaryReader reader,
+                ref global::TestDuplicateTableName row
+            ) { }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
                 TestDuplicateTableName,
@@ -188,29 +190,29 @@ namespace SpacetimeDB
                     global::TestDuplicateTableName
                 >.DoIter();
 
-            public global::TestDuplicateTableName Insert(global::TestDuplicateTableName row) =>
+            public global::TestDuplicateTableName Insert(global::TestDuplicateTableName row)
+            {
                 SpacetimeDB.Internal.ITableView<
                     TestDuplicateTableName,
                     global::TestDuplicateTableName
-                >.DoInsert(row);
+                >.DoInsert(ref row);
+                return row;
+            }
 
             public bool Delete(global::TestDuplicateTableName row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestDuplicateTableName,
                     global::TestDuplicateTableName
-                >.DoDelete(row);
+                >.DoDelete(in row);
         }
 
         public readonly struct TestIndexIssues
             : SpacetimeDB.Internal.ITableView<TestIndexIssues, global::TestIndexIssues>
         {
-            static global::TestIndexIssues SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 TestIndexIssues,
                 global::TestIndexIssues
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestIndexIssues row)
-            {
-                return row;
-            }
+            >.ReadGenFields(System.IO.BinaryReader reader, ref global::TestIndexIssues row) { }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
                 TestIndexIssues,
@@ -257,14 +259,17 @@ namespace SpacetimeDB
             public IEnumerable<global::TestIndexIssues> Iter() =>
                 SpacetimeDB.Internal.ITableView<TestIndexIssues, global::TestIndexIssues>.DoIter();
 
-            public global::TestIndexIssues Insert(global::TestIndexIssues row) =>
+            public global::TestIndexIssues Insert(global::TestIndexIssues row)
+            {
                 SpacetimeDB.Internal.ITableView<TestIndexIssues, global::TestIndexIssues>.DoInsert(
-                    row
+                    ref row
                 );
+                return row;
+            }
 
             public bool Delete(global::TestIndexIssues row) =>
                 SpacetimeDB.Internal.ITableView<TestIndexIssues, global::TestIndexIssues>.DoDelete(
-                    row
+                    in row
                 );
 
             public sealed class TestIndexWithoutColumnsIndex()
@@ -331,13 +336,10 @@ namespace SpacetimeDB
                 global::TestScheduleIssues
             >
         {
-            static global::TestScheduleIssues SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 TestScheduleWithMissingScheduleAtField,
                 global::TestScheduleIssues
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
-            {
-                return row;
-            }
+            >.ReadGenFields(System.IO.BinaryReader reader, ref global::TestScheduleIssues row) { }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
                 TestScheduleWithMissingScheduleAtField,
@@ -368,17 +370,20 @@ namespace SpacetimeDB
                     global::TestScheduleIssues
                 >.DoIter();
 
-            public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
+            public global::TestScheduleIssues Insert(global::TestScheduleIssues row)
+            {
                 SpacetimeDB.Internal.ITableView<
                     TestScheduleWithMissingScheduleAtField,
                     global::TestScheduleIssues
-                >.DoInsert(row);
+                >.DoInsert(ref row);
+                return row;
+            }
 
             public bool Delete(global::TestScheduleIssues row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestScheduleWithMissingScheduleAtField,
                     global::TestScheduleIssues
-                >.DoDelete(row);
+                >.DoDelete(in row);
         }
 
         public readonly struct TestScheduleWithoutPrimaryKey
@@ -387,13 +392,10 @@ namespace SpacetimeDB
                 global::TestScheduleIssues
             >
         {
-            static global::TestScheduleIssues SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutPrimaryKey,
                 global::TestScheduleIssues
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
-            {
-                return row;
-            }
+            >.ReadGenFields(System.IO.BinaryReader reader, ref global::TestScheduleIssues row) { }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutPrimaryKey,
@@ -427,17 +429,20 @@ namespace SpacetimeDB
                     global::TestScheduleIssues
                 >.DoIter();
 
-            public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
+            public global::TestScheduleIssues Insert(global::TestScheduleIssues row)
+            {
                 SpacetimeDB.Internal.ITableView<
                     TestScheduleWithoutPrimaryKey,
                     global::TestScheduleIssues
-                >.DoInsert(row);
+                >.DoInsert(ref row);
+                return row;
+            }
 
             public bool Delete(global::TestScheduleIssues row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestScheduleWithoutPrimaryKey,
                     global::TestScheduleIssues
-                >.DoDelete(row);
+                >.DoDelete(in row);
         }
 
         public readonly struct TestScheduleWithoutScheduleAt
@@ -446,13 +451,10 @@ namespace SpacetimeDB
                 global::TestScheduleIssues
             >
         {
-            static global::TestScheduleIssues SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutScheduleAt,
                 global::TestScheduleIssues
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
-            {
-                return row;
-            }
+            >.ReadGenFields(System.IO.BinaryReader reader, ref global::TestScheduleIssues row) { }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
                 TestScheduleWithoutScheduleAt,
@@ -496,17 +498,20 @@ namespace SpacetimeDB
                     global::TestScheduleIssues
                 >.DoIter();
 
-            public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
+            public global::TestScheduleIssues Insert(global::TestScheduleIssues row)
+            {
                 SpacetimeDB.Internal.ITableView<
                     TestScheduleWithoutScheduleAt,
                     global::TestScheduleIssues
-                >.DoInsert(row);
+                >.DoInsert(ref row);
+                return row;
+            }
 
             public bool Delete(global::TestScheduleIssues row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestScheduleWithoutScheduleAt,
                     global::TestScheduleIssues
-                >.DoDelete(row);
+                >.DoDelete(in row);
 
             public sealed class IdCorrectTypeUniqueIndex
                 : UniqueIndex<
@@ -526,7 +531,7 @@ namespace SpacetimeDB
                     DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
 
                 public bool Update(global::TestScheduleIssues row) =>
-                    DoUpdate(row.IdCorrectType, row);
+                    DoUpdate(row.IdCorrectType, ref row);
             }
 
             public IdCorrectTypeUniqueIndex IdCorrectType => new(this);
@@ -538,13 +543,10 @@ namespace SpacetimeDB
                 global::TestScheduleIssues
             >
         {
-            static global::TestScheduleIssues SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongPrimaryKeyType,
                 global::TestScheduleIssues
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
-            {
-                return row;
-            }
+            >.ReadGenFields(System.IO.BinaryReader reader, ref global::TestScheduleIssues row) { }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongPrimaryKeyType,
@@ -591,17 +593,20 @@ namespace SpacetimeDB
                     global::TestScheduleIssues
                 >.DoIter();
 
-            public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
+            public global::TestScheduleIssues Insert(global::TestScheduleIssues row)
+            {
                 SpacetimeDB.Internal.ITableView<
                     TestScheduleWithWrongPrimaryKeyType,
                     global::TestScheduleIssues
-                >.DoInsert(row);
+                >.DoInsert(ref row);
+                return row;
+            }
 
             public bool Delete(global::TestScheduleIssues row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestScheduleWithWrongPrimaryKeyType,
                     global::TestScheduleIssues
-                >.DoDelete(row);
+                >.DoDelete(in row);
 
             public sealed class IdWrongTypeUniqueIndex
                 : UniqueIndex<
@@ -621,7 +626,7 @@ namespace SpacetimeDB
                     DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
 
                 public bool Update(global::TestScheduleIssues row) =>
-                    DoUpdate(row.IdWrongType, row);
+                    DoUpdate(row.IdWrongType, ref row);
             }
 
             public IdWrongTypeUniqueIndex IdWrongType => new(this);
@@ -633,13 +638,10 @@ namespace SpacetimeDB
                 global::TestScheduleIssues
             >
         {
-            static global::TestScheduleIssues SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongScheduleAtType,
                 global::TestScheduleIssues
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
-            {
-                return row;
-            }
+            >.ReadGenFields(System.IO.BinaryReader reader, ref global::TestScheduleIssues row) { }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
                 TestScheduleWithWrongScheduleAtType,
@@ -686,17 +688,20 @@ namespace SpacetimeDB
                     global::TestScheduleIssues
                 >.DoIter();
 
-            public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
+            public global::TestScheduleIssues Insert(global::TestScheduleIssues row)
+            {
                 SpacetimeDB.Internal.ITableView<
                     TestScheduleWithWrongScheduleAtType,
                     global::TestScheduleIssues
-                >.DoInsert(row);
+                >.DoInsert(ref row);
+                return row;
+            }
 
             public bool Delete(global::TestScheduleIssues row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestScheduleWithWrongScheduleAtType,
                     global::TestScheduleIssues
-                >.DoDelete(row);
+                >.DoDelete(in row);
 
             public sealed class IdCorrectTypeUniqueIndex
                 : UniqueIndex<
@@ -717,7 +722,7 @@ namespace SpacetimeDB
                     DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
 
                 public bool Update(global::TestScheduleIssues row) =>
-                    DoUpdate(row.IdCorrectType, row);
+                    DoUpdate(row.IdCorrectType, ref row);
             }
 
             public IdCorrectTypeUniqueIndex IdCorrectType => new(this);
@@ -729,13 +734,13 @@ namespace SpacetimeDB
                 global::TestUniqueNotEquatable
             >
         {
-            static global::TestUniqueNotEquatable SpacetimeDB.Internal.ITableView<
+            static void SpacetimeDB.Internal.ITableView<
                 TestUniqueNotEquatable,
                 global::TestUniqueNotEquatable
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestUniqueNotEquatable row)
-            {
-                return row;
-            }
+            >.ReadGenFields(
+                System.IO.BinaryReader reader,
+                ref global::TestUniqueNotEquatable row
+            ) { }
 
             static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITableView<
                 TestUniqueNotEquatable,
@@ -788,17 +793,20 @@ namespace SpacetimeDB
                     global::TestUniqueNotEquatable
                 >.DoIter();
 
-            public global::TestUniqueNotEquatable Insert(global::TestUniqueNotEquatable row) =>
+            public global::TestUniqueNotEquatable Insert(global::TestUniqueNotEquatable row)
+            {
                 SpacetimeDB.Internal.ITableView<
                     TestUniqueNotEquatable,
                     global::TestUniqueNotEquatable
-                >.DoInsert(row);
+                >.DoInsert(ref row);
+                return row;
+            }
 
             public bool Delete(global::TestUniqueNotEquatable row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestUniqueNotEquatable,
                     global::TestUniqueNotEquatable
-                >.DoDelete(row);
+                >.DoDelete(in row);
         }
     }
 

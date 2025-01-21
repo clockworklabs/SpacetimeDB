@@ -14,41 +14,43 @@ public abstract class IndexBase<Row>
         FFI.index_id_from_name(name_bytes, (uint)name_bytes.Length, out indexId);
     }
 
-    private static void ToParams<Bounds>(
+    private delegate FFI.CheckedStatus FfiCallWithBounds<T>(
+        FFI.IndexId index_id,
+        ReadOnlySpan<byte> prefix,
+        uint prefix_len,
+        FFI.ColId prefix_elems,
+        ReadOnlySpan<byte> rstart,
+        uint rstart_len,
+        ReadOnlySpan<byte> rend,
+        uint rend_len,
+        out T out_
+    );
+
+    private static void MakeFfiCallWithBounds<Bounds, T>(
+        FFI.IndexId indexId,
         Bounds bounds,
-        out FFI.ColId prefixElems,
-        out ReadOnlySpan<byte> prefix,
-        out ReadOnlySpan<byte> rstart,
-        out ReadOnlySpan<byte> rend
+        FfiCallWithBounds<T> ffiCall,
+        out T out_
     )
         where Bounds : IBTreeIndexBounds
     {
-        prefixElems = new FFI.ColId(bounds.PrefixElems);
+        var prefixElems = new FFI.ColId(bounds.PrefixElems);
 
-        using var buffer = new SerializationBuffer();
+        using var buffer = SerializationBuffer.Borrow();
 
         var w = buffer.Writer;
         bounds.Prefix(w);
-        var prefix_idx = buffer.Written.Length;
+        var prefix_idx = (int)buffer.Position;
         bounds.RStart(w);
-        var rstart_idx = buffer.Written.Length;
+        var rstart_idx = (int)buffer.Position;
         bounds.REnd(w);
-        var bytes = buffer.Written;
-        var rend_idx = bytes.Length;
+        var bytes = buffer.GetWritten();
 
-        prefix = bytes[..prefix_idx];
-        rstart = bytes[prefix_idx..rstart_idx];
-        rend = bytes[rstart_idx..rend_idx];
-    }
+        var prefix = bytes[..prefix_idx];
+        var rstart = bytes[prefix_idx..rstart_idx];
+        var rend = bytes[rstart_idx..];
 
-    protected IEnumerable<Row> DoFilter<Bounds>(Bounds bounds)
-        where Bounds : IBTreeIndexBounds => new RawTableIter<Bounds>(indexId, bounds).Parse();
-
-    protected uint DoDelete<Bounds>(Bounds bounds)
-        where Bounds : IBTreeIndexBounds
-    {
-        ToParams(bounds, out var prefixElems, out var prefix, out var rstart, out var rend);
-        FFI.datastore_delete_by_btree_scan_bsatn(
+        ffiCall(
             indexId,
             prefix,
             (uint)prefix.Length,
@@ -57,7 +59,21 @@ public abstract class IndexBase<Row>
             (uint)rstart.Length,
             rend,
             (uint)rend.Length,
-            out var out_
+            out out_
+        );
+    }
+
+    protected IEnumerable<Row> DoFilter<Bounds>(Bounds bounds)
+        where Bounds : IBTreeIndexBounds => new RawTableIter<Bounds>(indexId, bounds).Parse();
+
+    protected uint DoDelete<Bounds>(Bounds bounds)
+        where Bounds : IBTreeIndexBounds
+    {
+        MakeFfiCallWithBounds(
+            indexId,
+            bounds,
+            FFI.datastore_delete_by_btree_scan_bsatn,
+            out uint out_
         );
         return out_;
     }
@@ -67,18 +83,7 @@ public abstract class IndexBase<Row>
     {
         protected override void IterStart(out FFI.RowIter handle)
         {
-            ToParams(bounds, out var prefixElems, out var prefix, out var rstart, out var rend);
-            FFI.datastore_btree_scan_bsatn(
-                indexId,
-                prefix,
-                (uint)prefix.Length,
-                prefixElems,
-                rstart,
-                (uint)rstart.Length,
-                rend,
-                (uint)rend.Length,
-                out handle
-            );
+            MakeFfiCallWithBounds(indexId, bounds, FFI.datastore_btree_scan_bsatn, out handle);
         }
     }
 }

@@ -1,36 +1,42 @@
 namespace SpacetimeDB.Internal;
 
+using System.Diagnostics;
+using System.Text;
 using SpacetimeDB.BSATN;
 
 // SpacetimeDB modules are guaranteed to be single-threaded, and, unlike in iterators, we don't have any potential for single-threaded concurrency.
 // This means we can use a single static buffer for all serialization operations, as long as we don't use it concurrently (e.g. in iterators).
-public readonly struct SerializationBuffer : IDisposable
+// In order to ensure that, this struct acts as a singleton guard to the data that actually lives in a static scope.
+public class SerializationBuffer : MemoryStream
 {
-    private static readonly MemoryStream stream = new();
+    public readonly BinaryReader Reader;
+    public readonly BinaryWriter Writer;
+    private bool isUsed = false;
 
-    private static readonly BinaryReader reader = new(stream);
-    private static readonly BinaryWriter writer = new(stream);
-    private static bool isUsed = false;
-
-#pragma warning disable CA1822 // Mark members as static
-    public BinaryReader Reader => reader;
-    public BinaryWriter Writer => writer;
-    public Span<byte> Written => stream.GetBuffer().AsSpan(0, (int)stream.Position);
-#pragma warning restore CA1822 // Mark members as static
-
-    public SerializationBuffer()
+    private SerializationBuffer()
     {
-        if (isUsed)
-        {
-            throw new InvalidOperationException("Buffer is already in use");
-        }
-        isUsed = true;
-        stream.Position = 0;
+        Reader = new(this, Encoding.UTF8, leaveOpen: true);
+        Writer = new(this, Encoding.UTF8, leaveOpen: true);
     }
 
-    public void Dispose()
+    private static readonly SerializationBuffer instance = new();
+
+    public static SerializationBuffer Borrow()
     {
-        isUsed = false;
+        Debug.Assert(!instance.isUsed, "Buffer is already in use");
+        instance.isUsed = true;
+        instance.Position = 0;
+        return instance;
+    }
+
+    public Span<byte> GetWritten() => GetBuffer().AsSpan(0, (int)Position);
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            isUsed = false;
+        }
     }
 }
 
@@ -172,26 +178,25 @@ public interface ITableView<View, T>
 
     protected static void DoInsert(ref T row)
     {
-        // Insert the row.
-        using (var buffer = new SerializationBuffer())
-        {
-            row.WriteFields(buffer.Writer);
-            var bytes = buffer.Written;
-            var bytes_len = (uint)bytes.Length;
-            FFI.datastore_insert_bsatn(tableId, bytes, ref bytes_len);
-        }
+        using var buffer = SerializationBuffer.Borrow();
 
-        // Write back any generated column values.
-        using var stream = new MemoryStream(bytes, 0, (int)bytes_len);
-        using var reader = new BinaryReader(stream);
-        return View.ReadGenFields(reader, row);
+        // Insert the row.
+        row.WriteFields(buffer.Writer);
+        var bytes = buffer.GetWritten();
+        var bytes_len = (uint)bytes.Length;
+        FFI.datastore_insert_bsatn(tableId, bytes, ref bytes_len);
+
+        // Read back any generated column values.
+        buffer.Position = 0;
+        View.ReadGenFields(buffer.Reader, ref row);
+        Debug.Assert(buffer.Position == bytes_len);
     }
 
     protected static bool DoDelete(in T row)
     {
-        using var buffer = new SerializationBuffer();
+        using var buffer = SerializationBuffer.Borrow();
         row.WriteFields(buffer.Writer);
-        var bytes = buffer.Written;
+        var bytes = buffer.GetWritten();
         FFI.datastore_delete_all_by_eq_bsatn(tableId, bytes, (uint)bytes.Length, out var out_);
         return out_ > 0;
     }
