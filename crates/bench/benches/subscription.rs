@@ -4,12 +4,15 @@ use spacetimedb::execution_context::Workload;
 use spacetimedb::host::module_host::DatabaseTableUpdate;
 use spacetimedb::identity::AuthCtx;
 use spacetimedb::messages::websocket::BsatnFormat;
+use spacetimedb::sql::ast::SchemaViewer;
 use spacetimedb::subscription::query::compile_read_only_queryset;
 use spacetimedb::subscription::subscription::ExecutionSet;
+use spacetimedb::subscription::tx::DeltaTx;
 use spacetimedb::{db::relational_db::RelationalDB, messages::websocket::Compression};
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
 use spacetimedb_primitives::{col_list, TableId};
+use spacetimedb_query::SubscribePlan;
 use spacetimedb_sats::{bsatn, product, AlgebraicType, AlgebraicValue, ProductValue};
 
 fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
@@ -107,6 +110,23 @@ fn eval(c: &mut Criterion) {
     let ins_rhs = insert_op(rhs, "location", new_rhs_row);
     let update = [&ins_lhs, &ins_rhs];
 
+    // A benchmark runner for the new query engine
+    let bench_query = |c: &mut Criterion, name, sql| {
+        c.bench_function(name, |b| {
+            let tx = raw.db.begin_tx(Workload::Subscribe);
+            let auth = AuthCtx::for_testing();
+            let schema_viewer = &SchemaViewer::new(&tx, &auth);
+            let plan = SubscribePlan::compile(sql, schema_viewer).unwrap();
+            let tx = DeltaTx::from(&tx);
+
+            b.iter(|| {
+                drop(black_box(
+                    plan.collect_table_update::<_, BsatnFormat>(Compression::None, &tx),
+                ))
+            })
+        });
+    };
+
     let bench_eval = |c: &mut Criterion, name, sql| {
         c.bench_function(name, |b| {
             let tx = raw.db.begin_tx(Workload::Update);
@@ -124,6 +144,22 @@ fn eval(c: &mut Criterion) {
         });
     };
 
+    // Join 1M rows on the left with 12K rows on the right.
+    // Note, this should use an index join so as not to read the entire footprint table.
+    let semijoin = format!(
+        r#"
+        select f.*
+        from footprint f join location l on f.entity_id = l.entity_id
+        where l.chunk_index = {chunk_index}
+        "#
+    );
+
+    let index_scan_multi = "select * from location WHERE x = 0 AND z = 10000 AND dimension = 0";
+
+    bench_query(c, "footprint-scan", "select * from footprint");
+    bench_query(c, "footprint-semijoin", &semijoin);
+    bench_query(c, "index-scan-multi", index_scan_multi);
+
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-scan --exact --profile-time=30
     // Iterate 1M rows.
@@ -132,7 +168,7 @@ fn eval(c: &mut Criterion) {
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- full-join --exact --profile-time=30
     // Join 1M rows on the left with 12K rows on the right.
-    // Note, this should use an index join so as not to read the entire lhs table.
+    // Note, this should use an index join so as not to read the entire footprint table.
     let name = format!(
         r#"
         select footprint.*

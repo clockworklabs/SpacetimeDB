@@ -177,6 +177,15 @@ impl InstanceEnv {
         Ok(row_len)
     }
 
+    pub fn update(&self, table_id: TableId, index_id: IndexId, buffer: &mut [u8]) -> Result<usize, NodesError> {
+        #![allow(unused)]
+
+        let stdb = &*self.replica_ctx.relational_db;
+        let tx = &mut *self.get_tx()?;
+
+        Ok(todo!())
+    }
+
     #[tracing::instrument(skip_all)]
     pub fn datastore_delete_by_btree_scan_bsatn(
         &self,

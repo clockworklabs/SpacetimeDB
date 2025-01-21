@@ -1,11 +1,11 @@
-use super::execution_unit::{ExecutionUnit, QueryHash};
+use super::execution_unit::QueryHash;
+use super::tx::DeltaTx;
 use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
-use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
-use arrayvec::ArrayVec;
+use crate::subscription::delta::eval_delta;
 use hashbrown::hash_map::OccupiedError;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
@@ -14,14 +14,15 @@ use spacetimedb_client_api_messages::websocket::{
 use spacetimedb_data_structures::map::{Entry, HashCollectionExt, HashMap, HashSet, IntMap};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
+use spacetimedb_query::delta::DeltaPlan;
+use std::ops::Deref;
 use std::sync::Arc;
-use std::time::Duration;
 
 /// Clients are uniquely identified by their Identity and Address.
 /// Identity is insufficient because different Addresses can use the same Identity.
 /// TODO: Determine if Address is sufficient for uniquely identifying a client.
 type ClientId = (Identity, Address);
-type Query = Arc<ExecutionUnit>;
+type Query = Arc<Plan>;
 type Client = Arc<ClientConnectionSender>;
 type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
 
@@ -29,6 +30,30 @@ type SwitchedDbUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::Databa
 type ClientQueryId = QueryId;
 /// SubscriptionId is a globally unique identifier for a subscription.
 type SubscriptionId = (ClientId, ClientQueryId);
+
+#[derive(Debug)]
+pub struct Plan {
+    hash: QueryHash,
+    plan: DeltaPlan,
+}
+
+impl Deref for Plan {
+    type Target = DeltaPlan;
+
+    fn deref(&self) -> &Self::Target {
+        &self.plan
+    }
+}
+
+impl Plan {
+    pub fn new(plan: DeltaPlan, hash: QueryHash) -> Self {
+        Self { plan, hash }
+    }
+
+    pub fn hash(&self) -> QueryHash {
+        self.hash
+    }
+}
 
 /// For each client, we hold a handle for sending messages, and we track the queries they are subscribed to.
 #[derive(Debug)]
@@ -198,8 +223,9 @@ impl SubscriptionManager {
 
         // If this is new, we need to update the table to query mapping.
         if !query_state.has_subscribers() {
-            self.tables.entry(query.return_table()).or_default().insert(hash);
-            self.tables.entry(query.filter_table()).or_default().insert(hash);
+            for table_id in query.table_ids() {
+                self.tables.entry(table_id).or_default().insert(hash);
+            }
         }
 
         query_state.subscriptions.insert(subscription_id);
@@ -230,8 +256,9 @@ impl SubscriptionManager {
                 .queries
                 .entry(hash)
                 .or_insert_with(|| QueryState::new(unit.clone()));
-            self.tables.entry(unit.return_table()).or_default().insert(hash);
-            self.tables.entry(unit.filter_table()).or_default().insert(hash);
+            for table_id in unit.table_ids() {
+                self.tables.entry(table_id).or_default().insert(hash);
+            }
             query_state.legacy_subscribers.insert(client_id);
         }
     }
@@ -241,9 +268,8 @@ impl SubscriptionManager {
     // This takes a ref to the table map instead of `self` to avoid borrowing issues.
     fn remove_query_from_tables(tables: &mut IntMap<TableId, HashSet<QueryHash>>, query: &Query) {
         let hash = query.hash();
-        let related_tables = [query.return_table(), query.filter_table()];
-        for table_id in related_tables.iter() {
-            if let Entry::Occupied(mut entry) = tables.entry(*table_id) {
+        for table_id in query.table_ids() {
+            if let Entry::Occupied(mut entry) = tables.entry(table_id) {
                 let hashes = entry.get_mut();
                 if hashes.remove(&hash) && hashes.is_empty() {
                     entry.remove();
@@ -284,47 +310,29 @@ impl SubscriptionManager {
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
     #[tracing::instrument(skip_all)]
-    pub fn eval_updates(
-        &self,
-        db: &RelationalDB,
-        tx: &Tx,
-        event: Arc<ModuleEvent>,
-        caller: Option<&ClientConnectionSender>,
-        slow_query_threshold: Option<Duration>,
-    ) {
+    pub fn eval_updates(&self, tx: &DeltaTx, event: Arc<ModuleEvent>, caller: Option<&ClientConnectionSender>) {
         use FormatSwitch::{Bsatn, Json};
 
         let tables = &event.status.database_update().unwrap().tables;
 
         // Put the main work on a rayon compute thread.
         rayon::scope(|_| {
-            // Collect the delta tables for each query.
-            // For selects this is just a single table.
-            // For joins it's two tables.
-            let mut units: HashMap<_, ArrayVec<_, 2>> = HashMap::default();
-            for table @ DatabaseTableUpdate { table_id, .. } in tables {
-                if let Some(hashes) = self.tables.get(table_id) {
-                    for hash in hashes {
-                        units.entry(hash).or_insert_with(ArrayVec::new).push(table);
-                    }
-                }
-            }
-
             let span = tracing::info_span!("eval_incr").entered();
-            let tx = &tx.into();
-            let mut eval = units
+            let mut eval = tables
+                .iter()
+                .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
+                .map(|DatabaseTableUpdate { table_id, .. }| table_id)
+                .filter_map(|table_id| self.tables.get(table_id))
+                .flatten()
+                .collect::<HashSet<_>>()
                 .par_iter()
-                .filter_map(|(&hash, tables)| {
-                    let unit = &self.queries.get(hash)?.query;
-                    unit.eval_incr(db, tx, &unit.sql, tables.iter().copied(), slow_query_threshold)
-                        .map(|table| (hash, table))
-                })
+                .filter_map(|&hash| self.queries.get(hash).map(|state| (hash, &state.query)))
                 // If N clients are subscribed to a query,
                 // we copy the DatabaseTableUpdate N times,
                 // which involves cloning BSATN (binary) or product values (json).
-                .flat_map_iter(|(hash, delta)| {
-                    let table_id = delta.table_id;
-                    let table_name = delta.table_name;
+                .flat_map_iter(|(hash, plan)| {
+                    let table_id = plan.table_id();
+                    let table_name = plan.table_name();
                     // Store at most one copy of the serialization to BSATN
                     // and ditto for the "serialization" for JSON.
                     // Each subscriber gets to pick which of these they want,
@@ -344,22 +352,32 @@ impl SubscriptionManager {
                             .clone()
                     }
 
-                    self.queries
-                        .get(hash)
-                        .into_iter()
-                        .flat_map(|query| query.all_clients())
-                        .map(move |id| {
-                            let client = &self.clients[id].outbound_ref;
-                            let update = match client.config.protocol {
-                                Protocol::Binary => {
-                                    Bsatn(memo_encode::<BsatnFormat>(&delta.updates, client, &mut ops_bin))
-                                }
-                                Protocol::Text => {
-                                    Json(memo_encode::<JsonFormat>(&delta.updates, client, &mut ops_json))
-                                }
-                            };
-                            (id, table_id, table_name.clone(), update)
+                    let evaluator = plan.evaluator(tx);
+
+                    // TODO: Handle errors instead of skipping them
+                    eval_delta(tx, &evaluator)
+                        .ok()
+                        .filter(|delta_updates| delta_updates.has_updates())
+                        .map(|delta_updates| {
+                            self.queries
+                                .get(hash)
+                                .into_iter()
+                                .flat_map(|query| query.all_clients())
+                                .map(move |id| {
+                                    let client = &self.clients[id].outbound_ref;
+                                    let update = match client.config.protocol {
+                                        Protocol::Binary => {
+                                            Bsatn(memo_encode::<BsatnFormat>(&delta_updates, client, &mut ops_bin))
+                                        }
+                                        Protocol::Text => {
+                                            Json(memo_encode::<JsonFormat>(&delta_updates, client, &mut ops_json))
+                                        }
+                                    };
+                                    (id, table_id, table_name.clone(), update)
+                                })
+                                .collect::<Vec<_>>()
                         })
+                        .unwrap_or_default()
                 })
                 .collect::<Vec<_>>()
                 .into_iter()
@@ -453,10 +471,11 @@ mod tests {
     use spacetimedb_client_api_messages::websocket::QueryId;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, Address, AlgebraicType, Identity};
     use spacetimedb_primitives::TableId;
-    use spacetimedb_vm::expr::CrudExpr;
+    use spacetimedb_query::delta::DeltaPlan;
 
-    use super::SubscriptionManager;
+    use super::{Plan, SubscriptionManager};
     use crate::execution_context::Workload;
+    use crate::sql::ast::SchemaViewer;
     use crate::subscription::module_subscription_manager::ClientQueryId;
     use crate::{
         client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName},
@@ -466,28 +485,20 @@ mod tests {
             module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall},
             ArgsTuple,
         },
-        sql::compiler::compile_sql,
-        subscription::{
-            execution_unit::{ExecutionUnit, QueryHash},
-            subscription::SupportedQuery,
-        },
+        subscription::execution_unit::QueryHash,
     };
 
     fn create_table(db: &RelationalDB, name: &str) -> ResultTest<TableId> {
         Ok(db.create_table_for_test(name, &[("a", AlgebraicType::U8)], &[])?)
     }
 
-    fn compile_plan(db: &RelationalDB, sql: &str) -> ResultTest<Arc<ExecutionUnit>> {
+    fn compile_plan(db: &RelationalDB, sql: &str) -> ResultTest<Arc<Plan>> {
         db.with_read_only(Workload::ForTests, |tx| {
-            let mut exprs = compile_sql(db, &AuthCtx::for_testing(), tx, sql)?;
-            assert_eq!(1, exprs.len());
-            assert!(matches!(exprs[0], CrudExpr::Query(_)));
-            let CrudExpr::Query(query) = exprs.remove(0) else {
-                unreachable!();
-            };
-            let plan = SupportedQuery::new(query, sql.to_owned())?;
+            let auth = AuthCtx::for_testing();
+            let tx = SchemaViewer::new(&*tx, &auth);
             let hash = QueryHash::from_string(sql);
-            Ok(Arc::new(ExecutionUnit::new(plan, hash)?))
+            let plan = DeltaPlan::compile(sql, &tx).unwrap();
+            Ok(Arc::new(Plan::new(plan, hash)))
         })
     }
 
@@ -937,7 +948,7 @@ mod tests {
         });
 
         db.with_read_only(Workload::Update, |tx| {
-            subscriptions.eval_updates(&db, tx, event, Some(&client0), None)
+            subscriptions.eval_updates(&(&*tx).into(), event, Some(&client0))
         });
 
         tokio::runtime::Builder::new_current_thread()

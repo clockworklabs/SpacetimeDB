@@ -20,12 +20,6 @@ pub const DESCRIBE_MODULE_DUNDER: &str = "__describe_module__";
 pub const PREINIT_DUNDER: &str = "__preinit__";
 /// initializes the user code in the module. fallible
 pub const SETUP_DUNDER: &str = "__setup__";
-/// the reducer with this name initializes the database
-pub const INIT_DUNDER: &str = "__init__";
-/// The reducer with this name is invoked when a client connects.
-pub const CLIENT_CONNECTED_DUNDER: &str = "__identity_connected__";
-/// The reducer with this name is invoked when a client disconnects.
-pub const CLIENT_DISCONNECTED_DUNDER: &str = "__identity_disconnected__";
 
 #[derive(Debug, Clone)]
 #[allow(unused)]
@@ -350,6 +344,7 @@ pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
         NodesError::DecodeRow(_) => Some(errno::BSATN_DECODE_ERROR),
         NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
         NodesError::IndexNotFound => Some(errno::NO_SUCH_INDEX),
+        NodesError::IndexNotUnique => Some(errno::INDEX_NOT_UNIQUE),
         NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => Some(errno::SCHEDULE_AT_DELAY_TOO_LONG),
         NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {
@@ -382,6 +377,7 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::row_iter_bsatn_advance,
             "spacetime_10.0"::row_iter_bsatn_close,
             "spacetime_10.0"::datastore_insert_bsatn,
+            "spacetime_10.0"::datastore_update_bsatn,
             "spacetime_10.0"::datastore_delete_all_by_eq_bsatn,
             "spacetime_10.0"::bytes_source_read,
             "spacetime_10.0"::bytes_sink_write,

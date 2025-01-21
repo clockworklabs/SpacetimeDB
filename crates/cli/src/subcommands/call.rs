@@ -219,8 +219,7 @@ fn add_reducer_ctx_to_err(error: &mut String, schema_json: Value, reducer_name: 
         .map(|kv| kv.0)
         .collect::<Vec<_>>();
 
-    // Hide pseudo-reducers (assume that any `__XXX__` are such); they shouldn't be callable.
-    reducers.retain(|&c| !(c.starts_with("__") && c.ends_with("__")));
+    // TODO(noa): exclude lifecycle reducers
 
     if let Some(best) = find_best_match_for_name(&reducers, reducer_name, None) {
         write!(error, "\n\nA reducer with a similar name exists: `{}`", best).unwrap();

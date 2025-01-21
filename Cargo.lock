@@ -815,7 +815,7 @@ dependencies = [
 
 [[package]]
 name = "connect_disconnect_client"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "spacetimedb-sdk",
@@ -4616,7 +4616,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "bytemuck",
  "derive_more",
@@ -4634,7 +4634,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bench"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "anymap",
@@ -4658,9 +4658,11 @@ dependencies = [
  "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-data-structures",
+ "spacetimedb-execution",
  "spacetimedb-lib",
  "spacetimedb-paths",
  "spacetimedb-primitives",
+ "spacetimedb-query",
  "spacetimedb-sats",
  "spacetimedb-schema",
  "spacetimedb-standalone",
@@ -4674,7 +4676,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "bitflags 2.6.0",
  "heck 0.4.1",
@@ -4682,20 +4684,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "spacetimedb-primitives",
- "spacetimedb-sql-parser",
  "syn 2.0.87",
 ]
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-cli"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -4733,7 +4734,6 @@ dependencies = [
  "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-schema",
- "spacetimedb-standalone",
  "spacetimedb-testing",
  "syntect",
  "tabled",
@@ -4745,6 +4745,7 @@ dependencies = [
  "tokio-tungstenite",
  "toml 0.8.19",
  "toml_edit",
+ "walkdir",
  "wasmbin",
  "wasmtime",
  "webbrowser",
@@ -4752,7 +4753,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4778,6 +4779,7 @@ dependencies = [
  "scopeguard",
  "serde",
  "serde_json",
+ "serde_with",
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-data-structures",
@@ -4795,7 +4797,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api-messages"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "brotli",
  "bytes",
@@ -4819,7 +4821,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-commitlog"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "bitflags 2.6.0",
  "crc32c",
@@ -4842,7 +4844,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-core"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -4910,13 +4912,16 @@ dependencies = [
  "spacetimedb-commitlog",
  "spacetimedb-data-structures",
  "spacetimedb-durability",
+ "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-jwks",
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-paths",
+ "spacetimedb-physical-plan",
  "spacetimedb-primitives",
+ "spacetimedb-query",
  "spacetimedb-sats",
  "spacetimedb-schema",
  "spacetimedb-snapshot",
@@ -4947,7 +4952,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-data-structures"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "ahash 0.8.11",
  "hashbrown 0.15.1",
@@ -4959,7 +4964,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-durability"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
@@ -4973,17 +4978,20 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-execution"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
+ "anyhow",
  "spacetimedb-expr",
  "spacetimedb-lib",
+ "spacetimedb-physical-plan",
  "spacetimedb-primitives",
+ "spacetimedb-sql-parser",
  "spacetimedb-table",
 ]
 
 [[package]]
 name = "spacetimedb-expr"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "derive_more",
  "spacetimedb-lib",
@@ -4997,7 +5005,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-fs-utils"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "hex",
@@ -5037,7 +5045,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-lib"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "bitflags 2.6.0",
@@ -5045,6 +5053,7 @@ dependencies = [
  "bytes",
  "derive_more",
  "enum-as-inner",
+ "enum-map",
  "hex",
  "insta",
  "itertools 0.12.1",
@@ -5064,7 +5073,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-metrics"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "arrayvec",
  "itertools 0.12.1",
@@ -5074,13 +5083,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-paths"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "chrono",
  "dirs",
  "fs2",
  "itoa",
+ "semver",
  "serde",
  "tempfile",
  "thiserror",
@@ -5089,25 +5099,45 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-physical-plan"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
+ "anyhow",
  "derive_more",
+ "pretty_assertions",
  "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-schema",
  "spacetimedb-sql-parser",
+ "spacetimedb-table",
 ]
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "bitflags 2.6.0",
  "either",
  "itertools 0.12.1",
  "nohash-hasher",
  "proptest",
+]
+
+[[package]]
+name = "spacetimedb-query"
+version = "1.0.0-rc3"
+dependencies = [
+ "anyhow",
+ "itertools 0.12.1",
+ "rayon",
+ "spacetimedb-client-api-messages",
+ "spacetimedb-execution",
+ "spacetimedb-expr",
+ "spacetimedb-lib",
+ "spacetimedb-physical-plan",
+ "spacetimedb-primitives",
+ "spacetimedb-sql-parser",
+ "spacetimedb-table",
 ]
 
 [[package]]
@@ -5120,7 +5150,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sats"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "ahash 0.8.11",
  "arrayvec",
@@ -5150,10 +5180,11 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-schema"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "enum-as-inner",
+ "enum-map",
  "hashbrown 0.15.1",
  "indexmap 2.6.0",
  "itertools 0.12.1",
@@ -5177,7 +5208,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sdk"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "anymap",
@@ -5203,7 +5234,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-snapshot"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "blake3",
  "hex",
@@ -5220,7 +5251,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sql-parser"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "derive_more",
  "sqlparser",
@@ -5229,7 +5260,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-standalone"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5261,7 +5292,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-table"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "ahash 0.8.11",
  "blake3",
@@ -5285,7 +5316,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-testing"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "clap 4.5.20",
@@ -5310,8 +5341,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-update"
+version = "1.0.0-rc3"
+dependencies = [
+ "anyhow",
+ "clap 4.5.20",
+ "semver",
+ "spacetimedb-paths",
+]
+
+[[package]]
 name = "spacetimedb-vm"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -5320,6 +5361,7 @@ dependencies = [
  "log",
  "smallvec",
  "spacetimedb-data-structures",
+ "spacetimedb-execution",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
@@ -5401,7 +5443,7 @@ dependencies = [
 
 [[package]]
 name = "sqltest"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5748,7 +5790,7 @@ dependencies = [
 
 [[package]]
 name = "test-client"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "env_logger",
@@ -5759,7 +5801,7 @@ dependencies = [
 
 [[package]]
 name = "test-counter"
-version = "1.0.0-rc2"
+version = "1.0.0-rc3"
 dependencies = [
  "anyhow",
  "spacetimedb-data-structures",

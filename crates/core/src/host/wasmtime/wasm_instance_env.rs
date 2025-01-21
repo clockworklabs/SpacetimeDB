@@ -682,6 +682,70 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Updates a row in the table identified by `table_id` to `row`
+    /// where the row is read from the byte string `row = row_ptr[..row_len]` in WASM memory
+    /// where `row_len = row_len_ptr[..size_of::<usize>()]` stores the capacity of `row`.
+    ///
+    /// The byte string `row` must be a BSATN-encoded `ProductValue`
+    /// typed at the table's `ProductType` row-schema.
+    ///
+    /// The row to update is found by projecting `row`
+    /// to the type of the *unique* index identified by `index_id`.
+    /// If no row is found, the error `NO_SUCH_ROW` is returned.
+    ///
+    /// To handle auto-incrementing columns,
+    /// when the call is successful,
+    /// the `row` is written back to with the generated sequence values.
+    /// These values are written as a BSATN-encoded `pv: ProductValue`.
+    /// Each `v: AlgebraicValue` in `pv` is typed at the sequence's column type.
+    /// The `v`s in `pv` are ordered by the order of the columns, in the schema of the table.
+    /// When the table has no sequences,
+    /// this implies that the `pv`, and thus `row`, will be empty.
+    /// The `row_len` is set to the length of `bsatn(pv)`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `row_len_ptr` is NULL or `row_len` is not in bounds of WASM memory.
+    /// - `row_ptr` is NULL or `row` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `INDEX_NOT_UNIQUE`, when the index was not unique.
+    /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`
+    ///    typed at the `ProductType` the table's schema specifies
+    ///    or when it cannot be projected to the index identified by `index_id`.
+    /// - `NO_SUCH_ROW`, when the row was not found in the unique index.
+    /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
+    /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
+    #[tracing::instrument(skip_all)]
+    pub fn datastore_update_bsatn(
+        caller: Caller<'_, Self>,
+        table_id: u32,
+        index_id: u32,
+        row_ptr: WasmPtr<u8>,
+        row_len_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt(caller, AbiCall::DatastoreUpdateBsatn, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            // Read `row-len`, i.e., the capacity of `row` pointed to by `row_ptr`.
+            let row_len = u32::read_from(mem, row_len_ptr)?;
+            // Get a mutable view to the `row`.
+            let row = mem.deref_slice_mut(row_ptr, row_len)?;
+
+            // Update the row in the DB and write back the generated column values.
+            let row_len = env.instance_env.update(table_id.into(), index_id.into(), row)?;
+            u32::try_from(row_len).unwrap().write_to(mem, row_len_ptr)?;
+            Ok(())
+        })
+    }
+
     /// Deletes all rows found in the index identified by `index_id`,
     /// according to the:
     /// - `prefix = prefix_ptr[..prefix_len]`,

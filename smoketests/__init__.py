@@ -17,7 +17,8 @@ import logging
 # miscellaneous file paths
 TEST_DIR = Path(__file__).parent
 STDB_DIR = TEST_DIR.parent
-SPACETIME_BIN = STDB_DIR / "target/debug/spacetime"
+exe_suffix = ".exe" if sys.platform == "win32" else ""
+SPACETIME_BIN = STDB_DIR / ("target/debug/spacetime" + exe_suffix)
 TEMPLATE_TARGET_DIR = STDB_DIR / "target/_stdbsmoketests"
 STDB_CONFIG = TEST_DIR / "config.toml"
 

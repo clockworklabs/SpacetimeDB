@@ -168,7 +168,11 @@ impl SnapshotWorker {
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
 // TODO(config): Allow DBs to specify how frequently to snapshot.
 // TODO(bikeshedding): Snapshot based on number of bytes written to commitlog, not tx offsets.
-const SNAPSHOT_FREQUENCY: u64 = 1_000_000;
+//
+// NOTE: Replicas must agree on the snapshot frequency. By making them consult
+// this value, later introduction of dynamic configuration will allow the
+// compiler to find external dependencies.
+pub const SNAPSHOT_FREQUENCY: u64 = 1_000_000;
 
 impl std::fmt::Debug for RelationalDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1178,10 +1182,10 @@ struct LockFile {
 impl LockFile {
     pub fn lock(root: &ReplicaDir) -> Result<Self, DBError> {
         root.create()?;
-        let path = root.as_ref().join("db.lock");
+        let path = root.0.join("db.lock");
         let lock = File::create(&path)?;
         lock.try_lock_exclusive()
-            .map_err(|e| DatabaseError::DatabasedOpened(root.as_ref().to_path_buf(), e.into()))?;
+            .map_err(|e| DatabaseError::DatabasedOpened(root.0.clone(), e.into()))?;
 
         Ok(Self {
             path: path.into(),

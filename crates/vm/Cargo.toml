@@ -7,6 +7,7 @@ description = "A VM for SpacetimeDB"
 
 [dependencies]
 spacetimedb-data-structures.workspace = true
+spacetimedb-execution.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true

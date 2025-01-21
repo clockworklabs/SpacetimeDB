@@ -101,28 +101,8 @@ impl Default for ArgsTuple {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default)]
-pub struct ReducerId(u32);
-impl std::fmt::Display for ReducerId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-impl From<usize> for ReducerId {
-    fn from(id: usize) -> Self {
-        Self(id as u32)
-    }
-}
-impl From<u32> for ReducerId {
-    fn from(id: u32) -> Self {
-        Self(id)
-    }
-}
-impl From<ReducerId> for u32 {
-    fn from(id: ReducerId) -> Self {
-        id.0
-    }
-}
+// TODO(noa): replace imports from this module with imports straight from primitives.
+pub use spacetimedb_primitives::ReducerId;
 
 #[derive(thiserror::Error, Debug)]
 #[error("invalid arguments for reducer {reducer}: {err}")]
@@ -153,6 +133,7 @@ pub enum AbiCall {
     RowIterBsatnAdvance,
     RowIterBsatnClose,
     DatastoreInsertBsatn,
+    DatastoreUpdateBsatn,
     DatastoreDeleteByBtreeScanBsatn,
     DatastoreDeleteAllByEqBsatn,
     BytesSourceRead,

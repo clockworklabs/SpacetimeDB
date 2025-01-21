@@ -12,7 +12,7 @@ use spacetimedb_client_api_messages::websocket::{
     SERVER_MSG_COMPRESSION_TAG_GZIP, SERVER_MSG_COMPRESSION_TAG_NONE,
 };
 use spacetimedb_client_api_messages::websocket::{ClientMessage, ServerMessage};
-use spacetimedb_lib::{bsatn, Address, Identity};
+use spacetimedb_lib::{bsatn, Address};
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};
 use tokio_tungstenite::{
@@ -104,7 +104,7 @@ where
 fn make_request<Host>(
     host: Host,
     db_name: &str,
-    credentials: Option<&(Identity, String)>,
+    token: Option<&str>,
     client_address: Address,
     params: WsParams,
 ) -> Result<http::Request<()>>
@@ -115,7 +115,7 @@ where
     let uri = make_uri(host, db_name, client_address, params)?;
     let mut req = IntoClientRequest::into_client_request(uri)?;
     request_insert_protocol_header(&mut req);
-    request_insert_auth_header(&mut req, credentials);
+    request_insert_auth_header(&mut req, token);
     Ok(req)
 }
 
@@ -137,9 +137,9 @@ fn request_insert_protocol_header(req: &mut http::Request<()>) {
 
 const AUTH_HEADER_KEY: &str = "Authorization";
 
-fn request_insert_auth_header(req: &mut http::Request<()>, credentials: Option<&(Identity, String)>) {
+fn request_insert_auth_header(req: &mut http::Request<()>, token: Option<&str>) {
     // TODO: figure out how the token is supposed to be encoded in the request
-    if let Some((_, token)) = credentials {
+    if let Some(token) = token {
         use base64::Engine;
 
         let auth_bytes = format!("token:{}", token);
@@ -159,7 +159,7 @@ impl WsConnection {
     pub(crate) async fn connect<Host>(
         host: Host,
         db_name: &str,
-        credentials: Option<&(Identity, String)>,
+        token: Option<&str>,
         client_address: Address,
         params: WsParams,
     ) -> Result<Self>
@@ -167,7 +167,7 @@ impl WsConnection {
         Host: TryInto<Uri>,
         <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
     {
-        let req = make_request(host, db_name, credentials, client_address, params)?;
+        let req = make_request(host, db_name, token, client_address, params)?;
         let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = connect_async_with_config(
             req,
             // TODO(kim): In order to be able to replicate module WASM blobs,
