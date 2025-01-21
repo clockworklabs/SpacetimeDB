@@ -14,4 +14,4 @@ A C# command-line client for this module is defined in [the C# SDK's examples](h
 
 ### TypeScript
 
-A web client for this module, built with TypeScript and React, is defined in [the TypeScript SDK's examples](https://github.com/clockworklabs/spacetimedb-typescript-sdk/tree/master/examples/quickstart/client), and described by [the SpacetimeDB TypeScript SDK quickstart](https://spacetimedb.com/docs/sdks/typescript/quickstart).
+A web client for this module, built with TypeScript and React, is defined in [the TypeScript SDK's examples](https://github.com/clockworklabs/spacetimedb-typescript-sdk/tree/master/examples/quickstart), and described by [the SpacetimeDB TypeScript SDK quickstart](https://spacetimedb.com/docs/sdks/typescript/quickstart).
