@@ -135,15 +135,13 @@ public static class Module
         }
     }
 
-    private static void Write(this BytesSink sink, byte[] bytes)
+    private static void Write(this BytesSink sink, ReadOnlySpan<byte> bytes)
     {
-        var start = 0U;
-        while (start != bytes.Length)
+        while (!bytes.IsEmpty)
         {
             var written = (uint)bytes.Length;
-            var buffer = bytes.AsSpan((int)start);
-            FFI.bytes_sink_write(sink, buffer, ref written);
-            start += written;
+            FFI.bytes_sink_write(sink, bytes, ref written);
+            bytes = bytes[(int)written..];
         }
     }
 
@@ -155,8 +153,9 @@ public static class Module
         {
             // We need this explicit cast here to make `ToBytes` understand the types correctly.
             RawModuleDef versioned = new RawModuleDef.V9(moduleDef);
-            var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
-            description.Write(moduleBytes);
+            using var buffer = SerializationBuffer.Borrow();
+            new RawModuleDef.BSATN().Write(buffer.Writer, versioned);
+            description.Write(buffer.GetWritten());
         }
         catch (Exception e)
         {

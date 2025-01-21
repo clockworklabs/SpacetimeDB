@@ -1,6 +1,7 @@
 namespace SpacetimeDB.BSATN;
 
 using System.Text;
+using SpacetimeDB.Internal;
 
 public interface IStructuralReadWrite
 {
@@ -22,19 +23,17 @@ public interface IStructuralReadWrite
     public static byte[] ToBytes<RW, T>(RW rw, T value)
         where RW : IReadWrite<T>
     {
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        rw.Write(writer, value);
-        return stream.ToArray();
+        using var buffer = SerializationBuffer.Borrow();
+        rw.Write(buffer.Writer, value);
+        return buffer.ToArray();
     }
 
     public static byte[] ToBytes<T>(T value)
         where T : IStructuralReadWrite
     {
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        value.WriteFields(writer);
-        return stream.ToArray();
+        using var buffer = SerializationBuffer.Borrow();
+        value.WriteFields(buffer.Writer);
+        return buffer.ToArray();
     }
 }
 
