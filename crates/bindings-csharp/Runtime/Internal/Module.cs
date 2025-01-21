@@ -180,11 +180,9 @@ public static class Module
         try
         {
             var senderIdentity = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
             );
-            var senderAddress = Address.From(
-                MemoryMarshal.AsBytes([address_0, address_1]).ToArray()
-            );
+            var senderAddress = Address.From(MemoryMarshal.AsBytes([address_0, address_1]));
             var random = new Random((int)timestamp.MicrosecondsSinceEpoch);
             var time = timestamp.ToStd();
 

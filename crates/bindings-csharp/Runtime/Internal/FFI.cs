@@ -128,14 +128,14 @@ internal static partial class FFI
 
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus table_id_from_name(
-        [In] byte[] name,
+        ReadOnlySpan<byte> name,
         uint name_len,
         out TableId out_
     );
 
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus index_id_from_name(
-        [In] byte[] name,
+        ReadOnlySpan<byte> name,
         uint name_len,
         out IndexId out_
     );
@@ -165,7 +165,7 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace)]
     public static partial Errno row_iter_bsatn_advance(
         RowIter iter_handle,
-        [MarshalUsing(CountElementName = nameof(buffer_len))] [Out] byte[] buffer,
+        Span<byte> buffer,
         ref uint buffer_len
     );
 
@@ -195,7 +195,7 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus datastore_delete_all_by_eq_bsatn(
         TableId table_id,
-        [In] byte[] relation,
+        ReadOnlySpan<byte> relation,
         uint relation_len,
         out uint out_
     );
@@ -227,12 +227,12 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace)]
     public static partial void console_log(
         LogLevel level,
-        [In] byte[] target,
+        ReadOnlySpan<byte> target,
         uint target_len,
-        [In] byte[] filename,
+        ReadOnlySpan<byte> filename,
         uint filename_len,
         uint line_number,
-        [In] byte[] message,
+        ReadOnlySpan<byte> message,
         uint message_len
     );
 
@@ -262,16 +262,19 @@ internal static partial class FFI
     }
 
     [LibraryImport(StdbNamespace)]
-    public static partial ConsoleTimerId console_timer_start([In] byte[] name, uint name_len);
+    public static partial ConsoleTimerId console_timer_start(
+        ReadOnlySpan<byte> name,
+        uint name_len
+    );
 
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus console_timer_end(ConsoleTimerId stopwatch_id);
 
     [LibraryImport(StdbNamespace)]
     public static partial void volatile_nonatomic_schedule_immediate(
-        [In] byte[] name,
+        ReadOnlySpan<byte> name,
         uint name_len,
-        [In] byte[] args,
+        ReadOnlySpan<byte> args,
         uint args_len
     );
 
