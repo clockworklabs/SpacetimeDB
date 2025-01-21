@@ -43,10 +43,15 @@ public class GameManager : MonoBehaviour
 
         // If the user has a SpacetimeDB auth token stored in the Unity PlayerPrefs,
         // we can use it to authenticate the connection.
-        //if (PlayerPrefs.HasKey(AuthToken.GetTokenKey()))
-        //{
-        //    builder = builder.WithToken(AuthToken.Token);
-        //}
+        // For testing purposes, it is often convenient to comment the following lines out and
+        // export an executable for the project using File -> Build Settings.
+        // Then, you can run the executable multiple times. Since the executable will not check for
+        // a saved auth token, each run of will receive a different Identifier,
+        // and their circles will be able to eat each other.
+        if (PlayerPrefs.HasKey(AuthToken.GetTokenKey()))
+        {
+            builder = builder.WithToken(AuthToken.Token);
+        }
 
         // Building the connection will establish a connection to the SpacetimeDB
         // server.
