@@ -111,9 +111,8 @@ impl StaticFuncSig {
 }
 impl<T: AsRef<[WasmType]>> PartialEq<FuncSig<T>> for wasmtime::ExternType {
     fn eq(&self, other: &FuncSig<T>) -> bool {
-        self.func().map_or(false, |f| {
-            f.params().eq(other.params.as_ref()) && f.results().eq(other.results.as_ref())
-        })
+        self.func()
+            .is_some_and(|f| f.params().eq(other.params.as_ref()) && f.results().eq(other.results.as_ref()))
     }
 }
 impl FuncSigLike for wasmtime::ExternType {

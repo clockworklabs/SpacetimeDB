@@ -92,7 +92,7 @@ impl<S> FromRequestParts<S> for WebSocketUpgrade {
                 parts
                     .headers
                     .typed_get::<Connection>()
-                    .map_or(false, |conn| conn.contains("upgrade"))
+                    .is_some_and(|conn| conn.contains("upgrade"))
                     && parts.headers.typed_get::<Upgrade>() == Some(Upgrade::websocket())
             })
             .ok_or(BadUpgrade)?;

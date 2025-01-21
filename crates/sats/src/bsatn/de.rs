@@ -48,7 +48,7 @@ impl de::Error for DecodeError {
     }
 }
 
-impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
+impl<'de, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'_, R> {
     type Error = DecodeError;
 
     fn deserialize_product<V: de::ProductVisitor<'de>>(self, visitor: V) -> Result<V::Output, DecodeError> {
@@ -132,7 +132,7 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
     }
 }
 
-impl<'de, 'a, R: BufReader<'de>> SeqProductAccess<'de> for Deserializer<'a, R> {
+impl<'de, R: BufReader<'de>> SeqProductAccess<'de> for Deserializer<'_, R> {
     type Error = DecodeError;
 
     fn next_element_seed<T: de::DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<T::Output>, DecodeError> {
@@ -140,7 +140,7 @@ impl<'de, 'a, R: BufReader<'de>> SeqProductAccess<'de> for Deserializer<'a, R> {
     }
 }
 
-impl<'de, 'a, R: BufReader<'de>> SumAccess<'de> for Deserializer<'a, R> {
+impl<'de, R: BufReader<'de>> SumAccess<'de> for Deserializer<'_, R> {
     type Error = DecodeError;
     type Variant = Self;
 
@@ -150,7 +150,7 @@ impl<'de, 'a, R: BufReader<'de>> SumAccess<'de> for Deserializer<'a, R> {
     }
 }
 
-impl<'de, 'a, R: BufReader<'de>> VariantAccess<'de> for Deserializer<'a, R> {
+impl<'de, R: BufReader<'de>> VariantAccess<'de> for Deserializer<'_, R> {
     type Error = DecodeError;
     fn deserialize_seed<T: de::DeserializeSeed<'de>>(self, seed: T) -> Result<T::Output, Self::Error> {
         seed.deserialize(self)
@@ -163,7 +163,7 @@ pub struct ArrayAccess<'a, R, T> {
     seeds: itertools::RepeatN<T>,
 }
 
-impl<'de, 'a, R: BufReader<'de>, T: de::DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for ArrayAccess<'a, R, T> {
+impl<'de, R: BufReader<'de>, T: de::DeserializeSeed<'de> + Clone> de::ArrayAccess<'de> for ArrayAccess<'_, R, T> {
     type Element = T::Output;
     type Error = DecodeError;
 

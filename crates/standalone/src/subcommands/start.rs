@@ -12,13 +12,6 @@ use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::ServerDataDir;
 use tokio::net::TcpListener;
 
-#[cfg(feature = "string")]
-impl From<std::string::String> for OsStr {
-    fn from(name: std::string::String) -> Self {
-        Self::from_string(name.into())
-    }
-}
-
 pub fn cli() -> clap::Command {
     clap::Command::new("start")
         .about("Starts a standalone SpacetimeDB instance")
