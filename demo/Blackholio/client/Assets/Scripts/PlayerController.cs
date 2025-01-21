@@ -6,28 +6,28 @@ using UnityEngine;
 
 public class PlayerController : MonoBehaviour
 {
-	const int SEND_UPDATES_PER_SEC = 20;
-	const float SEND_UPDATES_FREQUENCY = 1f / SEND_UPDATES_PER_SEC;
+    const int SEND_UPDATES_PER_SEC = 20;
+    const float SEND_UPDATES_FREQUENCY = 1f / SEND_UPDATES_PER_SEC;
 
     public static PlayerController Local { get; private set; }
 
-	private uint PlayerId;
+    private uint PlayerId;
     private float LastMovementSendTimestamp;
     private Vector2? LockInputPosition;
-	private List<CircleController> OwnedCircles = new List<CircleController>();
+    private List<CircleController> OwnedCircles = new List<CircleController>();
 
-	public string Username => GameManager.Conn.Db.Player.PlayerId.Find(PlayerId).Name;
-	public int NumberOfOwnedCircles => OwnedCircles.Count;
-	public bool IsLocalPlayer => this == Local;
+    public string Username => GameManager.Conn.Db.Player.PlayerId.Find(PlayerId).Name;
+    public int NumberOfOwnedCircles => OwnedCircles.Count;
+    public bool IsLocalPlayer => this == Local;
 
-	public void Initialize(Player player)
+    public void Initialize(Player player)
     {
         PlayerId = player.PlayerId;
         if (player.Identity == GameManager.LocalIdentity)
         {
             Local = this;
         }
-	}
+    }
 
     private void OnDestroy()
     {
@@ -48,20 +48,20 @@ public class PlayerController : MonoBehaviour
     }
 
     public void OnCircleDeleted(CircleController deletedCircle)
-	{
-		// This means we got eaten
-		if (OwnedCircles.Remove(deletedCircle) && IsLocalPlayer && OwnedCircles.Count == 0)
-		{
-			DeathScreen.Instance.SetVisible(true);
-		}
-	}
+    {
+        // This means we got eaten
+        if (OwnedCircles.Remove(deletedCircle) && IsLocalPlayer && OwnedCircles.Count == 0)
+        {
+            GameManager.Instance.deathScreen.SetVisible(true);
+        }
+    }
 
-	public uint TotalMass()
+    public uint TotalMass()
     {
         return (uint)OwnedCircles
             .Select(circle => GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId))
-			.Sum(e => e?.Mass ?? 0); //If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
-	}
+            .Sum(e => e?.Mass ?? 0); //If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
+    }
 
     public Vector2? CenterOfMass()
     {
@@ -69,7 +69,7 @@ public class PlayerController : MonoBehaviour
         {
             return null;
         }
-        
+
         Vector2 totalPos = Vector2.zero;
         float totalMass = 0;
         foreach (var circle in OwnedCircles)
@@ -81,9 +81,9 @@ public class PlayerController : MonoBehaviour
         }
 
         return totalPos / totalMass;
-	}
+    }
 
-	public void Update()
+    public void Update()
     {
         if (!IsLocalPlayer || NumberOfOwnedCircles == 0)
         {
@@ -100,11 +100,16 @@ public class PlayerController : MonoBehaviour
             if (LockInputPosition.HasValue)
             {
                 LockInputPosition = null;
-			}
+            }
             else
             {
-				LockInputPosition = (Vector2)Input.mousePosition;
+                LockInputPosition = (Vector2)Input.mousePosition;
             }
+        }
+
+        if (Input.GetKeyDown(KeyCode.S))
+        {
+            GameManager.Conn.Reducers.Suicide();
         }
 
         // Throttled input requests
@@ -120,26 +125,26 @@ public class PlayerController : MonoBehaviour
             };
             var centerOfScreen = screenSize / 2;
 
-			var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
+            var direction = (mousePosition - centerOfScreen) / (screenSize.y / 3);
             if (testInputEnabled) { direction = testInput; }
             GameManager.Conn.Reducers.UpdatePlayerInput(direction);
         }
-	}
+    }
 
-	private void OnGUI()
-	{
-		if (!IsLocalPlayer || !GameManager.IsConnected())
-		{
-			return;
-		}
+    private void OnGUI()
+    {
+        if (!IsLocalPlayer || !GameManager.IsConnected())
+        {
+            return;
+        }
 
-		GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
-	}
+        GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
+    }
 
-	//Automated testing members
-	private bool testInputEnabled;
-	private Vector2 testInput;
+    //Automated testing members
+    private bool testInputEnabled;
+    private Vector2 testInput;
 
-	public void SetTestInput(Vector2 input) => testInput = input;
-	public void EnableTestInput() => testInputEnabled = true;
+    public void SetTestInput(Vector2 input) => testInput = input;
+    public void EnableTestInput() => testInputEnabled = true;
 }

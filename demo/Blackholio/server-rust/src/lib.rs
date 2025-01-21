@@ -242,6 +242,36 @@ fn spawn_circle_at(
 }
 
 #[spacetimedb::reducer]
+pub fn respawn(ctx: &ReducerContext) -> Result<(), String> {
+    let player = ctx
+        .db
+        .player()
+        .identity()
+        .find(&ctx.sender)
+        .ok_or("No such player found")?;
+
+    spawn_player_initial_circle(ctx, player.player_id)?;
+
+    Ok(())
+}
+
+#[spacetimedb::reducer]
+pub fn suicide(ctx: &ReducerContext) -> Result<(), String> {
+    let player = ctx
+        .db
+        .player()
+        .identity()
+        .find(&ctx.sender)
+        .ok_or("No such player found")?;
+
+    for circle in ctx.db.circle().player_id().filter(&player.player_id) {
+        destroy_entity(ctx, circle.entity_id)?;
+    }
+
+    Ok(())
+}
+
+#[spacetimedb::reducer]
 pub fn update_player_input(ctx: &ReducerContext, direction: DbVector2) -> Result<(), String> {
     let player = ctx
         .db
@@ -265,7 +295,7 @@ fn is_overlapping(a: &Entity, b: &Entity) -> bool {
     let radius_a = mass_to_radius(a.mass);
     let radius_b = mass_to_radius(b.mass);
 
-    // If the distance between the two circle centers is less than the 
+    // If the distance between the two circle centers is less than the
     // maximum radius, then the center of the smaller circle is inside
     // the larger circle. This gives some leeway for the circles to overlap
     // before being eaten.
@@ -389,12 +419,8 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
             circle_entity.position + direction * mass_to_max_move_speed(circle_entity.mass);
         let min = circle_radius;
         let max = world_size as f32 - circle_radius;
-        circle_entity.position.x = new_pos
-            .x
-            .clamp(min, max);
-        circle_entity.position.y = new_pos
-            .y
-            .clamp(min, max);
+        circle_entity.position.x = new_pos.x.clamp(min, max);
+        circle_entity.position.y = new_pos.y.clamp(min, max);
         ctx.db.entity().entity_id().update(circle_entity);
     }
 
@@ -464,16 +490,22 @@ pub fn consume_entity(ctx: &ReducerContext, request: ConsumeEntityTimer) -> Resu
     let mut consumer_entity = consumer_entity.unwrap();
 
     consumer_entity.mass += consumed_entity.mass;
-    ctx.db.food().entity_id().delete(&consumed_entity.entity_id);
+    destroy_entity(ctx, consumed_entity.entity_id)?;
+    ctx.db.entity().entity_id().update(consumer_entity);
+
+    Ok(())
+}
+
+pub fn destroy_entity(ctx: &ReducerContext, entity_id: u32) -> Result<(), String> {
+    ctx.db.food().entity_id().delete(&entity_id);
     ctx.db
         .circle()
         .entity_id()
-        .delete(&consumed_entity.entity_id);
+        .delete(&entity_id);
     ctx.db
         .entity()
         .entity_id()
-        .delete(&consumed_entity.entity_id);
-    ctx.db.entity().entity_id().update(consumer_entity);
+        .delete(&entity_id);
 
     Ok(())
 }

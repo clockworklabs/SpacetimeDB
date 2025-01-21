@@ -501,6 +501,7 @@ MonoBehaviour:
   borderThickness: 2
   borderMaterial: {fileID: 2100000, guid: eb000c9de35d73e4d81c6a0831a9e7bc, type: 2}
   starBackgroundPrefab: {fileID: 0}
+  deathScreen: {fileID: 369182684}
 --- !u!4 &207278860
 Transform:
   m_ObjectHideFlags: 0

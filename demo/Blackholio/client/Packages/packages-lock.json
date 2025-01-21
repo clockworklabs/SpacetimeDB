@@ -1,11 +1,11 @@
 {
   "dependencies": {
     "com.clockworklabs.spacetimedbsdk": {
-      "version": "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git#v1.0.0-rc1-hotfix2",
+      "version": "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git#jgilles/emergency_subscribe",
       "depth": 0,
       "source": "git",
       "dependencies": {},
-      "hash": "ecffc4a495aaad8dbd1ab93b706ddbfd07d18f24"
+      "hash": "12e5e577dd66fd9682d2f5b34723448431232f51"
     },
     "com.unity.2d.animation": {
       "version": "9.1.1",
@@ -37,11 +37,11 @@
       "depth": 2,
       "source": "registry",
       "dependencies": {
+        "com.unity.burst": "1.7.3",
         "com.unity.2d.sprite": "1.0.0",
         "com.unity.mathematics": "1.1.0",
-        "com.unity.modules.uielements": "1.0.0",
         "com.unity.modules.animation": "1.0.0",
-        "com.unity.burst": "1.7.3"
+        "com.unity.modules.uielements": "1.0.0"
       },
       "url": "https://packages.unity.com"
     },
