@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use anyhow::{bail, Result};
 use itertools::Either;
-use spacetimedb_execution::{iter::ProjectIter, Datastore, DeltaStore, Row};
+use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore, Row};
 use spacetimedb_expr::check::{type_subscription, SchemaView};
 use spacetimedb_lib::query::Delta;
 use spacetimedb_physical_plan::{
@@ -141,31 +141,27 @@ pub struct DeltaPlanEvaluator {
 
 impl DeltaPlanEvaluator {
     pub fn eval_inserts<'a, Tx: Datastore + DeltaStore>(&'a self, tx: &'a Tx) -> Result<impl Iterator<Item = Row<'a>>> {
-        match self.insert_plans.len() {
-            1 => ProjectIter::build(&self.insert_plans[0], tx).map(Either::Left),
-            n => {
-                let mut iters = Vec::with_capacity(n);
-                for plan in &self.insert_plans {
-                    let iter = ProjectIter::build(plan, tx)?;
-                    iters.push(iter);
-                }
-                Ok(Either::Right(iters.into_iter().flatten()))
-            }
+        let mut rows = vec![];
+        for plan in &self.insert_plans {
+            let plan = PipelinedProject::from(plan.clone());
+            plan.execute(tx, &mut |row| {
+                rows.push(row);
+                Ok(())
+            })?;
         }
+        Ok(rows.into_iter())
     }
 
     pub fn eval_deletes<'a, Tx: Datastore + DeltaStore>(&'a self, tx: &'a Tx) -> Result<impl Iterator<Item = Row<'a>>> {
-        match self.delete_plans.len() {
-            1 => ProjectIter::build(&self.delete_plans[0], tx).map(Either::Left),
-            n => {
-                let mut iters = Vec::with_capacity(n);
-                for plan in &self.delete_plans {
-                    let iter = ProjectIter::build(plan, tx)?;
-                    iters.push(iter);
-                }
-                Ok(Either::Right(iters.into_iter().flatten()))
-            }
+        let mut rows = vec![];
+        for plan in &self.delete_plans {
+            let plan = PipelinedProject::from(plan.clone());
+            plan.execute(tx, &mut |row| {
+                rows.push(row);
+                Ok(())
+            })?;
         }
+        Ok(rows.into_iter())
     }
 
     pub fn is_join(&self) -> bool {
