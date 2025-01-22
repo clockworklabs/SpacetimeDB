@@ -123,7 +123,6 @@ pub async fn spacetimedb_login_force<'a>(
     config.set_spacetimedb_token(token.clone());
     config.save();
 
-    // It just preserves so much sanity for the caller if we return a reference instead of an owned thing.
     Ok(token)
 }
 
