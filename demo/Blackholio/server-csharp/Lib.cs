@@ -27,7 +27,7 @@ public static partial class Module
 		public uint id;
 		public ulong world_size;
 	}
-	
+
 	[Table(Name = "entity", Public = true)]
 	public partial struct Entity
 	{
@@ -36,9 +36,9 @@ public static partial class Module
 		public DbVector2 position;
 		public uint mass;
 	}
-	
+
 	[Table(Name = "circle", Public = true)]
-	[Index(Name = "player_id", BTree = ["player_id"])]
+	[SpacetimeDB.Index.BTree(Name = "player_id", Columns = [nameof(player_id)])]
 	public partial struct Circle
 	{
 		[PrimaryKey]
@@ -46,9 +46,9 @@ public static partial class Module
 		public uint player_id;
 		public DbVector2 direction;
 		public float speed;
-		public long last_split_time;
+		public ulong last_split_time;
 	}
-	
+
 	[Table(Name = "player", Public = true)]
 	public partial struct Player
 	{
@@ -58,7 +58,7 @@ public static partial class Module
 		public uint player_id;
 		public string name;
 	}
-	
+
 	[Table(Name = "logged_out_player", Public = true)]
 	public partial struct LoggedOutPlayer
 	{
@@ -66,7 +66,7 @@ public static partial class Module
 		public Identity identity;
 		public Player player;
 	}
-	
+
 	[Table(Name = "food", Public = true)]
 	public partial struct Food
 	{
@@ -74,31 +74,31 @@ public static partial class Module
 		public uint entity_id;
 	}
 
-	[Table(Name = "move_all_players_timer", Scheduled = nameof(MoveAllPlayers))]
+	[Table(Name = "move_all_players_timer", Scheduled = nameof(MoveAllPlayers), ScheduledAt = nameof(scheduled_at))]
 	public partial struct MoveAllPlayersTimer
 	{
 		[PrimaryKey, AutoInc]
 		public ulong scheduled_id;
 		public ScheduleAt scheduled_at;
 	}
-	
-	[Table(Name = "spawn_food_timer", Scheduled = nameof(SpawnFood))]
+
+	[Table(Name = "spawn_food_timer", Scheduled = nameof(SpawnFood), ScheduledAt = nameof(scheduled_at))]
 	public partial struct SpawnFoodTimer
 	{
 		[PrimaryKey, AutoInc]
 		public ulong scheduled_id;
 		public ScheduleAt scheduled_at;
 	}
-	
-	[Table(Name = "circle_decay_timer", Scheduled = nameof(CircleDecay))]
+
+	[Table(Name = "circle_decay_timer", Scheduled = nameof(CircleDecay), ScheduledAt = nameof(scheduled_at))]
 	public partial struct CircleDecayTimer
 	{
 		[PrimaryKey, AutoInc]
 		public ulong scheduled_id;
 		public ScheduleAt scheduled_at;
 	}
-	
-	[Table(Name = "circle_recombine_timer", Scheduled = nameof(CircleRecombine))]
+
+	[Table(Name = "circle_recombine_timer", Scheduled = nameof(CircleRecombine), ScheduledAt = nameof(scheduled_at))]
 	public partial struct CircleRecombineTimer
 	{
 		[PrimaryKey, AutoInc]
@@ -107,15 +107,15 @@ public static partial class Module
 		public uint player_id;
 	}
 
-	[Table(Name = "consume_entity_timer", Scheduled = nameof(consume_entity))]
+	[Table(Name = "consume_entity_timer", Scheduled = nameof(ConsumeEntity), ScheduledAt = nameof(scheduled_at))]
 	public partial struct ConsumeEntityTimer
 	{
-		[AutoInc]
+		[PrimaryKey, AutoInc]
 		public ulong scheduled_id;
 		public ScheduleAt scheduled_at;
 		public uint consumed_entity_id;
 		public uint consumer_entity_id;
-}
+	}
 	#endregion
 
 
@@ -147,7 +147,7 @@ public static partial class Module
 		if (player != null)
 		{
 			ctx.Db.player.Insert(player.Value.player);
-			ctx.Db.logged_out_player.Delete(player.Value);
+			ctx.Db.logged_out_player.identity.Delete(player.Value.identity);
 		}
 		else
 		{
@@ -174,7 +174,7 @@ public static partial class Module
 			identity = player.identity,
 			player = player
 		});
-		ctx.Db.player.Delete(player);
+		ctx.Db.player.identity.Delete(player.identity);
 	}
 
 	[Reducer]
@@ -191,12 +191,19 @@ public static partial class Module
 	public static void Respawn(ReducerContext ctx)
 	{
 		var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("No such player found");
-		if (ctx.Db.circle.player_id.Filter(player.player_id).Any())
-		{
-			throw new Exception($"Player {player.player_id} already has a circle");
-		}
 
 		SpawnPlayerInitialCircle(ctx, player.player_id);
+	}
+
+	[Reducer]
+	public static void Suicide(ReducerContext ctx)
+	{
+		var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("No such player found");
+
+		foreach (var circle in ctx.Db.circle.player_id.Filter(player.player_id))
+		{
+			DestroyEntity(ctx, circle.entity_id);
+		}
 	}
 
 	public static Entity SpawnPlayerInitialCircle(ReducerContext ctx, uint player_id)
@@ -229,7 +236,7 @@ public static partial class Module
 			player_id = player_id,
 			direction = new DbVector2(0, 1),
 			speed = 0f,
-			last_split_time = timestamp.ToUnixTimeMilliseconds(),
+			last_split_time = (ulong)timestamp.ToUnixTimeMilliseconds(),
 		});
 		return entity;
 	}
@@ -289,7 +296,7 @@ public static partial class Module
 			for (int i = 0; i < player_entities.Count; i++)
 			{
 				var circle_i = circles[i];
-				var time_since_split = (ctx.Timestamp.ToUnixTimeMilliseconds() - circle_i.last_split_time) / 1000f;
+				var time_since_split = ((ulong)ctx.Timestamp.ToUnixTimeMilliseconds() - circle_i.last_split_time) / 1000f;
 				var time_before_recombining = MathF.Max(SPLIT_RECOMBINE_DELAY_SEC - time_since_split, 0f);
 				if (time_before_recombining > SPLIT_GRAV_PULL_BEFORE_RECOMBINE_SEC)
 				{
@@ -405,7 +412,8 @@ public static partial class Module
 
 	private static void schedule_consume_entity(ReducerContext ctx, uint consumer_id, uint consumed_id)
 	{
-		ctx.Db.consume_entity_timer.Insert(new ConsumeEntityTimer {
+		ctx.Db.consume_entity_timer.Insert(new ConsumeEntityTimer
+		{
 			scheduled_at = new ScheduleAt.Time(DateTimeOffset.Now),
 			consumer_entity_id = consumer_id,
 			consumed_entity_id = consumed_id,
@@ -419,10 +427,15 @@ public static partial class Module
 		var consumer_entity = ctx.Db.entity.entity_id.Find(request.consumer_entity_id) ?? throw new Exception("Consumer entity doesn't exist");
 
 		consumer_entity.mass += consumed_entity.mass;
-		ctx.Db.food.entity_id.Delete(consumed_entity.entity_id);
-		ctx.Db.circle.entity_id.Delete(consumed_entity.entity_id);
-		ctx.Db.entity.entity_id.Delete(consumed_entity.entity_id);
+		DestroyEntity(ctx, consumed_entity.entity_id);
 		ctx.Db.entity.entity_id.Update(consumer_entity);
+	}
+
+	public static void DestroyEntity(ReducerContext ctx, uint entityId)
+	{
+		ctx.Db.food.entity_id.Delete(entityId);
+		ctx.Db.circle.entity_id.Delete(entityId);
+		ctx.Db.entity.entity_id.Delete(entityId);
 	}
 
 	[Reducer]
@@ -451,7 +464,7 @@ public static partial class Module
 					ctx.Timestamp
 				);
 				circle_entity.mass -= half_mass;
-				circle.last_split_time = ctx.Timestamp.ToUnixTimeMilliseconds();
+				circle.last_split_time = (ulong)ctx.Timestamp.ToUnixTimeMilliseconds();
 				ctx.Db.circle.entity_id.Update(circle);
 				ctx.Db.entity.entity_id.Update(circle_entity);
 				circle_count += 1;
@@ -530,7 +543,7 @@ public static partial class Module
 	{
 		List<Circle> circles = ctx.Db.circle.player_id.Filter(timer.player_id).ToList();
 		Entity[] recombining_entities = circles
-			.Where(c => (ctx.Timestamp.ToUnixTimeMilliseconds() - c.last_split_time) / 1000 >= SPLIT_RECOMBINE_DELAY_SEC)
+			.Where(c => ((ulong)ctx.Timestamp.ToUnixTimeMilliseconds() - c.last_split_time) / 1000 >= SPLIT_RECOMBINE_DELAY_SEC)
 			.Select(c => ctx.Db.entity.entity_id.Find(c.entity_id) ?? throw new Exception())
 			.ToArray();
 		if (recombining_entities.Length <= 1)
@@ -550,6 +563,6 @@ public static partial class Module
 
 
 	public static float Range(this Random rng, float min, float max) => rng.NextSingle() * (max - min) + min;
-	
+
 	public static uint Range(this Random rng, uint min, uint max) => (uint)rng.NextInt64(min, max);
 }

@@ -150,7 +150,10 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
 pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
     if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender) {
         ctx.db.player().insert(player.player.clone());
-        ctx.db.logged_out_player().delete(player);
+        ctx.db
+            .logged_out_player()
+            .identity()
+            .delete(&player.identity);
     } else {
         ctx.db.player().try_insert(Player {
             identity: ctx.sender,
@@ -460,6 +463,7 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
 }
 
 fn schedule_consume_entity(ctx: &ReducerContext, consumer_id: u32, consumed_id: u32) {
+    log::info!("now: {}", Timestamp::now().into_micros_since_epoch());
     ctx.db.consume_entity_timer().insert(ConsumeEntityTimer {
         scheduled_id: 0,
         scheduled_at: ScheduleAt::Time(Timestamp::now().into_micros_since_epoch()),
@@ -498,14 +502,8 @@ pub fn consume_entity(ctx: &ReducerContext, request: ConsumeEntityTimer) -> Resu
 
 pub fn destroy_entity(ctx: &ReducerContext, entity_id: u32) -> Result<(), String> {
     ctx.db.food().entity_id().delete(&entity_id);
-    ctx.db
-        .circle()
-        .entity_id()
-        .delete(&entity_id);
-    ctx.db
-        .entity()
-        .entity_id()
-        .delete(&entity_id);
+    ctx.db.circle().entity_id().delete(&entity_id);
+    ctx.db.entity().entity_id().delete(&entity_id);
 
     Ok(())
 }
