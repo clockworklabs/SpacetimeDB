@@ -56,7 +56,7 @@ impl Lang for Csharp {
 
             writeln!(
                 output,
-                "public class {csharp_table_name}Handle : RemoteTableHandle<EventContext, {table_type}>"
+                "public sealed class {csharp_table_name}Handle : RemoteTableHandle<EventContext, {table_type}>"
             );
             indented_block(output, |output| {
                 // If this is a table, we want to generate event accessor and indexes
@@ -711,7 +711,7 @@ fn autogen_csharp_product_common(
 ) {
     writeln!(output, "[SpacetimeDB.Type]");
     writeln!(output, "[DataContract]");
-    write!(output, "public partial class {name}");
+    write!(output, "public sealed partial class {name}");
     if !base.is_empty() {
         write!(output, " : {base}");
     }
