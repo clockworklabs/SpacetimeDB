@@ -1240,6 +1240,15 @@ mod tests {
         }
     }
 
+    // TODO(centril): find-replace all occurrences of body.
+    fn begin_mut_tx(datastore: &Locking) -> MutTxId {
+        datastore.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
+    }
+
+    fn commit(datastore: &Locking, tx: MutTxId) -> ResultTest<TxData> {
+        Ok(datastore.commit_mut_tx(tx)?.expect("commit should produce `TxData`"))
+    }
+
     #[rustfmt::skip]
     fn basic_table_schema_cols() -> [ColRow<'static>; 3] {
         let table = FIRST_NON_SYSTEM_ID;
@@ -2054,6 +2063,87 @@ mod tests {
         assert_eq!(all_rows_col_0_eq_1(&tx).len(), 1);
 
         datastore.commit_mut_tx(tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_regression_2134() -> ResultTest<()> {
+        // Get us a datastore and tx.
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+
+        // Create the table. The minimal repro is a one column table with a unique constraint.
+        let table_id = TableId::SENTINEL;
+        let table_schema = TableSchema::new(
+            table_id,
+            "Foo".into(),
+            vec![ColumnSchema {
+                table_id,
+                col_pos: 0.into(),
+                col_name: "id".into(),
+                col_type: AlgebraicType::I32,
+            }],
+            vec![IndexSchema {
+                table_id,
+                index_id: IndexId::SENTINEL,
+                index_name: "btree".into(),
+                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: 0.into() }),
+            }],
+            vec![ConstraintSchema {
+                table_id,
+                constraint_id: ConstraintId::SENTINEL,
+                constraint_name: "constraint".into(),
+                data: ConstraintData::Unique(UniqueConstraintData {
+                    columns: col_list![0].into(),
+                }),
+            }],
+            vec![],
+            StTableType::User,
+            StAccess::Public,
+            None,
+            None,
+        );
+        let table_id = datastore.create_table_mut_tx(&mut tx, table_schema)?;
+        commit(&datastore, tx)?;
+
+        // A "reducer" that deletes and then inserts the same row.
+        let row = &product![1];
+        let update = |datastore| -> ResultTest<_> {
+            let mut tx = begin_mut_tx(datastore);
+            // Delete the row.
+            let deleted = tx.delete_by_row_value(table_id, row)?;
+            // Insert it again.
+            insert(datastore, &mut tx, table_id, row)?;
+            let tx_data = commit(datastore, tx)?;
+            Ok((deleted, tx_data))
+        };
+
+        // In two separate transactions, we update a row to itself.
+        // What should happen is that the row is added to the committed state the first time,
+        // as the delete does nothing.
+        //
+        // The second time however,
+        // the delete should first mark the committed row as deleted in the delete tables,
+        // and then it should remove it from the delete tables upon insertion,
+        // rather than actually inserting it in the tx state.
+        // So the second transaction should be observationally a no-op.s
+        // There was a bug in the datastore that did not respect this in the presence of a unique index.
+        let (deleted_1, tx_data_1) = update(&datastore)?;
+        let (deleted_2, tx_data_2) = update(&datastore)?;
+
+        // In the first tx, the row is not deleted, but it is inserted, so we end up with the row committed.
+        assert_eq!(deleted_1, false);
+        assert_eq!(tx_data_1.deletes().count(), 0);
+        assert_eq!(tx_data_1.inserts().collect_vec(), [(&table_id, &[row.clone()].into())]);
+
+        // In the second tx, the row is deleted from the commit state,
+        // by marking it in the delete tables.
+        // Then, when inserting, it is un-deleted by un-marking.
+        // This sequence results in an empty tx-data.
+        assert_eq!(deleted_2, true);
+        assert_eq!(tx_data_2.deletes().count(), 0);
+        assert_eq!(tx_data_2.inserts().collect_vec(), []);
 
         Ok(())
     }

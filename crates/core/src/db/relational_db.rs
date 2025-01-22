@@ -578,7 +578,7 @@ impl RelationalDB {
     /// **Note**: this call **must** be paired with [`Self::rollback_mut_tx`] or
     /// [`Self::commit_tx`], otherwise the database will be left in an invalid
     /// state. See also [`Self::with_auto_commit`].
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn begin_mut_tx(&self, isolation_level: IsolationLevel, workload: Workload) -> MutTx {
         log::trace!("BEGIN MUT TX");
         let r = self.inner.begin_mut_tx(isolation_level, workload);
@@ -586,7 +586,7 @@ impl RelationalDB {
         r
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn begin_tx(&self, workload: Workload) -> Tx {
         log::trace!("BEGIN TX");
         let r = self.inner.begin_tx(workload);
@@ -594,25 +594,25 @@ impl RelationalDB {
         r
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn rollback_mut_tx(&self, tx: MutTx) {
         log::trace!("ROLLBACK MUT TX");
         self.inner.rollback_mut_tx(tx)
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn rollback_mut_tx_downgrade(&self, tx: MutTx, workload: Workload) -> Tx {
         log::trace!("ROLLBACK MUT TX");
         self.inner.rollback_mut_tx_downgrade(tx, workload)
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn release_tx(&self, tx: Tx) {
         log::trace!("RELEASE TX");
         self.inner.release_tx(tx)
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn commit_tx(&self, tx: MutTx) -> Result<Option<TxData>, DBError> {
         log::trace!("COMMIT MUT TX");
 
@@ -631,7 +631,7 @@ impl RelationalDB {
         Ok(Some(tx_data))
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> Result<Option<(TxData, Tx)>, DBError> {
         log::trace!("COMMIT MUT TX");
 
