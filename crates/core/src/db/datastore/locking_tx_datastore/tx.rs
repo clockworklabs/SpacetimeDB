@@ -100,7 +100,7 @@ impl TxId {
     // Do not change its return type to a bare `u64`.
     pub(crate) fn num_distinct_values(&self, table_id: TableId, cols: &ColList) -> Option<NonZeroU64> {
         let table = self.committed_state_shared_lock.get_table(table_id)?;
-        let index = table.indexes.get(cols)?;
+        let (_, index) = table.get_index_by_cols(cols)?;
         NonZeroU64::new(index.num_keys() as u64)
     }
 }
