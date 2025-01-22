@@ -258,7 +258,12 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         self.trapped
     }
 
-    #[tracing::instrument(skip_all, fields(db_id = self.instance.instance_env().replica_ctx.id))]
+    #[tracing::instrument(
+        level = "debug",
+        skip_all,
+        err
+        fields(db_id = self.instance.instance_env().replica_ctx.id),
+    )]
     fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
         log::debug!("init database");
         let timestamp = Timestamp::now();
@@ -328,7 +333,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         Ok(rcr)
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     fn update_database(
         &mut self,
         program: Program,
@@ -389,7 +394,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     /// The method also performs various measurements and records energy usage,
     /// as well as broadcasting a [`ModuleEvent`] containg information about
     /// the outcome of the call.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
         let CallReducerParams {
             timestamp,

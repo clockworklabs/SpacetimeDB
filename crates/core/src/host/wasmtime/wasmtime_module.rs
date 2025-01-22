@@ -181,7 +181,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
     type Trap = anyhow::Error;
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer(
         &mut self,
         op: ReducerOp<'_>,
