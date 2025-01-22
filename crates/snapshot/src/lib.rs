@@ -749,7 +749,7 @@ impl SnapshotRepository {
     /// in order to prevent us from retaining snapshots which will be superseded by the new diverging history.
     ///
     /// It is also called when creating a new snapshot via [`Self::create_snapshot`]
-    /// in order to prevent a diverging snapshot from being used as a parent (for hardlinking).
+    /// in order to prevent a diverging snapshot from being used as its own parent.
     ///
     /// Does not invalidate snapshots which are locked.
     ///
