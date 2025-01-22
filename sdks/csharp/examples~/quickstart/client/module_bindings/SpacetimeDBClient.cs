@@ -66,10 +66,9 @@ namespace SpacetimeDB.Types
 			return update.ReducerCall.ReducerName switch {
 				"identity_connected" => BSATNHelpers.Decode<Reducer.IdentityConnected>(encodedArgs),
 				"identity_disconnected" => BSATNHelpers.Decode<Reducer.IdentityDisconnected>(encodedArgs),
-				"init" => BSATNHelpers.Decode<Reducer.Init>(encodedArgs),
 				"send_message" => BSATNHelpers.Decode<Reducer.SendMessage>(encodedArgs),
 				"set_name" => BSATNHelpers.Decode<Reducer.SetName>(encodedArgs),
-				"<none>" | "" => new Reducer.StdbNone(),
+				"<none>" or "" => new Reducer.StdbNone(),
 				var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
 			};
 		}
@@ -83,7 +82,6 @@ namespace SpacetimeDB.Types
 			return reducer switch {
 				Reducer.IdentityConnected args => Reducers.InvokeIdentityConnected(eventContext, args),
 				Reducer.IdentityDisconnected args => Reducers.InvokeIdentityDisconnected(eventContext, args),
-				Reducer.Init args => Reducers.InvokeInit(eventContext, args),
 				Reducer.SendMessage args => Reducers.InvokeSendMessage(eventContext, args),
 				Reducer.SetName args => Reducers.InvokeSetName(eventContext, args),
 				Reducer.StdbNone => true,

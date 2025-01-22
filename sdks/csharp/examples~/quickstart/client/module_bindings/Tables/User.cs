@@ -7,6 +7,7 @@
 
 using System;
 using SpacetimeDB;
+using SpacetimeDB.BSATN;
 using SpacetimeDB.ClientApi;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
