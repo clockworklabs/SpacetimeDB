@@ -1452,11 +1452,11 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {{
 
     /// Unsubscribe from the query controlled by this `SubscriptionHandle`,
     /// then run `on_end` when its rows are removed from the client cache.
-    fn unsubscribe_then(self, on_end: __sdk::OnEndedCallback<RemoteModule>) -> anyhow::Result<()> {{
+    fn unsubscribe_then(self, on_end: __sdk::OnEndedCallback<RemoteModule>) -> __anyhow::Result<()> {{
         self.imp.unsubscribe_then(Some(on_end))
     }}
 
-    fn unsubscribe(self) -> anyhow::Result<()> {{
+    fn unsubscribe(self) -> __anyhow::Result<()> {{
         self.imp.unsubscribe_then(None)
     }}
 
