@@ -27,5 +27,5 @@ pub fn yes() -> Arg {
         .long("yes")
         .short('y')
         .action(SetTrue)
-        .help("Assume \"yes\" as answer to all prompts and run non-interactively")
+        .help("Run non-interactively wherever possible. This will answer \"yes\" to almost all prompts.")
 }

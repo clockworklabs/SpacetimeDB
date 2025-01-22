@@ -80,7 +80,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // we want to use the default identity
     // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
     //  easily create a new identity with an email
-    let auth_header = get_auth_header(&mut config, anon_identity, server).await?;
+    let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
 
     let mut query_params = Vec::<(&str, &str)>::new();
     query_params.push(("host_type", "wasm"));
@@ -198,7 +198,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             ));
         }
         PublishResult::PermissionDenied { domain } => {
-            let identity = decode_identity(&mut config, server).await?;
+            let identity = decode_identity(&mut config, server, !force).await?;
             //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
             // we should perhaps generate fun names like 'green-fire-dragon' instead
             let suggested_tld: String = identity.chars().take(12).collect();

@@ -50,8 +50,9 @@ pub async fn spacetime_register_tld(
     config: &mut Config,
     tld: &str,
     server: Option<&str>,
+    interactive: bool,
 ) -> Result<RegisterTldResult, anyhow::Error> {
-    let auth_header = get_auth_header(config, false, server).await?;
+    let auth_header = get_auth_header(config, false, server, interactive).await?;
 
     // TODO(jdetter): Fix URL encoding on specifying this domain
     let builder = reqwest::Client::new()
@@ -129,6 +130,7 @@ pub async fn describe_reducer(
     server: Option<String>,
     reducer_name: String,
     anon_identity: bool,
+    interactive: bool,
 ) -> anyhow::Result<DescribeReducer> {
     let builder = reqwest::Client::new().get(format!(
         "{}/database/schema/{}/{}/{}",
@@ -137,7 +139,7 @@ pub async fn describe_reducer(
         "reducer",
         reducer_name
     ));
-    let auth_header = get_auth_header(config, anon_identity, server.as_deref()).await?;
+    let auth_header = get_auth_header(config, anon_identity, server.as_deref(), interactive).await?;
     let builder = add_auth_header_opt(builder, &auth_header);
 
     let descr = builder

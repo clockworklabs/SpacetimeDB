@@ -34,7 +34,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let identity = decode_identity(&mut config, server, !force).await?;
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
-    match spacetime_register_tld(&mut config, domain, server).await? {
+    match spacetime_register_tld(&mut config, domain, server, !force).await? {
         RegisterTldResult::Success { domain } => {
             println!("Registered domain: {}", domain);
         }
