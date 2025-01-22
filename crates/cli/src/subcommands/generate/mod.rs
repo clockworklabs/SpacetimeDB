@@ -4,21 +4,16 @@ use anyhow::Context;
 use clap::parser::ValueSource;
 use clap::Arg;
 use clap::ArgAction::Set;
-use convert_case::{Case, Casing};
 use core::mem;
 use duct::cmd;
-use itertools::Itertools;
 use spacetimedb::host::wasmtime::{Mem, MemView, WasmPointee as _};
-use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
-use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, Typespace};
-use spacetimedb_lib::{bsatn, RawModuleDefV8, TypeAlias};
+use spacetimedb_lib::{bsatn, RawModuleDefV8};
 use spacetimedb_lib::{RawModuleDef, MODULE_ABI_MAJOR_VERSION};
 use spacetimedb_primitives::errno;
 use spacetimedb_schema;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
-use spacetimedb_schema::schema::{Schema, TableSchema};
 use std::fs;
 use std::path::{Path, PathBuf};
 use wasmtime::{Caller, StoreContextMut};
@@ -116,7 +111,7 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
 
     let module = if let Some(mut json_module) = json_module {
         let DeserializeWrapper(module) = if let Some(path) = json_module.next() {
-            serde_json::from_slice(&std::fs::read(path)?)?
+            serde_json::from_slice(&fs::read(path)?)?
         } else {
             serde_json::from_reader(std::io::stdin().lock())?
         };
@@ -213,73 +208,12 @@ impl clap::ValueEnum for Language {
     }
 }
 
-pub struct GenCtx {
-    typespace: Typespace,
-    names: Vec<Option<String>>,
-}
-
 pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow::Result<Vec<(String, String)>> {
     let module = ModuleDef::try_from(module)?;
     Ok(match lang {
         Language::Rust => generate_lang(&module, rust::Rust, namespace),
         Language::TypeScript => generate_lang(&module, typescript::TypeScript, namespace),
-        Language::Csharp => {
-            let ctx = GenCtx {
-                typespace: module.typespace().clone(),
-                names: (0..module.typespace().types.len())
-                    .map(|r| {
-                        module
-                            .type_def_from_ref(AlgebraicTypeRef(r as _))
-                            .map(|(name, _)| name.name_segments().join("."))
-                    })
-                    .collect(),
-            };
-
-            let tableset = module.tables().map(|t| t.product_type_ref).collect::<HashSet<_>>();
-            let tables = module
-                .tables()
-                .map(|table| TableDescHack {
-                    schema: TableSchema::from_module_def(&module, table, (), 0.into()),
-                    data: table.product_type_ref,
-                })
-                .sorted_by(|a, b| a.schema.table_name.cmp(&b.schema.table_name));
-
-            // HACK: Patch the fields to have the types that point to `AlgebraicTypeRef` because all generators depend on that
-            // `register_table` in rt.rs resolve the types early, but the generators do it late. This impact enums where
-            // the enum name is not preserved in the `AlgebraicType`.
-            // x.schema.columns =
-            //     RawColumnDefV8::from_product_type(typespace[x.data].as_product().unwrap().clone());
-
-            let types = module.types().filter(|typ| !tableset.contains(&typ.ty)).map(|typ| {
-                GenItem::TypeAlias(TypeAlias {
-                    name: typ.name.name_segments().join("."),
-                    ty: typ.ty,
-                })
-            });
-
-            let reducers = module
-                .reducers()
-                .filter(|r| r.lifecycle.is_none())
-                .map(|reducer| spacetimedb_lib::ReducerDef {
-                    name: reducer.name.clone().into(),
-                    args: reducer.params.elements.to_vec(),
-                })
-                .sorted_by(|a, b| a.name.cmp(&b.name));
-
-            let items = itertools::chain!(
-                types,
-                tables.into_iter().map(GenItem::Table),
-                reducers.map(GenItem::Reducer),
-            );
-
-            let items: Vec<GenItem> = items.collect();
-            let mut files: Vec<(String, String)> = items
-                .iter()
-                .filter_map(|item| item.generate(&ctx, lang, namespace))
-                .collect();
-            files.extend(generate_globals(&ctx, lang, namespace, &items));
-            files
-        }
+        Language::Csharp => generate_lang(&module, csharp::Csharp, namespace),
     })
 }
 
@@ -317,58 +251,6 @@ trait Lang {
     fn generate_type(&self, module: &ModuleDef, namespace: &str, typ: &TypeDef) -> String;
     fn generate_reducer(&self, module: &ModuleDef, namespace: &str, reducer: &ReducerDef) -> String;
     fn generate_globals(&self, module: &ModuleDef, namespace: &str) -> Vec<(String, String)>;
-}
-
-/// Backwards-compatibible imitation of `TableDesc` that should be removed once the generators are updated to rely on `ModuleDef`.
-pub struct TableDescHack {
-    schema: TableSchema,
-    data: AlgebraicTypeRef,
-}
-
-pub enum GenItem {
-    Table(TableDescHack),
-    TypeAlias(TypeAlias),
-    Reducer(spacetimedb_lib::ReducerDef),
-}
-
-fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenItem]) -> Vec<(String, String)> {
-    match lang {
-        Language::Csharp => csharp::autogen_csharp_globals(ctx, items, namespace),
-        Language::TypeScript => unreachable!(),
-        Language::Rust => unreachable!(),
-    }
-}
-
-impl GenItem {
-    fn generate(&self, ctx: &GenCtx, lang: Language, namespace: &str) -> Option<(String, String)> {
-        match lang {
-            Language::Csharp => self.generate_csharp(ctx, namespace),
-            Language::TypeScript => unreachable!(),
-            Language::Rust => unreachable!(),
-        }
-    }
-
-    fn generate_csharp(&self, ctx: &GenCtx, namespace: &str) -> Option<(String, String)> {
-        match self {
-            GenItem::Table(table) => {
-                let code = csharp::autogen_csharp_table(ctx, table, namespace);
-                Some((table.schema.table_name.as_ref().to_case(Case::Pascal) + ".cs", code))
-            }
-            GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
-                AlgebraicType::Sum(sum) => {
-                    let filename = name.replace('.', "");
-                    let code = csharp::autogen_csharp_sum(ctx, name, sum, namespace);
-                    Some((filename + ".cs", code))
-                }
-                AlgebraicType::Product(prod) => {
-                    let code = csharp::autogen_csharp_tuple(ctx, name, prod, namespace);
-                    Some((name.clone() + ".cs", code))
-                }
-                _ => todo!(),
-            },
-            GenItem::Reducer(_) => None,
-        }
-    }
 }
 
 pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDef> {
@@ -423,7 +305,7 @@ fn extract_descriptions_from_module(module: wasmtime::Module) -> anyhow::Result<
     let module: RawModuleDef = match instance.get_func(&mut store, "__describe_module__") {
         Some(f) => {
             store.data_mut().sink = Vec::new();
-            f.typed::<u32, ()>(&store)?.call(&mut store, 1).unwrap();
+            f.typed::<u32, ()>(&store)?.call(&mut store, 1)?;
             let buf = mem::take(&mut store.data_mut().sink);
             bsatn::from_slice(&buf)?
         }
