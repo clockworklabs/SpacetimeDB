@@ -722,7 +722,7 @@ fn autogen_csharp_product_common(
             .map(|(orig_name, ty)| {
                 writeln!(output, "[DataMember(Name = \"{orig_name}\")]");
 
-                let field_name = name.deref().to_case(Case::Pascal);
+                let field_name = orig_name.deref().to_case(Case::Pascal);
                 let ty = ty_fmt(module, ty, namespace).to_string();
 
                 writeln!(output, "public {ty} {field_name};");
