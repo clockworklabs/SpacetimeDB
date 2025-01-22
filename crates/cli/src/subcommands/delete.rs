@@ -19,7 +19,7 @@ pub fn cli() -> clap::Command {
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let database = args.get_one::<String>("database").unwrap();
-    let force: bool = args.get_flag("force");
+    let force = args.get_flag("force");
 
     let identity = database_identity(&config, database, server).await?;
 
