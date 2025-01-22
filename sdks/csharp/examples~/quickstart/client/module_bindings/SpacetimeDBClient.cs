@@ -56,8 +56,8 @@ namespace SpacetimeDB.Types
 			SetReducerFlags = new();
 			Reducers = new(this, this.SetReducerFlags);
 
-			clientDB.AddTable<User>("user", Db.User);
 			clientDB.AddTable<Message>("message", Db.Message);
+			clientDB.AddTable<User>("user", Db.User);
 		}
 
 		protected override Reducer ToReducer(TransactionUpdate update)
