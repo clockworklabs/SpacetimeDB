@@ -175,11 +175,12 @@ pub async fn get_auth_header(
     config: &mut Config,
     anon_identity: bool,
     target_server: Option<&str>,
+    interactive: bool,
 ) -> anyhow::Result<Option<String>> {
     if anon_identity {
         Ok(None)
     } else {
-        let token = get_login_token_or_log_in(config, target_server).await?;
+        let token = get_login_token_or_log_in(config, target_server, interactive).await?;
         // The current form is: Authorization: Basic base64("token:<token>")
         let mut auth_header = String::new();
         auth_header.push_str(format!("Basic {}", BASE_64_STD.encode(format!("token:{}", token))).as_str());
@@ -269,8 +270,12 @@ Please log back in with `spacetime logout` and then `spacetime login`."
     })
 }
 
-pub async fn decode_identity(config: &mut Config, target_server: Option<&str>) -> anyhow::Result<String> {
-    let token = get_login_token_or_log_in(config, target_server).await?;
+pub async fn decode_identity(
+    config: &mut Config,
+    target_server: Option<&str>,
+    interactive: bool,
+) -> anyhow::Result<String> {
+    let token = get_login_token_or_log_in(config, target_server, interactive).await?;
     // Here, we manually extract and decode the claims from the json web token.
     // We do this without using the `jsonwebtoken` crate because it doesn't seem to have a way to skip signature verification.
     // But signature verification would require getting the public key from a server, and we don't necessarily want to do that.
@@ -287,19 +292,22 @@ pub async fn decode_identity(config: &mut Config, target_server: Option<&str>) -
     Ok(claims_data.identity.to_string())
 }
 
-pub async fn get_login_token_or_log_in<'a>(config: &mut Config, target_server: Option<&str>) -> anyhow::Result<String> {
+pub async fn get_login_token_or_log_in<'a>(
+    config: &mut Config,
+    target_server: Option<&str>,
+    interactive: bool,
+) -> anyhow::Result<String> {
     if let Some(token) = config.spacetimedb_token() {
         return Ok(token.clone());
     }
 
-    // TODO: we must pass the force param
-
     // It would be "ideal" if we could print the `spacetimedb.com` by deriving it from the `default_auth_host` constant,
     // but this will change _so_ infrequently that it's not even worth the time to write that code and test it.
-    let full_login = y_or_n(
-        false,
-        "You are not logged in. Would you like to log in with spacetimedb.com?",
-    )?;
+    let full_login = interactive
+        && y_or_n(
+            false,
+            "You are not logged in. Would you like to log in with spacetimedb.com?",
+        )?;
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;

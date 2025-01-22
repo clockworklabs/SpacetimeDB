@@ -47,6 +47,7 @@ pub fn cli() -> clap::Command {
                 .value_parser(clap::value_parser!(Format))
                 .help("Output format for the logs")
         )
+        .arg(common_args::yes())
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
 
@@ -111,12 +112,13 @@ impl clap::ValueEnum for Format {
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
+    let force = args.get_flag("force");
     let mut num_lines = args.get_one::<u32>("num_lines").copied();
     let database = args.get_one::<String>("database").unwrap();
     let follow = args.get_flag("follow");
     let format = *args.get_one::<Format>("format").unwrap();
 
-    let auth_header = get_auth_header(&mut config, false, server).await?;
+    let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
     let database_identity = database_identity(&config, database, server).await?;
 

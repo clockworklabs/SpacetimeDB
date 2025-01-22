@@ -15,6 +15,7 @@ pub fn cli() -> Command {
     Command::new("list")
         .about("Lists the databases attached to an identity")
         .arg(common_args::server().help("The nickname, host name or URL of the server from which to list databases"))
+        .arg(common_args::yes())
 }
 
 #[derive(Deserialize)]
@@ -30,10 +31,11 @@ struct IdentityRow {
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = util::decode_identity(&mut config, server).await?;
+    let force = args.get_flag("force");
+    let identity = util::decode_identity(&mut config, server, !force).await?;
 
     let client = reqwest::Client::new();
-    let token = get_login_token_or_log_in(&mut config, server).await?;
+    let token = get_login_token_or_log_in(&mut config, server, !force).await?;
     let res = client
         .get(format!(
             "{}/identity/{}/databases",

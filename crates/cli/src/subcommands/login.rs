@@ -42,6 +42,7 @@ fn get_subcommands() -> Vec<Command> {
                 .action(ArgAction::SetTrue)
                 .help("Also show the auth token"),
         )
+        .arg(common_args::yes())
         .about("Show the current login info")]
 }
 
@@ -80,8 +81,9 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
 
 async fn exec_show(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let include_token = args.get_flag("token");
+    let force = args.get_flag("force");
 
-    let identity = decode_identity(&mut config, None).await?;
+    let identity = decode_identity(&mut config, None, !force).await?;
     println!("You are logged in as {}", identity);
 
     if include_token {

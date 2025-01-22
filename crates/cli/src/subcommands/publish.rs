@@ -159,7 +159,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
-        let identity = decode_identity(&mut config, server).await?;
+        let identity = decode_identity(&mut config, server, !force).await?;
         let err = res.text().await?;
         return unauth_error_context(
             Err(anyhow::anyhow!(err)),

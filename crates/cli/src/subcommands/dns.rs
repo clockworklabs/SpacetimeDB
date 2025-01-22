@@ -22,6 +22,7 @@ pub fn cli() -> Command {
                 .help("The database identity to rename"),
         )
         .arg(common_args::server().help("The nickname, host name or URL of the server on which to set the name"))
+        .arg(common_args::yes())
         .after_help("Run `spacetime rename --help` for more detailed information.\n")
 }
 
@@ -29,8 +30,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let domain = args.get_one::<String>("new-name").unwrap();
     let database_identity = args.get_one::<String>("database-identity").unwrap();
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = decode_identity(&mut config, server).await?;
-    let auth_header = get_auth_header(&mut config, false, server).await?;
+    let force = args.get_flag("force");
+    let identity = decode_identity(&mut config, server, !force).await?;
+    let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
     match spacetime_register_tld(&mut config, domain, server).await? {
         RegisterTldResult::Success { domain } => {
