@@ -225,7 +225,7 @@ impl HostController {
     /// database will be marked as initialized.
     ///
     /// See also: [`Self::get_module_host`]
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn get_or_launch_module_host(&self, database: Database, replica_id: u64) -> anyhow::Result<ModuleHost> {
         let mut rx = self.watch_maybe_launch_module_host(database, replica_id).await?;
         let module = rx.borrow_and_update();
@@ -239,7 +239,7 @@ impl HostController {
     /// gets notified each time the module is updated.
     ///
     /// See also: [`Self::watch_module_host`]
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn watch_maybe_launch_module_host(
         &self,
         database: Database,
@@ -281,7 +281,7 @@ impl HostController {
     ///
     /// If the computation `F` panics, the host is removed from this controller,
     /// releasing its resources.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn using_database<F, T>(&self, database: Database, replica_id: u64, f: F) -> anyhow::Result<T>
     where
         F: FnOnce(&RelationalDB) -> T + Send + 'static,
@@ -308,7 +308,7 @@ impl HostController {
     ///
     /// If the host was running, and the update fails, the previous version of
     /// the host keeps running.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all, err)]
     pub async fn update_module_host(
         &self,
         database: Database,
@@ -443,7 +443,7 @@ impl HostController {
 
     /// Release all resources of the [`ModuleHost`] identified by `replica_id`,
     /// and deregister it from the controller.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn exit_module_host(&self, replica_id: u64) -> Result<(), anyhow::Error> {
         trace!("exit module host {}", replica_id);
         let lock = self.hosts.lock().remove(&replica_id);
@@ -462,7 +462,7 @@ impl HostController {
     ///
     /// See [`Self::get_or_launch_module_host`] for a variant which launches
     /// the host if it is not running.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn get_module_host(&self, replica_id: u64) -> Result<ModuleHost, NoSuchModule> {
         trace!("get module host {}", replica_id);
         let guard = self.acquire_read_lock(replica_id).await;
@@ -477,7 +477,7 @@ impl HostController {
     ///
     /// See [`Self::watch_maybe_launch_module_host`] for a variant which
     /// launches the host if it is not running.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn watch_module_host(&self, replica_id: u64) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
         trace!("watch module host {}", replica_id);
         let guard = self.acquire_read_lock(replica_id).await;
@@ -692,7 +692,7 @@ impl Host {
     /// Note that this does **not** run module initialization routines, but may
     /// create on-disk artifacts if the host / database did not exist.
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "debug", skip_all, err)]
     async fn try_init(host_controller: &HostController, database: Database, replica_id: u64) -> anyhow::Result<Self> {
         let HostController {
             data_dir,
