@@ -307,7 +307,7 @@ public class SnapshotTests
             ),
             SampleTransactionUpdate(
                 1718487763059031, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                0, "__identity_connected__", 1957615, 66, [SampleUserInsert("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, true)],
+                0, "identity_connected", 1957615, 66, [SampleUserInsert("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, true)],
                 null
             ),
             SampleTransactionUpdate(
@@ -409,7 +409,7 @@ public class SnapshotTests
             ),
             SampleTransactionUpdate(
                 1718487791901504, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-                0, "__identity_disconnected__", 3595615, 75, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "B", "B", true, false)],
+                0, "identity_disconnected", 3595615, 75, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "B", "B", true, false)],
                 null
             ),
             SampleTransactionUpdate(

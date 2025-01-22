@@ -35,7 +35,7 @@
             CallerAddress: Guid_1,
             EnergyConsumed: {},
             Reducer: {
-              $type: Reducer.StdbIdentityConnected
+              $type: Reducer.IdentityConnected
             }
           }
         },
@@ -314,7 +314,7 @@
             CallerAddress: Guid_1,
             EnergyConsumed: {},
             Reducer: {
-              $type: Reducer.StdbIdentityDisconnected
+              $type: Reducer.IdentityDisconnected
             }
           }
         },
