@@ -1293,15 +1293,9 @@ impl MutTxId {
                     // - `commit_table` and `tx_table` use the same schema
                     //   because `tx_table` is derived from `commit_table`.
                     // - `tx_row_ptr` is correct per (PC.INS.1).
-                    if let (_, Some(commit_ptr)) = unsafe {
-                        Table::find_same_row_via_pointer_map(
-                            commit_table,
-                            tx_table,
-                            tx_blob_store,
-                            tx_row_ptr,
-                            tx_row_hash,
-                        )
-                    } {
+                    if let (_, Some(commit_ptr)) =
+                        unsafe { Table::find_same_row(commit_table, tx_table, tx_blob_store, tx_row_ptr, tx_row_hash) }
+                    {
                         // If `row` was already present in the committed state,
                         // either this is a set-semantic duplicate,
                         // or the row is marked as deleted, so we will undelete it
@@ -1469,8 +1463,6 @@ impl MutTxId {
                             to_delete
                         })
                     });
-
-                debug_assert_ne!(to_delete, Some(ptr));
 
                 // Remove the temporary entry from the insert tables.
                 // Do this before actually deleting to drop the borrows on the tables.
