@@ -1,5 +1,6 @@
 use crate::common_args;
 use crate::util;
+use crate::util::get_login_token_or_log_in;
 use crate::Config;
 use clap::{ArgMatches, Command};
 use reqwest::StatusCode;
@@ -32,6 +33,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let identity = util::decode_identity(&config)?;
 
     let client = reqwest::Client::new();
+    let token = get_login_token_or_log_in(&mut config, server).await?;
     let res = client
         .get(format!(
             "{}/identity/{}/databases",

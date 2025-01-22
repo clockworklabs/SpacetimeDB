@@ -3,7 +3,7 @@ use base64::{
     engine::general_purpose::STANDARD as BASE_64_STD, engine::general_purpose::STANDARD_NO_PAD as BASE_64_STD_NO_PAD,
     Engine as _,
 };
-use reqwest::RequestBuilder;
+use reqwest::{RequestBuilder, Url};
 use serde::Deserialize;
 use spacetimedb::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
@@ -13,6 +13,7 @@ use std::io::Write;
 use std::path::Path;
 
 use crate::config::Config;
+use crate::login::{default_auth_host, spacetimedb_login_force};
 
 /// Determine the identity of the `database`.
 pub async fn database_identity(
@@ -46,11 +47,11 @@ pub async fn spacetime_dns(
 /// identity will be looked up in the config and it will be used instead. Returns Ok() if the
 /// domain is successfully registered, returns Err otherwise.
 pub async fn spacetime_register_tld(
-    config: &Config,
+    config: &mut Config,
     tld: &str,
     server: Option<&str>,
 ) -> Result<RegisterTldResult, anyhow::Error> {
-    let auth_header = get_auth_header(config, false)?;
+    let auth_header = get_auth_header(config, false, server).await?;
 
     // TODO(jdetter): Fix URL encoding on specifying this domain
     let builder = reqwest::Client::new()
@@ -136,7 +137,7 @@ pub async fn describe_reducer(
         "reducer",
         reducer_name
     ));
-    let auth_header = get_auth_header(config, anon_identity)?;
+    let auth_header = get_auth_header(config, anon_identity, server.as_deref()).await?;
     let builder = add_auth_header_opt(builder, &auth_header);
 
     let descr = builder
@@ -170,11 +171,15 @@ pub fn add_auth_header_opt(mut builder: RequestBuilder, auth_header: &Option<Str
 ///  * `config` - The config file reference
 ///  * `anon_identity` - Whether or not to just use an anonymous identity (no identity)
 ///  * `identity_or_name` - The identity to try to lookup, which is typically provided from the command line
-pub fn get_auth_header(config: &Config, anon_identity: bool) -> anyhow::Result<Option<String>> {
+pub async fn get_auth_header(
+    config: &mut Config,
+    anon_identity: bool,
+    target_server: Option<&str>,
+) -> anyhow::Result<Option<String>> {
     if anon_identity {
         Ok(None)
     } else {
-        let token = config.spacetimedb_token_or_error()?;
+        let token = get_login_token_or_log_in(config, target_server).await?;
         // The current form is: Authorization: Basic base64("token:<token>")
         let mut auth_header = String::new();
         auth_header.push_str(format!("Basic {}", BASE_64_STD.encode(format!("token:{}", token))).as_str());
@@ -264,8 +269,8 @@ Please log back in with `spacetime logout` and then `spacetime login`."
     })
 }
 
-pub fn decode_identity(config: &Config) -> anyhow::Result<String> {
-    let token = config.spacetimedb_token_or_error()?;
+pub async fn decode_identity(config: &mut Config, target_server: Option<&str>) -> anyhow::Result<String> {
+    let token = get_login_token_or_log_in(config, target_server).await?;
     // Here, we manually extract and decode the claims from the json web token.
     // We do this without using the `jsonwebtoken` crate because it doesn't seem to have a way to skip signature verification.
     // But signature verification would require getting the public key from a server, and we don't necessarily want to do that.
@@ -280,4 +285,34 @@ pub fn decode_identity(config: &Config) -> anyhow::Result<String> {
     let claims_data: SpacetimeIdentityClaims = claims_data.try_into()?;
 
     Ok(claims_data.identity.to_string())
+}
+
+pub async fn get_login_token_or_log_in<'a>(
+    config: &'a mut Config,
+    target_server: Option<&str>,
+) -> anyhow::Result<&'a String> {
+    {
+        let token = config.spacetimedb_token();
+        if let Some(token) = token {
+            return Ok(token);
+        }
+        drop(token);
+    }
+
+    // TODO: we must pass the force param
+
+    // It would be "ideal" if we could print the `spacetimedb.com` by deriving it from the `default_auth_host` constant,
+    // but this will change _so_ infrequently that it's not even worth the time to write that code and test it.
+    let full_login = y_or_n(
+        false,
+        "You are not logged in. Would you like to log in with spacetimedb.com?",
+    )?;
+
+    if full_login {
+        let host = Url::parse(default_auth_host)?;
+        spacetimedb_login_force(config, &host, false).await
+    } else {
+        let host = Url::parse(&config.get_host_url(target_server)?)?;
+        spacetimedb_login_force(config, &host, true).await
+    }
 }

@@ -5,6 +5,8 @@ use reqwest::Url;
 use serde::Deserialize;
 use webbrowser;
 
+pub const default_auth_host: &str = "https://spacetimedb.com";
+
 pub fn cli() -> Command {
     Command::new("login")
         .args_conflicts_with_subcommands(true)
@@ -13,7 +15,7 @@ pub fn cli() -> Command {
         .arg(
             Arg::new("auth-host")
                 .long("auth-host")
-                .default_value("https://spacetimedb.com")
+                .default_value(default_auth_host)
                 .group("login-method")
                 .help("Fetch login token from a different host"),
         )
@@ -100,16 +102,26 @@ async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login:
         println!("If you want to log out, use spacetime logout.");
         Ok(token.clone())
     } else {
-        let token = if direct_login {
-            spacetimedb_direct_login(host).await?
-        } else {
-            let session_token = web_login_cached(config, host).await?;
-            spacetimedb_login(host, &session_token).await?
-        };
-        config.set_spacetimedb_token(token.clone());
-        config.save();
-        Ok(token)
+        spacetimedb_login_force(config, host, direct_login).await
     }
+}
+
+pub async fn spacetimedb_login_force<'a>(
+    config: &'a mut Config,
+    host: &Url,
+    direct_login: bool,
+) -> anyhow::Result<&'a String> {
+    let token = if direct_login {
+        spacetimedb_direct_login(host).await?
+    } else {
+        let session_token = web_login_cached(config, host).await?;
+        spacetimedb_login(host, &session_token).await?
+    };
+    config.set_spacetimedb_token(token);
+    config.save();
+
+    // It just preserves so much sanity for the caller if we return a reference instead of an owned thing.
+    Ok(config.spacetimedb_token().unwrap())
 }
 
 async fn web_login_cached(config: &mut Config, host: &Url) -> anyhow::Result<String> {
