@@ -47,7 +47,7 @@ spacetimedb::filter!("SELECT * FROM person");
 pub struct Book {
     isbn: String,
 }
- 
+
 #[spacetimedb::reducer]
 pub fn add_book(ctx: &ReducerContext, isbn: String) {
     ctx.db.book().insert(Book { isbn });
@@ -111,8 +111,8 @@ spacetimedb::filter!("SELECT * FROM book");
             """\
  sql
 ------------------------
- "SELECT * FROM book"
  "SELECT * FROM person"
+ "SELECT * FROM book"
 """,
         )
 

@@ -530,7 +530,8 @@ impl Table {
     ///
     /// # Safety
     ///
-    /// `needle_table.is_row_present(needle_ptr)` must hold.
+    /// - `target_table` and `needle_table` must have the same `row_layout`.
+    /// - `needle_table.is_row_present(needle_ptr)` must hold.
     unsafe fn find_same_row_via_unique_index(
         target_table: &Table,
         needle_table: &Table,
@@ -538,7 +539,7 @@ impl Table {
         needle_ptr: RowPointer,
     ) -> Option<RowPointer> {
         // Find the smallest unique index.
-        let (cols, idx) = target_table
+        let (cols, target_index) = target_table
             .indexes
             .iter()
             .find(|(_, idx)| idx.is_unique())
@@ -546,8 +547,14 @@ impl Table {
         // Project the needle row to the columns of the index, and then seek.
         // As this is a unique index, there are 0-1 rows for this key.
         let needle_row = unsafe { needle_table.get_row_ref_unchecked(needle_bs, needle_ptr) };
-        let key = needle_row.project(cols).expect("needle row should be valid");
-        idx.seek(&key).next()
+        let key = needle_row.project(&cols).expect("needle row should be valid");
+        target_index.seek(&key).next().filter(|&target_ptr| {
+            // SAFETY:
+            // - Caller promised that the row layouts were the same.
+            // - We know `target_ptr` exists, as it was in `target_index`, belonging to `target_table`.
+            // - Caller promised that `needle_ptr` is valid for `needle_table`.
+            unsafe { Self::eq_row_in_page(target_table, target_ptr, needle_table, needle_ptr) }
+        })
     }
 
     /// Insert the row identified by `ptr` into the table's [`PointerMap`],
@@ -645,34 +652,50 @@ impl Table {
         });
 
         // Scan all the frow pointers with `row_hash` in the `committed_table`.
-        let row_ptr = target_table
-            .pointers_for(row_hash)
-            .iter()
-            .copied()
-            .find(|committed_ptr| {
-                let (committed_page, committed_offset) = target_table.inner.page_and_offset(*committed_ptr);
-                let (tx_page, tx_offset) = needle_table.inner.page_and_offset(needle_ptr);
-
-                // SAFETY:
-                // Our invariants mean `tx_ptr` is valid, so `tx_page` and `tx_offset` are both valid.
-                // `committed_ptr` is in `committed_table.pointer_map`,
-                // so it must be valid and therefore `committed_page` and `committed_offset` are valid.
-                // Our invariants mean `committed_table.row_layout` applies to both tables.
-                // Moreover was `committed_table.inner.static_layout`
-                // derived from `committed_table.row_layout`.
-                unsafe {
-                    eq_row_in_page(
-                        committed_page,
-                        tx_page,
-                        committed_offset,
-                        tx_offset,
-                        &target_table.inner.row_layout,
-                        target_table.static_layout(),
-                    )
-                }
-            });
+        let row_ptr = target_table.pointers_for(row_hash).iter().copied().find(|&target_ptr| {
+            // SAFETY:
+            // - Caller promised that the row layouts were the same.
+            // - We know `target_ptr` exists, as it was found in a pointer map.
+            // - Caller promised that `needle_ptr` is valid for `needle_table`.
+            unsafe { Self::eq_row_in_page(target_table, target_ptr, needle_table, needle_ptr) }
+        });
 
         (row_hash, row_ptr)
+    }
+
+    /// Returns whether the row `target_ptr` in `target_table`
+    /// is exactly equal to the row `needle_ptr` in `needle_ptr`.
+    ///
+    /// # Safety
+    ///
+    /// - `target_table` and `needle_table` must have the same `row_layout`.
+    /// - `target_table.is_row_present(target_ptr)`.
+    /// - `needle_table.is_row_present(needle_ptr)`.
+    unsafe fn eq_row_in_page(
+        target_table: &Table,
+        target_ptr: RowPointer,
+        needle_table: &Table,
+        needle_ptr: RowPointer,
+    ) -> bool {
+        let (target_page, target_offset) = target_table.inner.page_and_offset(target_ptr);
+        let (needle_page, needle_offset) = needle_table.inner.page_and_offset(needle_ptr);
+
+        // SAFETY:
+        // - Caller promised that `target_ptr` is valid, so `target_page` and `target_offset` are both valid.
+        // - Caller promised that `needle_ptr` is valid, so `needle_page` and `needle_offset` are both valid.
+        // - Caller promised that the layouts of `target_table` and `needle_table` are the same,
+        //   so `target_table` applies to both.
+        //   Moreover `(x: Table).inner.static_layout` is always derived from `x.row_layout`.
+        unsafe {
+            eq_row_in_page(
+                target_page,
+                needle_page,
+                target_offset,
+                needle_offset,
+                &target_table.inner.row_layout,
+                target_table.static_layout(),
+            )
+        }
     }
 
     /// Searches `target_table` for a row equal to `needle_table[needle_ptr]`,
@@ -703,6 +726,7 @@ impl Table {
         } else {
             (
                 row_hash,
+                // SAFETY: Caller promised that `target_table` and `needle_table` have the same `row_layout`.
                 // SAFETY: Caller promised that `needle_table.is_row_present(needle_ptr)`.
                 unsafe { Self::find_same_row_via_unique_index(target_table, needle_table, needle_bs, needle_ptr) },
             )
