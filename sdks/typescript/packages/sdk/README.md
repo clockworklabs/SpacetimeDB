@@ -42,7 +42,7 @@ const connection = DBConnection.builder()
 
     connection.subscriptionBuilder().subscribe(['SELECT * FROM player']);
   })
-  .withCredentials([Identity.fromString('IDENTITY'), 'TOKEN'])
+  .withToken('TOKEN')
   .build();
 ```
 
