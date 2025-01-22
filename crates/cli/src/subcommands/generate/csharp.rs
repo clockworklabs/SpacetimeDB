@@ -273,14 +273,17 @@ impl Lang for Csharp {
             );
             writeln!(output);
 
-            writeln!(output, "public void {func_name_pascal_case}({func_params})");
-            indented_block(output, |output| {
-                writeln!(
-                    output,
-                    "conn.InternalCallReducer(new Reducer.{func_name_pascal_case}({func_args}), this.SetCallReducerFlags.{func_name_pascal_case}Flags);"
-                );
-            });
-            writeln!(output);
+            // Generate the method for calling the reducer, unless it's one of the lifecycle handlers.
+            if reducer.lifecycle.is_none() {
+                writeln!(output, "public void {func_name_pascal_case}({func_params})");
+                indented_block(output, |output| {
+                    writeln!(
+                        output,
+                        "conn.InternalCallReducer(new Reducer.{func_name_pascal_case}({func_args}), this.SetCallReducerFlags.{func_name_pascal_case}Flags);"
+                    );
+                });
+                writeln!(output);
+            }
 
             writeln!(
                 output,
@@ -395,8 +398,6 @@ impl Lang for Csharp {
             writeln!(output, "private Reducer() {{ }}");
             writeln!(output);
             writeln!(output, "public sealed class StdbNone : Reducer {{}}");
-            writeln!(output, "public sealed class StdbIdentityConnected : Reducer {{}}");
-            writeln!(output, "public sealed class StdbIdentityDisconnected : Reducer {{}}");
         });
         writeln!(output);
 
@@ -442,16 +443,8 @@ impl Lang for Csharp {
                             "\"{reducer_str_name}\" => BSATNHelpers.Decode<Reducer.{reducer_name}>(encodedArgs),"
                         );
                     }
-                    writeln!(output, "\"<none>\" => new Reducer.StdbNone(),");
-                    writeln!(
-                        output,
-                        "\"__identity_connected__\" => new Reducer.StdbIdentityConnected(),"
-                    );
-                    writeln!(
-                        output,
-                        "\"__identity_disconnected__\" => new Reducer.StdbIdentityDisconnected(),"
-                    );
-                    writeln!(output, "\"\" => new Reducer.StdbNone(),"); //Transaction from CLI command
+                    // Note: "" is a special case for transactions from CLI commands.
+                    writeln!(output, "\"<none>\" | \"\" => new Reducer.StdbNone(),");
                     writeln!(
                         output,
                         r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
@@ -483,9 +476,7 @@ impl Lang for Csharp {
                             "Reducer.{reducer_name} args => Reducers.Invoke{reducer_name}(eventContext, args),"
                         );
                     }
-                    writeln!(output, "Reducer.StdbNone or");
-                    writeln!(output, "Reducer.StdbIdentityConnected or");
-                    writeln!(output, "Reducer.StdbIdentityDisconnected => true,");
+                    writeln!(output, "Reducer.StdbNone => true,");
                     writeln!(
                         output,
                         r#"_ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
