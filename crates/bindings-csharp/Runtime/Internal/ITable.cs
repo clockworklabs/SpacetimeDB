@@ -153,7 +153,14 @@ public interface ITableView<View, T>
 
     protected static bool DoDelete(T row)
     {
-        var bytes = IStructuralReadWrite.ToBytes(row);
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        // delete_all_by_eq_bsatn actually tries to decode a LIST of rows, not just a single row.
+        // IStructuralReadWrite makes it hard to get at a List serialization instance.
+        // Just do it manually.
+        writer.Write(1); // Write the length, an int.
+        row.WriteFields(writer); // Write the contents of the struct.
+        var bytes = stream.ToArray();
         FFI.datastore_delete_all_by_eq_bsatn(tableId, bytes, (uint)bytes.Length, out var out_);
         return out_ > 0;
     }
