@@ -5,7 +5,7 @@ use reqwest::Url;
 use serde::Deserialize;
 use webbrowser;
 
-pub const default_auth_host: &str = "https://spacetimedb.com";
+pub const DEFAULT_AUTH_HOST: &str = "https://spacetimedb.com";
 
 pub fn cli() -> Command {
     Command::new("login")
@@ -15,7 +15,7 @@ pub fn cli() -> Command {
         .arg(
             Arg::new("auth-host")
                 .long("auth-host")
-                .default_value(default_auth_host)
+                .default_value(DEFAULT_AUTH_HOST)
                 .group("login-method")
                 .help("Fetch login token from a different host"),
         )
@@ -78,10 +78,10 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
     }
 }
 
-async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_show(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let include_token = args.get_flag("token");
 
-    let identity = decode_identity(&config)?;
+    let identity = decode_identity(&mut config, None).await?;
     println!("You are logged in as {}", identity);
 
     if include_token {
@@ -107,21 +107,21 @@ async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login:
 }
 
 pub async fn spacetimedb_login_force<'a>(
-    config: &'a mut Config,
+    config: &mut Config,
     host: &Url,
     direct_login: bool,
-) -> anyhow::Result<&'a String> {
+) -> anyhow::Result<String> {
     let token = if direct_login {
         spacetimedb_direct_login(host).await?
     } else {
         let session_token = web_login_cached(config, host).await?;
         spacetimedb_login(host, &session_token).await?
     };
-    config.set_spacetimedb_token(token);
+    config.set_spacetimedb_token(token.clone());
     config.save();
 
     // It just preserves so much sanity for the caller if we return a reference instead of an owned thing.
-    Ok(config.spacetimedb_token().unwrap())
+    Ok(token)
 }
 
 async fn web_login_cached(config: &mut Config, host: &Url) -> anyhow::Result<String> {

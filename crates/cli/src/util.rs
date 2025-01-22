@@ -13,7 +13,7 @@ use std::io::Write;
 use std::path::Path;
 
 use crate::config::Config;
-use crate::login::{default_auth_host, spacetimedb_login_force};
+use crate::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
 
 /// Determine the identity of the `database`.
 pub async fn database_identity(
@@ -287,16 +287,9 @@ pub async fn decode_identity(config: &mut Config, target_server: Option<&str>) -
     Ok(claims_data.identity.to_string())
 }
 
-pub async fn get_login_token_or_log_in<'a>(
-    config: &'a mut Config,
-    target_server: Option<&str>,
-) -> anyhow::Result<&'a String> {
-    {
-        let token = config.spacetimedb_token();
-        if let Some(token) = token {
-            return Ok(token);
-        }
-        drop(token);
+pub async fn get_login_token_or_log_in<'a>(config: &mut Config, target_server: Option<&str>) -> anyhow::Result<String> {
+    if let Some(token) = config.spacetimedb_token() {
+        return Ok(token.clone());
     }
 
     // TODO: we must pass the force param
@@ -309,7 +302,7 @@ pub async fn get_login_token_or_log_in<'a>(
     )?;
 
     if full_login {
-        let host = Url::parse(default_auth_host)?;
+        let host = Url::parse(DEFAULT_AUTH_HOST)?;
         spacetimedb_login_force(config, &host, false).await
     } else {
         let host = Url::parse(&config.get_host_url(target_server)?)?;

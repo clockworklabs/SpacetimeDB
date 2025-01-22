@@ -28,9 +28,9 @@ struct IdentityRow {
     pub db_identity: Identity,
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = util::decode_identity(&config)?;
+    let identity = util::decode_identity(&mut config, server).await?;
 
     let client = reqwest::Client::new();
     let token = get_login_token_or_log_in(&mut config, server).await?;
@@ -40,7 +40,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             config.get_host_url(server)?,
             identity
         ))
-        .basic_auth("token", Some(config.spacetimedb_token_or_error()?))
+        .basic_auth("token", Some(token))
         .send()
         .await?;
 

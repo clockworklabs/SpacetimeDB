@@ -25,14 +25,14 @@ pub fn cli() -> Command {
         .after_help("Run `spacetime rename --help` for more detailed information.\n")
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let domain = args.get_one::<String>("new-name").unwrap();
     let database_identity = args.get_one::<String>("database-identity").unwrap();
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
-    let identity = decode_identity(&config)?;
-    let auth_header = get_auth_header(&config, false)?;
+    let identity = decode_identity(&mut config, server).await?;
+    let auth_header = get_auth_header(&mut config, false, server).await?;
 
-    match spacetime_register_tld(&config, domain, server).await? {
+    match spacetime_register_tld(&mut config, domain, server).await? {
         RegisterTldResult::Success { domain } => {
             println!("Registered domain: {}", domain);
         }

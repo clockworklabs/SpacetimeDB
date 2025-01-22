@@ -49,7 +49,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         database_identity.clone(),
         reducer_name
     ));
-    let auth_header = get_auth_header(&config, anon_identity)?;
+    let auth_header = get_auth_header(&mut config, anon_identity, server).await?;
     let builder = add_auth_header_opt(builder, &auth_header);
     let describe_reducer = util::describe_reducer(
         &mut config,

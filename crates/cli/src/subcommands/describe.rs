@@ -26,7 +26,7 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help describe` for more detailed information.\n")
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let database = args.get_one::<String>("database").unwrap();
     let entity_name = args.get_one::<String>("entity_name");
     let entity_type = args.get_one::<String>("entity_type");
@@ -46,7 +46,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             entity_name
         ),
     });
-    let auth_header = get_auth_header(&config, anon_identity)?;
+    let auth_header = get_auth_header(&mut config, anon_identity, server).await?;
     let builder = add_auth_header_opt(builder, &auth_header);
 
     let descr = builder.send().await?.error_for_status()?.text().await?;

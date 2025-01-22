@@ -41,7 +41,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     exec_subcommand(config, cmd, subcommand_args).await
 }
 
-async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_status(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // let project_name = args.value_of("project name").unwrap();
     let identity = args.get_one::<String>("identity");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
@@ -49,7 +49,7 @@ async fn exec_status(config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
     let identity = if let Some(identity) = identity {
         identity.clone()
     } else {
-        util::decode_identity(&config)?
+        util::decode_identity(&mut config, server).await?
     };
 
     let status = reqwest::Client::new()

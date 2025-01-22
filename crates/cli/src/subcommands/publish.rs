@@ -65,7 +65,7 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_str());
     let name_or_identity = args.get_one::<String>("name|identity");
     let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
@@ -80,7 +80,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     // we want to use the default identity
     // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
     //  easily create a new identity with an email
-    let auth_header = get_auth_header(&config, anon_identity)?;
+    let auth_header = get_auth_header(&mut config, anon_identity, server).await?;
 
     let mut query_params = Vec::<(&str, &str)>::new();
     query_params.push(("host_type", "wasm"));
@@ -159,7 +159,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
-        let identity = decode_identity(&config)?;
+        let identity = decode_identity(&mut config, server).await?;
         let err = res.text().await?;
         return unauth_error_context(
             Err(anyhow::anyhow!(err)),
@@ -198,7 +198,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             ));
         }
         PublishResult::PermissionDenied { domain } => {
-            let identity = decode_identity(&config)?;
+            let identity = decode_identity(&mut config, server).await?;
             //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
             // we should perhaps generate fun names like 'green-fire-dragon' instead
             let suggested_tld: String = identity.chars().take(12).collect();
