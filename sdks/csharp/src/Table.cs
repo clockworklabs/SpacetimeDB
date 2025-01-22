@@ -7,8 +7,6 @@ using SpacetimeDB.BSATN;
 
 namespace SpacetimeDB
 {
-    public interface IDatabaseRow : IStructuralReadWrite { }
-
     public abstract class RemoteBase<DbConnection>
     {
         protected readonly DbConnection conn;
@@ -22,28 +20,28 @@ namespace SpacetimeDB
     public interface IRemoteTableHandle
     {
         // These methods need to be overridden by autogen.
-        object? GetPrimaryKey(IDatabaseRow row);
-        void InternalInvokeValueInserted(IDatabaseRow row);
-        void InternalInvokeValueDeleted(IDatabaseRow row);
+        object? GetPrimaryKey(IStructuralReadWrite row);
+        void InternalInvokeValueInserted(IStructuralReadWrite row);
+        void InternalInvokeValueDeleted(IStructuralReadWrite row);
 
         // These are provided by RemoteTableHandle.
         internal Type ClientTableType { get; }
-        internal IEnumerable<KeyValuePair<byte[], IDatabaseRow>> IterEntries();
-        internal bool InsertEntry(byte[] rowBytes, IDatabaseRow value);
+        internal IEnumerable<KeyValuePair<byte[], IStructuralReadWrite>> IterEntries();
+        internal bool InsertEntry(byte[] rowBytes, IStructuralReadWrite value);
         internal bool DeleteEntry(byte[] rowBytes);
-        internal IDatabaseRow DecodeValue(byte[] bytes);
+        internal IStructuralReadWrite DecodeValue(byte[] bytes);
 
-        internal void InvokeInsert(IEventContext context, IDatabaseRow row);
-        internal void InvokeDelete(IEventContext context, IDatabaseRow row);
-        internal void InvokeBeforeDelete(IEventContext context, IDatabaseRow row);
-        internal void InvokeUpdate(IEventContext context, IDatabaseRow oldRow, IDatabaseRow newRow);
+        internal void InvokeInsert(IEventContext context, IStructuralReadWrite row);
+        internal void InvokeDelete(IEventContext context, IStructuralReadWrite row);
+        internal void InvokeBeforeDelete(IEventContext context, IStructuralReadWrite row);
+        internal void InvokeUpdate(IEventContext context, IStructuralReadWrite oldRow, IStructuralReadWrite newRow);
 
         internal void Initialize(string name, IDbConnection conn);
     }
 
     public abstract class RemoteTableHandle<EventContext, Row> : IRemoteTableHandle
         where EventContext : class, IEventContext
-        where Row : IDatabaseRow, new()
+        where Row : IStructuralReadWrite, new()
     {
         string? name;
         IDbConnection? conn;
@@ -55,17 +53,17 @@ namespace SpacetimeDB
         }
 
         // These methods need to be overridden by autogen.
-        public virtual object? GetPrimaryKey(IDatabaseRow row) => null;
-        public virtual void InternalInvokeValueInserted(IDatabaseRow row) { }
-        public virtual void InternalInvokeValueDeleted(IDatabaseRow row) { }
+        public virtual object? GetPrimaryKey(IStructuralReadWrite row) => null;
+        public virtual void InternalInvokeValueInserted(IStructuralReadWrite row) { }
+        public virtual void InternalInvokeValueDeleted(IStructuralReadWrite row) { }
 
         // These are provided by RemoteTableHandle.
         Type IRemoteTableHandle.ClientTableType => typeof(Row);
 
         private readonly Dictionary<byte[], Row> Entries = new(Internal.ByteArrayComparer.Instance);
 
-        IEnumerable<KeyValuePair<byte[], IDatabaseRow>> IRemoteTableHandle.IterEntries() =>
-            Entries.Select(kv => new KeyValuePair<byte[], IDatabaseRow>(kv.Key, kv.Value));
+        IEnumerable<KeyValuePair<byte[], IStructuralReadWrite>> IRemoteTableHandle.IterEntries() =>
+            Entries.Select(kv => new KeyValuePair<byte[], IStructuralReadWrite>(kv.Key, kv.Value));
 
         /// <summary>
         /// Inserts the value into the table. There can be no existing value with the provided BSATN bytes.
@@ -73,7 +71,7 @@ namespace SpacetimeDB
         /// <param name="rowBytes">The BSATN encoded bytes of the row to retrieve.</param>
         /// <param name="value">The parsed row encoded by the <paramref>rowBytes</paramref>.</param>
         /// <returns>True if the row was inserted, false if the row wasn't inserted because it was a duplicate.</returns>
-        bool IRemoteTableHandle.InsertEntry(byte[] rowBytes, IDatabaseRow value) => Entries.TryAdd(rowBytes, (Row)value);
+        bool IRemoteTableHandle.InsertEntry(byte[] rowBytes, IStructuralReadWrite value) => Entries.TryAdd(rowBytes, (Row)value);
 
         /// <summary>
         /// Deletes a value from the table.
@@ -92,7 +90,7 @@ namespace SpacetimeDB
         }
 
         // The function to use for decoding a type value.
-        IDatabaseRow IRemoteTableHandle.DecodeValue(byte[] bytes) => BSATNHelpers.Decode<Row>(bytes);
+        IStructuralReadWrite IRemoteTableHandle.DecodeValue(byte[] bytes) => BSATNHelpers.Decode<Row>(bytes);
 
         public delegate void RowEventHandler(EventContext context, Row row);
         public event RowEventHandler? OnInsert;
@@ -111,16 +109,16 @@ namespace SpacetimeDB
         public Task<Row[]> RemoteQuery(string query) =>
             conn!.RemoteQuery<Row>($"SELECT {name!}.* FROM {name!} {query}");
 
-        void IRemoteTableHandle.InvokeInsert(IEventContext context, IDatabaseRow row) =>
+        void IRemoteTableHandle.InvokeInsert(IEventContext context, IStructuralReadWrite row) =>
             OnInsert?.Invoke((EventContext)context, (Row)row);
 
-        void IRemoteTableHandle.InvokeDelete(IEventContext context, IDatabaseRow row) =>
+        void IRemoteTableHandle.InvokeDelete(IEventContext context, IStructuralReadWrite row) =>
             OnDelete?.Invoke((EventContext)context, (Row)row);
 
-        void IRemoteTableHandle.InvokeBeforeDelete(IEventContext context, IDatabaseRow row) =>
+        void IRemoteTableHandle.InvokeBeforeDelete(IEventContext context, IStructuralReadWrite row) =>
             OnBeforeDelete?.Invoke((EventContext)context, (Row)row);
 
-        void IRemoteTableHandle.InvokeUpdate(IEventContext context, IDatabaseRow oldRow, IDatabaseRow newRow) =>
+        void IRemoteTableHandle.InvokeUpdate(IEventContext context, IStructuralReadWrite oldRow, IStructuralReadWrite newRow) =>
             OnUpdate?.Invoke((EventContext)context, (Row)oldRow, (Row)newRow);
     }
 }

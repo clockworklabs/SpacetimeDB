@@ -17,7 +17,7 @@ namespace SpacetimeDB
         public ClientCache(IDbConnection conn) => this.conn = conn;
 
         public void AddTable<Row>(string name, IRemoteTableHandle table)
-            where Row : IDatabaseRow, new()
+            where Row : IStructuralReadWrite, new()
         {
             if (!tables.TryAdd(name, table))
             {

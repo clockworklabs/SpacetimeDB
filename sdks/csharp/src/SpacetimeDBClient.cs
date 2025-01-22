@@ -108,7 +108,7 @@ namespace SpacetimeDB
         void FrameTick();
         void Disconnect();
 
-        internal Task<T[]> RemoteQuery<T>(string query) where T : IDatabaseRow, new();
+        internal Task<T[]> RemoteQuery<T>(string query) where T : IStructuralReadWrite, new();
     }
 
     public abstract class DbConnectionBase<DbConnection, Reducer> : IDbConnection
@@ -118,10 +118,10 @@ namespace SpacetimeDB
 
         readonly struct DbValue
         {
-            public readonly IDatabaseRow value;
+            public readonly IStructuralReadWrite value;
             public readonly byte[] bytes;
 
-            public DbValue(IDatabaseRow value, byte[] bytes)
+            public DbValue(IStructuralReadWrite value, byte[] bytes)
             {
                 this.value = value;
                 this.bytes = bytes;
@@ -1055,7 +1055,7 @@ namespace SpacetimeDB
 
         /// Usage: SpacetimeDBClientBase.instance.OneOffQuery<Message>("SELECT * FROM table WHERE sender = \"bob\"");
         [Obsolete("This is replaced by ctx.Db.TableName.RemoteQuery(\"WHERE ...\")", false)]
-        public Task<T[]> OneOffQuery<T>(string query) where T : IDatabaseRow, new() =>
+        public Task<T[]> OneOffQuery<T>(string query) where T : IStructuralReadWrite, new() =>
             ((IDbConnection)this).RemoteQuery<T>(query);
 
         async Task<T[]> IDbConnection.RemoteQuery<T>(string query)
