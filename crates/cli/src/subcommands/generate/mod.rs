@@ -7,6 +7,7 @@ use clap::ArgAction::Set;
 use core::mem;
 use duct::cmd;
 use spacetimedb::host::wasmtime::{Mem, MemView, WasmPointee as _};
+use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{bsatn, RawModuleDefV8};
 use spacetimedb_lib::{RawModuleDef, MODULE_ABI_MAJOR_VERSION};
@@ -231,12 +232,16 @@ fn generate_lang(module: &ModuleDef, lang: impl Lang, namespace: &str) -> Vec<(S
                 lang.generate_type(module, namespace, typ),
             )
         }),
-        module.reducers().map(|reducer| {
-            (
-                lang.reducer_filename(&reducer.name),
-                lang.generate_reducer(module, namespace, reducer),
-            )
-        }),
+        module
+            .reducers()
+            // Init reducer should be invisible to the clients.
+            .filter(|reducer| reducer.lifecycle != Some(Lifecycle::Init))
+            .map(|reducer| {
+                (
+                    lang.reducer_filename(&reducer.name),
+                    lang.generate_reducer(module, namespace, reducer),
+                )
+            }),
         lang.generate_globals(module, namespace),
     )
     .collect()
