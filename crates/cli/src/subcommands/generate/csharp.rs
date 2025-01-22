@@ -10,6 +10,7 @@ use super::Lang;
 use crate::generate::util::{collect_case, is_type_filterable, print_auto_generated_file_comment, type_ref_name};
 use crate::indent_scope;
 use convert_case::{Case, Casing};
+use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_primitives::ColList;
 use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm, ModuleDef, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
@@ -40,6 +41,7 @@ impl Lang for Csharp {
         let mut output = CsharpAutogen::new(
             namespace,
             &[
+                "SpacetimeDB.BSATN",
                 "SpacetimeDB.ClientApi",
                 "System.Collections.Generic",
                 "System.Runtime.Serialization",
@@ -435,7 +437,7 @@ impl Lang for Csharp {
                 writeln!(output, "return update.ReducerCall.ReducerName switch {{");
                 {
                     indent_scope!(output);
-                    for reducer in module.reducers() {
+                    for reducer in module.reducers().filter(|r| r.lifecycle != Some(Lifecycle::Init)) {
                         let reducer_str_name = &reducer.name;
                         let reducer_name = reducer.name.deref().to_case(Case::Pascal);
                         writeln!(
@@ -444,7 +446,7 @@ impl Lang for Csharp {
                         );
                     }
                     // Note: "" is a special case for transactions from CLI commands.
-                    writeln!(output, "\"<none>\" | \"\" => new Reducer.StdbNone(),");
+                    writeln!(output, "\"<none>\" or \"\" => new Reducer.StdbNone(),");
                     writeln!(
                         output,
                         r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
@@ -470,7 +472,11 @@ impl Lang for Csharp {
                 writeln!(output, "return reducer switch {{");
                 {
                     indent_scope!(output);
-                    for reducer_name in module.reducers().map(|r| r.name.deref().to_case(Case::Pascal)) {
+                    for reducer_name in module
+                        .reducers()
+                        .filter(|r| r.lifecycle != Some(Lifecycle::Init))
+                        .map(|r| r.name.deref().to_case(Case::Pascal))
+                    {
                         writeln!(
                             output,
                             "Reducer.{reducer_name} args => Reducers.Invoke{reducer_name}(eventContext, args),"
