@@ -68,7 +68,7 @@ public class GameManager : MonoBehaviour
     void HandleConnect(DbConnection conn, Identity identity, string token)
     {
         Debug.Log("Connected.");
-        //AuthToken.SaveToken(token);
+        AuthToken.SaveToken(token);
         LocalIdentity = identity;
 
         conn.Db.Circle.OnInsert += CircleOnInsert;
