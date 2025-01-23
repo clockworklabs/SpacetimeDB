@@ -102,7 +102,9 @@ namespace SpacetimeDB
 
     public interface IDbConnection
     {
-        internal void Subscribe(ISubscriptionHandle handle, string[] querySqls);
+        internal void LegacySubscribe(ISubscriptionHandle handle, string[] querySqls);
+        internal void Subscribe(ISubscriptionHandle handle, string querySql);
+        internal void Unsubscribe(QueryId queryId);
         void FrameTick();
         void Disconnect();
 
@@ -141,7 +143,21 @@ namespace SpacetimeDB
         [Obsolete]
         public event Action<Exception>? onSendError;
 
+        /// <summary>
+        /// Dictionary of legacy subscriptions, keyed by request ID rather than query ID.
+        /// Only used for `SubscribeToAllTables()`.
+        /// </summary>
+        private readonly Dictionary<uint, ISubscriptionHandle> legacySubscriptions = new();
+
+        /// <summary>
+        /// Dictionary of subscriptions, keyed by query ID.
+        /// </summary>
         private readonly Dictionary<uint, ISubscriptionHandle> subscriptions = new();
+
+        /// <summary>
+        /// Allocates query IDs.
+        /// </summary>
+        private UintAllocator queryIdAllocator;
 
         /// <summary>
         /// Invoked when a reducer is returned with an error and has no client-side handler.
@@ -339,17 +355,17 @@ namespace SpacetimeDB
                         Log.Error($"Unknown table name: {tableName}");
                         continue;
                     }
-
                     yield return (table, update);
                 }
             }
 
-            (List<DbOp>, Dictionary<System.Type, HashSet<byte[]>>?) PreProcessInitialSubscription(InitialSubscription initSub)
+            (List<DbOp>, Dictionary<System.Type, HashSet<byte[]>>) PreProcessLegacySubscription(InitialSubscription initSub)
             {
                 var dbOps = new List<DbOp>();
-
                 // This is all of the inserts
-                Dictionary<System.Type, HashSet<byte[]>>? subscriptionInserts = null;
+                int cap = initSub.DatabaseUpdate.Tables.Sum(a => (int)a.NumRows);
+                // FIXME: shouldn't this be `new(initSub.DatabaseUpdate.Tables.Length)` ?
+                Dictionary<System.Type, HashSet<byte[]>> subscriptionInserts = new(capacity: cap);
 
                 HashSet<byte[]> GetInsertHashSet(System.Type tableType, int tableSize)
                 {
@@ -358,48 +374,99 @@ namespace SpacetimeDB
                         hashSet = new HashSet<byte[]>(capacity: tableSize, comparer: ByteArrayComparer.Instance);
                         subscriptionInserts[tableType] = hashSet;
                     }
-
                     return hashSet;
                 }
-
-                int cap = initSub.DatabaseUpdate.Tables.Sum(a => (int)a.NumRows);
-                subscriptionInserts = new(capacity: cap);
 
                 // First apply all of the state
                 foreach (var (table, update) in GetTables(initSub.DatabaseUpdate))
                 {
                     var hashSet = GetInsertHashSet(table.ClientTableType, (int)update.NumRows);
 
-                    foreach (var cqu in update.Updates)
+                    PreProcessInsertOnlyTable(table, update, dbOps, hashSet);
+                }
+                return (dbOps, subscriptionInserts);
+            }
+
+            /// <summary>
+            /// TODO: the dictionary is here for backwards compatibility and can be removed
+            /// once we get rid of legacy subscriptions.
+            /// </summary>
+            (List<DbOp>, Dictionary<System.Type, HashSet<byte[]>>) PreProcessSubscribeApplied(SubscribeApplied subscribeApplied)
+            {
+                var table = clientDB.GetTable(subscribeApplied.Rows.TableName) ?? throw new Exception($"Unknown table name: {subscribeApplied.Rows.TableName}");
+                var dbOps = new List<DbOp>();
+                HashSet<byte[]> inserts = new();
+
+                PreProcessInsertOnlyTable(table, subscribeApplied.Rows.TableRows, dbOps, inserts);
+
+                var result = new Dictionary<System.Type, HashSet<byte[]>>();
+                result[table.ClientTableType] = inserts;
+
+                return (dbOps, result);
+            }
+
+            void PreProcessInsertOnlyTable(IRemoteTableHandle table, TableUpdate update, List<DbOp> dbOps, HashSet<byte[]> inserts)
+            {
+                foreach (var cqu in update.Updates)
+                {
+                    var qu = DecompressDecodeQueryUpdate(cqu);
+                    if (qu.Deletes.RowsData.Count > 0)
                     {
-                        var qu = DecompressDecodeQueryUpdate(cqu);
-                        if (qu.Deletes.RowsData.Count > 0)
+                        Log.Warn("Non-insert during an insert-only server message!");
+                    }
+                    foreach (var bin in BsatnRowListIter(qu.Inserts))
+                    {
+                        if (!inserts.Add(bin))
                         {
-                            Log.Warn("Non-insert during a subscription update!");
+                            // Ignore duplicate inserts in the same subscription update.
+                            continue;
                         }
-
-                        foreach (var bin in BsatnRowListIter(qu.Inserts))
+                        var obj = table.DecodeValue(bin);
+                        var op = new DbOp
                         {
-                            if (!hashSet.Add(bin))
-                            {
-                                // Ignore duplicate inserts in the same subscription update.
-                                continue;
-                            }
-
-                            var obj = table.DecodeValue(bin);
-                            var op = new DbOp
-                            {
-                                table = table,
-                                insert = new(obj, bin),
-                            };
-
-                            dbOps.Add(op);
-                        }
+                            table = table,
+                            insert = new(obj, bin),
+                        };
+                        dbOps.Add(op);
                     }
                 }
 
-                return (dbOps, subscriptionInserts);
             }
+
+
+            /// <summary>
+            /// TODO: the dictionary is here for backwards compatibility and can be removed
+            /// once we get rid of legacy subscriptions.
+            /// </summary>
+            List<DbOp> PreProcessUnsubscribeApplied(UnsubscribeApplied unsubApplied)
+            {
+                var table = clientDB.GetTable(unsubApplied.Rows.TableName) ?? throw new Exception($"Unknown table name: {unsubApplied.Rows.TableName}");
+                var dbOps = new List<DbOp>();
+
+                // First apply all of the state
+                foreach (var cqu in unsubApplied.Rows.TableRows.Updates)
+                {
+                    var qu = DecompressDecodeQueryUpdate(cqu);
+                    if (qu.Inserts.RowsData.Count > 0)
+                    {
+                        Log.Warn("Non-insert during an UnsubscribeApplied!");
+                    }
+                    foreach (var bin in BsatnRowListIter(qu.Deletes))
+                    {
+                        var obj = table.DecodeValue(bin);
+                        var op = new DbOp
+                        {
+                            table = table,
+                            delete = new(obj, bin),
+                        };
+                        dbOps.Add(op);
+                    }
+                }
+
+                return dbOps;
+            }
+
+
 
             List<DbOp> PreProcessDatabaseUpdate(DatabaseUpdate updates)
             {
@@ -485,10 +552,8 @@ namespace SpacetimeDB
                         }
                     }
                 }
-
                 // Combine primary key updates and non-primary key updates
                 dbOps.AddRange(primaryKeyChanges.Values);
-
                 return dbOps;
             }
 
@@ -514,15 +579,21 @@ namespace SpacetimeDB
 
                 ReducerEvent<Reducer>? reducerEvent = default;
 
-                // This is all of the inserts
+                // This is all of the inserts, used for updating the stale but un-cleared client cache.
                 Dictionary<System.Type, HashSet<byte[]>>? subscriptionInserts = null;
 
                 switch (message)
                 {
                     case ServerMessage.InitialSubscription(var initSub):
-                        var (ops, subIns) = PreProcessInitialSubscription(initSub);
-                        dbOps = ops;
-                        subscriptionInserts = subIns;
+                        (dbOps, subscriptionInserts) = PreProcessLegacySubscription(initSub);
+                        break;
+                    case ServerMessage.SubscribeApplied(var subscribeApplied):
+                        (dbOps, subscriptionInserts) = PreProcessSubscribeApplied(subscribeApplied);
+                        break;
+                    case ServerMessage.SubscriptionError(var subscriptionError):
+                        break;
+                    case ServerMessage.UnsubscribeApplied(var unsubscribeApplied):
+                        dbOps = PreProcessUnsubscribeApplied(unsubscribeApplied);
                         break;
                     case ServerMessage.TransactionUpdate(var transactionUpdate):
                         // Convert the generic event arguments in to a domain specific event object
@@ -560,11 +631,11 @@ namespace SpacetimeDB
                     case ServerMessage.OneOffQueryResponse(var resp):
                         PreProcessOneOffQuery(resp);
                         break;
+
                     default:
                         throw new InvalidOperationException();
                 }
 
-                // Logger.LogWarning($"Total Updates preprocessed: {totalUpdateCount}");
                 return new PreProcessedMessage
                 {
                     processed = new ProcessedMessage { message = message, dbOps = dbOps, timestamp = unprocessed.timestamp, reducerEvent = reducerEvent },
@@ -585,10 +656,10 @@ namespace SpacetimeDB
                 {
                     if (!subscriptionInserts.TryGetValue(table.ClientTableType, out var hashSet))
                     {
-                        // We still need to process tables that weren't included in subscription.
-                        // Otherwise we won't delete no-longer-available values
-                        hashSet = new HashSet<byte[]>();
-                        subscriptionInserts.Add(table.ClientTableType, hashSet);
+                        // We don't know if the user is waiting for subscriptions on other tables.
+                        // Leave the stale data for untouched tables in the cache; this is
+                        // the best we can do.
+                        continue;
                     }
 
                     foreach (var (rowBytes, oldValue) in table.IterEntries().Where(kv => !hashSet.Contains(kv.Key)))
@@ -749,11 +820,11 @@ namespace SpacetimeDB
                         stats.SubscriptionRequestTracker.FinishTrackingRequest(initialSubscription.RequestId);
                         var eventContext = ToEventContext(new Event<Reducer>.SubscribeApplied());
                         OnMessageProcessCompleteUpdate(eventContext, dbOps);
-                        if (subscriptions.TryGetValue(initialSubscription.RequestId, out var subscription))
+                        if (legacySubscriptions.TryGetValue(initialSubscription.RequestId, out var subscription))
                         {
                             try
                             {
-                                subscription.OnApplied(eventContext);
+                                subscription.OnApplied(eventContext, new SubscriptionAppliedType.LegacyActive(new()));
                             }
                             catch (Exception e)
                             {
@@ -762,6 +833,82 @@ namespace SpacetimeDB
                         }
                         break;
                     }
+
+                case ServerMessage.SubscribeApplied(var subscribeApplied):
+                    {
+                        stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.SubscribeApplied)}");
+                        stats.SubscriptionRequestTracker.FinishTrackingRequest(subscribeApplied.RequestId);
+                        var eventContext = ToEventContext(new Event<Reducer>.SubscribeApplied());
+                        OnMessageProcessCompleteUpdate(eventContext, dbOps);
+                        if (subscriptions.TryGetValue(subscribeApplied.QueryId.Id, out var subscription))
+                        {
+                            try
+                            {
+                                subscription.OnApplied(eventContext, new SubscriptionAppliedType.Active(subscribeApplied.QueryId));
+                            }
+                            catch (Exception e)
+                            {
+                                Log.Exception(e);
+                            }
+                        }
+
+                        break;
+                    }
+
+                case ServerMessage.SubscriptionError(var subscriptionError):
+                    {
+                        Log.Warn($"Subscription Error: ${subscriptionError.Error}");
+                        stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.SubscriptionError)}");
+                        if (subscriptionError.RequestId.HasValue)
+                        {
+                            stats.SubscriptionRequestTracker.FinishTrackingRequest(subscriptionError.RequestId.Value);
+                        }
+                        // TODO: should I use a more specific exception type here?
+                        var eventContext = ToEventContext(new Event<Reducer>.SubscribeError(new Exception(subscriptionError.Error)));
+                        OnMessageProcessCompleteUpdate(eventContext, dbOps);
+                        if (subscriptionError.QueryId.HasValue)
+                        {
+                            if (subscriptions.TryGetValue(subscriptionError.QueryId.Value, out var subscription))
+                            {
+                                try
+                                {
+                                    subscription.OnError(eventContext);
+                                }
+                                catch (Exception e)
+                                {
+                                    Log.Exception(e);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            Log.Warn("Received general subscription failure, disconnecting.");
+                            Disconnect();
+                        }
+
+                        break;
+                    }
+
+                case ServerMessage.UnsubscribeApplied(var unsubscribeApplied):
+                    {
+                        stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.UnsubscribeApplied)}");
+                        stats.SubscriptionRequestTracker.FinishTrackingRequest(unsubscribeApplied.RequestId);
+                        var eventContext = ToEventContext(new Event<Reducer>.UnsubscribeApplied());
+                        OnMessageProcessCompleteUpdate(eventContext, dbOps);
+                        if (subscriptions.TryGetValue(unsubscribeApplied.QueryId.Id, out var subscription))
+                        {
+                            try
+                            {
+                                subscription.OnEnded(eventContext);
+                            }
+                            catch (Exception e)
+                            {
+                                Log.Exception(e);
+                            }
+                        }
+                    }
+                    break;
+
                 case ServerMessage.TransactionUpdateLight(var update):
                     {
                         stats.ParseMessageTracker.InsertRequest(timestamp, $"type={nameof(ServerMessage.TransactionUpdateLight)}");
@@ -864,7 +1011,7 @@ namespace SpacetimeDB
             )));
         }
 
-        void IDbConnection.Subscribe(ISubscriptionHandle handle, string[] querySqls)
+        void IDbConnection.LegacySubscribe(ISubscriptionHandle handle, string[] querySqls)
         {
             if (!webSocket.IsConnected)
             {
@@ -873,12 +1020,35 @@ namespace SpacetimeDB
             }
 
             var id = stats.SubscriptionRequestTracker.StartTrackingRequest();
-            subscriptions[id] = handle;
+            legacySubscriptions[id] = handle;
             webSocket.Send(new ClientMessage.Subscribe(
                 new Subscribe
                 {
                     RequestId = id,
                     QueryStrings = querySqls.ToList()
+                }
+            ));
+        }
+
+        void IDbConnection.Subscribe(ISubscriptionHandle handle, string querySql)
+        {
+            if (!webSocket.IsConnected)
+            {
+                Log.Error("Cannot subscribe, not connected to server!");
+                return;
+            }
+
+            var id = stats.SubscriptionRequestTracker.StartTrackingRequest();
+            // We use a distinct ID from the request ID as a sanity check that we're not
+            // casting request IDs to query IDs anywhere in the new code path.
+            var queryId = queryIdAllocator.Next();
+            subscriptions[queryId] = handle;
+            webSocket.Send(new ClientMessage.SubscribeSingle(
+                new SubscribeSingle
+                {
+                    RequestId = id,
+                    Query = querySql,
+                    QueryId = new QueryId(queryId),
                 }
             ));
         }
@@ -952,6 +1122,38 @@ namespace SpacetimeDB
             {
                 OnMessageProcessComplete(preProcessedMessage);
             }
+        }
+
+        void IDbConnection.Unsubscribe(QueryId queryId)
+        {
+            if (!subscriptions.ContainsKey(queryId.Id))
+            {
+                Log.Warn($"Unsubscribing from a subscription that the DbConnection does not know about, with QueryId {queryId.Id}");
+            }
+
+            var requestId = stats.SubscriptionRequestTracker.StartTrackingRequest();
+
+            webSocket.Send(new ClientMessage.Unsubscribe(new()
+            {
+                RequestId = requestId,
+                QueryId = queryId
+            }));
+
+        }
+    }
+
+    internal struct UintAllocator
+    {
+        private uint lastAllocated;
+
+        /// <summary>
+        /// Allocate a new ID in a thread-unsafe way.
+        /// </summary>
+        /// <returns>A previously-unused ID.</returns>
+        public uint Next()
+        {
+            lastAllocated++;
+            return lastAllocated;
         }
     }
 }

@@ -73,7 +73,7 @@ jobs:
       # Now, setup the Unity tests.
 
       - name: Patch spacetimedb dependency in Cargo.toml
-        working-directory: unity-tests~/server
+        working-directory: unity-tests~/server-rust
         run: |
           sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../SpacetimeDB~/crates/bindings\" \}|" Cargo.toml
           cat Cargo.toml
@@ -84,7 +84,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: unity-tests~/server
+          workspaces: unity-tests~/server-rust
           shared-key: UnityTestServer
 
       - name: Install SpacetimeDB CLI from the local checkout
@@ -92,13 +92,16 @@ jobs:
           cargo install --path SpacetimeDB~/crates/cli --locked --message-format=short
           cargo install --path SpacetimeDB~/crates/standalone --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
+          rm $HOME/.cargo/bin/spacetime || echo "haven't run on this host before"
           ln -s $HOME/.cargo/bin/spacetimedb-cli $HOME/.cargo/bin/spacetime
+          # Clear any existing information
+          spacetime server clear -y
         env:
           # Share the target directory with our local project to avoid rebuilding same SpacetimeDB crates twice.
-          CARGO_TARGET_DIR: unity-tests~/server/target
+          CARGO_TARGET_DIR: unity-tests~/server-rust/target
 
       - name: Generate client bindings
-        working-directory: unity-tests~/server
+        working-directory: unity-tests~/server-rust
         run: bash ./generate.sh -y
 
       - name: Check for changes
@@ -121,8 +124,10 @@ jobs:
           disown
 
       - name: Publish module to SpacetimeDB
-        working-directory: unity-tests~/server
-        run: bash ./publish.sh
+        working-directory: unity-tests~/server-rust
+        run: |
+          spacetime logout && spacetime login --server-issued-login local
+          bash ./publish.sh
 
       - uses: actions/cache@v3
         with:

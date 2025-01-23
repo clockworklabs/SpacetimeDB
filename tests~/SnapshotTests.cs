@@ -104,7 +104,7 @@ public class SnapshotTests
             Address = Address.From(Convert.FromBase64String(address)) ?? throw new InvalidDataException("address")
         });
 
-    private static ServerMessage.InitialSubscription SampleSubscriptionUpdate(
+    private static ServerMessage.InitialSubscription SampleLegacyInitialSubscription(
         uint requestId,
         ulong hostExecutionDuration,
         List<TableUpdate> updates
@@ -116,6 +116,61 @@ public class SnapshotTests
         {
             Tables = updates
         }
+    });
+
+    private static ServerMessage.SubscribeApplied SampleSubscribeApplied(
+        uint requestId,
+        uint queryId,
+        ulong hostExecutionDuration,
+        TableUpdate tableUpdate
+    ) => new(new()
+    {
+        RequestId = requestId,
+        TotalHostExecutionDurationMicros = hostExecutionDuration,
+        QueryId = new(queryId),
+        Rows = new()
+        {
+            // This message contains redundant data, shrug.
+            // Copy out the redundant fields.
+            TableId = tableUpdate.TableId,
+            TableName = tableUpdate.TableName,
+            TableRows = tableUpdate
+        }
+    });
+
+    private static ServerMessage.UnsubscribeApplied SampleUnsubscribeApplied(
+        uint requestId,
+        uint queryId,
+        ulong hostExecutionDuration,
+        TableUpdate tableUpdate
+    ) => new(new()
+    {
+        RequestId = requestId,
+        TotalHostExecutionDurationMicros = hostExecutionDuration,
+        QueryId = new(queryId),
+        Rows = new()
+        {
+            // This message contains redundant data, shrug.
+            // Copy out the redundant fields.
+            TableId = tableUpdate.TableId,
+            TableName = tableUpdate.TableName,
+            TableRows = tableUpdate
+        }
+    });
+
+    private static ServerMessage.SubscriptionError SampleSubscriptionError(
+        uint? requestId,
+        uint? queryId,
+        uint? tableId,
+        string error,
+        ulong hostExecutionDuration
+    ) => new(new()
+    {
+        RequestId = requestId,
+        QueryId = queryId,
+        TableId = tableId,
+        Error = error,
+        TotalHostExecutionDurationMicros = hostExecutionDuration,
     });
 
     private static ServerMessage.TransactionUpdate SampleTransactionUpdate(
@@ -189,8 +244,14 @@ public class SnapshotTests
         return o.ToArray();
     }
 
+    private static readonly uint USER_TABLE_ID = 4097;
+    private static readonly string USER_TABLE_NAME = "user";
+    private static readonly uint MESSAGE_TABLE_ID = 4098;
+    private static readonly string MESSAGE_TABLE_NAME = "message";
+
+
     private static TableUpdate SampleUserInsert(string identity, string? name, bool online) =>
-        SampleUpdate(4097, "user", [new User
+        SampleUpdate(USER_TABLE_ID, USER_TABLE_NAME, [new User
         {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Name = name,
@@ -198,7 +259,7 @@ public class SnapshotTests
         }], []);
 
     private static TableUpdate SampleUserUpdate(string identity, string? oldName, string? newName, bool oldOnline, bool newOnline) =>
-        SampleUpdate(4097, "user", [new User
+        SampleUpdate(USER_TABLE_ID, USER_TABLE_NAME, [new User
         {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Name = newName,
@@ -210,70 +271,169 @@ public class SnapshotTests
             Online = oldOnline
         }]);
 
-    private static TableUpdate SampleMessage(string identity, ulong sent, string text) =>
-        SampleUpdate(4098, "message", [new Message
-        {
-            Sender = Identity.From(Convert.FromBase64String(identity)),
-            Sent = sent,
-            Text = text
-        }], []);
 
-    private static ServerMessage[] SampleDump() => [
-        SampleId(
-            "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=",
-            "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJoZXhfaWRlbnRpdHkiOiI4ZjkwY2M5NGE5OTY4ZGY2ZDI5N2JhYTY2NTAzYTg5M2IxYzM0YjBiMDAyNjhhNTE0ODk4ZGQ5NTRiMGRhMjBiIiwiaWF0IjoxNzE4NDg3NjY4LCJleHAiOm51bGx9.PSn481bLRqtFwIh46nOXDY14X3GKbz8t4K4GmBmz50loU6xzeL7zDdCh1V2cmiQsoGq8Erxg0r_6b6Y5SqKoBA",
-            "Vd4dFzcEzhLHJ6uNL8VXFg=="
-        ),
-        SampleSubscriptionUpdate(
-            1, 366, [SampleUserInsert("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)]
-        ),
-        SampleTransactionUpdate(0, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-            0, "unknown-reducer", 0, 40, [], null
-        ),
-        SampleTransactionUpdate(
-            1718487763059031, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-            0, "__identity_connected__", 1957615, 66, [SampleUserInsert("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, true)],
-            null
-        ),
-        SampleTransactionUpdate(
-            1718487768057579, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
-            1, "set_name", 4345615, 70, [SampleUserUpdate("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, "A", true, true)],
-            Encode(new Reducer.SetName { Name = "A" })
-        ),
-        SampleTransactionUpdate(
-            1718487775346381, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-            1, "send_message", 2779615, 57, [SampleMessage("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", 1718487775346381, "Hello, A!")],
-            Encode(new Reducer.SendMessage { Text = "Hello, A!" })
-        ),
-        SampleTransactionUpdate(
-            1718487777307855, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-            2, "set_name", 4268615, 98, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, "B", true, true)],
-            Encode(new Reducer.SetName { Name = "B" })
-        ),
-        SampleTransactionUpdate(
-            1718487783175083, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
-            2, "send_message", 2677615, 40, [SampleMessage("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", 1718487783175083, "Hello, B!")],
-            Encode(new Reducer.SendMessage { Text = "Hello, B!" })
-        ),
-        SampleTransactionUpdate(
-            1718487787645364, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-            3, "send_message", 2636615, 28, [SampleMessage("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", 1718487787645364, "Goodbye!")],
-            Encode(new Reducer.SendMessage { Text = "Goodbye!" })
-        ),
-        SampleTransactionUpdate(
-            1718487791901504, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
-            0, "__identity_disconnected__", 3595615, 75, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "B", "B", true, false)],
-            null
-        ),
-        SampleTransactionUpdate(
-            1718487794937841, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
-            3, "send_message", 2636615, 34, [SampleMessage("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", 1718487794937841, "Goodbye!")],
-            Encode(new Reducer.SendMessage { Text = "Goodbye!" })
-        ),
-    ];
+    private static Message SampleMessage(string identity, ulong sent, string text) => new()
+    {
+        Sender = Identity.From(Convert.FromBase64String(identity)),
+        Sent = sent,
+        Text = text
+    };
 
-    [Fact]
-    public async Task VerifyAllTablesParsed()
+    private static TableUpdate SampleMessageInsert(List<Message> messages) =>
+        SampleUpdate(MESSAGE_TABLE_ID, MESSAGE_TABLE_NAME, messages, []);
+
+    private static TableUpdate SampleMessageDelete(List<Message> messages) =>
+        SampleUpdate(MESSAGE_TABLE_ID, MESSAGE_TABLE_NAME, [], messages);
+
+    public static IEnumerable<object[]> SampleDump()
+    {
+        var sampleMessage0 = SampleMessage("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", 1718487775346381, "Hello, A!");
+        var sampleMessage1 = SampleMessage("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", 1718487783175083, "Hello, B!");
+        var sampleMessage2 = SampleMessage("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", 1718487787645364, "Goodbye!");
+        var sampleMessage3 = SampleMessage("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", 1718487794937841, "Goodbye!");
+
+        yield return new object[] { "LegacySubscribeAll",
+            new ServerMessage[] {
+            SampleId(
+                "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=",
+                "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJoZXhfaWRlbnRpdHkiOiJjMjAwNDgzMTUyZDY0MmM3ZDQwMmRlMDZjYWNjMzZkY2IwYzJhMWYyYmJlYjhlN2Q1YTY3M2YyNDM1Y2NhOTc1Iiwic3ViIjoiNmQ0YjU0MzAtMDBjZi00YTk5LTkzMmMtYWQyZDA3YmFiODQxIiwiaXNzIjoibG9jYWxob3N0IiwiYXVkIjpbInNwYWNldGltZWRiIl0sImlhdCI6MTczNzY2NTc2OSwiZXhwIjpudWxsfQ.GaKhvswWYW6wpPpK70_-Tw8DKjKJ2qnidwwj1fTUf3mctcsm_UusPYSws_pSW3qGnMNnGjEXt7rRNvGvuWf9ow",
+                "Vd4dFzcEzhLHJ6uNL8VXFg=="
+            ),
+            SampleLegacyInitialSubscription(
+                1, 366, [SampleUserInsert("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)]
+            ),
+            SampleTransactionUpdate(0, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
+                0, "unknown-reducer", 0, 40, [], null
+            ),
+            SampleTransactionUpdate(
+                1718487763059031, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
+                0, "__identity_connected__", 1957615, 66, [SampleUserInsert("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, true)],
+                null
+            ),
+            SampleTransactionUpdate(
+                1718487768057579, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
+                1, "set_name", 4345615, 70, [SampleUserUpdate("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, "A", true, true)],
+                Encode(new Reducer.SetName { Name = "A" })
+            ),
+            SampleTransactionUpdate(
+                1718487775346381, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
+                1, "send_message", 2779615, 57, [SampleMessageInsert([
+                    sampleMessage0
+                ])],
+                Encode(new Reducer.SendMessage { Text = "Hello, A!" })
+            ),
+            SampleTransactionUpdate(
+                1718487777307855, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
+                2, "set_name", 4268615, 98, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, "B", true, true)],
+                Encode(new Reducer.SetName { Name = "B" })
+            ),
+            SampleTransactionUpdate(
+                1718487783175083, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
+                2, "send_message", 2677615, 40, [SampleMessageInsert([
+                    sampleMessage1
+                ])],
+                Encode(new Reducer.SendMessage { Text = "Hello, B!" })
+            ),
+            SampleTransactionUpdate(
+                1718487787645364, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
+                3, "send_message", 2636615, 28, [SampleMessageInsert([
+                    sampleMessage2
+                ])],
+                Encode(new Reducer.SendMessage { Text = "Goodbye!" })
+            ),
+            SampleTransactionUpdate(
+                1718487791901504, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
+                0, "__identity_disconnected__", 3595615, 75, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "B", "B", true, false)],
+                null
+            ),
+            SampleTransactionUpdate(
+                1718487794937841, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
+                3, "send_message", 2636615, 34, [SampleMessageInsert([
+                    sampleMessage3
+                ])],
+                Encode(new Reducer.SendMessage { Text = "Goodbye!" })
+            ),
+            }
+        };
+        yield return new object[] { "SubscribeApplied",
+            new ServerMessage[] {
+            SampleId(
+                "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=",
+                "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJoZXhfaWRlbnRpdHkiOiJjMjAwNDgzMTUyZDY0MmM3ZDQwMmRlMDZjYWNjMzZkY2IwYzJhMWYyYmJlYjhlN2Q1YTY3M2YyNDM1Y2NhOTc1Iiwic3ViIjoiNmQ0YjU0MzAtMDBjZi00YTk5LTkzMmMtYWQyZDA3YmFiODQxIiwiaXNzIjoibG9jYWxob3N0IiwiYXVkIjpbInNwYWNldGltZWRiIl0sImlhdCI6MTczNzY2NTc2OSwiZXhwIjpudWxsfQ.GaKhvswWYW6wpPpK70_-Tw8DKjKJ2qnidwwj1fTUf3mctcsm_UusPYSws_pSW3qGnMNnGjEXt7rRNvGvuWf9ow",
+                "Vd4dFzcEzhLHJ6uNL8VXFg=="
+            ),
+            SampleSubscribeApplied(
+                1, 1, 366, SampleUserInsert("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, true)
+            ),
+            SampleSubscribeApplied(
+                1, 2, 277, SampleUpdate<Message>(MESSAGE_TABLE_ID, MESSAGE_TABLE_NAME, [], [])
+            ),
+            SampleTransactionUpdate(0, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
+                0, "unknown-reducer", 0, 40, [], null
+            ),
+            SampleTransactionUpdate(
+                1718487763059031, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
+                0, "__identity_connected__", 1957615, 66, [SampleUserInsert("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, true)],
+                null
+            ),
+            SampleTransactionUpdate(
+                1718487768057579, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
+                1, "set_name", 4345615, 70, [SampleUserUpdate("j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", null, "A", true, true)],
+                Encode(new Reducer.SetName { Name = "A" })
+            ),
+            SampleTransactionUpdate(
+                1718487775346381, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
+                1, "send_message", 2779615, 57, [SampleMessageInsert([
+                    sampleMessage0
+                ])],
+                Encode(new Reducer.SendMessage { Text = "Hello, A!" })
+            ),
+            SampleTransactionUpdate(
+                1718487777307855, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
+                2, "set_name", 4268615, 98, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", null, "B", true, true)],
+                Encode(new Reducer.SetName { Name = "B" })
+            ),
+            SampleTransactionUpdate(
+                1718487783175083, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
+                2, "send_message", 2677615, 40, [SampleMessageInsert([
+                    sampleMessage1
+                ])],
+                Encode(new Reducer.SendMessage { Text = "Hello, B!" })
+            ),
+            SampleTransactionUpdate(
+                1718487787645364, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
+                3, "send_message", 2636615, 28, [SampleMessageInsert([
+                    sampleMessage2
+                ])],
+                Encode(new Reducer.SendMessage { Text = "Goodbye!" })
+            ),
+            SampleTransactionUpdate(
+                1718487791901504, "l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "Kwmeu5riP20rvCTNbBipLA==",
+                0, "__identity_disconnected__", 3595615, 75, [SampleUserUpdate("l0qzG1GPRtC1mwr+54q98tv0325gozLc6cNzq4vrzqY=", "B", "B", true, false)],
+                null
+            ),
+            SampleTransactionUpdate(
+                1718487794937841, "j5DMlKmWjfbSl7qmZQOok7HDSwsAJopRSJjdlUsNogs=", "Vd4dFzcEzhLHJ6uNL8VXFg==",
+                3, "send_message", 2636615, 34, [SampleMessageInsert([
+                    sampleMessage3
+                ])],
+                Encode(new Reducer.SendMessage { Text = "Goodbye!" })
+            ),
+            // Let's pretend the user unsubscribed from the table Messages...
+            SampleUnsubscribeApplied(0,
+            2, 55, SampleMessageDelete([sampleMessage0, sampleMessage1, sampleMessage2, sampleMessage3])),
+            // Tried to resubscribe unsuccessfully...
+            SampleSubscriptionError(0, 3, MESSAGE_TABLE_ID, "bad query dude", 69),
+            // Then successfully resubscribed.
+            SampleSubscribeApplied(0, 4, 53, SampleMessageInsert([sampleMessage0, sampleMessage1, sampleMessage2, sampleMessage3]))
+            }
+        };
+
+    }
+
+    [Theory]
+    [MemberData(nameof(SampleDump))]
+    public async Task VerifySampleDump(string dumpName, ServerMessage[] sampleDumpParsed)
     {
         var events = new Events();
 
@@ -288,8 +448,6 @@ public class SnapshotTests
             .OnConnect((conn, identity, token) => events.Add("OnConnect", new { identity, token }))
             .Build();
 
-        var sampleDumpParsed = SampleDump();
-
         // But for proper testing we need to convert it back to raw binary messages as if it was received over network.
         var sampleDumpBinary = sampleDumpParsed.Select(
             (message, i) =>
@@ -298,6 +456,9 @@ public class SnapshotTests
                 switch (message)
                 {
                     case ServerMessage.InitialSubscription(var _):
+                        client.stats.SubscriptionRequestTracker.StartTrackingRequest($"sample#{i}");
+                        break;
+                    case ServerMessage.SubscribeApplied(var _):
                         client.stats.SubscriptionRequestTracker.StartTrackingRequest($"sample#{i}");
                         break;
                     case ServerMessage.TransactionUpdate(var _):
@@ -368,6 +529,7 @@ public class SnapshotTests
                     Stats = client.stats
                 }
             )
+            .UseParameters(dumpName)
             .AddExtraSettings(settings => settings.Converters.AddRange([
                 new EventsConverter(),
                 new TimestampConverter(),
