@@ -576,6 +576,22 @@ namespace SpacetimeDB.Types
 			);
 			return true;
 		}
+		public delegate void SuicideHandler(EventContext ctx);
+		public event SuicideHandler? OnSuicide;
+
+		public void Suicide()
+		{
+			conn.InternalCallReducer(new Reducer.Suicide(), this.SetCallReducerFlags.SuicideFlags);
+		}
+
+		public bool InvokeSuicide(EventContext ctx, Reducer.Suicide args)
+		{
+			if (OnSuicide == null) return false;
+			OnSuicide(
+				ctx
+			);
+			return true;
+		}
 		public delegate void UpdatePlayerInputHandler(EventContext ctx, SpacetimeDB.Types.DbVector2 direction);
 		public event UpdatePlayerInputHandler? OnUpdatePlayerInput;
 
@@ -614,6 +630,8 @@ namespace SpacetimeDB.Types
 		public void Respawn(CallReducerFlags flags) { this.RespawnFlags = flags; }
 		internal CallReducerFlags SpawnFoodFlags;
 		public void SpawnFood(CallReducerFlags flags) { this.SpawnFoodFlags = flags; }
+		internal CallReducerFlags SuicideFlags;
+		public void Suicide(CallReducerFlags flags) { this.SuicideFlags = flags; }
 		internal CallReducerFlags UpdatePlayerInputFlags;
 		public void UpdatePlayerInput(CallReducerFlags flags) { this.UpdatePlayerInputFlags = flags; }
 	}
@@ -772,6 +790,13 @@ namespace SpacetimeDB.Types
 
 		[SpacetimeDB.Type]
 		[DataContract]
+		public partial class Suicide : Reducer, IReducerArgs
+		{
+			string IReducerArgs.ReducerName => "suicide";
+		}
+
+		[SpacetimeDB.Type]
+		[DataContract]
 		public partial class UpdatePlayerInput : Reducer, IReducerArgs
 		{
 			[DataMember(Name = "direction")]
@@ -831,6 +856,7 @@ namespace SpacetimeDB.Types
 				"player_split" => BSATNHelpers.Decode<Reducer.PlayerSplit>(encodedArgs),
 				"respawn" => BSATNHelpers.Decode<Reducer.Respawn>(encodedArgs),
 				"spawn_food" => BSATNHelpers.Decode<Reducer.SpawnFood>(encodedArgs),
+				"suicide" => BSATNHelpers.Decode<Reducer.Suicide>(encodedArgs),
 				"update_player_input" => BSATNHelpers.Decode<Reducer.UpdatePlayerInput>(encodedArgs),
 				"<none>" => new Reducer.StdbNone(),
 				"__identity_connected__" => new Reducer.StdbIdentityConnected(),
@@ -855,6 +881,7 @@ namespace SpacetimeDB.Types
 				Reducer.PlayerSplit args => Reducers.InvokePlayerSplit(eventContext, args),
 				Reducer.Respawn args => Reducers.InvokeRespawn(eventContext, args),
 				Reducer.SpawnFood args => Reducers.InvokeSpawnFood(eventContext, args),
+				Reducer.Suicide args => Reducers.InvokeSuicide(eventContext, args),
 				Reducer.UpdatePlayerInput args => Reducers.InvokeUpdatePlayerInput(eventContext, args),
 				Reducer.StdbNone or
 				Reducer.StdbIdentityConnected or

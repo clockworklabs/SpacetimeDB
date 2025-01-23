@@ -5,14 +5,7 @@ using UnityEngine.UI;
 
 public class DeathScreen : MonoBehaviour
 {
-	public static DeathScreen Instance { get; private set; }
-
 	public Button RespawnButton;
-
-	public void Awake()
-	{
-		Instance = this;
-	}
 
 	public void SetVisible(bool visible)
 	{
