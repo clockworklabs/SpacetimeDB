@@ -238,7 +238,7 @@ impl SubscriptionManager {
     ///
     /// If a query is not already indexed,
     /// its table ids added to the inverted index.
-    // #[tracing::instrument(skip_all)]
+    // #[tracing::instrument(level = "trace", skip_all)]
     pub fn set_legacy_subscription(&mut self, client: Client, queries: impl IntoIterator<Item = Query>) {
         let client_id = (client.id.identity, client.id.address);
         // First, remove any existing legacy subscriptions.
@@ -281,7 +281,7 @@ impl SubscriptionManager {
     /// Removes a client from the subscriber mapping.
     /// If a query no longer has any subscribers,
     /// it is removed from the index along with its table ids.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
         self.remove_legacy_subscriptions(client);
         let Some(client_info) = self.clients.get(client) else {
@@ -309,7 +309,7 @@ impl SubscriptionManager {
     /// This method takes a set of delta tables,
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn eval_updates(&self, tx: &DeltaTx, event: Arc<ModuleEvent>, caller: Option<&ClientConnectionSender>) {
         use FormatSwitch::{Bsatn, Json};
 
