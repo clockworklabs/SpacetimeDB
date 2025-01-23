@@ -14,7 +14,6 @@ bench = false
 [dependencies]
 spacetimedb-primitives.workspace = true
 
-bitflags.workspace = true
 humantime.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true
