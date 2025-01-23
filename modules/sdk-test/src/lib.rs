@@ -162,6 +162,22 @@ macro_rules! define_tables {
         define_tables!(@impl_ops $name { $($($ops)*)? } $($field_name $ty,)*);
     };
 
+    // Define a reducer for tables without unique constraints,
+    // which deletes a row.
+    (@impl_ops $name:ident
+     { delete $delete:ident
+       $(, $($ops:tt)* )? }
+     $($field_name:ident $ty:ty),* $(,)*) => {
+        paste::paste! {
+            #[spacetimedb::reducer]
+            pub fn $delete (ctx: &ReducerContext, $($field_name : $ty,)*) {
+                ctx.db.[<$name:snake>]().delete($name { $($field_name,)* });
+            }
+        }
+
+        define_tables!(@impl_ops $name { $($($ops)*)? } $($field_name $ty,)*);
+    };
+
     // Define a reducer for tables with unique constraints,
     // which inserts a row, or panics with `expect` if the row violates a unique constraint.
     (@impl_ops $name:ident
@@ -602,6 +618,7 @@ define_tables! {
     // A table with many fields, of many different types.
     LargeTable {
         insert insert_large_table,
+        delete delete_large_table,
     }
     a u8,
     b u16,
