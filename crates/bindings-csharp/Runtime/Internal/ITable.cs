@@ -17,10 +17,9 @@ internal abstract class RawTableIterBase<T>
                 return false;
             }
 
-            uint buffer_len;
             while (true)
             {
-                buffer_len = (uint)buffer.Length;
+                var buffer_len = buffer.Length;
                 var ret = FFI.row_iter_bsatn_advance(handle, buffer, ref buffer_len);
                 if (ret == Errno.EXHAUSTED)
                 {
@@ -116,7 +115,7 @@ public interface ITableView<View, T>
         new(() =>
         {
             var name_bytes = System.Text.Encoding.UTF8.GetBytes(tableName);
-            FFI.table_id_from_name(name_bytes, (uint)name_bytes.Length, out var out_);
+            FFI.table_id_from_name(name_bytes, name_bytes.Length, out var out_);
             return out_;
         });
 
@@ -142,11 +141,11 @@ public interface ITableView<View, T>
     {
         // Insert the row.
         var bytes = IStructuralReadWrite.ToBytes(row);
-        var bytes_len = (uint)bytes.Length;
+        var bytes_len = bytes.Length;
         FFI.datastore_insert_bsatn(tableId, bytes, ref bytes_len);
 
         // Write back any generated column values.
-        using var stream = new MemoryStream(bytes, 0, (int)bytes_len);
+        using var stream = new MemoryStream(bytes, 0, bytes_len);
         using var reader = new BinaryReader(stream);
         return View.ReadGenFields(reader, row);
     }
@@ -154,7 +153,7 @@ public interface ITableView<View, T>
     protected static bool DoDelete(T row)
     {
         var bytes = IStructuralReadWrite.ToBytes(row);
-        FFI.datastore_delete_all_by_eq_bsatn(tableId, bytes, (uint)bytes.Length, out var out_);
+        FFI.datastore_delete_all_by_eq_bsatn(tableId, bytes, bytes.Length, out var out_);
         return out_ > 0;
     }
 
