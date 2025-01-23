@@ -88,7 +88,7 @@ async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
         return Ok(());
     };
 
-    let identity = decode_identity(&token)?;
+    let identity = decode_identity(token)?;
     println!("You are logged in as {}", identity);
 
     if include_token {
