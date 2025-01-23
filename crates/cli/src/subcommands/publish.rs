@@ -199,6 +199,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             ));
         }
         PublishResult::PermissionDenied { domain } => {
+            if anon_identity {
+                anyhow::bail!("You need to be logged in to publish to {}", domain.tld());
+            }
+
             let token = get_login_token_or_log_in(&mut config, server, !force).await?;
             let identity = decode_identity(&token)?;
             //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
