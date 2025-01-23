@@ -319,9 +319,8 @@ impl CommittedState {
             .get_mut(&table_id)
             .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
         let blob_store = &mut self.blob_store;
-        let skip_index_update = true;
         table
-            .delete_equal_row(blob_store, rel, skip_index_update)
+            .delete_equal_row(blob_store, rel)
             .map_err(TableError::Insert)?
             .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
         Ok(())
@@ -334,7 +333,7 @@ impl CommittedState {
         row: &ProductValue,
     ) -> Result<()> {
         let (table, blob_store) = self.get_table_and_blob_store_or_create(table_id, schema);
-        table.insert_for_replay(blob_store, row).map_err(TableError::Insert)?;
+        table.insert(blob_store, row).map_err(TableError::Insert)?;
         Ok(())
     }
 
