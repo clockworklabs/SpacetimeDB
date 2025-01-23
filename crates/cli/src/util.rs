@@ -303,11 +303,12 @@ pub async fn get_login_token_or_log_in<'a>(
         return Ok(token.clone());
     }
 
-    // It would be "ideal" if we could print the `spacetimedb.com` by deriving it from the `default_auth_host` constant,
-    // but this will change _so_ infrequently that it's not even worth the time to write that code and test it.
+    // Note: We pass `force: false` to `y_or_n` because if we're running non-interactively we want to default to "no", not yes!
     let full_login = interactive
         && y_or_n(
             false,
+            // It would be "ideal" if we could print the `spacetimedb.com` by deriving it from the `default_auth_host` constant,
+            // but this will change _so_ infrequently that it's not even worth the time to write that code and test it.
             "You are not logged in. Would you like to log in with spacetimedb.com?",
         )?;
 
