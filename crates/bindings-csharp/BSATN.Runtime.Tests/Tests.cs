@@ -139,4 +139,16 @@ public static class BSATNRuntimeTests
             () => Address.FromHexString("these are not hex characters....")
         );
     }
+
+    [Fact]
+    public static void TimestampConversionChecks()
+    {
+        ulong us = 1737582793990639;
+        var time = ScheduleAt.DateTimeOffsetFromMicrosSinceUnixEpoch(us);
+
+        Assert.Equal(ScheduleAt.ToMicrosecondsSinceUnixEpoch(time), us);
+
+        var interval = ScheduleAt.TimeSpanFromMicroseconds(us);
+        Assert.Equal(ScheduleAt.ToMicroseconds(interval), us);
+    }
 }
