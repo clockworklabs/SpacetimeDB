@@ -9,7 +9,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, get_auth_header};
+use crate::util::{add_auth_header_opt, get_auth_header, get_login_token_or_log_in};
 use crate::util::{decode_identity, unauth_error_context, y_or_n};
 use crate::{build, common_args};
 
@@ -159,7 +159,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
-        let identity = decode_identity(&mut config, server, !force).await?;
+        let token = get_login_token_or_log_in(&mut config, server, !force).await?;
+        let identity = decode_identity(&token)?;
         let err = res.text().await?;
         return unauth_error_context(
             Err(anyhow::anyhow!(err)),
@@ -198,7 +199,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             ));
         }
         PublishResult::PermissionDenied { domain } => {
-            let identity = decode_identity(&mut config, server, !force).await?;
+            let token = get_login_token_or_log_in(&mut config, server, !force).await?;
+            let identity = decode_identity(&token)?;
             //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
             // we should perhaps generate fun names like 'green-fire-dragon' instead
             let suggested_tld: String = identity.chars().take(12).collect();

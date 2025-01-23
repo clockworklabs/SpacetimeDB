@@ -1,6 +1,8 @@
 use crate::common_args;
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, decode_identity, get_auth_header, spacetime_register_tld};
+use crate::util::{
+    add_auth_header_opt, decode_identity, get_auth_header, get_login_token_or_log_in, spacetime_register_tld,
+};
 use clap::ArgMatches;
 use clap::{Arg, Command};
 use reqwest::Url;
@@ -31,7 +33,8 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let database_identity = args.get_one::<String>("database-identity").unwrap();
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let force = args.get_flag("force");
-    let identity = decode_identity(&mut config, server, !force).await?;
+    let token = get_login_token_or_log_in(&mut config, server, !force).await?;
+    let identity = decode_identity(&token)?;
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
     match spacetime_register_tld(&mut config, domain, server, !force).await? {

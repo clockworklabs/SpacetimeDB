@@ -1,6 +1,6 @@
-use crate::common_args;
 use crate::util::decode_identity;
 use crate::Config;
+use crate::{common_args, util::get_login_token_or_log_in};
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use reqwest::Url;
 use serde::Deserialize;
@@ -84,7 +84,8 @@ async fn exec_show(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::
     let include_token = args.get_flag("token");
     let force = args.get_flag("force");
 
-    let identity = decode_identity(&mut config, None, !force).await?;
+    let token = get_login_token_or_log_in(&mut config, None, !force).await?;
+    let identity = decode_identity(&token)?;
     println!("You are logged in as {}", identity);
 
     if include_token {

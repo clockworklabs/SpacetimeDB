@@ -272,12 +272,7 @@ Please log back in with `spacetime logout` and then `spacetime login`."
     })
 }
 
-pub async fn decode_identity(
-    config: &mut Config,
-    target_server: Option<&str>,
-    interactive: bool,
-) -> anyhow::Result<String> {
-    let token = get_login_token_or_log_in(config, target_server, interactive).await?;
+pub fn decode_identity(token: &String) -> anyhow::Result<String> {
     // Here, we manually extract and decode the claims from the json web token.
     // We do this without using the `jsonwebtoken` crate because it doesn't seem to have a way to skip signature verification.
     // But signature verification would require getting the public key from a server, and we don't necessarily want to do that.
@@ -294,7 +289,7 @@ pub async fn decode_identity(
     Ok(claims_data.identity.to_string())
 }
 
-pub async fn get_login_token_or_log_in<'a>(
+pub async fn get_login_token_or_log_in(
     config: &mut Config,
     target_server: Option<&str>,
     interactive: bool,

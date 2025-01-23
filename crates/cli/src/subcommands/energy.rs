@@ -3,7 +3,7 @@ use crate::common_args;
 use clap::ArgMatches;
 
 use crate::config::Config;
-use crate::util;
+use crate::util::{self, get_login_token_or_log_in};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("energy")
@@ -51,7 +51,8 @@ async fn exec_status(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
     let identity = if let Some(identity) = identity {
         identity.clone()
     } else {
-        util::decode_identity(&mut config, server, !force).await?
+        let token = get_login_token_or_log_in(&mut config, server, !force).await?;
+        util::decode_identity(&token)?
     };
 
     let status = reqwest::Client::new()
