@@ -1,9 +1,12 @@
+use std::thread::available_parallelism;
+
 use crate::execution_context::WorkloadType;
 use crate::hash::Hash;
 use once_cell::sync::Lazy;
-use prometheus::{HistogramVec, IntCounterVec, IntGaugeVec};
+use prometheus::{core::Collector, Gauge, HistogramVec, IntCounterVec, IntGaugeVec, PullingGauge};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_metrics::metrics_group;
+use memory_stats::memory_stats;
 
 metrics_group!(
     pub struct WorkerMetrics {
@@ -113,3 +116,84 @@ metrics_group!(
 );
 
 pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
+
+fn build_global_metrics() -> Vec<Box<dyn Collector>> {
+        let mut metrics: Vec<Box<dyn Collector>> = Vec::new();
+        metrics.push(Box::new(PullingGauge::new(
+            "available_parallelism",
+            "The available parallelism, usually the numbers of logical cores.",
+            Box::new(|| available_parallelism().unwrap().get() as f64),
+        ).unwrap()));
+
+        metrics.push(Box::new(PullingGauge::new(
+            "physical_memory_bytes",
+            "The total amount of physical memory used by this process in bytes.",
+            Box::new(|| {
+                if let Some(usage) = memory_stats() {
+                    usage.physical_mem as f64
+                } else {
+                    0.0
+                }
+            })
+        ).unwrap()));
+
+        metrics.push(Box::new(PullingGauge::new(
+            "virtual_memory_bytes",
+            "The total amount of physical memory used by this process in bytes.",
+            Box::new(|| {
+                if let Some(usage) = memory_stats() {
+                    usage.virtual_mem as f64
+                } else {
+                    0.0
+                }
+            })
+        ).unwrap()));
+
+
+        metrics
+}
+
+// pub static GLOBAL_METRICS: Lazy<Vec<Box<dyn Collector>>> = Lazy::new(|| {
+//         let mut metrics: Vec<Box<dyn Collector>> = Vec::new();
+//         metrics.push(Box::new(PullingGauge::new(
+//             "available_parallelism",
+//             "The available parallelism, usually the numbers of logical cores.",
+//             Box::new(|| available_parallelism().unwrap().get() as f64),
+//         ).unwrap()));
+
+//         metrics.push(Box::new(PullingGauge::new(
+//             "physical_memory_bytes",
+//             "The total amount of physical memory used by this process in bytes.",
+//             Box::new(|| {
+//                 if let Some(usage) = memory_stats() {
+//                     usage.physical_mem as f64
+//                 } else {
+//                     0.0
+//                 }
+//             })
+//         ).unwrap()));
+
+//         metrics.push(Box::new(PullingGauge::new(
+//             "virtual_memory_bytes",
+//             "The total amount of physical memory used by this process in bytes.",
+//             Box::new(|| {
+//                 if let Some(usage) = memory_stats() {
+//                     usage.virtual_mem as f64
+//                 } else {
+//                     0.0
+//                 }
+//             })
+//         ).unwrap()));
+
+
+//         metrics
+// });
+
+pub fn register_global_metrics(registry: &prometheus::Registry) {
+    let mut metrics = build_global_metrics();
+    for metric in metrics.drain(..) {
+        if let Err(e) = registry.register(metric) {
+            log::error!("Failed to register global metric: {}", e);
+        }
+    }
+}

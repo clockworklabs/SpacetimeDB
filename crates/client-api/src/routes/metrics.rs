@@ -16,6 +16,7 @@ use crate::NodeDelegate;
 // }
 
 pub async fn metrics<S: NodeDelegate>(State(ctx): State<S>) -> axum::response::Result<impl IntoResponse> {
+    println!("metrics");
     let mut buf = String::new();
 
     let mut encode_to_buffer = |mfs: &[_]| {
