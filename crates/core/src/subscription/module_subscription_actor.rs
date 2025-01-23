@@ -1,7 +1,7 @@
 use super::execution_unit::QueryHash;
 use super::module_subscription_manager::{Plan, SubscriptionManager};
 use super::query::compile_read_only_query;
-use super::record_query_metrics;
+use super::record_exec_metrics;
 use super::tx::DeltaTx;
 use crate::client::messages::{
     SubscriptionError, SubscriptionMessage, SubscriptionResult, SubscriptionRows, SubscriptionUpdateMessage,
@@ -22,8 +22,8 @@ use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, FormatSwitch, JsonFormat, SubscribeSingle, TableUpdate, Unsubscribe,
 };
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
-use spacetimedb_query::metrics::QueryMetrics;
 use spacetimedb_query::{execute_plans, SubscribePlan};
 use std::{sync::Arc, time::Instant};
 
@@ -57,7 +57,7 @@ impl ModuleSubscriptions {
         query: Arc<Plan>,
         tx: &TxId,
         auth: &AuthCtx,
-    ) -> Result<(SubscriptionUpdate, QueryMetrics), DBError> {
+    ) -> Result<(SubscriptionUpdate, ExecutionMetrics), DBError> {
         let comp = sender.config.compression;
         let plan = SubscribePlan::from_delta_plan(&query);
 
@@ -123,8 +123,8 @@ impl ModuleSubscriptions {
 
         let (table_rows, metrics) = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth)?;
 
-        record_query_metrics(
-            WorkloadType::Subscribe,
+        record_exec_metrics(
+            &WorkloadType::Subscribe,
             &self.relational_db.database_identity(),
             metrics,
         );
@@ -192,8 +192,8 @@ impl ModuleSubscriptions {
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let (table_rows, metrics) = self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth)?;
 
-        record_query_metrics(
-            WorkloadType::Subscribe,
+        record_exec_metrics(
+            &WorkloadType::Subscribe,
             &self.relational_db.database_identity(),
             metrics,
         );
@@ -289,8 +289,8 @@ impl ModuleSubscriptions {
                 .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
 
-        record_query_metrics(
-            WorkloadType::Subscribe,
+        record_exec_metrics(
+            &WorkloadType::Subscribe,
             &self.relational_db.database_identity(),
             metrics,
         );

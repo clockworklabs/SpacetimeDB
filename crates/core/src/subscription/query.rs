@@ -132,10 +132,10 @@ mod tests {
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::identity::AuthCtx;
+    use spacetimedb_lib::metrics::ExecutionMetrics;
     use spacetimedb_lib::relation::FieldName;
     use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{ColId, TableId};
-    use spacetimedb_query::metrics::QueryMetrics;
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_schema::schema::*;
     use spacetimedb_vm::eval::run_ast;
@@ -734,7 +734,7 @@ mod tests {
 
     fn eval_incr(
         db: &RelationalDB,
-        metrics: &mut QueryMetrics,
+        metrics: &mut ExecutionMetrics,
         plan: &DeltaPlan,
         ops: Vec<(TableId, ProductValue, bool)>,
     ) -> ResultTest<DatabaseUpdate> {
@@ -790,7 +790,7 @@ mod tests {
         let r1 = product!(10, 0, 2);
         let r2 = product!(10, 0, 3);
 
-        let mut metrics = QueryMetrics::default();
+        let mut metrics = ExecutionMetrics::default();
 
         let result = eval_incr(db, &mut metrics, &query, vec![(rhs_id, r1, false), (rhs_id, r2, true)])?;
 
@@ -815,7 +815,7 @@ mod tests {
         let r1 = product!(13, 3, 5);
         let r2 = product!(13, 3, 6);
 
-        let mut metrics = QueryMetrics::default();
+        let mut metrics = ExecutionMetrics::default();
 
         let result = eval_incr(db, &mut metrics, &query, vec![(rhs_id, r1, false), (rhs_id, r2, true)])?;
 
@@ -840,7 +840,7 @@ mod tests {
         let r1 = product!(10, 0, 2);
         let r2 = product!(10, 0, 5);
 
-        let mut metrics = QueryMetrics::default();
+        let mut metrics = ExecutionMetrics::default();
 
         let result = eval_incr(db, &mut metrics, &query, vec![(rhs_id, r1, false), (rhs_id, r2, true)])?;
 
@@ -865,7 +865,7 @@ mod tests {
         let r1 = product!(13, 3, 5);
         let r2 = product!(13, 3, 4);
 
-        let mut metrics = QueryMetrics::default();
+        let mut metrics = ExecutionMetrics::default();
 
         let result = eval_incr(db, &mut metrics, &query, vec![(rhs_id, r1, false), (rhs_id, r2, true)])?;
 
@@ -890,7 +890,7 @@ mod tests {
         let lhs_row = product!(5, 10);
         let rhs_row = product!(20, 5, 3);
 
-        let mut metrics = QueryMetrics::default();
+        let mut metrics = ExecutionMetrics::default();
 
         let result = eval_incr(
             db,
@@ -921,7 +921,7 @@ mod tests {
         let lhs_row = product!(5, 10);
         let rhs_row = product!(20, 5, 5);
 
-        let mut metrics = QueryMetrics::default();
+        let mut metrics = ExecutionMetrics::default();
 
         let result = eval_incr(
             db,
@@ -951,7 +951,7 @@ mod tests {
         let lhs_row = product!(0, 5);
         let rhs_row = product!(10, 0, 2);
 
-        let mut metrics = QueryMetrics::default();
+        let mut metrics = ExecutionMetrics::default();
 
         let result = eval_incr(
             db,
@@ -982,7 +982,7 @@ mod tests {
         let lhs_row = product!(3, 8);
         let rhs_row = product!(13, 3, 5);
 
-        let mut metrics = QueryMetrics::default();
+        let mut metrics = ExecutionMetrics::default();
 
         let result = eval_incr(
             db,
@@ -1014,7 +1014,7 @@ mod tests {
         let rhs_old = product!(11, 1, 3);
         let rhs_new = product!(11, 1, 4);
 
-        let mut metrics = QueryMetrics::default();
+        let mut metrics = ExecutionMetrics::default();
 
         let result = eval_incr(
             db,

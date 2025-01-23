@@ -1,7 +1,6 @@
-use spacetimedb_lib::Identity;
-use spacetimedb_query::metrics::QueryMetrics;
+use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
 
-use crate::{db::db_metrics::DB_METRICS, execution_context::WorkloadType};
+use crate::{db::db_metrics::DB_METRICS, execution_context::WorkloadType, worker_metrics::WORKER_METRICS};
 
 pub mod delta;
 pub mod execution_unit;
@@ -12,13 +11,26 @@ pub mod query;
 pub mod subscription;
 pub mod tx;
 
-pub(crate) fn record_query_metrics(workload: WorkloadType, db: &Identity, metrics: QueryMetrics) {
+/// Update the global system metrics with transaction-level execution metrics
+pub(crate) fn record_exec_metrics(workload: &WorkloadType, db: &Identity, metrics: ExecutionMetrics) {
     DB_METRICS
         .rdb_num_index_seeks
-        .with_label_values(&workload, db)
+        .with_label_values(workload, db)
         .inc_by(metrics.index_seeks as u64);
     DB_METRICS
         .rdb_num_rows_scanned
-        .with_label_values(&workload, db)
+        .with_label_values(workload, db)
         .inc_by(metrics.rows_scanned as u64);
+    DB_METRICS
+        .rdb_num_bytes_scanned
+        .with_label_values(workload, db)
+        .inc_by(metrics.bytes_scanned as u64);
+    DB_METRICS
+        .rdb_num_bytes_written
+        .with_label_values(workload, db)
+        .inc_by(metrics.bytes_written as u64);
+    WORKER_METRICS
+        .bytes_sent_to_clients
+        .with_label_values(workload, db)
+        .inc_by(metrics.bytes_sent_to_clients as u64);
 }

@@ -6,8 +6,11 @@ use super::{
     tx::TxId,
     tx_state::TxState,
 };
-use crate::db::datastore::locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx};
 use crate::execution_context::Workload;
+use crate::{
+    db::datastore::locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
+    subscription::record_exec_metrics,
+};
 use crate::{
     db::{
         datastore::{
@@ -31,7 +34,7 @@ use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
 use spacetimedb_durability::TxOffset;
-use spacetimedb_lib::db::auth::StAccess;
+use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
@@ -615,13 +618,14 @@ impl MutTxDatastore for Locking {
 }
 
 /// This utility is responsible for recording all transaction metrics.
-pub(super) fn record_metrics(
+pub(super) fn record_tx_metrics(
     ctx: &ExecutionContext,
     tx_timer: Instant,
     lock_wait_time: Duration,
     committed: bool,
     tx_data: Option<&TxData>,
     committed_state: Option<&CommittedState>,
+    metrics: Option<ExecutionMetrics>,
 ) {
     let workload = &ctx.workload();
     let db = &ctx.database_identity();
@@ -647,6 +651,10 @@ pub(super) fn record_metrics(
         .rdb_txn_elapsed_time_sec
         .with_label_values(workload, db, reducer)
         .observe(elapsed_time);
+
+    if let Some(metrics) = metrics {
+        record_exec_metrics(workload, db, metrics);
+    }
 
     /// Update table rows and table size gauges,
     /// and sets them to zero if no table is present.
@@ -705,6 +713,7 @@ impl MutTx for Locking {
             lock_wait_time,
             timer,
             ctx,
+            metrics: ExecutionMetrics::default(),
         }
     }
 

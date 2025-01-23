@@ -2,19 +2,18 @@ use std::ops::Deref;
 
 use anyhow::{bail, Result};
 use delta::DeltaPlan;
-use metrics::QueryMetrics;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
-    Compression, DatabaseUpdate, QueryUpdate, TableUpdate, WebsocketFormat,
+    ByteListLen, Compression, DatabaseUpdate, QueryUpdate, TableUpdate, WebsocketFormat,
 };
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_expr::check::{type_subscription, SchemaView};
+use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_physical_plan::{compile::compile_project_plan, plan::ProjectPlan};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sql_parser::parser::sub::parse_subscription;
 
 pub mod delta;
-pub mod metrics;
 
 /// DIRTY HACK ALERT: Maximum allowed length, in UTF-8 bytes, of SQL queries.
 /// Any query longer than this will be rejected.
@@ -92,24 +91,26 @@ impl SubscribePlan {
     }
 
     /// Execute a subscription query
-    pub fn execute<Tx, F>(&self, tx: &Tx) -> Result<(F::List, u64, QueryMetrics)>
+    pub fn execute<Tx, F>(&self, tx: &Tx) -> Result<(F::List, u64, ExecutionMetrics)>
     where
         Tx: Datastore + DeltaStore,
         F: WebsocketFormat,
     {
         let plan = PipelinedProject::from(self.plan.clone());
         let mut rows = vec![];
-        let mut metrics = QueryMetrics::default();
+        let mut metrics = ExecutionMetrics::default();
         plan.execute(tx, &mut metrics, &mut |row| {
             rows.push(row);
             Ok(())
         })?;
         let (list, n) = F::encode_list(rows.into_iter());
+        metrics.bytes_scanned += list.num_bytes();
+        metrics.bytes_sent_to_clients += list.num_bytes();
         Ok((list, n, metrics))
     }
 
     /// Execute a subscription query and collect the results in a [TableUpdate]
-    pub fn collect_table_update<Tx, F>(&self, comp: Compression, tx: &Tx) -> Result<(TableUpdate<F>, QueryMetrics)>
+    pub fn collect_table_update<Tx, F>(&self, comp: Compression, tx: &Tx) -> Result<(TableUpdate<F>, ExecutionMetrics)>
     where
         Tx: Datastore + DeltaStore,
         F: WebsocketFormat,
@@ -131,7 +132,7 @@ pub fn execute_plans<Tx, F>(
     plans: Vec<SubscribePlan>,
     comp: Compression,
     tx: &Tx,
-) -> Result<(DatabaseUpdate<F>, QueryMetrics)>
+) -> Result<(DatabaseUpdate<F>, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore + Sync,
     F: WebsocketFormat,
@@ -143,7 +144,7 @@ where
         .map(|table_updates_with_metrics| {
             let n = table_updates_with_metrics.len();
             let mut tables = Vec::with_capacity(n);
-            let mut aggregated_metrics = QueryMetrics::default();
+            let mut aggregated_metrics = ExecutionMetrics::default();
             for (update, metrics) in table_updates_with_metrics {
                 tables.push(update);
                 aggregated_metrics.merge(metrics);
