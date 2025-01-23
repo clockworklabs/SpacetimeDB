@@ -43,7 +43,6 @@ fn get_subcommands() -> Vec<Command> {
                 .action(ArgAction::SetTrue)
                 .help("Also show the auth token"),
         )
-        .arg(common_args::yes())
         .about("Show the current login info")]
 }
 
@@ -82,16 +81,18 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
 
 async fn exec_show(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let include_token = args.get_flag("token");
-    let force = args.get_flag("force");
 
-    let token = get_login_token_or_log_in(&mut config, None, !force).await?;
+    let token = if let Some(token) = config.spacetimedb_token() {
+        token
+    } else {
+        println!("You are not logged in. Run `spacetime login` to log in.");
+        return Ok(());
+    };
+
     let identity = decode_identity(&token)?;
     println!("You are logged in as {}", identity);
 
     if include_token {
-        // We can `unwrap` because `decode_identity` fetches this too.
-        // TODO: maybe decode_identity should take token as a param.
-        let token = config.spacetimedb_token().unwrap();
         println!("Your auth token (don't share this!) is {}", token);
     }
 
