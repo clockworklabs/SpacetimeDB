@@ -104,6 +104,11 @@ metrics_group!(
         #[help = "The time spent executing a reducer (in seconds), plus the time spent evaluating its subscription queries"]
         #[labels(db: Identity, reducer: str)]
         pub reducer_plus_query_duration: HistogramVec,
+
+        #[name = spacetime_num_bytes_sent_to_clients_total]
+        #[help = "The cumulative number of bytes sent to clients"]
+        #[labels(txn_type: WorkloadType, db: Identity)]
+        pub bytes_sent_to_clients: IntCounterVec,
     }
 );
 

@@ -24,9 +24,19 @@ metrics_group!(
         pub rdb_num_rows_deleted: IntCounterVec,
 
         #[name = spacetime_num_rows_scanned_total]
-        #[help = "The cumulative number of rows scanned during by reducers and queries"]
+        #[help = "The cumulative number of rows scanned from the database"]
         #[labels(txn_type: WorkloadType, db: Identity)]
         pub rdb_num_rows_scanned: IntCounterVec,
+
+        #[name = spacetime_num_bytes_scanned_total]
+        #[help = "The cumulative number of bytes scanned from the database"]
+        #[labels(txn_type: WorkloadType, db: Identity)]
+        pub rdb_num_bytes_scanned: IntCounterVec,
+
+        #[name = spacetime_num_bytes_written_total]
+        #[help = "The cumulative number of bytes written to the database"]
+        #[labels(txn_type: WorkloadType, db: Identity)]
+        pub rdb_num_bytes_written: IntCounterVec,
 
         #[name = spacetime_num_index_seeks_total]
         #[help = "The cumulative number of index seeks"]

@@ -19,14 +19,6 @@ use spacetimedb_table::{
 pub mod iter;
 pub mod pipelined;
 
-pub trait ExecutionMetrics: Default {
-    /// Increment the number of index seeks
-    fn inc_index_seeks_by(&mut self, seeks: usize);
-
-    /// Increment the number of row ids scanned
-    fn inc_rows_scanned_by(&mut self, rows: usize);
-}
-
 /// The datastore interface required for building an executor
 pub trait Datastore {
     fn table(&self, table_id: TableId) -> Option<&Table>;

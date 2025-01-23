@@ -14,7 +14,7 @@ use crate::messages::control_db::Database;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
-use crate::subscription::record_query_metrics;
+use crate::subscription::record_exec_metrics;
 use crate::subscription::tx::DeltaTx;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::vm::check_row_limit;
@@ -27,7 +27,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_client_api_messages::timestamp::Timestamp;
-use spacetimedb_client_api_messages::websocket::{Compression, OneOffTable, QueryUpdate, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
@@ -129,13 +129,14 @@ impl UpdatesRelValue<'_> {
         !(self.deletes.is_empty() && self.inserts.is_empty())
     }
 
-    pub fn encode<F: WebsocketFormat>(&self, compression: Compression) -> (F::QueryUpdate, u64) {
+    pub fn encode<F: WebsocketFormat>(&self, compression: Compression) -> (F::QueryUpdate, u64, usize) {
         let (deletes, nr_del) = F::encode_list(self.deletes.iter());
         let (inserts, nr_ins) = F::encode_list(self.inserts.iter());
         let num_rows = nr_del + nr_ins;
+        let num_bytes = deletes.num_bytes() + inserts.num_bytes();
         let qu = QueryUpdate { deletes, inserts };
         let cqu = F::into_query_update(qu, compression);
-        (cqu, num_rows)
+        (cqu, num_rows, num_bytes)
     }
 }
 
@@ -842,7 +843,7 @@ impl ModuleHost {
                 .context("One-off queries are not allowed to modify the database")
         })?;
 
-        record_query_metrics(WorkloadType::Sql, &db.database_identity(), metrics);
+        record_exec_metrics(&WorkloadType::Sql, &db.database_identity(), metrics);
 
         Ok(rows)
     }

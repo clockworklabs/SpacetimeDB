@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use spacetimedb_execution::{Datastore, DeltaStore};
-use spacetimedb_query::{delta::DeltaPlanEvaluator, metrics::QueryMetrics};
+use spacetimedb_lib::metrics::ExecutionMetrics;
+use spacetimedb_query::delta::DeltaPlanEvaluator;
 use spacetimedb_vm::relation::RelValue;
 
 use crate::host::module_host::UpdatesRelValue;
@@ -15,7 +16,7 @@ use crate::host::module_host::UpdatesRelValue;
 /// Hence this may be removed at any time after 1.0.
 pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
     tx: &'a Tx,
-    metrics: &mut QueryMetrics,
+    metrics: &mut ExecutionMetrics,
     delta: &'a DeltaPlanEvaluator,
 ) -> Result<UpdatesRelValue<'a>> {
     if !delta.is_join() {

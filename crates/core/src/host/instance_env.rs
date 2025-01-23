@@ -80,7 +80,12 @@ impl ChunkedWriter {
         self.chunks
     }
 
-    pub fn collect_iter(pool: &mut ChunkPool, iter: impl Iterator<Item = impl ToBsatn>) -> Vec<Vec<u8>> {
+    pub fn collect_iter(
+        pool: &mut ChunkPool,
+        iter: impl Iterator<Item = impl ToBsatn>,
+        rows_scanned: &mut usize,
+        bytes_scanned: &mut usize,
+    ) -> Vec<Vec<u8>> {
         let mut chunked_writer = Self::default();
         // Consume the iterator, serializing each `item`,
         // while allowing a chunk to be created at boundaries.
@@ -89,9 +94,16 @@ impl ChunkedWriter {
             item.to_bsatn_extend(&mut chunked_writer.curr).unwrap();
             // Flush at item boundaries.
             chunked_writer.flush(pool);
+            // Update rows scanned
+            *rows_scanned += 1;
         }
 
-        chunked_writer.into_chunks()
+        let chunks = chunked_writer.into_chunks();
+
+        // Update (BSATN) bytes scanned
+        *bytes_scanned += chunks.iter().map(|chunk| chunk.len()).sum::<usize>();
+
+        chunks
     }
 }
 
@@ -238,6 +250,14 @@ impl InstanceEnv {
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
         let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
 
+        // Note, we're deleting rows based on the result of a btree scan.
+        // Hence we must update our `index_seeks` and `rows_scanned` metrics.
+        //
+        // Note that we're not updating `bytes_scanned` at all,
+        // because we never dereference any of the returned `RowPointer`s.
+        tx.metrics.index_seeks += 1;
+        tx.metrics.rows_scanned += rows_to_delete.len();
+
         // Delete them and count how many we deleted.
         Ok(stdb.delete(tx, table_id, rows_to_delete))
     }
@@ -255,11 +275,19 @@ impl InstanceEnv {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
 
+        // Track the number of bytes coming from the caller
+        tx.metrics.bytes_scanned += relation.len();
+
         // Find the row schema using it to decode a vector of product values.
         let row_ty = stdb.row_schema_for_table(tx, table_id)?;
         // `TableType::delete` cares about a single element
         // so in that case we can avoid the allocation by using `smallvec`.
         let relation = ProductValue::decode_smallvec(&row_ty, &mut &*relation).map_err(NodesError::DecodeRow)?;
+
+        // Note, we track the number of rows coming from the caller,
+        // regardless of whether or not we actually delete them,
+        // since we have to derive row ids for each one of them.
+        tx.metrics.rows_scanned += relation.len();
 
         // Delete them and return how many we deleted.
         Ok(stdb.delete_by_rel(tx, table_id, relation))
@@ -315,7 +343,20 @@ impl InstanceEnv {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.tx.get()?;
 
-        let chunks = ChunkedWriter::collect_iter(pool, stdb.iter_mut(tx, table_id)?);
+        // Track the number of rows and the number of bytes scanned by the iterator
+        let (mut rows_scanned, mut bytes_scanned) = *scopeguard::guard((0, 0), |(rows_scanned, bytes_scanned)| {
+            tx.metrics.rows_scanned += rows_scanned;
+            tx.metrics.bytes_scanned += bytes_scanned;
+        });
+
+        // Scan table and serialize rows to bsatn
+        let chunks = ChunkedWriter::collect_iter(
+            pool,
+            stdb.iter_mut(tx, table_id)?,
+            &mut rows_scanned,
+            &mut bytes_scanned,
+        );
+
         Ok(chunks)
     }
 
@@ -332,9 +373,23 @@ impl InstanceEnv {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.tx.get()?;
 
+        // Track rows and bytes scanned by the iterator
+        let (mut rows_scanned, mut bytes_scanned) = *scopeguard::guard((0, 0), |(rows_scanned, bytes_scanned)| {
+            tx.metrics.index_seeks += 1;
+            tx.metrics.rows_scanned += rows_scanned;
+            tx.metrics.bytes_scanned += bytes_scanned;
+        });
+
+        // Open index iterator
         let (_, iter) = stdb.btree_scan(tx, index_id, prefix, prefix_elems, rstart, rend)?;
-        let chunks = ChunkedWriter::collect_iter(pool, iter);
-        Ok(chunks)
+
+        // Scan the index and serialize rows to bsatn
+        Ok(ChunkedWriter::collect_iter(
+            pool,
+            iter,
+            &mut rows_scanned,
+            &mut bytes_scanned,
+        ))
     }
 }
 

@@ -7,17 +7,17 @@ use crate::execution_context::WorkloadType;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, UpdatesRelValue};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::subscription::delta::eval_delta;
-use crate::subscription::record_query_metrics;
+use crate::subscription::record_exec_metrics;
 use hashbrown::hash_map::OccupiedError;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryId, QueryUpdate, WebsocketFormat,
 };
 use spacetimedb_data_structures::map::{Entry, HashCollectionExt, HashMap, HashSet, IntMap};
+use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_query::delta::DeltaPlan;
-use spacetimedb_query::metrics::QueryMetrics;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -353,21 +353,35 @@ impl SubscriptionManager {
                     // but we only fill `ops_bin` and `ops_json` at most once.
                     // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
-                    let mut ops_bin: Option<(CompressableQueryUpdate<BsatnFormat>, _)> = None;
-                    let mut ops_json: Option<(QueryUpdate<JsonFormat>, _)> = None;
+                    let mut ops_bin: Option<(CompressableQueryUpdate<BsatnFormat>, _, _)> = None;
+                    let mut ops_json: Option<(QueryUpdate<JsonFormat>, _, _)> = None;
 
                     fn memo_encode<F: WebsocketFormat>(
                         updates: &UpdatesRelValue<'_>,
                         client: &ClientConnectionSender,
-                        memory: &mut Option<(F::QueryUpdate, u64)>,
+                        memory: &mut Option<(F::QueryUpdate, u64, usize)>,
+                        metrics: &mut ExecutionMetrics,
                     ) -> (F::QueryUpdate, u64) {
-                        memory
-                            .get_or_insert_with(|| updates.encode::<F>(client.config.compression))
-                            .clone()
+                        let (update, num_rows, num_bytes) = memory
+                            .get_or_insert_with(|| {
+                                let encoded = updates.encode::<F>(client.config.compression);
+                                // The first time we insert into this map, we call encode.
+                                // This is when we serialize the rows to BSATN/JSON.
+                                // Hence this is where we increment `bytes_scanned`.
+                                metrics.bytes_scanned += encoded.2;
+                                encoded
+                            })
+                            .clone();
+                        // We call this function for each query,
+                        // and for each client subscribed to it.
+                        // Therefore every time we call this function,
+                        // we update the `bytes_sent_to_clients` metric.
+                        metrics.bytes_sent_to_clients += num_bytes;
+                        (update, num_rows)
                     }
 
                     let evaluator = plan.evaluator(tx);
-                    let mut metrics = QueryMetrics::default();
+                    let mut metrics = ExecutionMetrics::default();
 
                     // TODO: Handle errors instead of skipping them
                     let updates = eval_delta(tx, &mut metrics, &evaluator)
@@ -378,15 +392,21 @@ impl SubscriptionManager {
                                 .get(hash)
                                 .into_iter()
                                 .flat_map(|query| query.all_clients())
-                                .map(move |id| {
+                                .map(|id| {
                                     let client = &self.clients[id].outbound_ref;
                                     let update = match client.config.protocol {
-                                        Protocol::Binary => {
-                                            Bsatn(memo_encode::<BsatnFormat>(&delta_updates, client, &mut ops_bin))
-                                        }
-                                        Protocol::Text => {
-                                            Json(memo_encode::<JsonFormat>(&delta_updates, client, &mut ops_json))
-                                        }
+                                        Protocol::Binary => Bsatn(memo_encode::<BsatnFormat>(
+                                            &delta_updates,
+                                            client,
+                                            &mut ops_bin,
+                                            &mut metrics,
+                                        )),
+                                        Protocol::Text => Json(memo_encode::<JsonFormat>(
+                                            &delta_updates,
+                                            client,
+                                            &mut ops_json,
+                                            &mut metrics,
+                                        )),
                                     };
                                     (id, table_id, table_name.clone(), update)
                                 })
@@ -397,7 +417,7 @@ impl SubscriptionManager {
                     (updates, metrics)
                 })
                 .reduce(
-                    || (vec![], QueryMetrics::default()),
+                    || (vec![], ExecutionMetrics::default()),
                     |(mut updates, mut aggregated_metrics), (table_upates, metrics)| {
                         updates.extend(table_upates);
                         aggregated_metrics.merge(metrics);
@@ -405,7 +425,7 @@ impl SubscriptionManager {
                     },
                 );
 
-            record_query_metrics(WorkloadType::Update, database_identity, metrics);
+            record_exec_metrics(&WorkloadType::Update, database_identity, metrics);
 
             let mut eval = updates
                 .into_iter()

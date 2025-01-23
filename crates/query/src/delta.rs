@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use itertools::Either;
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore, Row};
 use spacetimedb_expr::check::{type_subscription, SchemaView};
-use spacetimedb_lib::query::Delta;
+use spacetimedb_lib::{metrics::ExecutionMetrics, query::Delta};
 use spacetimedb_physical_plan::{
     compile::compile_project_plan,
     plan::{HashJoin, IxJoin, Label, PhysicalPlan, ProjectPlan},
@@ -12,7 +12,7 @@ use spacetimedb_physical_plan::{
 use spacetimedb_primitives::TableId;
 use spacetimedb_sql_parser::parser::sub::parse_subscription;
 
-use crate::{metrics::QueryMetrics, MAX_SQL_LENGTH};
+use crate::MAX_SQL_LENGTH;
 
 /// A delta plan performs incremental view maintenance
 #[derive(Debug)]
@@ -143,7 +143,7 @@ impl DeltaPlanEvaluator {
     pub fn eval_inserts<'a, Tx: Datastore + DeltaStore>(
         &'a self,
         tx: &'a Tx,
-        metrics: &mut QueryMetrics,
+        metrics: &mut ExecutionMetrics,
     ) -> Result<impl Iterator<Item = Row<'a>>> {
         let mut rows = vec![];
         for plan in &self.insert_plans {
@@ -159,7 +159,7 @@ impl DeltaPlanEvaluator {
     pub fn eval_deletes<'a, Tx: Datastore + DeltaStore>(
         &'a self,
         tx: &'a Tx,
-        metrics: &mut QueryMetrics,
+        metrics: &mut ExecutionMetrics,
     ) -> Result<impl Iterator<Item = Row<'a>>> {
         let mut rows = vec![];
         for plan in &self.delete_plans {
