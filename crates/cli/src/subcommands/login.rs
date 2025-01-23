@@ -1,6 +1,5 @@
 use crate::util::decode_identity;
 use crate::Config;
-use crate::{common_args, util::get_login_token_or_log_in};
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use reqwest::Url;
 use serde::Deserialize;
@@ -79,7 +78,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
     }
 }
 
-async fn exec_show(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+async fn exec_show(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let include_token = args.get_flag("token");
 
     let token = if let Some(token) = config.spacetimedb_token() {
