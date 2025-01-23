@@ -1,4 +1,6 @@
-use crate::generate::util::namespace_is_empty_or_default;
+use crate::generate::util::{
+    is_reducer_invokable, iter_reducers, iter_tables, iter_unique_cols, namespace_is_empty_or_default,
+};
 use crate::indent_scope;
 
 use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
@@ -8,16 +10,14 @@ use std::fmt::{self, Write};
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
-use itertools::Itertools;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
-use spacetimedb_primitives::ColList;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, PrimitiveType};
 
 use super::code_indenter::{CodeIndenter, Indenter};
-use super::Lang;
+use super::{util, Lang};
 
 type Imports = BTreeSet<AlgebraicTypeRef>;
 
@@ -164,20 +164,16 @@ export class {table_handle} {{
         });
         writeln!(out, "}}");
 
-        let constraints = schema.backcompat_column_constraints();
+        for (_unique_field_pos, (unique_field_ident, unique_field_type_use)) in iter_unique_cols(&schema, product_def) {
+            let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
+            let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
 
-        for field in schema.columns() {
-            if constraints[&ColList::from(field.col_pos)].has_unique() {
-                let (unique_field_ident, unique_field_type_use) = &product_def.elements[field.col_pos.idx()];
-                let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
-                let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
+            let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
+            let unique_field_type = type_name(module, unique_field_type_use);
 
-                let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
-                let unique_field_type = type_name(module, unique_field_type_use);
-
-                writeln!(
-                    out,
-                    "/**
+            writeln!(
+                out,
+                "/**
  * Access to the `{unique_field_name}` unique index on the table `{table_name}`,
  * which allows point queries on the field of the same name
  * via the [`{unique_constraint}.find`] method.
@@ -188,33 +184,32 @@ export class {table_handle} {{
  *
  * Get a handle on the `{unique_field_name}` unique index on the table `{table_name}`.
  */"
+            );
+            writeln!(out, "{unique_field_name} = {{");
+            out.with_indent(|out| {
+                writeln!(
+                    out,
+                    "// Find the subscribed row whose `{unique_field_name}` column value is equal to `col_val`,"
                 );
-                writeln!(out, "{unique_field_name} = {{");
+                writeln!(out, "// if such a row is present in the client cache.");
+                writeln!(
+                    out,
+                    "find: (col_val: {unique_field_type}): {row_type} | undefined => {{"
+                );
                 out.with_indent(|out| {
-                    writeln!(
-                        out,
-                        "// Find the subscribed row whose `{unique_field_name}` column value is equal to `col_val`,"
-                    );
-                    writeln!(out, "// if such a row is present in the client cache.");
-                    writeln!(
-                        out,
-                        "find: (col_val: {unique_field_type}): {row_type} | undefined => {{"
-                    );
+                    writeln!(out, "for (let row of this.tableCache.iter()) {{");
                     out.with_indent(|out| {
-                        writeln!(out, "for (let row of this.tableCache.iter()) {{");
+                        writeln!(out, "if (deepEqual(row.{unique_field_name}, col_val)) {{");
                         out.with_indent(|out| {
-                            writeln!(out, "if (deepEqual(row.{unique_field_name}, col_val)) {{");
-                            out.with_indent(|out| {
-                                writeln!(out, "return row;");
-                            });
-                            writeln!(out, "}}");
+                            writeln!(out, "return row;");
                         });
                         writeln!(out, "}}");
                     });
-                    writeln!(out, "}},");
+                    writeln!(out, "}}");
                 });
-                writeln!(out, "}};");
-            }
+                writeln!(out, "}},");
+            });
+            writeln!(out, "}};");
         }
 
         writeln!(out);
@@ -327,7 +322,7 @@ Requested namespace: {namespace}",
 
         writeln!(out);
         writeln!(out, "// Import and reexport all types");
-        for ty in iter_types(module) {
+        for ty in util::iter_types(module) {
             let type_name = collect_case(Case::Pascal, ty.name.name_segments());
             let type_module_name = type_module_name(&ty.name) + ".ts";
             writeln!(out, "import {{ {type_name} }} from \"./{type_module_name}\";");
@@ -457,38 +452,41 @@ fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
         let arg_name_list = arg_name_list.trim_end_matches(", ");
 
         let reducer_name = &reducer.name;
-        let reducer_name_pascal = reducer_name.deref().to_case(Case::Pascal);
-        let reducer_function_name = reducer_function_name(reducer);
-        let reducer_variant = reducer_variant_name(&reducer.name);
-        if reducer.params_for_generate.elements.is_empty() {
-            writeln!(out, "{reducer_function_name}() {{");
-            out.with_indent(|out| {
-                writeln!(
-                    out,
-                    "this.connection.callReducer(\"{reducer_name}\", new Uint8Array(0), this.setCallReducerFlags.{reducer_function_name}Flags);"
-                );
-            });
-        } else {
-            writeln!(out, "{reducer_function_name}({arg_list}) {{");
-            out.with_indent(|out| {
-                writeln!(out, "const __args = {{ {arg_name_list} }};");
-                writeln!(out, "let __writer = new BinaryWriter(1024);");
-                writeln!(
-                    out,
-                    "{reducer_variant}.getTypeScriptAlgebraicType().serialize(__writer, __args);"
-                );
-                writeln!(out, "let __argsBuffer = __writer.getBuffer();");
-                writeln!(out, "this.connection.callReducer(\"{reducer_name}\", __argsBuffer, this.setCallReducerFlags.{reducer_function_name}Flags);");
-            });
+
+        if is_reducer_invokable(reducer) {
+            let reducer_function_name = reducer_function_name(reducer);
+            let reducer_variant = reducer_variant_name(&reducer.name);
+            if reducer.params_for_generate.elements.is_empty() {
+                writeln!(out, "{reducer_function_name}() {{");
+                out.with_indent(|out| {
+                    writeln!(
+                        out,
+                        "this.connection.callReducer(\"{reducer_name}\", new Uint8Array(0), this.setCallReducerFlags.{reducer_function_name}Flags);"
+                    );
+                });
+            } else {
+                writeln!(out, "{reducer_function_name}({arg_list}) {{");
+                out.with_indent(|out| {
+                    writeln!(out, "const __args = {{ {arg_name_list} }};");
+                    writeln!(out, "let __writer = new BinaryWriter(1024);");
+                    writeln!(
+                        out,
+                        "{reducer_variant}.getTypeScriptAlgebraicType().serialize(__writer, __args);"
+                    );
+                    writeln!(out, "let __argsBuffer = __writer.getBuffer();");
+                    writeln!(out, "this.connection.callReducer(\"{reducer_name}\", __argsBuffer, this.setCallReducerFlags.{reducer_function_name}Flags);");
+                });
+            }
+            writeln!(out, "}}");
+            out.newline();
         }
-        writeln!(out, "}}");
-        out.newline();
 
         let arg_list_padded = if arg_list.is_empty() {
             String::new()
         } else {
             format!(", {arg_list}")
         };
+        let reducer_name_pascal = reducer_name.deref().to_case(Case::Pascal);
         writeln!(
             out,
             "on{reducer_name_pascal}(callback: (ctx: EventContext{arg_list_padded}) => void) {{"
@@ -1062,27 +1060,6 @@ fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports) {
             "import {{ {type_name} as __{type_name} }} from \"./{module_name}\";"
         );
     }
-}
-
-/// Iterate over all the [`ReducerDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &ReducerDef> {
-    module.reducers().sorted_by_key(|reducer| &reducer.name)
-}
-
-/// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
-    module.tables().sorted_by_key(|table| &table.name)
-}
-
-/// Iterate over all the [`TypeDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDef> {
-    module.types().sorted_by_key(|table| &table.name)
 }
 
 /// Use `search_function` on `roots` to detect required imports, then print them with `print_imports`.

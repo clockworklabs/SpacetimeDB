@@ -1,15 +1,15 @@
 use super::code_indenter::{CodeIndenter, Indenter};
-use super::util::{collect_case, is_type_filterable, print_lines, type_ref_name};
+use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
-use crate::generate::util::{namespace_is_empty_or_default, print_auto_generated_file_comment};
+use crate::generate::util::{
+    iter_tables, iter_types, iter_unique_cols, namespace_is_empty_or_default, print_auto_generated_file_comment,
+};
 use convert_case::{Case, Casing};
-use itertools::Itertools;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
-use spacetimedb_primitives::ColList;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
-use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, PrimitiveType, ProductTypeDef};
+use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, PrimitiveType};
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
 use std::ops::Deref;
@@ -214,7 +214,7 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 ",
             |out| {
                 writeln!(out, "let _table = client_cache.get_or_make_table::<{row_type}>({table_name:?});");
-                for (unique_field_ident, unique_field_type_use) in iter_unique_cols(&schema, product_def) {
+                for (_unique_field_pos, (unique_field_ident, unique_field_type_use)) in iter_unique_cols(&schema, product_def) {
                     let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
                     let unique_field_type = type_name(module, unique_field_type_use);
                     writeln!(
@@ -279,7 +279,7 @@ pub(super) fn parse_table_update(
             );
         }
 
-        for (unique_field_ident, unique_field_type_use) in iter_unique_cols(&schema, product_def) {
+        for (_unique_field_pos, (unique_field_ident, unique_field_type_use)) in iter_unique_cols(&schema, product_def) {
             let unique_field_name = unique_field_ident.deref().to_case(Case::Snake);
             let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
 
@@ -828,9 +828,9 @@ fn reducer_flags_trait_name(reducer: &ReducerDef) -> String {
 /// Iterate over all of the Rust `mod`s for types, reducers and tables in the `module`.
 fn iter_module_names(module: &ModuleDef) -> impl Iterator<Item = String> + '_ {
     itertools::chain!(
-        module.types().map(|ty| type_module_name(&ty.name)).sorted(),
-        module.reducers().map(|r| reducer_module_name(&r.name)).sorted(),
-        module.tables().map(|tbl| table_module_name(&tbl.name)).sorted(),
+        iter_types(module).map(|ty| type_module_name(&ty.name)),
+        iter_reducers(module).map(|r| reducer_module_name(&r.name)),
+        iter_tables(module).map(|tbl| table_module_name(&tbl.name)),
     )
 }
 
@@ -843,7 +843,7 @@ fn print_module_decls(module: &ModuleDef, out: &mut Indenter) {
 
 /// Print appropriate reexports for all the files that will be generated for `items`.
 fn print_module_reexports(module: &ModuleDef, out: &mut Indenter) {
-    for ty in module.types().sorted_by_key(|ty| &ty.name) {
+    for ty in iter_types(module) {
         let mod_name = type_module_name(&ty.name);
         let type_name = collect_case(Case::Pascal, ty.name.name_segments());
         writeln!(out, "pub use {mod_name}::{type_name};")
@@ -867,36 +867,6 @@ fn print_module_reexports(module: &ModuleDef, out: &mut Indenter) {
             "pub use {mod_name}::{{{reducer_trait_name}, {flags_trait_name}, {callback_id_name}}};"
         );
     }
-}
-
-/// Iterate over all the [`ReducerDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &ReducerDef> {
-    module.reducers().sorted_by_key(|reducer| &reducer.name)
-}
-
-/// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducable codegen.
-fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
-    module.tables().sorted_by_key(|table| &table.name)
-}
-
-fn iter_unique_cols<'a>(
-    schema: &'a TableSchema,
-    product_def: &'a ProductTypeDef,
-) -> impl Iterator<Item = &'a (Identifier, AlgebraicTypeUse)> + 'a {
-    let constraints = schema.backcompat_column_constraints();
-    schema.columns().iter().filter_map(move |field| {
-        constraints[&ColList::from(field.col_pos)]
-            .has_unique()
-            .then(|| {
-                let res @ (_, ref ty) = &product_def.elements[field.col_pos.idx()];
-                is_type_filterable(ty).then_some(res)
-            })
-            .flatten()
-    })
 }
 
 fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {

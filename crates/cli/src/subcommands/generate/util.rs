@@ -5,16 +5,19 @@ use std::{
     ops::Deref,
 };
 
+use super::code_indenter::Indenter;
 use convert_case::{Case, Casing};
 use itertools::Itertools;
-use spacetimedb_lib::sats::AlgebraicTypeRef;
+use spacetimedb_lib::{db::raw_def::v9::Lifecycle, sats::AlgebraicTypeRef};
+use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_schema::def::{TableDef, TypeDef};
+use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::type_for_generate::ProductTypeDef;
 use spacetimedb_schema::{
-    def::ModuleDef,
+    def::{ModuleDef, ReducerDef},
     identifier::Identifier,
     type_for_generate::{AlgebraicTypeUse, PrimitiveType},
 };
-
-use super::code_indenter::Indenter;
 
 /// Turns a closure `f: Fn(&mut Formatter) -> Result` into `fmt::Display`.
 pub(super) fn fmt_fn(f: impl Fn(&mut Formatter) -> Result) -> impl Display {
@@ -68,4 +71,50 @@ pub(super) fn is_type_filterable(ty: &AlgebraicTypeUse) -> bool {
         AlgebraicTypeUse::String | AlgebraicTypeUse::Identity | AlgebraicTypeUse::Address => true,
         _ => false,
     }
+}
+
+pub(super) fn is_reducer_invokable(reducer: &ReducerDef) -> bool {
+    reducer.lifecycle.is_none()
+}
+
+/// Iterate over all the [`ReducerDef`]s defined by the module, in alphabetical order by name.
+///
+/// The init reducer is skipped because it should never be visible to the clients.
+/// Sorting is not necessary for reducers because they are already stored in an IndexMap.
+pub(super) fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &ReducerDef> {
+    module
+        .reducers()
+        .filter(|reducer| reducer.lifecycle != Some(Lifecycle::Init))
+}
+
+/// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.
+///
+/// Sorting is necessary to have deterministic reproducable codegen.
+pub(super) fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
+    module.tables().sorted_by_key(|table| &table.name)
+}
+
+pub(super) fn iter_unique_cols<'a>(
+    schema: &'a TableSchema,
+    product_def: &'a ProductTypeDef,
+) -> impl Iterator<Item = (ColId, &'a (Identifier, AlgebraicTypeUse))> + 'a {
+    let constraints = schema.backcompat_column_constraints();
+    schema.columns().iter()
+        .map(|field| field.col_pos)
+        .filter_map(move |col_pos| {
+        constraints[&ColList::from(col_pos)]
+            .has_unique()
+            .then(|| {
+                let res @ (_, ref ty) = &product_def.elements[col_pos.idx()];
+                is_type_filterable(ty).then_some((col_pos, res))
+            })
+            .flatten()
+    })
+}
+
+/// Iterate over all the [`TypeDef`]s defined by the module, in alphabetical order by name.
+///
+/// Sorting is necessary to have deterministic reproducable codegen.
+pub fn iter_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDef> {
+    module.types().sorted_by_key(|table| &table.name)
 }

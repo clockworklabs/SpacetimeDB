@@ -7,11 +7,9 @@ use std::ops::Deref;
 
 use super::code_indenter::CodeIndenter;
 use super::Lang;
-use crate::generate::util::{collect_case, is_type_filterable, print_auto_generated_file_comment, type_ref_name};
+use crate::generate::util::{collect_case, is_reducer_invokable, iter_reducers, iter_tables, iter_unique_cols, print_auto_generated_file_comment, type_ref_name};
 use crate::indent_scope;
 use convert_case::{Case, Casing};
-use spacetimedb_lib::db::raw_def::v9::Lifecycle;
-use spacetimedb_primitives::ColList;
 use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm, ModuleDef, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
@@ -65,22 +63,7 @@ impl Lang for Csharp {
                 let product_type = module.typespace_for_generate()[table.product_type_ref]
                     .as_product()
                     .unwrap();
-                let constraints = schema.backcompat_constraints();
-                let unique_indexes = schema
-                    .columns()
-                    .iter()
-                    .filter_map(move |field| {
-                        constraints
-                            .get(&ColList::from(field.col_pos))?
-                            .has_unique()
-                            .then(|| {
-                                let (name, ty) = &product_type.elements[field.col_pos.idx()];
-                                is_type_filterable(ty)
-                                    .then(|| (field.col_pos, (name.deref().to_case(Case::Pascal), ty)))
-                            })
-                            .flatten()
-                    })
-                    .collect::<BTreeMap<_, _>>();
+                let unique_indexes = iter_unique_cols(&schema, product_type).collect::<BTreeMap<_, _>>();
                 if !unique_indexes.is_empty() {
                     // OnInsert method for updating indexes
                     writeln!(
@@ -275,8 +258,7 @@ impl Lang for Csharp {
             );
             writeln!(output);
 
-            // Generate the method for calling the reducer, unless it's one of the lifecycle handlers.
-            if reducer.lifecycle.is_none() {
+            if is_reducer_invokable(reducer) {
                 writeln!(output, "public void {func_name_pascal_case}({func_params})");
                 indented_block(output, |output| {
                     writeln!(
@@ -419,7 +401,7 @@ impl Lang for Csharp {
                 writeln!(output, "Reducers = new(this, this.SetReducerFlags);");
                 writeln!(output);
 
-                for table in module.tables() {
+                for table in iter_tables(module) {
                     writeln!(
                         output,
                         "clientDB.AddTable<{table_type}>(\"{table_name}\", Db.{csharp_table_name});",
@@ -437,7 +419,7 @@ impl Lang for Csharp {
                 writeln!(output, "return update.ReducerCall.ReducerName switch {{");
                 {
                     indent_scope!(output);
-                    for reducer in module.reducers().filter(|r| r.lifecycle != Some(Lifecycle::Init)) {
+                    for reducer in iter_reducers(module) {
                         let reducer_str_name = &reducer.name;
                         let reducer_name = reducer.name.deref().to_case(Case::Pascal);
                         writeln!(
@@ -472,11 +454,7 @@ impl Lang for Csharp {
                 writeln!(output, "return reducer switch {{");
                 {
                     indent_scope!(output);
-                    for reducer_name in module
-                        .reducers()
-                        .filter(|r| r.lifecycle != Some(Lifecycle::Init))
-                        .map(|r| r.name.deref().to_case(Case::Pascal))
-                    {
+                    for reducer_name in iter_reducers(module).map(|r| r.name.deref().to_case(Case::Pascal)) {
                         writeln!(
                             output,
                             "Reducer.{reducer_name} args => Reducers.Invoke{reducer_name}(eventContext, args),"
@@ -623,14 +601,21 @@ impl CsharpAutogen {
     }
 }
 
-fn autogen_csharp_sum(module: &ModuleDef, mut sum_type_name: String, sum_type: &SumTypeDef, namespace: &str) -> String {
-    let mut output = CsharpAutogen::new(namespace, &[]);
-
+// This handles support for `#[sats(name = "Foo.Bar")]` namespace syntax on enums and sum types.
+// SpacetimeDB doesn't officially support it, but BitCraft uses it, so it needs to be kept for legacy reasons.
+// TODO: either support this syntax on all types and in all output languages, not only sum types only in C#, or remove it altogether.
+fn handle_custom_enum_namespace(output: &mut CsharpAutogen, sum_type_name: &mut String) {
     if let Some((sum_namespace, sum_type_name_)) = sum_type_name.split_once('.') {
         output.push_namespace(sum_namespace);
         output.push_namespace("Types");
-        sum_type_name = sum_type_name_.to_case(Case::Pascal);
+        *sum_type_name = sum_type_name_.to_case(Case::Pascal);
     }
+}
+
+fn autogen_csharp_sum(module: &ModuleDef, mut sum_type_name: String, sum_type: &SumTypeDef, namespace: &str) -> String {
+    let mut output = CsharpAutogen::new(namespace, &[]);
+
+    handle_custom_enum_namespace(&mut output, &mut sum_type_name);
 
     writeln!(output, "[SpacetimeDB.Type]");
     write!(
@@ -669,11 +654,7 @@ fn autogen_csharp_sum(module: &ModuleDef, mut sum_type_name: String, sum_type: &
 fn autogen_csharp_plain_enum(mut sum_type_name: String, sum_type: &PlainEnumTypeDef, namespace: &str) -> String {
     let mut output = CsharpAutogen::new(namespace, &[]);
 
-    if let Some((sum_namespace, sum_type_name_)) = sum_type_name.split_once('.') {
-        output.push_namespace(sum_namespace);
-        output.push_namespace("Types");
-        sum_type_name = sum_type_name_.to_case(Case::Pascal);
-    }
+    handle_custom_enum_namespace(&mut output, &mut sum_type_name);
 
     writeln!(output, "[SpacetimeDB.Type]");
     writeln!(output, "public enum {sum_type_name}");
