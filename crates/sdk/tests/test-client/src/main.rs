@@ -80,7 +80,7 @@ fn main() {
         "insert_simple_enum" => exec_insert_simple_enum(),
         "insert_enum_with_payload" => exec_insert_enum_with_payload(),
 
-        "insert_long_table" => exec_insert_long_table(),
+        "insert_delete_large_table" => exec_insert_delete_large_table(),
 
         "insert_primitives_as_strings" => exec_insert_primitives_as_strings(),
 
@@ -1287,7 +1287,7 @@ macro_rules! assert_eq_or_bail {
 
 /// This test invokes a reducer with many arguments of many types,
 /// and observes a callback for an inserted table with many columns of many types.
-fn exec_insert_long_table() {
+fn exec_insert_delete_large_table() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -1295,12 +1295,16 @@ fn exec_insert_long_table() {
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
-        let mut large_table_result = Some(test_counter.add_test("insert-large-table"));
+        let mut insert_result = Some(test_counter.add_test("insert-large-table"));
+        let mut delete_result = Some(test_counter.add_test("delete-large-table"));
         move |ctx| {
-            ctx.db.large_table().on_insert(move |ctx, row| {
-                if large_table_result.is_some() {
+            let table = ctx.db.large_table();
+            table.on_insert(move |ctx, large_table_inserted| {
+                if let Some(insert_result) = insert_result.take() {
                     let run_tests = || {
-                        assert_eq_or_bail!(large_table(), *row);
+                        let large_table = large_table();
+
+                        assert_eq_or_bail!(large_table, *large_table_inserted);
                         if !matches!(
                             ctx.event,
                             Event::Reducer(ReducerEvent {
@@ -1310,9 +1314,52 @@ fn exec_insert_long_table() {
                         ) {
                             anyhow::bail!("Unexpected event: expeced InsertLargeTable but found {:?}", ctx.event,);
                         }
+
+                        // Now we'll delete the row we just inserted and check that the delete callback is called.
+                        ctx.reducers.delete_large_table(
+                            large_table.a,
+                            large_table.b,
+                            large_table.c,
+                            large_table.d,
+                            large_table.e,
+                            large_table.f,
+                            large_table.g,
+                            large_table.h,
+                            large_table.i,
+                            large_table.j,
+                            large_table.k,
+                            large_table.l,
+                            large_table.m,
+                            large_table.n,
+                            large_table.o,
+                            large_table.p,
+                            large_table.q,
+                            large_table.r,
+                            large_table.s,
+                            large_table.t,
+                            large_table.u,
+                            large_table.v,
+                        )
+                    };
+                    insert_result(run_tests());
+                }
+            });
+            table.on_delete(move |ctx, row| {
+                if let Some(delete_result) = delete_result.take() {
+                    let run_tests = || {
+                        assert_eq_or_bail!(large_table(), *row);
+                        if !matches!(
+                            ctx.event,
+                            Event::Reducer(ReducerEvent {
+                                reducer: Reducer::DeleteLargeTable { .. },
+                                ..
+                            })
+                        ) {
+                            anyhow::bail!("Unexpected event: expeced DeleteLargeTable but found {:?}", ctx.event,);
+                        }
                         Ok(())
                     };
-                    (large_table_result.take().unwrap())(run_tests());
+                    delete_result(run_tests());
                 }
             });
             let large_table = large_table();

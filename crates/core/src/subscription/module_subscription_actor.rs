@@ -73,7 +73,7 @@ impl ModuleSubscriptions {
         })
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn add_subscription(
         &self,
         sender: Arc<ClientConnectionSender>,
@@ -198,7 +198,7 @@ impl ModuleSubscriptions {
 
     /// Add a subscriber to the module. NOTE: this function is blocking.
     /// This is used for the legacy subscription API which uses a set of queries.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn add_legacy_subscriber(
         &self,
         sender: Arc<ClientConnectionSender>,

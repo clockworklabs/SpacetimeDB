@@ -27,7 +27,7 @@ impl DiskStorage {
         path
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn get(&self, key: &Hash) -> io::Result<Option<Box<[u8]>>> {
         let path = self.object_path(key);
         match fs::read(path).await {
@@ -48,7 +48,7 @@ impl DiskStorage {
         }
     }
 
-    #[tracing::instrument(skip(self, value))]
+    #[tracing::instrument(level = "trace", skip(self, value))]
     pub async fn put(&self, value: &[u8]) -> io::Result<Hash> {
         let h = hash_bytes(value);
         let path = self.object_path(&h);
@@ -68,7 +68,7 @@ impl DiskStorage {
         Ok(h)
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn prune(&self, key: &Hash) -> anyhow::Result<()> {
         Ok(fs::remove_file(self.object_path(key)).await?)
     }

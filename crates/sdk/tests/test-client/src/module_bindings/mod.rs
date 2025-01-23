@@ -8,6 +8,7 @@ use spacetimedb_sdk::__codegen::{
 };
 
 pub mod byte_struct_type;
+pub mod delete_large_table_reducer;
 pub mod delete_pk_address_reducer;
 pub mod delete_pk_bool_reducer;
 pub mod delete_pk_i_128_reducer;
@@ -360,6 +361,9 @@ pub mod vec_unit_struct_table;
 pub mod vec_unit_struct_type;
 
 pub use byte_struct_type::ByteStruct;
+pub use delete_large_table_reducer::{
+    delete_large_table, set_flags_for_delete_large_table, DeleteLargeTableCallbackId,
+};
 pub use delete_pk_address_reducer::{delete_pk_address, set_flags_for_delete_pk_address, DeletePkAddressCallbackId};
 pub use delete_pk_bool_reducer::{delete_pk_bool, set_flags_for_delete_pk_bool, DeletePkBoolCallbackId};
 pub use delete_pk_i_128_reducer::{delete_pk_i_128, set_flags_for_delete_pk_i_128, DeletePkI128CallbackId};
@@ -842,6 +846,30 @@ pub use vec_unit_struct_type::VecUnitStruct;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
+    DeleteLargeTable {
+        a: u8,
+        b: u16,
+        c: u32,
+        d: u64,
+        e: u128,
+        f: __sats::u256,
+        g: i8,
+        h: i16,
+        i: i32,
+        j: i64,
+        k: i128,
+        l: __sats::i256,
+        m: bool,
+        n: f32,
+        o: f64,
+        p: String,
+        q: SimpleEnum,
+        r: EnumWithPayload,
+        s: UnitStruct,
+        t: ByteStruct,
+        u: EveryPrimitiveStruct,
+        v: EveryVecStruct,
+    },
     DeletePkAddress {
         a: __sdk::Address,
     },
@@ -1416,6 +1444,7 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
+            Reducer::DeleteLargeTable { .. } => "delete_large_table",
             Reducer::DeletePkAddress { .. } => "delete_pk_address",
             Reducer::DeletePkBool { .. } => "delete_pk_bool",
             Reducer::DeletePkI128 { .. } => "delete_pk_i128",
@@ -1586,6 +1615,13 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
     type Error = __anyhow::Error;
     fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {
         match &value.reducer_name[..] {
+            "delete_large_table" => Ok(
+                __sdk::parse_reducer_args::<delete_large_table_reducer::DeleteLargeTableArgs>(
+                    "delete_large_table",
+                    &value.args,
+                )?
+                .into(),
+            ),
             "delete_pk_address" => Ok(
                 __sdk::parse_reducer_args::<delete_pk_address_reducer::DeletePkAddressArgs>(
                     "delete_pk_address",

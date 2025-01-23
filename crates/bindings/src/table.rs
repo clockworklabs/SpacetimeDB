@@ -257,30 +257,22 @@ impl MaybeError for AutoIncOverflow {
 }
 
 pub trait Column {
-    type Row;
-    type ColType;
+    type Table: Table;
+    type ColType: SpacetimeType + Serialize + DeserializeOwned;
     const COLUMN_NAME: &'static str;
-    fn get_field(row: &Self::Row) -> &Self::ColType;
+    fn get_field(row: &<Self::Table as Table>::Row) -> &Self::ColType;
 }
 
-pub struct UniqueColumn<Tbl: Table, ColType, Col>
-where
-    ColType: SpacetimeType + Serialize + DeserializeOwned,
-    Col: Index + Column<Row = Tbl::Row, ColType = ColType>,
-{
-    _marker: PhantomData<(Tbl, Col)>,
+pub struct UniqueColumn<Tbl, ColType, Col> {
+    _marker: PhantomData<(Tbl, ColType, Col)>,
 }
 
-impl<Tbl: Table, ColType, Col> UniqueColumn<Tbl, ColType, Col>
-where
-    ColType: SpacetimeType + Serialize + DeserializeOwned,
-    Col: Index + Column<Row = Tbl::Row, ColType = ColType>,
-{
+impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColType, Col> {
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
     #[inline]
-    fn get_args(&self, col_val: &ColType) -> BTreeScanArgs {
+    fn get_args(&self, col_val: &Col::ColType) -> BTreeScanArgs {
         BTreeScanArgs {
             data: IterBuf::serialize(&std::ops::Bound::Included(col_val)).unwrap(),
             prefix_elems: 0,
@@ -298,11 +290,11 @@ where
     // whereas by-ref makes passing `!Copy` fields more performant.
     // Can we do something smart with `std::borrow::Borrow`?
     #[inline]
-    pub fn find(&self, col_val: impl Borrow<ColType>) -> Option<Tbl::Row> {
+    pub fn find(&self, col_val: impl Borrow<Col::ColType>) -> Option<Tbl::Row> {
         self._find(col_val.borrow())
     }
 
-    fn _find(&self, col_val: &ColType) -> Option<Tbl::Row> {
+    fn _find(&self, col_val: &Col::ColType) -> Option<Tbl::Row> {
         // Find the row with a match.
         let index_id = Col::index_id();
         let args = self.get_args(col_val);
@@ -330,11 +322,11 @@ where
     /// May panic if deleting the row would violate a constraint,
     /// though as of proposing no such constraints exist.
     #[inline]
-    pub fn delete(&self, col_val: impl Borrow<ColType>) -> bool {
+    pub fn delete(&self, col_val: impl Borrow<Col::ColType>) -> bool {
         self._delete(col_val.borrow()).0
     }
 
-    fn _delete(&self, col_val: &ColType) -> (bool, IterBuf) {
+    fn _delete(&self, col_val: &Col::ColType) -> (bool, IterBuf) {
         let index_id = Col::index_id();
         let args = self.get_args(col_val);
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();

@@ -3539,9 +3539,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.89"
+version = "1.0.93"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f139b0662de085916d1fb67d2b4169d1addddda1919e696f3252b740b629986e"
+checksum = "60946a68e5f9d28b0dc1c21bb8a97ee7d018a8b322fa57838ba31cc878e22d99"
 dependencies = [
  "unicode-ident",
 ]
@@ -4678,7 +4678,6 @@ dependencies = [
 name = "spacetimedb-bindings-macro"
 version = "1.0.0-rc3"
 dependencies = [
- "bitflags 2.6.0",
  "heck 0.4.1",
  "humantime",
  "proc-macro2",
@@ -4745,6 +4744,7 @@ dependencies = [
  "tokio-tungstenite",
  "toml 0.8.19",
  "toml_edit",
+ "tracing",
  "walkdir",
  "wasmbin",
  "wasmtime",
@@ -5288,6 +5288,7 @@ dependencies = [
  "tokio",
  "toml 0.8.19",
  "tower-http",
+ "tracing",
 ]
 
 [[package]]
@@ -5348,6 +5349,7 @@ dependencies = [
  "clap 4.5.20",
  "semver",
  "spacetimedb-paths",
+ "tracing",
 ]
 
 [[package]]

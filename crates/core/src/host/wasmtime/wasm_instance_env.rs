@@ -303,7 +303,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_TABLE`, when `name` is not the name of a table.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn table_id_from_name(
         caller: Caller<'_, Self>,
         name: WasmPtr<u8>,
@@ -338,7 +338,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_INDEX`, when `name` is not the name of an index.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn index_id_from_name(
         caller: Caller<'_, Self>,
         name: WasmPtr<u8>,
@@ -368,7 +368,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_row_count(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<u64>) -> RtResult<u32> {
         Self::cvt_ret::<u64>(caller, AbiCall::DatastoreTableRowCount, out, |caller| {
             let (_, env) = Self::mem_env(caller);
@@ -391,7 +391,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
-    // #[tracing::instrument(skip_all)]
+    // #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_scan_bsatn(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -541,7 +541,7 @@ impl WasmInstanceEnv {
     /// - `BUFFER_TOO_SMALL`, when there are rows left but they cannot fit in `buffer`.
     ///   When this occurs, `buffer_len` is set to the size of the next item in the iterator.
     ///   To make progress, the caller should reallocate the buffer to at least that size and try again.
-    // #[tracing::instrument(skip_all)]
+    // #[tracing::instrument(level = "trace", skip_all)]
     pub fn row_iter_bsatn_advance(
         caller: Caller<'_, Self>,
         iter: u32,
@@ -612,7 +612,7 @@ impl WasmInstanceEnv {
     /// Returns an error:
     ///
     /// - `NO_SUCH_ITER`, when `iter` is not a valid iterator.
-    // #[tracing::instrument(skip_all)]
+    // #[tracing::instrument(level = "trace", skip_all)]
     pub fn row_iter_bsatn_close(caller: Caller<'_, Self>, iter: u32) -> RtResult<u32> {
         let row_iter_idx = RowIterIdx(iter);
         Self::cvt_custom(caller, AbiCall::RowIterBsatnClose, |caller| {
@@ -660,7 +660,7 @@ impl WasmInstanceEnv {
     ///   typed at the `ProductType` the table's schema specifies.
     /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
     /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_insert_bsatn(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -723,7 +723,7 @@ impl WasmInstanceEnv {
     /// - `NO_SUCH_ROW`, when the row was not found in the unique index.
     /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
     /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_update_bsatn(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -844,7 +844,7 @@ impl WasmInstanceEnv {
     /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
     /// - `BSATN_DECODE_ERROR`, when `rel` cannot be decoded to `Vec<ProductValue>`
     ///   where each `ProductValue` is typed at the `ProductType` the table's schema specifies.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_delete_all_by_eq_bsatn(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -1052,7 +1052,7 @@ impl WasmInstanceEnv {
     /// - `message` is not NULL and `message_ptr[..message_len]` is not in bounds of WASM memory.
     ///
     /// [target]: https://docs.rs/log/latest/log/struct.Record.html#method.target
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn console_log(
         caller: Caller<'_, Self>,
         level: u32,
