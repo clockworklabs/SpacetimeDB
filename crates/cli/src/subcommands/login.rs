@@ -109,11 +109,7 @@ async fn spacetimedb_token_cached(config: &mut Config, host: &Url, direct_login:
     }
 }
 
-pub async fn spacetimedb_login_force<'a>(
-    config: &mut Config,
-    host: &Url,
-    direct_login: bool,
-) -> anyhow::Result<String> {
+pub async fn spacetimedb_login_force(config: &mut Config, host: &Url, direct_login: bool) -> anyhow::Result<String> {
     let token = if direct_login {
         spacetimedb_direct_login(host).await?
     } else {
