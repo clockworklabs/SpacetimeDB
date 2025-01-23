@@ -38,6 +38,9 @@ where
     total_txs
 }
 
+/// Put the `txes` into a single commit within `log`.
+///
+/// Panics if `txes` does not fit within a single commit within `log`.
 pub fn fill_log_with<R, T>(log: &mut commitlog::Generic<R, T>, txes: impl IntoIterator<Item = T>)
 where
     R: Repo,
