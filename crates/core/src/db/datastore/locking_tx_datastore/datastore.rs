@@ -115,7 +115,10 @@ impl Locking {
         // The database tables are now initialized with the correct data.
         // Now we have to build our in memory structures.
         commit_state.build_sequence_state(&mut datastore.sequence_state.lock())?;
-        commit_state.build_indexes()?;
+        // We don't want to build indexes here; we'll build those later,
+        // in `rebuild_state_after_replay`.
+        // We actively do not want indexes to exist during replay,
+        // as they break replaying TX 0.
 
         log::trace!("DATABASE:BOOTSTRAPPING SYSTEM TABLES DONE");
         Ok(datastore)
