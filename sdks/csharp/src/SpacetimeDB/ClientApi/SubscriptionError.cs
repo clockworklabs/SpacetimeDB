@@ -19,6 +19,8 @@ namespace SpacetimeDB.ClientApi
 		public ulong TotalHostExecutionDurationMicros;
 		[DataMember(Name = "request_id")]
 		public uint? RequestId;
+		[DataMember(Name = "query_id")]
+		public uint? QueryId;
 		[DataMember(Name = "table_id")]
 		public uint? TableId;
 		[DataMember(Name = "error")]
@@ -27,12 +29,14 @@ namespace SpacetimeDB.ClientApi
 		public SubscriptionError(
 			ulong TotalHostExecutionDurationMicros,
 			uint? RequestId,
+			uint? QueryId,
 			uint? TableId,
 			string Error
 		)
 		{
 			this.TotalHostExecutionDurationMicros = TotalHostExecutionDurationMicros;
 			this.RequestId = RequestId;
+			this.QueryId = QueryId;
 			this.TableId = TableId;
 			this.Error = Error;
 		}

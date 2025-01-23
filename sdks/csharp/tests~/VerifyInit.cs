@@ -55,14 +55,7 @@ static class VerifyInit
                 );
             }
 
-            if (
-                value.GetMinMaxTimes(int.MaxValue) is
-                { Min.Metadata: var Min, Max.Metadata: var Max }
-            )
-            {
-                writer.WriteMember(value, Min, nameof(Min));
-                writer.WriteMember(value, Max, nameof(Max));
-            }
+            // We don't use the stats, since they are nondeterministic.
 
             writer.WriteEndObject();
         }
