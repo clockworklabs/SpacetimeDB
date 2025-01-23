@@ -198,17 +198,11 @@ impl<'a> PrintIndex<'a> {
     }
 }
 
-pub enum JoinKind {
-    IxJoin,
-    HashJoin,
-    NlJoin,
-}
-
 /// A formated line of output
 pub enum Line<'a> {
     TableScan {
         table: &'a str,
-        label: Label,
+        label: usize,
         ident: u16,
     },
     Filter {
@@ -227,7 +221,6 @@ pub enum Line<'a> {
     },
     IxJoin {
         semi: &'a Semi,
-
         rhs: String,
         ident: u16,
     },
@@ -239,7 +232,6 @@ pub enum Line<'a> {
         ident: u16,
     },
     JoinExpr {
-        kind: JoinKind,
         unique: bool,
         lhs: Field<'a>,
         rhs: Field<'a>,
@@ -365,7 +357,7 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
 
             lines.add(Line::TableScan {
                 table: schema.name,
-                label: *label,
+                label: label.0,
                 ident,
             });
         }
@@ -385,7 +377,7 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
             lines.add(Line::FilterIxScan {
                 idx,
                 label: *label,
-                ident: ident + 2,
+                ident: ident + 4,
             });
         }
         PhysicalPlan::IxJoin(idx, semi) => {
@@ -398,7 +390,7 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
                 rhs: rhs.name.to_string(),
             });
 
-            eval_plan(lines, &idx.lhs, ident + 4);
+            eval_plan(lines, &idx.lhs, ident + 2);
 
             lines.output = output_join(lines, semi, idx.lhs_field.label, idx.rhs_label);
 
@@ -406,7 +398,6 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
             let rhs = lines.labels.label(&idx.rhs_label, idx.rhs_field).unwrap();
 
             lines.add(Line::JoinExpr {
-                kind: JoinKind::IxJoin,
                 unique: idx.unique,
                 lhs,
                 rhs,
@@ -416,8 +407,8 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
         PhysicalPlan::HashJoin(idx, semi) => {
             lines.add(Line::HashJoin { semi, ident });
 
-            eval_plan(lines, &idx.lhs, ident + 4);
-            eval_plan(lines, &idx.rhs, ident + 4);
+            eval_plan(lines, &idx.lhs, ident + 2);
+            eval_plan(lines, &idx.rhs, ident + 2);
 
             lines.output = output_join(lines, semi, idx.lhs_field.label, idx.rhs_field.label);
 
@@ -425,7 +416,6 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
             let rhs = lines.labels.field(&idx.rhs_field).unwrap();
 
             lines.add(Line::JoinExpr {
-                kind: JoinKind::HashJoin,
                 unique: idx.unique,
                 lhs,
                 rhs,
@@ -435,8 +425,8 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan, ident: u16) {
         PhysicalPlan::NLJoin(lhs, rhs) => {
             lines.add(Line::NlJoin { ident });
 
-            eval_plan(lines, lhs, ident + 4);
-            eval_plan(lines, rhs, ident + 4);
+            eval_plan(lines, lhs, ident + 2);
+            eval_plan(lines, rhs, ident + 2);
         }
         PhysicalPlan::Filter(plan, filter) => {
             eval_plan(lines, plan, ident);
@@ -611,14 +601,14 @@ impl<'a> fmt::Display for Explain<'a> {
 
         for line in &self.lines {
             let ident = line.ident();
-            let (ident, arrow) = if ident > 2 { (ident - 2, "-> ") } else { (ident, "") };
-            write!(f, "{:ident$}{arrow}", "")?;
+            let arrow = if ident > 0 { "-> " } else { "" };
+
             match line {
                 Line::TableScan { table, label, ident: _ } => {
                     if self.options.show_schema {
-                        write!(f, "Seq Scan on {}:{}", table, label.0)?;
+                        write!(f, "{:ident$}{arrow}Seq Scan on {table}:{label}", "")?;
                     } else {
-                        write!(f, "Seq Scan on {}", table)?;
+                        write!(f, "{:ident$}{arrow}Seq Scan on {table}", "")?;
                     }
                 }
                 Line::IxScan {
@@ -626,22 +616,24 @@ impl<'a> fmt::Display for Explain<'a> {
                     index,
                     ident: _,
                 } => {
-                    write!(f, "Index Scan using {index} on {table_name}")?;
+                    write!(f, "{:ident$}{arrow}Index Scan using {index} on {table_name}", "")?;
                 }
                 Line::Filter { expr, ident: _ } => {
+                    write!(f, "{:ident$}Filter: ", "")?;
                     write!(
                         f,
-                        "Filter: ({})",
+                        "({})",
                         PrintExpr {
                             expr,
                             labels: &self.labels,
-                        },
+                        }
                     )?;
                 }
                 Line::FilterIxScan { idx, label, ident: _ } => {
+                    write!(f, "{:ident$}Index Cond: ", "")?;
                     write!(
                         f,
-                        "Index Cond: ({})",
+                        "({})",
                         PrintSarg {
                             expr: &idx.arg,
                             prefix: &idx.prefix,
@@ -652,33 +644,27 @@ impl<'a> fmt::Display for Explain<'a> {
                 }
 
                 Line::IxJoin { semi, rhs, ident: _ } => {
-                    write!(f, "Index Join: {semi:?} on {rhs}")?;
+                    write!(f, "{:ident$}{arrow}Index Join: {semi:?} on {rhs}", "")?;
                 }
                 Line::HashJoin { semi, ident: _ } => match semi {
                     Semi::All => {
-                        write!(f, "Hash Join")?;
+                        write!(f, "{:ident$}{arrow}Hash Join", "")?;
                     }
                     semi => {
-                        write!(f, "Hash Join: {semi:?}")?;
+                        write!(f, "{:ident$}{arrow}Hash Join: {semi:?}", "")?;
                     }
                 },
                 Line::NlJoin { ident: _ } => {
-                    write!(f, "Nested Loop")?;
+                    write!(f, "{:ident$}{arrow}Nested Loop", "")?;
                 }
                 Line::JoinExpr {
-                    kind,
                     unique,
                     lhs,
                     rhs,
                     ident: _,
                 } => {
-                    let kind = match kind {
-                        JoinKind::IxJoin => "Index Cond",
-                        JoinKind::HashJoin => "Hash Cond",
-                        JoinKind::NlJoin => "Loop Cond",
-                    };
-                    writeln!(f, "Inner Unique: {unique}")?;
-                    write!(f, "{:ident$}{arrow}{kind}: ({} = {})", "", lhs, rhs)?;
+                    writeln!(f, "{:ident$}Inner Unique: {unique}", "")?;
+                    write!(f, "{:ident$}Join Cond: ({} = {})", "", lhs, rhs)?;
                 }
             }
             writeln!(f)?;

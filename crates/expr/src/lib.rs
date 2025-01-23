@@ -188,5 +188,5 @@ pub struct StatementCtx<'a> {
     pub statement: Statement,
     pub sql: &'a str,
     pub source: StatementSource,
-    pub planning_time: std::time::Duration,
+    pub planning_time: Option<std::time::Duration>,
 }

@@ -965,7 +965,7 @@ pub struct PhysicalCtx<'a> {
     // A map from table names to their labels
     pub vars: HashMap<String, usize>,
     pub source: StatementSource,
-    pub planning_time: std::time::Duration,
+    pub planning_time: Option<std::time::Duration>,
 }
 
 impl<'a> PhysicalCtx<'a> {
@@ -986,12 +986,12 @@ pub mod tests_utils {
     use spacetimedb_expr::statement::compile_sql_stmt;
 
     fn sub<'a>(db: &'a impl SchemaView, sql: &'a str) -> PhysicalCtx<'a> {
-        let plan = compile_sql_sub(sql, db).unwrap();
+        let plan = compile_sql_sub(sql, db, true).unwrap();
         compile(plan)
     }
 
     fn query<'a>(db: &'a impl SchemaView, sql: &'a str) -> PhysicalCtx<'a> {
-        let plan = compile_sql_stmt(sql, db).unwrap();
+        let plan = compile_sql_stmt(sql, db, true).unwrap();
         compile(plan)
     }
 
@@ -1155,10 +1155,8 @@ Seq Scan on t
     /// No rewrites applied to a table scan + filter
     #[test]
     fn filter_noop() {
-        let t_id = TableId(1);
-
         let t = Arc::new(schema(
-            t_id,
+            TableId(1),
             "t",
             &[("id", AlgebraicType::U64), ("x", AlgebraicType::U64)],
             &[&[0]],
@@ -1166,7 +1164,7 @@ Seq Scan on t
             Some(0),
         ));
 
-        let db = SchemaViewer::new(vec![t.clone()]);
+        let db = SchemaViewer::new(vec![t]);
 
         check_sub(
             &db,
@@ -1263,15 +1261,15 @@ Seq Scan on t
             expect![[r#"
 Index Join: Rhs on b
   -> Index Join: Rhs on q
-      -> Index Join: Rhs on p
-          -> Index Scan using Index id 0 on u
-            -> Index Cond: (u.identity = U64(5))
-        -> Inner Unique: true
-        -> Index Cond: (u.entity_id = p.entity_id)
-    -> Inner Unique: false
-    -> Index Cond: (p.chunk = q.chunk)
+    -> Index Join: Rhs on p
+      -> Index Scan using Index id 0 on u
+          Index Cond: (u.identity = U64(5))
+      Inner Unique: true
+      Join Cond: (u.entity_id = p.entity_id)
+    Inner Unique: false
+    Join Cond: (p.chunk = q.chunk)
   Inner Unique: true
-  Index Cond: (q.entity_id = b.entity_id)
+  Join Cond: (q.entity_id = b.entity_id)
   Output: b.entity_id, b.misc"#]],
         );
 
@@ -1472,21 +1470,21 @@ Index Join: Rhs on b
             expect![[r#"
 Hash Join
   -> Hash Join
+    -> Hash Join
       -> Hash Join
-          -> Hash Join
-              -> Seq Scan on m
-              -> Seq Scan on n
-            -> Inner Unique: false
-            -> Hash Cond: (m.manager = n.manager)
-          -> Seq Scan on u
-        -> Inner Unique: false
-        -> Hash Cond: (n.employee = u.employee)
-      -> Seq Scan on v
-    -> Inner Unique: false
-    -> Hash Cond: (u.project = v.project)
+        -> Seq Scan on m
+        -> Seq Scan on n
+        Inner Unique: false
+        Join Cond: (m.manager = n.manager)
+      -> Seq Scan on u
+      Inner Unique: false
+      Join Cond: (n.employee = u.employee)
+    -> Seq Scan on v
+    Inner Unique: false
+    Join Cond: (u.project = v.project)
   -> Seq Scan on p
   Inner Unique: false
-  Hash Cond: (p.id = v.project)
+  Join Cond: (p.id = v.project)
   Filter: (m.employee = U64(5) AND v.employee = U64(5))
   Output: p.id, p.name"#]],
         );
@@ -1668,7 +1666,7 @@ Hash Join
             expect![
                 r#"
 Index Scan using Index id 2 on t
-  Index Cond: (t.z = U8(5), t.x = U8(3), t.y = U8(4))
+    Index Cond: (t.z = U8(5), t.x = U8(3), t.y = U8(4))
   Output: t.w, t.x, t.y, t.z"#
             ],
         );
@@ -1819,7 +1817,7 @@ Index Scan using Index id 2 on t
 Query: SELECT m.* FROM m CROSS JOIN p WHERE m.employee = 1
 Nested Loop
   -> Index Scan using Index id 0 on m
-    -> Index Cond: (m.employee = U64(1))
+      Index Cond: (m.employee = U64(1))
   -> Seq Scan on p:2
   Output: m.employee, m.manager
 -------
@@ -1927,7 +1925,7 @@ Label: p, TableId:3
             "SELECT m.* FROM m WHERE employee = 1",
             expect![[r#"
 Index Scan using Index id 0 on m
-  Index Cond: (m.employee = U64(1))
+    Index Cond: (m.employee = U64(1))
   Output: m.employee, m.manager"#]],
         );
     }
@@ -1959,7 +1957,7 @@ Index Scan using Index id 0 on m
                   -> Seq Scan on m
                   -> Seq Scan on p
                   Inner Unique: false
-                  Hash Cond: (m.employee = p.id)
+                  Join Cond: (m.employee = p.id)
                   Filter: (m.employee = U64(1))
                   Output: p.id, p.name"#]],
         );
@@ -1976,7 +1974,7 @@ Index Scan using Index id 0 on m
 Index Join: Rhs on p
   -> Seq Scan on m
   Inner Unique: true
-  Index Cond: (m.employee = p.id)
+  Join Cond: (m.employee = p.id)
   Output: p.id, p.name"#]],
         );
     }
