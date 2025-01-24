@@ -199,12 +199,18 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             ));
         }
         PublishResult::PermissionDenied { domain } => {
-            if anon_identity {
+            let token = if anon_identity {
+                None
+            } else {
+                config.spacetimedb_token()
+            };
+            let token = if let Some(token) = token {
+                token
+            } else {
                 anyhow::bail!("You need to be logged in to publish to {}", domain.tld());
-            }
+            };
 
-            let token = get_login_token_or_log_in(&mut config, server, !force).await?;
-            let identity = decode_identity(&token)?;
+            let identity = decode_identity(token)?;
             //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
             // we should perhaps generate fun names like 'green-fire-dragon' instead
             let suggested_tld: String = identity.chars().take(12).collect();
