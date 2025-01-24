@@ -516,6 +516,7 @@ impl ModuleHost {
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
+        log::trace!("disconnecting client {}", client_id);
         let this = self.clone();
         let _ = tokio::task::spawn_blocking(move || {
             this.subscriptions().remove_subscriber(client_id);
