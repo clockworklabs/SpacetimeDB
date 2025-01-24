@@ -82,11 +82,7 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
             "set_name" => {
                 Ok(__sdk::parse_reducer_args::<set_name_reducer::SetNameArgs>("set_name", &value.args)?.into())
             }
-            unknown => Err(__sdk::Error::UnknownName {
-                kind: "reducer",
-                container: "ReducerCallInfo",
-                name: unknown.to_string(),
-            }),
+            unknown => Err(__sdk::InternalError::unknown_name("reducer", unknown, "ReducerCallInfo").into()),
         }
     }
 }
@@ -109,11 +105,7 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "user" => db_update.user = user_table::parse_table_update(table_update)?,
 
                 unknown => {
-                    return Err(__sdk::Error::UnknownName {
-                        kind: "table",
-                        container: "DatabaseUpdate",
-                        name: unknown.to_string(),
-                    });
+                    return Err(__sdk::InternalError::unknown_name("table", unknown, "DatabaseUpdate").into());
                 }
             }
         }

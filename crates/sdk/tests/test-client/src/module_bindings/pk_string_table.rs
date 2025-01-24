@@ -105,10 +105,10 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<PkString>> {
     __sdk::TableUpdate::parse_table_update_with_primary_key::<String>(raw_updates, |row: &PkString| &row.s).map_err(
-        |e| __sdk::Error::Parse {
-            ty: "TableUpdate<PkString>",
-            container: "TableUpdate",
-            source: Box::new(e),
+        |e| {
+            __sdk::InternalError::failed_parse("TableUpdate<PkString>", "TableUpdate")
+                .with_cause(e)
+                .into()
         },
     )
 }

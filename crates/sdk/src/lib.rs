@@ -48,6 +48,7 @@ pub mod __codegen {
     pub use crate::callbacks::{CallbackId, DbCallbacks};
     pub use crate::client_cache::{ClientCache, TableHandle, UniqueConstraintHandle};
     pub use crate::db_connection::DbContextImpl;
+    pub use crate::error::{Error, InternalError, Result};
     pub use crate::spacetime_module::{
         parse_reducer_args, DbConnection, DbUpdate, EventContext, InModule, Reducer, SpacetimeModule,
         SubscriptionHandle, TableUpdate,
@@ -56,7 +57,6 @@ pub mod __codegen {
     pub use crate::{
         Address, DbConnectionBuilder, DbContext, Event, Identity, ReducerEvent, ScheduleAt, Table, TableWithPrimaryKey,
     };
-    pub use crate::{Error, Result};
 }
 
 #[doc(hidden)]

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use spacetimedb_lib::bsatn;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone)]
@@ -21,62 +20,77 @@ pub enum Error {
     #[error("Unsubscribe already called on subscription")]
     AlreadyUnsubscribed,
 
-    #[error("Unknown {kind} {name} in {container}")]
-    UnknownName {
-        kind: &'static str,
-        name: String,
-        container: &'static str,
-    },
-
-    #[error("Failed to parse {ty} from {container}: {source}")]
-    Parse {
-        ty: &'static str,
-        container: &'static str,
-        #[source]
-        source: Box<Self>,
-    },
-
-    #[error("Failed to parse row of type {ty}")]
-    ParseRow {
-        ty: &'static str,
-        #[source]
-        source: bsatn::DecodeError,
-    },
-
-    #[error("Failed to parse arguments for reducer {reducer_name} of type {ty}")]
-    ParseReducerArgs {
-        ty: &'static str,
-        reducer_name: &'static str,
-        #[source]
-        source: bsatn::DecodeError,
-    },
-
-    #[error("Failed to serialize arguments for reducer {reducer_name} of type {ty}")]
-    SerializeReducerArgs {
-        ty: &'static str,
-        reducer_name: &'static str,
-        #[source]
-        source: bsatn::EncodeError,
-    },
-
     #[error("Error in WebSocket connection: {0}")]
     Ws(#[from] crate::websocket::WsError),
 
-    #[error("Failed to create Tokio runtime: {source}")]
-    CreateTokioRuntime {
-        #[source]
-        source: Arc<std::io::Error>,
-    },
+    #[error(transparent)]
+    Internal(#[from] InternalError),
+}
 
-    #[error("Unexpected error when getting current Tokio runtime: {source}")]
-    TokioTryCurrent {
-        #[source]
-        source: Arc<tokio::runtime::TryCurrentError>,
-    },
+#[derive(Debug, Clone)]
+pub struct InternalError {
+    message: String,
+    cause: Option<Arc<dyn std::error::Error + Send + Sync>>,
+}
+
+impl InternalError {
+    pub(crate) fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            cause: None,
+        }
+    }
 
     #[doc(hidden)]
-    #[error("Call to set_client_address after CLIENT_ADDRESS was initialized to a different value")]
-    AlreadySetClientAddress,
+    /// Called by codegen. Not part of this library's stable API.
+    pub fn with_cause(self, cause: impl std::error::Error + Send + Sync + 'static) -> Self {
+        Self {
+            cause: Some(Arc::new(cause)),
+            ..self
+        }
+    }
+
+    #[doc(hidden)]
+    /// Called by codegen. Not part of this library's stable API.
+    pub fn failed_parse(ty: &'static str, container: &'static str) -> Self {
+        Self::new(format!("Failed to parse {ty} from {container}"))
+    }
+
+    #[doc(hidden)]
+    /// Called by codegen. Not part of this library's stable API.
+    pub fn unknown_name(category: &'static str, name: impl std::fmt::Display, container: &'static str) -> Self {
+        Self::new(format!("Unknown {category} {name} in {container}"))
+    }
+}
+
+impl std::fmt::Display for InternalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(&self.message)?;
+        if let Some(cause) = &self.cause {
+            write!(f, ": {cause}")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for InternalError {
+    fn cause(&self) -> Option<&dyn std::error::Error> {
+        // `self.cause.as_deref()`,
+        // except that formulation is unable to convert our `dyn Error + Send + Sync`
+        // into a `dyn Error`.
+        // See [this StackOverflow answer](https://stackoverflow.com/questions/63810977/strange-behavior-when-adding-the-send-trait-to-a-boxed-trait-object).
+        if let Some(cause) = &self.cause {
+            Some(cause)
+        } else {
+            None
+        }
+    }
+    fn description(&self) -> &str {
+        &self.message
+    }
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

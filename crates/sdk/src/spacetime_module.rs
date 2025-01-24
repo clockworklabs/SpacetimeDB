@@ -8,6 +8,7 @@ use crate::{
     db_connection::DbContextImpl,
     subscription::{OnEndedCallback, SubscriptionHandleImpl},
     Event,
+    __codegen::InternalError,
 };
 use bytes::Bytes;
 use spacetimedb_client_api_messages::websocket::{self as ws, RowListLen as _};
@@ -69,10 +70,10 @@ where
     );
 
     fn parse_update(update: ws::DatabaseUpdate<ws::BsatnFormat>) -> crate::Result<Self> {
-        Self::try_from(update).map_err(|source| crate::Error::Parse {
-            ty: std::any::type_name::<Self>(),
-            container: "DatabaseUpdate",
-            source: Box::new(source),
+        Self::try_from(update).map_err(|source| {
+            InternalError::failed_parse(std::any::type_name::<Self>(), "DatabaseUpdate")
+                .with_cause(source)
+                .into()
         })
     }
 }
@@ -296,9 +297,8 @@ impl<Row: DeserializeOwned + Debug> TableUpdate<Row> {
     }
 
     fn parse_row(bytes: Bytes) -> crate::Result<WithBsatn<Row>> {
-        let parsed = bsatn::from_slice::<Row>(&bytes).map_err(|source| crate::Error::ParseRow {
-            ty: std::any::type_name::<Row>(),
-            source,
+        let parsed = bsatn::from_slice::<Row>(&bytes).map_err(|source| {
+            InternalError::failed_parse(std::any::type_name::<Row>(), "row data").with_cause(source)
         })?;
         Ok(WithBsatn {
             bsatn: bytes,
@@ -308,9 +308,9 @@ impl<Row: DeserializeOwned + Debug> TableUpdate<Row> {
 }
 
 pub fn parse_reducer_args<Args: DeserializeOwned>(reducer_name: &'static str, args: &[u8]) -> crate::Result<Args> {
-    bsatn::from_slice::<Args>(args).map_err(|source| crate::Error::ParseReducerArgs {
-        ty: std::any::type_name::<Args>(),
-        reducer_name,
-        source,
+    bsatn::from_slice::<Args>(args).map_err(|source| {
+        InternalError::failed_parse(std::any::type_name::<Args>(), reducer_name)
+            .with_cause(source)
+            .into()
     })
 }

@@ -61,11 +61,7 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
                 identity_disconnected_reducer::IdentityDisconnectedArgs,
             >("identity_disconnected", &value.args)?
             .into()),
-            unknown => Err(__sdk::Error::UnknownName {
-                kind: "reducer",
-                container: "ReducerCallInfo",
-                name: unknown.to_string(),
-            }),
+            unknown => Err(__sdk::InternalError::unknown_name("reducer", unknown, "ReducerCallInfo").into()),
         }
     }
 }
@@ -88,11 +84,7 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "disconnected" => db_update.disconnected = disconnected_table::parse_table_update(table_update)?,
 
                 unknown => {
-                    return Err(__sdk::Error::UnknownName {
-                        kind: "table",
-                        container: "DatabaseUpdate",
-                        name: unknown.to_string(),
-                    });
+                    return Err(__sdk::InternalError::unknown_name("table", unknown, "DatabaseUpdate").into());
                 }
             }
         }

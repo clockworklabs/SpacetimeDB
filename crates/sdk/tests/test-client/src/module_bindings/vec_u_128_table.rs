@@ -86,9 +86,9 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<VecU128>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates).map_err(|e| __sdk::Error::Parse {
-        ty: "TableUpdate<VecU128>",
-        container: "TableUpdate",
-        source: Box::new(e),
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates).map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<VecU128>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
