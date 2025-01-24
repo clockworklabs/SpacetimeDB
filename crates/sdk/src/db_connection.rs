@@ -27,6 +27,7 @@ use crate::{
     },
     websocket::{WsConnection, WsParams},
     Event, ReducerEvent, Status,
+    __codegen::InternalError,
 };
 use bytes::Bytes;
 use futures::StreamExt;
@@ -626,10 +627,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         args: Args,
     ) -> crate::Result<()> {
         // TODO(centril, perf): consider using a thread local pool to avoid allocating each time.
-        let args_bsatn = bsatn::to_vec(&args).map_err(|source| crate::Error::SerializeReducerArgs {
-            ty: std::any::type_name::<Args>(),
-            reducer_name,
-            source,
+        let args_bsatn = bsatn::to_vec(&args).map_err(|source| {
+            InternalError::new(format!(
+                "Failed to serialize {} as arguments for reducer {}",
+                std::any::type_name::<Args>(),
+                reducer_name,
+            ))
+            .with_cause(source)
         })?;
 
         self.queue_mutation(PendingMutation::CallReducer {
@@ -767,7 +771,10 @@ fn get_client_address() -> Address {
 pub fn set_client_address(addr: Address) -> crate::Result<()> {
     let stored = *CLIENT_ADDRESS.get_or_init(|| addr);
     if stored != addr {
-        return Err(crate::Error::AlreadySetClientAddress);
+        return Err(InternalError::new(
+            "Call to set_client_address after CLIENT_ADDRESS was initialized to a different value ",
+        )
+        .into());
     }
     Ok(())
 }
@@ -989,17 +996,17 @@ fn enter_or_create_runtime() -> crate::Result<(Option<Runtime>, runtime::Handle)
                 .worker_threads(1)
                 .thread_name("spacetimedb-background-connection")
                 .build()
-                .map_err(|source| crate::Error::CreateTokioRuntime {
-                    source: Arc::new(source),
-                })?;
+                .map_err(|source| InternalError::new("Failed to create Tokio runtime").with_cause(source))?;
             let handle = rt.handle().clone();
 
             Ok((Some(rt), handle))
         }
         Ok(handle) => Ok((None, handle)),
-        Err(source) => Err(crate::Error::TokioTryCurrent {
-            source: Arc::new(source),
-        }),
+        Err(source) => Err(
+            InternalError::new("Unexpected error when getting current Tokio runtime")
+                .with_cause(source)
+                .into(),
+        ),
     }
 }
 
@@ -1035,12 +1042,12 @@ async fn parse_loop<M: SpacetimeModule>(
                     db_update: update,
                     sub_id: sub.request_id,
                 })
-                .unwrap_or_else(|source| {
-                    ParsedMessage::Error(crate::Error::Parse {
-                        ty: "DatabaseUpdate",
-                        container: "InitialSubscription",
-                        source: Box::new(source),
-                    })
+                .unwrap_or_else(|e| {
+                    ParsedMessage::Error(
+                        InternalError::failed_parse("DatabaseUpdate", "InitialSubscription")
+                            .with_cause(e)
+                            .into(),
+                    )
                 }),
             ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate {
                 status,
@@ -1051,11 +1058,11 @@ async fn parse_loop<M: SpacetimeModule>(
                 energy_quanta_used,
                 ..
             }) => match Status::parse_status_and_update::<M>(status) {
-                Err(e) => ParsedMessage::Error(crate::Error::Parse {
-                    ty: "Status",
-                    container: "TransactionUpdate",
-                    source: Box::new(e),
-                }),
+                Err(e) => ParsedMessage::Error(
+                    InternalError::failed_parse("Status", "TransactionUpdate")
+                        .with_cause(e)
+                        .into(),
+                ),
                 Ok((status, db_update)) => {
                     let event = M::Reducer::try_from(reducer_call)
                         .map(|reducer| {
@@ -1076,11 +1083,11 @@ async fn parse_loop<M: SpacetimeModule>(
             },
             ws::ServerMessage::TransactionUpdateLight(ws::TransactionUpdateLight { update, request_id: _ }) => {
                 match M::DbUpdate::parse_update(update) {
-                    Err(e) => ParsedMessage::Error(crate::Error::Parse {
-                        ty: "DbUpdate",
-                        container: "TransactionUpdateLight",
-                        source: Box::new(e),
-                    }),
+                    Err(e) => ParsedMessage::Error(
+                        InternalError::failed_parse("DbUpdate", "TransactionUpdateLight")
+                            .with_cause(e)
+                            .into(),
+                    ),
                     Ok(db_update) => ParsedMessage::TransactionUpdate(Event::UnknownTransaction, Some(db_update)),
                 }
             }
@@ -1097,11 +1104,11 @@ async fn parse_loop<M: SpacetimeModule>(
                 let db_update = ws::DatabaseUpdate::from_iter(std::iter::once(table_rows));
                 let query_id = subscribe_applied.query_id.id;
                 match M::DbUpdate::parse_update(db_update) {
-                    Err(e) => ParsedMessage::Error(crate::Error::Parse {
-                        ty: "DbUpdate",
-                        container: "SubscribeApplied",
-                        source: Box::new(e),
-                    }),
+                    Err(e) => ParsedMessage::Error(
+                        InternalError::failed_parse("DbUpdate", "SubscribeApplied")
+                            .with_cause(e)
+                            .into(),
+                    ),
                     Ok(initial_update) => ParsedMessage::SubscribeApplied {
                         query_id,
                         initial_update,
@@ -1113,11 +1120,11 @@ async fn parse_loop<M: SpacetimeModule>(
                 let db_update = ws::DatabaseUpdate::from_iter(std::iter::once(table_rows));
                 let query_id = unsubscribe_applied.query_id.id;
                 match M::DbUpdate::parse_update(db_update) {
-                    Err(e) => ParsedMessage::Error(crate::Error::Parse {
-                        ty: "DbUpdate",
-                        container: "UnsubscribeApplied",
-                        source: Box::new(e),
-                    }),
+                    Err(e) => ParsedMessage::Error(
+                        InternalError::failed_parse("DbUpdate", "UnsubscribeApplied")
+                            .with_cause(e)
+                            .into(),
+                    ),
                     Ok(initial_update) => ParsedMessage::UnsubscribeApplied {
                         query_id,
                         initial_update,

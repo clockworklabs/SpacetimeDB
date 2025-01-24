@@ -107,10 +107,10 @@ pub(super) fn parse_table_update(
     __sdk::TableUpdate::parse_table_update_with_primary_key::<u64>(raw_updates, |row: &ScheduledTable| {
         &row.scheduled_id
     })
-    .map_err(|e| __sdk::Error::Parse {
-        ty: "TableUpdate<ScheduledTable>",
-        container: "TableUpdate",
-        source: Box::new(e),
+    .map_err(|e| {
+        __sdk::InternalError::failed_parse("TableUpdate<ScheduledTable>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 

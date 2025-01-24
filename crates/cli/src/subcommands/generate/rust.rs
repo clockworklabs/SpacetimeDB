@@ -260,11 +260,13 @@ pub(super) fn parse_table_update(
     __sdk::TableUpdate::parse_table_update_with_primary_key::<{pk_field_type}>(
         raw_updates,
         |row: &{row_type}| &row.{pk_field_name},
-    ).map_err(|e| __sdk::Error::Parse {{
-        ty: \"TableUpdate<{row_type}>\",
-        container: \"TableUpdate\",
-        source: Box::new(e),
-    }})
+    )
+        .map_err(|e| {{
+             __sdk::InternalError::failed_parse(
+                \"TableUpdate<{row_type}>\",
+                \"TableUpdate\",
+            ).with_cause(e).into()
+        }})
 }}
 "
             );
@@ -277,10 +279,11 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
 ) -> __sdk::Result<__sdk::TableUpdate<{row_type}>> {{
     __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .map_err(|e| __sdk::Error::Parse {{
-            ty: \"TableUpdate<{row_type}>\",
-            container: \"TableUpdate\",
-            source: Box::new(e),
+        .map_err(|e| {{
+             __sdk::InternalError::failed_parse(
+                \"TableUpdate<{row_type}>\",
+                \"TableUpdate\",
+            ).with_cause(e).into()
         }})
 }}
 "
@@ -1015,7 +1018,7 @@ impl __sdk::InModule for Reducer {{
                             }
                             writeln!(
                                 out,
-                                "unknown => Err(__sdk::Error::UnknownName {{  kind: \"reducer\", container: \"ReducerCallInfo\", name: unknown.to_string() }}),",
+                                "unknown => Err(__sdk::InternalError::unknown_name(\"reducer\", unknown, \"ReducerCallInfo\").into()),",
                             );
                         },
                         "}\n",
@@ -1071,11 +1074,11 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
         },
         "
                 unknown => {
-                    return Err(__sdk::Error::UnknownName {
-                        kind: \"table\",
-                        container: \"DatabaseUpdate\",
-                        name: unknown.to_string(),
-                    });
+                    return Err(__sdk::InternalError::unknown_name(
+                        \"table\",
+                        unknown,
+                        \"DatabaseUpdate\",
+                    ).into());
                 }
             }
         }
