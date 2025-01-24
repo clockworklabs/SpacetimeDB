@@ -140,6 +140,11 @@ impl SubscriptionManager {
     }
 
     #[cfg(test)]
+    fn contains_client(&self, subscriber: &ClientId) -> bool {
+        self.clients.contains_key(subscriber)
+    }
+
+    #[cfg(test)]
     fn contains_legacy_subscription(&self, subscriber: &ClientId, query: &QueryHash) -> bool {
         self.queries
             .get(query)
@@ -284,7 +289,7 @@ impl SubscriptionManager {
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn remove_all_subscriptions(&mut self, client: &ClientId) {
         self.remove_legacy_subscriptions(client);
-        let Some(client_info) = self.clients.get(client) else {
+        let Some(client_info) = self.clients.remove(client) else {
             return;
         };
         debug_assert!(client_info.legacy_subscriptions.is_empty());
@@ -688,14 +693,17 @@ mod tests {
             .map(|client| (client.id.identity, client.id.address))
             .collect::<Vec<_>>();
         subscriptions.remove_all_subscriptions(&client_ids[0]);
+        assert!(!subscriptions.contains_client(&client_ids[0]));
         // There are still two left.
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
         subscriptions.remove_all_subscriptions(&client_ids[1]);
         // There is still one left.
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+        assert!(!subscriptions.contains_client(&client_ids[1]));
         subscriptions.remove_all_subscriptions(&client_ids[2]);
         // Now there are no subscribers.
         assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
+        assert!(!subscriptions.contains_client(&client_ids[2]));
 
         Ok(())
     }
