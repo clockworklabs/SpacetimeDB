@@ -2,10 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-    self as __sdk, __lib, __sats, __ws,
-    anyhow::{self as __anyhow, Context as _},
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::byte_struct_type::ByteStruct;
 use super::enum_with_payload_type::EnumWithPayload;
@@ -110,7 +107,7 @@ pub trait insert_large_table {
         t: ByteStruct,
         u: EveryPrimitiveStruct,
         v: EveryVecStruct,
-    ) -> __anyhow::Result<()>;
+    ) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_large_table`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -180,7 +177,7 @@ impl insert_large_table for super::RemoteReducers {
         t: ByteStruct,
         u: EveryPrimitiveStruct,
         v: EveryVecStruct,
-    ) -> __anyhow::Result<()> {
+    ) -> __sdk::Result<()> {
         self.imp.call_reducer(
             "insert_large_table",
             InsertLargeTableArgs {

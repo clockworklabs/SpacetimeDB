@@ -3,10 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_i_32_type::PkI32;
-use spacetimedb_sdk::__codegen::{
-    self as __sdk, __lib, __sats, __ws,
-    anyhow::{self as __anyhow, Context as _},
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_i32`.
 ///
@@ -106,9 +103,14 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkI32TableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<PkI32>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<i32>(raw_updates, |row: &PkI32| &row.n)
-        .context("Failed to parse table update for table \"pk_i32\"")
+) -> __sdk::Result<__sdk::TableUpdate<PkI32>> {
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<i32>(raw_updates, |row: &PkI32| &row.n).map_err(|e| {
+        __sdk::Error::Parse {
+            ty: "TableUpdate<PkI32>",
+            container: "TableUpdate",
+            source: Box::new(e),
+        }
+    })
 }
 
 /// Access to the `n` unique index on the table `pk_i32`,

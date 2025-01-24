@@ -5213,7 +5213,6 @@ dependencies = [
 name = "spacetimedb-sdk"
 version = "1.0.0-rc4"
 dependencies = [
- "anyhow",
  "anymap",
  "base64 0.21.7",
  "brotli",
@@ -5231,6 +5230,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-sats",
  "spacetimedb-testing",
+ "thiserror",
  "tokio",
  "tokio-tungstenite",
 ]

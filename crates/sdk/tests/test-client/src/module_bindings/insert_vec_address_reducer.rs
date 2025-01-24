@@ -2,10 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-    self as __sdk, __lib, __sats, __ws,
-    anyhow::{self as __anyhow, Context as _},
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -35,7 +32,7 @@ pub trait insert_vec_address {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_vec_address`] callbacks.
-    fn insert_vec_address(&self, a: Vec<__sdk::Address>) -> __anyhow::Result<()>;
+    fn insert_vec_address(&self, a: Vec<__sdk::Address>) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_vec_address`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -56,7 +53,7 @@ pub trait insert_vec_address {
 }
 
 impl insert_vec_address for super::RemoteReducers {
-    fn insert_vec_address(&self, a: Vec<__sdk::Address>) -> __anyhow::Result<()> {
+    fn insert_vec_address(&self, a: Vec<__sdk::Address>) -> __sdk::Result<()> {
         self.imp.call_reducer("insert_vec_address", InsertVecAddressArgs { a })
     }
     fn on_insert_vec_address(

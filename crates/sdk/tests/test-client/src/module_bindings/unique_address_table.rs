@@ -3,10 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::unique_address_type::UniqueAddress;
-use spacetimedb_sdk::__codegen::{
-    self as __sdk, __lib, __sats, __ws,
-    anyhow::{self as __anyhow, Context as _},
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `unique_address`.
 ///
@@ -89,9 +86,12 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<UniqueAddress>> {
-    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .context("Failed to parse table update for table \"unique_address\"")
+) -> __sdk::Result<__sdk::TableUpdate<UniqueAddress>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates).map_err(|e| __sdk::Error::Parse {
+        ty: "TableUpdate<UniqueAddress>",
+        container: "TableUpdate",
+        source: Box::new(e),
+    })
 }
 
 /// Access to the `a` unique index on the table `unique_address`,

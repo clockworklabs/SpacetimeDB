@@ -2,10 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-    self as __sdk, __lib, __sats, __ws,
-    anyhow::{self as __anyhow, Context as _},
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -39,7 +36,7 @@ pub trait insert_unique_i_256 {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_insert_unique_i_256`] callbacks.
-    fn insert_unique_i_256(&self, n: __sats::i256, data: i32) -> __anyhow::Result<()>;
+    fn insert_unique_i_256(&self, n: __sats::i256, data: i32) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `insert_unique_i256`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -60,7 +57,7 @@ pub trait insert_unique_i_256 {
 }
 
 impl insert_unique_i_256 for super::RemoteReducers {
-    fn insert_unique_i_256(&self, n: __sats::i256, data: i32) -> __anyhow::Result<()> {
+    fn insert_unique_i_256(&self, n: __sats::i256, data: i32) -> __sdk::Result<()> {
         self.imp
             .call_reducer("insert_unique_i256", InsertUniqueI256Args { n, data })
     }

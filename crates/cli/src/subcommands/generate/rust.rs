@@ -256,11 +256,15 @@ impl<'ctx> __sdk::TableWithPrimaryKey for {table_handle}<'ctx> {{
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<{row_type}>> {{
+) -> __sdk::Result<__sdk::TableUpdate<{row_type}>> {{
     __sdk::TableUpdate::parse_table_update_with_primary_key::<{pk_field_type}>(
         raw_updates,
         |row: &{row_type}| &row.{pk_field_name},
-    ).context(\"Failed to parse table update for table \\\"{table_name}\\\"\")
+    ).map_err(|e| __sdk::Error::Parse {{
+        ty: \"TableUpdate<{row_type}>\",
+        container: \"TableUpdate\",
+        source: Box::new(e),
+    }})
 }}
 "
             );
@@ -271,9 +275,13 @@ pub(super) fn parse_table_update(
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<{row_type}>> {{
+) -> __sdk::Result<__sdk::TableUpdate<{row_type}>> {{
     __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
-        .context(\"Failed to parse table update for table \\\"{table_name}\\\"\")
+        .map_err(|e| __sdk::Error::Parse {{
+            ty: \"TableUpdate<{row_type}>\",
+            container: \"TableUpdate\",
+            source: Box::new(e),
+        }})
 }}
 "
             );
@@ -453,7 +461,7 @@ pub trait {func_name} {{
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_{func_name}`] callbacks.
-    fn {func_name}(&self, {arglist}) -> __anyhow::Result<()>;
+    fn {func_name}(&self, {arglist}) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `{reducer_name}`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -471,7 +479,7 @@ pub trait {func_name} {{
 }}
 
 impl {func_name} for super::RemoteReducers {{
-    fn {func_name}(&self, {arglist}) -> __anyhow::Result<()> {{
+    fn {func_name}(&self, {arglist}) -> __sdk::Result<()> {{
         self.imp.call_reducer({reducer_name:?}, {args_type} {{ {arg_names_list} }})
     }}
     fn on_{func_name}(
@@ -626,7 +634,6 @@ const ALLOW_LINTS: &str = "#![allow(unused, clippy::all)]";
 const SPACETIMEDB_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::__codegen::{",
     "\tself as __sdk,",
-    "\tanyhow::{self as __anyhow, Context as _},",
     "\t__lib,",
     "\t__sats,",
     "\t__ws,",
@@ -974,7 +981,7 @@ impl __sdk::InModule for Reducer {{
     out.delimited_block(
         "impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {",
         |out| {
-            writeln!(out, "type Error = __anyhow::Error;");
+            writeln!(out, "type Error = __sdk::Error;");
             // We define an "args struct" for each reducer in `generate_reducer`.
             // This is not user-facing, and is not exported past the "root" `mod.rs`;
             // it is an internal helper for serialization and deserialization.
@@ -991,7 +998,7 @@ impl __sdk::InModule for Reducer {{
             // then convert it into a `Reducer` variant via `Into::into`,
             // which we also implement in `generate_reducer`.
             out.delimited_block(
-                "fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {",
+                "fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __sdk::Result<Self> {",
                 |out| {
                     out.delimited_block(
                         "match &value.reducer_name[..] {",
@@ -1008,7 +1015,7 @@ impl __sdk::InModule for Reducer {{
                             }
                             writeln!(
                                 out,
-                                "_ => Err(__anyhow::anyhow!(\"Unknown reducer {{:?}}\", value.reducer_name)),",
+                                "unknown => Err(__sdk::Error::UnknownName {{  kind: \"reducer\", container: \"ReducerCallInfo\", name: unknown.to_string() }}),",
                             );
                         },
                         "}\n",
@@ -1045,7 +1052,7 @@ fn print_db_update_defn(module: &ModuleDef, out: &mut Indenter) {
     out.delimited_block(
         "
 impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
-    type Error = __anyhow::Error;
+    type Error = __sdk::Error;
     fn try_from(raw: __ws::DatabaseUpdate<__ws::BsatnFormat>) -> Result<Self, Self::Error> {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
@@ -1063,7 +1070,13 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
             }
         },
         "
-                unknown => __anyhow::bail!(\"Unknown table {unknown:?} in DatabaseUpdate\"),
+                unknown => {
+                    return Err(__sdk::Error::UnknownName {
+                        kind: \"table\",
+                        container: \"DatabaseUpdate\",
+                        name: unknown.to_string(),
+                    });
+                }
             }
         }
         Ok(db_update)
@@ -1251,7 +1264,7 @@ impl __sdk::DbContext for DbConnection {{
         self.imp.is_active()
     }}
 
-    fn disconnect(&self) -> __anyhow::Result<()> {{
+    fn disconnect(&self) -> __sdk::Result<()> {{
         self.imp.disconnect()
     }}
 
@@ -1291,7 +1304,7 @@ impl DbConnection {{
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::frame_tick`] each frame
     /// to fully exhaust the queue whenever time is available.
-    pub fn advance_one_message(&self) -> __anyhow::Result<bool> {{
+    pub fn advance_one_message(&self) -> __sdk::Result<bool> {{
         self.imp.advance_one_message()
     }}
 
@@ -1305,7 +1318,7 @@ impl DbConnection {{
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::run_threaded`] to spawn a thread
     /// which advances the connection automatically.
-    pub fn advance_one_message_blocking(&self) -> __anyhow::Result<()> {{
+    pub fn advance_one_message_blocking(&self) -> __sdk::Result<()> {{
         self.imp.advance_one_message_blocking()
     }}
 
@@ -1319,13 +1332,13 @@ impl DbConnection {{
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::run_async`] to run an `async` loop
     /// which advances the connection when polled.
-    pub async fn advance_one_message_async(&self) -> __anyhow::Result<()> {{
+    pub async fn advance_one_message_async(&self) -> __sdk::Result<()> {{
         self.imp.advance_one_message_async().await
     }}
 
     /// Process all WebSocket messages waiting in the queue,
     /// then return without `await`ing or blocking the current thread.
-    pub fn frame_tick(&self) -> __anyhow::Result<()> {{
+    pub fn frame_tick(&self) -> __sdk::Result<()> {{
         self.imp.frame_tick()
     }}
 
@@ -1335,7 +1348,7 @@ impl DbConnection {{
     }}
 
     /// Run an `async` loop which processes WebSocket messages when polled.
-    pub async fn run_async(&self) -> __anyhow::Result<()> {{
+    pub async fn run_async(&self) -> __sdk::Result<()> {{
         self.imp.run_async().await
     }}
 }}
@@ -1391,7 +1404,7 @@ impl __sdk::DbContext for EventContext {{
         self.imp.is_active()
     }}
 
-    fn disconnect(&self) -> __anyhow::Result<()> {{
+    fn disconnect(&self) -> __sdk::Result<()> {{
         self.imp.disconnect()
     }}
 
@@ -1452,11 +1465,11 @@ impl __sdk::SubscriptionHandle for SubscriptionHandle {{
 
     /// Unsubscribe from the query controlled by this `SubscriptionHandle`,
     /// then run `on_end` when its rows are removed from the client cache.
-    fn unsubscribe_then(self, on_end: __sdk::OnEndedCallback<RemoteModule>) -> __anyhow::Result<()> {{
+    fn unsubscribe_then(self, on_end: __sdk::OnEndedCallback<RemoteModule>) -> __sdk::Result<()> {{
         self.imp.unsubscribe_then(Some(on_end))
     }}
 
-    fn unsubscribe(self) -> __anyhow::Result<()> {{
+    fn unsubscribe(self) -> __sdk::Result<()> {{
         self.imp.unsubscribe_then(None)
     }}
 

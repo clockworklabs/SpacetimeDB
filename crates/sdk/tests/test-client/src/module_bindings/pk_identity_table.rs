@@ -3,10 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_identity_type::PkIdentity;
-use spacetimedb_sdk::__codegen::{
-    self as __sdk, __lib, __sats, __ws,
-    anyhow::{self as __anyhow, Context as _},
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_identity`.
 ///
@@ -106,9 +103,13 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkIdentityTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<PkIdentity>> {
+) -> __sdk::Result<__sdk::TableUpdate<PkIdentity>> {
     __sdk::TableUpdate::parse_table_update_with_primary_key::<__sdk::Identity>(raw_updates, |row: &PkIdentity| &row.i)
-        .context("Failed to parse table update for table \"pk_identity\"")
+        .map_err(|e| __sdk::Error::Parse {
+            ty: "TableUpdate<PkIdentity>",
+            container: "TableUpdate",
+            source: Box::new(e),
+        })
 }
 
 /// Access to the `i` unique index on the table `pk_identity`,

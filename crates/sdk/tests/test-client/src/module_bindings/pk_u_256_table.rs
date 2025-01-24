@@ -3,10 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_u_256_type::PkU256;
-use spacetimedb_sdk::__codegen::{
-    self as __sdk, __lib, __sats, __ws,
-    anyhow::{self as __anyhow, Context as _},
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_u256`.
 ///
@@ -106,9 +103,14 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkU256TableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<PkU256>> {
-    __sdk::TableUpdate::parse_table_update_with_primary_key::<__sats::u256>(raw_updates, |row: &PkU256| &row.n)
-        .context("Failed to parse table update for table \"pk_u256\"")
+) -> __sdk::Result<__sdk::TableUpdate<PkU256>> {
+    __sdk::TableUpdate::parse_table_update_with_primary_key::<__sats::u256>(raw_updates, |row: &PkU256| &row.n).map_err(
+        |e| __sdk::Error::Parse {
+            ty: "TableUpdate<PkU256>",
+            container: "TableUpdate",
+            source: Box::new(e),
+        },
+    )
 }
 
 /// Access to the `n` unique index on the table `pk_u256`,
