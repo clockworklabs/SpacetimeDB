@@ -1,1 +1,1 @@
-spacetime generate --out-dir ../client/Assets/Scripts/autogen -y --lang cs
+spacetime generate --out-dir ../client-unity/Assets/Scripts/autogen -y --lang cs

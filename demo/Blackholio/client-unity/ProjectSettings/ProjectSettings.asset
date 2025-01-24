@@ -13,7 +13,7 @@ PlayerSettings:
   useOnDemandResources: 0
   accelerometerFrequency: 60
   companyName: DefaultCompany
-  productName: client
+  productName: client-unity
   defaultCursor: {fileID: 0}
   cursorHotspot: {x: 0, y: 0}
   m_SplashScreenBackgroundColor: {r: 0.13725491, g: 0.12156863, b: 0.1254902, a: 1}
@@ -161,7 +161,7 @@ PlayerSettings:
   androidSupportedAspectRatio: 1
   androidMaxAspectRatio: 2.1
   applicationIdentifier:
-    Standalone: com.DefaultCompany.client
+    Standalone: com.DefaultCompany.client-unity
   buildNumber:
     Standalone: 0
     VisionOS: 0
@@ -689,14 +689,14 @@ PlayerSettings:
   apiCompatibilityLevelPerPlatform: {}
   m_RenderingPath: 1
   m_MobileRenderingPath: 1
-  metroPackageName: client
+  metroPackageName: client-unity
   metroPackageVersion: 
   metroCertificatePath: 
   metroCertificatePassword: 
   metroCertificateSubject: 
   metroCertificateIssuer: 
   metroCertificateNotAfter: 0000000000000000
-  metroApplicationDescription: client
+  metroApplicationDescription: client-unity
   wsaImages: {}
   metroTileShortName: 
   metroTileShowName: 0
@@ -768,7 +768,7 @@ PlayerSettings:
   cloudProjectId: 8b94edca-6eef-4580-95d5-9a4b32437fec
   framebufferDepthMemorylessMode: 0
   qualitySettingsNames: []
-  projectName: client (3)
+  projectName: client-unity (3)
   organizationId: john_unity577
   cloudEnabled: 0
   legacyClampBlendShapeWeights: 0

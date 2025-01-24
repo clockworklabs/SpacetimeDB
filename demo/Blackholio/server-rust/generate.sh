@@ -2,4 +2,4 @@
 
 set -euo pipefail
 
-spacetime generate --out-dir ../client/Assets/Scripts/autogen --lang cs $@
+spacetime generate --out-dir ../client-unity/Assets/Scripts/autogen --lang cs $@

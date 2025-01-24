@@ -55,7 +55,7 @@ To get started, follow these steps:
 
 ```plaintext
 Blackholio/
-├── client/            # Unity client project
+├── client-unity/            # Unity client project
 ├── server-rust/       # SpacetimeDB server module (Rust implementation)
 ├── server-csharp/     # SpacetimeDB server module (C# implementation)
 ├── docs/              # Tutorial documentation and images
