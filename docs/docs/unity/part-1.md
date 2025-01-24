@@ -38,7 +38,7 @@ Open Unity and create a new project by selecting "New" from the Unity Hub or goi
 
 **⚠️ Important: Choose the `Universal 2D`** template to select a template which uses the Unity Universal Render Pipeline.
 
-For `Project Name` use `client`. For Project Location make sure that you use your `blackholio` directory. This is the directory that we created in a previous step.
+For `Project Name` use `client-unity`. For Project Location make sure that you use your `blackholio` directory. This is the directory that we created in a previous step.
 
 <!-- ![Universal 2D Template](./part-1-universal-2d-template.png) -->
 

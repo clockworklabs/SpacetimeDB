@@ -8,6 +8,7 @@ This progressive tutorial is continued from [part 3](/docs/unity/part-3).
 
 At this point, we're very close to having a working game. All we have to do is modify our server to allow the player to move around, and to simulate the physics and collisions of the game.
 
+:::server-rust
 Let's start by building out a simple math library to help us do collision calculations. Create a new `math.rs` file in the `server-rust/src` directory and add the following contents. Let's also move the `DbVector2` type from `lib.rs` into this file.
 
 ```rust
@@ -163,9 +164,58 @@ pub fn update_player_input(ctx: &ReducerContext, direction: DbVector2) -> Result
 ```
 
 This is a simple reducer that takes the movement input from the client and applies them to all circles that that player controls. Note that it is not possible for a player to move another player's circles using this reducer, because the `ctx.sender` value is not set by the client. Instead `ctx.sender` is set by SpacetimeDB after it has authenticated that sender. You can rest assured that the caller has been authenticated as that player by the time this reducer is called.
+:::
+:::server-csharp
+Let's start by building out a simple math library to help us do collision calculations. Create a new `Math.cs` file in the `csharp-server` directory and add the following contents. Let's also remove the `DbVector2` type from `Lib.cs`.
+
+```csharp
+[SpacetimeDB.Type]
+public partial struct DbVector2
+{
+    public float x;
+    public float y;
+
+    public DbVector2(float x, float y)
+    {
+        this.x = x;
+        this.y = y;
+    }
+
+    public float SqrMagnitude => x * x + y * y;
+    public float Magnitude => MathF.Sqrt(SqrMagnitude);
+    public DbVector2 Normalized => this / Magnitude;
+
+    public static DbVector2 operator +(DbVector2 a, DbVector2 b) => new DbVector2(a.x + b.x, a.y + b.y);
+    public static DbVector2 operator -(DbVector2 a, DbVector2 b) => new DbVector2(a.x - b.x, a.y - b.y);
+    public static DbVector2 operator *(DbVector2 a, float b) => new DbVector2(a.x * b, a.y * b);
+    public static DbVector2 operator /(DbVector2 a, float b) => new DbVector2(a.x / b, a.y / b);
+}
+```
+
+Next, add the following reducer to the `Module` class of your `Lib.cs` file.
+
+```csharp
+[Reducer]
+public static void UpdatePlayerInput(ReducerContext ctx, DbVector2 direction)
+{
+    var player = ctx.Db.player.identity.Find(ctx.CallerIdentity) ?? throw new Exception("Player not found");				
+    foreach (var c in ctx.Db.circle.player_id.Filter(player.player_id))
+    {
+        var circle = c;
+        circle.direction = direction.Normalized;
+        circle.speed = Math.Clamp(direction.Magnitude, 0f, 1f);
+        ctx.Db.circle.entity_id.Update(circle);
+    }
+		  
+}
+```
+
+This is a simple reducer that takes the movement input from the client and applies them to all circles that that player controls. Note that it is not possible for a player to move another player's circles using this reducer, because the `ctx.CallerIdentity` value is not set by the client. Instead `ctx.CallerIdentity` is set by SpacetimeDB after it has authenticated that sender. You can rest assured that the caller has been authenticated as that player by the time this reducer is called.
+:::
 
 Finally, let's schedule a reducer to run every 50 milliseconds to move the player's circles around based on the most recently set player input.
 
+:::server-rust
 ```rust
 #[spacetimedb::table(name = move_all_players_timer, scheduled(move_all_players))]
 pub struct MoveAllPlayersTimer {
@@ -208,21 +258,70 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
     Ok(())
 }
 ```
+:::
+:::server-csharp
+```csharp
+[Table(Name = "move_all_players_timer", Scheduled = nameof(MoveAllPlayers), ScheduledAt = nameof(scheduled_at))]
+public partial struct MoveAllPlayersTimer
+{
+    [PrimaryKey, AutoInc]
+    public ulong scheduled_id;
+    public ScheduleAt scheduled_at;
+}
+
+const uint START_PLAYER_SPEED = 10;
+
+public static float MassToMaxMoveSpeed(uint mass) => 2f * START_PLAYER_SPEED / (1f + MathF.Sqrt((float)mass / START_PLAYER_MASS));
+
+[Reducer]
+public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
+{
+    var world_size = (ctx.Db.config.id.Find(0) ?? throw new Exception("Config not found")).world_size;
+
+    var circle_directions = ctx.Db.circle.Iter().Select(c => (c.entity_id, c.direction * c.speed)).ToDictionary();
+
+    // Handle player input
+    foreach (var circle in ctx.Db.circle.Iter())
+    {
+        var circle_entity = ctx.Db.entity.entity_id.Find(circle.entity_id) ?? throw new Exception("Circle has no entity");
+        var circle_radius = MassToRadius(circle_entity.mass);
+        var direction = circle_directions[circle.entity_id];
+        var new_pos = circle_entity.position + direction * MassToMaxMoveSpeed(circle_entity.mass);
+        circle_entity.position.x = Math.Clamp(new_pos.x, circle_radius, world_size - circle_radius);
+        circle_entity.position.y = Math.Clamp(new_pos.y, circle_radius, world_size - circle_radius);
+        ctx.Db.entity.entity_id.Update(circle_entity);
+    }
+}
+```
+:::
 
 This reducer is very similar to a standard game "tick" or "frame" that you might find in an ordinary game server or similar to something like the `Update` loop in a game engine like Unity. We've scheduled it every 50 milliseconds and we can use it to step forward our simulation by moving all the circles a little bit further in the direction they're moving.
 
 In this reducer, we're just looping through all the circles in the game and updating their position based on their direction, speed, and mass. Just basic physics.
 
+:::server-rust
 Add the following to your `init` reducer to schedule the `move_all_players` reducer to run every 50 milliseconds.
 
 ```rust
-    ctx.db
-        .move_all_players_timer()
-        .try_insert(MoveAllPlayersTimer {
-            scheduled_id: 0,
-            scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).as_micros() as u64),
-        })?;
+ctx.db
+    .move_all_players_timer()
+    .try_insert(MoveAllPlayersTimer {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).as_micros() as u64),
+    })?;
 ```
+:::
+:::server-csharp
+Add the following to your `Init` reducer to schedule the `MoveAllPlayers` reducer to run every 50 milliseconds.
+
+```csharp
+ctx.Db.move_all_players_timer.Insert(new MoveAllPlayersTimer
+{
+    scheduled_at = new ScheduleAt.Interval(TimeSpan.FromMilliseconds(50))
+});
+```
+:::
+
 
 Republish your module with:
 
@@ -233,7 +332,7 @@ spacetime publish --server local blackholio --delete-data
 Regenerate your server bindings with:
 
 ```sh
-spacetime generate --lang csharp --out-dir ../client/Assets/autogen
+spacetime generate --lang csharp --out-dir ../client-unity/Assets/autogen
 ```
 
 > **BUG WORKAROUND NOTE**: You may have to delete LoggedOutPlayer.cs again.
@@ -288,9 +387,10 @@ Let's try it out! Press play and roam freely around the arena! Now we're cooking
 
 Well this is pretty fun, but wouldn't it be better if we could eat food and grow our circle? Surely, that's going to be a pain, right?
 
+:::server-rust
 Wrong. With SpacetimeDB it's extremely easy. All we have to do is add an `is_overlapping` helper function which does some basic math based on mass radii, and modify our `move_all_player` reducer to loop through every entity in the arena for every circle, checking each for overlaps. This may not be the most efficient way to do collision checking (building a quad tree or doing [spatial hashing](https://conkerjo.wordpress.com/2009/06/13/spatial-hashing-implementation-for-fast-2d-collisions/) might be better), but SpacetimeDB is very fast so for this number of entities it'll be a breeze for SpacetimeDB.
 
-Sometimes simple is best! Add the following code to your `lib.rs` file.
+Sometimes simple is best! Add the following code to your `lib.rs` file and make sure to replace the existing `move_all_players` reducer.
 
 ```rust
 const MINIMUM_SAFE_MASS_RATIO: f32 = 0.85;
@@ -366,6 +466,84 @@ pub fn move_all_players(ctx: &ReducerContext, _timer: MoveAllPlayersTimer) -> Re
     Ok(())
 }
 ```
+:::
+:::server-csharp
+Wrong. With SpacetimeDB it's extremely easy. All we have to do is add an `IsOverlapping` helper function which does some basic math based on mass radii, and modify our `MoveAllPlayers` reducer to loop through every entity in the arena for every circle, checking each for overlaps. This may not be the most efficient way to do collision checking (building a quad tree or doing [spatial hashing](https://conkerjo.wordpress.com/2009/06/13/spatial-hashing-implementation-for-fast-2d-collisions/) might be better), but SpacetimeDB is very fast so for this number of entities it'll be a breeze for SpacetimeDB.
+
+Sometimes simple is best! Add the following code to the `Module` class of your `Lib.cs` file and make sure to replace the existing `MoveAllPlayers` reducer.
+
+```csharp
+const float MINIMUM_SAFE_MASS_RATIO = 0.85f;
+
+public static bool IsOverlapping(Entity a, Entity b)
+{
+    var dx = a.position.x - b.position.x;
+    var dy = a.position.y - b.position.y;
+    var distance_sq = dx * dx + dy * dy;
+
+    var radius_a = MassToRadius(a.mass);
+    var radius_b = MassToRadius(b.mass);
+    
+    // If the distance between the two circle centers is less than the
+    // maximum radius, then the center of the smaller circle is inside
+    // the larger circle. This gives some leeway for the circles to overlap
+    // before being eaten.
+    var max_radius = radius_a > radius_b ? radius_a: radius_b;
+    return distance_sq <= max_radius * max_radius;
+}
+
+[Reducer]
+public static void MoveAllPlayers(ReducerContext ctx, MoveAllPlayersTimer timer)
+{
+    var world_size = (ctx.Db.config.id.Find(0) ?? throw new Exception("Config not found")).world_size;
+
+    // Handle player input
+    foreach (var circle in ctx.Db.circle.Iter())
+    {
+        var circle_entity = ctx.Db.entity.entity_id.Find(circle.entity_id) ?? throw new Exception("Circle has no entity");
+        var circle_radius = MassToRadius(circle_entity.mass);
+        var direction = circle.direction * circle.speed;
+        var new_pos = circle_entity.position + direction * MassToMaxMoveSpeed(circle_entity.mass);
+        circle_entity.position.x = Math.Clamp(new_pos.x, circle_radius, world_size - circle_radius);
+        circle_entity.position.y = Math.Clamp(new_pos.y, circle_radius, world_size - circle_radius);
+
+        // Check collisions
+        foreach (var entity in ctx.Db.entity.Iter())
+        {
+            if (entity.entity_id == circle_entity.entity_id)
+            {
+                continue;
+            }
+            if (IsOverlapping(circle_entity, entity))
+            {
+                // Check to see if we're overlapping with food
+                if (ctx.Db.food.entity_id.Find(entity.entity_id).HasValue) {
+                    ctx.Db.entity.entity_id.Delete(entity.entity_id);
+                    ctx.Db.food.entity_id.Delete(entity.entity_id);
+                    circle_entity.mass += entity.mass;
+                }
+                
+                // Check to see if we're overlapping with another circle owned by another player
+                var other_circle = ctx.Db.circle.entity_id.Find(entity.entity_id);
+                if (other_circle.HasValue &&
+                    other_circle.Value.player_id != circle.player_id)
+                {
+                    var mass_ratio = (float)entity.mass / circle_entity.mass;
+                    if (mass_ratio < MINIMUM_SAFE_MASS_RATIO)
+                    {
+                        ctx.Db.entity.entity_id.Delete(entity.entity_id);
+                        ctx.Db.circle.entity_id.Delete(entity.entity_id);
+                        circle_entity.mass += entity.mass;
+                    }
+                }
+            }
+        }
+        ctx.Db.entity.entity_id.Update(circle_entity);
+    }
+}
+```
+:::
+
 
 For every circle, we look at all other entities. If they are overlapping then for food, we add the mass of the food to the circle and delete the food, otherwise if it's a circle we delete the smaller circle and add the mass to the bigger circle.
 
@@ -383,7 +561,12 @@ Notice that the food automatically respawns as you vaccuum them up. This is beca
 
 # Conclusion
 
+:::server-rust
 So far you've learned how to configure a new Unity project to work with SpacetimeDB, how to develop, build, and publish a SpacetimeDB server module. Within the module, you've learned how to create tables, update tables, and write reducers. You've learned about special reducers like `client_connected` and `init` and how to created scheduled reducers. You learned how we can used scheduled reducers to implement a physics simulation right within your module.
+:::
+:::server-csharp
+So far you've learned how to configure a new Unity project to work with SpacetimeDB, how to develop, build, and publish a SpacetimeDB server module. Within the module, you've learned how to create tables, update tables, and write reducers. You've learned about special reducers like `ClientConnected` and `Init` and how to created scheduled reducers. You learned how we can used scheduled reducers to implement a physics simulation right within your module.
+:::
 
 You've also learned how view module logs and connect your client to your server module, call reducers from the client and synchronize the data with client. Finally you learned how to use that synchronized data to draw game objects on the screen, so that we can interact with them and play a game!
 
@@ -402,7 +585,7 @@ There's still plenty more we can do to build this into a proper game though. For
 - Nice shaders
 - Space theme!
 
-Fortunately, we've done that for you! If you'd like to check out the completed tutorial game you can download it on GitHub:
+Fortunately, we've done that for you! If you'd like to check out the completed tutorial game, with these additional features, you can download it on GitHub:
 
 https://github.com/ClockworkLabs/Blackholio
 
