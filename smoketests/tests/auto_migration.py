@@ -48,7 +48,7 @@ const PERSON_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * F
 pub struct Book {
     isbn: String,
 }
- 
+
 #[spacetimedb::reducer]
 pub fn add_book(ctx: &ReducerContext, isbn: String) {
     ctx.db.book().insert(Book { isbn });
@@ -113,8 +113,8 @@ const BOOK_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FRO
             """\
  sql
 ------------------------
- "SELECT * FROM book"
  "SELECT * FROM person"
+ "SELECT * FROM book"
 """,
         )
 

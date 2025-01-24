@@ -1753,6 +1753,62 @@ public static partial class Module
     }
 
     [SpacetimeDB.Reducer]
+    public static void delete_large_table(
+        ReducerContext ctx,
+        byte a,
+        ushort b,
+        uint c,
+        ulong d,
+        U128 e,
+        U256 f,
+        sbyte g,
+        short h,
+        int i,
+        long j,
+        I128 k,
+        I256 l,
+        bool m,
+        float n,
+        double o,
+        string p,
+        SimpleEnum q,
+        EnumWithPayload r,
+        UnitStruct s,
+        ByteStruct t,
+        EveryPrimitiveStruct u,
+        EveryVecStruct v
+    )
+    {
+        ctx.Db.large_table.Delete(
+            new LargeTable
+            {
+                a = a,
+                b = b,
+                c = c,
+                d = d,
+                e = e,
+                f = f,
+                g = g,
+                h = h,
+                i = i,
+                j = j,
+                k = k,
+                l = l,
+                m = m,
+                n = n,
+                o = o,
+                p = p,
+                q = q,
+                r = r,
+                s = s,
+                t = t,
+                u = u,
+                v = v,
+            }
+        );
+    }
+
+    [SpacetimeDB.Reducer]
     public static void insert_primitives_as_strings(ReducerContext ctx, EveryPrimitiveStruct s)
     {
         ctx.Db.vec_string.Insert(

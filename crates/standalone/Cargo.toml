@@ -42,6 +42,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tower-http.workspace = true
 toml.workspace = true
+tracing = { workspace = true, features = ["release_max_level_debug"] }
 
 [dev-dependencies]
 once_cell.workspace = true

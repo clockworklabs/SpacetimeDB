@@ -114,8 +114,8 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
-            fn insert_long_table() {
-                make_test("insert_long_table").run();
+            fn insert_delete_large_table() {
+                make_test("insert_delete_large_table").run();
             }
 
             #[test]

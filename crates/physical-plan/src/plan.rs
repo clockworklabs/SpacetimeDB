@@ -6,7 +6,7 @@ use std::{
 
 use derive_more::From;
 use spacetimedb_expr::StatementSource;
-use spacetimedb_lib::{query::Delta, AlgebraicValue};
+use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
@@ -845,6 +845,12 @@ pub trait ProjectField {
 impl ProjectField for RowRef<'_> {
     fn project(&self, field: &TupleField) -> AlgebraicValue {
         self.read_col(field.field_pos).unwrap()
+    }
+}
+
+impl ProjectField for &'_ ProductValue {
+    fn project(&self, field: &TupleField) -> AlgebraicValue {
+        self.elements[field.field_pos].clone()
     }
 }
 

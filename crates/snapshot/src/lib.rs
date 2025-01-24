@@ -494,6 +494,17 @@ impl SnapshotRepository {
         blobs: &'db dyn BlobStore,
         tx_offset: TxOffset,
     ) -> Result<SnapshotDirPath, SnapshotError> {
+        // Invalidate equal to or newer than `tx_offset`.
+        //
+        // This is because snapshots don't currently track the epoch in which
+        // they were created:
+        //
+        // Say, for example, a snapshot was created at offset 10, then a leader
+        // failover causes the commitlog to be reset to offset 9. The next
+        // transaction (also offset 10) will trigger snapshot creation, but we'd
+        // mistake the existing snapshot (now invalid) as the previous snapshot.
+        self.invalidate_newer_snapshots(tx_offset.saturating_sub(1))?;
+
         // If a previous snapshot exists in this snapshot repo,
         // get a handle on its object repo in order to hardlink shared objects into the new snapshot.
         let prev_snapshot = self
@@ -736,6 +747,9 @@ impl SnapshotRepository {
     /// When rebuilding a database, we will call this method
     /// with the [`spacetimedb_durability::Durability::durable_tx_offset`] as the `upper_bound`
     /// in order to prevent us from retaining snapshots which will be superseded by the new diverging history.
+    ///
+    /// It is also called when creating a new snapshot via [`Self::create_snapshot`]
+    /// in order to prevent a diverging snapshot from being used as its own parent.
     ///
     /// Does not invalidate snapshots which are locked.
     ///

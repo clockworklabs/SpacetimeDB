@@ -529,7 +529,7 @@ impl ExecutionSet {
         ws::DatabaseUpdate { tables }
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn eval_incr_for_test<'a>(
         &'a self,
 
