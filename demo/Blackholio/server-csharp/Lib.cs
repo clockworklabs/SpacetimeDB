@@ -50,6 +50,7 @@ public static partial class Module
 	}
 
 	[Table(Name = "player", Public = true)]
+	[Table(Name = "logged_out_player")]
 	public partial struct Player
 	{
 		[PrimaryKey]
@@ -57,14 +58,6 @@ public static partial class Module
 		[Unique, AutoInc]
 		public uint player_id;
 		public string name;
-	}
-
-	[Table(Name = "logged_out_player", Public = true)]
-	public partial struct LoggedOutPlayer
-	{
-		[PrimaryKey]
-		public Identity identity;
-		public Player player;
 	}
 
 	[Table(Name = "food", Public = true)]
@@ -146,7 +139,7 @@ public static partial class Module
 		var player = ctx.Db.logged_out_player.identity.Find(ctx.CallerIdentity);
 		if (player != null)
 		{
-			ctx.Db.player.Insert(player.Value.player);
+			ctx.Db.player.Insert(player.Value);
 			ctx.Db.logged_out_player.identity.Delete(player.Value.identity);
 		}
 		else
@@ -169,11 +162,7 @@ public static partial class Module
 			ctx.Db.entity.entity_id.Delete(entity.entity_id);
 			ctx.Db.circle.entity_id.Delete(entity.entity_id);
 		}
-		ctx.Db.logged_out_player.Insert(new LoggedOutPlayer
-		{
-			identity = player.identity,
-			player = player
-		});
+		ctx.Db.logged_out_player.Insert(player);
 		ctx.Db.player.identity.Delete(player.identity);
 	}
 
