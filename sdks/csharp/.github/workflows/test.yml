@@ -89,8 +89,8 @@ jobs:
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
-          cargo install --path SpacetimeDB~/crates/cli --locked --message-format=short
-          cargo install --path SpacetimeDB~/crates/standalone --locked --message-format=short
+          cargo install --force --path SpacetimeDB~/crates/cli --locked --message-format=short
+          cargo install --force --path SpacetimeDB~/crates/standalone --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
           rm $HOME/.cargo/bin/spacetime || echo "haven't run on this host before"
           ln -s $HOME/.cargo/bin/spacetimedb-cli $HOME/.cargo/bin/spacetime
