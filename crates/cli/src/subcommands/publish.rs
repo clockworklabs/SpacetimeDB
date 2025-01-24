@@ -202,6 +202,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             let token = if anon_identity {
                 None
             } else {
+                // Note: Technically, this logic could be simplified, because if we're not in the `anon_identity` case, then a check further up will have forced the user to log in and get a token.
+                // So, in principle, the "token is None" case is exactly the "anon_identity" case, and we can assume that config.spacetimedb_token() is actually Some otherwise.
+                // However, this version is more correct in isolation / doesn't require relying on assumptions about code elsewhere that might change.
                 config.spacetimedb_token()
             };
             let token = if let Some(token) = token {
