@@ -56,6 +56,7 @@ pub struct Circle {
 }
 
 #[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(name = logged_out_player)]
 #[derive(Debug, Clone)]
 pub struct Player {
     #[primary_key]
@@ -64,13 +65,6 @@ pub struct Player {
     #[auto_inc]
     player_id: u32,
     name: String,
-}
-
-#[spacetimedb::table(name = logged_out_player, public)]
-pub struct LoggedOutPlayer {
-    #[primary_key]
-    identity: Identity,
-    player: Player,
 }
 
 #[spacetimedb::table(name = food, public)]
@@ -149,7 +143,7 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
 #[spacetimedb::reducer(client_connected)]
 pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
     if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender) {
-        ctx.db.player().insert(player.player.clone());
+        ctx.db.player().insert(player.clone());
         ctx.db
             .logged_out_player()
             .identity()
@@ -173,10 +167,7 @@ pub fn disconnect(ctx: &ReducerContext) -> Result<(), String> {
         .find(&ctx.sender)
         .ok_or("Player not found")?;
     let player_id = player.player_id;
-    ctx.db.logged_out_player().insert(LoggedOutPlayer {
-        identity: player.identity,
-        player,
-    });
+    ctx.db.logged_out_player().insert(player);
     ctx.db.player().identity().delete(&ctx.sender);
 
     // Remove any circles from the arena
