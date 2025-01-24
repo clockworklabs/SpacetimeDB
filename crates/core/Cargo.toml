@@ -122,6 +122,7 @@ test = []
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
+spacetimedb-commitlog = { workspace = true, features = ["test"] }
 
 criterion.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.

@@ -1,4 +1,3 @@
-use super::wasm_common::{CLIENT_CONNECTED_DUNDER, CLIENT_DISCONNECTED_DUNDER};
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger::{LogLevel, Record};
@@ -30,6 +29,7 @@ use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_client_api_messages::websocket::{Compression, OneOffTable, QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
+use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::{col_list, TableId};
@@ -181,9 +181,6 @@ pub struct ModuleInfo {
     /// Loaded by loading the module's program from the system tables, extracting its definition,
     /// and validating.
     pub module_def: ModuleDef,
-    /// Map between reducer IDs and reducer names.
-    /// Reducer names are sorted alphabetically.
-    pub reducers_map: ReducersMap,
     /// The identity of the module.
     pub owner_identity: Identity,
     /// The identity of the database.
@@ -207,37 +204,14 @@ impl ModuleInfo {
         log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
         subscriptions: ModuleSubscriptions,
     ) -> Arc<Self> {
-        // Note: sorts alphabetically!
-        let reducers_map = module_def.reducers().map(|r| &*r.name).collect();
         Arc::new(ModuleInfo {
             module_def,
-            reducers_map,
             owner_identity,
             database_identity,
             module_hash,
             log_tx,
             subscriptions,
         })
-    }
-
-    /// Get the reducer seed and ID for a reducer name, if any.
-    pub fn reducer_seed_and_id(&self, reducer_name: &str) -> Option<(ReducerArgsDeserializeSeed, ReducerId)> {
-        let seed = self.module_def.reducer_arg_deserialize_seed(reducer_name)?;
-        let reducer_id = self
-            .reducers_map
-            .lookup_id(reducer_name)
-            .expect("seed was present, so ID should be present!");
-        Some((seed, reducer_id))
-    }
-
-    /// Get a reducer by its ID.
-    pub fn get_reducer_by_id(&self, reducer_id: ReducerId) -> Option<&ReducerDef> {
-        let name = self.reducers_map.lookup_name(reducer_id)?;
-        Some(
-            self.module_def
-                .reducer(name)
-                .expect("id was present, so reducer should be present!"),
-        )
     }
 }
 
@@ -480,6 +454,8 @@ pub enum ReducerCallError {
     NoSuchReducer,
     #[error("no such scheduled reducer")]
     ScheduleReducerNotFound,
+    #[error("can't directly call special {0:?} lifecycle reducer")]
+    LifecycleReducer(Lifecycle),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -562,11 +538,14 @@ impl ModuleHost {
         caller_address: Address,
         connected: bool,
     ) -> Result<(), ReducerCallError> {
-        let reducer_name = if connected {
-            CLIENT_CONNECTED_DUNDER
+        let (lifecycle, fake_name) = if connected {
+            (Lifecycle::OnConnect, "__identity_connected__")
         } else {
-            CLIENT_DISCONNECTED_DUNDER
+            (Lifecycle::OnDisconnect, "__identity_disconnected__")
         };
+
+        let reducer_lookup = self.info.module_def.lifecycle_reducer(lifecycle);
+        let reducer_name = reducer_lookup.as_ref().map(|(_, def)| &*def.name).unwrap_or(fake_name);
 
         let db = &self.inner.replica_ctx().relational_db;
         let workload = || {
@@ -579,42 +558,41 @@ impl ModuleHost {
             })
         };
 
-        let result = self
-            .call_reducer_inner(
+        let result = if let Some((reducer_id, reducer_def)) = reducer_lookup {
+            self.call_reducer_inner(
                 caller_identity,
                 Some(caller_address),
                 None,
                 None,
                 None,
-                reducer_name,
+                reducer_id,
+                reducer_def,
                 ReducerArgs::Nullary,
             )
             .await
             .map(drop)
-            .or_else(|e| match e {
-                // If the module doesn't define connected or disconnected, commit
-                // a transaction to update `st_clients` and to ensure we always have those events
-                // paired in the commitlog.
-                //
-                // This is necessary to be able to disconnect clients after a server
-                // crash.
-                ReducerCallError::NoSuchReducer => db
-                    .with_auto_commit(workload(), |mut_tx| {
-                        if connected {
-                            self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
-                        } else {
-                            Ok(())
-                        }
-                    })
-                    .map_err(|err| {
-                        InvalidReducerArguments {
-                            err: err.into(),
-                            reducer: reducer_name.into(),
-                        }
-                        .into()
-                    }),
-                e => Err(e),
-            });
+        } else {
+            // If the module doesn't define connected or disconnected, commit
+            // a transaction to update `st_clients` and to ensure we always have those events
+            // paired in the commitlog.
+            //
+            // This is necessary to be able to disconnect clients after a server
+            // crash.
+            db.with_auto_commit(workload(), |mut_tx| {
+                if connected {
+                    self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
+                } else {
+                    Ok(())
+                }
+            })
+            .map_err(|err| {
+                InvalidReducerArguments {
+                    err: err.into(),
+                    reducer: reducer_name.into(),
+                }
+                .into()
+            })
+        };
 
         // Deleting client from `st_clients`does not depend upon result of disconnect reducer hence done in a separate tx.
         if !connected {
@@ -667,25 +645,15 @@ impl ModuleHost {
         client: Option<Arc<ClientConnectionSender>>,
         request_id: Option<RequestId>,
         timer: Option<Instant>,
-        reducer_name: &str,
+        reducer_id: ReducerId,
+        reducer_def: &ReducerDef,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let reducer_seed = self
-            .info
-            .module_def
-            .reducer_arg_deserialize_seed(reducer_name)
-            .ok_or(ReducerCallError::NoSuchReducer)?;
-
-        let reducer_id = self
-            .info
-            .reducers_map
-            .lookup_id(reducer_name)
-            .expect("if we found the seed, we should find the ID!");
-
+        let reducer_seed = ReducerArgsDeserializeSeed(self.info.module_def.typespace().with_type(reducer_def));
         let args = args.into_tuple(reducer_seed)?;
         let caller_address = caller_address.unwrap_or(Address::__DUMMY);
 
-        self.call(reducer_name, move |inst| {
+        self.call(&reducer_def.name, move |inst| {
             inst.call_reducer(
                 None,
                 CallReducerParams {
@@ -714,20 +682,28 @@ impl ModuleHost {
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        if reducer_name.starts_with("__") && reducer_name.ends_with("__") {
-            return Err(ReducerCallError::NoSuchReducer);
-        }
-        let res = self
-            .call_reducer_inner(
+        let res = async {
+            let (reducer_id, reducer_def) = self
+                .info
+                .module_def
+                .reducer_full(reducer_name)
+                .ok_or(ReducerCallError::NoSuchReducer)?;
+            if let Some(lifecycle) = reducer_def.lifecycle {
+                return Err(ReducerCallError::LifecycleReducer(lifecycle));
+            }
+            self.call_reducer_inner(
                 caller_identity,
                 caller_address,
                 client,
                 request_id,
                 timer,
-                reducer_name,
+                reducer_id,
+                reducer_def,
                 args,
             )
-            .await;
+            .await
+        }
+        .await;
 
         let log_message = match &res {
             Err(ReducerCallError::NoSuchReducer) => Some(format!(
@@ -765,10 +741,11 @@ impl ModuleHost {
             match call_reducer_params(&mut tx) {
                 Ok(Some(params)) => {
                     // Is necessary to patch the context with the actual calling reducer
-                    let reducer = module
-                        .reducers_map
-                        .lookup_name(params.reducer_id)
+                    let reducer_def = module
+                        .module_def
+                        .get_reducer_by_id(params.reducer_id)
                         .ok_or(ReducerCallError::ScheduleReducerNotFound)?;
+                    let reducer = &*reducer_def.name;
 
                     tx.ctx = ExecutionContext::with_workload(
                         tx.ctx.database_identity(),
@@ -839,7 +816,7 @@ impl ModuleHost {
         )
     }
 
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn one_off_query<F: WebsocketFormat>(
         &self,
         caller_identity: Identity,

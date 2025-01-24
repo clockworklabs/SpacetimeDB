@@ -25,7 +25,7 @@ use super::indexes::RowPointer;
 use super::table::RowRef;
 use crate::{read_column::ReadColumn, static_assert_size, MemoryUsage};
 use core::ops::RangeBounds;
-use spacetimedb_primitives::{ColList, IndexId};
+use spacetimedb_primitives::ColList;
 use spacetimedb_sats::{
     algebraic_value::Packed, i256, product_value::InvalidFieldError, u256, AlgebraicType, AlgebraicValue, ProductType,
 };
@@ -661,8 +661,6 @@ impl TypedIndex {
 /// A B-Tree based index on a set of [`ColId`]s of a table.
 #[derive(Debug, PartialEq, Eq)]
 pub struct BTreeIndex {
-    /// The ID of this index.
-    pub index_id: IndexId,
     /// The actual index, specialized for the appropriate key type.
     idx: TypedIndex,
     /// The key type of this index.
@@ -680,22 +678,27 @@ pub struct BTreeIndex {
     /// Memoized counter for [`Self::num_key_bytes`].
     /// See that method for more detailed documentation.
     num_key_bytes: u64,
+
+    /// Given a full row, typed at some `ty: ProductType`,
+    /// these columns are the ones that this index indexes.
+    /// Projecting the `ty` to `self.indexed_columns` yields the index's type `self.key_type`.
+    pub indexed_columns: ColList,
 }
 
 impl MemoryUsage for BTreeIndex {
     fn heap_usage(&self) -> usize {
         let Self {
-            index_id,
             idx,
             key_type,
             num_rows,
             num_key_bytes,
+            indexed_columns,
         } = self;
-        index_id.heap_usage()
-            + idx.heap_usage()
+        idx.heap_usage()
             + key_type.heap_usage()
             + num_rows.heap_usage()
             + num_key_bytes.heap_usage()
+            + indexed_columns.heap_usage()
     }
 }
 
@@ -703,20 +706,15 @@ static_assert_size!(BTreeIndex, 80);
 
 impl BTreeIndex {
     /// Returns a new possibly unique index, with `index_id` for a set of columns.
-    pub fn new(
-        index_id: IndexId,
-        row_type: &ProductType,
-        indexed_columns: &ColList,
-        is_unique: bool,
-    ) -> Result<Self, InvalidFieldError> {
-        let key_type = row_type.project(indexed_columns)?;
+    pub fn new(row_type: &ProductType, indexed_columns: ColList, is_unique: bool) -> Result<Self, InvalidFieldError> {
+        let key_type = row_type.project(&indexed_columns)?;
         let typed_index = TypedIndex::new(&key_type, is_unique);
         Ok(Self {
-            index_id,
             idx: typed_index,
             key_type,
             num_rows: 0,
             num_key_bytes: 0,
+            indexed_columns,
         })
     }
 
@@ -724,14 +722,14 @@ impl BTreeIndex {
     /// so the returned index is empty.
     pub fn clone_structure(&self) -> Self {
         let key_type = self.key_type.clone();
-        let index_id = self.index_id;
         let idx = self.idx.clone_structure();
+        let indexed_columns = self.indexed_columns.clone();
         Self {
-            index_id,
             idx,
             key_type,
             num_rows: 0,
             num_key_bytes: 0,
+            indexed_columns,
         }
     }
 
@@ -741,15 +739,11 @@ impl BTreeIndex {
     }
 
     /// Inserts `ptr` with the value `row` to this index.
-    /// This index will extract the necessary values from `row` based on `self.cols`.
+    /// This index will extract the necessary values from `row` based on `self.indexed_columns`.
     ///
     /// Returns `Ok(Some(existing_row))` if this insertion would violate a unique constraint.
-    pub fn check_and_insert(
-        &mut self,
-        cols: &ColList,
-        row_ref: RowRef<'_>,
-    ) -> Result<Option<RowPointer>, InvalidFieldError> {
-        let (res, size_in_bytes) = self.idx.insert(cols, row_ref)?;
+    pub fn check_and_insert(&mut self, row_ref: RowRef<'_>) -> Result<Option<RowPointer>, InvalidFieldError> {
+        let (res, size_in_bytes) = self.idx.insert(&self.indexed_columns, row_ref)?;
         if res.is_none() {
             // No existing row; the new row was inserted.
             // Update the `num_rows` and `num_key_bytes` counters
@@ -760,11 +754,11 @@ impl BTreeIndex {
         Ok(res)
     }
 
-    /// Deletes `ptr` with its indexed value `col_value` from this index.
+    /// Deletes `row_ref` with its indexed value `row_ref.project(&self.indexed_columns)` from this index.
     ///
     /// Returns whether `ptr` was present.
-    pub fn delete(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
-        if let Some(size_in_bytes) = self.idx.delete(cols, row_ref)? {
+    pub fn delete(&mut self, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
+        if let Some(size_in_bytes) = self.idx.delete(&self.indexed_columns, row_ref)? {
             // Was present, and deleted: update the `num_rows` and `num_key_bytes` counters.
             self.num_rows -= 1;
             self.num_key_bytes -= size_in_bytes as u64;
@@ -803,11 +797,10 @@ impl BTreeIndex {
     /// Returns the first unique constraint violation caused when adding this index, if any.
     pub fn build_from_rows<'table>(
         &mut self,
-        cols: &ColList,
         rows: impl IntoIterator<Item = RowRef<'table>>,
     ) -> Result<Option<RowPointer>, InvalidFieldError> {
         for row_ref in rows {
-            if let violation @ Some(_) = self.check_and_insert(cols, row_ref)? {
+            if let violation @ Some(_) = self.check_and_insert(row_ref)? {
                 return Ok(violation);
             }
         }
@@ -883,7 +876,7 @@ mod test {
     }
 
     fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool) -> BTreeIndex {
-        BTreeIndex::new(0.into(), row_type, cols, is_unique).unwrap()
+        BTreeIndex::new(row_type, cols.clone(), is_unique).unwrap()
     }
 
     /// Extracts from `row` the relevant column values according to what columns are indexed.
@@ -914,7 +907,7 @@ mod test {
             let mut table = table(ty);
             let mut blob_store = HashMapBlobStore::default();
             let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
-            prop_assert_eq!(index.delete(&cols, row_ref).unwrap(), false);
+            prop_assert_eq!(index.delete(row_ref).unwrap(), false);
             prop_assert!(index.idx.is_empty());
         }
 
@@ -929,11 +922,11 @@ mod test {
             prop_assert_eq!(index.idx.len(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
 
-            prop_assert_eq!(index.check_and_insert(&cols, row_ref).unwrap(), None);
+            prop_assert_eq!(index.check_and_insert(row_ref).unwrap(), None);
             prop_assert_eq!(index.idx.len(), 1);
             prop_assert_eq!(index.contains_any(&value), true);
 
-            prop_assert_eq!(index.delete(&cols, row_ref).unwrap(), true);
+            prop_assert_eq!(index.delete(row_ref).unwrap(), true);
             prop_assert_eq!(index.idx.len(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
         }
@@ -955,7 +948,7 @@ mod test {
             );
 
             // Insert.
-            prop_assert_eq!(index.check_and_insert(&cols, row_ref).unwrap(), None);
+            prop_assert_eq!(index.check_and_insert(row_ref).unwrap(), None);
 
             // Inserting again would be a problem.
             prop_assert_eq!(index.idx.len(), 1);
@@ -964,7 +957,7 @@ mod test {
                 get_rows_that_violate_unique_constraint(&index, &value).unwrap().collect::<Vec<_>>(),
                 [row_ref.pointer()]
             );
-            prop_assert_eq!(index.check_and_insert(&cols, row_ref).unwrap(), Some(row_ref.pointer()));
+            prop_assert_eq!(index.check_and_insert(row_ref).unwrap(), Some(row_ref.pointer()));
         }
 
         #[test]
@@ -988,7 +981,7 @@ mod test {
                 let row = product![x];
                 let row_ref = table.insert(&mut blob_store, &row).unwrap().1;
                 val_to_ptr.insert(x, row_ref.pointer());
-                prop_assert_eq!(index.check_and_insert(&cols, row_ref).unwrap(), None);
+                prop_assert_eq!(index.check_and_insert(row_ref).unwrap(), None);
             }
 
             fn test_seek(index: &BTreeIndex, val_to_ptr: &HashMap<u64, RowPointer>, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {

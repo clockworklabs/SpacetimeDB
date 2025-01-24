@@ -313,7 +313,7 @@ impl ValidatedIndex<'_> {
         }
     }
 
-    fn marker_type(&self, vis: &syn::Visibility, row_type_ident: &Ident) -> TokenStream {
+    fn marker_type(&self, vis: &syn::Visibility, tablehandle_ident: &Ident) -> TokenStream {
         let index_ident = self.accessor_name;
         let index_name = &self.index_name;
         let vis = if let ValidatedIndexType::UniqueBTree { col } = self.kind {
@@ -339,10 +339,10 @@ impl ValidatedIndex<'_> {
             let field_ident = col.field.ident.unwrap();
             decl.extend(quote! {
                 impl spacetimedb::table::Column for #index_ident {
-                    type Row = #row_type_ident;
+                    type Table = #tablehandle_ident;
                     type ColType = #col_ty;
                     const COLUMN_NAME: &'static str = #col_name;
-                    fn get_field(row: &Self::Row) -> &Self::ColType {
+                    fn get_field(row: &<Self::Table as spacetimedb::Table>::Row) -> &Self::ColType {
                         &row.#field_ident
                     }
                 }
@@ -535,13 +535,11 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         _ => std::cmp::Ordering::Equal,
     });
 
+    let tablehandle_ident = format_ident!("{}__TableHandle", table_ident);
+
     let index_descs = indices.iter().map(|index| index.desc());
     let index_accessors = indices.iter().map(|index| index.accessor(vis, original_struct_ident));
-    let index_marker_types = indices
-        .iter()
-        .map(|index| index.marker_type(vis, original_struct_ident));
-
-    let tablehandle_ident = format_ident!("{}__TableHandle", table_ident);
+    let index_marker_types = indices.iter().map(|index| index.marker_type(vis, &tablehandle_ident));
 
     // Generate `integrate_generated_columns`
     // which will integrate all generated auto-inc col values into `_row`.

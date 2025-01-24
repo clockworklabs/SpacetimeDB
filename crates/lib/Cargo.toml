@@ -22,6 +22,7 @@ proptest = ["dep:proptest", "dep:proptest-derive"]
 # Allows using additional test methods.
 test = ["proptest", "spacetimedb-sats/test"]
 metrics_impls = ["dep:spacetimedb-metrics", "spacetimedb-sats/metrics_impls"]
+enum-map = ["dep:enum-map"]
 
 [dependencies]
 spacetimedb-bindings-macro.workspace = true
@@ -39,6 +40,7 @@ itertools.workspace = true
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
 blake3.workspace = true
+enum-map = { workspace = true, optional = true }
 
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }

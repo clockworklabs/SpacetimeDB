@@ -10,3 +10,4 @@ spacetimedb-paths.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 semver.workspace = true
+tracing = { workspace = true, features = ["release_max_level_off"] }

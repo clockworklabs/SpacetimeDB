@@ -5,7 +5,7 @@ use iter::PlanIter;
 use spacetimedb_lib::{
     bsatn::{EncodeError, ToBsatn},
     query::Delta,
-    ser::Serialize,
+    sats::impl_serialize,
     AlgebraicValue, ProductValue,
 };
 use spacetimedb_physical_plan::plan::{ProjectField, ProjectPlan, TupleField};
@@ -17,6 +17,7 @@ use spacetimedb_table::{
 };
 
 pub mod iter;
+pub mod pipelined;
 
 /// The datastore interface required for building an executor
 pub trait Datastore {
@@ -44,7 +45,8 @@ pub trait Datastore {
             .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
             .and_then(|table| {
                 table
-                    .index_seek_by_id(self.blob_store(), index_id, range)
+                    .get_index_by_id_with_table(self.blob_store(), index_id)
+                    .map(|i| i.seek(range))
                     .ok_or_else(|| anyhow!("IndexId `{index_id}` does not exist"))
             })
     }
@@ -71,11 +73,16 @@ pub trait DeltaStore {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone)]
 pub enum Row<'a> {
     Ptr(RowRef<'a>),
     Ref(&'a ProductValue),
 }
+
+impl_serialize!(['a] Row<'a>, (self, ser) => match self {
+    Self::Ptr(row) => row.serialize(ser),
+    Self::Ref(row) => row.serialize(ser),
+});
 
 impl ToBsatn for Row<'_> {
     fn static_bsatn_size(&self) -> Option<u16> {
@@ -103,8 +110,8 @@ impl ToBsatn for Row<'_> {
 impl ProjectField for Row<'_> {
     fn project(&self, field: &TupleField) -> AlgebraicValue {
         match self {
-            Self::Ptr(ptr) => ptr.read_col(field.field_pos).unwrap(),
-            Self::Ref(val) => val.elements.get(field.field_pos).unwrap().clone(),
+            Self::Ptr(ptr) => ptr.project(field),
+            Self::Ref(val) => val.project(field),
         }
     }
 }
@@ -150,6 +157,13 @@ impl<'a> Tuple<'a> {
                 rows.push(ptr);
                 Self::Join(rows)
             }
+        }
+    }
+
+    fn join(self, with: Self) -> Self {
+        match with {
+            Self::Row(ptr) => self.append(ptr),
+            Self::Join(ptrs) => ptrs.into_iter().fold(self, |tup, ptr| tup.append(ptr)),
         }
     }
 }
