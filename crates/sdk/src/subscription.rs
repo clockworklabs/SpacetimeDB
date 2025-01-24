@@ -6,7 +6,6 @@ use crate::{
     db_connection::{next_request_id, next_subscription_id, DbContextImpl, PendingMutation},
     spacetime_module::{SpacetimeModule, SubscriptionHandle},
 };
-use anyhow::bail;
 use futures_channel::mpsc;
 use spacetimedb_client_api_messages::websocket::{self as ws};
 use spacetimedb_data_structures::map::HashMap;
@@ -357,14 +356,13 @@ impl<M: SpacetimeModule> SubscriptionState<M> {
         })
     }
 
-    pub fn unsubscribe_then(&mut self, on_end: Option<OnEndedCallback<M>>) -> anyhow::Result<()> {
-        // pub fn unsubscribe_then(&mut self, on_end: impl FnOnce(&M::EventContext) + Send + 'static) -> anyhow::Result<()> {
+    pub fn unsubscribe_then(&mut self, on_end: Option<OnEndedCallback<M>>) -> crate::Result<()> {
         if self.is_ended() {
-            bail!("Subscription has already ended");
+            return Err(crate::Error::AlreadyEnded);
         }
         // Check if it has already been called.
         if self.unsubscribe_called {
-            bail!("Unsubscribe already called");
+            return Err(crate::Error::AlreadyUnsubscribed);
         }
 
         self.unsubscribe_called = true;
@@ -471,7 +469,7 @@ impl<M: SpacetimeModule> SubscriptionHandleImpl<M> {
     }
 
     /// Called by the `SubscriptionHandle` method of the same name.
-    pub fn unsubscribe_then(self, on_end: Option<OnEndedCallback<M>>) -> anyhow::Result<()> {
+    pub fn unsubscribe_then(self, on_end: Option<OnEndedCallback<M>>) -> crate::Result<()> {
         let mut inner = self.inner.lock().unwrap();
         inner.unsubscribe_then(on_end)
     }

@@ -1532,7 +1532,7 @@ fn exec_reauth_part_1() {
 
     DbConnection::builder()
         .on_connect(|_, _identity, token| {
-            save_result(creds_store().save(token));
+            save_result(creds_store().save(token).map_err(Into::into));
         })
         .on_connect_error(|e| panic!("Connect failed: {e:?}"))
         .with_module_name(name)

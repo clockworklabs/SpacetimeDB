@@ -13,7 +13,7 @@ spacetimedb-sats.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde"]}
 spacetimedb-client-api-messages.workspace = true
 
-anyhow = { workspace = true, features = ["backtrace"] }
+thiserror.workspace = true
 anymap.workspace = true
 base64.workspace = true
 brotli.workspace = true
