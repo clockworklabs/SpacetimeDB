@@ -102,17 +102,26 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         ));
     }
 
-    let path_to_wasm = if !path_to_project.is_dir() && path_to_project.extension().map_or(false, |ext| ext == "wasm") {
-        println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
-        println!("removed in a future release. Please use --bin-path instead.");
-        path_to_project.clone()
-    } else if let Some(path) = wasm_file {
+    let path_to_wasm = if let Some(path) = wasm_file {
         println!("Skipping build. Instead we are publishing {}", path.display());
         path.clone()
     } else {
         build::exec_with_argstring(config.clone(), path_to_project, build_options).await?
     };
     let program_bytes = fs::read(path_to_wasm)?;
+
+    let server_address = {
+        let url = Url::parse(&database_host)?;
+        url.host_str().unwrap_or("<default>").to_string()
+    };
+    if server_address != "localhost" && server_address != "127.0.0.1" {
+        println!("You are about to publish to a non-local server: {}", server_address);
+        if !y_or_n(force, "Are you sure you want to proceed?")? {
+            println!("Aborting");
+            return Ok(());
+        }
+    }
+
     println!(
         "Uploading to {} => {}",
         server.unwrap_or(config.default_server_name().unwrap_or("<default>")),
@@ -184,9 +193,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         PublishResult::TldNotRegistered { domain } => {
             return Err(anyhow::anyhow!(
                 "The top level domain that you provided is not registered.\n\
-            This tld is not yet registered to any identity. You can register this domain with the following command:\n\
-            \n\
-            \tspacetime dns register-tld {}\n",
+            This tld is not yet registered to any identity: {}",
                 domain.tld()
             ));
         }

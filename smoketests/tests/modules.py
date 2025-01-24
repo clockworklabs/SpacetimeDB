@@ -7,7 +7,7 @@ class UpdateModule(Smoketest):
     AUTOPUBLISH = False
 
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -25,9 +25,9 @@ pub fn add(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn say_hello(ctx: &ReducerContext) {
     for person in ctx.db.person().iter() {
-        println!("Hello, {}!", person.name);
+        log::info!("Hello, {}!", person.name);
     }
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """
     MODULE_CODE_B = """
@@ -42,7 +42,7 @@ pub struct Person {
 """
 
     MODULE_CODE_C = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -59,7 +59,7 @@ pub struct Pet {
 
 #[spacetimedb::reducer]
 pub fn are_we_updated_yet(ctx: &ReducerContext) {
-    println!("MODULE UPDATED");
+    log::info!("MODULE UPDATED");
 }
 """
 
@@ -102,7 +102,7 @@ pub fn are_we_updated_yet(ctx: &ReducerContext) {
 
 class UploadModule1(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -117,9 +117,9 @@ pub fn add(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn say_hello(ctx: &ReducerContext) {
     for person in ctx.db.person().iter() {
-        println!("Hello, {}!", person.name);
+        log::info!("Hello, {}!", person.name);
     }
-    println!("Hello, World!");
+    log::info!("Hello, World!");
 }
 """
 
@@ -139,11 +139,15 @@ pub fn say_hello(ctx: &ReducerContext) {
 
 class UploadModule2(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, duration, ReducerContext, Table, Timestamp};
+use spacetimedb::{log, duration, ReducerContext, Table, Timestamp};
 
 
 #[spacetimedb::table(name = scheduled_message, public, scheduled(my_repeating_reducer))]
 pub struct ScheduledMessage {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: spacetimedb::ScheduleAt,
     prev: Timestamp,
 }
 
@@ -154,7 +158,7 @@ fn init(ctx: &ReducerContext) {
 
 #[spacetimedb::reducer]
 pub fn my_repeating_reducer(ctx: &ReducerContext, arg: ScheduledMessage) {
-    println!("Invoked: ts={:?}, delta={:?}", ctx.timestamp, ctx.timestamp.duration_since(arg.prev));
+     log::info!("Invoked: ts={:?}, delta={:?}", ctx.timestamp, ctx.timestamp.duration_since(arg.prev));
 }
 """
     def test_upload_module_2(self):

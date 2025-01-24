@@ -10,7 +10,7 @@ rust-version.workspace = true
 test = []
 
 [dependencies]
-spacetimedb-lib.workspace = true
+spacetimedb-lib = { workspace = true, features = ["enum-map"] }
 spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-data-structures.workspace = true
@@ -28,6 +28,7 @@ serde_json.workspace = true
 smallvec.workspace = true
 hashbrown.workspace = true
 enum-as-inner.workspace = true
+enum-map.workspace = true
 
 [dev-dependencies]
 spacetimedb-lib = { workspace = true, features = ["test"] }
@@ -35,5 +36,5 @@ spacetimedb-lib = { workspace = true, features = ["test"] }
 spacetimedb-testing = { path = "../testing" }
 spacetimedb-cli.workspace = true
 
-pretty_assertions.workspace = true
 proptest.workspace = true
+serial_test.workspace = true

@@ -139,7 +139,7 @@ impl BlobStore for NullBlobStore {
 
 /// A blob store that is backed by a hash map with a reference counted value.
 /// Used for tests when you need an actual blob store.
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq, Debug)]
 pub struct HashMapBlobStore {
     /// For testing, we use a hash map with a reference count
     /// to handle freeing and cloning correctly.
@@ -154,6 +154,7 @@ impl MemoryUsage for HashMapBlobStore {
 }
 
 /// A blob object including a reference count and the data.
+#[derive(PartialEq, Eq, Debug)]
 struct BlobObject {
     /// Reference count of the blob.
     uses: usize,

@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::one_timestamp_type::OneTimestamp;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `one_timestamp`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.one_timestamp().on_insert(...)`.
 pub struct OneTimestampTableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<OneTimestamp>,
+    imp: __sdk::TableHandle<OneTimestamp>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl OneTimestampTableAccess for super::RemoteTables {
     }
 }
 
-pub struct OneTimestampInsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct OneTimestampDeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct OneTimestampInsertCallbackId(__sdk::CallbackId);
+pub struct OneTimestampDeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for OneTimestampTableHandle<'ctx> {
+impl<'ctx> __sdk::Table for OneTimestampTableHandle<'ctx> {
     type Row = OneTimestamp;
     type EventContext = super::EventContext;
 
@@ -83,9 +82,13 @@ impl<'ctx> __sdk::table::Table for OneTimestampTableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<OneTimestamp>("one_timestamp");
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneTimestamp>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<OneTimestamp>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"one_timestamp\"")
 }

@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeletePkI256 {
+pub(super) struct DeletePkI256Args {
     pub n: __sats::i256,
 }
 
-impl __sdk::spacetime_module::InModule for DeletePkI256 {
+impl From<DeletePkI256Args> for super::Reducer {
+    fn from(args: DeletePkI256Args) -> Self {
+        Self::DeletePkI256 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for DeletePkI256Args {
     type Module = super::RemoteModule;
 }
 
-pub struct DeletePkI256CallbackId(__sdk::callbacks::CallbackId);
+pub struct DeletePkI256CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `delete_pk_i256`.
@@ -52,19 +57,32 @@ pub trait delete_pk_i_256 {
 
 impl delete_pk_i_256 for super::RemoteReducers {
     fn delete_pk_i_256(&self, n: __sats::i256) -> __anyhow::Result<()> {
-        self.imp.call_reducer("delete_pk_i256", DeletePkI256 { n })
+        self.imp.call_reducer("delete_pk_i256", DeletePkI256Args { n })
     }
     fn on_delete_pk_i_256(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sats::i256) + Send + 'static,
     ) -> DeletePkI256CallbackId {
-        DeletePkI256CallbackId(self.imp.on_reducer::<DeletePkI256>(
+        DeletePkI256CallbackId(self.imp.on_reducer(
             "delete_pk_i256",
-            Box::new(move |ctx: &super::EventContext, args: &DeletePkI256| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeletePkI256 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_delete_pk_i_256(&self, callback: DeletePkI256CallbackId) {
-        self.imp.remove_on_reducer::<DeletePkI256>("delete_pk_i256", callback.0)
+        self.imp.remove_on_reducer("delete_pk_i256", callback.0)
     }
 }
 

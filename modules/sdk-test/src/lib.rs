@@ -102,6 +102,7 @@ pub struct EveryVecStruct {
     q: Vec<Identity>,
     r: Vec<Address>,
     s: Vec<Timestamp>,
+    t: Vec<TimeDuration>,
 }
 
 /// Defines one or more tables, and optionally reducers alongside them.
@@ -161,6 +162,22 @@ macro_rules! define_tables {
             #[spacetimedb::reducer]
             pub fn $insert (ctx: &ReducerContext, $($field_name : $ty,)*) {
                 ctx.db.[<$name:snake>]().insert($name { $($field_name,)* });
+            }
+        }
+
+        define_tables!(@impl_ops $name { $($($ops)*)? } $($field_name $ty,)*);
+    };
+
+    // Define a reducer for tables without unique constraints,
+    // which deletes a row.
+    (@impl_ops $name:ident
+     { delete $delete:ident
+       $(, $($ops:tt)* )? }
+     $($field_name:ident $ty:ty),* $(,)*) => {
+        paste::paste! {
+            #[spacetimedb::reducer]
+            pub fn $delete (ctx: &ReducerContext, $($field_name : $ty,)*) {
+                ctx.db.[<$name:snake>]().delete($name { $($field_name,)* });
             }
         }
 
@@ -618,6 +635,7 @@ define_tables! {
     // A table with many fields, of many different types.
     LargeTable {
         insert insert_large_table,
+        delete delete_large_table,
     }
     a u8,
     b u16,
@@ -656,4 +674,33 @@ define_tables! {
 #[spacetimedb::reducer]
 fn no_op_succeeds(_ctx: &ReducerContext) {}
 
-spacetimedb::filter!("SELECT * FROM one_u8");
+#[spacetimedb::client_visibility_filter]
+const ONE_U8_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM one_u8");
+
+#[spacetimedb::table(name = scheduled_table, scheduled(send_scheduled_message), public)]
+pub struct ScheduledTable {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: spacetimedb::ScheduleAt,
+    text: String,
+}
+
+#[spacetimedb::reducer]
+fn send_scheduled_message(_ctx: &ReducerContext, arg: ScheduledTable) {
+    let _ = arg.text;
+    let _ = arg.scheduled_at;
+    let _ = arg.scheduled_id;
+}
+
+#[spacetimedb::table(name = indexed_table)]
+struct IndexedTable {
+    #[index(btree)]
+    player_id: u32,
+}
+
+#[spacetimedb::table(name = indexed_table_2, index(name=player_id_snazz_index, btree(columns = [player_id, player_snazz])))]
+struct IndexedTable2 {
+    player_id: u32,
+    player_snazz: f32,
+}

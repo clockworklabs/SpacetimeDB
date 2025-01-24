@@ -3,6 +3,7 @@
 use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
+use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{
@@ -12,11 +13,7 @@ use crate::host::wasm_common::{
 use crate::host::AbiCall;
 use anyhow::Context as _;
 use spacetimedb_primitives::{errno, ColId};
-use spacetimedb_sats::bsatn;
-use spacetimedb_sats::buffer::{CountWriter, TeeWriter};
 use wasmtime::{AsContext, Caller, StoreContextMut};
-
-use crate::host::instance_env::InstanceEnv;
 
 use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
 
@@ -73,6 +70,9 @@ pub(super) struct WasmInstanceEnv {
 
     /// The last, including current, reducer to be executed by this environment.
     reducer_name: String,
+    /// A pool of unused allocated chunks that can be reused.
+    // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
+    chunk_pool: ChunkPool,
 }
 
 const CALL_REDUCER_ARGS_SOURCE: u32 = 1;
@@ -97,6 +97,7 @@ impl WasmInstanceEnv {
             reducer_start,
             call_times: CallTimes::new(),
             reducer_name: String::from(""),
+            chunk_pool: <_>::default(),
         }
     }
 
@@ -302,7 +303,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_TABLE`, when `name` is not the name of a table.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn table_id_from_name(
         caller: Caller<'_, Self>,
         name: WasmPtr<u8>,
@@ -337,7 +338,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_INDEX`, when `name` is not the name of an index.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn index_id_from_name(
         caller: Caller<'_, Self>,
         name: WasmPtr<u8>,
@@ -367,7 +368,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_row_count(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<u64>) -> RtResult<u32> {
         Self::cvt_ret::<u64>(caller, AbiCall::DatastoreTableRowCount, out, |caller| {
             let (_, env) = Self::mem_env(caller);
@@ -390,7 +391,7 @@ impl WasmInstanceEnv {
     ///
     /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
     /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
-    // #[tracing::instrument(skip_all)]
+    // #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_scan_bsatn(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -399,7 +400,9 @@ impl WasmInstanceEnv {
         Self::cvt_ret(caller, AbiCall::DatastoreTableScanBsatn, out, |caller| {
             let env = caller.data_mut();
             // Collect the iterator chunks.
-            let chunks = env.instance_env.datastore_table_scan_bsatn_chunks(table_id.into())?;
+            let chunks = env
+                .instance_env
+                .datastore_table_scan_bsatn_chunks(&mut env.chunk_pool, table_id.into())?;
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
             Ok(env.iters.insert(chunks.into_iter()))
@@ -495,6 +498,7 @@ impl WasmInstanceEnv {
 
             // Find the relevant rows.
             let chunks = env.instance_env.datastore_btree_scan_bsatn_chunks(
+                &mut env.chunk_pool,
                 index_id.into(),
                 prefix,
                 prefix_elems,
@@ -537,7 +541,7 @@ impl WasmInstanceEnv {
     /// - `BUFFER_TOO_SMALL`, when there are rows left but they cannot fit in `buffer`.
     ///   When this occurs, `buffer_len` is set to the size of the next item in the iterator.
     ///   To make progress, the caller should reallocate the buffer to at least that size and try again.
-    // #[tracing::instrument(skip_all)]
+    // #[tracing::instrument(level = "trace", skip_all)]
     pub fn row_iter_bsatn_advance(
         caller: Caller<'_, Self>,
         iter: u32,
@@ -574,11 +578,9 @@ impl WasmInstanceEnv {
                 buffer = &mut buffer[chunk.len()..];
 
                 // Advance the iterator, as we used a chunk.
-                // TODO(Centril): consider putting these into a pool for reuse
-                // by the next `ChunkedWriter::collect_iter`, `span_start`, and `bytes_sink_write`.
-                // Although we need to shrink these chunks to fit due to `Box<[u8]>`,
-                // in practice, `realloc` will in practice not move the data to a new heap allocation.
-                iter.next();
+                // SAFETY: We peeked one `chunk`, so there must be one at least.
+                let chunk = unsafe { iter.next().unwrap_unchecked() };
+                env.chunk_pool.put(chunk);
             }
 
             let ret = match (written, iter.as_slice().first()) {
@@ -610,7 +612,7 @@ impl WasmInstanceEnv {
     /// Returns an error:
     ///
     /// - `NO_SUCH_ITER`, when `iter` is not a valid iterator.
-    // #[tracing::instrument(skip_all)]
+    // #[tracing::instrument(level = "trace", skip_all)]
     pub fn row_iter_bsatn_close(caller: Caller<'_, Self>, iter: u32) -> RtResult<u32> {
         let row_iter_idx = RowIterIdx(iter);
         Self::cvt_custom(caller, AbiCall::RowIterBsatnClose, |caller| {
@@ -658,7 +660,7 @@ impl WasmInstanceEnv {
     ///   typed at the `ProductType` the table's schema specifies.
     /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
     /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_insert_bsatn(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -673,16 +675,72 @@ impl WasmInstanceEnv {
             // Get a mutable view to the `row`.
             let row = mem.deref_slice_mut(row_ptr, row_len)?;
 
-            // Insert the row into the DB.
-            // This will return back the generated column values.
-            let gen_cols = env.instance_env.insert(table_id.into(), row)?;
+            // Insert the row into the DB and write back the generated column values.
+            let row_len = env.instance_env.insert(table_id.into(), row)?;
+            u32::try_from(row_len).unwrap().write_to(mem, row_len_ptr)?;
+            Ok(())
+        })
+    }
 
-            // Write back the generated column values to `row`
-            // and the encoded length to `row_len`.
-            let counter = CountWriter::default();
-            let mut writer = TeeWriter::new(counter, row);
-            bsatn::to_writer(&mut writer, &gen_cols).unwrap();
-            let row_len = writer.w1.finish();
+    /// Updates a row in the table identified by `table_id` to `row`
+    /// where the row is read from the byte string `row = row_ptr[..row_len]` in WASM memory
+    /// where `row_len = row_len_ptr[..size_of::<usize>()]` stores the capacity of `row`.
+    ///
+    /// The byte string `row` must be a BSATN-encoded `ProductValue`
+    /// typed at the table's `ProductType` row-schema.
+    ///
+    /// The row to update is found by projecting `row`
+    /// to the type of the *unique* index identified by `index_id`.
+    /// If no row is found, the error `NO_SUCH_ROW` is returned.
+    ///
+    /// To handle auto-incrementing columns,
+    /// when the call is successful,
+    /// the `row` is written back to with the generated sequence values.
+    /// These values are written as a BSATN-encoded `pv: ProductValue`.
+    /// Each `v: AlgebraicValue` in `pv` is typed at the sequence's column type.
+    /// The `v`s in `pv` are ordered by the order of the columns, in the schema of the table.
+    /// When the table has no sequences,
+    /// this implies that the `pv`, and thus `row`, will be empty.
+    /// The `row_len` is set to the length of `bsatn(pv)`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `row_len_ptr` is NULL or `row_len` is not in bounds of WASM memory.
+    /// - `row_ptr` is NULL or `row` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `INDEX_NOT_UNIQUE`, when the index was not unique.
+    /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`
+    ///    typed at the `ProductType` the table's schema specifies
+    ///    or when it cannot be projected to the index identified by `index_id`.
+    /// - `NO_SUCH_ROW`, when the row was not found in the unique index.
+    /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
+    /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_update_bsatn(
+        caller: Caller<'_, Self>,
+        table_id: u32,
+        index_id: u32,
+        row_ptr: WasmPtr<u8>,
+        row_len_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt(caller, AbiCall::DatastoreUpdateBsatn, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            // Read `row-len`, i.e., the capacity of `row` pointed to by `row_ptr`.
+            let row_len = u32::read_from(mem, row_len_ptr)?;
+            // Get a mutable view to the `row`.
+            let row = mem.deref_slice_mut(row_ptr, row_len)?;
+
+            // Update the row in the DB and write back the generated column values.
+            let row_len = env.instance_env.update(table_id.into(), index_id.into(), row)?;
             u32::try_from(row_len).unwrap().write_to(mem, row_len_ptr)?;
             Ok(())
         })
@@ -786,7 +844,7 @@ impl WasmInstanceEnv {
     /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
     /// - `BSATN_DECODE_ERROR`, when `rel` cannot be decoded to `Vec<ProductValue>`
     ///   where each `ProductValue` is typed at the `ProductType` the table's schema specifies.
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_delete_all_by_eq_bsatn(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -994,7 +1052,7 @@ impl WasmInstanceEnv {
     /// - `message` is not NULL and `message_ptr[..message_len]` is not in bounds of WASM memory.
     ///
     /// [target]: https://docs.rs/log/latest/log/struct.Record.html#method.target
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(level = "trace", skip_all)]
     pub fn console_log(
         caller: Caller<'_, Self>,
         level: u32,
@@ -1078,6 +1136,28 @@ impl WasmInstanceEnv {
                 &caller.as_context(),
             );
             Ok(0)
+        })
+    }
+
+    /// Writes the identity of the module into `out = out_ptr[..32]`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `out_ptr` is NULL or `out` is not in bounds of WASM memory.
+    pub fn identity(caller: Caller<'_, Self>, out_ptr: WasmPtr<u8>) -> RtResult<()> {
+        // Use `with_span` rather than one of the `cvt_*` functions,
+        // as we want to possibly trap, but not to return an error code.
+        Self::with_span(caller, AbiCall::Identity, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let identity = env.instance_env.replica_ctx.database.database_identity;
+            // We're implicitly casting `out_ptr` to `WasmPtr<Identity>` here.
+            // (Both types are actually `u32`.)
+            // This works because `Identity::write_to` does not require an aligned pointer,
+            // as it gets a `&mut [u8]` from WASM memory and does `copy_from_slice` with it.
+            identity.write_to(mem, out_ptr)?;
+            Ok(())
         })
     }
 }

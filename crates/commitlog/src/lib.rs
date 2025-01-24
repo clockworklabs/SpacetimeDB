@@ -24,8 +24,8 @@ pub use crate::{
 pub mod error;
 pub mod payload;
 
-#[cfg(test)]
-mod tests;
+#[cfg(any(test, feature = "test"))]
+pub mod tests;
 
 /// [`Commitlog`] options.
 #[derive(Clone, Copy, Debug)]
@@ -83,6 +83,14 @@ impl Default for Options {
             offset_index_interval_bytes: NonZeroU64::new(4096).unwrap(),
             offset_index_require_segment_fsync: false,
         }
+    }
+}
+
+impl Options {
+    /// Compute the length in bytes of an offset index based on the settings in
+    /// `self`.
+    pub fn offset_index_len(&self) -> u64 {
+        self.max_segment_size / self.offset_index_interval_bytes
     }
 }
 

@@ -43,8 +43,8 @@ fn creds_store() -> credentials::File {
 }
 
 /// Our `on_connect` callback: save our credentials to a file.
-fn on_connected(_ctx: &DbConnection, identity: Identity, token: &str) {
-    if let Err(e) = creds_store().save(identity, token) {
+fn on_connected(_ctx: &DbConnection, _identity: Identity, token: &str) {
+    if let Err(e) = creds_store().save(token) {
         eprintln!("Failed to save credentials: {:?}", e);
     }
 }
@@ -169,7 +169,7 @@ fn connect_to_db() -> DbConnection {
         .on_connect(on_connected)
         .on_connect_error(|err| panic!("Error while connecting: {err}"))
         .on_disconnect(on_disconnected)
-        .with_credentials(creds_store().load().expect("Error loading credentials"))
+        .with_token(creds_store().load().expect("Error loading credentials"))
         .with_module_name(DB_NAME)
         .with_uri(HOST)
         .with_compression(Compression::Gzip)

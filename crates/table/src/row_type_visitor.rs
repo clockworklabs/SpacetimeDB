@@ -46,6 +46,11 @@ use std::sync::Arc;
 /// This is a potentially expensive operation,
 /// so the resulting `VarLenVisitorProgram` should be stored and re-used.
 pub fn row_type_visitor(ty: &RowTypeLayout) -> VarLenVisitorProgram {
+    if ty.layout().fixed {
+        // Fast-path: The row type doesn't contain var-len members, so quit early.
+        return VarLenVisitorProgram { insns: [].into() };
+    }
+
     let rose_tree = product_type_to_rose_tree(ty.product(), &mut 0);
 
     rose_tree_to_visitor_program(&rose_tree)
@@ -111,10 +116,8 @@ fn sum_type_to_rose_tree(ty: &SumTypeLayout, current_offset: &mut usize) -> VarL
 
             // All variants are stored overlapping at the offset of the sum.
             // Don't let them mutate `current_offset`.
-            // Note that we store sums with data first,
-            // followed by tag,
-            // so the variant data goes at `current_offset`,
-            // not `current_offset + tag + padding`.
+            // Note that we store sums with tag first,
+            // followed by data/payload.
             //
             // `offset_of_variant_data` is defined as 0,
             // but included for future-proofing.
@@ -271,7 +274,7 @@ fn remove_trailing_gotos(program: &mut Vec<Insn>) -> bool {
 }
 
 /// The instruction set of a [`VarLenVisitorProgram`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Insn {
     // TODO(perf): consider boxing this variant (or making it a variable-width instruction)
     //             to minimize sizeof(insn),
@@ -352,7 +355,7 @@ impl fmt::Display for Insn {
 /// Forward progress, and thus termination,
 /// during interpretation is guaranteed when evaluating a program,
 /// as all jumps (`SwitchOnTag` and `Goto`) will set `new_instr_ptr > old_instr_ptr`.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VarLenVisitorProgram {
     /// The list of instructions that make up this program.
     insns: Arc<[Insn]>,

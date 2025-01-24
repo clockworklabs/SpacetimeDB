@@ -2,34 +2,39 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct Init {}
+pub(super) struct InitArgs {}
 
-impl __sdk::spacetime_module::InModule for Init {
+impl From<InitArgs> for super::Reducer {
+    fn from(args: InitArgs) -> Self {
+        Self::Init
+    }
+}
+
+impl __sdk::InModule for InitArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InitCallbackId(__sdk::callbacks::CallbackId);
+pub struct InitCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `__init__`.
+/// Extension trait for access to the reducer `init`.
 ///
 /// Implemented for [`super::RemoteReducers`].
 pub trait init {
-    /// Request that the remote module invoke the reducer `__init__` to run as soon as possible.
+    /// Request that the remote module invoke the reducer `init` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_init`] callbacks.
     fn init(&self) -> __anyhow::Result<()>;
-    /// Register a callback to run whenever we are notified of an invocation of the reducer `__init__`.
+    /// Register a callback to run whenever we are notified of an invocation of the reducer `init`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
     /// will always have [`__sdk::Event::Reducer`] as its `event`,
@@ -47,28 +52,41 @@ pub trait init {
 
 impl init for super::RemoteReducers {
     fn init(&self) -> __anyhow::Result<()> {
-        self.imp.call_reducer("__init__", Init {})
+        self.imp.call_reducer("init", InitArgs {})
     }
     fn on_init(&self, mut callback: impl FnMut(&super::EventContext) + Send + 'static) -> InitCallbackId {
-        InitCallbackId(self.imp.on_reducer::<Init>(
-            "__init__",
-            Box::new(move |ctx: &super::EventContext, args: &Init| callback(ctx)),
+        InitCallbackId(self.imp.on_reducer(
+            "init",
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::Init {},
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx)
+            }),
         ))
     }
     fn remove_on_init(&self, callback: InitCallbackId) {
-        self.imp.remove_on_reducer::<Init>("__init__", callback.0)
+        self.imp.remove_on_reducer("init", callback.0)
     }
 }
 
 #[allow(non_camel_case_types)]
 #[doc(hidden)]
-/// Extension trait for setting the call-flags for the reducer `__init__`.
+/// Extension trait for setting the call-flags for the reducer `init`.
 ///
 /// Implemented for [`super::SetReducerFlags`].
 ///
 /// This type is currently unstable and may be removed without a major version bump.
 pub trait set_flags_for_init {
-    /// Set the call-reducer flags for the reducer `__init__` to `flags`.
+    /// Set the call-reducer flags for the reducer `init` to `flags`.
     ///
     /// This type is currently unstable and may be removed without a major version bump.
     fn init(&self, flags: __ws::CallReducerFlags);
@@ -76,6 +94,6 @@ pub trait set_flags_for_init {
 
 impl set_flags_for_init for super::SetReducerFlags {
     fn init(&self, flags: __ws::CallReducerFlags) {
-        self.imp.set_call_reducer_flags("__init__", flags);
+        self.imp.set_call_reducer_flags("init", flags);
     }
 }

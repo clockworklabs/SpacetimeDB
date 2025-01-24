@@ -1,10 +1,86 @@
 use crate::db::{datastore::locking_tx_datastore::state_view::StateView as _, relational_db::Tx};
+use spacetimedb_lib::query::Delta;
+use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg};
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr};
 
 /// The estimated number of rows that a query plan will return.
 pub fn num_rows(tx: &Tx, expr: &QueryExpr) -> u64 {
     row_est(tx, &expr.source, &expr.query)
+}
+
+/// Use cardinality estimates to predict the total number of rows scanned by a query
+pub fn estimate_rows_scanned(tx: &Tx, plan: &PhysicalPlan) -> u64 {
+    match plan {
+        PhysicalPlan::TableScan(..) | PhysicalPlan::IxScan(..) => row_estimate(tx, plan),
+        PhysicalPlan::Filter(input, _) => estimate_rows_scanned(tx, input).saturating_add(row_estimate(tx, input)),
+        PhysicalPlan::NLJoin(lhs, rhs) => estimate_rows_scanned(tx, lhs)
+            .saturating_add(estimate_rows_scanned(tx, rhs))
+            .saturating_add(row_estimate(tx, lhs).saturating_mul(row_estimate(tx, rhs))),
+        PhysicalPlan::IxJoin(IxJoin { lhs, unique: true, .. }, _) => {
+            estimate_rows_scanned(tx, lhs).saturating_add(row_estimate(tx, lhs))
+        }
+        PhysicalPlan::IxJoin(
+            IxJoin {
+                lhs, rhs, rhs_field, ..
+            },
+            _,
+        ) => estimate_rows_scanned(tx, lhs).saturating_add(row_estimate(tx, lhs).saturating_mul(index_row_est(
+            tx,
+            rhs.table_id,
+            &ColList::from(*rhs_field),
+        ))),
+        PhysicalPlan::HashJoin(
+            HashJoin {
+                lhs, rhs, unique: true, ..
+            },
+            _,
+        ) => estimate_rows_scanned(tx, lhs)
+            .saturating_add(estimate_rows_scanned(tx, rhs))
+            .saturating_add(row_estimate(tx, lhs)),
+        PhysicalPlan::HashJoin(HashJoin { lhs, rhs, .. }, _) => estimate_rows_scanned(tx, lhs)
+            .saturating_add(estimate_rows_scanned(tx, rhs))
+            .saturating_add(row_estimate(tx, lhs).saturating_mul(row_estimate(tx, rhs))),
+    }
+}
+
+/// Estimate the cardinality of a physical plan
+pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
+    match plan {
+        // Table scans return the number of rows in the table
+        PhysicalPlan::TableScan(schema, _, None) => tx.table_row_count(schema.table_id).unwrap_or_default(),
+        PhysicalPlan::TableScan(_, _, Some(Delta::Inserts(n) | Delta::Deletes(n))) => *n as u64,
+        // The selectivity of a single column index scan is 1 / NDV,
+        // where NDV is the Number of Distinct Values of a column.
+        // Note, this assumes a uniform distribution of column values.
+        PhysicalPlan::IxScan(
+            ix @ IxScan {
+                arg: Sarg::Eq(col_id, _),
+                ..
+            },
+            _,
+        ) if ix.prefix.is_empty() => index_row_est(tx, ix.schema.table_id, &ColList::from(*col_id)),
+        // For all other index scans we assume a worst-case scenario.
+        PhysicalPlan::IxScan(IxScan { schema, .. }, _) => tx.table_row_count(schema.table_id).unwrap_or_default(),
+        // Same for filters
+        PhysicalPlan::Filter(input, _) => row_estimate(tx, input),
+        // Nested loop joins are cross joins
+        PhysicalPlan::NLJoin(lhs, rhs) => row_estimate(tx, lhs).saturating_mul(row_estimate(tx, rhs)),
+        // Unique joins return a maximal estimation.
+        // We assume every lhs row has a matching rhs row.
+        PhysicalPlan::IxJoin(IxJoin { lhs, unique: true, .. }, _)
+        | PhysicalPlan::HashJoin(HashJoin { lhs, unique: true, .. }, _) => row_estimate(tx, lhs),
+        // Otherwise we estimate the rows returned from the rhs
+        PhysicalPlan::IxJoin(
+            IxJoin {
+                lhs, rhs, rhs_field, ..
+            },
+            _,
+        ) => row_estimate(tx, lhs).saturating_mul(index_row_est(tx, rhs.table_id, &ColList::from(*rhs_field))),
+        PhysicalPlan::HashJoin(HashJoin { lhs, rhs, .. }, _) => {
+            row_estimate(tx, lhs).saturating_mul(row_estimate(tx, rhs))
+        }
+    }
 }
 
 /// The estimated number of rows that a query sub-plan will return.
@@ -66,7 +142,9 @@ fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use crate::db::relational_db::tests_utils::insert;
     use crate::execution_context::Workload;
+    use crate::sql::ast::SchemaViewer;
     use crate::{
         db::relational_db::{tests_utils::TestDB, RelationalDB},
         error::DBError,
@@ -74,8 +152,11 @@ mod tests {
         sql::compiler::compile_sql,
     };
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType};
+    use spacetimedb_query::SubscribePlan;
     use spacetimedb_sats::product;
     use spacetimedb_vm::expr::CrudExpr;
+
+    use super::row_estimate;
 
     fn in_mem_db() -> TestDB {
         TestDB::in_memory().expect("failed to make test db")
@@ -87,6 +168,15 @@ mod tests {
             [CrudExpr::Query(expr)] => num_rows(&tx, expr),
             exprs => panic!("unexpected result from compilation: {:#?}", exprs),
         }
+    }
+
+    /// Using the new query plan
+    fn new_row_estimate(db: &RelationalDB, sql: &str) -> u64 {
+        let auth = AuthCtx::for_testing();
+        let tx = db.begin_tx(Workload::ForTests);
+        let tx = SchemaViewer::new(&tx, &auth);
+        let plan = SubscribePlan::compile(sql, &tx).expect("failed to compile sql");
+        row_estimate(&tx, &plan)
     }
 
     const NUM_T_ROWS: u64 = 10;
@@ -103,8 +193,7 @@ mod tests {
 
         db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
             for i in 0..NUM_T_ROWS {
-                db.insert(tx, table_id, product![i % NDV_T, i])
-                    .expect("failed to insert into table");
+                insert(db, tx, table_id, &product![i % NDV_T, i]).expect("failed to insert into table");
             }
             Ok(())
         })
@@ -120,7 +209,7 @@ mod tests {
 
         db.with_auto_commit(Workload::ForTests, |tx| -> Result<(), DBError> {
             for i in 0..NUM_S_ROWS {
-                db.insert(tx, rhs, product![i, i]).expect("failed to insert into table");
+                insert(db, tx, rhs, &product![i, i]).expect("failed to insert into table");
             }
             Ok(())
         })
@@ -141,14 +230,19 @@ mod tests {
     fn cardinality_estimation_index_lookup() {
         let db = in_mem_db();
         create_table_t(&db, true);
-        assert_eq!(NUM_T_ROWS / NDV_T, num_rows_for(&db, "select * from T where a = 0"));
+        let sql = "select * from T where a = 0";
+        let est = NUM_T_ROWS / NDV_T;
+        assert_eq!(est, num_rows_for(&db, sql));
+        assert_eq!(est, new_row_estimate(&db, sql));
     }
 
     #[test]
     fn cardinality_estimation_0_ndv() {
         let db = in_mem_db();
         create_empty_table_r(&db, true);
-        assert_eq!(0, num_rows_for(&db, "select * from R where a = 0"));
+        let sql = "select * from R where a = 0";
+        assert_eq!(0, num_rows_for(&db, sql));
+        assert_eq!(0, new_row_estimate(&db, sql));
     }
 
     /// We estimate an index range to return all input rows.
@@ -156,7 +250,9 @@ mod tests {
     fn cardinality_estimation_index_range() {
         let db = in_mem_db();
         create_table_t(&db, true);
-        assert_eq!(NUM_T_ROWS, num_rows_for(&db, "select * from T where a > 0 and a < 2"));
+        let sql = "select * from T where a > 0 and a < 2";
+        assert_eq!(NUM_T_ROWS, num_rows_for(&db, sql));
+        assert_eq!(NUM_T_ROWS, new_row_estimate(&db, sql));
     }
 
     /// We estimate a selection on a non-indexed column to return all input rows.
@@ -164,7 +260,9 @@ mod tests {
     fn select_cardinality_estimation() {
         let db = in_mem_db();
         create_table_t(&db, true);
-        assert_eq!(NUM_T_ROWS, num_rows_for(&db, "select * from T where b = 0"));
+        let sql = "select * from T where b = 0";
+        assert_eq!(NUM_T_ROWS, num_rows_for(&db, sql));
+        assert_eq!(NUM_T_ROWS, new_row_estimate(&db, sql));
     }
 
     /// We estimate a projection to return all input rows.
@@ -172,7 +270,8 @@ mod tests {
     fn project_cardinality_estimation() {
         let db = in_mem_db();
         create_table_t(&db, true);
-        assert_eq!(NUM_T_ROWS, num_rows_for(&db, "select a from T"));
+        let sql = "select a from T";
+        assert_eq!(NUM_T_ROWS, num_rows_for(&db, sql));
     }
 
     /// We estimate an inner join to return the product of its input sizes.
@@ -181,10 +280,10 @@ mod tests {
         let db = in_mem_db();
         create_table_t(&db, false);
         create_table_s(&db, false);
-        assert_eq!(
-            NUM_T_ROWS * NUM_S_ROWS, // => 20
-            num_rows_for(&db, "select T.* from T join S on T.a = S.a where S.c = 0")
-        );
+        let sql = "select T.* from T join S on T.a = S.a where S.c = 0";
+        let est = NUM_T_ROWS * NUM_S_ROWS;
+        assert_eq!(est, num_rows_for(&db, sql));
+        assert_eq!(est, new_row_estimate(&db, sql));
     }
 
     /// An index join estimates its output cardinality in the same way.
@@ -194,9 +293,9 @@ mod tests {
         let db = in_mem_db();
         create_table_t(&db, true);
         create_table_s(&db, true);
-        assert_eq!(
-            NUM_T_ROWS / NDV_T * NUM_S_ROWS / NDV_S, // => 2
-            num_rows_for(&db, "select T.* from T join S on T.a = S.a where S.c = 0")
-        );
+        let sql = "select T.* from T join S on T.a = S.a where S.c = 0";
+        let est = NUM_T_ROWS / NDV_T * NUM_S_ROWS / NDV_S;
+        assert_eq!(est, num_rows_for(&db, sql));
+        assert_eq!(est, new_row_estimate(&db, sql));
     }
 }

@@ -2,24 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertPkI64 {
+pub(super) struct InsertPkI64Args {
     pub n: i64,
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for InsertPkI64 {
+impl From<InsertPkI64Args> for super::Reducer {
+    fn from(args: InsertPkI64Args) -> Self {
+        Self::InsertPkI64 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertPkI64Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertPkI64CallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertPkI64CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_pk_i64`.
@@ -53,19 +61,32 @@ pub trait insert_pk_i_64 {
 
 impl insert_pk_i_64 for super::RemoteReducers {
     fn insert_pk_i_64(&self, n: i64, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_pk_i64", InsertPkI64 { n, data })
+        self.imp.call_reducer("insert_pk_i64", InsertPkI64Args { n, data })
     }
     fn on_insert_pk_i_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i64, &i32) + Send + 'static,
     ) -> InsertPkI64CallbackId {
-        InsertPkI64CallbackId(self.imp.on_reducer::<InsertPkI64>(
+        InsertPkI64CallbackId(self.imp.on_reducer(
             "insert_pk_i64",
-            Box::new(move |ctx: &super::EventContext, args: &InsertPkI64| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertPkI64 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_insert_pk_i_64(&self, callback: InsertPkI64CallbackId) {
-        self.imp.remove_on_reducer::<InsertPkI64>("insert_pk_i64", callback.0)
+        self.imp.remove_on_reducer("insert_pk_i64", callback.0)
     }
 }
 

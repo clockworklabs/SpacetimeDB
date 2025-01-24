@@ -99,6 +99,7 @@ pub enum Workload {
     Reducer(ReducerContext),
     Sql,
     Subscribe,
+    Unsubscribe,
     Update,
     Internal,
 }
@@ -112,6 +113,7 @@ pub enum WorkloadType {
     Reducer,
     Sql,
     Subscribe,
+    Unsubscribe,
     Update,
     Internal,
 }
@@ -124,6 +126,7 @@ impl From<Workload> for WorkloadType {
             Workload::Reducer(_) => Self::Reducer,
             Workload::Sql => Self::Sql,
             Workload::Subscribe => Self::Subscribe,
+            Workload::Unsubscribe => Self::Unsubscribe,
             Workload::Update => Self::Update,
             Workload::Internal => Self::Internal,
         }
@@ -155,6 +158,7 @@ impl ExecutionContext {
             Workload::Reducer(ctx) => Self::reducer(database_identity, ctx),
             Workload::Sql => Self::sql(database_identity),
             Workload::Subscribe => Self::subscribe(database_identity),
+            Workload::Unsubscribe => Self::unsubscribe(database_identity),
             Workload::Update => Self::incremental_update(database_identity),
         }
     }
@@ -172,6 +176,11 @@ impl ExecutionContext {
     /// Returns an [ExecutionContext] for an initial subscribe call.
     pub fn subscribe(database: Identity) -> Self {
         Self::new(database, None, WorkloadType::Subscribe)
+    }
+
+    /// Returns an [ExecutionContext] for an unsubscribe call.
+    pub fn unsubscribe(database: Identity) -> Self {
+        Self::new(database, None, WorkloadType::Unsubscribe)
     }
 
     /// Returns an [ExecutionContext] for a subscription update.

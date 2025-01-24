@@ -1,19 +1,18 @@
 //! Defines procedural macros like `#[spacetimedb::table]`,
 //! simplifying writing SpacetimeDB modules in Rust.
 
-mod filter;
 mod reducer;
 mod sats;
 mod table;
 mod util;
 
-use crate::util::cvt_attr;
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::time::Duration;
-use syn::parse::ParseStream;
-use syn::ItemFn;
+use syn::{parse::ParseStream, Attribute};
+use syn::{ItemConst, ItemFn};
+use util::{cvt_attr, ok_or_compile_error};
 
 mod sym {
     /// A symbol known at compile-time against
@@ -31,6 +30,7 @@ mod sym {
         };
     }
 
+    symbol!(at);
     symbol!(auto_inc);
     symbol!(btree);
     symbol!(client_connected);
@@ -154,8 +154,24 @@ mod sym {
 pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
         let args = reducer::ReducerArgs::parse(args)?;
-        reducer::reducer_impl(args, &original_function)
+        reducer::reducer_impl(args, original_function)
     })
+}
+
+/// It turns out to be shockingly difficult to construct an [`Attribute`].
+/// That type is not [`Parse`], instead having two distinct methods
+/// for parsing "inner" vs "outer" attributes.
+///
+/// We need this [`Attribute`] in [`table`] so that we can "pushnew" it
+/// onto the end of a list of attributes. See comments within [`table`].
+fn derive_table_helper_attr() -> Attribute {
+    let source = quote!(#[derive(spacetimedb::__TableHelper)]);
+
+    syn::parse::Parser::parse2(Attribute::parse_outer, source)
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap()
 }
 
 /// Generates code for treating this struct type as a table.
@@ -232,18 +248,46 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 #[proc_macro_attribute]
 pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     // put this on the struct so we don't get unknown attribute errors
-    let extra_attr = quote!(#[derive(spacetimedb::__TableHelper)]);
-    cvt_attr::<syn::DeriveInput>(args, item, extra_attr, |args, item| {
-        let args = table::TableArgs::parse(args, &item.ident)?;
-        table::table_impl(args, item)
+    let derive_table_helper: syn::Attribute = derive_table_helper_attr();
+
+    ok_or_compile_error(|| {
+        let item = TokenStream::from(item);
+        let mut derive_input: syn::DeriveInput = syn::parse2(item.clone())?;
+
+        // Add `derive(__TableHelper)` only if it's not already in the attributes of the `derive_input.`
+        // If multiple `#[table]` attributes are applied to the same `struct` item,
+        // this will ensure that we don't emit multiple conflicting implementations
+        // for traits like `SpacetimeType`, `Serialize` and `Deserialize`.
+        //
+        // We need to push at the end, rather than the beginning,
+        // because rustc expands attribute macros (including derives) top-to-bottom,
+        // and we need *all* `#[table]` attributes *before* the `derive(__TableHelper)`.
+        // This way, the first `table` will insert a `derive(__TableHelper)`,
+        // and all subsequent `#[table]`s on the same `struct` will see it,
+        // and not add another.
+        //
+        // Note, thank goodness, that `syn`'s `PartialEq` impls (provided with the `extra-traits` feature)
+        // skip any [`Span`]s contained in the items,
+        // thereby comparing for syntactic rather than structural equality. This shouldn't matter,
+        // since we expect that the `derive_table_helper` will always have the same [`Span`]s,
+        // but it's nice to know.
+        if !derive_input.attrs.contains(&derive_table_helper) {
+            derive_input.attrs.push(derive_table_helper);
+        }
+
+        let args = table::TableArgs::parse(args.into(), &derive_input.ident)?;
+        let generated = table::table_impl(args, &derive_input)?;
+        Ok(TokenStream::from_iter([quote!(#derive_input), generated]))
     })
 }
 
+/// Special alias for `derive(SpacetimeType)`, aka [`schema_type`], for use by [`table`].
+///
 /// Provides helper attributes for `#[spacetimedb::table]`, so that we don't get unknown attribute errors.
 #[doc(hidden)]
 #[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index))]
-pub fn table_helper(_input: StdTokenStream) -> StdTokenStream {
-    Default::default()
+pub fn table_helper(input: StdTokenStream) -> StdTokenStream {
+    schema_type(input)
 }
 
 #[proc_macro]
@@ -315,17 +359,24 @@ pub fn schema_type(input: StdTokenStream) -> StdTokenStream {
     })
 }
 
-/// Generates code for registering a row-level security `SQL` function.
+/// Generates code for registering a row-level security rule.
 ///
-/// A row-level security function takes a `SQL` query expression that is used to filter rows.
+/// This attribute must be applied to a `const` binding of type [`Filter`].
+/// It will be interpreted as a filter on the table to which it applies, for all client queries.
+/// If a module contains multiple `client_visibility_filter`s for the same table,
+/// they will be unioned together as if by SQL `OR`,
+/// so that any row permitted by at least one filter is visible.
+///
+/// The `const` binding's identifier must be unique within the module.
 ///
 /// The query follows the same syntax as a subscription query.
 ///
-/// **Example:**
+/// ## Example:
 ///
 /// ```rust,ignore
 /// /// Players can only see what's in their chunk
-/// spacetimedb::filter!("
+/// #[spacetimedb::client_visibility_filter]
+/// const PLAYERS_SEE_ENTITIES_IN_SAME_CHUNK: Filter = Filter::Sql("
 ///     SELECT * FROM LocationState WHERE chunk_index IN (
 ///         SELECT chunk_index FROM LocationState WHERE entity_id IN (
 ///             SELECT entity_id FROM UserState WHERE identity = @sender
@@ -334,14 +385,34 @@ pub fn schema_type(input: StdTokenStream) -> StdTokenStream {
 /// ");
 /// ```
 ///
-/// **NOTE:** The `SQL` query expression is pre-parsed at compile time, but only check is a valid
-/// subscription query *syntactically*, not that the query is valid when executed.
-///
-/// For example, it could refer to a non-existent table.
-#[proc_macro]
-pub fn filter(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let arg = syn::parse_macro_input!(input);
-    filter::filter_impl(arg)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+/// Queries are not checked for syntactic or semantic validity
+/// until they are processed by the SpacetimeDB host.
+/// This means that errors in queries, such as syntax errors, type errors or unknown tables,
+/// will be reported during `spacetime publish`, not at compile time.
+#[doc(hidden)] // TODO: RLS filters are currently unimplemented, and are not enforced.
+#[proc_macro_attribute]
+pub fn client_visibility_filter(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| {
+        if !args.is_empty() {
+            return Err(syn::Error::new_spanned(
+                TokenStream::from(args),
+                "The `client_visibility_filter` attribute does not accept arguments",
+            ));
+        }
+
+        let item: ItemConst = syn::parse(item)?;
+        let rls_ident = item.ident.clone();
+        let register_rls_symbol = format!("__preinit__20_register_row_level_security_{rls_ident}");
+
+        Ok(quote! {
+            #item
+
+            const _: () = {
+                #[export_name = #register_rls_symbol]
+                extern "C" fn __register_client_visibility_filter() {
+                    spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())
+                }
+            };
+        })
+    })
 }

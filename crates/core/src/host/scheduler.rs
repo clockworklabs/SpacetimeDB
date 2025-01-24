@@ -304,8 +304,9 @@ impl SchedulerActor {
             let id = match item {
                 QueueItem::Id(id) => id,
                 QueueItem::VolatileNonatomicImmediate { reducer_name, args } => {
-                    let (reducer_seed, reducer_id) = module_info
-                        .reducer_seed_and_id(&reducer_name[..])
+                    let (reducer_id, reducer_seed) = module_info
+                        .module_def
+                        .reducer_arg_deserialize_seed(&reducer_name[..])
                         .ok_or_else(|| anyhow!("Reducer not found: {}", reducer_name))?;
                     let reducer_args = args.into_tuple(reducer_seed)?;
 
@@ -334,8 +335,9 @@ impl SchedulerActor {
 
             let ScheduledReducer { reducer, bsatn_args } = proccess_schedule(tx, &db, id.table_id, &schedule_row)?;
 
-            let (reducer_seed, reducer_id) = module_info
-                .reducer_seed_and_id(&reducer[..])
+            let (reducer_id, reducer_seed) = module_info
+                .module_def
+                .reducer_arg_deserialize_seed(&reducer[..])
                 .ok_or_else(|| anyhow!("Reducer not found: {}", reducer))?;
 
             let reducer_args = ReducerArgs::Bsatn(bsatn_args.into()).into_tuple(reducer_seed)?;

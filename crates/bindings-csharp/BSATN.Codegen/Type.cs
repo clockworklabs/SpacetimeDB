@@ -15,11 +15,18 @@ public record MemberDeclaration(string Name, string Type, string TypeInfo)
         {
             TypeInfo = GetTypeInfo(type);
         }
+        catch (UnresolvedTypeException)
+        {
+            // If it's an unresolved type, this error will have been already highlighted by .NET itself, no need to add noise.
+            // Just add some dummy type to avoid further errors.
+            // Note that we just use `object` here because emitting the unresolved type's name again would produce more of said noise.
+            TypeInfo = "SpacetimeDB.BSATN.Unsupported<object>";
+        }
         catch (Exception e)
         {
             diag.Report(ErrorDescriptor.UnsupportedType, (member, type, e));
-            // dummy type; can't instantiate an interface, but at least it will produce fewer noisy errors
-            TypeInfo = $"SpacetimeDB.BSATN.IReadWrite<{Type}>";
+            // dummy BSATN implementation to produce fewer noisy errors
+            TypeInfo = $"SpacetimeDB.BSATN.Unsupported<{Type}>";
         }
     }
 
@@ -58,9 +65,9 @@ public abstract record BaseTypeDeclaration<M>
     public readonly string ShortName;
     public readonly string FullName;
     public readonly TypeKind Kind;
-    public EquatableArray<M> Members { get; init; }
+    public readonly EquatableArray<M> Members;
 
-    protected abstract M ConvertMember(IFieldSymbol field, DiagReporter diag);
+    protected abstract M ConvertMember(int index, IFieldSymbol field, DiagReporter diag);
 
     public BaseTypeDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
@@ -127,10 +134,12 @@ public abstract record BaseTypeDeclaration<M>
         Scope = new(typeSyntax);
         ShortName = type.Name;
         FullName = SymbolToName(type);
-        Members = new(fields.Select(field => ConvertMember(field, diag)).ToImmutableArray());
+        Members = new(
+            fields.Select((field, index) => ConvertMember(index, field, diag)).ToImmutableArray()
+        );
     }
 
-    public virtual Scope.Extensions ToExtensions()
+    public Scope.Extensions ToExtensions()
     {
         string read,
             write;
@@ -234,10 +243,13 @@ public abstract record BaseTypeDeclaration<M>
                     {{write}}
                 }
 
-                public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                public SpacetimeDB.BSATN.AlgebraicType.Ref GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
                     registrar.RegisterType<{{FullName}}>(_ => new SpacetimeDB.BSATN.AlgebraicType.{{Kind}}(new SpacetimeDB.BSATN.AggregateElement[] {
                         {{MemberDeclaration.GenerateDefs(Members)}}
                     }));
+
+                SpacetimeDB.BSATN.AlgebraicType SpacetimeDB.BSATN.IReadWrite<{{FullName}}>.GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                    GetAlgebraicType(registrar);
             }
             """
         );
@@ -251,8 +263,11 @@ record TypeDeclaration : BaseTypeDeclaration<MemberDeclaration>
     public TypeDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
         : base(context, diag) { }
 
-    protected override MemberDeclaration ConvertMember(IFieldSymbol field, DiagReporter diag) =>
-        new(field, diag);
+    protected override MemberDeclaration ConvertMember(
+        int index,
+        IFieldSymbol field,
+        DiagReporter diag
+    ) => new(field, diag);
 }
 
 [Generator]

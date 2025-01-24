@@ -17,13 +17,13 @@ public partial struct Disconnected
 static partial class Module
 {
     [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
-    public static void Connected(ReducerContext ctx)
+    public static void identity_connected(ReducerContext ctx)
     {
         ctx.Db.connected.Insert(new Connected { identity = ctx.CallerIdentity });
     }
 
     [SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
-    public static void Disconnected(ReducerContext ctx)
+    public static void identity_disconnected(ReducerContext ctx)
     {
         ctx.Db.disconnected.Insert(new Disconnected { identity = ctx.CallerIdentity });
     }

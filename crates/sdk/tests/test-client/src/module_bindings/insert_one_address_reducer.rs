@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneAddress {
+pub(super) struct InsertOneAddressArgs {
     pub a: __sdk::Address,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOneAddress {
+impl From<InsertOneAddressArgs> for super::Reducer {
+    fn from(args: InsertOneAddressArgs) -> Self {
+        Self::InsertOneAddress { a: args.a }
+    }
+}
+
+impl __sdk::InModule for InsertOneAddressArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOneAddressCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOneAddressCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_one_address`.
@@ -52,20 +57,32 @@ pub trait insert_one_address {
 
 impl insert_one_address for super::RemoteReducers {
     fn insert_one_address(&self, a: __sdk::Address) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_address", InsertOneAddress { a })
+        self.imp.call_reducer("insert_one_address", InsertOneAddressArgs { a })
     }
     fn on_insert_one_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Address) + Send + 'static,
     ) -> InsertOneAddressCallbackId {
-        InsertOneAddressCallbackId(self.imp.on_reducer::<InsertOneAddress>(
+        InsertOneAddressCallbackId(self.imp.on_reducer(
             "insert_one_address",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneAddress| callback(ctx, &args.a)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneAddress { a },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, a)
+            }),
         ))
     }
     fn remove_on_insert_one_address(&self, callback: InsertOneAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertOneAddress>("insert_one_address", callback.0)
+        self.imp.remove_on_reducer("insert_one_address", callback.0)
     }
 }
 

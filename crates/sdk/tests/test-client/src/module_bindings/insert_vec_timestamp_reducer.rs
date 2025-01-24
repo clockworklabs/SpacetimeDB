@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecTimestamp {
+pub(super) struct InsertVecTimestampArgs {
     pub t: Vec<__sdk::Timestamp>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertVecTimestamp {
+impl From<InsertVecTimestampArgs> for super::Reducer {
+    fn from(args: InsertVecTimestampArgs) -> Self {
+        Self::InsertVecTimestamp { t: args.t }
+    }
+}
+
+impl __sdk::InModule for InsertVecTimestampArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecTimestampCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertVecTimestampCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_timestamp`.
@@ -52,20 +57,33 @@ pub trait insert_vec_timestamp {
 
 impl insert_vec_timestamp for super::RemoteReducers {
     fn insert_vec_timestamp(&self, t: Vec<__sdk::Timestamp>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_timestamp", InsertVecTimestamp { t })
+        self.imp
+            .call_reducer("insert_vec_timestamp", InsertVecTimestampArgs { t })
     }
     fn on_insert_vec_timestamp(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<__sdk::Timestamp>) + Send + 'static,
     ) -> InsertVecTimestampCallbackId {
-        InsertVecTimestampCallbackId(self.imp.on_reducer::<InsertVecTimestamp>(
+        InsertVecTimestampCallbackId(self.imp.on_reducer(
             "insert_vec_timestamp",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecTimestamp| callback(ctx, &args.t)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecTimestamp { t },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, t)
+            }),
         ))
     }
     fn remove_on_insert_vec_timestamp(&self, callback: InsertVecTimestampCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertVecTimestamp>("insert_vec_timestamp", callback.0)
+        self.imp.remove_on_reducer("insert_vec_timestamp", callback.0)
     }
 }
 

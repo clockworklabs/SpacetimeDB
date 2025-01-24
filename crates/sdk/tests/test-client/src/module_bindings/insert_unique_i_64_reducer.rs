@@ -2,24 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertUniqueI64 {
+pub(super) struct InsertUniqueI64Args {
     pub n: i64,
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for InsertUniqueI64 {
+impl From<InsertUniqueI64Args> for super::Reducer {
+    fn from(args: InsertUniqueI64Args) -> Self {
+        Self::InsertUniqueI64 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertUniqueI64Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertUniqueI64CallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertUniqueI64CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_unique_i64`.
@@ -53,20 +61,33 @@ pub trait insert_unique_i_64 {
 
 impl insert_unique_i_64 for super::RemoteReducers {
     fn insert_unique_i_64(&self, n: i64, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_unique_i64", InsertUniqueI64 { n, data })
+        self.imp
+            .call_reducer("insert_unique_i64", InsertUniqueI64Args { n, data })
     }
     fn on_insert_unique_i_64(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i64, &i32) + Send + 'static,
     ) -> InsertUniqueI64CallbackId {
-        InsertUniqueI64CallbackId(self.imp.on_reducer::<InsertUniqueI64>(
+        InsertUniqueI64CallbackId(self.imp.on_reducer(
             "insert_unique_i64",
-            Box::new(move |ctx: &super::EventContext, args: &InsertUniqueI64| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertUniqueI64 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_insert_unique_i_64(&self, callback: InsertUniqueI64CallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueI64>("insert_unique_i64", callback.0)
+        self.imp.remove_on_reducer("insert_unique_i64", callback.0)
     }
 }
 

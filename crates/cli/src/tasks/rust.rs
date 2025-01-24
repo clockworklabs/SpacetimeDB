@@ -1,6 +1,8 @@
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
+use crate::detect::{has_rust_up, has_wasm32_target};
 use anyhow::Context;
 use cargo_metadata::Message;
 use duct::cmd;
@@ -19,37 +21,56 @@ fn cargo_cmd(subcommand: &str, build_debug: bool, args: &[&str]) -> duct::Expres
     )
 }
 
-pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
-    // Make sure that we have the wasm target installed (ok to run if its already installed)
-    if let Err(err) = cmd!("rustup", "target", "add", "wasm32-unknown-unknown").run() {
-        println!(
-            "Warning: Failed to install wasm32-unknown-unknown target: {}. Is `rustup` installed?",
-            err
-        );
+pub(crate) fn build_rust(project_path: &Path, lint_dir: Option<&Path>, build_debug: bool) -> anyhow::Result<PathBuf> {
+    // Make sure that we have the wasm target installed
+    if !has_wasm32_target() {
+        if has_rust_up() {
+            cmd!("rustup", "target", "add", "wasm32-unknown-unknown")
+                .run()
+                .context("Failed to install wasm32-unknown-unknown target with rustup")?;
+        } else {
+            anyhow::bail!("wasm32-unknown-unknown target is not installed. Please install it.");
+        }
     }
 
-    // Note: Clippy has to run first so that it can build & cache deps for actual build while checking in parallel.
-    if !skip_clippy {
-        let clippy_conf_dir = tempfile::tempdir()?;
-        fs::write(clippy_conf_dir.path().join("clippy.toml"), CLIPPY_TOML)?;
-        eprintln!("checking crate with spacetimedb's clippy configuration");
-        let out = cargo_cmd(
-            "clippy",
-            build_debug,
-            &[
-                "--",
-                "--no-deps",
-                "-Aclippy::all",
-                "-Dclippy::disallowed-macros",
-                "-Dclippy::disallowed-methods",
-            ],
-        )
-        .dir(project_path)
-        .env("CLIPPY_DISABLE_DOCS_LINKS", "1")
-        .env("CLIPPY_CONF_DIR", clippy_conf_dir.path())
-        .unchecked()
-        .run()?;
-        anyhow::ensure!(out.status.success(), "clippy found a lint error");
+    if let Some(lint_dir) = lint_dir {
+        let mut err_count: u32 = 0;
+        let lint_dir = project_path.join(lint_dir);
+        for file in walkdir::WalkDir::new(lint_dir).into_iter() {
+            let file = file?;
+            let printable_path = file.path().to_str().ok_or(anyhow::anyhow!("path not utf-8"))?;
+            if file.file_type().is_file() && file.path().extension().map_or(false, |ext| ext == "rs") {
+                let file = fs::File::open(file.path())?;
+                for (idx, line) in io::BufReader::new(file).lines().enumerate() {
+                    let line = line?;
+                    let line_number = idx + 1;
+                    for disallowed in &["println!", "print!", "eprintln!", "eprint!", "dbg!"] {
+                        if line.contains(disallowed) {
+                            if err_count == 0 {
+                                eprintln!("\nDetected nonfunctional print statements:\n");
+                            }
+                            eprintln!("{printable_path}:{line_number}: {line}");
+                            err_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+        if err_count > 0 {
+            eprintln!();
+            anyhow::bail!(
+                "Found {err_count} disallowed print statement(s).\n\
+                These will not be printed from SpacetimeDB modules.\n\
+                If you need to print something, use the `log` crate\n\
+                and the `log::info!` macro instead."
+            );
+        }
+    } else {
+        println!(
+            "Warning: Skipping checks for nonfunctional print statements.\n\
+            If you have used builtin macros for printing, such as println!,\n\
+            your logs will not show up."
+        );
     }
 
     let reader = cargo_cmd("build", build_debug, &["--message-format=json-render-diagnostics"])
@@ -71,20 +92,6 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
 
     Ok(artifact.into())
 }
-
-const CLIPPY_TOML: &str = r#"
-disallowed-macros = [
-    { path = "std::print",       reason = "print!() has no effect inside a spacetimedb module; use log::info!() instead" },
-    { path = "std::println",   reason = "println!() has no effect inside a spacetimedb module; use log::info!() instead" },
-    { path = "std::eprint",     reason = "eprint!() has no effect inside a spacetimedb module; use log::warn!() instead" },
-    { path = "std::eprintln", reason = "eprintln!() has no effect inside a spacetimedb module; use log::warn!() instead" },
-    { path = "std::dbg",      reason = "std::dbg!() has no effect inside a spacetimedb module; import spacetime's dbg!() macro instead" },
-]
-disallowed-methods = [
-  { path = "std::time::SystemTime::now", reason = "The wasm32-unknown-unknown implementation of many syscalls, including reading the current time, is stubbed and will panic. Use the timestamp field of ReducerContext instead." },
-  { path = "std::time::Instant::now", reason = "The wasm32-unknown-unknown implementation of many syscalls, including reading the current time, is stubbed and will panic. Use the timestamp field of ReducerContext instead." },
-]
-"#;
 
 fn check_for_issues(artifact: &Path) -> anyhow::Result<()> {
     // if this fails for some reason, just let it fail elsewhere

@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertOneF32 {
+pub(super) struct InsertOneF32Args {
     pub f: f32,
 }
 
-impl __sdk::spacetime_module::InModule for InsertOneF32 {
+impl From<InsertOneF32Args> for super::Reducer {
+    fn from(args: InsertOneF32Args) -> Self {
+        Self::InsertOneF32 { f: args.f }
+    }
+}
+
+impl __sdk::InModule for InsertOneF32Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertOneF32CallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertOneF32CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_one_f32`.
@@ -52,19 +57,32 @@ pub trait insert_one_f_32 {
 
 impl insert_one_f_32 for super::RemoteReducers {
     fn insert_one_f_32(&self, f: f32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_one_f32", InsertOneF32 { f })
+        self.imp.call_reducer("insert_one_f32", InsertOneF32Args { f })
     }
     fn on_insert_one_f_32(
         &self,
         mut callback: impl FnMut(&super::EventContext, &f32) + Send + 'static,
     ) -> InsertOneF32CallbackId {
-        InsertOneF32CallbackId(self.imp.on_reducer::<InsertOneF32>(
+        InsertOneF32CallbackId(self.imp.on_reducer(
             "insert_one_f32",
-            Box::new(move |ctx: &super::EventContext, args: &InsertOneF32| callback(ctx, &args.f)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertOneF32 { f },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, f)
+            }),
         ))
     }
     fn remove_on_insert_one_f_32(&self, callback: InsertOneF32CallbackId) {
-        self.imp.remove_on_reducer::<InsertOneF32>("insert_one_f32", callback.0)
+        self.imp.remove_on_reducer("insert_one_f32", callback.0)
     }
 }
 

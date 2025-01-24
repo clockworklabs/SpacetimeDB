@@ -6,6 +6,9 @@ using SpacetimeDB.BSATN;
 
 internal static class Util
 {
+    public static Span<byte> AsBytes<T>(ref T val)
+        where T : struct => MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref val, 1));
+
     /// <summary>
     /// Convert this object to a BIG-ENDIAN hex string.
     ///
@@ -15,35 +18,28 @@ internal static class Util
     ///
     /// (This might be wrong if the string is printed after, say, a unicode right-to-left marker.
     /// But, well, what can you do.)
-    ///
-    /// Similar to `Convert.ToHexString`, but that method is not available in .NET Standard
-    /// which we need to target for Unity support.
     /// </summary>
     /// <typeparam name="T"></typeparam>
     /// <param name="val"></param>
     /// <returns></returns>
     public static string ToHexBigEndian<T>(T val)
-        where T : struct => BitConverter.ToString(AsBytesBigEndian(val).ToArray()).Replace("-", "");
-
-    /// <summary>
-    /// Read a value of type T from the passed span, which is assumed to be in little-endian format.
-    /// The behavior of this method is independent of the endianness of the host, unlike MemoryMarshal.Read.
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <param name="source"></param>
-    /// <returns></returns>
-    public static T ReadLittleEndian<T>(ReadOnlySpan<byte> source)
-        where T : struct => Read<T>(source, !BitConverter.IsLittleEndian);
-
-    /// <summary>
-    /// Read a value of type T from the passed span, which is assumed to be in big-endian format.
-    /// The behavior of this method is independent of the endianness of the host, unlike MemoryMarshal.Read.
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <param name="source"></param>
-    /// <returns></returns>
-    public static T ReadBigEndian<T>(ReadOnlySpan<byte> source)
-        where T : struct => Read<T>(source, BitConverter.IsLittleEndian);
+        where T : struct
+    {
+        var bytes = AsBytes(ref val);
+        // If host is little-endian, reverse the bytes.
+        // Note that this reverses our stack copy of `val`, not the original value, and doesn't require heap `byte[]` allocation.
+        if (BitConverter.IsLittleEndian)
+        {
+            bytes.Reverse();
+        }
+#if NET5_0_OR_GREATER
+        return Convert.ToHexString(bytes);
+#else
+        // Similar to `Convert.ToHexString`, but that method is not available in .NET Standard
+        // which we need to target for Unity support.
+        return BitConverter.ToString(bytes.ToArray()).Replace("-", "");
+#endif
+    }
 
     /// <summary>
     /// Convert the passed byte array to a value of type T, optionally reversing it before performing the conversion.
@@ -52,9 +48,9 @@ internal static class Util
     /// </summary>
     /// <typeparam name="T"></typeparam>
     /// <param name="source"></param>
-    /// <param name="reverse"></param>
+    /// <param name="littleEndian"></param>
     /// <returns></returns>
-    static T Read<T>(ReadOnlySpan<byte> source, bool reverse)
+    public static T Read<T>(ReadOnlySpan<byte> source, bool littleEndian)
         where T : struct
     {
         Debug.Assert(
@@ -64,52 +60,11 @@ internal static class Util
 
         var result = MemoryMarshal.Read<T>(source);
 
-        if (reverse)
+        if (littleEndian != BitConverter.IsLittleEndian)
         {
-            var resultSpan = MemoryMarshal.CreateSpan(ref result, 1);
-            MemoryMarshal.AsBytes(resultSpan).Reverse();
+            AsBytes(ref result).Reverse();
         }
 
-        return result;
-    }
-
-    /// <summary>
-    /// Convert the passed T to a little-endian byte array.
-    /// The behavior of this method is independent of the endianness of the host, unlike MemoryMarshal.Read.
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <param name="source"></param>
-    /// <returns></returns>
-    public static byte[] AsBytesLittleEndian<T>(T source)
-        where T : struct => AsBytes(source, !BitConverter.IsLittleEndian);
-
-    /// <summary>
-    /// Convert the passed T to a big-endian byte array.
-    /// The behavior of this method is independent of the endianness of the host, unlike MemoryMarshal.Read.
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <param name="source"></param>
-    /// <returns></returns>
-    public static byte[] AsBytesBigEndian<T>(T source)
-        where T : struct => AsBytes<T>(source, BitConverter.IsLittleEndian);
-
-    /// <summary>
-    /// Convert the passed T to a byte array, and optionally reverse the array before returning it.
-    /// If the output is not reversed, it will have the native endianness of the host system.
-    /// (The endianness of the host system can be checked via System.BitConverter.IsLittleEndian.)
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <param name="source"></param>
-    /// <param name="reverse"></param>
-    /// <returns></returns>
-    static byte[] AsBytes<T>(T source, bool reverse)
-        where T : struct
-    {
-        var result = MemoryMarshal.AsBytes([source]).ToArray();
-        if (reverse)
-        {
-            Array.Reverse(result, 0, result.Length);
-        }
         return result;
     }
 
@@ -120,6 +75,10 @@ internal static class Util
     /// <returns></returns>
     public static byte[] StringToByteArray(string hex)
     {
+#if NET5_0_OR_GREATER
+        return Convert.FromHexString(hex);
+#else
+        // Manual implementation for .NET Standard compatibility.
         Debug.Assert(
             hex.Length % 2 == 0,
             $"Expected input string (\"{hex}\") to be of even length"
@@ -132,18 +91,8 @@ internal static class Util
             bytes[i / 2] = Convert.ToByte(hex.Substring(i, 2), 16);
         }
         return bytes;
+#endif
     }
-
-    /// <summary>
-    /// Read a value from a "big-endian" hex string.
-    /// All hex strings we expect to encounter are big-endian (store most significant bytes
-    /// at low indexes) so this should always be used.
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <param name="hex"></param>
-    /// <returns></returns>
-    public static T ReadFromBigEndianHexString<T>(string hex)
-        where T : struct => ReadBigEndian<T>(StringToByteArray(hex));
 
     // Similarly, we need some constants that are not available in .NET Standard.
     public const long TicksPerMicrosecond = 10;
@@ -164,18 +113,7 @@ public readonly partial struct Unit
     }
 }
 
-// We manually implement the following few classes to customize their BSATN serialization.
-// In particular, they are all "special" types, so they need to have their BSATN.GetAlgebraicType work in
-// a special way. Rather than registering themselves in the Typespace, and returning an AlgebraicTypeRef,
-// they return an AlgebraicType.Product directly, with a special property name that can be recognised by SpacetimeDB.
-// This behaviour is ONLY used for these special types.
-//
-// If you need to update these types, remove the portion marked "// --- auto-generated ---",
-// add a [SpacetimeDB.Type] annotation to the type, and enable "EmitCompilerGeneratedFiles" in BSATN.Runtime.csproj.
-// Then, you can find the code that needs to be generated in `obj/`, and copy it here.
-// Take extra care to update the code marked with "// --- customized ---".
-
-
+[StructLayout(LayoutKind.Sequential)]
 public readonly record struct Address
 {
     private readonly U128 value;
@@ -191,9 +129,9 @@ public readonly record struct Address
     /// Returns null if the resulting address is the default.
     /// </summary>
     /// <param name="bytes"></param>
-    public static Address? From(byte[] bytes)
+    public static Address? From(ReadOnlySpan<byte> bytes)
     {
-        var addr = new Address(Util.ReadLittleEndian<U128>(bytes));
+        var addr = Util.Read<Address>(bytes, littleEndian: true);
         return addr == default ? null : addr;
     }
 
@@ -210,9 +148,9 @@ public readonly record struct Address
     /// Returns null if the resulting address is the default.
     /// </summary>
     /// <param name="bytes"></param>
-    public static Address? FromBigEndian(byte[] bytes)
+    public static Address? FromBigEndian(ReadOnlySpan<byte> bytes)
     {
-        var addr = new Address(Util.ReadBigEndian<U128>(bytes));
+        var addr = Util.Read<Address>(bytes, littleEndian: false);
         return addr == default ? null : addr;
     }
 
@@ -221,18 +159,14 @@ public readonly record struct Address
     /// </summary>
     /// <param name="hex"></param>
     /// <returns></returns>
-    public static Address? FromHexString(string hex)
-    {
-        var addr = new Address(Util.ReadFromBigEndianHexString<U128>(hex));
-        return addr == default ? null : addr;
-    }
+    public static Address? FromHexString(string hex) => FromBigEndian(Util.StringToByteArray(hex));
 
     public static Address Random()
     {
         var random = new Random();
-        var bytes = new byte[16];
-        random.NextBytes(bytes);
-        return Address.From(bytes) ?? default;
+        var addr = new Address();
+        random.NextBytes(Util.AsBytes(ref addr));
+        return addr;
     }
 
     // --- auto-generated ---
@@ -255,6 +189,7 @@ public readonly record struct Address
     public override string ToString() => Util.ToHexBigEndian(value);
 }
 
+[StructLayout(LayoutKind.Sequential)]
 public readonly record struct Identity
 {
     private readonly U256 value;
@@ -268,10 +203,7 @@ public readonly record struct Identity
     /// or, failing that, FromBigEndian.
     /// </summary>
     /// <param name="bytes"></param>
-    public Identity(byte[] bytes)
-    {
-        value = Util.ReadLittleEndian<U256>(bytes);
-    }
+    public Identity(ReadOnlySpan<byte> bytes) => this = From(bytes);
 
     /// <summary>
     /// Create an Identity from a LITTLE-ENDIAN byte array.
@@ -280,7 +212,8 @@ public readonly record struct Identity
     /// or, failing that, FromBigEndian.
     /// </summary>
     /// <param name="bytes"></param>
-    public static Identity From(byte[] bytes) => new(bytes);
+    public static Identity From(ReadOnlySpan<byte> bytes) =>
+        Util.Read<Identity>(bytes, littleEndian: true);
 
     /// <summary>
     /// Create an Identity from a BIG-ENDIAN byte array.
@@ -293,18 +226,15 @@ public readonly record struct Identity
     /// [0xb0, 0xb1, 0xb2, ...]
     /// </summary>
     /// <param name="bytes"></param>
-    public static Identity FromBigEndian(byte[] bytes)
-    {
-        return new Identity(Util.ReadBigEndian<U256>(bytes));
-    }
+    public static Identity FromBigEndian(ReadOnlySpan<byte> bytes) =>
+        Util.Read<Identity>(bytes, littleEndian: false);
 
     /// <summary>
     /// Create an Identity from a hex string.
     /// </summary>
     /// <param name="hex"></param>
     /// <returns></returns>
-    public static Identity FromHexString(string hex) =>
-        new Identity(Util.ReadFromBigEndianHexString<U256>(hex));
+    public static Identity FromHexString(string hex) => FromBigEndian(Util.StringToByteArray(hex));
 
     public readonly struct BSATN : IReadWrite<Identity>
     {
@@ -461,6 +391,7 @@ public partial struct TimeDuration(long microseconds) : SpacetimeDB.BSATN.IStruc
     }
 }
 
+[SpacetimeDB.Type]
 public partial record ScheduleAt : SpacetimeDB.TaggedEnum<(TimeDuration Interval, Timestamp Time)>
 {
     public static implicit operator ScheduleAt(TimeDuration duration) => new Interval(duration);

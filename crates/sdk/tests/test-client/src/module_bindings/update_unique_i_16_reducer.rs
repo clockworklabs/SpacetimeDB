@@ -2,24 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdateUniqueI16 {
+pub(super) struct UpdateUniqueI16Args {
     pub n: i16,
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for UpdateUniqueI16 {
+impl From<UpdateUniqueI16Args> for super::Reducer {
+    fn from(args: UpdateUniqueI16Args) -> Self {
+        Self::UpdateUniqueI16 {
+            n: args.n,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdateUniqueI16Args {
     type Module = super::RemoteModule;
 }
 
-pub struct UpdateUniqueI16CallbackId(__sdk::callbacks::CallbackId);
+pub struct UpdateUniqueI16CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `update_unique_i16`.
@@ -53,20 +61,33 @@ pub trait update_unique_i_16 {
 
 impl update_unique_i_16 for super::RemoteReducers {
     fn update_unique_i_16(&self, n: i16, data: i32) -> __anyhow::Result<()> {
-        self.imp.call_reducer("update_unique_i16", UpdateUniqueI16 { n, data })
+        self.imp
+            .call_reducer("update_unique_i16", UpdateUniqueI16Args { n, data })
     }
     fn on_update_unique_i_16(
         &self,
         mut callback: impl FnMut(&super::EventContext, &i16, &i32) + Send + 'static,
     ) -> UpdateUniqueI16CallbackId {
-        UpdateUniqueI16CallbackId(self.imp.on_reducer::<UpdateUniqueI16>(
+        UpdateUniqueI16CallbackId(self.imp.on_reducer(
             "update_unique_i16",
-            Box::new(move |ctx: &super::EventContext, args: &UpdateUniqueI16| callback(ctx, &args.n, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdateUniqueI16 { n, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n, data)
+            }),
         ))
     }
     fn remove_on_update_unique_i_16(&self, callback: UpdateUniqueI16CallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdateUniqueI16>("update_unique_i16", callback.0)
+        self.imp.remove_on_reducer("update_unique_i16", callback.0)
     }
 }
 

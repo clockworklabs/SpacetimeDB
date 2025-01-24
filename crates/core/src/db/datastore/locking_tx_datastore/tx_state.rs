@@ -1,19 +1,19 @@
 use core::ops::RangeBounds;
 use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
+use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     static_assert_size,
-    table::{IndexScanIter, RowRef, Table},
+    table::{IndexScanIter, RowRef, Table, TableAndIndex},
 };
 use std::collections::{btree_map, BTreeMap, BTreeSet};
 
 pub(super) type DeleteTable = BTreeSet<RowPointer>;
 
 /// A mapping to find the actual index given an `IndexId`.
-pub(super) type IndexIdMap = IntMap<IndexId, (TableId, ColList)>;
+pub(super) type IndexIdMap = IntMap<IndexId, TableId>;
 pub(super) type RemovedIndexIdSet = IntSet<IndexId>;
 
 /// `TxState` tracks all of the modifications made during a particular transaction.
@@ -89,14 +89,14 @@ impl TxState {
     }
 
     /// When there's an index on `cols`,
-    /// returns an iterator over the [BTreeIndex] that yields all the `RowId`s
-    /// that match the specified `value` in the indexed column.
+    /// returns an iterator over the [BTreeIndex] that yields all the [`RowRef`]s
+    /// that match the specified `range` in the indexed column.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
     ///
-    /// For a unique index this will always yield at most one `RowId`.
+    /// For a unique index this will always yield at most one `RowRef`.
     /// When there is no index this returns `None`.
-    pub(super) fn index_seek<'a>(
+    pub(super) fn index_seek_by_cols<'a>(
         &'a self,
         table_id: TableId,
         cols: &ColList,
@@ -104,7 +104,20 @@ impl TxState {
     ) -> Option<IndexScanIter<'a>> {
         self.insert_tables
             .get(&table_id)?
-            .index_seek(&self.blob_store, cols, range)
+            .get_index_by_cols_with_table(&self.blob_store, cols)
+            .map(|i| i.seek(range))
+    }
+
+    /// Returns the table associated with the given `index_id`, if any.
+    pub(super) fn get_table_for_index(&self, index_id: IndexId) -> Option<TableId> {
+        self.index_id_map.get(&index_id).copied()
+    }
+
+    /// Returns the table for `table_id` combined with the index for `index_id`, if both exist.
+    pub(super) fn get_index_by_id_with_table(&self, table_id: TableId, index_id: IndexId) -> Option<TableAndIndex<'_>> {
+        self.insert_tables
+            .get(&table_id)?
+            .get_index_by_id_with_table(&self.blob_store, index_id)
     }
 
     // TODO(perf, deep-integration): Make this unsafe. Add the following to the docs:
@@ -145,6 +158,12 @@ impl TxState {
             .unwrap_or(false)
     }
 
+    /// Returns the [DeleteTable] for the given `table_id`, checking if it's empty.
+    pub(super) fn get_delete_table(&self, table_id: TableId) -> Option<&DeleteTable> {
+        self.delete_tables.get(&table_id).filter(|x| !x.is_empty())
+    }
+
+    /// Guarantees that the `table_id` returns a `DeleteTable`.
     pub(super) fn get_delete_table_mut(&mut self, table_id: TableId) -> &mut DeleteTable {
         self.delete_tables.entry(table_id).or_default()
     }
@@ -179,10 +198,22 @@ impl TxState {
         Some((tbl, blob_store, idx_map, delete_tables.entry(table_id).or_default()))
     }
 
-    /// Returns the table and index associated with the given `table_id` and `col_list`, if any.
-    pub(super) fn get_table_and_index_type(&self, table_id: TableId, col_list: &ColList) -> Option<&AlgebraicType> {
-        let table = self.insert_tables.get(&table_id)?;
-        let index = table.indexes.get(col_list)?;
-        Some(&index.key_type)
+    /// Assumes that the insert and delete tables exist for `table_id` and fetches them.
+    ///
+    /// # Safety
+    ///
+    /// The insert and delete tables must exist.
+    pub unsafe fn assume_present_get_mut_table(
+        &mut self,
+        table_id: TableId,
+    ) -> (&mut Table, &mut dyn BlobStore, &mut DeleteTable) {
+        let tx_blob_store: &mut dyn BlobStore = &mut self.blob_store;
+        let tx_table = self.insert_tables.get_mut(&table_id);
+        // SAFETY: we successfully got a `tx_table` before and haven't removed it since.
+        let tx_table = unsafe { tx_table.unwrap_unchecked() };
+        let delete_table = self.delete_tables.get_mut(&table_id);
+        // SAFETY: we successfully got a `delete_table` before and haven't removed it since.
+        let delete_table = unsafe { delete_table.unwrap_unchecked() };
+        (tx_table, tx_blob_store, delete_table)
     }
 }

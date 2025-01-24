@@ -2,24 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertUniqueIdentity {
+pub(super) struct InsertUniqueIdentityArgs {
     pub i: __sdk::Identity,
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for InsertUniqueIdentity {
+impl From<InsertUniqueIdentityArgs> for super::Reducer {
+    fn from(args: InsertUniqueIdentityArgs) -> Self {
+        Self::InsertUniqueIdentity {
+            i: args.i,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertUniqueIdentityArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertUniqueIdentityCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertUniqueIdentityCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_unique_identity`.
@@ -54,20 +62,32 @@ pub trait insert_unique_identity {
 impl insert_unique_identity for super::RemoteReducers {
     fn insert_unique_identity(&self, i: __sdk::Identity, data: i32) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_unique_identity", InsertUniqueIdentity { i, data })
+            .call_reducer("insert_unique_identity", InsertUniqueIdentityArgs { i, data })
     }
     fn on_insert_unique_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Identity, &i32) + Send + 'static,
     ) -> InsertUniqueIdentityCallbackId {
-        InsertUniqueIdentityCallbackId(self.imp.on_reducer::<InsertUniqueIdentity>(
+        InsertUniqueIdentityCallbackId(self.imp.on_reducer(
             "insert_unique_identity",
-            Box::new(move |ctx: &super::EventContext, args: &InsertUniqueIdentity| callback(ctx, &args.i, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertUniqueIdentity { i, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, i, data)
+            }),
         ))
     }
     fn remove_on_insert_unique_identity(&self, callback: InsertUniqueIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertUniqueIdentity>("insert_unique_identity", callback.0)
+        self.imp.remove_on_reducer("insert_unique_identity", callback.0)
     }
 }
 

@@ -6,8 +6,8 @@ public static partial class synthetic
 {
     // ---------- schemas ----------
 
-    [SpacetimeDB.Table]
-    public partial struct unique_0_u32_u64_str
+    [SpacetimeDB.Table(Name = "unique_0_u32_u64_str")]
+    public partial struct unique_0_u32_u64_str_t
     {
         [Unique]
         public uint id;
@@ -15,27 +15,29 @@ public static partial class synthetic
         public string name;
     }
 
-    [SpacetimeDB.Table]
-    public partial struct no_index_u32_u64_str
+    [SpacetimeDB.Table(Name = "no_index_u32_u64_str")]
+    public partial struct no_index_u32_u64_str_t
     {
         public uint id;
         public ulong age;
         public string name;
     }
 
-    [SpacetimeDB.Table]
-    [SpacetimeDB.Index(BTree = [nameof(id)])]
-    [SpacetimeDB.Index(BTree = [nameof(age)])]
-    [SpacetimeDB.Index(BTree = [nameof(name)])]
-    public partial struct btree_each_column_u32_u64_str
+    [SpacetimeDB.Table(Name = "btree_each_column_u32_u64_str")]
+    public partial struct btree_each_column_u32_u64_str_t
     {
+        [SpacetimeDB.Index.BTree]
         public uint id;
+
+        [SpacetimeDB.Index.BTree]
         public ulong age;
+
+        [SpacetimeDB.Index.BTree]
         public string name;
     }
 
-    [SpacetimeDB.Table]
-    public partial struct unique_0_u32_u64_u64
+    [SpacetimeDB.Table(Name = "unique_0_u32_u64_u64")]
+    public partial struct unique_0_u32_u64_u64_t
     {
         [Unique]
         public uint id;
@@ -43,22 +45,24 @@ public static partial class synthetic
         public ulong y;
     }
 
-    [SpacetimeDB.Table]
-    public partial struct no_index_u32_u64_u64
+    [SpacetimeDB.Table(Name = "no_index_u32_u64_u64")]
+    public partial struct no_index_u32_u64_u64_t
     {
         public uint id;
         public ulong x;
         public ulong y;
     }
 
-    [SpacetimeDB.Table]
-    [SpacetimeDB.Index(BTree = [nameof(id)])]
-    [SpacetimeDB.Index(BTree = [nameof(x)])]
-    [SpacetimeDB.Index(BTree = [nameof(y)])]
-    public partial struct btree_each_column_u32_u64_u64
+    [SpacetimeDB.Table(Name = "btree_each_column_u32_u64_u64")]
+    public partial struct btree_each_column_u32_u64_u64_t
     {
+        [SpacetimeDB.Index.BTree]
         public uint id;
+
+        [SpacetimeDB.Index.BTree]
         public ulong x;
+
+        [SpacetimeDB.Index.BTree]
         public ulong y;
     }
 
@@ -172,10 +176,10 @@ public static partial class synthetic
     [SpacetimeDB.Reducer]
     public static void insert_bulk_unique_0_u32_u64_u64(
         ReducerContext ctx,
-        List<unique_0_u32_u64_u64> locs
+        List<unique_0_u32_u64_u64_t> locs
     )
     {
-        foreach (unique_0_u32_u64_u64 loc in locs)
+        foreach (unique_0_u32_u64_u64_t loc in locs)
         {
             ctx.Db.unique_0_u32_u64_u64.Insert(loc);
         }
@@ -184,10 +188,10 @@ public static partial class synthetic
     [SpacetimeDB.Reducer]
     public static void insert_bulk_no_index_u32_u64_u64(
         ReducerContext ctx,
-        List<no_index_u32_u64_u64> locs
+        List<no_index_u32_u64_u64_t> locs
     )
     {
-        foreach (no_index_u32_u64_u64 loc in locs)
+        foreach (no_index_u32_u64_u64_t loc in locs)
         {
             ctx.Db.no_index_u32_u64_u64.Insert(loc);
         }
@@ -196,10 +200,10 @@ public static partial class synthetic
     [SpacetimeDB.Reducer]
     public static void insert_bulk_btree_each_column_u32_u64_u64(
         ReducerContext ctx,
-        List<btree_each_column_u32_u64_u64> locs
+        List<btree_each_column_u32_u64_u64_t> locs
     )
     {
-        foreach (btree_each_column_u32_u64_u64 loc in locs)
+        foreach (btree_each_column_u32_u64_u64_t loc in locs)
         {
             ctx.Db.btree_each_column_u32_u64_u64.Insert(loc);
         }
@@ -208,10 +212,10 @@ public static partial class synthetic
     [SpacetimeDB.Reducer]
     public static void insert_bulk_unique_0_u32_u64_str(
         ReducerContext ctx,
-        List<unique_0_u32_u64_str> people
+        List<unique_0_u32_u64_str_t> people
     )
     {
-        foreach (unique_0_u32_u64_str u32_u64_str in people)
+        foreach (unique_0_u32_u64_str_t u32_u64_str in people)
         {
             ctx.Db.unique_0_u32_u64_str.Insert(u32_u64_str);
         }
@@ -220,10 +224,10 @@ public static partial class synthetic
     [SpacetimeDB.Reducer]
     public static void insert_bulk_no_index_u32_u64_str(
         ReducerContext ctx,
-        List<no_index_u32_u64_str> people
+        List<no_index_u32_u64_str_t> people
     )
     {
-        foreach (no_index_u32_u64_str u32_u64_str in people)
+        foreach (no_index_u32_u64_str_t u32_u64_str in people)
         {
             ctx.Db.no_index_u32_u64_str.Insert(u32_u64_str);
         }
@@ -232,10 +236,10 @@ public static partial class synthetic
     [SpacetimeDB.Reducer]
     public static void insert_bulk_btree_each_column_u32_u64_str(
         ReducerContext ctx,
-        List<btree_each_column_u32_u64_str> people
+        List<btree_each_column_u32_u64_str_t> people
     )
     {
-        foreach (btree_each_column_u32_u64_str u32_u64_str in people)
+        foreach (btree_each_column_u32_u64_str_t u32_u64_str in people)
         {
             ctx.Db.btree_each_column_u32_u64_str.Insert(u32_u64_str);
         }
@@ -244,10 +248,12 @@ public static partial class synthetic
     // ---------- update ----------
 
     [SpacetimeDB.Reducer]
-    public static void update_bulk_unique_0_u32_u64_u64(ReducerContext ctx, uint rowCount)
+    public static void update_bulk_unique_0_u32_u64_u64(ReducerContext ctx, uint row_count)
     {
         int hit = 0;
-        foreach (unique_0_u32_u64_u64 loc in ctx.Db.unique_0_u32_u64_u64.Iter().Take((int)rowCount))
+        foreach (
+            unique_0_u32_u64_u64_t loc in ctx.Db.unique_0_u32_u64_u64.Iter().Take((int)row_count)
+        )
         {
             hit++;
             ctx.Db.unique_0_u32_u64_u64.id.Update(
@@ -259,20 +265,20 @@ public static partial class synthetic
                 }
             );
         }
-        if (hit != rowCount)
+        if (hit != row_count)
         {
             throw new Exception("Not enough rows to perform requested amount of updates");
         }
     }
 
     [SpacetimeDB.Reducer]
-    public static void update_bulk_unique_0_u32_u64_str(ReducerContext ctx, uint rowCount)
+    public static void update_bulk_unique_0_u32_u64_str(ReducerContext ctx, uint row_count)
     {
         uint hit = 0;
         foreach (
-            unique_0_u32_u64_str u32_u64_str in ctx
+            unique_0_u32_u64_str_t u32_u64_str in ctx
                 .Db.unique_0_u32_u64_str.Iter()
-                .Take((int)rowCount)
+                .Take((int)row_count)
         )
         {
             hit++;
@@ -285,7 +291,7 @@ public static partial class synthetic
                 }
             );
         }
-        if (hit != rowCount)
+        if (hit != row_count)
         {
             throw new Exception("Not enough rows to perform requested amount of updates");
         }
@@ -296,7 +302,7 @@ public static partial class synthetic
     [SpacetimeDB.Reducer]
     public static void iterate_unique_0_u32_u64_str(ReducerContext ctx)
     {
-        foreach (unique_0_u32_u64_str u32_u64_str in ctx.Db.unique_0_u32_u64_str.Iter())
+        foreach (unique_0_u32_u64_str_t u32_u64_str in ctx.Db.unique_0_u32_u64_str.Iter())
         {
             Bench.BlackBox(u32_u64_str);
         }
@@ -305,7 +311,7 @@ public static partial class synthetic
     [SpacetimeDB.Reducer]
     public static void iterate_unique_0_u32_u64_u64(ReducerContext ctx)
     {
-        foreach (unique_0_u32_u64_u64 u32_u64_u64 in ctx.Db.unique_0_u32_u64_u64.Iter())
+        foreach (unique_0_u32_u64_u64_t u32_u64_u64 in ctx.Db.unique_0_u32_u64_u64.Iter())
         {
             Bench.BlackBox(u32_u64_u64);
         }
@@ -496,43 +502,43 @@ public static partial class synthetic
     // ---------- module-specific stuff ----------
 
     [SpacetimeDB.Reducer]
-    public static void fn_with_1_args(ReducerContext ctx, string arg) { }
+    public static void fn_with_1_args(ReducerContext ctx, string _arg) { }
 
     [SpacetimeDB.Reducer]
     public static void fn_with_32_args(
         ReducerContext ctx,
-        string arg1,
-        string arg2,
-        string arg3,
-        string arg4,
-        string arg5,
-        string arg6,
-        string arg7,
-        string arg8,
-        string arg9,
-        string arg10,
-        string arg11,
-        string arg12,
-        string arg13,
-        string arg14,
-        string arg15,
-        string arg16,
-        string arg17,
-        string arg18,
-        string arg19,
-        string arg20,
-        string arg21,
-        string arg22,
-        string arg23,
-        string arg24,
-        string arg25,
-        string arg26,
-        string arg27,
-        string arg28,
-        string arg29,
-        string arg30,
-        string arg31,
-        string arg32
+        string _arg1,
+        string _arg2,
+        string _arg3,
+        string _arg4,
+        string _arg5,
+        string _arg6,
+        string _arg7,
+        string _arg8,
+        string _arg9,
+        string _arg10,
+        string _arg11,
+        string _arg12,
+        string _arg13,
+        string _arg14,
+        string _arg15,
+        string _arg16,
+        string _arg17,
+        string _arg18,
+        string _arg19,
+        string _arg20,
+        string _arg21,
+        string _arg22,
+        string _arg23,
+        string _arg24,
+        string _arg25,
+        string _arg26,
+        string _arg27,
+        string _arg28,
+        string _arg29,
+        string _arg30,
+        string _arg31,
+        string _arg32
     ) { }
 
     [SpacetimeDB.Reducer]

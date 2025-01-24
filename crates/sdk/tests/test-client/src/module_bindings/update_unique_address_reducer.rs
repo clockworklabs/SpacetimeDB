@@ -2,24 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct UpdateUniqueAddress {
+pub(super) struct UpdateUniqueAddressArgs {
     pub a: __sdk::Address,
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for UpdateUniqueAddress {
+impl From<UpdateUniqueAddressArgs> for super::Reducer {
+    fn from(args: UpdateUniqueAddressArgs) -> Self {
+        Self::UpdateUniqueAddress {
+            a: args.a,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for UpdateUniqueAddressArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct UpdateUniqueAddressCallbackId(__sdk::callbacks::CallbackId);
+pub struct UpdateUniqueAddressCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `update_unique_address`.
@@ -54,20 +62,32 @@ pub trait update_unique_address {
 impl update_unique_address for super::RemoteReducers {
     fn update_unique_address(&self, a: __sdk::Address, data: i32) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("update_unique_address", UpdateUniqueAddress { a, data })
+            .call_reducer("update_unique_address", UpdateUniqueAddressArgs { a, data })
     }
     fn on_update_unique_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Address, &i32) + Send + 'static,
     ) -> UpdateUniqueAddressCallbackId {
-        UpdateUniqueAddressCallbackId(self.imp.on_reducer::<UpdateUniqueAddress>(
+        UpdateUniqueAddressCallbackId(self.imp.on_reducer(
             "update_unique_address",
-            Box::new(move |ctx: &super::EventContext, args: &UpdateUniqueAddress| callback(ctx, &args.a, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::UpdateUniqueAddress { a, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, a, data)
+            }),
         ))
     }
     fn remove_on_update_unique_address(&self, callback: UpdateUniqueAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<UpdateUniqueAddress>("update_unique_address", callback.0)
+        self.imp.remove_on_reducer("update_unique_address", callback.0)
     }
 }
 

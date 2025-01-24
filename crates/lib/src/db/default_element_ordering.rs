@@ -3,6 +3,7 @@
 //! - In ABI version 8, the default ordering was not applied.
 //! - In ABI version 9, the default ordering is applied to all types in a spacetime module, unless they explicitly declare a custom ordering.
 
+use crate::is_sorted;
 use spacetimedb_sats::{ProductType, ProductTypeElement, SumType, SumTypeVariant};
 
 /// A label for a field of a `ProductType` or a variant of a `SumType`.
@@ -47,20 +48,6 @@ pub fn sum_type_has_default_ordering(ty: &SumType) -> bool {
 /// Not a recursive check.
 pub fn product_type_has_default_ordering(ty: &ProductType) -> bool {
     is_sorted(ty.elements.iter().enumerate().map(ElementLabel::from))
-}
-
-/// Check that an iterator is sorted.
-///
-/// TODO: remove this when [`Iterator`::is_sorted`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.is_sorted) is stabilized.
-fn is_sorted<T: Ord>(mut it: impl Iterator<Item = T>) -> bool {
-    let Some(mut curr) = it.next() else {
-        return true;
-    };
-    it.all(|next| {
-        let ordered = curr <= next;
-        curr = next;
-        ordered
-    })
 }
 
 #[cfg(test)]

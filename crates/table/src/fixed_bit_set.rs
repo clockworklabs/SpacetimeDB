@@ -1,4 +1,5 @@
 use core::{
+    cmp, fmt,
     ops::{BitAnd, BitAndAssign, BitOr, Not, Shl},
     slice::Iter,
 };
@@ -151,7 +152,8 @@ mod internal_unsafe {
     }
 }
 
-impl<B: BitBlock> std::cmp::PartialEq for FixedBitSet<B> {
+impl<B: BitBlock> cmp::Eq for FixedBitSet<B> {}
+impl<B: BitBlock> cmp::PartialEq for FixedBitSet<B> {
     fn eq(&self, other: &Self) -> bool {
         self.storage() == other.storage()
     }
@@ -248,6 +250,12 @@ impl<B: BitBlock> FixedBitSet<B> {
 impl<B> MemoryUsage for FixedBitSet<B> {
     fn heap_usage(&self) -> usize {
         std::mem::size_of_val(self.storage())
+    }
+}
+
+impl<B: BitBlock> fmt::Debug for FixedBitSet<B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_set().entries(self.iter_set()).finish()
     }
 }
 

@@ -5,7 +5,7 @@ import logging
 
 class AddTableAutoMigration(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table, SpacetimeType};
+use spacetimedb::{log, ReducerContext, Table, SpacetimeType};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -20,7 +20,7 @@ pub fn add_person(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     for person in ctx.db.person().iter() {
-        println!("{}: {}", prefix, person.name);
+        log::info!("{}: {}", prefix, person.name);
     }
 }
 
@@ -37,7 +37,8 @@ pub struct Vector2 {
     y: f64,
 }
 
-spacetimedb::filter!("SELECT * FROM person");
+#[spacetimedb::client_visibility_filter]
+const PERSON_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM person");
 """
 
     MODULE_CODE_UPDATED = (
@@ -47,7 +48,7 @@ spacetimedb::filter!("SELECT * FROM person");
 pub struct Book {
     isbn: String,
 }
- 
+
 #[spacetimedb::reducer]
 pub fn add_book(ctx: &ReducerContext, isbn: String) {
     ctx.db.book().insert(Book { isbn });
@@ -56,11 +57,12 @@ pub fn add_book(ctx: &ReducerContext, isbn: String) {
 #[spacetimedb::reducer]
 pub fn print_books(ctx: &ReducerContext, prefix: String) {
     for book in ctx.db.book().iter() {
-        println!("{}: {}", prefix, book.isbn);
+        log::info!("{}: {}", prefix, book.isbn);
     }
 }
 
-spacetimedb::filter!("SELECT * FROM book");
+#[spacetimedb::client_visibility_filter]
+const BOOK_VISIBLE: spacetimedb::Filter = spacetimedb::Filter::Sql("SELECT * FROM book");
 """
     )
 
@@ -75,11 +77,14 @@ spacetimedb::filter!("SELECT * FROM book");
         """This tests uploading a module with a schema change that should not require clearing the database."""
 
         # Check the row-level SQL filter is created correctly
-        self.assertSql("SELECT sql FROM st_row_level_security", """\
+        self.assertSql(
+            "SELECT sql FROM st_row_level_security",
+            """\
  sql
 ------------------------
  "SELECT * FROM person"
-""")
+""",
+        )
 
         logging.info("Initial publish complete")
         # initial module code is already published by test framework
@@ -103,12 +108,15 @@ spacetimedb::filter!("SELECT * FROM book");
         logging.info("Updated")
 
         # Check the row-level SQL filter is added correctly
-        self.assertSql("SELECT sql FROM st_row_level_security", """\
+        self.assertSql(
+            "SELECT sql FROM st_row_level_security",
+            """\
  sql
 ------------------------
  "SELECT * FROM person"
  "SELECT * FROM book"
-""")
+""",
+        )
 
         self.logs(100)
 
@@ -127,7 +135,7 @@ spacetimedb::filter!("SELECT * FROM book");
 
 class RejectTableChanges(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -142,13 +150,13 @@ pub fn add_person(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     for person in ctx.db.person().iter() {
-        println!("{}: {}", prefix, person.name);
+        log::info!("{}: {}", prefix, person.name);
     }
 }
 """
 
     MODULE_CODE_UPDATED = """
-use spacetimedb::{println, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext, Table};
 
 #[spacetimedb::table(name = person)]
 pub struct Person {
@@ -164,7 +172,7 @@ pub fn add_person(ctx: &ReducerContext, name: String) {
 #[spacetimedb::reducer]
 pub fn print_persons(ctx: &ReducerContext, prefix: String) {
     for person in ctx.db.person().iter() {
-        println!("{}: {}", prefix, person.name);
+        log::info!("{}: {}", prefix, person.name);
     }
 }
 """

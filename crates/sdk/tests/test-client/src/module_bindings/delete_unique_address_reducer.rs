@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct DeleteUniqueAddress {
+pub(super) struct DeleteUniqueAddressArgs {
     pub a: __sdk::Address,
 }
 
-impl __sdk::spacetime_module::InModule for DeleteUniqueAddress {
+impl From<DeleteUniqueAddressArgs> for super::Reducer {
+    fn from(args: DeleteUniqueAddressArgs) -> Self {
+        Self::DeleteUniqueAddress { a: args.a }
+    }
+}
+
+impl __sdk::InModule for DeleteUniqueAddressArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct DeleteUniqueAddressCallbackId(__sdk::callbacks::CallbackId);
+pub struct DeleteUniqueAddressCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `delete_unique_address`.
@@ -53,20 +58,32 @@ pub trait delete_unique_address {
 impl delete_unique_address for super::RemoteReducers {
     fn delete_unique_address(&self, a: __sdk::Address) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("delete_unique_address", DeleteUniqueAddress { a })
+            .call_reducer("delete_unique_address", DeleteUniqueAddressArgs { a })
     }
     fn on_delete_unique_address(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Address) + Send + 'static,
     ) -> DeleteUniqueAddressCallbackId {
-        DeleteUniqueAddressCallbackId(self.imp.on_reducer::<DeleteUniqueAddress>(
+        DeleteUniqueAddressCallbackId(self.imp.on_reducer(
             "delete_unique_address",
-            Box::new(move |ctx: &super::EventContext, args: &DeleteUniqueAddress| callback(ctx, &args.a)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::DeleteUniqueAddress { a },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, a)
+            }),
         ))
     }
     fn remove_on_delete_unique_address(&self, callback: DeleteUniqueAddressCallbackId) {
-        self.imp
-            .remove_on_reducer::<DeleteUniqueAddress>("delete_unique_address", callback.0)
+        self.imp.remove_on_reducer("delete_unique_address", callback.0)
     }
 }
 

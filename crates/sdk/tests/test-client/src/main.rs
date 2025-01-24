@@ -7,10 +7,8 @@ use core::fmt::Display;
 use module_bindings::*;
 
 use spacetimedb_sdk::{
-    credentials,
-    sats::{i256, u256},
-    ws_messages::CallReducerFlags,
-    Address, DbConnectionBuilder, DbContext, Event, Identity, ReducerEvent, Status, Table, TimeDuration, Timestamp,
+    credentials, i256, u256, unstable::CallReducerFlags, Address, DbConnectionBuilder, DbContext, Event, Identity,
+    ReducerEvent, Status, Table, TimeDuration, Timestamp,
 };
 use test_counter::TestCounter;
 
@@ -97,7 +95,7 @@ fn main() {
         "insert_simple_enum" => exec_insert_simple_enum(),
         "insert_enum_with_payload" => exec_insert_enum_with_payload(),
 
-        "insert_long_table" => exec_insert_long_table(),
+        "insert_delete_large_table" => exec_insert_delete_large_table(),
 
         "insert_primitives_as_strings" => exec_insert_primitives_as_strings(),
 
@@ -537,7 +535,7 @@ fn exec_insert_caller_identity() {
         move |ctx| {
             subscribe_all_then(ctx, move |ctx| {
                 on_insert_one::<OneIdentity>(ctx, &test_counter, ctx.identity(), |event| {
-                    matches!(event, Reducer::InsertCallerOneIdentity(_))
+                    matches!(event, Reducer::InsertCallerOneIdentity)
                 });
                 ctx.reducers.insert_caller_one_identity().unwrap();
 
@@ -622,7 +620,7 @@ fn exec_insert_caller_address() {
         move |ctx| {
             subscribe_all_then(ctx, move |ctx| {
                 on_insert_one::<OneAddress>(ctx, &test_counter, ctx.address(), |event| {
-                    matches!(event, Reducer::InsertCallerOneAddress(_))
+                    matches!(event, Reducer::InsertCallerOneAddress)
                 });
                 ctx.reducers.insert_caller_one_address().unwrap();
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
@@ -735,7 +733,7 @@ fn exec_insert_call_timestamp() {
                                 reducer_event.status
                             );
                         }
-                        let expected_reducer = Reducer::InsertCallTimestamp(InsertCallTimestamp {});
+                        let expected_reducer = Reducer::InsertCallTimestamp;
                         if reducer_event.reducer != expected_reducer {
                             anyhow::bail!(
                                 "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
@@ -795,7 +793,7 @@ fn exec_on_reducer() {
                     reducer_event.status
                 );
             }
-            let expected_reducer = Reducer::InsertOneU8(InsertOneU8 { n: value });
+            let expected_reducer = Reducer::InsertOneU8 { n: value };
             if reducer_event.reducer != expected_reducer {
                 anyhow::bail!(
                     "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
@@ -878,10 +876,10 @@ fn exec_fail_reducer() {
                         reducer_event.status
                     );
                 }
-                let expected_reducer = Reducer::InsertPkU8(InsertPkU8 {
+                let expected_reducer = Reducer::InsertPkU8 {
                     n: key,
                     data: initial_data,
-                });
+                };
                 if reducer_event.reducer != expected_reducer {
                     anyhow::bail!(
                         "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
@@ -944,10 +942,10 @@ fn exec_fail_reducer() {
                         reducer_event.status
                     );
                 }
-                let expected_reducer = Reducer::InsertPkU8(InsertPkU8 {
+                let expected_reducer = Reducer::InsertPkU8 {
                     n: key,
                     data: fail_data,
-                });
+                };
                 if reducer_event.reducer != expected_reducer {
                     anyhow::bail!(
                         "Unexpected Reducer in ReducerEvent: expected {expected_reducer:?} but found {:?}",
@@ -1055,7 +1053,7 @@ fn every_primitive_struct() -> EveryPrimitiveStruct {
         p: "string".to_string(),
         q: Identity::__dummy(),
         r: Address::default(),
-        s: Timestamp::now(),
+        s: Timestamp::from_micros_since_unix_epoch(9876543210),
         t: TimeDuration::from_micros(-67_419_000_000_003),
     }
 }
@@ -1080,7 +1078,8 @@ fn every_vec_struct() -> EveryVecStruct {
         p: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
         q: vec![Identity::__dummy()],
         r: vec![Address::default()],
-        s: vec![Timestamp::now()],
+        s: vec![Timestamp::from_micros_since_unix_epoch(9876543210)],
+        t: vec![TimeDuration::from_micros(-67_419_000_000_003)],
     }
 }
 
@@ -1276,7 +1275,7 @@ fn exec_should_fail() {
 
 /// This test invokes a reducer with many arguments of many types,
 /// and observes a callback for an inserted table with many columns of many types.
-fn exec_insert_long_table() {
+fn exec_insert_delete_large_table() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -1284,30 +1283,73 @@ fn exec_insert_long_table() {
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
-        let mut large_table_result = Some(test_counter.add_test("insert-large-table"));
+        let mut insert_result = Some(test_counter.add_test("insert-large-table"));
+        let mut delete_result = Some(test_counter.add_test("delete-large-table"));
         move |ctx| {
-            let large_table = large_table();
-            ctx.db.large_table().on_insert({
-                let large_table = large_table.clone();
-                move |ctx, row| {
-                    if large_table_result.is_some() {
-                        let run_tests = || {
-                            assert_eq_or_bail!(large_table, *row);
-                            if !matches!(
-                                ctx.event,
-                                Event::Reducer(ReducerEvent {
-                                    reducer: Reducer::InsertLargeTable(_),
-                                    ..
-                                })
-                            ) {
-                                anyhow::bail!("Unexpected event: expeced InsertLargeTable but found {:?}", ctx.event,);
-                            }
-                            Ok(())
-                        };
-                        (large_table_result.take().unwrap())(run_tests());
-                    }
+            let table = ctx.db.large_table();
+            table.on_insert(move |ctx, large_table_inserted| {
+                if let Some(insert_result) = insert_result.take() {
+                    let run_tests = || {
+                        assert_eq_or_bail!(large_table(), *large_table_inserted);
+                        if !matches!(
+                            ctx.event,
+                            Event::Reducer(ReducerEvent {
+                                reducer: Reducer::InsertLargeTable { .. },
+                                ..
+                            })
+                        ) {
+                            anyhow::bail!("Unexpected event: expeced InsertLargeTable but found {:?}", ctx.event,);
+                        }
+
+                        // Now we'll delete the row we just inserted and check that the delete callback is called.
+                        let large_table = large_table();
+                        ctx.reducers.delete_large_table(
+                            large_table.a,
+                            large_table.b,
+                            large_table.c,
+                            large_table.d,
+                            large_table.e,
+                            large_table.f,
+                            large_table.g,
+                            large_table.h,
+                            large_table.i,
+                            large_table.j,
+                            large_table.k,
+                            large_table.l,
+                            large_table.m,
+                            large_table.n,
+                            large_table.o,
+                            large_table.p,
+                            large_table.q,
+                            large_table.r,
+                            large_table.s,
+                            large_table.t,
+                            large_table.u,
+                            large_table.v,
+                        )
+                    };
+                    insert_result(run_tests());
                 }
             });
+            table.on_delete(move |ctx, row| {
+                if let Some(delete_result) = delete_result.take() {
+                    let run_tests = || {
+                        assert_eq_or_bail!(large_table(), *row);
+                        if !matches!(
+                            ctx.event,
+                            Event::Reducer(ReducerEvent {
+                                reducer: Reducer::DeleteLargeTable { .. },
+                                ..
+                            })
+                        ) {
+                            anyhow::bail!("Unexpected event: expeced DeleteLargeTable but found {:?}", ctx.event,);
+                        }
+                        Ok(())
+                    };
+                    delete_result(run_tests());
+                }
+            });
+            let large_table = large_table();
             ctx.reducers
                 .insert_large_table(
                     large_table.a,
@@ -1385,7 +1427,7 @@ fn exec_insert_primitives_as_strings() {
                             ctx.event,
                             Event::Reducer(ReducerEvent {
                                 status: Status::Committed,
-                                reducer: Reducer::InsertPrimitivesAsStrings(_),
+                                reducer: Reducer::InsertPrimitivesAsStrings { .. },
                                 ..
                             })
                         ) {
@@ -1525,8 +1567,8 @@ fn exec_reauth_part_1() {
     let save_result = test_counter.add_test("save-credentials");
 
     DbConnection::builder()
-        .on_connect(|_, identity, token| {
-            save_result(creds_store().save(identity, token));
+        .on_connect(|_, _identity, token| {
+            save_result(creds_store().save(token));
         })
         .on_connect_error(|e| panic!("Connect failed: {e:?}"))
         .with_module_name(name)
@@ -1549,14 +1591,13 @@ fn exec_reauth_part_2() {
 
     let creds_match_result = test_counter.add_test("creds-match");
 
-    let (identity, token) = creds_store().load().unwrap().unwrap();
+    let token = creds_store().load().unwrap().unwrap();
 
     DbConnection::builder()
         .on_connect({
             let token = token.clone();
-            move |_, recv_identity, recv_token| {
+            move |_, _recv_identity, recv_token| {
                 let run_checks = || {
-                    assert_eq_or_bail!(identity, recv_identity);
                     assert_eq_or_bail!(token, recv_token);
                     Ok(())
                 };
@@ -1565,7 +1606,7 @@ fn exec_reauth_part_2() {
         })
         .on_connect_error(|e| panic!("Connect failed: {e:?}"))
         .with_module_name(name)
-        .with_credentials(Some((identity, token)))
+        .with_token(Some(token))
         .with_uri(LOCALHOST)
         .build()
         .unwrap()
@@ -1642,7 +1683,7 @@ fn exec_caller_always_notified() {
         (no_op_result.take().unwrap())(match ctx.event {
             Event::Reducer(ReducerEvent {
                 status: Status::Committed,
-                reducer: Reducer::NoOpSucceeds(_),
+                reducer: Reducer::NoOpSucceeds,
                 ..
             }) => Ok(()),
             _ => Err(anyhow::anyhow!(
@@ -1657,8 +1698,8 @@ fn exec_caller_always_notified() {
     test_counter.wait_for_all();
 }
 
-/// Duplicates the test `insert_primitive`, but using the `SELECT * FROM *` sugar
-/// rather than an explicit query set.
+/// Duplicates the test `insert_primitive`,
+/// but using `SubscriptionBuilder::subscribe_to_all_tables` rather than an explicit query set.
 fn exec_subscribe_all_select_star() {
     let test_counter = TestCounter::new();
 
@@ -1696,7 +1737,7 @@ fn exec_subscribe_all_select_star() {
             }
         })
         .on_error(|_| panic!("Subscription error"))
-        .subscribe(["SELECT * FROM *"]);
+        .subscribe_to_all_tables();
 
     test_counter.wait_for_all();
 }

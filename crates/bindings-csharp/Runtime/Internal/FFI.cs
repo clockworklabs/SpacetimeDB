@@ -34,6 +34,8 @@ public enum Errno : short
     BUFFER_TOO_SMALL = 11,
     UNIQUE_ALREADY_EXISTS = 12,
     SCHEDULE_AT_DELAY_TOO_LONG = 13,
+    INDEX_NOT_UNIQUE = 14,
+    NO_SUCH_ROW = 15,
 }
 
 #pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
@@ -84,6 +86,8 @@ internal static partial class FFI
                     Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
                     Errno.UNIQUE_ALREADY_EXISTS => new UniqueConstraintViolationException(),
                     Errno.SCHEDULE_AT_DELAY_TOO_LONG => new ScheduleAtDelayTooLongException(),
+                    Errno.INDEX_NOT_UNIQUE => new IndexNotUniqueException(),
+                    Errno.NO_SUCH_ROW => new NoSuchRowException(),
                     _ => new UnknownException(status),
                 };
             }
@@ -270,4 +274,16 @@ internal static partial class FFI
         [In] byte[] args,
         uint args_len
     );
+
+    // Note #1: our Identity type has the same layout as a fixed-size 32-byte little-endian buffer,
+    // so instead of working around C#'s lack of fixed-size arrays, we just accept the pointer to
+    // the Identity itself. In this regard it's different from Rust declaration, but is still
+    // functionally the same.
+    // Note #2: we can't use `LibraryImport` here due to https://github.com/dotnet/runtime/issues/98616
+    // which prevents source-generated PInvokes from working with types from other assemblies, and
+    // `Identity` lives in another assembly (`BSATN.Runtime`). Luckily, `DllImport` is enough here.
+#pragma warning disable SYSLIB1054 // Suppress "Use 'LibraryImportAttribute' instead of 'DllImportAttribute'" warning.
+    [DllImport(StdbNamespace)]
+    public static extern void identity(out Identity dest);
+#pragma warning restore SYSLIB1054
 }

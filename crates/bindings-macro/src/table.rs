@@ -1,6 +1,6 @@
-use crate::sats::{self, derive_deserialize, derive_satstype, derive_serialize};
+use crate::sats;
 use crate::sym;
-use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta, MutItem};
+use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
 use heck::ToSnakeCase;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, ToTokens};
@@ -14,7 +14,7 @@ use syn::{parse_quote, Ident, Path, Token};
 
 pub(crate) struct TableArgs {
     access: Option<TableAccess>,
-    scheduled: Option<Path>,
+    scheduled: Option<ScheduledArg>,
     name: Ident,
     indices: Vec<IndexArg>,
 }
@@ -36,19 +36,10 @@ impl TableAccess {
     }
 }
 
-// add scheduled_id and scheduled_at fields to the struct
-fn add_scheduled_fields(item: &mut syn::DeriveInput) {
-    if let syn::Data::Struct(struct_data) = &mut item.data {
-        if let syn::Fields::Named(fields) = &mut struct_data.fields {
-            let extra_fields: syn::FieldsNamed = parse_quote!({
-                #[primary_key]
-                #[auto_inc]
-                pub scheduled_id: u64,
-                pub scheduled_at: spacetimedb::spacetimedb_lib::ScheduleAt,
-            });
-            fields.named.extend(extra_fields.named);
-        }
-    }
+struct ScheduledArg {
+    span: Span,
+    reducer: Path,
+    at: Option<Ident>,
 }
 
 struct IndexArg {
@@ -85,9 +76,7 @@ impl TableArgs {
                 sym::index => indices.push(IndexArg::parse_meta(meta)?),
                 sym::scheduled => {
                     check_duplicate(&scheduled, &meta)?;
-                    let in_parens;
-                    syn::parenthesized!(in_parens in meta.input);
-                    scheduled = Some(in_parens.parse::<Path>()?);
+                    scheduled = Some(ScheduledArg::parse_meta(meta)?);
                 }
             });
             Ok(())
@@ -106,6 +95,35 @@ impl TableArgs {
             name,
             indices,
         })
+    }
+}
+
+impl ScheduledArg {
+    fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
+        let span = meta.path.span();
+        let mut reducer = None;
+        let mut at = None;
+
+        meta.parse_nested_meta(|meta| {
+            if meta.input.peek(syn::Token![=]) || meta.input.peek(syn::token::Paren) {
+                match_meta!(match meta {
+                    sym::at => {
+                        check_duplicate(&at, &meta)?;
+                        let ident = meta.value()?.parse()?;
+                        at = Some(ident);
+                    }
+                })
+            } else {
+                check_duplicate_msg(&reducer, &meta, "can only specify one scheduled reducer")?;
+                reducer = Some(meta.path);
+            }
+            Ok(())
+        })?;
+
+        let reducer = reducer.ok_or_else(|| {
+            meta.error("must specify scheduled reducer associated with the table: scheduled(reducer_name)")
+        })?;
+        Ok(Self { span, reducer, at })
     }
 }
 
@@ -176,11 +194,7 @@ impl IndexArg {
     }
 
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'_>> {
-        let find_column = |ident| {
-            cols.iter()
-                .find(|col| col.field.ident == Some(ident))
-                .ok_or_else(|| syn::Error::new(ident.span(), "not a column of the table"))
-        };
+        let find_column = |ident| find_column(cols, ident);
         let kind = match &self.kind {
             IndexType::BTree { columns } => {
                 let cols = columns.iter().map(find_column).collect::<syn::Result<Vec<_>>>()?;
@@ -299,7 +313,7 @@ impl ValidatedIndex<'_> {
         }
     }
 
-    fn marker_type(&self, vis: &syn::Visibility, row_type_ident: &Ident) -> TokenStream {
+    fn marker_type(&self, vis: &syn::Visibility, tablehandle_ident: &Ident) -> TokenStream {
         let index_ident = self.accessor_name;
         let index_name = &self.index_name;
         let vis = if let ValidatedIndexType::UniqueBTree { col } = self.kind {
@@ -325,10 +339,10 @@ impl ValidatedIndex<'_> {
             let field_ident = col.field.ident.unwrap();
             decl.extend(quote! {
                 impl spacetimedb::table::Column for #index_ident {
-                    type Row = #row_type_ident;
+                    type Table = #tablehandle_ident;
                     type ColType = #col_ty;
                     const COLUMN_NAME: &'static str = #col_name;
-                    fn get_field(row: &Self::Row) -> &Self::ColType {
+                    fn get_field(row: &<Self::Table as spacetimedb::Table>::Row) -> &Self::ColType {
                         &row.#field_ident
                     }
                 }
@@ -368,6 +382,18 @@ struct Column<'a> {
     ty: &'a syn::Type,
 }
 
+fn try_find_column<'a, 'b, T: ?Sized>(cols: &'a [Column<'b>], name: &T) -> Option<&'a Column<'b>>
+where
+    Ident: PartialEq<T>,
+{
+    cols.iter()
+        .find(|col| col.field.ident.is_some_and(|ident| ident == name))
+}
+
+fn find_column<'a, 'b>(cols: &'a [Column<'b>], name: &Ident) -> syn::Result<&'a Column<'b>> {
+    try_find_column(cols, name).ok_or_else(|| syn::Error::new(name.span(), "not a column of the table"))
+}
+
 enum ColumnAttr {
     Unique(Span),
     AutoInc(Span),
@@ -398,17 +424,9 @@ impl ColumnAttr {
     }
 }
 
-pub(crate) fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::Result<TokenStream> {
-    let scheduled_reducer_type_check = args.scheduled.as_ref().map(|reducer| {
-        add_scheduled_fields(&mut item);
-        let struct_name = &item.ident;
-        quote! {
-            const _: () = spacetimedb::rt::scheduled_reducer_typecheck::<#struct_name>(#reducer);
-        }
-    });
-
+pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let vis = &item.vis;
-    let sats_ty = sats::sats_type_from_derive(&item, quote!(spacetimedb::spacetimedb_lib))?;
+    let sats_ty = sats::sats_type_from_derive(item, quote!(spacetimedb::spacetimedb_lib))?;
 
     let original_struct_ident = sats_ty.ident;
     let table_ident = &args.name;
@@ -437,7 +455,7 @@ pub(crate) fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput
 
     if fields.len() > u16::MAX.into() {
         return Err(syn::Error::new_spanned(
-            &*item,
+            item,
             "too many columns; the most a table can have is 2^16",
         ));
     }
@@ -517,17 +535,11 @@ pub(crate) fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput
         _ => std::cmp::Ordering::Equal,
     });
 
-    let index_descs = indices.iter().map(|index| index.desc());
-    let index_accessors = indices.iter().map(|index| index.accessor(vis, original_struct_ident));
-    let index_marker_types = indices
-        .iter()
-        .map(|index| index.marker_type(vis, original_struct_ident));
-
     let tablehandle_ident = format_ident!("{}__TableHandle", table_ident);
 
-    let deserialize_impl = derive_deserialize(&sats_ty);
-    let serialize_impl = derive_serialize(&sats_ty);
-    let schema_impl = derive_satstype(&sats_ty);
+    let index_descs = indices.iter().map(|index| index.desc());
+    let index_accessors = indices.iter().map(|index| index.accessor(vis, original_struct_ident));
+    let index_marker_types = indices.iter().map(|index| index.marker_type(vis, &tablehandle_ident));
 
     // Generate `integrate_generated_columns`
     // which will integrate all generated auto-inc col values into `_row`.
@@ -548,18 +560,60 @@ pub(crate) fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput
     let primary_col_id = primary_key_column.iter().map(|col| col.index);
     let sequence_col_ids = sequenced_columns.iter().map(|col| col.index);
 
-    let schedule = args
+    let (schedule, schedule_typecheck) = args
         .scheduled
         .as_ref()
-        .map(|reducer| {
-            // scheduled_at was inserted as the last field
-            let scheduled_at_id = (fields.len() - 1) as u16;
-            quote!(spacetimedb::table::ScheduleDesc {
+        .map(|sched| {
+            let scheduled_at_column = match &sched.at {
+                Some(at) => Some(find_column(&columns, at)?),
+                None => try_find_column(&columns, "scheduled_at"),
+            };
+            // better error message when both are missing
+            if scheduled_at_column.is_none() && primary_key_column.is_none() {
+                return Err(syn::Error::new(
+                    sched.span,
+                    "scheduled table missing required columns; add these to your struct:\n\
+                             #[primary_key]\n\
+                             #[auto_inc]\n\
+                             scheduled_id: u64,\n\
+                             scheduled_at: spacetimedb::ScheduleAt,",
+                ));
+            }
+            let scheduled_at_column = scheduled_at_column.ok_or_else(|| {
+                syn::Error::new(
+                    sched.span,
+                    "scheduled tables must have a `scheduled_at: spacetimedb::ScheduleAt` column. \
+                             if the column has a name besides `scheduled_at`, you can specify it with \
+                             `scheduled(my_reducer, at = custom_scheduled_at)`",
+                )
+            })?;
+            let primary_key_column = primary_key_column.ok_or_else(|| {
+                syn::Error::new(
+                    sched.span,
+                    "scheduled tables must have a `#[primary_key] #[auto_inc] scheduled_id: u64` column",
+                )
+            })?;
+
+            let reducer = &sched.reducer;
+            let scheduled_at_id = scheduled_at_column.index;
+            let desc = quote!(spacetimedb::table::ScheduleDesc {
                 reducer_name: <#reducer as spacetimedb::rt::ReducerInfo>::NAME,
                 scheduled_at_column: #scheduled_at_id,
-            })
+            });
+
+            let primary_key_ty = primary_key_column.ty;
+            let scheduled_at_ty = scheduled_at_column.ty;
+            let typecheck = quote! {
+                spacetimedb::rt::scheduled_reducer_typecheck::<#original_struct_ident>(#reducer);
+                spacetimedb::rt::assert_scheduled_table_primary_key::<#primary_key_ty>();
+                let _ = |x: #scheduled_at_ty| { let _: spacetimedb::ScheduleAt = x; };
+            };
+
+            Ok((desc, typecheck))
         })
-        .into_iter();
+        .transpose()?
+        .unzip();
+    let schedule = schedule.into_iter();
 
     let unique_err = if !unique_columns.is_empty() {
         quote!(spacetimedb::UniqueConstraintViolation)
@@ -572,7 +626,6 @@ pub(crate) fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput
         quote!(::core::convert::Infallible)
     };
 
-    let field_names = fields.iter().map(|f| f.ident.unwrap()).collect::<Vec<_>>();
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
 
     let tabletype_impl = quote! {
@@ -607,28 +660,14 @@ pub(crate) fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput
         }
     };
 
-    let col_num = 0u16..;
-    let field_access_impls = quote! {
-        #(impl spacetimedb::table::FieldAccess<#col_num> for #original_struct_ident {
-            type Field = #field_types;
-            fn get_field(&self) -> &Self::Field {
-                &self.#field_names
-            }
-        })*
-    };
-
-    let row_type_to_table = quote!(<#row_type as spacetimedb::table::__MapRowTypeToTable>::Table);
-
     // Output all macro data
     let trait_def = quote_spanned! {table_ident.span()=>
         #[allow(non_camel_case_types, dead_code)]
         #vis trait #table_ident {
-            fn #table_ident(&self) -> &#row_type_to_table;
+            fn #table_ident(&self) -> &#tablehandle_ident;
         }
         impl #table_ident for spacetimedb::Local {
-            fn #table_ident(&self) -> &#row_type_to_table {
-                #[allow(non_camel_case_types)]
-                type #tablehandle_ident = #row_type_to_table;
+            fn #table_ident(&self) -> &#tablehandle_ident {
                 &#tablehandle_ident {}
             }
         }
@@ -643,21 +682,14 @@ pub(crate) fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput
     let emission = quote! {
         const _: () = {
             #(let _ = <#field_types as spacetimedb::rt::TableColumn>::_ITEM;)*
+            #schedule_typecheck
         };
 
         #trait_def
 
-        #[cfg(doc)]
         #tablehandle_def
 
         const _: () = {
-            #[cfg(not(doc))]
-            #tablehandle_def
-
-            impl spacetimedb::table::__MapRowTypeToTable for #row_type {
-                type Table = #tablehandle_ident;
-            }
-
             impl #tablehandle_ident {
                 #(#index_accessors)*
             }
@@ -673,14 +705,6 @@ pub(crate) fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput
 
             #describe_table_func
         };
-
-        #schema_impl
-        #deserialize_impl
-        #serialize_impl
-
-        #field_access_impls
-
-        #scheduled_reducer_type_check
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {

@@ -14,7 +14,7 @@
             PrimaryKeyAuto = PrimaryKey | AutoInc,
         }
 
-        [AttributeUsage(AttributeTargets.Field)]
+        [AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
         public abstract class ColumnAttribute : Attribute
         {
             public string? Table { get; init; }
@@ -48,17 +48,33 @@
         /// </summary>
         public bool Public { get; init; } = false;
 
+        /// <summary>
+        /// If set, the name of the reducer that will be invoked when the scheduled time is reached.
+        /// </summary>
         public string? Scheduled { get; init; }
+
+        /// <summary>
+        /// The name of the column that will be used to store the scheduled time.
+        ///
+        /// <para>Defaults to <c>ScheduledAt</c>.</para>
+        /// </summary>
+        public string ScheduledAt { get; init; } = "ScheduledAt";
     }
 
-    [AttributeUsage(AttributeTargets.Struct | AttributeTargets.Class, AllowMultiple = true)]
-    public sealed class IndexAttribute : Attribute
+    [AttributeUsage(
+        AttributeTargets.Struct | AttributeTargets.Class | AttributeTargets.Field,
+        AllowMultiple = true
+    )]
+    public abstract class Index : Attribute
     {
         public string? Table { get; init; }
 
         public string? Name { get; init; }
 
-        public required string[] BTree { get; init; }
+        public sealed class BTreeAttribute : Index
+        {
+            public string[] Columns { get; init; } = [];
+        }
     }
 
     public sealed class AutoIncAttribute : Internal.ColumnAttribute

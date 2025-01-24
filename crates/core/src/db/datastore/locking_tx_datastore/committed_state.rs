@@ -1,9 +1,11 @@
 use super::{
     datastore::Result,
     sequence::{Sequence, SequencesState},
-    state_view::{Iter, IterByColRange, ScanIterByColRange, StateView},
+    state_view::{IterByColRangeTx, StateView},
     tx_state::{DeleteTable, IndexIdMap, RemovedIndexIdSet, TxState},
+    IterByColEqTx,
 };
+use crate::db::datastore::locking_tx_datastore::state_view::{IterTx, ScanIterByColRangeTx};
 use crate::{
     db::{
         datastore::{
@@ -30,16 +32,16 @@ use spacetimedb_lib::{
     db::auth::{StAccess, StTableType},
     Identity,
 };
-use spacetimedb_primitives::{ColList, ColSet, TableId};
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_primitives::{ColList, ColSet, IndexId, TableId};
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
-    table::{IndexScanIter, InsertError, RowRef, Table},
+    table::{IndexScanIter, InsertError, RowRef, Table, TableAndIndex},
     MemoryUsage,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 /// Contains the live, in-memory snapshot of a database. This structure
@@ -69,6 +71,12 @@ impl MemoryUsage for CommittedState {
 }
 
 impl StateView for CommittedState {
+    type Iter<'a> = IterTx<'a>;
+    type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeTx<'a, R>;
+    type IterByColEq<'a, 'r> = IterByColEqTx<'a, 'r>
+    where
+        Self: 'a;
+
     fn get_schema(&self, table_id: TableId) -> Option<&Arc<TableSchema>> {
         self.tables.get(&table_id).map(|table| table.get_schema())
     }
@@ -77,9 +85,9 @@ impl StateView for CommittedState {
         self.get_table(table_id).map(|table| table.row_count)
     }
 
-    fn iter(&self, table_id: TableId) -> Result<Iter<'_>> {
-        if let Some(table_name) = self.table_name(table_id) {
-            return Ok(Iter::new(table_id, table_name, None, self));
+    fn iter(&self, table_id: TableId) -> Result<Self::Iter<'_>> {
+        if self.table_name(table_id).is_some() {
+            return Ok(IterTx::new(table_id, self));
         }
         Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
@@ -91,14 +99,24 @@ impl StateView for CommittedState {
         table_id: TableId,
         cols: ColList,
         range: R,
-    ) -> Result<IterByColRange<'_, R>> {
+    ) -> Result<Self::IterByColRange<'_, R>> {
         // TODO: Why does this unconditionally return a `Scan` iter,
         // instead of trying to return a `CommittedIndex` iter?
-        Ok(IterByColRange::Scan(ScanIterByColRange::new(
+        // Answer: Because CommittedIndexIter::tx_state: Option<&'a TxState> need to be Some to read after reopen
+        Ok(IterByColRangeTx::Scan(ScanIterByColRangeTx::new(
             self.iter(table_id)?,
             cols,
             range,
         )))
+    }
+
+    fn iter_by_col_eq<'a, 'r>(
+        &'a self,
+        table_id: TableId,
+        cols: impl Into<ColList>,
+        value: &'r AlgebraicValue,
+    ) -> Result<Self::IterByColEq<'a, 'r>> {
+        self.iter_by_col_range(table_id, cols.into(), value)
     }
 }
 
@@ -301,9 +319,8 @@ impl CommittedState {
             .get_mut(&table_id)
             .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
         let blob_store = &mut self.blob_store;
-        let skip_index_update = true;
         table
-            .delete_equal_row(blob_store, rel, skip_index_update)
+            .delete_equal_row(blob_store, rel)
             .map_err(TableError::Insert)?
             .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
         Ok(())
@@ -316,7 +333,7 @@ impl CommittedState {
         row: &ProductValue,
     ) -> Result<()> {
         let (table, blob_store) = self.get_table_and_blob_store_or_create(table_id, schema);
-        table.insert_internal(blob_store, row).map_err(TableError::Insert)?;
+        table.insert(blob_store, row).map_err(TableError::Insert)?;
         Ok(())
     }
 
@@ -357,19 +374,19 @@ impl CommittedState {
             .collect();
 
         for index_row in rows {
-            let Some((table, blob_store)) = self.get_table_and_blob_store(index_row.table_id) else {
+            let index_id = index_row.index_id;
+            let table_id = index_row.table_id;
+            let Some((table, blob_store)) = self.get_table_and_blob_store(table_id) else {
                 panic!("Cannot create index for table which doesn't exist in committed state");
             };
             let columns = match index_row.index_algorithm {
                 StIndexAlgorithm::BTree { columns } => columns,
                 _ => unimplemented!("Only BTree indexes are supported"),
             };
-            let is_unique = unique_constraints.contains(&(index_row.table_id, (&columns).into()));
-
-            let index = table.new_index(index_row.index_id, &columns, is_unique)?;
-            table.insert_index(blob_store, columns.clone(), index);
-            self.index_id_map
-                .insert(index_row.index_id, (index_row.table_id, columns));
+            let is_unique = unique_constraints.contains(&(table_id, (&columns).into()));
+            let index = table.new_index(columns.clone(), is_unique)?;
+            table.insert_index(blob_store, index_id, index);
+            self.index_id_map.insert(index_id, table_id);
         }
         Ok(())
     }
@@ -411,13 +428,36 @@ impl CommittedState {
         Ok(())
     }
 
+    /// When there's an index on `cols`,
+    /// returns an iterator over the [BTreeIndex] that yields all the [`RowRef`]s
+    /// that match the specified `range` in the indexed column.
+    ///
+    /// Matching is defined by `Ord for AlgebraicValue`.
+    ///
+    /// For a unique index this will always yield at most one `RowRef`.
+    /// When there is no index this returns `None`.
     pub(super) fn index_seek<'a>(
         &'a self,
         table_id: TableId,
         cols: &ColList,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> Option<IndexScanIter<'a>> {
-        self.tables.get(&table_id)?.index_seek(&self.blob_store, cols, range)
+        self.tables
+            .get(&table_id)?
+            .get_index_by_cols_with_table(&self.blob_store, cols)
+            .map(|i| i.seek(range))
+    }
+
+    /// Returns the table associated with the given `index_id`, if any.
+    pub(super) fn get_table_for_index(&self, index_id: IndexId) -> Option<TableId> {
+        self.index_id_map.get(&index_id).copied()
+    }
+
+    /// Returns the table for `table_id` combined with the index for `index_id`, if both exist.
+    pub(super) fn get_index_by_id_with_table(&self, table_id: TableId, index_id: IndexId) -> Option<TableAndIndex<'_>> {
+        self.tables
+            .get(&table_id)?
+            .get_index_by_id_with_table(&self.blob_store, index_id)
     }
 
     // TODO(perf, deep-integration): Make this method `unsafe`. Add the following to the docs:
@@ -619,57 +659,27 @@ impl CommittedState {
         let blob_store = &mut self.blob_store;
         (table, blob_store)
     }
-
-    /// Returns the table and index associated with the given `table_id` and `col_list`, if any.
-    pub(super) fn get_table_and_index_type(&self, table_id: TableId, col_list: &ColList) -> Option<&AlgebraicType> {
-        let table = self.tables.get(&table_id)?;
-        let index = table.indexes.get(col_list)?;
-        Some(&index.key_type)
-    }
 }
 
-pub struct CommittedIndexIter<'a> {
-    table_id: TableId,
-    tx_state: Option<&'a TxState>,
-    #[allow(dead_code)]
-    committed_state: &'a CommittedState,
+pub struct CommittedIndexIterWithDeletedMutTx<'a> {
     committed_rows: IndexScanIter<'a>,
-    num_committed_rows_fetched: u64,
+    del_table: &'a DeleteTable,
 }
 
-impl<'a> CommittedIndexIter<'a> {
-    pub(super) fn new(
-        table_id: TableId,
-        tx_state: Option<&'a TxState>,
-        committed_state: &'a CommittedState,
-        committed_rows: IndexScanIter<'a>,
-    ) -> Self {
+impl<'a> CommittedIndexIterWithDeletedMutTx<'a> {
+    pub(super) fn new(committed_rows: IndexScanIter<'a>, del_table: &'a BTreeSet<RowPointer>) -> Self {
         Self {
-            table_id,
-            tx_state,
-            committed_state,
             committed_rows,
-            num_committed_rows_fetched: 0,
+            del_table,
         }
     }
 }
 
-impl<'a> Iterator for CommittedIndexIter<'a> {
+impl<'a> Iterator for CommittedIndexIterWithDeletedMutTx<'a> {
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(row_ref) = self.committed_rows.find(|row_ref| {
-            !self
-                .tx_state
-                .map(|tx_state| tx_state.is_deleted(self.table_id, row_ref.pointer()))
-                .unwrap_or(false)
-        }) {
-            // TODO(metrics): This doesn't actually fetch a row.
-            // Move this counter to `RowRef::read_row`.
-            self.num_committed_rows_fetched += 1;
-            return Some(row_ref);
-        }
-
-        None
+        self.committed_rows
+            .find(|row_ref| !self.del_table.contains(&row_ref.pointer()))
     }
 }

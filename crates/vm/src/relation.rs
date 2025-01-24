@@ -1,4 +1,5 @@
 use core::hash::{Hash, Hasher};
+use spacetimedb_execution::Row;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::relation::{ColExpr, ColExprRef, Header};
 use spacetimedb_sats::bsatn::{ser::BsatnError, ToBsatn};
@@ -26,6 +27,15 @@ pub enum RelValue<'a> {
     /// However, for (lifetime) reasons, we cannot (yet) keep it as a `RowRef<'_>`
     /// and must convert that into a `ProductValue`.
     ProjRef(&'a ProductValue),
+}
+
+impl<'a> From<Row<'a>> for RelValue<'a> {
+    fn from(value: Row<'a>) -> Self {
+        match value {
+            Row::Ptr(ptr) => Self::Row(ptr),
+            Row::Ref(ptr) => Self::ProjRef(ptr),
+        }
+    }
 }
 
 impl Eq for RelValue<'_> {}

@@ -7,9 +7,10 @@ description = "The HTTP API for SpacetimeDB"
 
 [dependencies]
 spacetimedb-client-api-messages.workspace = true
-spacetimedb-data-structures.workspace = true
 spacetimedb-core.workspace = true
+spacetimedb-data-structures.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde"] }
+spacetimedb-paths.workspace = true
 spacetimedb-schema.workspace = true
 
 tokio = { version = "1.2", features = ["full"] }
@@ -43,7 +44,7 @@ derive_more = "0.99.17"
 uuid.workspace = true
 jsonwebtoken.workspace = true
 scopeguard.workspace = true
-spacetimedb-paths.workspace = true
+serde_with.workspace = true
 
 [dev-dependencies]
 jsonwebtoken.workspace = true

@@ -3,10 +3,9 @@
 
 #![allow(unused)]
 use super::one_i_256_type::OneI256;
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 /// Table handle for the table `one_i256`.
@@ -18,7 +17,7 @@ use spacetimedb_sdk::{
 /// but to directly chain method calls,
 /// like `ctx.db.one_i_256().on_insert(...)`.
 pub struct OneI256TableHandle<'ctx> {
-    imp: __sdk::db_connection::TableHandle<OneI256>,
+    imp: __sdk::TableHandle<OneI256>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -41,10 +40,10 @@ impl OneI256TableAccess for super::RemoteTables {
     }
 }
 
-pub struct OneI256InsertCallbackId(__sdk::callbacks::CallbackId);
-pub struct OneI256DeleteCallbackId(__sdk::callbacks::CallbackId);
+pub struct OneI256InsertCallbackId(__sdk::CallbackId);
+pub struct OneI256DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::table::Table for OneI256TableHandle<'ctx> {
+impl<'ctx> __sdk::Table for OneI256TableHandle<'ctx> {
     type Row = OneI256;
     type EventContext = super::EventContext;
 
@@ -83,9 +82,13 @@ impl<'ctx> __sdk::table::Table for OneI256TableHandle<'ctx> {
 }
 
 #[doc(hidden)]
+pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
+    let _table = client_cache.get_or_make_table::<OneI256>("one_i256");
+}
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::spacetime_module::TableUpdate<OneI256>> {
-    __sdk::spacetime_module::TableUpdate::parse_table_update_no_primary_key(raw_updates)
+) -> __anyhow::Result<__sdk::TableUpdate<OneI256>> {
+    __sdk::TableUpdate::parse_table_update_no_primary_key(raw_updates)
         .context("Failed to parse table update for table \"one_i256\"")
 }

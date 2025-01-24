@@ -266,28 +266,6 @@ impl AlgebraicValue {
             _ => false,
         }
     }
-
-    /// Converts `sequence_value` to an appropriate `AlgebraicValue` based on `ty`.
-    /// Truncates the `sequence_value` to fit `ty`.
-    ///
-    /// Panics if `ty` is not an integer type.
-    pub fn from_sequence_value(ty: &AlgebraicType, sequence_value: i128) -> Self {
-        match *ty {
-            AlgebraicType::I8 => (sequence_value as i8).into(),
-            AlgebraicType::U8 => (sequence_value as u8).into(),
-            AlgebraicType::I16 => (sequence_value as i16).into(),
-            AlgebraicType::U16 => (sequence_value as u16).into(),
-            AlgebraicType::I32 => (sequence_value as i32).into(),
-            AlgebraicType::U32 => (sequence_value as u32).into(),
-            AlgebraicType::I64 => (sequence_value as i64).into(),
-            AlgebraicType::U64 => (sequence_value as u64).into(),
-            AlgebraicType::I128 => sequence_value.into(),
-            AlgebraicType::U128 => (sequence_value as u128).into(),
-            AlgebraicType::I256 => sequence_value.into(),
-            AlgebraicType::U256 => (sequence_value as u128).into(),
-            _ => panic!("`{ty:?}` is not a sequence integer type"),
-        }
-    }
 }
 
 impl<T: Into<AlgebraicValue>> From<Option<T>> for AlgebraicValue {

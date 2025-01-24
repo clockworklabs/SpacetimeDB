@@ -2,24 +2,32 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertPkIdentity {
+pub(super) struct InsertPkIdentityArgs {
     pub i: __sdk::Identity,
     pub data: i32,
 }
 
-impl __sdk::spacetime_module::InModule for InsertPkIdentity {
+impl From<InsertPkIdentityArgs> for super::Reducer {
+    fn from(args: InsertPkIdentityArgs) -> Self {
+        Self::InsertPkIdentity {
+            i: args.i,
+            data: args.data,
+        }
+    }
+}
+
+impl __sdk::InModule for InsertPkIdentityArgs {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertPkIdentityCallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertPkIdentityCallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_pk_identity`.
@@ -54,20 +62,32 @@ pub trait insert_pk_identity {
 impl insert_pk_identity for super::RemoteReducers {
     fn insert_pk_identity(&self, i: __sdk::Identity, data: i32) -> __anyhow::Result<()> {
         self.imp
-            .call_reducer("insert_pk_identity", InsertPkIdentity { i, data })
+            .call_reducer("insert_pk_identity", InsertPkIdentityArgs { i, data })
     }
     fn on_insert_pk_identity(
         &self,
         mut callback: impl FnMut(&super::EventContext, &__sdk::Identity, &i32) + Send + 'static,
     ) -> InsertPkIdentityCallbackId {
-        InsertPkIdentityCallbackId(self.imp.on_reducer::<InsertPkIdentity>(
+        InsertPkIdentityCallbackId(self.imp.on_reducer(
             "insert_pk_identity",
-            Box::new(move |ctx: &super::EventContext, args: &InsertPkIdentity| callback(ctx, &args.i, &args.data)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertPkIdentity { i, data },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, i, data)
+            }),
         ))
     }
     fn remove_on_insert_pk_identity(&self, callback: InsertPkIdentityCallbackId) {
-        self.imp
-            .remove_on_reducer::<InsertPkIdentity>("insert_pk_identity", callback.0)
+        self.imp.remove_on_reducer("insert_pk_identity", callback.0)
     }
 }
 

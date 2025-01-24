@@ -2,23 +2,28 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::{
-    self as __sdk,
+use spacetimedb_sdk::__codegen::{
+    self as __sdk, __lib, __sats, __ws,
     anyhow::{self as __anyhow, Context as _},
-    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct InsertVecI32 {
+pub(super) struct InsertVecI32Args {
     pub n: Vec<i32>,
 }
 
-impl __sdk::spacetime_module::InModule for InsertVecI32 {
+impl From<InsertVecI32Args> for super::Reducer {
+    fn from(args: InsertVecI32Args) -> Self {
+        Self::InsertVecI32 { n: args.n }
+    }
+}
+
+impl __sdk::InModule for InsertVecI32Args {
     type Module = super::RemoteModule;
 }
 
-pub struct InsertVecI32CallbackId(__sdk::callbacks::CallbackId);
+pub struct InsertVecI32CallbackId(__sdk::CallbackId);
 
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the reducer `insert_vec_i32`.
@@ -52,19 +57,32 @@ pub trait insert_vec_i_32 {
 
 impl insert_vec_i_32 for super::RemoteReducers {
     fn insert_vec_i_32(&self, n: Vec<i32>) -> __anyhow::Result<()> {
-        self.imp.call_reducer("insert_vec_i32", InsertVecI32 { n })
+        self.imp.call_reducer("insert_vec_i32", InsertVecI32Args { n })
     }
     fn on_insert_vec_i_32(
         &self,
         mut callback: impl FnMut(&super::EventContext, &Vec<i32>) + Send + 'static,
     ) -> InsertVecI32CallbackId {
-        InsertVecI32CallbackId(self.imp.on_reducer::<InsertVecI32>(
+        InsertVecI32CallbackId(self.imp.on_reducer(
             "insert_vec_i32",
-            Box::new(move |ctx: &super::EventContext, args: &InsertVecI32| callback(ctx, &args.n)),
+            Box::new(move |ctx: &super::EventContext| {
+                let super::EventContext {
+                    event:
+                        __sdk::Event::Reducer(__sdk::ReducerEvent {
+                            reducer: super::Reducer::InsertVecI32 { n },
+                            ..
+                        }),
+                    ..
+                } = ctx
+                else {
+                    unreachable!()
+                };
+                callback(ctx, n)
+            }),
         ))
     }
     fn remove_on_insert_vec_i_32(&self, callback: InsertVecI32CallbackId) {
-        self.imp.remove_on_reducer::<InsertVecI32>("insert_vec_i32", callback.0)
+        self.imp.remove_on_reducer("insert_vec_i32", callback.0)
     }
 }
 
