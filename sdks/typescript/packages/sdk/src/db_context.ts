@@ -121,6 +121,27 @@ export class SubscriptionBuilder {
   subscribe(query_sql: string[]): void {
     this.db['subscribe'](query_sql, this.#onApplied, this.#onError);
   }
+
+  /**
+   * Subscribes to all rows from all tables.
+   *
+   * This method is intended as a convenience
+   * for applications where client-side memory use and network bandwidth are not concerns.
+   * Applications where these resources are a constraint
+   * should register more precise queries via `subscribe`
+   * in order to replicate only the subset of data which the client needs to function.
+   *
+   * This method should not be combined with `subscribe` on the same `DbConnection`.
+   * A connection may either `subscribe` to particular queries,
+   * or `subscribeToAllTables`, but not both.
+   * Attempting to call `subscribe`
+   * on a `DbConnection` that has previously used `subscribeToAllTables`,
+   * or vice versa, may misbehave in any number of ways,
+   * including dropping subscriptions, corrupting the client cache, or throwing errors.
+   */
+  subscribeToAllTables(): void {
+    this.subscribe(['SELECT * FROM *']);
+  }
 }
 
 /**
