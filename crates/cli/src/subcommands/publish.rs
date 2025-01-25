@@ -9,7 +9,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, get_auth_header};
+use crate::util::{add_auth_header_opt, get_auth_header, get_login_token_or_log_in};
 use crate::util::{decode_identity, unauth_error_context, y_or_n};
 use crate::{build, common_args};
 
@@ -65,7 +65,7 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_str());
     let name_or_identity = args.get_one::<String>("name|identity");
     let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
@@ -80,7 +80,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     // we want to use the default identity
     // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
     //  easily create a new identity with an email
-    let auth_header = get_auth_header(&config, anon_identity)?;
+    let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
 
     let mut query_params = Vec::<(&str, &str)>::new();
     query_params.push(("host_type", "wasm"));
@@ -159,7 +159,8 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let res = builder.body(program_bytes).send().await?;
     if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
-        let identity = decode_identity(&config)?;
+        let token = get_login_token_or_log_in(&mut config, server, !force).await?;
+        let identity = decode_identity(&token)?;
         let err = res.text().await?;
         return unauth_error_context(
             Err(anyhow::anyhow!(err)),
@@ -198,7 +199,21 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             ));
         }
         PublishResult::PermissionDenied { domain } => {
-            let identity = decode_identity(&config)?;
+            let token = if anon_identity {
+                None
+            } else {
+                // Note: Technically, this logic could be simplified, because if we're not in the `anon_identity` case, then a check further up will have forced the user to log in and get a token.
+                // So, in principle, the "token is None" case is exactly the "anon_identity" case, and we can assume that config.spacetimedb_token() is actually Some otherwise.
+                // However, this version is more correct in isolation / doesn't require relying on assumptions about code elsewhere that might change.
+                config.spacetimedb_token()
+            };
+            let token = if let Some(token) = token {
+                token
+            } else {
+                anyhow::bail!("You need to be logged in to publish to {}", domain.tld());
+            };
+
+            let identity = decode_identity(token)?;
             //TODO(jdetter): Have a nice name generator here, instead of using some abstract characters
             // we should perhaps generate fun names like 'green-fire-dragon' instead
             let suggested_tld: String = identity.chars().take(12).collect();

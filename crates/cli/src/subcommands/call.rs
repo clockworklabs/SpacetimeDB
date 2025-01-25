@@ -30,6 +30,7 @@ pub fn cli() -> clap::Command {
         .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(common_args::anonymous())
+        .arg(common_args::yes())
         .after_help("Run `spacetime help call` for more detailed information.\n")
 }
 
@@ -38,6 +39,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     let reducer_name = args.get_one::<String>("reducer_name").unwrap();
     let arguments = args.get_many::<String>("arguments");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
+    let force = args.get_flag("force");
 
     let anon_identity = args.get_flag("anon_identity");
 
@@ -49,7 +51,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         database_identity.clone(),
         reducer_name
     ));
-    let auth_header = get_auth_header(&config, anon_identity)?;
+    let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
     let builder = add_auth_header_opt(builder, &auth_header);
     let describe_reducer = util::describe_reducer(
         &mut config,
@@ -57,6 +59,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         server.map(|x| x.to_string()),
         reducer_name.clone(),
         anon_identity,
+        !force,
     )
     .await?;
 
