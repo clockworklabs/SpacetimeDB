@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 
 DRY_RUN=0
 ALLOW_DIRTY=0
+NEW_CRATE_OWNERS=("tyler@clockworklabs.io" "zeke@clockworklabs.io")
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -32,7 +33,6 @@ if [ $DRY_RUN -ne 1 ]; then
 fi
 
 BASEDIR=$(pwd)
-
 declare -a CRATES=("metrics" "primitives" "sql-parser" "bindings-macro" "bindings-sys" "data-structures" "sats" "lib" "schema" "bindings" "table" "vm" "client-api-messages" "paths" "commitlog" "durability" "fs-utils" "snapshot" "expr" "execution" "physical-plan" "query" "core" "client-api" "standalone" "cli" "sdk")
 
 for crate in "${CRATES[@]}"; do
@@ -49,6 +49,14 @@ for crate in "${CRATES[@]}"; do
     [[ $DRY_RUN -eq 1 ]] && PUBLISH_CMD+=" --dry-run"
     [[ $ALLOW_DIRTY -eq 1 ]] && PUBLISH_CMD+=" --allow-dirty"
 
+    # Check if crate exists on crates.io
+    if ! cargo search "$crate" --limit 1 | grep -q "^$crate ="; then
+        IS_NEW_CRATE=1
+        echo "INFO: Detected $crate as a new crate on crates.io!"
+    else
+        IS_NEW_CRATE=0
+    fi
+
     echo "Publishing crate: $crate with command: $PUBLISH_CMD"
     if ! OUTPUT=$($PUBLISH_CMD 2>&1); then
         if echo "$OUTPUT" | grep -q "crate version .* is already uploaded"; then
@@ -57,6 +65,15 @@ for crate in "${CRATES[@]}"; do
             echo "ERROR: Failed to publish $crate. Check logs:"
             echo "$OUTPUT"
             exit 1
+        fi
+    else
+        # If this is a new crate, add owners
+        if [ $IS_NEW_CRATE -eq 1 ]; then
+            echo "INFO: Adding owners for new crate $crate..."
+            for owner in "${NEW_CRATE_OWNERS[@]}"; do
+                cargo owner --add "$owner"
+                echo "INFO: Added $owner as an owner of $crate."
+            done
         fi
     fi
 done
