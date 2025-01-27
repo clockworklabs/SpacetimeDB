@@ -7,10 +7,6 @@ use super::{
     tx_state::{DeleteTable, IndexIdMap, TxState},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::db::datastore::locking_tx_datastore::committed_state::CommittedIndexIterWithDeletedMutTx;
-use crate::db::datastore::locking_tx_datastore::state_view::{
-    IndexSeekIterIdWithDeletedMutTx, IterByColEqMutTx, IterByColRangeMutTx, IterMutTx,
-};
 use crate::db::datastore::system_tables::{
     with_sys_table_buf, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StFields as _, StIndexFields,
     StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields,
@@ -18,6 +14,15 @@ use crate::db::datastore::system_tables::{
     ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
 };
 use crate::db::datastore::traits::{RowTypeForTable, TxData};
+use crate::db::datastore::{
+    locking_tx_datastore::committed_state::CommittedIndexIterWithDeletedMutTx, traits::InsertFlags,
+};
+use crate::db::datastore::{
+    locking_tx_datastore::state_view::{
+        IndexSeekIterIdWithDeletedMutTx, IterByColEqMutTx, IterByColRangeMutTx, IterMutTx,
+    },
+    traits::UpdateFlags,
+};
 use crate::execution_context::Workload;
 use crate::{
     error::{IndexError, SequenceError, TableError},
@@ -1174,7 +1179,7 @@ impl MutTxId {
         &'a mut self,
         table_id: TableId,
         row: &T,
-    ) -> Result<(ColList, RowRefInsertion<'a>)> {
+    ) -> Result<(ColList, RowRefInsertion<'a>, InsertFlags)> {
         thread_local! {
             static BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
         }
@@ -1199,11 +1204,12 @@ impl MutTxId {
     /// Returns:
     /// - a list of columns which have been replaced with generated values.
     /// - a ref to the inserted row.
+    /// - any insert flags.
     pub(super) fn insert<const GENERATE: bool>(
         &mut self,
         table_id: TableId,
         row: &[u8],
-    ) -> Result<(ColList, RowRefInsertion<'_>)> {
+    ) -> Result<(ColList, RowRefInsertion<'_>, InsertFlags)> {
         // Get the insert table, so we can write the row into it.
         let (tx_table, tx_blob_store, ..) = self
             .tx_state
@@ -1212,6 +1218,10 @@ impl MutTxId {
                 self.committed_state_write_lock.get_table(table_id),
             )
             .ok_or(TableError::IdNotFoundState(table_id))?;
+
+        let insert_flags = InsertFlags {
+            is_scheduler_table: tx_table.is_scheduler(),
+        };
 
         // 1. Insert the physical row.
         let (tx_row_ref, blob_bytes) = tx_table.insert_physically_bsatn(tx_blob_store, row)?;
@@ -1322,7 +1332,7 @@ impl MutTxId {
                             // SAFETY: `find_same_row` told us that `ptr` refers to a valid row in `commit_table`.
                             unsafe { commit_table.get_row_ref_unchecked(blob_store, commit_ptr) },
                         );
-                        return Ok((gen_cols, rri));
+                        return Ok((gen_cols, rri, insert_flags));
                     }
 
                     // Pacify the borrow checker.
@@ -1350,7 +1360,7 @@ impl MutTxId {
                     // as there haven't been any interleaving `&mut` calls that could invalidate the pointer.
                     tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr)
                 });
-                Ok((gen_cols, rri))
+                Ok((gen_cols, rri, insert_flags))
             }
             // `row` previously present in insert tables; do nothing but return `ptr`.
             Err(InsertError::Duplicate(DuplicateError(ptr))) => {
@@ -1358,7 +1368,7 @@ impl MutTxId {
                     // SAFETY: `tx_table` told us that `ptr` refers to a valid row in it.
                     unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, ptr) },
                 );
-                Ok((gen_cols, rri))
+                Ok((gen_cols, rri, insert_flags))
             }
 
             // Unwrap these error into `TableError::{IndexError, Bflatn}`:
@@ -1382,7 +1392,13 @@ impl MutTxId {
     /// Returns:
     /// - a list of columns which have been replaced with generated values.
     /// - a ref to the new row.
-    pub(crate) fn update(&mut self, table_id: TableId, index_id: IndexId, row: &[u8]) -> Result<(ColList, RowRef<'_>)> {
+    /// - any update flags.
+    pub(crate) fn update(
+        &mut self,
+        table_id: TableId,
+        index_id: IndexId,
+        row: &[u8],
+    ) -> Result<(ColList, RowRef<'_>, UpdateFlags)> {
         let tx_removed_index = self.tx_state_removed_index(index_id);
 
         // 1. Insert the physical row into the tx insert table.
@@ -1424,6 +1440,10 @@ impl MutTxId {
         }
         // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds as we haven't deleted it yet.
         let tx_row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
+
+        let update_flags = UpdateFlags {
+            is_scheduler_table: tx_table.is_scheduler(),
+        };
 
         // 3. Find the old row and remove it.
         //----------------------------------------------------------------------
@@ -1564,7 +1584,7 @@ impl MutTxId {
             // per post-condition of `confirm_insertion` and `confirm_update`
             // in the if/else branches respectively.
             let tx_row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
-            return Ok((cols_to_gen, tx_row_ref));
+            return Ok((cols_to_gen, tx_row_ref, update_flags));
         };
 
         // When we reach here, we had an error and we need to revert the insertion of `tx_row_ref`.

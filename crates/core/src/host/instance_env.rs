@@ -142,11 +142,11 @@ impl InstanceEnv {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
 
-        let (row_len, row_ptr) = stdb
+        let (row_len, row_ptr, insert_flags) = stdb
             .insert(tx, table_id, buffer)
-            .map(|(gen_cols, row_ref)| {
+            .map(|(gen_cols, row_ref, insert_flags)| {
                 let row_len = Self::project_cols_bsatn(buffer, gen_cols, row_ref);
-                (row_len, row_ref.pointer())
+                (row_len, row_ref.pointer(), insert_flags)
             })
             .inspect_err(|e| match e {
                 DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation { .. })) => {}
@@ -160,28 +160,35 @@ impl InstanceEnv {
                 }
             })?;
 
-        self.maybe_schedule_row(stdb, tx, table_id, row_ptr)?;
+        if insert_flags.is_scheduler_table {
+            self.schedule_row(stdb, tx, table_id, row_ptr)?;
+        }
 
         Ok(row_len)
     }
 
-    fn maybe_schedule_row(
+    #[cold]
+    #[inline(never)]
+    fn schedule_row(
         &self,
         stdb: &RelationalDB,
         tx: &mut MutTx,
         table_id: TableId,
         row_ptr: RowPointer,
     ) -> Result<(), NodesError> {
-        if let Some((id_column, at_column)) = stdb.table_scheduled_id_and_at(tx, table_id)? {
-            let row_ref = tx.get(table_id, row_ptr)?.unwrap();
-            let (schedule_id, schedule_at) = get_schedule_from_row(&row_ref, id_column, at_column)
-                // NOTE(centril): Should never happen,
-                // as we successfully inserted and thus `ret` is verified against the table schema.
-                .map_err(|e| NodesError::ScheduleError(ScheduleError::DecodingError(e)))?;
-            self.scheduler
-                .schedule(table_id, schedule_id, schedule_at, id_column, at_column)
-                .map_err(NodesError::ScheduleError)?;
-        }
+        let (id_column, at_column) = stdb
+            .table_scheduled_id_and_at(tx, table_id)?
+            .expect("schedule_row should only be called when we know its a scheduler table");
+
+        let row_ref = tx.get(table_id, row_ptr)?.unwrap();
+        let (schedule_id, schedule_at) = get_schedule_from_row(&row_ref, id_column, at_column)
+            // NOTE(centril): Should never happen,
+            // as we successfully inserted and thus `ret` is verified against the table schema.
+            .map_err(|e| NodesError::ScheduleError(ScheduleError::DecodingError(e)))?;
+        self.scheduler
+            .schedule(table_id, schedule_id, schedule_at, id_column, at_column)
+            .map_err(NodesError::ScheduleError)?;
+
         Ok(())
     }
 
@@ -189,11 +196,11 @@ impl InstanceEnv {
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
 
-        let (row_len, row_ptr) = stdb
+        let (row_len, row_ptr, update_flags) = stdb
             .update(tx, table_id, index_id, buffer)
-            .map(|(gen_cols, row_ref)| {
+            .map(|(gen_cols, row_ref, update_flags)| {
                 let row_len = Self::project_cols_bsatn(buffer, gen_cols, row_ref);
-                (row_len, row_ref.pointer())
+                (row_len, row_ref.pointer(), update_flags)
             })
             .inspect_err(|e| match e {
                 DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation { .. })) => {}
@@ -207,7 +214,9 @@ impl InstanceEnv {
                 }
             })?;
 
-        self.maybe_schedule_row(stdb, tx, table_id, row_ptr)?;
+        if update_flags.is_scheduler_table {
+            self.schedule_row(stdb, tx, table_id, row_ptr)?;
+        }
 
         Ok(row_len)
     }

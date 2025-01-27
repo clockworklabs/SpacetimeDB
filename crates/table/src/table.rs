@@ -92,6 +92,10 @@ pub struct Table {
     /// Note that the [`HashMapBlobStore`] does ref-counting and de-duplication,
     /// but this sum will count an object each time its hash is mentioned, rather than just once.
     blob_store_bytes: BlobNumBytes,
+    /// Indicates whether this is a scheduler table or not.
+    ///
+    /// This is an optimization to avoid checking the schema in e.g., `InstanceEnv::{insert, update}`.
+    is_scheduler: bool,
 }
 
 /// The part of a `Table` concerned only with storing rows.
@@ -167,6 +171,7 @@ impl MemoryUsage for Table {
             squashed_offset,
             row_count,
             blob_store_bytes,
+            is_scheduler,
         } = self;
         inner.heap_usage()
             + pointer_map.heap_usage()
@@ -174,6 +179,7 @@ impl MemoryUsage for Table {
             + squashed_offset.heap_usage()
             + row_count.heap_usage()
             + blob_store_bytes.heap_usage()
+            + is_scheduler.heap_usage()
     }
 }
 
@@ -231,6 +237,11 @@ impl Table {
         // which is removed when the first unique index is added.
         let pm = Some(PointerMap::default());
         Self::new_with_indexes_capacity(schema, row_layout, static_layout, visitor_prog, squashed_offset, pm)
+    }
+
+    /// Returns whether this is a scheduler table.
+    pub fn is_scheduler(&self) -> bool {
+        self.is_scheduler
     }
 
     /// Check if the `row` conflicts with any unique index on `self`,
@@ -1604,6 +1615,7 @@ impl Table {
                 visitor_prog,
                 pages: Pages::default(),
             },
+            is_scheduler: schema.schedule.is_some(),
             schema,
             indexes: BTreeMap::new(),
             pointer_map,
