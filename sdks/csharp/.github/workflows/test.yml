@@ -144,6 +144,8 @@ jobs:
           # TODO: find out why pointing to a local directory doesn't work - is it because Unity CI action uses Docker?
           yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git#${{ github.head_ref }}"' manifest.json
           cat manifest.json
+          # Force cache refresh for this package, otherwise it will sometimes fail on CI.
+          rm -rf ../Library/PackageCache/com.clockworklabs.spacetimedbsdk@*
 
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
