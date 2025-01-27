@@ -53,9 +53,14 @@ namespace SpacetimeDB
         }
 
         // These methods need to be overridden by autogen.
-        public virtual object? GetPrimaryKey(IStructuralReadWrite row) => null;
-        public virtual void InternalInvokeValueInserted(IStructuralReadWrite row) { }
-        public virtual void InternalInvokeValueDeleted(IStructuralReadWrite row) { }
+        public virtual object? GetPrimaryKey(Row row) => null;
+        public virtual void InternalInvokeValueInserted(Row row) { }
+        public virtual void InternalInvokeValueDeleted(Row row) { }
+
+        // These are implementations of the type-erased interface.
+        object? IRemoteTableHandle.GetPrimaryKey(IStructuralReadWrite row) => GetPrimaryKey((Row)row);
+        void IRemoteTableHandle.InternalInvokeValueInserted(IStructuralReadWrite row) => InternalInvokeValueInserted((Row)row);
+        void IRemoteTableHandle.InternalInvokeValueDeleted(IStructuralReadWrite row) => InternalInvokeValueDeleted((Row)row);
 
         // These are provided by RemoteTableHandle.
         Type IRemoteTableHandle.ClientTableType => typeof(Row);
