@@ -751,11 +751,7 @@ namespace SpacetimeDB
 
                 if (update.delete is { } delete)
                 {
-                    if (update.table.DeleteEntry(delete.bytes))
-                    {
-                        update.table.InternalInvokeValueDeleted(delete.value);
-                    }
-                    else
+                    if (!update.table.DeleteEntry(delete.bytes))
                     {
                         update.delete = null;
                         dbOps[i] = update;
@@ -764,11 +760,7 @@ namespace SpacetimeDB
 
                 if (update.insert is { } insert)
                 {
-                    if (update.table.InsertEntry(insert.bytes, insert.value))
-                    {
-                        update.table.InternalInvokeValueInserted(insert.value);
-                    }
-                    else
+                    if (!update.table.InsertEntry(insert.bytes, insert.value))
                     {
                         update.insert = null;
                         dbOps[i] = update;

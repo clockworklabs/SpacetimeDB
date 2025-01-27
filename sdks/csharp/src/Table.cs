@@ -21,8 +21,6 @@ namespace SpacetimeDB
     {
         // These methods need to be overridden by autogen.
         object? GetPrimaryKey(IStructuralReadWrite row);
-        void InternalInvokeValueInserted(IStructuralReadWrite row);
-        void InternalInvokeValueDeleted(IStructuralReadWrite row);
 
         // These are provided by RemoteTableHandle.
         internal Type ClientTableType { get; }
@@ -59,8 +57,6 @@ namespace SpacetimeDB
 
         // These are implementations of the type-erased interface.
         object? IRemoteTableHandle.GetPrimaryKey(IStructuralReadWrite row) => GetPrimaryKey((Row)row);
-        void IRemoteTableHandle.InternalInvokeValueInserted(IStructuralReadWrite row) => InternalInvokeValueInserted((Row)row);
-        void IRemoteTableHandle.InternalInvokeValueDeleted(IStructuralReadWrite row) => InternalInvokeValueDeleted((Row)row);
 
         // These are provided by RemoteTableHandle.
         Type IRemoteTableHandle.ClientTableType => typeof(Row);
@@ -76,7 +72,19 @@ namespace SpacetimeDB
         /// <param name="rowBytes">The BSATN encoded bytes of the row to retrieve.</param>
         /// <param name="value">The parsed row encoded by the <paramref>rowBytes</paramref>.</param>
         /// <returns>True if the row was inserted, false if the row wasn't inserted because it was a duplicate.</returns>
-        bool IRemoteTableHandle.InsertEntry(byte[] rowBytes, IStructuralReadWrite value) => Entries.TryAdd(rowBytes, (Row)value);
+        bool IRemoteTableHandle.InsertEntry(byte[] rowBytes, IStructuralReadWrite value)
+        {
+            var row = (Row)value;
+            if (Entries.TryAdd(rowBytes, (Row)value))
+            {
+                InternalInvokeValueInserted(row);
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
 
         /// <summary>
         /// Deletes a value from the table.
@@ -85,8 +93,9 @@ namespace SpacetimeDB
         /// <returns>True if and only if the value was previously resident and has been deleted.</returns>
         bool IRemoteTableHandle.DeleteEntry(byte[] rowBytes)
         {
-            if (Entries.Remove(rowBytes))
+            if (Entries.Remove(rowBytes, out var row))
             {
+                InternalInvokeValueDeleted(row);
                 return true;
             }
 
