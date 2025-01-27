@@ -575,7 +575,12 @@ impl CsharpAutogen {
 
         writeln!(output, "using System;");
         // Don't emit `using SpacetimeDB;` if we are going to be nested in the SpacetimeDB namespace.
-        if namespace.split('.').expect("split always returns at least one string") != "SpacetimeDB" {
+        if namespace
+            .split('.')
+            .next()
+            .expect("split always returns at least one string")
+            != "SpacetimeDB"
+        {
             writeln!(output, "using SpacetimeDB;");
         }
         for extra_using in extra_usings {
