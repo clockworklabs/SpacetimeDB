@@ -83,6 +83,9 @@ pub use sum_type_variant::SumTypeVariant;
 pub use sum_value::SumValue;
 pub use typespace::{GroundSpacetimeType, SpacetimeType, Typespace};
 
+pub use de::Deserialize;
+pub use ser::Serialize;
+
 /// The `Value` trait provides an abstract notion of a value.
 ///
 /// All we know about values abstractly is that they have a `Type`.

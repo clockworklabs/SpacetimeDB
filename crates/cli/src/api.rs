@@ -62,12 +62,22 @@ impl ClientApi {
         let res = self
             .client
             .get(self.con.db_uri("schema"))
-            .query(&[("module_def", true)])
+            .query(&[("version", "9")])
             .send()
             .await?
             .error_for_status()?;
         let DeserializeWrapper(module_def) = res.json().await?;
         Ok(module_def)
+    }
+
+    pub async fn call(&self, reducer_name: &str, arg_json: String) -> anyhow::Result<reqwest::Response> {
+        Ok(self
+            .client
+            .post(self.con.db_uri("call") + "/" + reducer_name)
+            .header(http::header::CONTENT_TYPE, "application/json")
+            .body(arg_json)
+            .send()
+            .await?)
     }
 }
 

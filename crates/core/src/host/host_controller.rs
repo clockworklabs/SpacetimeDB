@@ -19,13 +19,11 @@ use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
 use parking_lot::{Mutex, RwLock};
-use serde::Serialize;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability as durability;
 use spacetimedb_lib::hash_bytes;
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
 use spacetimedb_sats::hash::Hash;
-use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -96,37 +94,6 @@ impl HostRuntimes {
     fn new(data_dir: &ServerDataDir) -> Arc<Self> {
         let wasmtime = WasmtimeRuntime::new(data_dir);
         Arc::new(Self { wasmtime })
-    }
-}
-
-#[derive(PartialEq, Eq, Hash, Copy, Clone, Serialize, Debug)]
-pub enum DescribedEntityType {
-    Table,
-    Reducer,
-}
-
-impl DescribedEntityType {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            DescribedEntityType::Table => "table",
-            DescribedEntityType::Reducer => "reducer",
-        }
-    }
-}
-impl std::str::FromStr for DescribedEntityType {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "table" => Ok(DescribedEntityType::Table),
-            "reducer" => Ok(DescribedEntityType::Reducer),
-            _ => Err(()),
-        }
-    }
-}
-impl fmt::Display for DescribedEntityType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
     }
 }
 
