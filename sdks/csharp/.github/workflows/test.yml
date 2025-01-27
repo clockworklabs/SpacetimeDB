@@ -72,12 +72,6 @@ jobs:
 
       # Now, setup the Unity tests.
 
-      - name: Patch spacetimedb dependency in Cargo.toml
-        working-directory: unity-tests~/server-rust
-        run: |
-          sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../SpacetimeDB~/crates/bindings\" \}|" Cargo.toml
-          cat Cargo.toml
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -86,6 +80,12 @@ jobs:
         with:
           workspaces: unity-tests~/server-rust
           shared-key: UnityTestServer
+
+      - name: Patch spacetimedb dependency in Cargo.toml
+        working-directory: unity-tests~/server-rust
+        run: |
+          sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../SpacetimeDB~/crates/bindings\" \}|" Cargo.toml
+          cat Cargo.toml
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
