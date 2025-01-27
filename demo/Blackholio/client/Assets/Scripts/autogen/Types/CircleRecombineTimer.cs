@@ -11,31 +11,31 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	[SpacetimeDB.Type]
-	[DataContract]
-	public sealed partial class CircleRecombineTimer
-	{
-		[DataMember(Name = "scheduled_id")]
-		public ulong ScheduledId;
-		[DataMember(Name = "scheduled_at")]
-		public SpacetimeDB.ScheduleAt ScheduledAt;
-		[DataMember(Name = "player_id")]
-		public uint PlayerId;
+    [SpacetimeDB.Type]
+    [DataContract]
+    public sealed partial class CircleRecombineTimer
+    {
+        [DataMember(Name = "scheduled_id")]
+        public ulong ScheduledId;
+        [DataMember(Name = "scheduled_at")]
+        public SpacetimeDB.ScheduleAt ScheduledAt;
+        [DataMember(Name = "player_id")]
+        public uint PlayerId;
 
-		public CircleRecombineTimer(
-			ulong ScheduledId,
-			SpacetimeDB.ScheduleAt ScheduledAt,
-			uint PlayerId
-		)
-		{
-			this.ScheduledId = ScheduledId;
-			this.ScheduledAt = ScheduledAt;
-			this.PlayerId = PlayerId;
-		}
+        public CircleRecombineTimer(
+            ulong ScheduledId,
+            SpacetimeDB.ScheduleAt ScheduledAt,
+            uint PlayerId
+        )
+        {
+            this.ScheduledId = ScheduledId;
+            this.ScheduledAt = ScheduledAt;
+            this.PlayerId = PlayerId;
+        }
 
-		public CircleRecombineTimer()
-		{
-			this.ScheduledAt = null!;
-		}
-	}
+        public CircleRecombineTimer()
+        {
+            this.ScheduledAt = null!;
+        }
+    }
 }

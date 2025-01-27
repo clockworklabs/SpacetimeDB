@@ -13,41 +13,41 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteTables
-	{
-		public sealed class SpawnFoodTimerHandle : RemoteTableHandle<EventContext, SpawnFoodTimer>
-		{
-			public override void InternalInvokeValueInserted(IStructuralReadWrite row)
-			{
-				var value = (SpawnFoodTimer)row;
-				ScheduledId.Cache[value.ScheduledId] = value;
-			}
+    public sealed partial class RemoteTables
+    {
+        public sealed class SpawnFoodTimerHandle : RemoteTableHandle<EventContext, SpawnFoodTimer>
+        {
+            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            {
+                var value = (SpawnFoodTimer)row;
+                ScheduledId.Cache[value.ScheduledId] = value;
+            }
 
-			public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
-			{
-				ScheduledId.Cache.Remove(((SpawnFoodTimer)row).ScheduledId);
-			}
+            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            {
+                ScheduledId.Cache.Remove(((SpawnFoodTimer)row).ScheduledId);
+            }
 
-			public sealed class ScheduledIdUniqueIndex
-			{
-				internal readonly Dictionary<ulong, SpawnFoodTimer> Cache = new(16);
+            public sealed class ScheduledIdUniqueIndex
+            {
+                internal readonly Dictionary<ulong, SpawnFoodTimer> Cache = new(16);
 
-				public SpawnFoodTimer? Find(ulong value)
-				{
-					Cache.TryGetValue(value, out var r);
-					return r;
-				}
-			}
+                public SpawnFoodTimer? Find(ulong value)
+                {
+                    Cache.TryGetValue(value, out var r);
+                    return r;
+                }
+            }
 
-			public ScheduledIdUniqueIndex ScheduledId = new();
+            public ScheduledIdUniqueIndex ScheduledId = new();
 
-			internal SpawnFoodTimerHandle()
-			{
-			}
+            internal SpawnFoodTimerHandle()
+            {
+            }
 
-			public override object GetPrimaryKey(IStructuralReadWrite row) => ((SpawnFoodTimer)row).ScheduledId;
-		}
+            public override object GetPrimaryKey(IStructuralReadWrite row) => ((SpawnFoodTimer)row).ScheduledId;
+        }
 
-		public readonly SpawnFoodTimerHandle SpawnFoodTimer = new();
-	}
+        public readonly SpawnFoodTimerHandle SpawnFoodTimer = new();
+    }
 }

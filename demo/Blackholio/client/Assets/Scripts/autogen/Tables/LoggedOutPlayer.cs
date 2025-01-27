@@ -13,41 +13,41 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteTables
-	{
-		public sealed class LoggedOutPlayerHandle : RemoteTableHandle<EventContext, LoggedOutPlayer>
-		{
-			public override void InternalInvokeValueInserted(IStructuralReadWrite row)
-			{
-				var value = (LoggedOutPlayer)row;
-				Identity.Cache[value.Identity] = value;
-			}
+    public sealed partial class RemoteTables
+    {
+        public sealed class LoggedOutPlayerHandle : RemoteTableHandle<EventContext, LoggedOutPlayer>
+        {
+            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            {
+                var value = (LoggedOutPlayer)row;
+                Identity.Cache[value.Identity] = value;
+            }
 
-			public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
-			{
-				Identity.Cache.Remove(((LoggedOutPlayer)row).Identity);
-			}
+            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            {
+                Identity.Cache.Remove(((LoggedOutPlayer)row).Identity);
+            }
 
-			public sealed class IdentityUniqueIndex
-			{
-				internal readonly Dictionary<SpacetimeDB.Identity, LoggedOutPlayer> Cache = new(16);
+            public sealed class IdentityUniqueIndex
+            {
+                internal readonly Dictionary<SpacetimeDB.Identity, LoggedOutPlayer> Cache = new(16);
 
-				public LoggedOutPlayer? Find(SpacetimeDB.Identity value)
-				{
-					Cache.TryGetValue(value, out var r);
-					return r;
-				}
-			}
+                public LoggedOutPlayer? Find(SpacetimeDB.Identity value)
+                {
+                    Cache.TryGetValue(value, out var r);
+                    return r;
+                }
+            }
 
-			public IdentityUniqueIndex Identity = new();
+            public IdentityUniqueIndex Identity = new();
 
-			internal LoggedOutPlayerHandle()
-			{
-			}
+            internal LoggedOutPlayerHandle()
+            {
+            }
 
-			public override object GetPrimaryKey(IStructuralReadWrite row) => ((LoggedOutPlayer)row).Identity;
-		}
+            public override object GetPrimaryKey(IStructuralReadWrite row) => ((LoggedOutPlayer)row).Identity;
+        }
 
-		public readonly LoggedOutPlayerHandle LoggedOutPlayer = new();
-	}
+        public readonly LoggedOutPlayerHandle LoggedOutPlayer = new();
+    }
 }

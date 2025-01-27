@@ -13,41 +13,41 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteTables
-	{
-		public sealed class CircleRecombineTimerHandle : RemoteTableHandle<EventContext, CircleRecombineTimer>
-		{
-			public override void InternalInvokeValueInserted(IStructuralReadWrite row)
-			{
-				var value = (CircleRecombineTimer)row;
-				ScheduledId.Cache[value.ScheduledId] = value;
-			}
+    public sealed partial class RemoteTables
+    {
+        public sealed class CircleRecombineTimerHandle : RemoteTableHandle<EventContext, CircleRecombineTimer>
+        {
+            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            {
+                var value = (CircleRecombineTimer)row;
+                ScheduledId.Cache[value.ScheduledId] = value;
+            }
 
-			public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
-			{
-				ScheduledId.Cache.Remove(((CircleRecombineTimer)row).ScheduledId);
-			}
+            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            {
+                ScheduledId.Cache.Remove(((CircleRecombineTimer)row).ScheduledId);
+            }
 
-			public sealed class ScheduledIdUniqueIndex
-			{
-				internal readonly Dictionary<ulong, CircleRecombineTimer> Cache = new(16);
+            public sealed class ScheduledIdUniqueIndex
+            {
+                internal readonly Dictionary<ulong, CircleRecombineTimer> Cache = new(16);
 
-				public CircleRecombineTimer? Find(ulong value)
-				{
-					Cache.TryGetValue(value, out var r);
-					return r;
-				}
-			}
+                public CircleRecombineTimer? Find(ulong value)
+                {
+                    Cache.TryGetValue(value, out var r);
+                    return r;
+                }
+            }
 
-			public ScheduledIdUniqueIndex ScheduledId = new();
+            public ScheduledIdUniqueIndex ScheduledId = new();
 
-			internal CircleRecombineTimerHandle()
-			{
-			}
+            internal CircleRecombineTimerHandle()
+            {
+            }
 
-			public override object GetPrimaryKey(IStructuralReadWrite row) => ((CircleRecombineTimer)row).ScheduledId;
-		}
+            public override object GetPrimaryKey(IStructuralReadWrite row) => ((CircleRecombineTimer)row).ScheduledId;
+        }
 
-		public readonly CircleRecombineTimerHandle CircleRecombineTimer = new();
-	}
+        public readonly CircleRecombineTimerHandle CircleRecombineTimer = new();
+    }
 }

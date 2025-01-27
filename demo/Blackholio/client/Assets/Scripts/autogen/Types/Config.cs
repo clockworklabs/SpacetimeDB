@@ -11,26 +11,26 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	[SpacetimeDB.Type]
-	[DataContract]
-	public sealed partial class Config
-	{
-		[DataMember(Name = "id")]
-		public uint Id;
-		[DataMember(Name = "world_size")]
-		public ulong WorldSize;
+    [SpacetimeDB.Type]
+    [DataContract]
+    public sealed partial class Config
+    {
+        [DataMember(Name = "id")]
+        public uint Id;
+        [DataMember(Name = "world_size")]
+        public ulong WorldSize;
 
-		public Config(
-			uint Id,
-			ulong WorldSize
-		)
-		{
-			this.Id = Id;
-			this.WorldSize = WorldSize;
-		}
+        public Config(
+            uint Id,
+            ulong WorldSize
+        )
+        {
+            this.Id = Id;
+            this.WorldSize = WorldSize;
+        }
 
-		public Config()
-		{
-		}
-	}
+        public Config()
+        {
+        }
+    }
 }

@@ -11,27 +11,27 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	[SpacetimeDB.Type]
-	[DataContract]
-	public sealed partial class LoggedOutPlayer
-	{
-		[DataMember(Name = "identity")]
-		public SpacetimeDB.Identity Identity;
-		[DataMember(Name = "player")]
-		public Player Player;
+    [SpacetimeDB.Type]
+    [DataContract]
+    public sealed partial class LoggedOutPlayer
+    {
+        [DataMember(Name = "identity")]
+        public SpacetimeDB.Identity Identity;
+        [DataMember(Name = "player")]
+        public Player Player;
 
-		public LoggedOutPlayer(
-			SpacetimeDB.Identity Identity,
-			Player Player
-		)
-		{
-			this.Identity = Identity;
-			this.Player = Player;
-		}
+        public LoggedOutPlayer(
+            SpacetimeDB.Identity Identity,
+            Player Player
+        )
+        {
+            this.Identity = Identity;
+            this.Player = Player;
+        }
 
-		public LoggedOutPlayer()
-		{
-			this.Player = new();
-		}
-	}
+        public LoggedOutPlayer()
+        {
+            this.Player = new();
+        }
+    }
 }

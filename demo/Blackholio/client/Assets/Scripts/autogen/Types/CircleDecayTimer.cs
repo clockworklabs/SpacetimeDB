@@ -11,27 +11,27 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	[SpacetimeDB.Type]
-	[DataContract]
-	public sealed partial class CircleDecayTimer
-	{
-		[DataMember(Name = "scheduled_id")]
-		public ulong ScheduledId;
-		[DataMember(Name = "scheduled_at")]
-		public SpacetimeDB.ScheduleAt ScheduledAt;
+    [SpacetimeDB.Type]
+    [DataContract]
+    public sealed partial class CircleDecayTimer
+    {
+        [DataMember(Name = "scheduled_id")]
+        public ulong ScheduledId;
+        [DataMember(Name = "scheduled_at")]
+        public SpacetimeDB.ScheduleAt ScheduledAt;
 
-		public CircleDecayTimer(
-			ulong ScheduledId,
-			SpacetimeDB.ScheduleAt ScheduledAt
-		)
-		{
-			this.ScheduledId = ScheduledId;
-			this.ScheduledAt = ScheduledAt;
-		}
+        public CircleDecayTimer(
+            ulong ScheduledId,
+            SpacetimeDB.ScheduleAt ScheduledAt
+        )
+        {
+            this.ScheduledId = ScheduledId;
+            this.ScheduledAt = ScheduledAt;
+        }
 
-		public CircleDecayTimer()
-		{
-			this.ScheduledAt = null!;
-		}
-	}
+        public CircleDecayTimer()
+        {
+            this.ScheduledAt = null!;
+        }
+    }
 }

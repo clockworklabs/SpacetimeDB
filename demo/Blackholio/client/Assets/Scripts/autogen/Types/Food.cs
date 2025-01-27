@@ -11,20 +11,20 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	[SpacetimeDB.Type]
-	[DataContract]
-	public sealed partial class Food
-	{
-		[DataMember(Name = "entity_id")]
-		public uint EntityId;
+    [SpacetimeDB.Type]
+    [DataContract]
+    public sealed partial class Food
+    {
+        [DataMember(Name = "entity_id")]
+        public uint EntityId;
 
-		public Food(uint EntityId)
-		{
-			this.EntityId = EntityId;
-		}
+        public Food(uint EntityId)
+        {
+            this.EntityId = EntityId;
+        }
 
-		public Food()
-		{
-		}
-	}
+        public Food()
+        {
+        }
+    }
 }

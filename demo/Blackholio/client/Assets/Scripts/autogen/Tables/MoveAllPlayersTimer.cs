@@ -13,41 +13,41 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteTables
-	{
-		public sealed class MoveAllPlayersTimerHandle : RemoteTableHandle<EventContext, MoveAllPlayersTimer>
-		{
-			public override void InternalInvokeValueInserted(IStructuralReadWrite row)
-			{
-				var value = (MoveAllPlayersTimer)row;
-				ScheduledId.Cache[value.ScheduledId] = value;
-			}
+    public sealed partial class RemoteTables
+    {
+        public sealed class MoveAllPlayersTimerHandle : RemoteTableHandle<EventContext, MoveAllPlayersTimer>
+        {
+            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            {
+                var value = (MoveAllPlayersTimer)row;
+                ScheduledId.Cache[value.ScheduledId] = value;
+            }
 
-			public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
-			{
-				ScheduledId.Cache.Remove(((MoveAllPlayersTimer)row).ScheduledId);
-			}
+            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            {
+                ScheduledId.Cache.Remove(((MoveAllPlayersTimer)row).ScheduledId);
+            }
 
-			public sealed class ScheduledIdUniqueIndex
-			{
-				internal readonly Dictionary<ulong, MoveAllPlayersTimer> Cache = new(16);
+            public sealed class ScheduledIdUniqueIndex
+            {
+                internal readonly Dictionary<ulong, MoveAllPlayersTimer> Cache = new(16);
 
-				public MoveAllPlayersTimer? Find(ulong value)
-				{
-					Cache.TryGetValue(value, out var r);
-					return r;
-				}
-			}
+                public MoveAllPlayersTimer? Find(ulong value)
+                {
+                    Cache.TryGetValue(value, out var r);
+                    return r;
+                }
+            }
 
-			public ScheduledIdUniqueIndex ScheduledId = new();
+            public ScheduledIdUniqueIndex ScheduledId = new();
 
-			internal MoveAllPlayersTimerHandle()
-			{
-			}
+            internal MoveAllPlayersTimerHandle()
+            {
+            }
 
-			public override object GetPrimaryKey(IStructuralReadWrite row) => ((MoveAllPlayersTimer)row).ScheduledId;
-		}
+            public override object GetPrimaryKey(IStructuralReadWrite row) => ((MoveAllPlayersTimer)row).ScheduledId;
+        }
 
-		public readonly MoveAllPlayersTimerHandle MoveAllPlayersTimer = new();
-	}
+        public readonly MoveAllPlayersTimerHandle MoveAllPlayersTimer = new();
+    }
 }

@@ -12,53 +12,53 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteReducers : RemoteBase<DbConnection>
-	{
-		public delegate void CircleDecayHandler(EventContext ctx, CircleDecayTimer timer);
-		public event CircleDecayHandler? OnCircleDecay;
+    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    {
+        public delegate void CircleDecayHandler(EventContext ctx, CircleDecayTimer timer);
+        public event CircleDecayHandler? OnCircleDecay;
 
-		public void CircleDecay(CircleDecayTimer timer)
-		{
-			conn.InternalCallReducer(new Reducer.CircleDecay(timer), this.SetCallReducerFlags.CircleDecayFlags);
-		}
+        public void CircleDecay(CircleDecayTimer timer)
+        {
+            conn.InternalCallReducer(new Reducer.CircleDecay(timer), this.SetCallReducerFlags.CircleDecayFlags);
+        }
 
-		public bool InvokeCircleDecay(EventContext ctx, Reducer.CircleDecay args)
-		{
-			if (OnCircleDecay == null) return false;
-			OnCircleDecay(
-				ctx,
-				args.Timer
-			);
-			return true;
-		}
-	}
+        public bool InvokeCircleDecay(EventContext ctx, Reducer.CircleDecay args)
+        {
+            if (OnCircleDecay == null) return false;
+            OnCircleDecay(
+                ctx,
+                args.Timer
+            );
+            return true;
+        }
+    }
 
-	public abstract partial class Reducer
-	{
-		[SpacetimeDB.Type]
-		[DataContract]
-		public sealed partial class CircleDecay : Reducer, IReducerArgs
-		{
-			[DataMember(Name = "_timer")]
-			public CircleDecayTimer Timer;
+    public abstract partial class Reducer
+    {
+        [SpacetimeDB.Type]
+        [DataContract]
+        public sealed partial class CircleDecay : Reducer, IReducerArgs
+        {
+            [DataMember(Name = "_timer")]
+            public CircleDecayTimer Timer;
 
-			public CircleDecay(CircleDecayTimer Timer)
-			{
-				this.Timer = Timer;
-			}
+            public CircleDecay(CircleDecayTimer Timer)
+            {
+                this.Timer = Timer;
+            }
 
-			public CircleDecay()
-			{
-				this.Timer = new();
-			}
+            public CircleDecay()
+            {
+                this.Timer = new();
+            }
 
-			string IReducerArgs.ReducerName => "circle_decay";
-		}
-	}
+            string IReducerArgs.ReducerName => "circle_decay";
+        }
+    }
 
-	public sealed partial class SetReducerFlags
-	{
-		internal CallReducerFlags CircleDecayFlags;
-		public void CircleDecay(CallReducerFlags flags) { this.CircleDecayFlags = flags; }
-	}
+    public sealed partial class SetReducerFlags
+    {
+        internal CallReducerFlags CircleDecayFlags;
+        public void CircleDecay(CallReducerFlags flags) { this.CircleDecayFlags = flags; }
+    }
 }

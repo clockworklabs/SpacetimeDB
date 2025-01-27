@@ -12,34 +12,34 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteReducers : RemoteBase<DbConnection>
-	{
-		public delegate void ConnectHandler(EventContext ctx);
-		public event ConnectHandler? OnConnect;
+    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    {
+        public delegate void ConnectHandler(EventContext ctx);
+        public event ConnectHandler? OnConnect;
 
-		public bool InvokeConnect(EventContext ctx, Reducer.Connect args)
-		{
-			if (OnConnect == null) return false;
-			OnConnect(
-				ctx
-			);
-			return true;
-		}
-	}
+        public bool InvokeConnect(EventContext ctx, Reducer.Connect args)
+        {
+            if (OnConnect == null) return false;
+            OnConnect(
+                ctx
+            );
+            return true;
+        }
+    }
 
-	public abstract partial class Reducer
-	{
-		[SpacetimeDB.Type]
-		[DataContract]
-		public sealed partial class Connect : Reducer, IReducerArgs
-		{
-			string IReducerArgs.ReducerName => "connect";
-		}
-	}
+    public abstract partial class Reducer
+    {
+        [SpacetimeDB.Type]
+        [DataContract]
+        public sealed partial class Connect : Reducer, IReducerArgs
+        {
+            string IReducerArgs.ReducerName => "connect";
+        }
+    }
 
-	public sealed partial class SetReducerFlags
-	{
-		internal CallReducerFlags ConnectFlags;
-		public void Connect(CallReducerFlags flags) { this.ConnectFlags = flags; }
-	}
+    public sealed partial class SetReducerFlags
+    {
+        internal CallReducerFlags ConnectFlags;
+        public void Connect(CallReducerFlags flags) { this.ConnectFlags = flags; }
+    }
 }

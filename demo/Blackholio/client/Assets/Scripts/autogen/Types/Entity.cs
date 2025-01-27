@@ -11,31 +11,31 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	[SpacetimeDB.Type]
-	[DataContract]
-	public sealed partial class Entity
-	{
-		[DataMember(Name = "entity_id")]
-		public uint EntityId;
-		[DataMember(Name = "position")]
-		public DbVector2 Position;
-		[DataMember(Name = "mass")]
-		public uint Mass;
+    [SpacetimeDB.Type]
+    [DataContract]
+    public sealed partial class Entity
+    {
+        [DataMember(Name = "entity_id")]
+        public uint EntityId;
+        [DataMember(Name = "position")]
+        public DbVector2 Position;
+        [DataMember(Name = "mass")]
+        public uint Mass;
 
-		public Entity(
-			uint EntityId,
-			DbVector2 Position,
-			uint Mass
-		)
-		{
-			this.EntityId = EntityId;
-			this.Position = Position;
-			this.Mass = Mass;
-		}
+        public Entity(
+            uint EntityId,
+            DbVector2 Position,
+            uint Mass
+        )
+        {
+            this.EntityId = EntityId;
+            this.Position = Position;
+            this.Mass = Mass;
+        }
 
-		public Entity()
-		{
-			this.Position = new();
-		}
-	}
+        public Entity()
+        {
+            this.Position = new();
+        }
+    }
 }

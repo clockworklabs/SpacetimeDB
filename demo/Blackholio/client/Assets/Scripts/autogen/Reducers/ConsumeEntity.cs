@@ -12,53 +12,53 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteReducers : RemoteBase<DbConnection>
-	{
-		public delegate void ConsumeEntityHandler(EventContext ctx, ConsumeEntityTimer request);
-		public event ConsumeEntityHandler? OnConsumeEntity;
+    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    {
+        public delegate void ConsumeEntityHandler(EventContext ctx, ConsumeEntityTimer request);
+        public event ConsumeEntityHandler? OnConsumeEntity;
 
-		public void ConsumeEntity(ConsumeEntityTimer request)
-		{
-			conn.InternalCallReducer(new Reducer.ConsumeEntity(request), this.SetCallReducerFlags.ConsumeEntityFlags);
-		}
+        public void ConsumeEntity(ConsumeEntityTimer request)
+        {
+            conn.InternalCallReducer(new Reducer.ConsumeEntity(request), this.SetCallReducerFlags.ConsumeEntityFlags);
+        }
 
-		public bool InvokeConsumeEntity(EventContext ctx, Reducer.ConsumeEntity args)
-		{
-			if (OnConsumeEntity == null) return false;
-			OnConsumeEntity(
-				ctx,
-				args.Request
-			);
-			return true;
-		}
-	}
+        public bool InvokeConsumeEntity(EventContext ctx, Reducer.ConsumeEntity args)
+        {
+            if (OnConsumeEntity == null) return false;
+            OnConsumeEntity(
+                ctx,
+                args.Request
+            );
+            return true;
+        }
+    }
 
-	public abstract partial class Reducer
-	{
-		[SpacetimeDB.Type]
-		[DataContract]
-		public sealed partial class ConsumeEntity : Reducer, IReducerArgs
-		{
-			[DataMember(Name = "request")]
-			public ConsumeEntityTimer Request;
+    public abstract partial class Reducer
+    {
+        [SpacetimeDB.Type]
+        [DataContract]
+        public sealed partial class ConsumeEntity : Reducer, IReducerArgs
+        {
+            [DataMember(Name = "request")]
+            public ConsumeEntityTimer Request;
 
-			public ConsumeEntity(ConsumeEntityTimer Request)
-			{
-				this.Request = Request;
-			}
+            public ConsumeEntity(ConsumeEntityTimer Request)
+            {
+                this.Request = Request;
+            }
 
-			public ConsumeEntity()
-			{
-				this.Request = new();
-			}
+            public ConsumeEntity()
+            {
+                this.Request = new();
+            }
 
-			string IReducerArgs.ReducerName => "consume_entity";
-		}
-	}
+            string IReducerArgs.ReducerName => "consume_entity";
+        }
+    }
 
-	public sealed partial class SetReducerFlags
-	{
-		internal CallReducerFlags ConsumeEntityFlags;
-		public void ConsumeEntity(CallReducerFlags flags) { this.ConsumeEntityFlags = flags; }
-	}
+    public sealed partial class SetReducerFlags
+    {
+        internal CallReducerFlags ConsumeEntityFlags;
+        public void ConsumeEntity(CallReducerFlags flags) { this.ConsumeEntityFlags = flags; }
+    }
 }

@@ -12,34 +12,34 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteReducers : RemoteBase<DbConnection>
-	{
-		public delegate void DisconnectHandler(EventContext ctx);
-		public event DisconnectHandler? OnDisconnect;
+    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    {
+        public delegate void DisconnectHandler(EventContext ctx);
+        public event DisconnectHandler? OnDisconnect;
 
-		public bool InvokeDisconnect(EventContext ctx, Reducer.Disconnect args)
-		{
-			if (OnDisconnect == null) return false;
-			OnDisconnect(
-				ctx
-			);
-			return true;
-		}
-	}
+        public bool InvokeDisconnect(EventContext ctx, Reducer.Disconnect args)
+        {
+            if (OnDisconnect == null) return false;
+            OnDisconnect(
+                ctx
+            );
+            return true;
+        }
+    }
 
-	public abstract partial class Reducer
-	{
-		[SpacetimeDB.Type]
-		[DataContract]
-		public sealed partial class Disconnect : Reducer, IReducerArgs
-		{
-			string IReducerArgs.ReducerName => "disconnect";
-		}
-	}
+    public abstract partial class Reducer
+    {
+        [SpacetimeDB.Type]
+        [DataContract]
+        public sealed partial class Disconnect : Reducer, IReducerArgs
+        {
+            string IReducerArgs.ReducerName => "disconnect";
+        }
+    }
 
-	public sealed partial class SetReducerFlags
-	{
-		internal CallReducerFlags DisconnectFlags;
-		public void Disconnect(CallReducerFlags flags) { this.DisconnectFlags = flags; }
-	}
+    public sealed partial class SetReducerFlags
+    {
+        internal CallReducerFlags DisconnectFlags;
+        public void Disconnect(CallReducerFlags flags) { this.DisconnectFlags = flags; }
+    }
 }

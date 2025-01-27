@@ -12,53 +12,53 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteReducers : RemoteBase<DbConnection>
-	{
-		public delegate void CircleRecombineHandler(EventContext ctx, CircleRecombineTimer timer);
-		public event CircleRecombineHandler? OnCircleRecombine;
+    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    {
+        public delegate void CircleRecombineHandler(EventContext ctx, CircleRecombineTimer timer);
+        public event CircleRecombineHandler? OnCircleRecombine;
 
-		public void CircleRecombine(CircleRecombineTimer timer)
-		{
-			conn.InternalCallReducer(new Reducer.CircleRecombine(timer), this.SetCallReducerFlags.CircleRecombineFlags);
-		}
+        public void CircleRecombine(CircleRecombineTimer timer)
+        {
+            conn.InternalCallReducer(new Reducer.CircleRecombine(timer), this.SetCallReducerFlags.CircleRecombineFlags);
+        }
 
-		public bool InvokeCircleRecombine(EventContext ctx, Reducer.CircleRecombine args)
-		{
-			if (OnCircleRecombine == null) return false;
-			OnCircleRecombine(
-				ctx,
-				args.Timer
-			);
-			return true;
-		}
-	}
+        public bool InvokeCircleRecombine(EventContext ctx, Reducer.CircleRecombine args)
+        {
+            if (OnCircleRecombine == null) return false;
+            OnCircleRecombine(
+                ctx,
+                args.Timer
+            );
+            return true;
+        }
+    }
 
-	public abstract partial class Reducer
-	{
-		[SpacetimeDB.Type]
-		[DataContract]
-		public sealed partial class CircleRecombine : Reducer, IReducerArgs
-		{
-			[DataMember(Name = "timer")]
-			public CircleRecombineTimer Timer;
+    public abstract partial class Reducer
+    {
+        [SpacetimeDB.Type]
+        [DataContract]
+        public sealed partial class CircleRecombine : Reducer, IReducerArgs
+        {
+            [DataMember(Name = "timer")]
+            public CircleRecombineTimer Timer;
 
-			public CircleRecombine(CircleRecombineTimer Timer)
-			{
-				this.Timer = Timer;
-			}
+            public CircleRecombine(CircleRecombineTimer Timer)
+            {
+                this.Timer = Timer;
+            }
 
-			public CircleRecombine()
-			{
-				this.Timer = new();
-			}
+            public CircleRecombine()
+            {
+                this.Timer = new();
+            }
 
-			string IReducerArgs.ReducerName => "circle_recombine";
-		}
-	}
+            string IReducerArgs.ReducerName => "circle_recombine";
+        }
+    }
 
-	public sealed partial class SetReducerFlags
-	{
-		internal CallReducerFlags CircleRecombineFlags;
-		public void CircleRecombine(CallReducerFlags flags) { this.CircleRecombineFlags = flags; }
-	}
+    public sealed partial class SetReducerFlags
+    {
+        internal CallReducerFlags CircleRecombineFlags;
+        public void CircleRecombine(CallReducerFlags flags) { this.CircleRecombineFlags = flags; }
+    }
 }

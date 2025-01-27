@@ -13,41 +13,41 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteTables
-	{
-		public sealed class ConsumeEntityTimerHandle : RemoteTableHandle<EventContext, ConsumeEntityTimer>
-		{
-			public override void InternalInvokeValueInserted(IStructuralReadWrite row)
-			{
-				var value = (ConsumeEntityTimer)row;
-				ScheduledId.Cache[value.ScheduledId] = value;
-			}
+    public sealed partial class RemoteTables
+    {
+        public sealed class ConsumeEntityTimerHandle : RemoteTableHandle<EventContext, ConsumeEntityTimer>
+        {
+            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            {
+                var value = (ConsumeEntityTimer)row;
+                ScheduledId.Cache[value.ScheduledId] = value;
+            }
 
-			public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
-			{
-				ScheduledId.Cache.Remove(((ConsumeEntityTimer)row).ScheduledId);
-			}
+            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            {
+                ScheduledId.Cache.Remove(((ConsumeEntityTimer)row).ScheduledId);
+            }
 
-			public sealed class ScheduledIdUniqueIndex
-			{
-				internal readonly Dictionary<ulong, ConsumeEntityTimer> Cache = new(16);
+            public sealed class ScheduledIdUniqueIndex
+            {
+                internal readonly Dictionary<ulong, ConsumeEntityTimer> Cache = new(16);
 
-				public ConsumeEntityTimer? Find(ulong value)
-				{
-					Cache.TryGetValue(value, out var r);
-					return r;
-				}
-			}
+                public ConsumeEntityTimer? Find(ulong value)
+                {
+                    Cache.TryGetValue(value, out var r);
+                    return r;
+                }
+            }
 
-			public ScheduledIdUniqueIndex ScheduledId = new();
+            public ScheduledIdUniqueIndex ScheduledId = new();
 
-			internal ConsumeEntityTimerHandle()
-			{
-			}
+            internal ConsumeEntityTimerHandle()
+            {
+            }
 
-			public override object GetPrimaryKey(IStructuralReadWrite row) => ((ConsumeEntityTimer)row).ScheduledId;
-		}
+            public override object GetPrimaryKey(IStructuralReadWrite row) => ((ConsumeEntityTimer)row).ScheduledId;
+        }
 
-		public readonly ConsumeEntityTimerHandle ConsumeEntityTimer = new();
-	}
+        public readonly ConsumeEntityTimerHandle ConsumeEntityTimer = new();
+    }
 }

@@ -11,26 +11,26 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	[SpacetimeDB.Type]
-	[DataContract]
-	public sealed partial class DbVector2
-	{
-		[DataMember(Name = "x")]
-		public float X;
-		[DataMember(Name = "y")]
-		public float Y;
+    [SpacetimeDB.Type]
+    [DataContract]
+    public sealed partial class DbVector2
+    {
+        [DataMember(Name = "x")]
+        public float X;
+        [DataMember(Name = "y")]
+        public float Y;
 
-		public DbVector2(
-			float X,
-			float Y
-		)
-		{
-			this.X = X;
-			this.Y = Y;
-		}
+        public DbVector2(
+            float X,
+            float Y
+        )
+        {
+            this.X = X;
+            this.Y = Y;
+        }
 
-		public DbVector2()
-		{
-		}
-	}
+        public DbVector2()
+        {
+        }
+    }
 }

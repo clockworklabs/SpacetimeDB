@@ -12,53 +12,53 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteReducers : RemoteBase<DbConnection>
-	{
-		public delegate void UpdatePlayerInputHandler(EventContext ctx, DbVector2 direction);
-		public event UpdatePlayerInputHandler? OnUpdatePlayerInput;
+    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    {
+        public delegate void UpdatePlayerInputHandler(EventContext ctx, DbVector2 direction);
+        public event UpdatePlayerInputHandler? OnUpdatePlayerInput;
 
-		public void UpdatePlayerInput(DbVector2 direction)
-		{
-			conn.InternalCallReducer(new Reducer.UpdatePlayerInput(direction), this.SetCallReducerFlags.UpdatePlayerInputFlags);
-		}
+        public void UpdatePlayerInput(DbVector2 direction)
+        {
+            conn.InternalCallReducer(new Reducer.UpdatePlayerInput(direction), this.SetCallReducerFlags.UpdatePlayerInputFlags);
+        }
 
-		public bool InvokeUpdatePlayerInput(EventContext ctx, Reducer.UpdatePlayerInput args)
-		{
-			if (OnUpdatePlayerInput == null) return false;
-			OnUpdatePlayerInput(
-				ctx,
-				args.Direction
-			);
-			return true;
-		}
-	}
+        public bool InvokeUpdatePlayerInput(EventContext ctx, Reducer.UpdatePlayerInput args)
+        {
+            if (OnUpdatePlayerInput == null) return false;
+            OnUpdatePlayerInput(
+                ctx,
+                args.Direction
+            );
+            return true;
+        }
+    }
 
-	public abstract partial class Reducer
-	{
-		[SpacetimeDB.Type]
-		[DataContract]
-		public sealed partial class UpdatePlayerInput : Reducer, IReducerArgs
-		{
-			[DataMember(Name = "direction")]
-			public DbVector2 Direction;
+    public abstract partial class Reducer
+    {
+        [SpacetimeDB.Type]
+        [DataContract]
+        public sealed partial class UpdatePlayerInput : Reducer, IReducerArgs
+        {
+            [DataMember(Name = "direction")]
+            public DbVector2 Direction;
 
-			public UpdatePlayerInput(DbVector2 Direction)
-			{
-				this.Direction = Direction;
-			}
+            public UpdatePlayerInput(DbVector2 Direction)
+            {
+                this.Direction = Direction;
+            }
 
-			public UpdatePlayerInput()
-			{
-				this.Direction = new();
-			}
+            public UpdatePlayerInput()
+            {
+                this.Direction = new();
+            }
 
-			string IReducerArgs.ReducerName => "update_player_input";
-		}
-	}
+            string IReducerArgs.ReducerName => "update_player_input";
+        }
+    }
 
-	public sealed partial class SetReducerFlags
-	{
-		internal CallReducerFlags UpdatePlayerInputFlags;
-		public void UpdatePlayerInput(CallReducerFlags flags) { this.UpdatePlayerInputFlags = flags; }
-	}
+    public sealed partial class SetReducerFlags
+    {
+        internal CallReducerFlags UpdatePlayerInputFlags;
+        public void UpdatePlayerInput(CallReducerFlags flags) { this.UpdatePlayerInputFlags = flags; }
+    }
 }

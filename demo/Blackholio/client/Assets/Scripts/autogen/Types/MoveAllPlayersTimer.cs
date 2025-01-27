@@ -11,27 +11,27 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	[SpacetimeDB.Type]
-	[DataContract]
-	public sealed partial class MoveAllPlayersTimer
-	{
-		[DataMember(Name = "scheduled_id")]
-		public ulong ScheduledId;
-		[DataMember(Name = "scheduled_at")]
-		public SpacetimeDB.ScheduleAt ScheduledAt;
+    [SpacetimeDB.Type]
+    [DataContract]
+    public sealed partial class MoveAllPlayersTimer
+    {
+        [DataMember(Name = "scheduled_id")]
+        public ulong ScheduledId;
+        [DataMember(Name = "scheduled_at")]
+        public SpacetimeDB.ScheduleAt ScheduledAt;
 
-		public MoveAllPlayersTimer(
-			ulong ScheduledId,
-			SpacetimeDB.ScheduleAt ScheduledAt
-		)
-		{
-			this.ScheduledId = ScheduledId;
-			this.ScheduledAt = ScheduledAt;
-		}
+        public MoveAllPlayersTimer(
+            ulong ScheduledId,
+            SpacetimeDB.ScheduleAt ScheduledAt
+        )
+        {
+            this.ScheduledId = ScheduledId;
+            this.ScheduledAt = ScheduledAt;
+        }
 
-		public MoveAllPlayersTimer()
-		{
-			this.ScheduledAt = null!;
-		}
-	}
+        public MoveAllPlayersTimer()
+        {
+            this.ScheduledAt = null!;
+        }
+    }
 }

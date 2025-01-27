@@ -12,39 +12,39 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteReducers : RemoteBase<DbConnection>
-	{
-		public delegate void PlayerSplitHandler(EventContext ctx);
-		public event PlayerSplitHandler? OnPlayerSplit;
+    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    {
+        public delegate void PlayerSplitHandler(EventContext ctx);
+        public event PlayerSplitHandler? OnPlayerSplit;
 
-		public void PlayerSplit()
-		{
-			conn.InternalCallReducer(new Reducer.PlayerSplit(), this.SetCallReducerFlags.PlayerSplitFlags);
-		}
+        public void PlayerSplit()
+        {
+            conn.InternalCallReducer(new Reducer.PlayerSplit(), this.SetCallReducerFlags.PlayerSplitFlags);
+        }
 
-		public bool InvokePlayerSplit(EventContext ctx, Reducer.PlayerSplit args)
-		{
-			if (OnPlayerSplit == null) return false;
-			OnPlayerSplit(
-				ctx
-			);
-			return true;
-		}
-	}
+        public bool InvokePlayerSplit(EventContext ctx, Reducer.PlayerSplit args)
+        {
+            if (OnPlayerSplit == null) return false;
+            OnPlayerSplit(
+                ctx
+            );
+            return true;
+        }
+    }
 
-	public abstract partial class Reducer
-	{
-		[SpacetimeDB.Type]
-		[DataContract]
-		public sealed partial class PlayerSplit : Reducer, IReducerArgs
-		{
-			string IReducerArgs.ReducerName => "player_split";
-		}
-	}
+    public abstract partial class Reducer
+    {
+        [SpacetimeDB.Type]
+        [DataContract]
+        public sealed partial class PlayerSplit : Reducer, IReducerArgs
+        {
+            string IReducerArgs.ReducerName => "player_split";
+        }
+    }
 
-	public sealed partial class SetReducerFlags
-	{
-		internal CallReducerFlags PlayerSplitFlags;
-		public void PlayerSplit(CallReducerFlags flags) { this.PlayerSplitFlags = flags; }
-	}
+    public sealed partial class SetReducerFlags
+    {
+        internal CallReducerFlags PlayerSplitFlags;
+        public void PlayerSplit(CallReducerFlags flags) { this.PlayerSplitFlags = flags; }
+    }
 }

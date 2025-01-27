@@ -13,52 +13,52 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteTables
-	{
-		public sealed class CircleHandle : RemoteTableHandle<EventContext, Circle>
-		{
-			public override void InternalInvokeValueInserted(IStructuralReadWrite row)
-			{
-				var value = (Circle)row;
-				EntityId.Cache[value.EntityId] = value;
-			}
+    public sealed partial class RemoteTables
+    {
+        public sealed class CircleHandle : RemoteTableHandle<EventContext, Circle>
+        {
+            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            {
+                var value = (Circle)row;
+                EntityId.Cache[value.EntityId] = value;
+            }
 
-			public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
-			{
-				EntityId.Cache.Remove(((Circle)row).EntityId);
-			}
+            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            {
+                EntityId.Cache.Remove(((Circle)row).EntityId);
+            }
 
-			public sealed class EntityIdUniqueIndex
-			{
-				internal readonly Dictionary<uint, Circle> Cache = new(16);
+            public sealed class EntityIdUniqueIndex
+            {
+                internal readonly Dictionary<uint, Circle> Cache = new(16);
 
-				public Circle? Find(uint value)
-				{
-					Cache.TryGetValue(value, out var r);
-					return r;
-				}
-			}
+                public Circle? Find(uint value)
+                {
+                    Cache.TryGetValue(value, out var r);
+                    return r;
+                }
+            }
 
-			public EntityIdUniqueIndex EntityId = new();
+            public EntityIdUniqueIndex EntityId = new();
 
-			public sealed class PlayerIdIndex
-			{
-				CircleHandle Handle;
-				internal PlayerIdIndex(CircleHandle handle) => Handle = handle;
-				public IEnumerable<Circle> Filter(uint value) =>
-					Handle.Query(x => x.PlayerId == value);
-			}
+            public sealed class PlayerIdIndex
+            {
+                CircleHandle Handle;
+                internal PlayerIdIndex(CircleHandle handle) => Handle = handle;
+                public IEnumerable<Circle> Filter(uint value) =>
+                    Handle.Query(x => x.PlayerId == value);
+            }
 
-			public PlayerIdIndex PlayerId { get; init; }
+            public PlayerIdIndex PlayerId { get; init; }
 
-			internal CircleHandle()
-			{
-				PlayerId = new(this);
-			}
+            internal CircleHandle()
+            {
+                PlayerId = new(this);
+            }
 
-			public override object GetPrimaryKey(IStructuralReadWrite row) => ((Circle)row).EntityId;
-		}
+            public override object GetPrimaryKey(IStructuralReadWrite row) => ((Circle)row).EntityId;
+        }
 
-		public readonly CircleHandle Circle = new();
-	}
+        public readonly CircleHandle Circle = new();
+    }
 }

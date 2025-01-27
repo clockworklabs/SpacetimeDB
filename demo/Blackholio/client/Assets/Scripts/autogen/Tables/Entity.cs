@@ -13,41 +13,41 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteTables
-	{
-		public sealed class EntityHandle : RemoteTableHandle<EventContext, Entity>
-		{
-			public override void InternalInvokeValueInserted(IStructuralReadWrite row)
-			{
-				var value = (Entity)row;
-				EntityId.Cache[value.EntityId] = value;
-			}
+    public sealed partial class RemoteTables
+    {
+        public sealed class EntityHandle : RemoteTableHandle<EventContext, Entity>
+        {
+            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            {
+                var value = (Entity)row;
+                EntityId.Cache[value.EntityId] = value;
+            }
 
-			public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
-			{
-				EntityId.Cache.Remove(((Entity)row).EntityId);
-			}
+            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            {
+                EntityId.Cache.Remove(((Entity)row).EntityId);
+            }
 
-			public sealed class EntityIdUniqueIndex
-			{
-				internal readonly Dictionary<uint, Entity> Cache = new(16);
+            public sealed class EntityIdUniqueIndex
+            {
+                internal readonly Dictionary<uint, Entity> Cache = new(16);
 
-				public Entity? Find(uint value)
-				{
-					Cache.TryGetValue(value, out var r);
-					return r;
-				}
-			}
+                public Entity? Find(uint value)
+                {
+                    Cache.TryGetValue(value, out var r);
+                    return r;
+                }
+            }
 
-			public EntityIdUniqueIndex EntityId = new();
+            public EntityIdUniqueIndex EntityId = new();
 
-			internal EntityHandle()
-			{
-			}
+            internal EntityHandle()
+            {
+            }
 
-			public override object GetPrimaryKey(IStructuralReadWrite row) => ((Entity)row).EntityId;
-		}
+            public override object GetPrimaryKey(IStructuralReadWrite row) => ((Entity)row).EntityId;
+        }
 
-		public readonly EntityHandle Entity = new();
-	}
+        public readonly EntityHandle Entity = new();
+    }
 }

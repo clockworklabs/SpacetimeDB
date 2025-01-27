@@ -12,53 +12,53 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteReducers : RemoteBase<DbConnection>
-	{
-		public delegate void EnterGameHandler(EventContext ctx, string name);
-		public event EnterGameHandler? OnEnterGame;
+    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    {
+        public delegate void EnterGameHandler(EventContext ctx, string name);
+        public event EnterGameHandler? OnEnterGame;
 
-		public void EnterGame(string name)
-		{
-			conn.InternalCallReducer(new Reducer.EnterGame(name), this.SetCallReducerFlags.EnterGameFlags);
-		}
+        public void EnterGame(string name)
+        {
+            conn.InternalCallReducer(new Reducer.EnterGame(name), this.SetCallReducerFlags.EnterGameFlags);
+        }
 
-		public bool InvokeEnterGame(EventContext ctx, Reducer.EnterGame args)
-		{
-			if (OnEnterGame == null) return false;
-			OnEnterGame(
-				ctx,
-				args.Name
-			);
-			return true;
-		}
-	}
+        public bool InvokeEnterGame(EventContext ctx, Reducer.EnterGame args)
+        {
+            if (OnEnterGame == null) return false;
+            OnEnterGame(
+                ctx,
+                args.Name
+            );
+            return true;
+        }
+    }
 
-	public abstract partial class Reducer
-	{
-		[SpacetimeDB.Type]
-		[DataContract]
-		public sealed partial class EnterGame : Reducer, IReducerArgs
-		{
-			[DataMember(Name = "name")]
-			public string Name;
+    public abstract partial class Reducer
+    {
+        [SpacetimeDB.Type]
+        [DataContract]
+        public sealed partial class EnterGame : Reducer, IReducerArgs
+        {
+            [DataMember(Name = "name")]
+            public string Name;
 
-			public EnterGame(string Name)
-			{
-				this.Name = Name;
-			}
+            public EnterGame(string Name)
+            {
+                this.Name = Name;
+            }
 
-			public EnterGame()
-			{
-				this.Name = "";
-			}
+            public EnterGame()
+            {
+                this.Name = "";
+            }
 
-			string IReducerArgs.ReducerName => "enter_game";
-		}
-	}
+            string IReducerArgs.ReducerName => "enter_game";
+        }
+    }
 
-	public sealed partial class SetReducerFlags
-	{
-		internal CallReducerFlags EnterGameFlags;
-		public void EnterGame(CallReducerFlags flags) { this.EnterGameFlags = flags; }
-	}
+    public sealed partial class SetReducerFlags
+    {
+        internal CallReducerFlags EnterGameFlags;
+        public void EnterGame(CallReducerFlags flags) { this.EnterGameFlags = flags; }
+    }
 }

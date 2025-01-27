@@ -11,39 +11,39 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	[SpacetimeDB.Type]
-	[DataContract]
-	public sealed partial class Circle
-	{
-		[DataMember(Name = "entity_id")]
-		public uint EntityId;
-		[DataMember(Name = "player_id")]
-		public uint PlayerId;
-		[DataMember(Name = "direction")]
-		public DbVector2 Direction;
-		[DataMember(Name = "speed")]
-		public float Speed;
-		[DataMember(Name = "last_split_time")]
-		public ulong LastSplitTime;
+    [SpacetimeDB.Type]
+    [DataContract]
+    public sealed partial class Circle
+    {
+        [DataMember(Name = "entity_id")]
+        public uint EntityId;
+        [DataMember(Name = "player_id")]
+        public uint PlayerId;
+        [DataMember(Name = "direction")]
+        public DbVector2 Direction;
+        [DataMember(Name = "speed")]
+        public float Speed;
+        [DataMember(Name = "last_split_time")]
+        public ulong LastSplitTime;
 
-		public Circle(
-			uint EntityId,
-			uint PlayerId,
-			DbVector2 Direction,
-			float Speed,
-			ulong LastSplitTime
-		)
-		{
-			this.EntityId = EntityId;
-			this.PlayerId = PlayerId;
-			this.Direction = Direction;
-			this.Speed = Speed;
-			this.LastSplitTime = LastSplitTime;
-		}
+        public Circle(
+            uint EntityId,
+            uint PlayerId,
+            DbVector2 Direction,
+            float Speed,
+            ulong LastSplitTime
+        )
+        {
+            this.EntityId = EntityId;
+            this.PlayerId = PlayerId;
+            this.Direction = Direction;
+            this.Speed = Speed;
+            this.LastSplitTime = LastSplitTime;
+        }
 
-		public Circle()
-		{
-			this.Direction = new();
-		}
-	}
+        public Circle()
+        {
+            this.Direction = new();
+        }
+    }
 }

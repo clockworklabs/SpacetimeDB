@@ -13,41 +13,41 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteTables
-	{
-		public sealed class FoodHandle : RemoteTableHandle<EventContext, Food>
-		{
-			public override void InternalInvokeValueInserted(IStructuralReadWrite row)
-			{
-				var value = (Food)row;
-				EntityId.Cache[value.EntityId] = value;
-			}
+    public sealed partial class RemoteTables
+    {
+        public sealed class FoodHandle : RemoteTableHandle<EventContext, Food>
+        {
+            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            {
+                var value = (Food)row;
+                EntityId.Cache[value.EntityId] = value;
+            }
 
-			public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
-			{
-				EntityId.Cache.Remove(((Food)row).EntityId);
-			}
+            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            {
+                EntityId.Cache.Remove(((Food)row).EntityId);
+            }
 
-			public sealed class EntityIdUniqueIndex
-			{
-				internal readonly Dictionary<uint, Food> Cache = new(16);
+            public sealed class EntityIdUniqueIndex
+            {
+                internal readonly Dictionary<uint, Food> Cache = new(16);
 
-				public Food? Find(uint value)
-				{
-					Cache.TryGetValue(value, out var r);
-					return r;
-				}
-			}
+                public Food? Find(uint value)
+                {
+                    Cache.TryGetValue(value, out var r);
+                    return r;
+                }
+            }
 
-			public EntityIdUniqueIndex EntityId = new();
+            public EntityIdUniqueIndex EntityId = new();
 
-			internal FoodHandle()
-			{
-			}
+            internal FoodHandle()
+            {
+            }
 
-			public override object GetPrimaryKey(IStructuralReadWrite row) => ((Food)row).EntityId;
-		}
+            public override object GetPrimaryKey(IStructuralReadWrite row) => ((Food)row).EntityId;
+        }
 
-		public readonly FoodHandle Food = new();
-	}
+        public readonly FoodHandle Food = new();
+    }
 }

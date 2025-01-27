@@ -11,35 +11,35 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	[SpacetimeDB.Type]
-	[DataContract]
-	public sealed partial class ConsumeEntityTimer
-	{
-		[DataMember(Name = "scheduled_id")]
-		public ulong ScheduledId;
-		[DataMember(Name = "scheduled_at")]
-		public SpacetimeDB.ScheduleAt ScheduledAt;
-		[DataMember(Name = "consumed_entity_id")]
-		public uint ConsumedEntityId;
-		[DataMember(Name = "consumer_entity_id")]
-		public uint ConsumerEntityId;
+    [SpacetimeDB.Type]
+    [DataContract]
+    public sealed partial class ConsumeEntityTimer
+    {
+        [DataMember(Name = "scheduled_id")]
+        public ulong ScheduledId;
+        [DataMember(Name = "scheduled_at")]
+        public SpacetimeDB.ScheduleAt ScheduledAt;
+        [DataMember(Name = "consumed_entity_id")]
+        public uint ConsumedEntityId;
+        [DataMember(Name = "consumer_entity_id")]
+        public uint ConsumerEntityId;
 
-		public ConsumeEntityTimer(
-			ulong ScheduledId,
-			SpacetimeDB.ScheduleAt ScheduledAt,
-			uint ConsumedEntityId,
-			uint ConsumerEntityId
-		)
-		{
-			this.ScheduledId = ScheduledId;
-			this.ScheduledAt = ScheduledAt;
-			this.ConsumedEntityId = ConsumedEntityId;
-			this.ConsumerEntityId = ConsumerEntityId;
-		}
+        public ConsumeEntityTimer(
+            ulong ScheduledId,
+            SpacetimeDB.ScheduleAt ScheduledAt,
+            uint ConsumedEntityId,
+            uint ConsumerEntityId
+        )
+        {
+            this.ScheduledId = ScheduledId;
+            this.ScheduledAt = ScheduledAt;
+            this.ConsumedEntityId = ConsumedEntityId;
+            this.ConsumerEntityId = ConsumerEntityId;
+        }
 
-		public ConsumeEntityTimer()
-		{
-			this.ScheduledAt = null!;
-		}
-	}
+        public ConsumeEntityTimer()
+        {
+            this.ScheduledAt = null!;
+        }
+    }
 }
