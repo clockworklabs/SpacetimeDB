@@ -96,23 +96,22 @@ impl Lang for Csharp {
                     // OnInsert method for updating indexes
                     writeln!(
                         output,
-                        "public override void InternalInvokeValueInserted(IStructuralReadWrite row)"
+                        "public override void InternalInvokeValueInserted({table_type} row)"
                     );
                     indented_block(output, |output| {
-                        writeln!(output, "var value = ({table_type})row;");
                         for (field_name, _) in unique_indexes.values() {
-                            writeln!(output, "{field_name}.Cache[value.{field_name}] = value;");
+                            writeln!(output, "{field_name}.Cache[row.{field_name}] = row;");
                         }
                     });
                     writeln!(output);
                     // OnDelete method for updating indexes
                     writeln!(
                         output,
-                        "public override void InternalInvokeValueDeleted(IStructuralReadWrite row)"
+                        "public override void InternalInvokeValueDeleted({table_type} row)"
                     );
                     indented_block(output, |output| {
                         for (field_name, _) in unique_indexes.values() {
-                            writeln!(output, "{field_name}.Cache.Remove((({table_type})row).{field_name});");
+                            writeln!(output, "{field_name}.Cache.Remove(row.{field_name});");
                         }
                     });
                     writeln!(output);
@@ -209,7 +208,7 @@ impl Lang for Csharp {
                     writeln!(output);
                     writeln!(
                         output,
-                        "public override object GetPrimaryKey(IStructuralReadWrite row) => (({table_type})row).{col_name_pascal_case};",
+                        "public override object GetPrimaryKey({table_type} row) => row.{col_name_pascal_case};",
                         col_name_pascal_case = primary_col_index.col_name.deref().to_case(Case::Pascal)
                     );
                 }
