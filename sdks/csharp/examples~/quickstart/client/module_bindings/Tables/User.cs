@@ -17,12 +17,12 @@ namespace SpacetimeDB.Types
     {
         public sealed class UserHandle : RemoteTableHandle<EventContext, User>
         {
-            public override void InternalInvokeValueInserted(User row)
+            protected override void InternalInvokeValueInserted(User row)
             {
                 Identity.Cache[row.Identity] = row;
             }
 
-            public override void InternalInvokeValueDeleted(User row)
+            protected override void InternalInvokeValueDeleted(User row)
             {
                 Identity.Cache.Remove(row.Identity);
             }
@@ -44,7 +44,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            public override object GetPrimaryKey(User row) => row.Identity;
+            protected override object GetPrimaryKey(User row) => row.Identity;
         }
 
         public readonly UserHandle User = new();

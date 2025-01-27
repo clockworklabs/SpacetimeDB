@@ -19,10 +19,8 @@ namespace SpacetimeDB
 
     public interface IRemoteTableHandle
     {
-        // These methods need to be overridden by autogen.
-        object? GetPrimaryKey(IStructuralReadWrite row);
+        internal object? GetPrimaryKey(IStructuralReadWrite row);
 
-        // These are provided by RemoteTableHandle.
         internal Type ClientTableType { get; }
         internal IEnumerable<KeyValuePair<byte[], IStructuralReadWrite>> IterEntries();
         internal bool InsertEntry(byte[] rowBytes, IStructuralReadWrite value);
@@ -51,9 +49,9 @@ namespace SpacetimeDB
         }
 
         // These methods need to be overridden by autogen.
-        public virtual object? GetPrimaryKey(Row row) => null;
-        public virtual void InternalInvokeValueInserted(Row row) { }
-        public virtual void InternalInvokeValueDeleted(Row row) { }
+        protected virtual object? GetPrimaryKey(Row row) => null;
+        protected virtual void InternalInvokeValueInserted(Row row) { }
+        protected virtual void InternalInvokeValueDeleted(Row row) { }
 
         // These are implementations of the type-erased interface.
         object? IRemoteTableHandle.GetPrimaryKey(IStructuralReadWrite row) => GetPrimaryKey((Row)row);
@@ -75,7 +73,7 @@ namespace SpacetimeDB
         bool IRemoteTableHandle.InsertEntry(byte[] rowBytes, IStructuralReadWrite value)
         {
             var row = (Row)value;
-            if (Entries.TryAdd(rowBytes, (Row)value))
+            if (Entries.TryAdd(rowBytes, row))
             {
                 InternalInvokeValueInserted(row);
                 return true;
