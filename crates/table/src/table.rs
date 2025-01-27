@@ -1088,6 +1088,11 @@ impl Table {
         self.pages().iter().map(|page| page.num_rows() as u64).sum()
     }
 
+    #[cfg(test)]
+    fn reconstruct_num_rows(&self) -> u64 {
+        self.pages().iter().map(|page| page.reconstruct_num_rows() as u64).sum()
+    }
+
     /// Returns the number of bytes used by rows resident in this table.
     ///
     /// This includes data bytes, padding bytes and some overhead bytes,
@@ -1107,6 +1112,18 @@ impl Table {
         self.pages()
             .iter()
             .map(|page| page.bytes_used_by_rows(self.inner.row_layout.size()) as u64)
+            .sum()
+    }
+
+    #[cfg(test)]
+    fn reconstruct_bytes_used_by_rows(&self) -> u64 {
+        self.pages()
+            .iter()
+            .map(|page| unsafe {
+                // Safety: `page` is in `self`, and was constructed using `self.innser.row_layout` and `self.inner.visitor_prog`,
+                // so the three are mutually consistent.
+                page.reconstruct_bytes_used_by_rows(self.inner.row_layout.size(), &self.inner.visitor_prog)
+            } as u64)
             .sum()
     }
 
@@ -1701,7 +1718,7 @@ pub(crate) mod test {
     use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
     use spacetimedb_primitives::{col_list, TableId};
     use spacetimedb_sats::bsatn::to_vec;
-    use spacetimedb_sats::proptest::generate_typed_row;
+    use spacetimedb_sats::proptest::{generate_typed_row, generate_typed_row_vec};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
     use spacetimedb_schema::def::ModuleDef;
     use spacetimedb_schema::schema::Schema as _;
@@ -1906,6 +1923,25 @@ pub(crate) mod test {
             prop_assert_eq!(res_pv, res_bsatn);
             prop_assert_eq!(bs_pv, bs_bsatn);
             prop_assert_eq!(table_pv, table_bsatn);
+        }
+
+        #[test]
+        fn row_size_reporting_matches_slow_implementations((ty, vals) in generate_typed_row_vec(128, 2048)) {
+            let mut blob_store = HashMapBlobStore::default();
+            let mut table = table(ty.clone());
+
+            for row in vals {
+                prop_assume!(table.insert(&mut blob_store, &row).is_ok());
+            }
+
+            prop_assert_eq!(table.bytes_used_by_rows(), table.reconstruct_bytes_used_by_rows());
+            prop_assert_eq!(table.num_rows(), table.reconstruct_num_rows());
+
+            // TODO(testing): Determine if there's a meaningful way to test that the blob store reporting is correct.
+            // I (pgoldman 2025-01-27) doubt it, as the test would be "visit every blob and sum their size,"
+            // which is already what the actual implementation does.
+
+            // TODO(testing): Put one or more indexes on `table` and verify that they report the right usage.
         }
     }
 

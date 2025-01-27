@@ -1129,11 +1129,49 @@ impl Page {
         self.header.fixed.num_rows as usize
     }
 
+    #[cfg(test)]
+    /// Use this page's present rows bitvec to compute the number of present rows.
+    ///
+    /// This can be compared with [`Self::num_rows`] as a consistency check during tests.
+    pub fn reconstruct_num_rows(&self) -> usize {
+        // If we cared, we could rewrite this to `u64::count_ones` on each block of the bitset.
+        // We do not care. This method is slow.
+        self.header.fixed.present_rows.iter_set().count()
+    }
+
     /// Returns the number of var-len granules allocated in this page.
     ///
     /// This method runs in constant time.
     pub fn num_var_len_granules(&self) -> usize {
         self.header.var.num_granules as usize
+    }
+
+    #[cfg(test)]
+    /// # Safety
+    ///
+    /// - `var_len_visitor` must be a valid [`VarLenMembers`] visitor
+    ///   specialized to the type and layout of rows within this [`Page`].
+    /// - `fixed_row_size` must be exactly the length in bytes of fixed rows in this page,
+    ///   which must further be the length of rows expected by the `var_len_visitor`.
+    pub unsafe fn reconstruct_num_var_len_granules(
+        &self,
+        fixed_row_size: Size,
+        var_len_visitor: &impl VarLenMembers,
+    ) -> usize {
+        self.iter_fixed_len(fixed_row_size)
+            .flat_map(|row| unsafe {
+                // Safety: `row` came out of `iter_fixed_len`,
+                // which, due to caller requirements on `fixed_row_size`,
+                // is giving us valid, aligned, initialized rows of the row type.
+                var_len_visitor.visit_var_len(self.get_row_data(row, fixed_row_size))
+            })
+            .flat_map(|var_len_obj| unsafe {
+                // Safety: We believe `row` to be valid
+                // and `var_len_visitor` to be correctly visiting its var-len members.
+                // Therefore, `var_len_obj` is a valid var-len object.
+                self.iter_var_len_object(var_len_obj.first_granule)
+            })
+            .count()
     }
 
     /// Returns the number of bytes used by rows stored in this page.
@@ -1152,6 +1190,24 @@ impl Page {
     pub fn bytes_used_by_rows(&self, fixed_row_size: Size) -> usize {
         let fixed_row_bytes = self.num_rows() * fixed_row_size.len();
         let var_len_bytes = self.num_var_len_granules() * VarLenGranule::SIZE.len();
+        fixed_row_bytes + var_len_bytes
+    }
+
+    #[cfg(test)]
+    /// # Safety
+    ///
+    /// - `var_len_visitor` must be a valid [`VarLenMembers`] visitor
+    ///   specialized to the type and layout of rows within this [`Page`].
+    /// - `fixed_row_size` must be exactly the length in bytes of fixed rows in this page,
+    ///   which must further be the length of rows expected by the `var_len_visitor`.
+    pub unsafe fn reconstruct_bytes_used_by_rows(
+        &self,
+        fixed_row_size: Size,
+        var_len_visitor: &impl VarLenMembers,
+    ) -> usize {
+        let fixed_row_bytes = self.reconstruct_num_rows() * fixed_row_size.len();
+        let var_len_bytes = unsafe { self.reconstruct_num_var_len_granules(fixed_row_size, var_len_visitor) }
+            * VarLenGranule::SIZE.len();
         fixed_row_bytes + var_len_bytes
     }
 
