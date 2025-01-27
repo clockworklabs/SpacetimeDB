@@ -4,11 +4,11 @@ use base64::{
     Engine as _,
 };
 use reqwest::RequestBuilder;
-use serde::Deserialize;
 use spacetimedb::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
-use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_lib::{AlgebraicType, Identity};
+use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
+use spacetimedb_lib::{sats, Identity};
+use spacetimedb_schema::def::ModuleDef;
 use std::io::Write;
 use std::path::Path;
 
@@ -82,72 +82,36 @@ pub async fn spacetime_reverse_dns(
     Ok(serde_json::from_slice(&bytes[..]).unwrap())
 }
 
-#[derive(Deserialize)]
-pub struct IdentityTokenJson {
-    pub identity: Identity,
-    pub token: String,
-}
-
-pub enum InitDefaultResultType {
-    Existing,
-    SavedNew,
-}
-
-pub struct InitDefaultResult {
-    pub result_type: InitDefaultResultType,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct DescribeReducer {
-    #[serde(rename = "type")]
-    pub type_field: String,
-    pub arity: i32,
-    pub schema: DescribeSchema,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct DescribeSchema {
-    pub name: String,
-    pub elements: Vec<DescribeElement>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct DescribeElement {
-    pub name: Option<DescribeElementName>,
-    pub algebraic_type: AlgebraicType,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct DescribeElementName {
-    pub some: String,
-}
-
-pub async fn describe_reducer(
-    config: &mut Config,
+pub async fn fetch_raw_module_schema(
+    client: &reqwest::Client,
+    config: &Config,
     database: Identity,
-    server: Option<String>,
-    reducer_name: String,
+    server: Option<&str>,
     anon_identity: bool,
-) -> anyhow::Result<DescribeReducer> {
-    let builder = reqwest::Client::new().get(format!(
-        "{}/database/schema/{}/{}/{}",
-        config.get_host_url(server.as_deref())?,
-        database,
-        "reducer",
-        reducer_name
-    ));
+) -> anyhow::Result<RawModuleDefV9> {
+    let builder = client.get(format!("{}/database/schema/{}", config.get_host_url(server)?, database,));
+
     let auth_header = get_auth_header(config, anon_identity)?;
     let builder = add_auth_header_opt(builder, &auth_header);
 
-    let descr = builder
-        .query(&[("expand", true)])
+    let sats::serde::SerdeWrapper(module_def) = builder
+        .query(&[("version", "9")])
         .send()
         .await?
         .error_for_status()?
-        .text()
+        .json()
         .await?;
-    let result: HashMap<String, DescribeReducer> = serde_json::from_str(descr.as_str()).unwrap();
-    Ok(result[&reducer_name].clone())
+    Ok(module_def)
+}
+pub async fn fetch_module_schema(
+    client: &reqwest::Client,
+    config: &Config,
+    database: Identity,
+    server: Option<&str>,
+    anon_identity: bool,
+) -> anyhow::Result<ModuleDef> {
+    let raw_module_def = fetch_raw_module_schema(client, config, database, server, anon_identity).await?;
+    Ok(raw_module_def.try_into()?)
 }
 
 /// Add an authorization header, if provided, to the request `builder`.
