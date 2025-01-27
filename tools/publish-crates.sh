@@ -50,7 +50,7 @@ for crate in "${CRATES[@]}"; do
     [[ $ALLOW_DIRTY -eq 1 ]] && PUBLISH_CMD+=" --allow-dirty"
 
     # Check if crate exists on crates.io
-    if ! cargo search "$crate" --limit 1 | grep -q "^$crate ="; then
+    if ! cargo search "$crate" | grep -q "^$crate ="; then
         IS_NEW_CRATE=1
         echo "INFO: Detected $crate as a new crate on crates.io!"
     else
