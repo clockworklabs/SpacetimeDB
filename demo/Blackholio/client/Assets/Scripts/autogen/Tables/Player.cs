@@ -17,17 +17,16 @@ namespace SpacetimeDB.Types
     {
         public sealed class PlayerHandle : RemoteTableHandle<EventContext, Player>
         {
-            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            public override void InternalInvokeValueInserted(Player row)
             {
-                var value = (Player)row;
-                Identity.Cache[value.Identity] = value;
-                PlayerId.Cache[value.PlayerId] = value;
+                Identity.Cache[row.Identity] = row;
+                PlayerId.Cache[row.PlayerId] = row;
             }
 
-            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            public override void InternalInvokeValueDeleted(Player row)
             {
-                Identity.Cache.Remove(((Player)row).Identity);
-                PlayerId.Cache.Remove(((Player)row).PlayerId);
+                Identity.Cache.Remove(row.Identity);
+                PlayerId.Cache.Remove(row.PlayerId);
             }
 
             public sealed class IdentityUniqueIndex
@@ -60,7 +59,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            public override object GetPrimaryKey(IStructuralReadWrite row) => ((Player)row).Identity;
+            public override object GetPrimaryKey(Player row) => row.Identity;
         }
 
         public readonly PlayerHandle Player = new();

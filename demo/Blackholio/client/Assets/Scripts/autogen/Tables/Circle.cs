@@ -17,15 +17,14 @@ namespace SpacetimeDB.Types
     {
         public sealed class CircleHandle : RemoteTableHandle<EventContext, Circle>
         {
-            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            public override void InternalInvokeValueInserted(Circle row)
             {
-                var value = (Circle)row;
-                EntityId.Cache[value.EntityId] = value;
+                EntityId.Cache[row.EntityId] = row;
             }
 
-            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            public override void InternalInvokeValueDeleted(Circle row)
             {
-                EntityId.Cache.Remove(((Circle)row).EntityId);
+                EntityId.Cache.Remove(row.EntityId);
             }
 
             public sealed class EntityIdUniqueIndex
@@ -56,7 +55,7 @@ namespace SpacetimeDB.Types
                 PlayerId = new(this);
             }
 
-            public override object GetPrimaryKey(IStructuralReadWrite row) => ((Circle)row).EntityId;
+            public override object GetPrimaryKey(Circle row) => row.EntityId;
         }
 
         public readonly CircleHandle Circle = new();

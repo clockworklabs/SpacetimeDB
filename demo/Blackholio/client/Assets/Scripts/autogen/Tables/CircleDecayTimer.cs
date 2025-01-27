@@ -17,15 +17,14 @@ namespace SpacetimeDB.Types
     {
         public sealed class CircleDecayTimerHandle : RemoteTableHandle<EventContext, CircleDecayTimer>
         {
-            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            public override void InternalInvokeValueInserted(CircleDecayTimer row)
             {
-                var value = (CircleDecayTimer)row;
-                ScheduledId.Cache[value.ScheduledId] = value;
+                ScheduledId.Cache[row.ScheduledId] = row;
             }
 
-            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            public override void InternalInvokeValueDeleted(CircleDecayTimer row)
             {
-                ScheduledId.Cache.Remove(((CircleDecayTimer)row).ScheduledId);
+                ScheduledId.Cache.Remove(row.ScheduledId);
             }
 
             public sealed class ScheduledIdUniqueIndex
@@ -45,7 +44,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            public override object GetPrimaryKey(IStructuralReadWrite row) => ((CircleDecayTimer)row).ScheduledId;
+            public override object GetPrimaryKey(CircleDecayTimer row) => row.ScheduledId;
         }
 
         public readonly CircleDecayTimerHandle CircleDecayTimer = new();

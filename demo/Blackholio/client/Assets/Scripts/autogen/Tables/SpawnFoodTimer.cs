@@ -17,15 +17,14 @@ namespace SpacetimeDB.Types
     {
         public sealed class SpawnFoodTimerHandle : RemoteTableHandle<EventContext, SpawnFoodTimer>
         {
-            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            public override void InternalInvokeValueInserted(SpawnFoodTimer row)
             {
-                var value = (SpawnFoodTimer)row;
-                ScheduledId.Cache[value.ScheduledId] = value;
+                ScheduledId.Cache[row.ScheduledId] = row;
             }
 
-            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            public override void InternalInvokeValueDeleted(SpawnFoodTimer row)
             {
-                ScheduledId.Cache.Remove(((SpawnFoodTimer)row).ScheduledId);
+                ScheduledId.Cache.Remove(row.ScheduledId);
             }
 
             public sealed class ScheduledIdUniqueIndex
@@ -45,7 +44,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            public override object GetPrimaryKey(IStructuralReadWrite row) => ((SpawnFoodTimer)row).ScheduledId;
+            public override object GetPrimaryKey(SpawnFoodTimer row) => row.ScheduledId;
         }
 
         public readonly SpawnFoodTimerHandle SpawnFoodTimer = new();

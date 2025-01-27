@@ -17,15 +17,14 @@ namespace SpacetimeDB.Types
     {
         public sealed class CircleRecombineTimerHandle : RemoteTableHandle<EventContext, CircleRecombineTimer>
         {
-            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            public override void InternalInvokeValueInserted(CircleRecombineTimer row)
             {
-                var value = (CircleRecombineTimer)row;
-                ScheduledId.Cache[value.ScheduledId] = value;
+                ScheduledId.Cache[row.ScheduledId] = row;
             }
 
-            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            public override void InternalInvokeValueDeleted(CircleRecombineTimer row)
             {
-                ScheduledId.Cache.Remove(((CircleRecombineTimer)row).ScheduledId);
+                ScheduledId.Cache.Remove(row.ScheduledId);
             }
 
             public sealed class ScheduledIdUniqueIndex
@@ -45,7 +44,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            public override object GetPrimaryKey(IStructuralReadWrite row) => ((CircleRecombineTimer)row).ScheduledId;
+            public override object GetPrimaryKey(CircleRecombineTimer row) => row.ScheduledId;
         }
 
         public readonly CircleRecombineTimerHandle CircleRecombineTimer = new();

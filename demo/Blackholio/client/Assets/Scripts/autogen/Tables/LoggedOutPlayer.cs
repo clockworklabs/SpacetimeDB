@@ -17,15 +17,14 @@ namespace SpacetimeDB.Types
     {
         public sealed class LoggedOutPlayerHandle : RemoteTableHandle<EventContext, LoggedOutPlayer>
         {
-            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            public override void InternalInvokeValueInserted(LoggedOutPlayer row)
             {
-                var value = (LoggedOutPlayer)row;
-                Identity.Cache[value.Identity] = value;
+                Identity.Cache[row.Identity] = row;
             }
 
-            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            public override void InternalInvokeValueDeleted(LoggedOutPlayer row)
             {
-                Identity.Cache.Remove(((LoggedOutPlayer)row).Identity);
+                Identity.Cache.Remove(row.Identity);
             }
 
             public sealed class IdentityUniqueIndex
@@ -45,7 +44,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            public override object GetPrimaryKey(IStructuralReadWrite row) => ((LoggedOutPlayer)row).Identity;
+            public override object GetPrimaryKey(LoggedOutPlayer row) => row.Identity;
         }
 
         public readonly LoggedOutPlayerHandle LoggedOutPlayer = new();

@@ -17,15 +17,14 @@ namespace SpacetimeDB.Types
     {
         public sealed class ConsumeEntityTimerHandle : RemoteTableHandle<EventContext, ConsumeEntityTimer>
         {
-            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            public override void InternalInvokeValueInserted(ConsumeEntityTimer row)
             {
-                var value = (ConsumeEntityTimer)row;
-                ScheduledId.Cache[value.ScheduledId] = value;
+                ScheduledId.Cache[row.ScheduledId] = row;
             }
 
-            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            public override void InternalInvokeValueDeleted(ConsumeEntityTimer row)
             {
-                ScheduledId.Cache.Remove(((ConsumeEntityTimer)row).ScheduledId);
+                ScheduledId.Cache.Remove(row.ScheduledId);
             }
 
             public sealed class ScheduledIdUniqueIndex
@@ -45,7 +44,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            public override object GetPrimaryKey(IStructuralReadWrite row) => ((ConsumeEntityTimer)row).ScheduledId;
+            public override object GetPrimaryKey(ConsumeEntityTimer row) => row.ScheduledId;
         }
 
         public readonly ConsumeEntityTimerHandle ConsumeEntityTimer = new();

@@ -17,15 +17,14 @@ namespace SpacetimeDB.Types
     {
         public sealed class ConfigHandle : RemoteTableHandle<EventContext, Config>
         {
-            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            public override void InternalInvokeValueInserted(Config row)
             {
-                var value = (Config)row;
-                Id.Cache[value.Id] = value;
+                Id.Cache[row.Id] = row;
             }
 
-            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            public override void InternalInvokeValueDeleted(Config row)
             {
-                Id.Cache.Remove(((Config)row).Id);
+                Id.Cache.Remove(row.Id);
             }
 
             public sealed class IdUniqueIndex
@@ -45,7 +44,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            public override object GetPrimaryKey(IStructuralReadWrite row) => ((Config)row).Id;
+            public override object GetPrimaryKey(Config row) => row.Id;
         }
 
         public readonly ConfigHandle Config = new();

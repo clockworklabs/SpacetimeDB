@@ -17,15 +17,14 @@ namespace SpacetimeDB.Types
     {
         public sealed class MoveAllPlayersTimerHandle : RemoteTableHandle<EventContext, MoveAllPlayersTimer>
         {
-            public override void InternalInvokeValueInserted(IStructuralReadWrite row)
+            public override void InternalInvokeValueInserted(MoveAllPlayersTimer row)
             {
-                var value = (MoveAllPlayersTimer)row;
-                ScheduledId.Cache[value.ScheduledId] = value;
+                ScheduledId.Cache[row.ScheduledId] = row;
             }
 
-            public override void InternalInvokeValueDeleted(IStructuralReadWrite row)
+            public override void InternalInvokeValueDeleted(MoveAllPlayersTimer row)
             {
-                ScheduledId.Cache.Remove(((MoveAllPlayersTimer)row).ScheduledId);
+                ScheduledId.Cache.Remove(row.ScheduledId);
             }
 
             public sealed class ScheduledIdUniqueIndex
@@ -45,7 +44,7 @@ namespace SpacetimeDB.Types
             {
             }
 
-            public override object GetPrimaryKey(IStructuralReadWrite row) => ((MoveAllPlayersTimer)row).ScheduledId;
+            public override object GetPrimaryKey(MoveAllPlayersTimer row) => row.ScheduledId;
         }
 
         public readonly MoveAllPlayersTimerHandle MoveAllPlayersTimer = new();
