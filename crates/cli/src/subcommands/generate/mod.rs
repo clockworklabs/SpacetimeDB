@@ -1,11 +1,9 @@
 #![warn(clippy::uninlined_format_args)]
 
-use anyhow::Context;
 use clap::parser::ValueSource;
 use clap::Arg;
 use clap::ArgAction::Set;
 use core::mem;
-use duct::cmd;
 use fs_err as fs;
 use spacetimedb::host::wasmtime::{Mem, MemView, WasmPointee as _};
 use spacetimedb_lib::de::serde::DeserializeWrapper;
@@ -18,7 +16,6 @@ use spacetimedb_schema::identifier::Identifier;
 use std::path::{Path, PathBuf};
 use wasmtime::{Caller, StoreContextMut};
 
-use crate::detect::{has_rust_fmt, has_rust_up};
 use crate::generate::util::iter_reducers;
 use crate::util::y_or_n;
 use crate::Config;
@@ -139,6 +136,14 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
 
     let mut paths = BTreeSet::new();
 
+    // Note: using `dyn` is fine here - the monomorphisation is not worth the cost and complexity,
+    // as we're already operating on filesystem which is much slower than any `dyn` overhead anyway.`
+    let lang = match lang {
+        Language::Csharp => &csharp::Csharp as &dyn Lang,
+        Language::TypeScript => &typescript::TypeScript as &dyn Lang,
+        Language::Rust => &rust::Rust as &dyn Lang,
+    };
+
     for (fname, code) in generate(module, lang, namespace.as_str())? {
         let fname = Path::new(&fname);
         // If a generator asks for a file in a subdirectory, create the subdirectory first.
@@ -149,8 +154,6 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
         fs::write(&path, code)?;
         paths.insert(path);
     }
-
-    format_files(&paths, lang)?;
 
     // TODO: We should probably just delete all generated files before we generate any, rather than selectively deleting some afterward.
     let mut auto_generated_buf: [u8; AUTO_GENERATED_PREFIX.len()] = [0; AUTO_GENERATED_PREFIX.len()];
@@ -194,6 +197,12 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
         }
     }
 
+    if let Err(err) = lang.format_files(paths) {
+        // If we couldn't format the files, print a warning but don't fail the entire
+        // task as the output should still be usable, just less pretty.
+        eprintln!("Could not format generated files: {err}");
+    }
+
     println!("Generate finished successfully.");
     Ok(())
 }
@@ -218,17 +227,9 @@ impl clap::ValueEnum for Language {
     }
 }
 
-pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow::Result<Vec<(String, String)>> {
-    let module = ModuleDef::try_from(module)?;
-    Ok(match lang {
-        Language::Rust => generate_lang(&module, rust::Rust, namespace),
-        Language::TypeScript => generate_lang(&module, typescript::TypeScript, namespace),
-        Language::Csharp => generate_lang(&module, csharp::Csharp, namespace),
-    })
-}
-
-fn generate_lang(module: &ModuleDef, lang: impl Lang, namespace: &str) -> Vec<(String, String)> {
-    itertools::chain!(
+pub fn generate(module: RawModuleDef, lang: &dyn Lang, namespace: &str) -> anyhow::Result<Vec<(String, String)>> {
+    let module = &ModuleDef::try_from(module)?;
+    Ok(itertools::chain!(
         module.tables().map(|tbl| {
             (
                 lang.table_filename(module, tbl),
@@ -249,13 +250,14 @@ fn generate_lang(module: &ModuleDef, lang: impl Lang, namespace: &str) -> Vec<(S
         }),
         lang.generate_globals(module, namespace),
     )
-    .collect()
+    .collect())
 }
 
-trait Lang {
+pub trait Lang {
     fn table_filename(&self, module: &ModuleDef, table: &TableDef) -> String;
     fn type_filename(&self, type_name: &ScopedTypeName) -> String;
     fn reducer_filename(&self, reducer_name: &Identifier) -> String;
+    fn format_files(&self, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()>;
 
     fn generate_table(&self, module: &ModuleDef, namespace: &str, tbl: &TableDef) -> String;
     fn generate_type(&self, module: &ModuleDef, namespace: &str, typ: &TypeDef) -> String;
@@ -361,27 +363,4 @@ impl WasmCtx {
 
         Ok(0)
     }
-}
-
-fn format_files<'p>(generated_files: impl IntoIterator<Item = &'p PathBuf>, lang: Language) -> anyhow::Result<()> {
-    match lang {
-        Language::Rust => {
-            if !has_rust_fmt() {
-                if has_rust_up() {
-                    cmd!("rustup", "component", "add", "rustfmt")
-                        .run()
-                        .context("Failed to install rustfmt with Rustup")?;
-                } else {
-                    anyhow::bail!("rustfmt is not installed. Please install it.");
-                }
-            }
-            for path in generated_files {
-                cmd!("rustfmt", "--edition", "2021", path.to_str().unwrap()).run()?;
-            }
-        }
-        Language::Csharp => {}
-        Language::TypeScript => {}
-    }
-
-    Ok(())
 }

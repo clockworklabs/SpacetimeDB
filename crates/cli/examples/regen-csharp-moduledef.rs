@@ -3,7 +3,7 @@
 
 use fs_err as fs;
 use regex::Regex;
-use spacetimedb_cli::generate::{generate, Language};
+use spacetimedb_cli::generate::{csharp, generate};
 use spacetimedb_lib::{RawModuleDef, RawModuleDefV8};
 use std::path::Path;
 use std::sync::OnceLock;
@@ -23,7 +23,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut results = generate(
         RawModuleDef::V8BackCompat(module),
-        Language::Csharp,
+        &csharp::Csharp,
         "SpacetimeDB.Internal",
     )?;
 

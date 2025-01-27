@@ -18,6 +18,7 @@ use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, 
 
 use super::code_indenter::{CodeIndenter, Indenter};
 use super::{util, Lang};
+use std::path::PathBuf;
 
 type Imports = BTreeSet<AlgebraicTypeRef>;
 
@@ -40,6 +41,11 @@ impl Lang for TypeScript {
 
     fn reducer_filename(&self, reducer_name: &Identifier) -> String {
         reducer_module_name(reducer_name) + ".ts"
+    }
+
+    fn format_files(&self, _generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
+        // TODO: implement formatting.
+        Ok(())
     }
 
     fn generate_type(&self, module: &ModuleDef, namespace: &str, typ: &TypeDef) -> String {

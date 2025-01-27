@@ -1,4 +1,7 @@
 use spacetimedb_cli::generate;
+use spacetimedb_cli::generate::csharp::Csharp;
+use spacetimedb_cli::generate::rust::Rust;
+use spacetimedb_cli::generate::typescript::TypeScript;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
 use std::path::Path;
@@ -24,7 +27,7 @@ macro_rules! declare_tests {
         #[test]
         fn $name() {
             let module = generate::extract_descriptions(compiled_module()).unwrap();
-            let outfiles: HashMap<_, _> = generate::generate(module, generate::Language::$lang, $namespace)
+            let outfiles: HashMap<_, _> = generate::generate(module, &$lang, $namespace)
                 .unwrap()
                 .into_iter()
                 .collect();
