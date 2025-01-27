@@ -96,7 +96,7 @@ impl Lang for Csharp {
                     // OnInsert method for updating indexes
                     writeln!(
                         output,
-                        "public override void InternalInvokeValueInserted({table_type} row)"
+                        "protected override void InternalInvokeValueInserted({table_type} row)"
                     );
                     indented_block(output, |output| {
                         for (field_name, _) in unique_indexes.values() {
@@ -107,7 +107,7 @@ impl Lang for Csharp {
                     // OnDelete method for updating indexes
                     writeln!(
                         output,
-                        "public override void InternalInvokeValueDeleted({table_type} row)"
+                        "protected override void InternalInvokeValueDeleted({table_type} row)"
                     );
                     indented_block(output, |output| {
                         for (field_name, _) in unique_indexes.values() {
@@ -208,7 +208,7 @@ impl Lang for Csharp {
                     writeln!(output);
                     writeln!(
                         output,
-                        "public override object GetPrimaryKey({table_type} row) => row.{col_name_pascal_case};",
+                        "protected override object GetPrimaryKey({table_type} row) => row.{col_name_pascal_case};",
                         col_name_pascal_case = primary_col_index.col_name.deref().to_case(Case::Pascal)
                     );
                 }
