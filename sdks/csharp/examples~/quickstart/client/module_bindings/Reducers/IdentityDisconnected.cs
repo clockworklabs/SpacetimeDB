@@ -6,7 +6,6 @@
 #nullable enable
 
 using System;
-using SpacetimeDB;
 using SpacetimeDB.ClientApi;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
