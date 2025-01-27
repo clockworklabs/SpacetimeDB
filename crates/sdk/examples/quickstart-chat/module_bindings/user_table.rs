@@ -3,10 +3,7 @@
 
 #![allow(unused)]
 use super::user_type::User;
-use spacetimedb_sdk::__codegen::{
-    self as __sdk, __lib, __sats, __ws,
-    anyhow::{self as __anyhow, Context as _},
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `user`.
 ///
@@ -106,9 +103,13 @@ impl<'ctx> __sdk::TableWithPrimaryKey for UserTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn parse_table_update(
     raw_updates: __ws::TableUpdate<__ws::BsatnFormat>,
-) -> __anyhow::Result<__sdk::TableUpdate<User>> {
+) -> __sdk::Result<__sdk::TableUpdate<User>> {
     __sdk::TableUpdate::parse_table_update_with_primary_key::<__sdk::Identity>(raw_updates, |row: &User| &row.identity)
-        .context("Failed to parse table update for table \"user\"")
+        .map_err(|e| {
+            __sdk::InternalError::failed_parse("TableUpdate<User>", "TableUpdate")
+                .with_cause(e)
+                .into()
+        })
 }
 
 /// Access to the `identity` unique index on the table `user`,

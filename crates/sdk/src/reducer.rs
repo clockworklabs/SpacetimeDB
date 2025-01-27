@@ -2,7 +2,6 @@ use crate::callbacks::CallbackId;
 use crate::global_connection::{with_connection, with_reducer_callbacks};
 use crate::identity::Identity;
 use crate::Address;
-use anyhow::Result;
 use spacetimedb_client_api_messages::websocket::BsatnFormat;
 use spacetimedb_sats::{de::DeserializeOwned, ser::Serialize};
 use std::any::Any;
@@ -37,7 +36,7 @@ pub struct ReducerCallbackId<R> {
 pub trait Reducer: DeserializeOwned + Serialize + Any + Send + Sync + Clone {
     const REDUCER_NAME: &'static str;
 
-    fn invoke(self) -> Result<()> {
+    fn invoke(self) -> crate::Result<()> {
         with_connection(|conn| conn.invoke_reducer(self))
     }
 

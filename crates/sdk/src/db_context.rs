@@ -42,7 +42,7 @@ pub trait DbContext {
     /// Close the connection.
     ///
     /// Returns an error if we are already disconnected.
-    fn disconnect(&self) -> anyhow::Result<()>;
+    fn disconnect(&self) -> crate::Result<()>;
 
     type SubscriptionBuilder;
     /// Get a builder-pattern constructor for subscribing to queries,

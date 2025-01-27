@@ -24,6 +24,20 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
+            fn subscribe_and_cancel() {
+                make_test("subscribe_and_cancel").run();
+            }
+
+            #[test]
+            fn subscribe_and_unsubscribe() {
+                make_test("subscribe_and_unsubscribe").run();
+            }
+
+            #[test]
+            fn subscription_error_smoke_test() {
+                make_test("subscription_error_smoke_test").run();
+            }
+            #[test]
             fn delete_primitive() {
                 make_test("delete_primitive").run();
             }

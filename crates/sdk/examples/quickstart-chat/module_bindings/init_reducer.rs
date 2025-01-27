@@ -2,10 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused)]
-use spacetimedb_sdk::__codegen::{
-    self as __sdk, __lib, __sats, __ws,
-    anyhow::{self as __anyhow, Context as _},
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -33,7 +30,7 @@ pub trait init {
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_init`] callbacks.
-    fn init(&self) -> __anyhow::Result<()>;
+    fn init(&self) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `__init__`.
     ///
     /// The [`super::EventContext`] passed to the `callback`
@@ -51,7 +48,7 @@ pub trait init {
 }
 
 impl init for super::RemoteReducers {
-    fn init(&self) -> __anyhow::Result<()> {
+    fn init(&self) -> __sdk::Result<()> {
         self.imp.call_reducer("__init__", InitArgs {})
     }
     fn on_init(&self, mut callback: impl FnMut(&super::EventContext) + Send + 'static) -> InitCallbackId {
