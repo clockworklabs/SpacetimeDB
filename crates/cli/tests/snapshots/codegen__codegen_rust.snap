@@ -19,13 +19,13 @@ snapshot_kind: text
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct AddPlayerArgs {
-	pub name: String,
+    pub name: String,
 }
 
 impl From<AddPlayerArgs> for super::Reducer {
-	fn from(args: AddPlayerArgs) -> Self {
-		Self::AddPlayer {
-			name: args.name,
+    fn from(args: AddPlayerArgs) -> Self {
+        Self::AddPlayer {
+            name: args.name,
 }
 }
 }
@@ -131,13 +131,13 @@ impl set_flags_for_add_player for super::SetReducerFlags {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct AddPrivateArgs {
-	pub name: String,
+    pub name: String,
 }
 
 impl From<AddPrivateArgs> for super::Reducer {
-	fn from(args: AddPrivateArgs) -> Self {
-		Self::AddPrivate {
-			name: args.name,
+    fn from(args: AddPrivateArgs) -> Self {
+        Self::AddPrivate {
+            name: args.name,
 }
 }
 }
@@ -243,11 +243,11 @@ impl set_flags_for_add_private for super::SetReducerFlags {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct AssertCallerIdentityIsModuleIdentityArgs {
-	}
+    }
 
 impl From<AssertCallerIdentityIsModuleIdentityArgs> for super::Reducer {
-	fn from(args: AssertCallerIdentityIsModuleIdentityArgs) -> Self {
-		Self::AssertCallerIdentityIsModuleIdentity
+    fn from(args: AssertCallerIdentityIsModuleIdentityArgs) -> Self {
+        Self::AssertCallerIdentityIsModuleIdentity
 }
 }
 
@@ -350,7 +350,7 @@ impl set_flags_for_assert_caller_identity_is_module_identity for super::SetReduc
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Baz {
-	pub field: String,
+    pub field: String,
 }
 
 
@@ -375,11 +375,11 @@ impl __sdk::InModule for Baz {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct ClientConnectedArgs {
-	}
+    }
 
 impl From<ClientConnectedArgs> for super::Reducer {
-	fn from(args: ClientConnectedArgs) -> Self {
-		Self::ClientConnected
+    fn from(args: ClientConnectedArgs) -> Self {
+        Self::ClientConnected
 }
 }
 
@@ -482,13 +482,13 @@ impl set_flags_for_client_connected for super::SetReducerFlags {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct DeletePlayerArgs {
-	pub id: u64,
+    pub id: u64,
 }
 
 impl From<DeletePlayerArgs> for super::Reducer {
-	fn from(args: DeletePlayerArgs) -> Self {
-		Self::DeletePlayer {
-			id: args.id,
+    fn from(args: DeletePlayerArgs) -> Self {
+        Self::DeletePlayer {
+            id: args.id,
 }
 }
 }
@@ -594,13 +594,13 @@ impl set_flags_for_delete_player for super::SetReducerFlags {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct DeletePlayersByNameArgs {
-	pub name: String,
+    pub name: String,
 }
 
 impl From<DeletePlayersByNameArgs> for super::Reducer {
-	fn from(args: DeletePlayersByNameArgs) -> Self {
-		Self::DeletePlayersByName {
-			name: args.name,
+    fn from(args: DeletePlayersByNameArgs) -> Self {
+        Self::DeletePlayersByName {
+            name: args.name,
 }
 }
 }
@@ -707,11 +707,11 @@ use super::baz_type::Baz;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub enum Foobar {
-	Baz(Baz),
+    Baz(Baz),
 
-	Bar,
+    Bar,
 
-	Har(u32),
+    Har(u32),
 
 }
 
@@ -807,7 +807,7 @@ impl<'ctx> __sdk::Table for HasSpecialStuffTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 
-		let _table = client_cache.get_or_make_table::<HasSpecialStuff>("has_special_stuff");
+        let _table = client_cache.get_or_make_table::<HasSpecialStuff>("has_special_stuff");
 }
 #[doc(hidden)]
 pub(super) fn parse_table_update(
@@ -833,8 +833,8 @@ pub(super) fn parse_table_update(
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct HasSpecialStuff {
-	pub identity: __sdk::Identity,
-	pub address: __sdk::Address,
+    pub identity: __sdk::Identity,
+    pub address: __sdk::Address,
 }
 
 
@@ -928,9 +928,9 @@ impl<'ctx> __sdk::Table for LoggedOutPlayerTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 
-		let _table = client_cache.get_or_make_table::<Player>("logged_out_player");
-	_table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
-	_table.add_unique_constraint::<u64>("player_id", |row| &row.player_id);
+        let _table = client_cache.get_or_make_table::<Player>("logged_out_player");
+    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
+    _table.add_unique_constraint::<u64>("player_id", |row| &row.player_id);
 }
 pub struct LoggedOutPlayerUpdateCallbackId(__sdk::CallbackId);
 
@@ -1113,31 +1113,31 @@ pub use test_btree_index_args_reducer::{test_btree_index_args, set_flags_for_tes
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
-		AddPlayer {
-		name: String,
-}	,
-	AddPrivate {
-		name: String,
-}	,
-	AssertCallerIdentityIsModuleIdentity ,
-	ClientConnected ,
-	DeletePlayer {
-		id: u64,
-}	,
-	DeletePlayersByName {
-		name: String,
-}	,
-	QueryPrivate ,
-	RepeatingTest {
-		arg: RepeatingTestArg,
-}	,
-	Test {
-		arg: TestA,
-		arg_2: TestB,
-		arg_3: NamespaceTestC,
-		arg_4: NamespaceTestF,
-}	,
-	TestBtreeIndexArgs ,
+        AddPlayer {
+        name: String,
+}    ,
+    AddPrivate {
+        name: String,
+}    ,
+    AssertCallerIdentityIsModuleIdentity ,
+    ClientConnected ,
+    DeletePlayer {
+        id: u64,
+}    ,
+    DeletePlayersByName {
+        name: String,
+}    ,
+    QueryPrivate ,
+    RepeatingTest {
+        arg: RepeatingTestArg,
+}    ,
+    Test {
+        arg: TestA,
+        arg_2: TestB,
+        arg_3: NamespaceTestC,
+        arg_4: NamespaceTestF,
+}    ,
+    TestBtreeIndexArgs ,
 }
 
 
@@ -1146,36 +1146,36 @@ impl __sdk::InModule for Reducer {
 }
 
 impl __sdk::Reducer for Reducer {
-	fn reducer_name(&self) -> &'static str {
-		match self {
-						Reducer::AddPlayer { .. } => "add_player",
-			Reducer::AddPrivate { .. } => "add_private",
-			Reducer::AssertCallerIdentityIsModuleIdentity => "assert_caller_identity_is_module_identity",
-			Reducer::ClientConnected => "client_connected",
-			Reducer::DeletePlayer { .. } => "delete_player",
-			Reducer::DeletePlayersByName { .. } => "delete_players_by_name",
-			Reducer::QueryPrivate => "query_private",
-			Reducer::RepeatingTest { .. } => "repeating_test",
-			Reducer::Test { .. } => "test",
-			Reducer::TestBtreeIndexArgs => "test_btree_index_args",
+    fn reducer_name(&self) -> &'static str {
+        match self {
+                        Reducer::AddPlayer { .. } => "add_player",
+            Reducer::AddPrivate { .. } => "add_private",
+            Reducer::AssertCallerIdentityIsModuleIdentity => "assert_caller_identity_is_module_identity",
+            Reducer::ClientConnected => "client_connected",
+            Reducer::DeletePlayer { .. } => "delete_player",
+            Reducer::DeletePlayersByName { .. } => "delete_players_by_name",
+            Reducer::QueryPrivate => "query_private",
+            Reducer::RepeatingTest { .. } => "repeating_test",
+            Reducer::Test { .. } => "test",
+            Reducer::TestBtreeIndexArgs => "test_btree_index_args",
 }
 }
 }
 impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
-		type Error = __anyhow::Error;
+        type Error = __anyhow::Error;
 fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {
-		match &value.reducer_name[..] {
-						"add_player" => Ok(__sdk::parse_reducer_args::<add_player_reducer::AddPlayerArgs>("add_player", &value.args)?.into()),
-			"add_private" => Ok(__sdk::parse_reducer_args::<add_private_reducer::AddPrivateArgs>("add_private", &value.args)?.into()),
-			"assert_caller_identity_is_module_identity" => Ok(__sdk::parse_reducer_args::<assert_caller_identity_is_module_identity_reducer::AssertCallerIdentityIsModuleIdentityArgs>("assert_caller_identity_is_module_identity", &value.args)?.into()),
-			"client_connected" => Ok(__sdk::parse_reducer_args::<client_connected_reducer::ClientConnectedArgs>("client_connected", &value.args)?.into()),
-			"delete_player" => Ok(__sdk::parse_reducer_args::<delete_player_reducer::DeletePlayerArgs>("delete_player", &value.args)?.into()),
-			"delete_players_by_name" => Ok(__sdk::parse_reducer_args::<delete_players_by_name_reducer::DeletePlayersByNameArgs>("delete_players_by_name", &value.args)?.into()),
-			"query_private" => Ok(__sdk::parse_reducer_args::<query_private_reducer::QueryPrivateArgs>("query_private", &value.args)?.into()),
-			"repeating_test" => Ok(__sdk::parse_reducer_args::<repeating_test_reducer::RepeatingTestArgs>("repeating_test", &value.args)?.into()),
-			"test" => Ok(__sdk::parse_reducer_args::<test_reducer::TestArgs>("test", &value.args)?.into()),
-			"test_btree_index_args" => Ok(__sdk::parse_reducer_args::<test_btree_index_args_reducer::TestBtreeIndexArgsArgs>("test_btree_index_args", &value.args)?.into()),
-			_ => Err(__anyhow::anyhow!("Unknown reducer {:?}", value.reducer_name)),
+        match &value.reducer_name[..] {
+                        "add_player" => Ok(__sdk::parse_reducer_args::<add_player_reducer::AddPlayerArgs>("add_player", &value.args)?.into()),
+            "add_private" => Ok(__sdk::parse_reducer_args::<add_private_reducer::AddPrivateArgs>("add_private", &value.args)?.into()),
+            "assert_caller_identity_is_module_identity" => Ok(__sdk::parse_reducer_args::<assert_caller_identity_is_module_identity_reducer::AssertCallerIdentityIsModuleIdentityArgs>("assert_caller_identity_is_module_identity", &value.args)?.into()),
+            "client_connected" => Ok(__sdk::parse_reducer_args::<client_connected_reducer::ClientConnectedArgs>("client_connected", &value.args)?.into()),
+            "delete_player" => Ok(__sdk::parse_reducer_args::<delete_player_reducer::DeletePlayerArgs>("delete_player", &value.args)?.into()),
+            "delete_players_by_name" => Ok(__sdk::parse_reducer_args::<delete_players_by_name_reducer::DeletePlayersByNameArgs>("delete_players_by_name", &value.args)?.into()),
+            "query_private" => Ok(__sdk::parse_reducer_args::<query_private_reducer::QueryPrivateArgs>("query_private", &value.args)?.into()),
+            "repeating_test" => Ok(__sdk::parse_reducer_args::<repeating_test_reducer::RepeatingTestArgs>("repeating_test", &value.args)?.into()),
+            "test" => Ok(__sdk::parse_reducer_args::<test_reducer::TestArgs>("test", &value.args)?.into()),
+            "test_btree_index_args" => Ok(__sdk::parse_reducer_args::<test_btree_index_args_reducer::TestBtreeIndexArgsArgs>("test_btree_index_args", &value.args)?.into()),
+            _ => Err(__anyhow::anyhow!("Unknown reducer {:?}", value.reducer_name)),
 }
 }
 }
@@ -1184,17 +1184,17 @@ fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
-		has_special_stuff: __sdk::TableUpdate<HasSpecialStuff>,
-	logged_out_player: __sdk::TableUpdate<Player>,
-	pk_multi_identity: __sdk::TableUpdate<PkMultiIdentity>,
-	player: __sdk::TableUpdate<Player>,
-	points: __sdk::TableUpdate<Point>,
-	private: __sdk::TableUpdate<Private>,
-	repeating_test_arg: __sdk::TableUpdate<RepeatingTestArg>,
-	test_a: __sdk::TableUpdate<TestA>,
-	test_d: __sdk::TableUpdate<TestD>,
-	test_e: __sdk::TableUpdate<TestE>,
-	test_f: __sdk::TableUpdate<TestFoobar>,
+        has_special_stuff: __sdk::TableUpdate<HasSpecialStuff>,
+    logged_out_player: __sdk::TableUpdate<Player>,
+    pk_multi_identity: __sdk::TableUpdate<PkMultiIdentity>,
+    player: __sdk::TableUpdate<Player>,
+    points: __sdk::TableUpdate<Point>,
+    private: __sdk::TableUpdate<Private>,
+    repeating_test_arg: __sdk::TableUpdate<RepeatingTestArg>,
+    test_a: __sdk::TableUpdate<TestA>,
+    test_d: __sdk::TableUpdate<TestD>,
+    test_e: __sdk::TableUpdate<TestE>,
+    test_f: __sdk::TableUpdate<TestFoobar>,
 }
 
 
@@ -1205,17 +1205,17 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
         for table_update in raw.tables {
             match &table_update.table_name[..] {
 
-		"has_special_stuff" => db_update.has_special_stuff = has_special_stuff_table::parse_table_update(table_update)?,
-	"logged_out_player" => db_update.logged_out_player = logged_out_player_table::parse_table_update(table_update)?,
-	"pk_multi_identity" => db_update.pk_multi_identity = pk_multi_identity_table::parse_table_update(table_update)?,
-	"player" => db_update.player = player_table::parse_table_update(table_update)?,
-	"points" => db_update.points = points_table::parse_table_update(table_update)?,
-	"private" => db_update.private = private_table::parse_table_update(table_update)?,
-	"repeating_test_arg" => db_update.repeating_test_arg = repeating_test_arg_table::parse_table_update(table_update)?,
-	"test_a" => db_update.test_a = test_a_table::parse_table_update(table_update)?,
-	"test_d" => db_update.test_d = test_d_table::parse_table_update(table_update)?,
-	"test_e" => db_update.test_e = test_e_table::parse_table_update(table_update)?,
-	"test_f" => db_update.test_f = test_f_table::parse_table_update(table_update)?,
+        "has_special_stuff" => db_update.has_special_stuff = has_special_stuff_table::parse_table_update(table_update)?,
+    "logged_out_player" => db_update.logged_out_player = logged_out_player_table::parse_table_update(table_update)?,
+    "pk_multi_identity" => db_update.pk_multi_identity = pk_multi_identity_table::parse_table_update(table_update)?,
+    "player" => db_update.player = player_table::parse_table_update(table_update)?,
+    "points" => db_update.points = points_table::parse_table_update(table_update)?,
+    "private" => db_update.private = private_table::parse_table_update(table_update)?,
+    "repeating_test_arg" => db_update.repeating_test_arg = repeating_test_arg_table::parse_table_update(table_update)?,
+    "test_a" => db_update.test_a = test_a_table::parse_table_update(table_update)?,
+    "test_d" => db_update.test_d = test_d_table::parse_table_update(table_update)?,
+    "test_e" => db_update.test_e = test_e_table::parse_table_update(table_update)?,
+    "test_f" => db_update.test_f = test_f_table::parse_table_update(table_update)?,
 
                 unknown => __anyhow::bail!("Unknown table {unknown:?} in DatabaseUpdate"),
             }
@@ -1229,31 +1229,31 @@ impl __sdk::InModule for DbUpdate {
 }
 
 impl __sdk::DbUpdate for DbUpdate {
-	fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) {
-				cache.apply_diff_to_table::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff);
-		cache.apply_diff_to_table::<Player>("logged_out_player", &self.logged_out_player);
-		cache.apply_diff_to_table::<PkMultiIdentity>("pk_multi_identity", &self.pk_multi_identity);
-		cache.apply_diff_to_table::<Player>("player", &self.player);
-		cache.apply_diff_to_table::<Point>("points", &self.points);
-		cache.apply_diff_to_table::<Private>("private", &self.private);
-		cache.apply_diff_to_table::<RepeatingTestArg>("repeating_test_arg", &self.repeating_test_arg);
-		cache.apply_diff_to_table::<TestA>("test_a", &self.test_a);
-		cache.apply_diff_to_table::<TestD>("test_d", &self.test_d);
-		cache.apply_diff_to_table::<TestE>("test_e", &self.test_e);
-		cache.apply_diff_to_table::<TestFoobar>("test_f", &self.test_f);
+    fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) {
+                cache.apply_diff_to_table::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff);
+        cache.apply_diff_to_table::<Player>("logged_out_player", &self.logged_out_player);
+        cache.apply_diff_to_table::<PkMultiIdentity>("pk_multi_identity", &self.pk_multi_identity);
+        cache.apply_diff_to_table::<Player>("player", &self.player);
+        cache.apply_diff_to_table::<Point>("points", &self.points);
+        cache.apply_diff_to_table::<Private>("private", &self.private);
+        cache.apply_diff_to_table::<RepeatingTestArg>("repeating_test_arg", &self.repeating_test_arg);
+        cache.apply_diff_to_table::<TestA>("test_a", &self.test_a);
+        cache.apply_diff_to_table::<TestD>("test_d", &self.test_d);
+        cache.apply_diff_to_table::<TestE>("test_e", &self.test_e);
+        cache.apply_diff_to_table::<TestFoobar>("test_f", &self.test_f);
 }
 fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
-				callbacks.invoke_table_row_callbacks::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff, event);
-		callbacks.invoke_table_row_callbacks::<Player>("logged_out_player", &self.logged_out_player, event);
-		callbacks.invoke_table_row_callbacks::<PkMultiIdentity>("pk_multi_identity", &self.pk_multi_identity, event);
-		callbacks.invoke_table_row_callbacks::<Player>("player", &self.player, event);
-		callbacks.invoke_table_row_callbacks::<Point>("points", &self.points, event);
-		callbacks.invoke_table_row_callbacks::<Private>("private", &self.private, event);
-		callbacks.invoke_table_row_callbacks::<RepeatingTestArg>("repeating_test_arg", &self.repeating_test_arg, event);
-		callbacks.invoke_table_row_callbacks::<TestA>("test_a", &self.test_a, event);
-		callbacks.invoke_table_row_callbacks::<TestD>("test_d", &self.test_d, event);
-		callbacks.invoke_table_row_callbacks::<TestE>("test_e", &self.test_e, event);
-		callbacks.invoke_table_row_callbacks::<TestFoobar>("test_f", &self.test_f, event);
+                callbacks.invoke_table_row_callbacks::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff, event);
+        callbacks.invoke_table_row_callbacks::<Player>("logged_out_player", &self.logged_out_player, event);
+        callbacks.invoke_table_row_callbacks::<PkMultiIdentity>("pk_multi_identity", &self.pk_multi_identity, event);
+        callbacks.invoke_table_row_callbacks::<Player>("player", &self.player, event);
+        callbacks.invoke_table_row_callbacks::<Point>("points", &self.points, event);
+        callbacks.invoke_table_row_callbacks::<Private>("private", &self.private, event);
+        callbacks.invoke_table_row_callbacks::<RepeatingTestArg>("repeating_test_arg", &self.repeating_test_arg, event);
+        callbacks.invoke_table_row_callbacks::<TestA>("test_a", &self.test_a, event);
+        callbacks.invoke_table_row_callbacks::<TestD>("test_d", &self.test_d, event);
+        callbacks.invoke_table_row_callbacks::<TestE>("test_e", &self.test_e, event);
+        callbacks.invoke_table_row_callbacks::<TestFoobar>("test_f", &self.test_f, event);
 }
 }
 
@@ -1562,28 +1562,28 @@ impl<Ctx: __sdk::DbContext<
 
 
 impl __sdk::SpacetimeModule for RemoteModule {
-	
-	type DbConnection = DbConnection;
-	type EventContext = EventContext;
-	type Reducer = Reducer;
-	type DbView = RemoteTables;
-	type Reducers = RemoteReducers;
-	type SetReducerFlags = SetReducerFlags;
-	type DbUpdate = DbUpdate;
-	type SubscriptionHandle = SubscriptionHandle;
+    
+    type DbConnection = DbConnection;
+    type EventContext = EventContext;
+    type Reducer = Reducer;
+    type DbView = RemoteTables;
+    type Reducers = RemoteReducers;
+    type SetReducerFlags = SetReducerFlags;
+    type DbUpdate = DbUpdate;
+    type SubscriptionHandle = SubscriptionHandle;
 
 fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
-				has_special_stuff_table::register_table(client_cache);
-		logged_out_player_table::register_table(client_cache);
-		pk_multi_identity_table::register_table(client_cache);
-		player_table::register_table(client_cache);
-		points_table::register_table(client_cache);
-		private_table::register_table(client_cache);
-		repeating_test_arg_table::register_table(client_cache);
-		test_a_table::register_table(client_cache);
-		test_d_table::register_table(client_cache);
-		test_e_table::register_table(client_cache);
-		test_f_table::register_table(client_cache);
+                has_special_stuff_table::register_table(client_cache);
+        logged_out_player_table::register_table(client_cache);
+        pk_multi_identity_table::register_table(client_cache);
+        player_table::register_table(client_cache);
+        points_table::register_table(client_cache);
+        private_table::register_table(client_cache);
+        repeating_test_arg_table::register_table(client_cache);
+        test_a_table::register_table(client_cache);
+        test_d_table::register_table(client_cache);
+        test_e_table::register_table(client_cache);
+        test_f_table::register_table(client_cache);
 }
 }
 '''
@@ -1602,9 +1602,9 @@ fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub enum NamespaceTestC {
-	Foo,
+    Foo,
 
-	Bar,
+    Bar,
 
 }
 
@@ -1631,11 +1631,11 @@ impl __sdk::InModule for NamespaceTestC {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub enum NamespaceTestF {
-	Foo,
+    Foo,
 
-	Bar,
+    Bar,
 
-	Baz(String),
+    Baz(String),
 
 }
 
@@ -1731,9 +1731,9 @@ impl<'ctx> __sdk::Table for PkMultiIdentityTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 
-		let _table = client_cache.get_or_make_table::<PkMultiIdentity>("pk_multi_identity");
-	_table.add_unique_constraint::<u32>("id", |row| &row.id);
-	_table.add_unique_constraint::<u32>("other", |row| &row.other);
+        let _table = client_cache.get_or_make_table::<PkMultiIdentity>("pk_multi_identity");
+    _table.add_unique_constraint::<u32>("id", |row| &row.id);
+    _table.add_unique_constraint::<u32>("other", |row| &row.other);
 }
 pub struct PkMultiIdentityUpdateCallbackId(__sdk::CallbackId);
 
@@ -1838,8 +1838,8 @@ pub(super) fn parse_table_update(
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct PkMultiIdentity {
-	pub id: u32,
-	pub other: u32,
+    pub id: u32,
+    pub other: u32,
 }
 
 
@@ -1933,9 +1933,9 @@ impl<'ctx> __sdk::Table for PlayerTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 
-		let _table = client_cache.get_or_make_table::<Player>("player");
-	_table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
-	_table.add_unique_constraint::<u64>("player_id", |row| &row.player_id);
+        let _table = client_cache.get_or_make_table::<Player>("player");
+    _table.add_unique_constraint::<__sdk::Identity>("identity", |row| &row.identity);
+    _table.add_unique_constraint::<u64>("player_id", |row| &row.player_id);
 }
 pub struct PlayerUpdateCallbackId(__sdk::CallbackId);
 
@@ -2040,9 +2040,9 @@ pub(super) fn parse_table_update(
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Player {
-	pub identity: __sdk::Identity,
-	pub player_id: u64,
-	pub name: String,
+    pub identity: __sdk::Identity,
+    pub player_id: u64,
+    pub name: String,
 }
 
 
@@ -2067,8 +2067,8 @@ impl __sdk::InModule for Player {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Point {
-	pub x: i64,
-	pub y: i64,
+    pub x: i64,
+    pub y: i64,
 }
 
 
@@ -2162,7 +2162,7 @@ impl<'ctx> __sdk::Table for PointsTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 
-		let _table = client_cache.get_or_make_table::<Point>("points");
+        let _table = client_cache.get_or_make_table::<Point>("points");
 }
 #[doc(hidden)]
 pub(super) fn parse_table_update(
@@ -2257,7 +2257,7 @@ impl<'ctx> __sdk::Table for PrivateTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 
-		let _table = client_cache.get_or_make_table::<Private>("private");
+        let _table = client_cache.get_or_make_table::<Private>("private");
 }
 #[doc(hidden)]
 pub(super) fn parse_table_update(
@@ -2283,7 +2283,7 @@ pub(super) fn parse_table_update(
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct Private {
-	pub name: String,
+    pub name: String,
 }
 
 
@@ -2308,11 +2308,11 @@ impl __sdk::InModule for Private {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct QueryPrivateArgs {
-	}
+    }
 
 impl From<QueryPrivateArgs> for super::Reducer {
-	fn from(args: QueryPrivateArgs) -> Self {
-		Self::QueryPrivate
+    fn from(args: QueryPrivateArgs) -> Self {
+        Self::QueryPrivate
 }
 }
 
@@ -2484,8 +2484,8 @@ impl<'ctx> __sdk::Table for RepeatingTestArgTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 
-		let _table = client_cache.get_or_make_table::<RepeatingTestArg>("repeating_test_arg");
-	_table.add_unique_constraint::<u64>("scheduled_id", |row| &row.scheduled_id);
+        let _table = client_cache.get_or_make_table::<RepeatingTestArg>("repeating_test_arg");
+    _table.add_unique_constraint::<u64>("scheduled_id", |row| &row.scheduled_id);
 }
 pub struct RepeatingTestArgUpdateCallbackId(__sdk::CallbackId);
 
@@ -2560,9 +2560,9 @@ pub(super) fn parse_table_update(
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct RepeatingTestArg {
-	pub scheduled_id: u64,
-	pub scheduled_at: __sdk::ScheduleAt,
-	pub prev_time: u64,
+    pub scheduled_id: u64,
+    pub scheduled_at: __sdk::ScheduleAt,
+    pub prev_time: u64,
 }
 
 
@@ -2588,13 +2588,13 @@ use super::repeating_test_arg_type::RepeatingTestArg;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct RepeatingTestArgs {
-	pub arg: RepeatingTestArg,
+    pub arg: RepeatingTestArg,
 }
 
 impl From<RepeatingTestArgs> for super::Reducer {
-	fn from(args: RepeatingTestArgs) -> Self {
-		Self::RepeatingTest {
-			arg: args.arg,
+    fn from(args: RepeatingTestArgs) -> Self {
+        Self::RepeatingTest {
+            arg: args.arg,
 }
 }
 }
@@ -2769,7 +2769,7 @@ impl<'ctx> __sdk::Table for TestATableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 
-		let _table = client_cache.get_or_make_table::<TestA>("test_a");
+        let _table = client_cache.get_or_make_table::<TestA>("test_a");
 }
 #[doc(hidden)]
 pub(super) fn parse_table_update(
@@ -2795,9 +2795,9 @@ pub(super) fn parse_table_update(
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct TestA {
-	pub x: u32,
-	pub y: u32,
-	pub z: String,
+    pub x: u32,
+    pub y: u32,
+    pub z: String,
 }
 
 
@@ -2822,7 +2822,7 @@ impl __sdk::InModule for TestA {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct TestB {
-	pub foo: String,
+    pub foo: String,
 }
 
 
@@ -2847,11 +2847,11 @@ impl __sdk::InModule for TestB {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct TestBtreeIndexArgsArgs {
-	}
+    }
 
 impl From<TestBtreeIndexArgsArgs> for super::Reducer {
-	fn from(args: TestBtreeIndexArgsArgs) -> Self {
-		Self::TestBtreeIndexArgs
+    fn from(args: TestBtreeIndexArgsArgs) -> Self {
+        Self::TestBtreeIndexArgs
 }
 }
 
@@ -3024,7 +3024,7 @@ impl<'ctx> __sdk::Table for TestDTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 
-		let _table = client_cache.get_or_make_table::<TestD>("test_d");
+        let _table = client_cache.get_or_make_table::<TestD>("test_d");
 }
 #[doc(hidden)]
 pub(super) fn parse_table_update(
@@ -3051,7 +3051,7 @@ use super::namespace_test_c_type::NamespaceTestC;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct TestD {
-	pub test_c: Option::<NamespaceTestC>,
+    pub test_c: Option::<NamespaceTestC>,
 }
 
 
@@ -3145,8 +3145,8 @@ impl<'ctx> __sdk::Table for TestETableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 
-		let _table = client_cache.get_or_make_table::<TestE>("test_e");
-	_table.add_unique_constraint::<u64>("id", |row| &row.id);
+        let _table = client_cache.get_or_make_table::<TestE>("test_e");
+    _table.add_unique_constraint::<u64>("id", |row| &row.id);
 }
 pub struct TestEUpdateCallbackId(__sdk::CallbackId);
 
@@ -3221,8 +3221,8 @@ pub(super) fn parse_table_update(
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct TestE {
-	pub id: u64,
-	pub name: String,
+    pub id: u64,
+    pub name: String,
 }
 
 
@@ -3317,7 +3317,7 @@ impl<'ctx> __sdk::Table for TestFTableHandle<'ctx> {
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
 
-		let _table = client_cache.get_or_make_table::<TestFoobar>("test_f");
+        let _table = client_cache.get_or_make_table::<TestFoobar>("test_f");
 }
 #[doc(hidden)]
 pub(super) fn parse_table_update(
@@ -3344,7 +3344,7 @@ use super::foobar_type::Foobar;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct TestFoobar {
-	pub field: Foobar,
+    pub field: Foobar,
 }
 
 
@@ -3373,19 +3373,19 @@ use super::namespace_test_f_type::NamespaceTestF;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct TestArgs {
-	pub arg: TestA,
-	pub arg_2: TestB,
-	pub arg_3: NamespaceTestC,
-	pub arg_4: NamespaceTestF,
+    pub arg: TestA,
+    pub arg_2: TestB,
+    pub arg_3: NamespaceTestC,
+    pub arg_4: NamespaceTestF,
 }
 
 impl From<TestArgs> for super::Reducer {
-	fn from(args: TestArgs) -> Self {
-		Self::Test {
-			arg: args.arg,
-			arg_2: args.arg_2,
-			arg_3: args.arg_3,
-			arg_4: args.arg_4,
+    fn from(args: TestArgs) -> Self {
+        Self::Test {
+            arg: args.arg,
+            arg_2: args.arg_2,
+            arg_3: args.arg_3,
+            arg_4: args.arg_4,
 }
 }
 }

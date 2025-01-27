@@ -16,14 +16,12 @@ use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, 
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
 use std::ops::Deref;
-use std::path::{PathBuf};
+use std::path::PathBuf;
 
 /// Pairs of (module_name, TypeName).
 type Imports = BTreeSet<AlgebraicTypeRef>;
 
-// TODO(cloutiertyler): Rust should probably use four spaces instead of tabs
-// but I'm keeping this so as to not explode the diff.
-const INDENT: &str = "\t";
+const INDENT: &str = "    ";
 
 pub struct Rust;
 
