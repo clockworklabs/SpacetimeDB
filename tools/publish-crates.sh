@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 
 DRY_RUN=0
 ALLOW_DIRTY=0
+SKIP_ALREADY_PUBLISHED=0
 NEW_CRATE_OWNERS=("tyler@clockworklabs.io" "zeke@clockworklabs.io")
 
 # Parse arguments
@@ -15,6 +16,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --allow-dirty)
             ALLOW_DIRTY=1
+            ;;
+        --skip-already-published)
+            SKIP_ALREADY_PUBLISHED=1
             ;;
         *)
             echo "Invalid argument: $1"
@@ -59,7 +63,7 @@ for crate in "${CRATES[@]}"; do
 
     echo "Publishing crate: $crate with command: $PUBLISH_CMD"
     if ! OUTPUT=$($PUBLISH_CMD 2>&1); then
-        if echo "$OUTPUT" | grep -q "crate version .* is already uploaded"; then
+        if [ $SKIP_ALREADY_PUBLISHED -eq 1 ] && echo "$OUTPUT" | grep -q "crate version .* is already uploaded"; then
             echo "WARNING: Crate $crate version is already published. Skipping..."
         else
             echo "ERROR: Failed to publish $crate. Check logs:"
