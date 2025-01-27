@@ -12,34 +12,34 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteReducers : RemoteBase<DbConnection>
-	{
-		public delegate void IdentityDisconnectedHandler(EventContext ctx);
-		public event IdentityDisconnectedHandler? OnIdentityDisconnected;
+    public sealed partial class RemoteReducers : RemoteBase<DbConnection>
+    {
+        public delegate void IdentityDisconnectedHandler(EventContext ctx);
+        public event IdentityDisconnectedHandler? OnIdentityDisconnected;
 
-		public bool InvokeIdentityDisconnected(EventContext ctx, Reducer.IdentityDisconnected args)
-		{
-			if (OnIdentityDisconnected == null) return false;
-			OnIdentityDisconnected(
-				ctx
-			);
-			return true;
-		}
-	}
+        public bool InvokeIdentityDisconnected(EventContext ctx, Reducer.IdentityDisconnected args)
+        {
+            if (OnIdentityDisconnected == null) return false;
+            OnIdentityDisconnected(
+                ctx
+            );
+            return true;
+        }
+    }
 
-	public abstract partial class Reducer
-	{
-		[SpacetimeDB.Type]
-		[DataContract]
-		public sealed partial class IdentityDisconnected : Reducer, IReducerArgs
-		{
-			string IReducerArgs.ReducerName => "identity_disconnected";
-		}
-	}
+    public abstract partial class Reducer
+    {
+        [SpacetimeDB.Type]
+        [DataContract]
+        public sealed partial class IdentityDisconnected : Reducer, IReducerArgs
+        {
+            string IReducerArgs.ReducerName => "identity_disconnected";
+        }
+    }
 
-	public sealed partial class SetReducerFlags
-	{
-		internal CallReducerFlags IdentityDisconnectedFlags;
-		public void IdentityDisconnected(CallReducerFlags flags) { this.IdentityDisconnectedFlags = flags; }
-	}
+    public sealed partial class SetReducerFlags
+    {
+        internal CallReducerFlags IdentityDisconnectedFlags;
+        public void IdentityDisconnected(CallReducerFlags flags) { this.IdentityDisconnectedFlags = flags; }
+    }
 }

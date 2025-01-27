@@ -11,31 +11,31 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	[SpacetimeDB.Type]
-	[DataContract]
-	public sealed partial class Message
-	{
-		[DataMember(Name = "sender")]
-		public SpacetimeDB.Identity Sender;
-		[DataMember(Name = "sent")]
-		public ulong Sent;
-		[DataMember(Name = "text")]
-		public string Text;
+    [SpacetimeDB.Type]
+    [DataContract]
+    public sealed partial class Message
+    {
+        [DataMember(Name = "sender")]
+        public SpacetimeDB.Identity Sender;
+        [DataMember(Name = "sent")]
+        public ulong Sent;
+        [DataMember(Name = "text")]
+        public string Text;
 
-		public Message(
-			SpacetimeDB.Identity Sender,
-			ulong Sent,
-			string Text
-		)
-		{
-			this.Sender = Sender;
-			this.Sent = Sent;
-			this.Text = Text;
-		}
+        public Message(
+            SpacetimeDB.Identity Sender,
+            ulong Sent,
+            string Text
+        )
+        {
+            this.Sender = Sender;
+            this.Sent = Sent;
+            this.Text = Text;
+        }
 
-		public Message()
-		{
-			this.Text = "";
-		}
-	}
+        public Message()
+        {
+            this.Text = "";
+        }
+    }
 }

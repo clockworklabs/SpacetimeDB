@@ -13,15 +13,15 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
-	public sealed partial class RemoteTables
-	{
-		public sealed class MessageHandle : RemoteTableHandle<EventContext, Message>
-		{
-			internal MessageHandle()
-			{
-			}
-		}
+    public sealed partial class RemoteTables
+    {
+        public sealed class MessageHandle : RemoteTableHandle<EventContext, Message>
+        {
+            internal MessageHandle()
+            {
+            }
+        }
 
-		public readonly MessageHandle Message = new();
-	}
+        public readonly MessageHandle Message = new();
+    }
 }
