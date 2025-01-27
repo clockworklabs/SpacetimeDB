@@ -2,7 +2,7 @@ use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::relational_db::{MutTx, RelationalDB};
-use crate::error::{IndexError, NodesError};
+use crate::error::{DBError, IndexError, NodesError};
 use crate::replica_context::ReplicaContext;
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
@@ -149,12 +149,7 @@ impl InstanceEnv {
                 (row_len, row_ref.pointer())
             })
             .inspect_err(|e| match e {
-                crate::error::DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
-                    constraint_name: _,
-                    table_name: _,
-                    cols: _,
-                    value: _,
-                })) => {}
+                DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation { .. })) => {}
                 _ => {
                     let res = stdb.table_name_from_id_mut(tx, table_id);
                     if let Ok(Some(table_name)) = res {
@@ -201,12 +196,7 @@ impl InstanceEnv {
                 (row_len, row_ref.pointer())
             })
             .inspect_err(|e| match e {
-                crate::error::DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
-                    constraint_name: _,
-                    table_name: _,
-                    cols: _,
-                    value: _,
-                })) => {}
+                DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation { .. })) => {}
                 _ => {
                     let res = stdb.table_name_from_id_mut(tx, table_id);
                     if let Ok(Some(table_name)) = res {
