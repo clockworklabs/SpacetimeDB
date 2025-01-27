@@ -485,10 +485,15 @@ impl Table {
         Ok((hash, ptr))
     }
 
-    /// Confirms a row update, after first checking constraints.
+    /// Confirms a row update, after first updating indices and checking constraints.
     ///
-    /// On `Ok(_)`, statistics of the table are also updated,
-    /// and the `ptr` still points to a valid row, and otherwise not.
+    /// On `Ok(_)`:
+    /// - the statistics of the table are also updated,
+    /// - the `ptr` still points to a valid row.
+    ///
+    /// Otherwise, on `Err(_)`:
+    /// - `ptr` will not point to a valid row,
+    /// - the statistics won't be updated.
     ///
     /// # Safety
     ///
