@@ -5,11 +5,14 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone)]
 #[non_exhaustive]
 pub enum Error {
-    #[error("Disconnected normally following a call to `DbContext::disconnect`")]
+    #[error("Connection has terminated")]
     Disconnected,
 
-    #[error("Already disconnected in call to `DbContext::disconnect`")]
-    AlreadyDisconnected,
+    #[error("Failed to connect: {source}")]
+    FailedToConnect {
+        #[source]
+        source: InternalError,
+    },
 
     #[error("Host returned error when processing subscription query: {error}")]
     SubscriptionError { error: String },
@@ -19,9 +22,6 @@ pub enum Error {
 
     #[error("Unsubscribe already called on subscription")]
     AlreadyUnsubscribed,
-
-    #[error("Error in WebSocket connection: {0}")]
-    Ws(#[from] crate::websocket::WsError),
 
     #[error(transparent)]
     Internal(#[from] InternalError),
@@ -53,13 +53,21 @@ impl InternalError {
     #[doc(hidden)]
     /// Called by codegen. Not part of this library's stable API.
     pub fn failed_parse(ty: &'static str, container: &'static str) -> Self {
-        Self::new(format!("Failed to parse {ty} from {container}"))
+        Self::new(format!(
+            "Failed to parse {ty} from {container}.
+
+This is often caused by outdated bindings; try re-running `spacetime generate`."
+        ))
     }
 
     #[doc(hidden)]
     /// Called by codegen. Not part of this library's stable API.
     pub fn unknown_name(category: &'static str, name: impl std::fmt::Display, container: &'static str) -> Self {
-        Self::new(format!("Unknown {category} {name} in {container}"))
+        Self::new(format!(
+            "Unknown {category} {name} in {container}
+
+This is often caused by outdated bindings; try re-running `spacetime generate`."
+        ))
     }
 }
 
