@@ -1134,6 +1134,16 @@ impl RelationalDB {
         self.inner.insert_mut_tx(tx, table_id, row)
     }
 
+    pub fn update<'a>(
+        &'a self,
+        tx: &'a mut MutTx,
+        table_id: TableId,
+        index_id: IndexId,
+        row: &[u8],
+    ) -> Result<(ColList, RowRef<'a>), DBError> {
+        self.inner.update_mut_tx(tx, table_id, index_id, row)
+    }
+
     pub fn delete(&self, tx: &mut MutTx, table_id: TableId, row_ids: impl IntoIterator<Item = RowPointer>) -> u32 {
         self.inner.delete_mut_tx(tx, table_id, row_ids)
     }

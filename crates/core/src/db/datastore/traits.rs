@@ -495,6 +495,21 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         table_id: TableId,
         row: &[u8],
     ) -> Result<(ColList, RowRef<'a>)>;
+    /// Updates a row to `row`, encoded in BSATN, into the table identified by `table_id`
+    /// using the index identified by `index_id`.
+    ///
+    /// Returns the list of columns with sequence-trigger values that were replaced with generated ones
+    /// and a reference to the row as a [`RowRef`].
+    ///
+    /// Generated columns are columns with an auto-inc sequence
+    /// and where the column was `0` in `row`.
+    fn update_mut_tx<'a>(
+        &'a self,
+        tx: &'a mut Self::MutTx,
+        table_id: TableId,
+        index_id: IndexId,
+        row: &[u8],
+    ) -> Result<(ColList, RowRef<'a>)>;
 
     /// Obtain the [`Metadata`] for this datastore.
     ///
