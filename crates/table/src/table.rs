@@ -1849,6 +1849,72 @@ pub(crate) mod test {
             .sum()
     }
 
+    /// Given a row type `ty`, a set of rows of that type `vals`,
+    /// and a set of columns within that type `indexed_columns`,
+    /// populate a table with `vals`, add an index on the `indexed_columns`,
+    /// and perform various assertions that the reported index size metrics are correct.
+    fn test_index_size_reporting(
+        ty: ProductType,
+        vals: Vec<ProductValue>,
+        indexed_columns: ColList,
+    ) -> Result<(), TestCaseError> {
+        let mut blob_store = HashMapBlobStore::default();
+        let mut table = table(ty.clone());
+
+        for row in &vals {
+            prop_assume!(table.insert(&mut blob_store, row).is_ok());
+        }
+
+        // We haven't added any indexes yet, so there should be 0 rows in indexes.
+        prop_assert_eq!(table.num_rows_in_indexes(), 0);
+
+        let index_id = IndexId(0);
+
+        // Add an index on column 0.
+        table.insert_index(
+            &blob_store,
+            index_id,
+            BTreeIndex::new(&ty, indexed_columns.clone(), false).unwrap(),
+        );
+
+        // We have one index, which should be fully populated,
+        // so in total we should have the same number of rows in indexes as we have rows.
+        prop_assert_eq!(table.num_rows_in_indexes(), table.num_rows());
+
+        let index = table.get_index_by_id(index_id).unwrap();
+
+        // One index, so table's reporting of bytes used should match that index's reporting.
+        prop_assert_eq!(table.bytes_used_by_index_keys(), index.num_key_bytes());
+
+        // Walk all the rows in the index, sum their key size,
+        // and assert it matches the `index.num_key_bytes()`
+        prop_assert_eq!(
+            index.num_key_bytes(),
+            reconstruct_index_num_key_bytes(&table, &blob_store, index_id)
+        );
+
+        // Walk all the rows we inserted, project them to the cols that will be their keys,
+        // sum their key size,
+        // and assert it matches the `index.num_key_bytes()`
+        let key_size_in_pvs = vals
+            .iter()
+            .map(|row| crate::btree_index::KeySize::key_size_in_bytes(&row.project(&indexed_columns).unwrap()) as u64)
+            .sum();
+        prop_assert_eq!(index.num_key_bytes(), key_size_in_pvs);
+
+        // Add a duplicate of the same index, so we can check that all above quantities double.
+        table.insert_index(
+            &blob_store,
+            IndexId(1),
+            BTreeIndex::new(&ty, indexed_columns, false).unwrap(),
+        );
+
+        prop_assert_eq!(table.num_rows_in_indexes(), table.num_rows() * 2);
+        prop_assert_eq!(table.bytes_used_by_index_keys(), key_size_in_pvs * 2);
+
+        Ok(())
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig { max_shrink_iters: 0x10000000, ..Default::default() })]
 
@@ -1958,50 +2024,17 @@ pub(crate) mod test {
 
         #[test]
         fn index_size_reporting_matches_slow_implementations_single_column((ty, vals) in generate_typed_row_vec(128, 2048)) {
-            let mut blob_store = HashMapBlobStore::default();
-            let mut table = table(ty.clone());
+            prop_assume!(!ty.elements.is_empty());
 
-            for row in &vals {
-                prop_assume!(table.insert(&mut blob_store, row).is_ok());
-            }
+            test_index_size_reporting(ty, vals, ColList::from(ColId(0)))?;
+        }
 
-            // We haven't added any indexes yet, so there should be 0 rows in indexes.
-            prop_assert_eq!(table.num_rows_in_indexes(), 0);
+        #[test]
+        fn index_size_reporting_matches_slow_implementations_two_column((ty, vals) in generate_typed_row_vec(128, 2048)) {
+            prop_assume!(ty.elements.len() >= 2);
 
-            let index_id = IndexId(0);
 
-            // Add an index on column 0.
-            table.insert_index(&mut blob_store, index_id, BTreeIndex::new(&ty, ColList::from(ColId(0)), false).unwrap());
-
-            // We have one index, which should be fully populated,
-            // so in total we should have the same number of rows in indexes as we have rows.
-            prop_assert_eq!(table.num_rows_in_indexes(), table.num_rows());
-
-            let index = table.get_index_by_id(index_id).unwrap();
-
-            // One index, so table's reporting of bytes used should match that index's reporting.
-            prop_assert_eq!(table.bytes_used_by_index_keys(), index.num_key_bytes());
-
-            // Walk all the rows in the index, sum their key size,
-            // and assert it matches the `index.num_key_bytes()`
-            prop_assert_eq!(
-                index.num_key_bytes(),
-                reconstruct_index_num_key_bytes(&table, &blob_store, index_id)
-            );
-
-            // Walk all the rows we inserted, project them to the cols that will be their keys,
-            // sum their key size,
-            // and assert it matches the `index.num_key_bytes()`
-            let key_size_in_pvs = vals.iter().map(|row| {
-                crate::btree_index::KeySize::key_size_in_bytes(&row.elements[0]) as u64
-            }).sum();
-            prop_assert_eq!(index.num_key_bytes(), key_size_in_pvs);
-
-            // Add a duplicate of the same index, so we can check that all above quantities double.
-            table.insert_index(&mut blob_store, IndexId(1), BTreeIndex::new(&ty, ColList::from(ColId(0)), false).unwrap());
-
-            prop_assert_eq!(table.num_rows_in_indexes(), table.num_rows() * 2);
-            prop_assert_eq!(table.bytes_used_by_index_keys(), key_size_in_pvs * 2);
+            test_index_size_reporting(ty, vals, ColList::from([ColId(0), ColId(1)]))?;
         }
     }
 
