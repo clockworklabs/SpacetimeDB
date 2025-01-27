@@ -99,7 +99,7 @@ pub(super) fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef>
 pub(super) fn iter_unique_cols<'a>(
     schema: &'a TableSchema,
     product_def: &'a ProductTypeDef,
-) -> impl Iterator<Item = (ColId, &'a (Identifier, AlgebraicTypeUse))> + 'a {
+) -> impl Iterator<Item = (ColId, &'a Identifier, &'a AlgebraicTypeUse)> + 'a {
     let constraints = schema.backcompat_column_constraints();
     schema
         .columns()
@@ -109,8 +109,8 @@ pub(super) fn iter_unique_cols<'a>(
             constraints[&ColList::from(col_pos)]
                 .has_unique()
                 .then(|| {
-                    let res @ (_, ref ty) = &product_def.elements[col_pos.idx()];
-                    is_type_filterable(ty).then_some((col_pos, res))
+                    let (name, ty) = &product_def.elements[col_pos.idx()];
+                    is_type_filterable(ty).then_some((col_pos, name, ty))
                 })
                 .flatten()
         })

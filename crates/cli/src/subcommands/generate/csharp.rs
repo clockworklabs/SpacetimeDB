@@ -66,7 +66,9 @@ impl Lang for Csharp {
                 let product_type = module.typespace_for_generate()[table.product_type_ref]
                     .as_product()
                     .unwrap();
-                let unique_indexes = iter_unique_cols(&schema, product_type).collect::<BTreeMap<_, _>>();
+                let unique_indexes = iter_unique_cols(&schema, product_type)
+                    .map(|(col_id, name, ty)| (col_id, (name.deref().to_case(Case::Pascal), ty)))
+                    .collect::<BTreeMap<_, _>>();
                 if !unique_indexes.is_empty() {
                     // OnInsert method for updating indexes
                     writeln!(
