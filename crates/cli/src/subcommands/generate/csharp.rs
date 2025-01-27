@@ -7,7 +7,10 @@ use std::ops::Deref;
 
 use super::code_indenter::CodeIndenter;
 use super::Lang;
-use crate::generate::util::{collect_case, is_reducer_invokable, iter_reducers, iter_tables, iter_unique_cols, print_auto_generated_file_comment, type_ref_name};
+use crate::generate::util::{
+    collect_case, is_reducer_invokable, iter_reducers, iter_tables, iter_unique_cols,
+    print_auto_generated_file_comment, type_ref_name,
+};
 use crate::indent_scope;
 use convert_case::{Case, Casing};
 use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm, ModuleDef, TableDef, TypeDef};
@@ -542,7 +545,6 @@ fn default_init(ctx: &TypespaceForGenerate, ty: &AlgebraicTypeUse) -> Option<&'s
 
 struct CsharpAutogen {
     output: CodeIndenter<String>,
-    ns_level: u32,
 }
 
 impl Deref for CsharpAutogen {
@@ -572,7 +574,8 @@ impl CsharpAutogen {
         writeln!(output);
 
         writeln!(output, "using System;");
-        if namespace != "SpacetimeDB" {
+        // Don't emit `using SpacetimeDB;` if we are going to be nested in the SpacetimeDB namespace.
+        if namespace.split('.').expect("split always returns at least one string") != "SpacetimeDB" {
             writeln!(output, "using SpacetimeDB;");
         }
         for extra_using in extra_usings {
@@ -580,42 +583,23 @@ impl CsharpAutogen {
         }
         writeln!(output);
 
-        let mut result = Self { output, ns_level: 0 };
-        result.push_namespace(namespace);
-        result
-    }
+        writeln!(output, "namespace {namespace}");
+        writeln!(output, "{{");
+        output.indent(1);
 
-    pub fn push_namespace(&mut self, ns: &str) {
-        writeln!(self, "namespace {ns}");
-        writeln!(self, "{{");
-        self.indent(1);
-        self.ns_level += 1;
+        Self { output }
     }
 
     pub fn into_inner(mut self) -> String {
-        for _ in 0..self.ns_level {
-            self.dedent(1);
-            writeln!(self, "}}");
-        }
+        self.dedent(1);
+        writeln!(self, "}}");
+
         self.output.into_inner()
     }
 }
 
-// This handles support for `#[sats(name = "Foo.Bar")]` namespace syntax on enums and sum types.
-// SpacetimeDB doesn't officially support it, but BitCraft uses it, so it needs to be kept for legacy reasons.
-// TODO: either support this syntax on all types and in all output languages, not only sum types only in C#, or remove it altogether.
-fn handle_custom_enum_namespace(output: &mut CsharpAutogen, sum_type_name: &mut String) {
-    if let Some((sum_namespace, sum_type_name_)) = sum_type_name.split_once('.') {
-        output.push_namespace(sum_namespace);
-        output.push_namespace("Types");
-        *sum_type_name = sum_type_name_.to_case(Case::Pascal);
-    }
-}
-
-fn autogen_csharp_sum(module: &ModuleDef, mut sum_type_name: String, sum_type: &SumTypeDef, namespace: &str) -> String {
+fn autogen_csharp_sum(module: &ModuleDef, sum_type_name: String, sum_type: &SumTypeDef, namespace: &str) -> String {
     let mut output = CsharpAutogen::new(namespace, &[]);
-
-    handle_custom_enum_namespace(&mut output, &mut sum_type_name);
 
     writeln!(output, "[SpacetimeDB.Type]");
     write!(
@@ -651,15 +635,13 @@ fn autogen_csharp_sum(module: &ModuleDef, mut sum_type_name: String, sum_type: &
     output.into_inner()
 }
 
-fn autogen_csharp_plain_enum(mut sum_type_name: String, sum_type: &PlainEnumTypeDef, namespace: &str) -> String {
+fn autogen_csharp_plain_enum(enum_type_name: String, enum_type: &PlainEnumTypeDef, namespace: &str) -> String {
     let mut output = CsharpAutogen::new(namespace, &[]);
 
-    handle_custom_enum_namespace(&mut output, &mut sum_type_name);
-
     writeln!(output, "[SpacetimeDB.Type]");
-    writeln!(output, "public enum {sum_type_name}");
+    writeln!(output, "public enum {enum_type_name}");
     indented_block(&mut output, |output| {
-        for variant in &*sum_type.variants {
+        for variant in &*enum_type.variants {
             writeln!(output, "{variant},");
         }
     });
