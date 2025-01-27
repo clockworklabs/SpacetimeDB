@@ -1035,7 +1035,7 @@ Next lets add some callbacks when rows change in the database. Modify the `Handl
         // Request all tables
         Conn.SubscriptionBuilder()
             .OnApplied(HandleSubscriptionApplied)
-            .Subscribe("SELECT * FROM *");
+            .SubscribeToAllTables();
     }
 ```
 
