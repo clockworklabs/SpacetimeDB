@@ -58,7 +58,7 @@ jobs:
           fi
           echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
       - name: Install & Run SpacetimeDB
-        uses: ./.github/actions/install-and-run-spacetimedb.yml
+        uses: ./.github/actions/install-and-run-spacetimedb
         with:
           git_ref: ${{ env.GIT_REF }}
       - name: Run smoketests
