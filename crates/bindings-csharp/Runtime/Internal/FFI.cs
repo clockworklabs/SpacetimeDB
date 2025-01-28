@@ -52,8 +52,33 @@ internal static partial class FFI
 #endif
     ;
 
+    public static void Check(this Errno status)
+    {
+        if (status == Errno.OK)
+        {
+            return;
+        }
+        throw status switch
+        {
+            Errno.NOT_IN_TRANSACTION => new NotInTransactionException(),
+            Errno.BSATN_DECODE_ERROR => new BsatnDecodeException(),
+            Errno.NO_SUCH_TABLE => new NoSuchTableException(),
+            Errno.NO_SUCH_INDEX => new NoSuchIndexException(),
+            Errno.NO_SUCH_ITER => new NoSuchIterException(),
+            Errno.NO_SUCH_CONSOLE_TIMER => new NoSuchLogStopwatch(),
+            Errno.NO_SUCH_BYTES => new NoSuchBytesException(),
+            Errno.NO_SPACE => new NoSpaceException(),
+            Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
+            Errno.UNIQUE_ALREADY_EXISTS => new UniqueConstraintViolationException(),
+            Errno.SCHEDULE_AT_DELAY_TOO_LONG => new ScheduleAtDelayTooLongException(),
+            Errno.INDEX_NOT_UNIQUE => new IndexNotUniqueException(),
+            Errno.NO_SUCH_ROW => new NoSuchRowException(),
+            _ => new UnknownException(status),
+        };
+    }
+
     [NativeMarshalling(typeof(Marshaller))]
-    public struct CheckedStatus
+    internal struct CheckedStatus
     {
         // This custom marshaller takes care of checking the status code
         // returned from the host and throwing an exception if it's not 0.
@@ -69,27 +94,8 @@ internal static partial class FFI
         {
             public static CheckedStatus ConvertToManaged(Errno status)
             {
-                if (status == 0)
-                {
-                    return default;
-                }
-                throw status switch
-                {
-                    Errno.NOT_IN_TRANSACTION => new NotInTransactionException(),
-                    Errno.BSATN_DECODE_ERROR => new BsatnDecodeException(),
-                    Errno.NO_SUCH_TABLE => new NoSuchTableException(),
-                    Errno.NO_SUCH_INDEX => new NoSuchIndexException(),
-                    Errno.NO_SUCH_ITER => new NoSuchIterException(),
-                    Errno.NO_SUCH_CONSOLE_TIMER => new NoSuchLogStopwatch(),
-                    Errno.NO_SUCH_BYTES => new NoSuchBytesException(),
-                    Errno.NO_SPACE => new NoSpaceException(),
-                    Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
-                    Errno.UNIQUE_ALREADY_EXISTS => new UniqueConstraintViolationException(),
-                    Errno.SCHEDULE_AT_DELAY_TOO_LONG => new ScheduleAtDelayTooLongException(),
-                    Errno.INDEX_NOT_UNIQUE => new IndexNotUniqueException(),
-                    Errno.NO_SUCH_ROW => new NoSuchRowException(),
-                    _ => new UnknownException(status),
-                };
+                status.Check();
+                return default;
             }
         }
     }
