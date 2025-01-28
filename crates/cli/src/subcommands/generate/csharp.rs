@@ -444,6 +444,10 @@ impl Lang for Csharp {
         results.push(("SpacetimeDBClient.cs".to_owned(), output.into_inner()));
         results
     }
+
+    fn clap_value(&self) -> clap::builder::PossibleValue {
+        clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"])
+    }
 }
 
 fn ty_fmt<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse, namespace: &'a str) -> impl fmt::Display + 'a {

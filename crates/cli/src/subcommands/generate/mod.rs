@@ -20,6 +20,7 @@ use crate::generate::util::iter_reducers;
 use crate::util::y_or_n;
 use crate::Config;
 use crate::{build, common_args};
+use clap::builder::PossibleValue;
 use std::collections::BTreeSet;
 use std::io::Read;
 use util::AUTO_GENERATED_PREFIX;
@@ -136,13 +137,7 @@ pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()>
 
     let mut paths = BTreeSet::new();
 
-    // Note: using `dyn` is fine here - the monomorphisation is not worth the cost and complexity,
-    // as we're already operating on filesystem which is much slower than any `dyn` overhead anyway.`
-    let lang = match lang {
-        Language::Csharp => &csharp::Csharp as &dyn Lang,
-        Language::TypeScript => &typescript::TypeScript as &dyn Lang,
-        Language::Rust => &rust::Rust as &dyn Lang,
-    };
+    let lang = lang.as_dyn_lang();
 
     for (fname, code) in generate(module, lang, namespace.as_str())? {
         let fname = Path::new(&fname);
@@ -214,16 +209,24 @@ pub enum Language {
     Rust,
 }
 
+impl Language {
+    // Note: using `dyn` is fine here - the monomorphisation is not worth the cost and complexity,
+    // as we're already operating on filesystem which is much slower than any `dyn` overhead anyway.`
+    fn as_dyn_lang(&self) -> &'static dyn Lang {
+        match self {
+            Self::Csharp => &csharp::Csharp,
+            Self::TypeScript => &typescript::TypeScript,
+            Self::Rust => &rust::Rust,
+        }
+    }
+}
+
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
         &[Self::Csharp, Self::TypeScript, Self::Rust]
     }
-    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
-        match self {
-            Self::Csharp => Some(clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"])),
-            Self::TypeScript => Some(clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"])),
-            Self::Rust => Some(clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"])),
-        }
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(self.as_dyn_lang().clap_value())
     }
 }
 
@@ -257,12 +260,14 @@ pub trait Lang {
     fn table_filename(&self, module: &ModuleDef, table: &TableDef) -> String;
     fn type_filename(&self, type_name: &ScopedTypeName) -> String;
     fn reducer_filename(&self, reducer_name: &Identifier) -> String;
-    fn format_files(&self, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()>;
 
     fn generate_table(&self, module: &ModuleDef, namespace: &str, tbl: &TableDef) -> String;
     fn generate_type(&self, module: &ModuleDef, namespace: &str, typ: &TypeDef) -> String;
     fn generate_reducer(&self, module: &ModuleDef, namespace: &str, reducer: &ReducerDef) -> String;
     fn generate_globals(&self, module: &ModuleDef, namespace: &str) -> Vec<(String, String)>;
+
+    fn format_files(&self, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()>;
+    fn clap_value(&self) -> PossibleValue;
 }
 
 pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDef> {

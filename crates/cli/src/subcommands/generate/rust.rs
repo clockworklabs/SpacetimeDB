@@ -592,6 +592,10 @@ Requested namespace: {namespace}",
 
         vec![("mod.rs".to_string(), (output.into_inner()))]
     }
+
+    fn clap_value(&self) -> clap::builder::PossibleValue {
+        clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"])
+    }
 }
 
 pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeUse) -> fmt::Result {

@@ -428,6 +428,10 @@ setReducerFlagsConstructor: () => {{
 
         vec![("index.ts".to_string(), (output.into_inner()))]
     }
+
+    fn clap_value(&self) -> clap::builder::PossibleValue {
+        clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"])
+    }
 }
 
 fn print_remote_reducers(module: &ModuleDef, out: &mut Indenter) {
