@@ -8,21 +8,7 @@ use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationE
 use crate::host::wasm_common::*;
 use crate::util::string_from_utf8_lossy_owned;
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
-use wasmtime::{AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace};
-
-fn log_traceback(func_type: &str, func: &str, e: &wasmtime::Error) {
-    log::info!("{} \"{}\" runtime error: {}", func_type, func, e);
-    if let Some(bt) = e.downcast_ref::<WasmBacktrace>() {
-        let frames_len = bt.frames().len();
-        for (i, frame) in bt.frames().iter().enumerate() {
-            log::info!(
-                "  Frame #{}: {}",
-                frames_len - i,
-                rustc_demangle::demangle(frame.func_name().unwrap_or("<unknown>"))
-            );
-        }
-    }
-}
+use wasmtime::{AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc};
 
 #[derive(Clone)]
 pub struct WasmtimeModule {
@@ -166,7 +152,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros());
 
         result
-            .inspect_err(|err| log_traceback("describer", describer_func_name, err))
+            .inspect_err(|err| log::info!("module describer raised a runtime error: {err:#}"))
             .map_err(DescribeError::RuntimeError)?;
 
         // Fetch the bsatn returned by the describer call.
@@ -234,10 +220,6 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             timings,
             call_result,
         }
-    }
-
-    fn log_traceback(func_type: &str, func: &str, trap: &Self::Trap) {
-        log_traceback(func_type, func, trap)
     }
 }
 

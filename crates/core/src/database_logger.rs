@@ -81,6 +81,18 @@ pub struct BacktraceFrame<'a> {
     pub module_name: Option<&'a str>,
     #[serde_as(as = "Option<DemangleSymbol>")]
     pub func_name: Option<&'a str>,
+    pub symbols: Vec<BacktraceFrameSymbol<'a>>,
+}
+
+#[serde_with::skip_serializing_none]
+#[serde_with::serde_as]
+#[derive(serde::Serialize)]
+pub struct BacktraceFrameSymbol<'a> {
+    #[serde_as(as = "Option<DemangleSymbol>")]
+    pub name: Option<&'a str>,
+    pub file: Option<&'a str>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
 }
 
 struct DemangleSymbol;
@@ -90,7 +102,7 @@ impl serde_with::SerializeAs<&str> for DemangleSymbol {
         S: serde::Serializer,
     {
         if let Ok(sym) = rustc_demangle::try_demangle(source) {
-            serializer.serialize_str(&sym.to_string())
+            serializer.collect_str(&sym)
         } else {
             serializer.serialize_str(source)
         }

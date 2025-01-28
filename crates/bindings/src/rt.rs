@@ -29,7 +29,9 @@ pub fn invoke_reducer<'a, A: Args<'a>>(
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
     // Run the reducer with the environment all set up.
-    with_timestamp_set(ctx.timestamp, || reducer.invoke(&ctx, args))
+    with_timestamp_set(ctx.timestamp, || {
+        __rust_begin_short_backtrace(|| reducer.invoke(&ctx, args))
+    })
 }
 /// A trait for types representing the *execution logic* of a reducer.
 #[diagnostic::on_unimplemented(
@@ -260,6 +262,7 @@ macro_rules! impl_reducer {
             Ret: IntoReducerResult
         {
             #[allow(non_snake_case)]
+            #[inline(always)]
             fn invoke(&self, ctx: &ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
                 let ($($T,)*) = args;
                 self(ctx, $($T),*).into_result()
@@ -618,4 +621,32 @@ pub fn volatile_nonatomic_schedule_immediate<'de, A: Args<'de>, R: Reducer<'de, 
 
     // Schedule the reducer.
     sys::volatile_nonatomic_schedule_immediate(R2::NAME, &arg_bytes)
+}
+
+// Used to tidy up the backtrace in cli/subcommands/logs.rs
+#[inline(never)]
+pub(crate) fn __rust_begin_short_backtrace<F, T>(f: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    let result = f();
+
+    // prevent this frame from being tail-call optimised away
+    std::hint::black_box(());
+
+    result
+}
+
+// Used to tidy up the backtrace in cli/subcommands/logs.rs
+#[inline(never)]
+pub(crate) fn __rust_end_short_backtrace<F, T>(f: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    let result = f();
+
+    // prevent this frame from being tail-call optimised away
+    std::hint::black_box(());
+
+    result
 }

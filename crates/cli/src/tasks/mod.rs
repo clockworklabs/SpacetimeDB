@@ -16,7 +16,7 @@ pub fn build(project_path: &Path, lint_dir: Option<&Path>, build_debug: bool) ->
     if !build_debug {
         eprintln!("Optimising module with wasm-opt...");
         let wasm_path_opt = wasm_path.with_extension("opt.wasm");
-        match cmd!("wasm-opt", "-all", "-g", "-O2", &wasm_path, "-o", &wasm_path_opt).run() {
+        match cmd!("wasm-opt", "-all", "-O2", &wasm_path, "-g", "-o", &wasm_path_opt).run() {
             Ok(_) => wasm_path = wasm_path_opt,
             // Non-critical error for backward compatibility with users who don't have wasm-opt.
             Err(err) => {
