@@ -50,6 +50,7 @@ fn reducer(_ctx: &ReducerContext, args: ScheduledReducerArgs) {
         logs = "\n".join(self.logs(5))
         self.assertNotIn("the reducer ran", logs)
 
+TIMESTAMP_ZERO = {'__timestamp_nanos_since_unix_epoch':0}
 
 class SubscribeScheduledTable(Smoketest):
     MODULE_CODE = """
@@ -75,8 +76,8 @@ fn schedule_repeated_reducer(ctx: &ReducerContext) {
 }
 
 #[spacetimedb::reducer]
-pub fn my_reducer(_ctx: &ReducerContext, arg: ScheduledTable) {
-    log::info!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), arg.prev.elapsed());
+pub fn my_reducer(ctx: &ReducerContext, arg: ScheduledTable) {
+    log::info!("Invoked: ts={:?}, delta={:?}", ctx.timestamp, ctx.timestamp.duration_since(arg.prev));
 }
 """
     def test_scheduled_table_subscription(self):
@@ -91,7 +92,7 @@ pub fn my_reducer(_ctx: &ReducerContext, arg: ScheduledTable) {
         # scheduled reducer should be ran by now
         self.assertEqual(lines, 1)
 
-        row_entry = {'prev': 0, 'scheduled_id': 2, 'sched_at': {'Time': 0}}
+        row_entry = {'prev': TIMESTAMP_ZERO, 'scheduled_id': 2, 'sched_at': {'Time': TIMESTAMP_ZERO}}
         # subscription should have 2 updates, first for row insert in scheduled table and second for row deletion.
         self.assertEqual(sub(), [{'scheduled_table': {'deletes': [], 'inserts': [row_entry]}}, {'scheduled_table': {'deletes': [row_entry], 'inserts': []}}])
 
@@ -112,8 +113,8 @@ pub fn my_reducer(_ctx: &ReducerContext, arg: ScheduledTable) {
         # scheduling repeated reducer again just to get 2nd subscription update.
         self.call("schedule_reducer")
 
-        repeated_row_entry = {'prev': 0, 'scheduled_id': 1, 'sched_at': {'Interval': 100000}}
-        row_entry = {'prev': 0, 'scheduled_id': 2, 'sched_at': {'Time': 0}}
+        repeated_row_entry = {'prev': TIMESTAMP_ZERO, 'scheduled_id': 1, 'sched_at': {'Interval': {'__time_duration_micros': 100000 }}}
+        row_entry = {'prev': TIMESTAMP_ZERO, 'scheduled_id': 2, 'sched_at': {'Time': TIMESTAMP_ZERO}}
 
         # subscription should have 2 updates and should not have any deletes
         self.assertEqual(sub(), [{'scheduled_table': {'deletes': [], 'inserts': [repeated_row_entry]}}, {'scheduled_table': {'deletes': [], 'inserts': [row_entry]}}])

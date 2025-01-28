@@ -53,9 +53,9 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
-            Reducer::IdentityConnected => "__identity_connected__",
-            Reducer::IdentityDisconnected => "__identity_disconnected__",
-            Reducer::Init => "__init__",
+            Reducer::IdentityConnected => "identity_connected",
+            Reducer::IdentityDisconnected => "identity_disconnected",
+            Reducer::Init => "init",
             Reducer::SendMessage { .. } => "send_message",
             Reducer::SetName { .. } => "set_name",
         }
@@ -65,15 +65,18 @@ impl TryFrom<__ws::ReducerCallInfo<__ws::BsatnFormat>> for Reducer {
     type Error = __anyhow::Error;
     fn try_from(value: __ws::ReducerCallInfo<__ws::BsatnFormat>) -> __anyhow::Result<Self> {
         match &value.reducer_name[..] {
-            "__identity_connected__" => Ok(__sdk::parse_reducer_args::<
-                identity_connected_reducer::IdentityConnectedArgs,
-            >("__identity_connected__", &value.args)?
-            .into()),
-            "__identity_disconnected__" => Ok(__sdk::parse_reducer_args::<
+            "identity_connected" => Ok(
+                __sdk::parse_reducer_args::<identity_connected_reducer::IdentityConnectedArgs>(
+                    "identity_connected",
+                    &value.args,
+                )?
+                .into(),
+            ),
+            "identity_disconnected" => Ok(__sdk::parse_reducer_args::<
                 identity_disconnected_reducer::IdentityDisconnectedArgs,
-            >("__identity_disconnected__", &value.args)?
+            >("identity_disconnected", &value.args)?
             .into()),
-            "__init__" => Ok(__sdk::parse_reducer_args::<init_reducer::InitArgs>("__init__", &value.args)?.into()),
+            "init" => Ok(__sdk::parse_reducer_args::<init_reducer::InitArgs>("init", &value.args)?.into()),
             "send_message" => Ok(__sdk::parse_reducer_args::<send_message_reducer::SendMessageArgs>(
                 "send_message",
                 &value.args,

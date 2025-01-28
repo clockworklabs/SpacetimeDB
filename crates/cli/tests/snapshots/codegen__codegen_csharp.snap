@@ -363,12 +363,12 @@ namespace SpacetimeDB
 		[DataMember(Name = "scheduled_at")]
 		public SpacetimeDB.ScheduleAt ScheduledAt;
 		[DataMember(Name = "prev_time")]
-		public ulong PrevTime;
+		public SpacetimeDB.Timestamp PrevTime;
 
 		public RepeatingTestArg(
 			ulong ScheduledId,
 			SpacetimeDB.ScheduleAt ScheduledAt,
-			ulong PrevTime
+			SpacetimeDB.Timestamp PrevTime
 		)
 		{
 			this.ScheduledId = ScheduledId;
@@ -379,6 +379,7 @@ namespace SpacetimeDB
 		public RepeatingTestArg()
 		{
 			this.ScheduledAt = null!;
+			this.PrevTime = new();
 		}
 
 	}

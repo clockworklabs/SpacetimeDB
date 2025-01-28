@@ -120,7 +120,7 @@ pub struct HasSpecialStuff {
 #[spacetimedb::reducer(init)]
 pub fn init(ctx: &ReducerContext) {
     ctx.db.repeating_test_arg().insert(RepeatingTestArg {
-        prev_time: Timestamp::now(),
+        prev_time: ctx.timestamp,
         scheduled_id: 0,
         scheduled_at: duration!("1000ms").into(),
     });
@@ -128,7 +128,10 @@ pub fn init(ctx: &ReducerContext) {
 
 #[spacetimedb::reducer]
 pub fn repeating_test(ctx: &ReducerContext, arg: RepeatingTestArg) {
-    let delta_time = arg.prev_time.elapsed();
+    let delta_time = ctx
+        .timestamp
+        .duration_since(arg.prev_time)
+        .expect("arg.prev_time is later than ctx.timestamp... huh?");
     log::trace!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
 }
 

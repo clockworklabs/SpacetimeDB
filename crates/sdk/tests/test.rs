@@ -74,6 +74,16 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
+            fn insert_timestamp() {
+                make_test("insert_timestamp").run();
+            }
+
+            #[test]
+            fn insert_call_timestamp() {
+                make_test("insert_call_timestamp").run();
+            }
+
+            #[test]
             fn on_reducer() {
                 make_test("on_reducer").run();
             }

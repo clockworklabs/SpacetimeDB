@@ -9,7 +9,8 @@
 use anyhow::{Context, Result};
 use spacetimedb::{
     sats::{i256, u256},
-    Address, Identity, ReducerContext, SpacetimeType, Table,
+    spacetimedb_lib::TimeDuration,
+    Address, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
 };
 
 #[derive(SpacetimeType)]
@@ -39,6 +40,7 @@ pub enum EnumWithPayload {
     Str(String),
     Identity(Identity),
     Address(Address),
+    Timestamp(Timestamp),
     Bytes(Vec<u8>),
     Ints(Vec<i32>),
     Strings(Vec<String>),
@@ -75,6 +77,8 @@ pub struct EveryPrimitiveStruct {
     p: String,
     q: Identity,
     r: Address,
+    s: Timestamp,
+    t: TimeDuration,
 }
 
 #[derive(SpacetimeType)]
@@ -97,6 +101,8 @@ pub struct EveryVecStruct {
     p: Vec<String>,
     q: Vec<Identity>,
     r: Vec<Address>,
+    s: Vec<Timestamp>,
+    t: Vec<TimeDuration>,
 }
 
 /// Defines one or more tables, and optionally reducers alongside them.
@@ -272,6 +278,8 @@ define_tables! {
     OneIdentity { insert insert_one_identity } i Identity;
     OneAddress { insert insert_one_address } a Address;
 
+    OneTimestamp { insert insert_one_timestamp } t Timestamp;
+
     OneSimpleEnum { insert insert_one_simple_enum } e SimpleEnum;
     OneEnumWithPayload { insert insert_one_enum_with_payload } e EnumWithPayload;
 
@@ -306,6 +314,8 @@ define_tables! {
 
     VecIdentity { insert insert_vec_identity } i Vec<Identity>;
     VecAddress { insert insert_vec_address } a Vec<Address>;
+
+    VecTimestamp { insert insert_vec_timestamp } t Vec<Timestamp>;
 
     VecSimpleEnum { insert insert_vec_simple_enum } e Vec<SimpleEnum>;
     VecEnumWithPayload { insert insert_vec_enum_with_payload } e Vec<EnumWithPayload>;
@@ -588,6 +598,11 @@ fn insert_caller_pk_address(ctx: &ReducerContext, data: i32) -> anyhow::Result<(
 }
 
 #[spacetimedb::reducer]
+fn insert_call_timestamp(ctx: &ReducerContext) {
+    ctx.db.one_timestamp().insert(OneTimestamp { t: ctx.timestamp });
+}
+
+#[spacetimedb::reducer]
 fn insert_primitives_as_strings(ctx: &ReducerContext, s: EveryPrimitiveStruct) {
     ctx.db.vec_string().insert(VecString {
         s: vec![
@@ -609,6 +624,8 @@ fn insert_primitives_as_strings(ctx: &ReducerContext, s: EveryPrimitiveStruct) {
             s.p.to_string(),
             s.q.to_string(),
             s.r.to_string(),
+            s.s.to_string(),
+            s.t.to_string(),
         ],
     });
 }

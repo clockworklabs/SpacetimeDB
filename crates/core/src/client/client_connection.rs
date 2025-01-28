@@ -334,7 +334,7 @@ impl ClientConnection {
     ) -> OneOffQueryResponseMessage<F> {
         let result = self.module.one_off_query::<F>(self.id.identity, query.to_owned());
         let message_id = message_id.to_owned();
-        let total_host_execution_duration = timer.elapsed().as_micros() as u64;
+        let total_host_execution_duration = timer.elapsed().into();
         match result {
             Ok(results) => OneOffQueryResponseMessage {
                 message_id,

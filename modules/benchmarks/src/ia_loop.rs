@@ -3,7 +3,7 @@
 #![allow(clippy::too_many_arguments, unused_variables)]
 
 use crate::Load;
-use spacetimedb::{log, ReducerContext, SpacetimeType, Table, Timestamp};
+use spacetimedb::{log, ReducerContext, SpacetimeType, Table};
 use std::hash::{Hash, Hasher};
 
 #[spacetimedb::table(name = velocity)]
@@ -48,11 +48,14 @@ impl Position {
 }
 
 pub fn moment_milliseconds() -> u64 {
-    Timestamp::from_micros_since_epoch(1000)
-        .duration_since(Timestamp::UNIX_EPOCH)
-        .ok()
-        .unwrap()
-        .as_millis() as u64
+    1
+    // Duration::from_micros(1000).as_millis() as u64
+    // or previously...
+    // Timestamp::from_micros_since_epoch(1000)
+    //     .duration_since(Timestamp::UNIX_EPOCH)
+    //     .ok()
+    //     .unwrap()
+    //     .as_millis() as u64
 }
 
 #[derive(SpacetimeType, Debug, Clone, Copy)]

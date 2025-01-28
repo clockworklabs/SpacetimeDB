@@ -11,6 +11,8 @@
     <!-- Note: the binary produced by this package is used in Unity too, which is limited to .NET Standard 2.1. -->
     <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
     <RootNamespace>SpacetimeDB</RootNamespace>
+    <!-- You can enable this when debugging codegen problems. Outputs in obj/debug/[version]/generated. -->
+    <!-- <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles> -->
   </PropertyGroup>
 
   <ItemGroup>
