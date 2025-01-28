@@ -1,0 +1,39 @@
+# .github/actions/install-spacetimedb.yml
+name: 'Install & Run SpacetimeDB Standalone'
+description: 'A reusable GitHub Action to install SpacetimeDB Standalone and then run it in the background.'
+author: 'Clockwork Labs'
+
+inputs:
+  git_ref:
+    description: 'Git reference to checkout'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout sources
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.git_ref || github.ref }}
+
+    - uses: dsherret/rust-toolchain-file@v1
+
+    - uses: actions/setup-dotnet@v4
+      with:
+        global-json-file: modules/global.json
+
+    - name: Build and start database (Linux)
+      if: runner.os == 'Linux'
+      run: docker compose up -d
+      shell: bash
+
+    - name: Build and start database (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+        Start-Process target/debug/spacetimedb-cli.exe start
+        cd modules
+        dotnet workload config --update-mode workload-set
+        dotnet workload update
+      shell: bash
