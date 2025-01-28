@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::instrumentation::CallTimes;
-use crate::database_logger::SystemLogger;
+use crate::database_logger::{self, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientRow, ST_CLIENT_ID};
 use crate::db::datastore::traits::{IsolationLevel, Program};
@@ -508,6 +508,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             Ok(Err(errmsg)) => {
                 log::info!("reducer returned error: {errmsg}");
 
+                self.replica_context().logger.write(
+                    database_logger::LogLevel::Error,
+                    &database_logger::Record {
+                        ts: chrono::DateTime::from_timestamp_micros(timestamp.microseconds as i64).unwrap(),
+                        target: Some(reducer_name),
+                        filename: None,
+                        line_number: None,
+                        message: &errmsg,
+                    },
+                    &(),
+                );
                 EventStatus::Failed(errmsg.into())
             }
             // we haven't actually comitted yet - `commit_and_broadcast_event` will commit
