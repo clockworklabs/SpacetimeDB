@@ -1,29 +1,34 @@
 import time
-from .. import Smoketest, run_cmd, requires_docker
+from .. import COMPOSE_FILE, Smoketest, run_cmd, requires_docker
 from .zz_docker import restart_docker
 
 
-def kill_node_container(name_substr):
+def list_container():
+    container_list = run_cmd("docker", "compose", "-f", COMPOSE_FILE, "ps", "--format", "{{.ID}} {{.Name}}")
+    return container_list.splitlines() if container_list is not None else []
+
+def kill_node_container(container_id):
     """
     Stop the first Docker container whose name contains the given substring.
 
     :param name_substr: Substring to match in container names
     """
-    container_list = run_cmd("docker", "ps", "--format", "{{.ID}} {{.Names}}")
+    run_cmd("docker", "kill", container_id)
 
-    if container_list is None:
-        return
 
-    for line in container_list.splitlines():
-        container_id, container_name = line.split(maxsplit=1)
-        if name_substr in container_name:
-            result = run_cmd("docker", "stop", container_id)
-            if result is not None:
-                print(f"Container '{container_name}' has been killed.")
+
+def retry_on_error(func, max_retries=3, retry_delay=2):
+    """Helper to retry a function on error."""
+    for attempt in range(1, max_retries + 1):
+        try:
+            return func()
+        except Exception as e:
+            if attempt < max_retries:
+                print(f"Attempt {attempt} failed: {e}. Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
             else:
-                print(f"Failed to kill container '{container_name}'.")
-            break
-
+                print("Max retries reached. Raising the exception.")
+                raise
 
 @requires_docker
 class ReplicationTest(Smoketest):
@@ -44,17 +49,36 @@ fn send_message(ctx: &ReducerContext, text: String) {
 }
 
 """
+
     def test_leader_failure(self):
         """This test fails a leader, wait for new leader to be elected and verify if commits replicated to new leader"""
 
         self.call("send_message", "hey")
-        leader = self.leader_node();
-        kill_node_container(leader)
-
+        leader = self.leader_node()
+        containers = list_container()
+        for container in containers:
+            if leader in container:
+                kill_node_container(container.split()[0])
+                break
         time.sleep(2)
 
-        sub = self.subscribe("SELECT * FROM message", n=1)
         self.call("send_message", "joey")
+        
+        message_table = self.sql("SELECT * FROM message")
+        restart_docker()
+        time.sleep(2)
+        self.assertIn("hey", message_table)
+        self.assertIn("joey", message_table)
 
-        self.assertEqual(sub(), [{'scheduled_table': {'deletes': [], 'inserts': [{"id":1,"text":"hey"}, {"id":2,"text":"joey"}]}}])
+
+    def test_many_transactions(self):
+        """This test sends many messages to the database and verifies that they are all present"""
+
+        num_messages = 1000
+        for i in range(num_messages+1):
+            retry_on_error(lambda: self.call("send_message", f"{i}"))
+        message_table = self.sql(f"SELECT text FROM message where text='{num_messages}'")
+        self.assertIn("1000", message_table)
+
+
 

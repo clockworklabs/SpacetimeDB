@@ -1,7 +1,8 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::error::{IndexError, NodesError};
+use crate::db::relational_db::{MutTx, RelationalDB};
+use crate::error::{DBError, IndexError, NodesError};
 use crate::replica_context::ReplicaContext;
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
@@ -12,6 +13,7 @@ use spacetimedb_sats::{
     buffer::{CountWriter, TeeWriter},
     AlgebraicValue, ProductValue,
 };
+use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::{RowRef, UniqueConstraintViolation};
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -147,12 +149,7 @@ impl InstanceEnv {
                 (row_len, row_ref.pointer())
             })
             .inspect_err(|e| match e {
-                crate::error::DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
-                    constraint_name: _,
-                    table_name: _,
-                    cols: _,
-                    value: _,
-                })) => {}
+                DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation { .. })) => {}
                 _ => {
                     let res = stdb.table_name_from_id_mut(tx, table_id);
                     if let Ok(Some(table_name)) = res {
@@ -163,6 +160,18 @@ impl InstanceEnv {
                 }
             })?;
 
+        self.maybe_schedule_row(stdb, tx, table_id, row_ptr)?;
+
+        Ok(row_len)
+    }
+
+    fn maybe_schedule_row(
+        &self,
+        stdb: &RelationalDB,
+        tx: &mut MutTx,
+        table_id: TableId,
+        row_ptr: RowPointer,
+    ) -> Result<(), NodesError> {
         if let Some((id_column, at_column)) = stdb.table_scheduled_id_and_at(tx, table_id)? {
             let row_ref = tx.get(table_id, row_ptr)?.unwrap();
             let (schedule_id, schedule_at) = get_schedule_from_row(&row_ref, id_column, at_column)
@@ -173,17 +182,34 @@ impl InstanceEnv {
                 .schedule(table_id, schedule_id, schedule_at, id_column, at_column)
                 .map_err(NodesError::ScheduleError)?;
         }
-
-        Ok(row_len)
+        Ok(())
     }
 
     pub fn update(&self, table_id: TableId, index_id: IndexId, buffer: &mut [u8]) -> Result<usize, NodesError> {
-        #![allow(unused)]
-
         let stdb = &*self.replica_ctx.relational_db;
         let tx = &mut *self.get_tx()?;
 
-        Ok(todo!())
+        let (row_len, row_ptr) = stdb
+            .update(tx, table_id, index_id, buffer)
+            .map(|(gen_cols, row_ref)| {
+                let row_len = Self::project_cols_bsatn(buffer, gen_cols, row_ref);
+                (row_len, row_ref.pointer())
+            })
+            .inspect_err(|e| match e {
+                DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation { .. })) => {}
+                _ => {
+                    let res = stdb.table_name_from_id_mut(tx, table_id);
+                    if let Ok(Some(table_name)) = res {
+                        log::debug!("update(table: {table_name}, table_id: {table_id}, index_id: {index_id}): {e}")
+                    } else {
+                        log::debug!("update(table_id: {table_id}, index_id: {index_id}): {e}")
+                    }
+                }
+            })?;
+
+        self.maybe_schedule_row(stdb, tx, table_id, row_ptr)?;
+
+        Ok(row_len)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]

@@ -85,38 +85,38 @@ inherits = "release"
 debug = true
 
 [workspace.package]
-version = "1.0.0-rc3"
+version = "1.0.0-rc4"
 edition = "2021"
 # update rust-toolchain.toml too!
 rust-version = "1.78.0"
 
 [workspace.dependencies]
-spacetimedb = { path = "crates/bindings", version = "1.0.0-rc3" }
-spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "1.0.0-rc3" }
-spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "1.0.0-rc3" }
-spacetimedb-cli = { path = "crates/cli", version = "1.0.0-rc3" }
-spacetimedb-client-api = { path = "crates/client-api", version = "1.0.0-rc3" }
-spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "1.0.0-rc3" }
-spacetimedb-commitlog = { path = "crates/commitlog", version = "1.0.0-rc3" }
-spacetimedb-core = { path = "crates/core", version = "1.0.0-rc3" }
-spacetimedb-data-structures = { path = "crates/data-structures", version = "1.0.0-rc3" }
-spacetimedb-durability = { path = "crates/durability", version = "1.0.0-rc3" }
-spacetimedb-execution = { path = "crates/execution", version = "1.0.0-rc3" }
-spacetimedb-expr = { path = "crates/expr", version = "1.0.0-rc3" }
-spacetimedb-lib = { path = "crates/lib", default-features = false, version = "1.0.0-rc3" }
-spacetimedb-metrics = { path = "crates/metrics", version = "1.0.0-rc3" }
-spacetimedb-paths = { path = "crates/paths", version = "1.0.0-rc3" }
-spacetimedb-physical-plan = { path = "crates/physical-plan", version = "1.0.0-rc3" }
-spacetimedb-primitives = { path = "crates/primitives", version = "1.0.0-rc3" }
-spacetimedb-query = { path = "crates/query", version = "1.0.0-rc3" }
-spacetimedb-sats = { path = "crates/sats", version = "1.0.0-rc3" }
-spacetimedb-schema = { path = "crates/schema", version = "1.0.0-rc3" }
-spacetimedb-standalone = { path = "crates/standalone", version = "1.0.0-rc3" }
-spacetimedb-sql-parser = { path = "crates/sql-parser", version = "1.0.0-rc3" }
-spacetimedb-table = { path = "crates/table", version = "1.0.0-rc3" }
-spacetimedb-vm = { path = "crates/vm", version = "1.0.0-rc3" }
-spacetimedb-fs-utils = { path = "crates/fs-utils", version = "1.0.0-rc3" }
-spacetimedb-snapshot = { path = "crates/snapshot", version = "1.0.0-rc3" }
+spacetimedb = { path = "crates/bindings", version = "1.0.0-rc4" }
+spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "1.0.0-rc4" }
+spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "1.0.0-rc4" }
+spacetimedb-cli = { path = "crates/cli", version = "1.0.0-rc4" }
+spacetimedb-client-api = { path = "crates/client-api", version = "1.0.0-rc4" }
+spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "1.0.0-rc4" }
+spacetimedb-commitlog = { path = "crates/commitlog", version = "1.0.0-rc4" }
+spacetimedb-core = { path = "crates/core", version = "1.0.0-rc4" }
+spacetimedb-data-structures = { path = "crates/data-structures", version = "1.0.0-rc4" }
+spacetimedb-durability = { path = "crates/durability", version = "1.0.0-rc4" }
+spacetimedb-execution = { path = "crates/execution", version = "1.0.0-rc4" }
+spacetimedb-expr = { path = "crates/expr", version = "1.0.0-rc4" }
+spacetimedb-lib = { path = "crates/lib", default-features = false, version = "1.0.0-rc4" }
+spacetimedb-metrics = { path = "crates/metrics", version = "1.0.0-rc4" }
+spacetimedb-paths = { path = "crates/paths", version = "1.0.0-rc4" }
+spacetimedb-physical-plan = { path = "crates/physical-plan", version = "1.0.0-rc4" }
+spacetimedb-primitives = { path = "crates/primitives", version = "1.0.0-rc4" }
+spacetimedb-query = { path = "crates/query", version = "1.0.0-rc4" }
+spacetimedb-sats = { path = "crates/sats", version = "1.0.0-rc4" }
+spacetimedb-schema = { path = "crates/schema", version = "1.0.0-rc4" }
+spacetimedb-standalone = { path = "crates/standalone", version = "1.0.0-rc4" }
+spacetimedb-sql-parser = { path = "crates/sql-parser", version = "1.0.0-rc4" }
+spacetimedb-table = { path = "crates/table", version = "1.0.0-rc4" }
+spacetimedb-vm = { path = "crates/vm", version = "1.0.0-rc4" }
+spacetimedb-fs-utils = { path = "crates/fs-utils", version = "1.0.0-rc4" }
+spacetimedb-snapshot = { path = "crates/snapshot", version = "1.0.0-rc4" }
 
 ahash = "0.8"
 anyhow = "1.0.68"
@@ -190,7 +190,7 @@ paste = "1.0"
 petgraph = { version = "0.6.5", default-features = false }
 pin-project-lite = "0.2.9"
 postgres-types = "0.2.5"
-pretty_assertions = "1.4"
+pretty_assertions = { version = "1.4", features = ["unstable"] }
 proc-macro2 = "1.0"
 prometheus = "0.13.0"
 proptest = "1.4"

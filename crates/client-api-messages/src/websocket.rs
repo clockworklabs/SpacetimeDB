@@ -343,6 +343,9 @@ pub struct SubscriptionError {
     /// Provided by the client via a [`Subscribe`] or [`Unsubscribe`] message.
     /// [`None`] if this occurred as the result of a [`TransactionUpdate`].
     pub request_id: Option<u32>,
+    /// Provided by the client via a [`Subscribe`] or [`Unsubscribe`] message.
+    /// [`None`] if this occurred as the result of a [`TransactionUpdate`].
+    pub query_id: Option<u32>,
     /// The return table of the query in question.
     /// The server is not required to set this field.
     /// It has been added to avoid a breaking change post 1.0.
