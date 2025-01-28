@@ -75,7 +75,7 @@ impl DbConnectionBuilder {
 }
 ```
 
-Chain a call to `.on_connect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote module. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`with_credentials`](#method-with_credentials) to authenticate the same user in future connections.
+Chain a call to `.on_connect(callback)` to your builder to register a callback to run when your new `DbConnection` successfully initiates its connection to the remote module. The callback accepts three arguments: a reference to the `DbConnection`, the `Identity` by which SpacetimeDB identifies this connection, and a private access token which can be saved and later passed to [`with_token`](#method-with_token) to authenticate the same user in future connections.
 
 This interface may change in an upcoming release as we rework SpacetimeDB's authentication model.
 
@@ -93,15 +93,15 @@ impl DbConnectionBuilder {
 
 Chain a call to `.on_connect(callback)` to your builder to register a callback to run when your `DbConnection` disconnects from the remote module, either as a result of a call to [`disconnect`](#method-disconnect) or due to an error.
 
-#### Method `with_credentials`
+#### Method `with_token`
 
 ```rust
 impl DbConnectionBuilder {
-    fn with_credentials(self, credentials: Option<(Identity, String)>) -> Self;
+    fn with_token(self, token: Option<impl ToString>>) -> Self;
 }
 ```
 
-Chain a call to `.with_credentials(credentials)` to your builder to provide an `Identity` and private access token to authenticate with, or to explicitly select an anonymous connection. If this method is not called or `None` is passed, SpacetimeDB will generate a new `Identity` and sign a new private access token for the connection.
+Chain a call to `.with_token(token)` to your builder to provide an OpenID Connect compliant JSON Web Token to authenticate with, or to explicitly select an anonymous connection. If this method is not called or `None` is passed, SpacetimeDB will generate a new `Identity` and sign a new private access token for the connection.
 
 This interface may change in an upcoming release as we rework SpacetimeDB's authentication model.
 
