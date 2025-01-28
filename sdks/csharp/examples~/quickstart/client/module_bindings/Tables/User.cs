@@ -17,31 +17,18 @@ namespace SpacetimeDB.Types
     {
         public sealed class UserHandle : RemoteTableHandle<EventContext, User>
         {
-            protected override void InternalInvokeValueInserted(User row)
+            public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
-                Identity.Cache[row.Identity] = row;
+                protected override SpacetimeDB.Identity GetKey(User row) => row.Identity;
+
+                public IdentityUniqueIndex(UserHandle table) : base(table) { }
             }
 
-            protected override void InternalInvokeValueDeleted(User row)
-            {
-                Identity.Cache.Remove(row.Identity);
-            }
-
-            public sealed class IdentityUniqueIndex
-            {
-                internal readonly Dictionary<SpacetimeDB.Identity, User> Cache = new(16);
-
-                public User? Find(SpacetimeDB.Identity value)
-                {
-                    Cache.TryGetValue(value, out var r);
-                    return r;
-                }
-            }
-
-            public IdentityUniqueIndex Identity = new();
+            public readonly IdentityUniqueIndex Identity;
 
             internal UserHandle()
             {
+                Identity = new(this);
             }
 
             protected override object GetPrimaryKey(User row) => row.Identity;

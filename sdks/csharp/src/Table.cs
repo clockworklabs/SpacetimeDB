@@ -37,8 +37,41 @@ namespace SpacetimeDB
 
     public abstract class RemoteTableHandle<EventContext, Row> : IRemoteTableHandle
         where EventContext : class, IEventContext
-        where Row : IStructuralReadWrite, new()
+        where Row : class, IStructuralReadWrite, new()
     {
+        public abstract class IndexBase<Column>
+        {
+            protected abstract Column GetKey(Row row);
+        }
+
+        public abstract class UniqueIndexBase<Column> : IndexBase<Column>
+            where Column : IEquatable<Column>
+        {
+            private readonly Dictionary<Column, Row> Cache = new();
+
+            public UniqueIndexBase(RemoteTableHandle<EventContext, Row> table)
+            {
+                table.OnInternalInsert += row => Cache.Add(GetKey(row), row);
+                table.OnInternalDelete += row => Cache.Remove(GetKey(row));
+            }
+
+            public Row? Find(Column value) => Cache.TryGetValue(value, out var row) ? row : null;
+        }
+
+        public abstract class BTreeIndexBase<Column> : IndexBase<Column>
+            where Column : IComparable<Column>
+        {
+            private readonly RemoteTableHandle<EventContext, Row> table;
+
+            public BTreeIndexBase(RemoteTableHandle<EventContext, Row> table)
+            {
+                this.table = table;
+            }
+
+            public IEnumerable<Row> Filter(Column value) =>
+                table.Query(row => GetKey(row).Equals(value));
+        }
+
         string? name;
         IDbConnection? conn;
 
@@ -48,10 +81,15 @@ namespace SpacetimeDB
             this.conn = conn;
         }
 
-        // These methods need to be overridden by autogen.
+        // This method needs to be overridden by autogen.
         protected virtual object? GetPrimaryKey(Row row) => null;
-        protected virtual void InternalInvokeValueInserted(Row row) { }
-        protected virtual void InternalInvokeValueDeleted(Row row) { }
+
+        // These events are used by indices to add/remove rows to their dictionaries.
+        // TODO: figure out if they can be merged into regular OnInsert / OnDelete.
+        // I didn't do that because that delays the index updates until after the row is processed.
+        // In theory, that shouldn't be the issue, but I didn't want to break it right before leaving :)
+        private event Action<Row>? OnInternalInsert;
+        private event Action<Row>? OnInternalDelete;
 
         // These are implementations of the type-erased interface.
         object? IRemoteTableHandle.GetPrimaryKey(IStructuralReadWrite row) => GetPrimaryKey((Row)row);
@@ -75,7 +113,7 @@ namespace SpacetimeDB
             var row = (Row)value;
             if (Entries.TryAdd(rowBytes, row))
             {
-                InternalInvokeValueInserted(row);
+                OnInternalInsert?.Invoke(row);
                 return true;
             }
             else
@@ -93,7 +131,7 @@ namespace SpacetimeDB
         {
             if (Entries.Remove(rowBytes, out var row))
             {
-                InternalInvokeValueDeleted(row);
+                OnInternalDelete?.Invoke(row);
                 return true;
             }
 
