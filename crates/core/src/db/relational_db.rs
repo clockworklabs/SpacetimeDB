@@ -4,7 +4,8 @@ use super::datastore::locking_tx_datastore::state_view::{
 };
 use super::datastore::system_tables::ST_MODULE_ID;
 use super::datastore::traits::{
-    IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
+    InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
+    UpdateFlags,
 };
 use super::datastore::{
     locking_tx_datastore::{
@@ -1130,7 +1131,7 @@ impl RelationalDB {
         tx: &'a mut MutTx,
         table_id: TableId,
         row: &[u8],
-    ) -> Result<(ColList, RowRef<'a>), DBError> {
+    ) -> Result<(ColList, RowRef<'a>, InsertFlags), DBError> {
         self.inner.insert_mut_tx(tx, table_id, row)
     }
 
@@ -1140,7 +1141,7 @@ impl RelationalDB {
         table_id: TableId,
         index_id: IndexId,
         row: &[u8],
-    ) -> Result<(ColList, RowRef<'a>), DBError> {
+    ) -> Result<(ColList, RowRef<'a>, UpdateFlags), DBError> {
         self.inner.update_mut_tx(tx, table_id, index_id, row)
     }
 
@@ -1563,7 +1564,7 @@ pub mod tests_utils {
         table_id: TableId,
         row: &T,
     ) -> Result<(AlgebraicValue, RowRef<'a>), DBError> {
-        let (gen_cols, row_ref) = db.insert(tx, table_id, &to_vec(row).unwrap())?;
+        let (gen_cols, row_ref, _) = db.insert(tx, table_id, &to_vec(row).unwrap())?;
         let gen_cols = row_ref.project(&gen_cols).unwrap();
         Ok((gen_cols, row_ref))
     }
