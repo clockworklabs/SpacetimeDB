@@ -14,6 +14,27 @@ on:
 name: CI
 
 jobs:
+
+  find-git-ref:
+    name: Find Git Ref
+    runs-on: ubuntu-latest
+    outputs:
+      git_ref: ${{ steps.find-git-ref.outputs.git_ref }}
+    steps:
+      - name: Find Git ref
+        id: find-git-ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "git_ref=${GIT_REF}" >>"$GITHUB_OUTPUT"
+
   docker_smoketests:
     name: Smoketests
     strategy:
@@ -36,26 +57,10 @@ jobs:
             GIT_REF="${{ github.ref }}"
           fi
           echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
-      - name: Checkout sources
-        uses: actions/checkout@v4
+      - name: Install & Run SpacetimeDB
+        uses: ./.github/actions/install-spacetimedb.yml
         with:
-          ref: ${{ env.GIT_REF }}
-      - uses: dsherret/rust-toolchain-file@v1
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: modules/global.json
-      - name: Build and start database (Linux)
-        if: runner.os == 'Linux'
-        run: docker compose up -d
-      - name: Build and start database (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
-          Start-Process target/debug/spacetimedb-cli.exe start
-          cd modules
-          # the sdk-manifests on windows-latest are messed up, so we need to update them
-          dotnet workload config --update-mode workload-set
-          dotnet workload update
+          git_ref: ${{ env.GIT_REF }}
       - name: Run smoketests
         run: python -m smoketests ${{ matrix.smoketest_args }}
       - name: Stop containers (Linux)
