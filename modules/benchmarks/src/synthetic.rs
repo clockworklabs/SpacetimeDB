@@ -513,6 +513,105 @@ pub fn load(ctx: &ReducerContext, input: String) -> Result<(), String> {
 
     Ok(())
 }
+
+/// Used to execute a series of reducers in sequence for benchmarking purposes.
+///
+/// The input is a string with the following format:
+///
+/// `load_type`: [`Load`], `inserts`: `u32`, `query`: `u32`, `deletes`: `u32`
+///
+/// The order of the `inserts`, `query`, and `deletes` can be changed and will be executed in that order.
+#[spacetimedb::reducer]
+pub fn queries(ctx: &ReducerContext, input: String) -> Result<(), String> {
+    let args = input.split(',').map(|x| x.trim().to_lowercase()).collect::<Vec<_>>();
+    if args.len() < 2 {
+        return Err(format!("Expected at least 2 arguments, got {}", args.len()));
+    }
+    let load = match args[0].as_str() {
+        "tiny" => Load::Tiny,
+        "small" => Load::Small,
+        "medium" => Load::Medium,
+        "large" => Load::Large,
+        x => {
+            return Err(format!(
+                "Invalid load type: '{x}', expected: tiny, small, medium, or large"
+            ))
+        }
+    };
+
+    let mut inserts = 0u64;
+    let mut queries = 0u64;
+    let mut deletes = 0u64;
+
+    for arg in args.iter().skip(1) {
+        let parts = arg.split(':').map(|x| x.trim()).collect::<Vec<_>>();
+        if parts.len() != 2 {
+            return Err(format!("Invalid argument: '{arg}', expected: 'operation:count'"));
+        }
+        let count = parts[1].parse::<u64>().map_err(|e| format!("Invalid count: {}", e))?;
+        match parts[0] {
+            "inserts" => inserts = count,
+            "query" => queries = count,
+            "deletes" => deletes = count,
+            x => {
+                return Err(format!(
+                    "Invalid operation: '{x}', expected: inserts, query, or deletes"
+                ))
+            }
+        }
+    }
+
+    log::info!("Executing queries: inserts: {inserts}, query: {queries}, deletes: {deletes}");
+    // To allow to insert duplicate rows, the `ids` not use `[unique]` attribute, causing to not be able to use `update` method
+    match load {
+        Load::Tiny => {
+            if inserts > 0 {
+                insert_bulk_tiny_rows(ctx, inserts as u8);
+            }
+            for id in 0..queries {
+                filter_tiny_rows_by_id(ctx, id as u8);
+            }
+            for id in 0..deletes {
+                delete_tiny_rows_by_id(ctx, id as u8);
+            }
+        }
+        Load::Small => {
+            if inserts > 0 {
+                insert_bulk_small_rows(ctx, inserts);
+            }
+            for id in 0..queries {
+                filter_small_rows_by_id(ctx, id);
+            }
+            for id in 0..deletes {
+                delete_small_rows_by_id(ctx, id);
+            }
+        }
+        Load::Medium => {
+            if inserts > 0 {
+                insert_bulk_medium_var_rows(ctx, inserts);
+            }
+            for id in 0..queries {
+                filter_medium_var_rows_by_id(ctx, id);
+            }
+            for id in 0..deletes {
+                delete_medium_var_rows_by_id(ctx, id);
+            }
+        }
+        Load::Large => {
+            if inserts > 0 {
+                insert_bulk_large_var_rows(ctx, inserts);
+            }
+            for id in 0..queries {
+                filter_large_var_rows_by_id(ctx, id as u128);
+            }
+            for id in 0..deletes {
+                delete_large_var_rows_by_id(ctx, id as u128);
+            }
+        }
+    }
+
+    Ok(())
+}
 // ---------- update ----------
 
 #[spacetimedb::reducer]
@@ -665,6 +764,55 @@ pub fn filter_btree_each_column_u32_u64_u64_by_y(ctx: &ReducerContext, y: u64) {
     }
 }
 
+#[spacetimedb::reducer]
+pub fn filter_tiny_rows_by_id(ctx: &ReducerContext, id: u8) {
+    for row in ctx.db.tiny_rows().iter().filter(|r| r.id == id) {
+        black_box(row);
+    }
+}
+
+#[spacetimedb::reducer]
+pub fn filter_small_rows_by_id(ctx: &ReducerContext, id: u64) {
+    for row in ctx.db.small_rows().iter().filter(|r| r.id == id) {
+        black_box(row);
+    }
+}
+
+#[spacetimedb::reducer]
+pub fn filter_small_btree_each_column_rows_by_id(ctx: &ReducerContext, id: u64) {
+    for row in ctx.db.small_btree_each_column_rows().iter().filter(|r| r.id == id) {
+        black_box(row);
+    }
+}
+
+#[spacetimedb::reducer]
+pub fn filter_medium_var_rows_by_id(ctx: &ReducerContext, id: u64) {
+    for row in ctx.db.medium_var_rows().iter().filter(|r| r.id == id) {
+        black_box(row);
+    }
+}
+
+#[spacetimedb::reducer]
+pub fn filter_medium_var_rows_btree_each_column_by_id(ctx: &ReducerContext, id: u64) {
+    for row in ctx.db.medium_var_rows_btree_each_column().iter().filter(|r| r.id == id) {
+        black_box(row);
+    }
+}
+
+#[spacetimedb::reducer]
+pub fn filter_large_var_rows_by_id(ctx: &ReducerContext, id: u128) {
+    for row in ctx.db.large_var_rows().iter().filter(|r| r.id == id) {
+        black_box(row);
+    }
+}
+
+#[spacetimedb::reducer]
+pub fn filter_large_var_rows_btree_each_column_by_id(ctx: &ReducerContext, id: u128) {
+    for row in ctx.db.large_var_rows_btree_each_column().iter().filter(|r| r.id == id) {
+        black_box(row);
+    }
+}
+
 // ---------- delete ----------
 
 // FIXME: current nonunique delete interface is UNUSABLE!!!!
@@ -677,6 +825,41 @@ pub fn delete_unique_0_u32_u64_str_by_id(ctx: &ReducerContext, id: u32) {
 #[spacetimedb::reducer]
 pub fn delete_unique_0_u32_u64_u64_by_id(ctx: &ReducerContext, id: u32) {
     ctx.db.unique_0_u32_u64_u64().id().delete(id);
+}
+
+#[spacetimedb::reducer]
+pub fn delete_tiny_rows_by_id(ctx: &ReducerContext, id: u8) {
+    ctx.db.tiny_rows().id().delete(id);
+}
+
+#[spacetimedb::reducer]
+pub fn delete_small_rows_by_id(ctx: &ReducerContext, id: u64) {
+    ctx.db.small_rows().id().delete(id);
+}
+
+#[spacetimedb::reducer]
+pub fn delete_small_btree_each_column_rows_by_id(ctx: &ReducerContext, id: u64) {
+    ctx.db.small_btree_each_column_rows().id().delete(id);
+}
+
+#[spacetimedb::reducer]
+pub fn delete_medium_var_rows_by_id(ctx: &ReducerContext, id: u64) {
+    ctx.db.medium_var_rows().id().delete(id);
+}
+
+#[spacetimedb::reducer]
+pub fn delete_medium_var_rows_btree_each_column_by_id(ctx: &ReducerContext, id: u64) {
+    ctx.db.medium_var_rows_btree_each_column().id().delete(id);
+}
+
+#[spacetimedb::reducer]
+pub fn delete_large_var_rows_by_id(ctx: &ReducerContext, id: u128) {
+    ctx.db.large_var_rows().id().delete(id);
+}
+
+#[spacetimedb::reducer]
+pub fn delete_large_var_rows_btree_each_column_by_id(ctx: &ReducerContext, id: u128) {
+    ctx.db.large_var_rows_btree_each_column().id().delete(id);
 }
 
 // ---------- clear table ----------
