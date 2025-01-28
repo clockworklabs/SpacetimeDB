@@ -468,7 +468,7 @@ impl MutTxId {
         // Note that the index could have been added in this tx.
         self.tx_state
             .index_id_map_removals
-            .get_or_insert_with(Default::default)
+            .get_or_insert_default()
             .insert(index_id);
 
         log::trace!("INDEX DROPPED: {}", index_id);
@@ -596,13 +596,9 @@ impl MutTxId {
             AlgebraicType::Product(key_types) => {
                 let key_types = &key_types.elements;
                 // Split into types for the prefix and for the rest.
-                // TODO(centril): replace with `.split_at_checked(...)`.
-                if key_types.len() < prefix_elems.idx() {
-                    return Err(DecodeError::Other(
-                        "index key type has too few fields compared to prefix".into(),
-                    ));
-                }
-                let (prefix_types, rest_types) = key_types.split_at(prefix_elems.idx());
+                let (prefix_types, rest_types) = key_types
+                    .split_at_checked(prefix_elems.idx())
+                    .ok_or_else(|| DecodeError::Other("index key type has too few fields compared to prefix".into()))?;
 
                 // The `rstart` and `rend`s must be typed at `Bound<range_type>`.
                 // Extract that type and determine the length of the suffix.
@@ -994,7 +990,7 @@ impl MutTxId {
                 &sql.clone().into(),
             )?
             .next()
-            .ok_or_else(|| TableError::RawSqlNotFound(SystemTable::st_row_level_security, sql))?;
+            .ok_or(TableError::RawSqlNotFound(SystemTable::st_row_level_security, sql))?;
         self.delete(ST_ROW_LEVEL_SECURITY_ID, st_rls_ref.pointer())?;
 
         Ok(())
@@ -1602,7 +1598,7 @@ impl MutTxId {
                 let (table, blob_store) = self
                     .tx_state
                     .get_table_and_blob_store(table_id)
-                    .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
+                    .ok_or(TableError::IdNotFoundState(table_id))?;
                 Ok(table.delete(blob_store, row_pointer, |_| ()).is_some())
             }
             SquashedOffset::COMMITTED_STATE => {
@@ -1687,7 +1683,8 @@ impl MutTxId {
 impl StateView for MutTxId {
     type Iter<'a> = IterMutTx<'a>;
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeMutTx<'a, R>;
-    type IterByColEq<'a, 'r> = IterByColEqMutTx<'a, 'r>
+    type IterByColEq<'a, 'r>
+        = IterByColEqMutTx<'a, 'r>
     where
         Self: 'a;
 

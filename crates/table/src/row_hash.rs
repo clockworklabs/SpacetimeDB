@@ -26,7 +26,7 @@ use spacetimedb_sats::{algebraic_value::ser::concat_byte_chunks_buf, bsatn::Dese
 /// 1. the `fixed_offset` must point at a row in `page` lasting `ty.size()` bytes.
 /// 2. the row must be a valid `ty`.
 /// 3. for any `vlr: VarLenRef` stored in the row,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 pub unsafe fn hash_row_in_page(
     hasher: &mut impl Hasher,
     page: &Page,
@@ -49,7 +49,7 @@ pub unsafe fn hash_row_in_page(
 /// SAFETY:
 /// 1. the `value` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `value`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 unsafe fn hash_product(
     hasher: &mut impl Hasher,
     bytes: &Bytes,
@@ -78,7 +78,7 @@ unsafe fn hash_product(
 /// SAFETY:
 /// 1. the `value` must be valid at type `ty` and properly aligned for `ty`.
 /// 2. for any `vlr: VarLenRef` stored in `value`,
-///   `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
+///    `vlr.first_offset` must either be `NULL` or point to a valid granule in `page`.
 unsafe fn hash_value(
     hasher: &mut impl Hasher,
     bytes: &Bytes,

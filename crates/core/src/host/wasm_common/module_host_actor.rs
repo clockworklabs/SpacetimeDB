@@ -27,7 +27,6 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::sql::parser::RowLevelExpr;
 use crate::subscription::module_subscription_actor::WriteConflict;
-use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
 use spacetimedb_lib::buffer::DecodeError;
@@ -71,6 +70,7 @@ pub struct EnergyStats {
 
 pub struct ExecutionTimings {
     pub total_duration: Duration,
+    #[expect(unused)] // TODO: do we want to do something with this?
     pub wasm_instance_env_call_times: CallTimes,
 }
 
@@ -476,7 +476,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .record("timings.total_duration", tracing::field::debug(timings.total_duration))
             .record("energy.used", tracing::field::debug(energy.used));
 
-        const FRAME_LEN_60FPS: Duration = const_unwrap(Duration::from_secs(1).checked_div(60));
+        const FRAME_LEN_60FPS: Duration = Duration::from_secs(1).checked_div(60).unwrap();
         if timings.total_duration > FRAME_LEN_60FPS {
             // If we can't get your reducer done in a single frame we should debug it.
             tracing::debug!(

@@ -411,12 +411,13 @@ impl TxDatastore for Locking {
 }
 
 impl MutTxDatastore for Locking {
-    type IterMutTx<'a>= IterMutTx<'a>
+    type IterMutTx<'a>
+        = IterMutTx<'a>
     where
         Self: 'a;
     type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeMutTx<'a, R>;
     type IterByColEqMutTx<'a, 'r>
-    = IterByColRangeMutTx<'a, &'r AlgebraicValue>
+        = IterByColRangeMutTx<'a, &'r AlgebraicValue>
     where
         Self: 'a;
 

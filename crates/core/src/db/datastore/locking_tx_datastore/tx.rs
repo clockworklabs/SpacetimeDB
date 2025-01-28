@@ -40,7 +40,8 @@ impl Datastore for TxId {
 impl StateView for TxId {
     type Iter<'a> = IterTx<'a>;
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeTx<'a, R>;
-    type IterByColEq<'a, 'r> = IterByColEqTx<'a, 'r>
+    type IterByColEq<'a, 'r>
+        = IterByColEqTx<'a, 'r>
     where
         Self: 'a;
 
