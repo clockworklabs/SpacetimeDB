@@ -30,8 +30,11 @@ use spacetimedb_sats::{
     algebraic_value::Packed, i256, product_value::InvalidFieldError, u256, AlgebraicType, AlgebraicValue, ProductType,
 };
 
+mod key_size;
 mod multimap;
 mod uniquemap;
+
+pub use key_size::KeySize;
 
 type Index<K> = multimap::MultiMap<K, RowPointer>;
 type IndexIter<'a, K> = multimap::MultiMapRangeIter<'a, K, RowPointer>;
@@ -321,29 +324,44 @@ impl TypedIndex {
     /// or may insert a nonsense value into the index.
     /// Note, however, that it will not invoke undefined behavior.
     ///
-    /// Returns `Ok(Some(existing_row))` if this index was a unique index that was violated.
-    /// The index is not inserted to in that case.
-    fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<Option<RowPointer>, InvalidFieldError> {
-        fn mm_insert_at_type<T: Ord + ReadColumn>(
+    /// The returned `usize` is the number of bytes used by the key.
+    /// [`BTreeIndex::check_and_insert`] will use this
+    /// to update the counter for [`BTreeIndex::num_key_bytes`].
+    /// We want to store said counter outside of the [`TypedIndex`] enum,
+    /// but we can only compute the size using type info within the [`TypedIndex`],
+    /// so we have to return the size across this boundary.
+    ///
+    /// Returns `Ok((Some(existing_row), key_size))` if this index was a unique index that was violated.
+    /// The new entry is not inserted to in that case.
+    ///
+    /// Returns `Ok((None, key_size))` if the new entry was successfully inserted into the index.
+    fn insert(
+        &mut self,
+        cols: &ColList,
+        row_ref: RowRef<'_>,
+    ) -> Result<(Option<RowPointer>, usize), InvalidFieldError> {
+        fn mm_insert_at_type<T: Ord + ReadColumn + KeySize>(
             this: &mut Index<T>,
             cols: &ColList,
             row_ref: RowRef<'_>,
-        ) -> Result<Option<RowPointer>, InvalidFieldError> {
+        ) -> Result<(Option<RowPointer>, usize), InvalidFieldError> {
             let col_pos = cols.as_singleton().unwrap();
-            let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
+            let key: T = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
+            let key_size = key.key_size_in_bytes();
             this.insert(key, row_ref.pointer());
-            Ok(None)
+            Ok((None, key_size))
         }
-        fn um_insert_at_type<T: Ord + ReadColumn>(
+        fn um_insert_at_type<T: Ord + ReadColumn + KeySize>(
             this: &mut UniqueIndex<T>,
             cols: &ColList,
             row_ref: RowRef<'_>,
-        ) -> Result<Option<RowPointer>, InvalidFieldError> {
+        ) -> Result<(Option<RowPointer>, usize), InvalidFieldError> {
             let col_pos = cols.as_singleton().unwrap();
-            let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-            Ok(this.insert(key, row_ref.pointer()).copied())
+            let key: T = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
+            let key_size = key.key_size_in_bytes();
+            Ok((this.insert(key, row_ref.pointer()).copied(), key_size))
         }
-        let unique_violation = match self {
+        let (unique_violation, key_size) = match self {
             Self::Bool(idx) => mm_insert_at_type(idx, cols, row_ref),
             Self::U8(idx) => mm_insert_at_type(idx, cols, row_ref),
             Self::I8(idx) => mm_insert_at_type(idx, cols, row_ref),
@@ -360,8 +378,9 @@ impl TypedIndex {
             Self::String(idx) => mm_insert_at_type(idx, cols, row_ref),
             Self::AV(this) => {
                 let key = row_ref.project(cols)?;
+                let key_size = key.key_size_in_bytes();
                 this.insert(key, row_ref.pointer());
-                Ok(None)
+                Ok((None, key_size))
             }
             Self::UniqueBool(idx) => um_insert_at_type(idx, cols, row_ref),
             Self::UniqueU8(idx) => um_insert_at_type(idx, cols, row_ref),
@@ -379,10 +398,11 @@ impl TypedIndex {
             Self::UniqueString(idx) => um_insert_at_type(idx, cols, row_ref),
             Self::UniqueAV(this) => {
                 let key = row_ref.project(cols)?;
-                Ok(this.insert(key, row_ref.pointer()).copied())
+                let key_size = key.key_size_in_bytes();
+                Ok((this.insert(key, row_ref.pointer()).copied(), key_size))
             }
         }?;
-        Ok(unique_violation)
+        Ok((unique_violation, key_size))
     }
 
     /// Remove the row referred to by `row_ref` from the index `self`,
@@ -393,24 +413,34 @@ impl TypedIndex {
     /// this will behave oddly; it may return an error, do nothing,
     /// or remove the wrong value from the index.
     /// Note, however, that it will not invoke undefined behavior.
-    fn delete(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
-        fn mm_delete_at_type<T: Ord + ReadColumn>(
+    ///
+    /// If the row was present and has been deleted, returns `Ok(Some(key_size_in_bytes))`,
+    /// where `key_size_in_bytes` is the size of the key.
+    /// [`BTreeIndex::delete`] will use this
+    /// to update the counter for [`BTreeIndex::num_key_bytes`].
+    /// We want to store said counter outside of the [`TypedIndex`] enum,
+    /// but we can only compute the size using type info within the [`TypedIndex`],
+    /// so we have to return the size across this boundary.
+    fn delete(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<Option<usize>, InvalidFieldError> {
+        fn mm_delete_at_type<T: Ord + ReadColumn + KeySize>(
             this: &mut Index<T>,
             cols: &ColList,
             row_ref: RowRef<'_>,
-        ) -> Result<bool, InvalidFieldError> {
+        ) -> Result<Option<usize>, InvalidFieldError> {
             let col_pos = cols.as_singleton().unwrap();
-            let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-            Ok(this.delete(&key, &row_ref.pointer()))
+            let key: T = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
+            let key_size = key.key_size_in_bytes();
+            Ok(this.delete(&key, &row_ref.pointer()).then_some(key_size))
         }
-        fn um_delete_at_type<T: Ord + ReadColumn>(
+        fn um_delete_at_type<T: Ord + ReadColumn + KeySize>(
             this: &mut UniqueIndex<T>,
             cols: &ColList,
             row_ref: RowRef<'_>,
-        ) -> Result<bool, InvalidFieldError> {
+        ) -> Result<Option<usize>, InvalidFieldError> {
             let col_pos = cols.as_singleton().unwrap();
-            let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-            Ok(this.delete(&key))
+            let key: T = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
+            let key_size = key.key_size_in_bytes();
+            Ok(this.delete(&key).then_some(key_size))
         }
 
         match self {
@@ -430,7 +460,8 @@ impl TypedIndex {
             Self::String(this) => mm_delete_at_type(this, cols, row_ref),
             Self::AV(this) => {
                 let key = row_ref.project(cols)?;
-                Ok(this.delete(&key, &row_ref.pointer()))
+                let key_size = key.key_size_in_bytes();
+                Ok(this.delete(&key, &row_ref.pointer()).then_some(key_size))
             }
             Self::UniqueBool(this) => um_delete_at_type(this, cols, row_ref),
             Self::UniqueU8(this) => um_delete_at_type(this, cols, row_ref),
@@ -448,7 +479,8 @@ impl TypedIndex {
             Self::UniqueString(this) => um_delete_at_type(this, cols, row_ref),
             Self::UniqueAV(this) => {
                 let key = row_ref.project(cols)?;
-                Ok(this.delete(&key))
+                let key_size = key.key_size_in_bytes();
+                Ok(this.delete(&key).then_some(key_size))
             }
         }
     }
@@ -633,7 +665,20 @@ pub struct BTreeIndex {
     idx: TypedIndex,
     /// The key type of this index.
     /// This is the projection of the row type to the types of the columns indexed.
+    // TODO(perf, bikeshedding): Could trim `sizeof(BTreeIndex)` to 64 if this was `Box<AlgebraicType>`.
     pub key_type: AlgebraicType,
+
+    /// The number of rows in this index.
+    ///
+    /// Memoized counter for [`Self::num_rows`].
+    num_rows: u64,
+
+    /// The number of key bytes in this index.
+    ///
+    /// Memoized counter for [`Self::num_key_bytes`].
+    /// See that method for more detailed documentation.
+    num_key_bytes: u64,
+
     /// Given a full row, typed at some `ty: ProductType`,
     /// these columns are the ones that this index indexes.
     /// Projecting the `ty` to `self.indexed_columns` yields the index's type `self.key_type`.
@@ -645,13 +690,19 @@ impl MemoryUsage for BTreeIndex {
         let Self {
             idx,
             key_type,
+            num_rows,
+            num_key_bytes,
             indexed_columns,
         } = self;
-        idx.heap_usage() + key_type.heap_usage() + indexed_columns.heap_usage()
+        idx.heap_usage()
+            + key_type.heap_usage()
+            + num_rows.heap_usage()
+            + num_key_bytes.heap_usage()
+            + indexed_columns.heap_usage()
     }
 }
 
-static_assert_size!(BTreeIndex, 64);
+static_assert_size!(BTreeIndex, 80);
 
 impl BTreeIndex {
     /// Returns a new possibly unique index, with `index_id` for a set of columns.
@@ -661,6 +712,8 @@ impl BTreeIndex {
         Ok(Self {
             idx: typed_index,
             key_type,
+            num_rows: 0,
+            num_key_bytes: 0,
             indexed_columns,
         })
     }
@@ -674,6 +727,8 @@ impl BTreeIndex {
         Self {
             idx,
             key_type,
+            num_rows: 0,
+            num_key_bytes: 0,
             indexed_columns,
         }
     }
@@ -688,14 +743,30 @@ impl BTreeIndex {
     ///
     /// Returns `Ok(Some(existing_row))` if this insertion would violate a unique constraint.
     pub fn check_and_insert(&mut self, row_ref: RowRef<'_>) -> Result<Option<RowPointer>, InvalidFieldError> {
-        self.idx.insert(&self.indexed_columns, row_ref)
+        let (res, size_in_bytes) = self.idx.insert(&self.indexed_columns, row_ref)?;
+        if res.is_none() {
+            // No existing row; the new row was inserted.
+            // Update the `num_rows` and `num_key_bytes` counters
+            // to account for the new insertion.
+            self.num_rows += 1;
+            self.num_key_bytes += size_in_bytes as u64;
+        }
+        Ok(res)
     }
 
     /// Deletes `row_ref` with its indexed value `row_ref.project(&self.indexed_columns)` from this index.
     ///
-    /// Returns whether `row_ref` was present.
+    /// Returns whether `ptr` was present.
     pub fn delete(&mut self, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
-        self.idx.delete(&self.indexed_columns, row_ref)
+        if let Some(size_in_bytes) = self.idx.delete(&self.indexed_columns, row_ref)? {
+            // Was present, and deleted: update the `num_rows` and `num_key_bytes` counters.
+            self.num_rows -= 1;
+            self.num_key_bytes -= size_in_bytes as u64;
+            Ok(true)
+        } else {
+            // Was not present: don't update counters.
+            Ok(false)
+        }
     }
 
     /// Returns whether `value` is in this index.
@@ -743,11 +814,34 @@ impl BTreeIndex {
     /// rather than constructing a new `BTreeIndex`.
     pub fn clear(&mut self) {
         self.idx.clear();
+        self.num_key_bytes = 0;
+        self.num_rows = 0;
     }
 
     /// The number of unique keys in this index.
     pub fn num_keys(&self) -> usize {
         self.idx.num_keys()
+    }
+
+    /// The number of rows stored in this index.
+    ///
+    /// Note that, for non-unique indexes, this may be larger than [`Self::num_keys`].
+    ///
+    /// This method runs in constant time.
+    pub fn num_rows(&self) -> u64 {
+        self.num_rows
+    }
+
+    /// The number of bytes stored in keys in this index.
+    ///
+    /// For non-unique indexes, duplicate keys are counted once for each row that refers to them,
+    /// even though the internal storage may deduplicate them as an optimization.
+    ///
+    /// This method runs in constant time.
+    ///
+    /// See the [`KeySize`] trait for more details on how this method computes its result.
+    pub fn num_key_bytes(&self) -> u64 {
+        self.num_key_bytes
     }
 }
 
