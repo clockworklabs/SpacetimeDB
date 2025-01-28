@@ -3,8 +3,11 @@
 //! This module is internal, and may incompatibly change without warning.
 
 use crate::{
-    callbacks::DbCallbacks, client_cache::ClientCache, db_connection::DbContextImpl,
-    subscription::SubscriptionHandleImpl, Event,
+    callbacks::DbCallbacks,
+    client_cache::ClientCache,
+    db_connection::DbContextImpl,
+    subscription::{OnEndedCallback, SubscriptionHandleImpl},
+    Event,
 };
 use anyhow::Context;
 use bytes::Bytes;
@@ -109,11 +112,25 @@ where
     fn reducer_name(&self) -> &'static str;
 }
 
-pub trait SubscriptionHandle: InModule + Send + 'static
+pub trait SubscriptionHandle: InModule + Clone + Send + 'static
 where
     Self::Module: SpacetimeModule<SubscriptionHandle = Self>,
 {
     fn new(imp: SubscriptionHandleImpl<Self::Module>) -> Self;
+    fn is_ended(&self) -> bool;
+
+    fn is_active(&self) -> bool;
+
+    /// Unsubscribe from the query controlled by this `SubscriptionHandle`,
+    /// then run `on_end` when its rows are removed from the client cache.
+    /// Returns an error if the subscription is already ended,
+    /// or if unsubscribe has already been called.
+    fn unsubscribe_then(self, on_end: OnEndedCallback<Self::Module>) -> anyhow::Result<()>;
+
+    /// Unsubscribe from the query controlled by this `SubscriptionHandle`.
+    /// Returns an error if the subscription is already ended,
+    /// or if unsubscribe has already been called.
+    fn unsubscribe(self) -> anyhow::Result<()>;
 }
 
 pub struct WithBsatn<Row> {
