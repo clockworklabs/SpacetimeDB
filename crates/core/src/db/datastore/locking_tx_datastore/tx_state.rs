@@ -1,5 +1,5 @@
 use core::ops::RangeBounds;
-use spacetimedb_data_structures::map::{IntMap, IntSet};
+use spacetimedb_data_structures::map::{HashSet, IntMap, IntSet};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_table::{
@@ -8,9 +8,9 @@ use spacetimedb_table::{
     static_assert_size,
     table::{IndexScanIter, RowRef, Table, TableAndIndex},
 };
-use std::collections::{btree_map, BTreeMap, BTreeSet};
+use std::collections::{btree_map, BTreeMap};
 
-pub(super) type DeleteTable = BTreeSet<RowPointer>;
+pub(super) type DeleteTable = HashSet<RowPointer>;
 
 /// A mapping to find the actual index given an `IndexId`.
 pub(super) type IndexIdMap = IntMap<IndexId, TableId>;

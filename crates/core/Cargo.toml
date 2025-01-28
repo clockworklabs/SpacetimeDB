@@ -117,7 +117,7 @@ unindexed_iter_by_col_range_warn = []
 # Optional storage engines.
 default = ["unindexed_iter_by_col_range_warn"]
 # Enable test helpers and utils
-test = []
+test = ["spacetimedb-commitlog/test"]
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }

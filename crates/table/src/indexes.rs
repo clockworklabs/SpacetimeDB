@@ -204,7 +204,7 @@ impl fmt::LowerHex for PageOffset {
 
 /// The index of a [`Page`] within a [`Pages`].
 #[cfg_attr(any(test, feature = "proptest"), derive(proptest_derive::Arbitrary))]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct PageIndex(#[cfg_attr(any(test, feature = "proptest"), proptest(strategy = "0..MASK_PI"))] pub u64);
 
 impl MemoryUsage for PageIndex {}

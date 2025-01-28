@@ -44,7 +44,7 @@ use spacetimedb_table::{
     table::{IndexScanIter, InsertError, RowRef, Table, TableAndIndex},
     MemoryUsage,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// Contains the live, in-memory snapshot of a database. This structure
@@ -685,7 +685,7 @@ pub struct CommittedIndexIterWithDeletedMutTx<'a> {
 }
 
 impl<'a> CommittedIndexIterWithDeletedMutTx<'a> {
-    pub(super) fn new(committed_rows: IndexScanIter<'a>, del_table: &'a BTreeSet<RowPointer>) -> Self {
+    pub(super) fn new(committed_rows: IndexScanIter<'a>, del_table: &'a DeleteTable) -> Self {
         Self {
             committed_rows,
             del_table,
